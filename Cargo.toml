@@ -1,0 +1,11 @@
+[package]
+name = "jobu"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.49", features = ["derive"] }
+daemonize = "0.5.0"
+ratatui = "0.29.0"
+chrono = { version = "0.4", features = ["serde"] }
+nix = { version = "0.30.1", features = ["process", "signal"]}
