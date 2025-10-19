@@ -153,12 +153,10 @@ fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Erro
     // Calculate position to center the text "hello from jobu" (15 characters)
     let text = "hello from jobu";
     
-    // Write ANSI escape sequences directly to the TTY
     crossterm::execute!(tty,
         crossterm::cursor::SavePosition,
         crossterm::cursor::MoveTo(center_col, center_row)
     )?;
-
     write!(tty, "\x1b[31m{}\x1b[0m", text)?; // Red text and reset
     crossterm::execute!(tty, crossterm::cursor::RestorePosition)?;
     tty.flush()?;
