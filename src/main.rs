@@ -8,7 +8,7 @@ use std::io::Write;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::path::Path;
-    
+use std::io::{BufRead, BufReader};
 
 #[derive(Parser)]
 #[command(name = "jobu")]
@@ -132,34 +132,58 @@ fn run_daemon(pid_file: &str, log_file: &str)  {
     }
 }
 
+const JOBU_FIFO_PATH: &str = "/tmp/jobu.fifo";
+
 fn daemon_main_loop() {
     // this doesnt terminate
 
     // This is where the main daemon functionality would be implemented
     // For demonstration, we'll log periodic messages
+    let mut log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/jobu_daemon.log")
+            .unwrap();
+
+    // Remove existing FIFO if it exists
+    if Path::new(JOBU_FIFO_PATH).exists() {
+        std::fs::remove_file(JOBU_FIFO_PATH).unwrap();
+    }
+
+    // Create FIFO using system command
+    std::process::Command::new("mkfifo")
+        .arg(JOBU_FIFO_PATH)
+        .output()
+        .expect("Failed to create FIFO");
+
     
     let mut counter = 0;
     loop {
         counter += 1;
-        
-        // Write to log file to show the daemon is working
-        if let Ok(mut log_file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/jobu_daemon.log")
-        {
-            let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-            writeln!(log_file, "[{}] Jobu daemon is running (iteration {})", timestamp, counter).ok();
+
+        // Open FIFO for reading
+        match File::open(JOBU_FIFO_PATH) {
+            Ok(file) => {
+                let reader = BufReader::new(file);
+                for line in reader.lines() {
+                    match line {
+                        Ok(content) => {
+                            let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+                            writeln!(log_file, "[{}] {} {}", timestamp, counter, content).ok();
+                        }
+                        Err(e) => {
+                            let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+                            writeln!(log_file, "[{}] {} Error reading line: {}", timestamp, counter, e).ok();
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+                writeln!(log_file, "[{}] {} Error opening FIFO: {}", timestamp, counter, e).ok();
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
         }
-        
-        // Sleep for 30 seconds
-        std::thread::sleep(std::time::Duration::from_secs(30));
-        
-        // In a real implementation, this would be doing actual work like:
-        // - Processing job queues
-        // - Monitoring system resources
-        // - Handling incoming requests
-        // - Managing background tasks
     }
 }
 
@@ -169,5 +193,25 @@ fn run_activate() {
         Err(e) => eprintln!("Warning: {}", e),
     }
     run_daemon(DEFAULT_PID_FILE, "/tmp/jobu.log");
-    println!("FORBASH: echo 'hello from jobu'");
+    
+    // Wait a moment for daemon to start
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    
+    // Write to FIFO
+    match OpenOptions::new().write(true).open(JOBU_FIFO_PATH) {
+        Ok(mut file) => {
+            writeln!(file, "starting up").unwrap();
+        }
+        Err(e) => {
+            eprintln!("Failed to write to FIFO: {}", e);
+        }
+    }
+
+    // Read and print each line of activate.sh with FORBASH: prefix (compile-time inclusion)
+    println!("FORBASH: export JOBU_FIFO_PATH={}", JOBU_FIFO_PATH);
+
+    const ACTIVATE_SCRIPT: &str = include_str!("activate.sh");
+    for line in ACTIVATE_SCRIPT.lines() {
+        println!("FORBASH: {}", line);
+    }
 }
