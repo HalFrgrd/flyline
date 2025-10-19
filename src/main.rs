@@ -9,6 +9,7 @@ use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use std::path::Path;
 use std::io::{BufRead, BufReader};
+use crossterm::{terminal, Command};
 
 #[derive(Parser)]
 #[command(name = "jobu")]
@@ -134,6 +135,37 @@ fn run_daemon(pid_file: &str, log_file: &str)  {
 
 const JOBU_FIFO_PATH: &str = "/tmp/jobu.fifo";
 
+fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    
+    // Open the TTY device for writing
+    let mut tty = OpenOptions::new().write(true).open(tty_path)?;
+    
+    // Get terminal size using a simple approach
+    // We'll use the TIOCGWINSZ ioctl through crossterm
+    let (cols, rows) = terminal::size()?;
+    
+    // Calculate center position
+    let center_col = cols / 2;
+    let center_row = rows / 2;
+    
+    // Calculate position to center the text "hello from jobu" (15 characters)
+    let text = "hello from jobu";
+    
+    // Write ANSI escape sequences directly to the TTY
+    crossterm::execute!(tty,
+        crossterm::cursor::SavePosition,
+        crossterm::cursor::MoveTo(center_col, center_row)
+    )?;
+
+    write!(tty, "\x1b[31m{}\x1b[0m", text)?; // Red text and reset
+    crossterm::execute!(tty, crossterm::cursor::RestorePosition)?;
+    tty.flush()?;
+    
+    Ok(())
+}
+
 fn daemon_main_loop() {
     // this doesnt terminate
 
@@ -157,9 +189,7 @@ fn daemon_main_loop() {
         .expect("Failed to create FIFO");
 
     
-    let mut counter = 0;
     loop {
-        counter += 1;
 
         // Open FIFO for reading
         match File::open(JOBU_FIFO_PATH) {
@@ -169,18 +199,28 @@ fn daemon_main_loop() {
                     match line {
                         Ok(content) => {
                             let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-                            writeln!(log_file, "[{}] {} {}", timestamp, counter, content).ok();
+                            writeln!(log_file, "[{}] {}", timestamp, content).ok();
+                            if content.contains("tty=") {
+                                // do something special
+                                let tty = content.split("tty=").nth(1).unwrap_or("");
+                                writeln!(log_file, "[{}] Found TTY: {}", timestamp, tty).ok();
+                                
+                                // Display red message in center of terminal
+                                if let Err(e) = display_center_message(tty) {
+                                    writeln!(log_file, "[{}] Error displaying message: {}", timestamp, e).ok();
+                                }
+                            }
                         }
                         Err(e) => {
                             let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-                            writeln!(log_file, "[{}] {} Error reading line: {}", timestamp, counter, e).ok();
+                            writeln!(log_file, "[{}] Error reading line: {}", timestamp, e).ok();
                         }
                     }
                 }
             }
             Err(e) => {
                 let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-                writeln!(log_file, "[{}] {} Error opening FIFO: {}", timestamp, counter, e).ok();
+                writeln!(log_file, "[{}] Error opening FIFO: {}", timestamp, e).ok();
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
@@ -196,11 +236,15 @@ fn run_activate() {
     
     // Wait a moment for daemon to start
     std::thread::sleep(std::time::Duration::from_millis(500));
-    
+
+    // find the /dev/tty of the current terminal
+    let tty = std::fs::read_link("/proc/self/fd/0").unwrap();
+    println!("Current terminal TTY: {}", tty.display());
+
     // Write to FIFO
     match OpenOptions::new().write(true).open(JOBU_FIFO_PATH) {
         Ok(mut file) => {
-            writeln!(file, "starting up").unwrap();
+            writeln!(file, "starting up with tty={}", tty.display()).unwrap();
         }
         Err(e) => {
             eprintln!("Failed to write to FIFO: {}", e);
