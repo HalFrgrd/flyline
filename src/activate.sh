@@ -4,6 +4,25 @@ PROMPT_COMMAND='echo $LINENO > $JOBU_FIFO_PATH 2>/dev/null || true'
 
 # edit-and-execute-command annoyingly echos the command before executing it.
 # so i need to delete that line from the terminal in debug trap.
+
+# behaviour:
+# - lines with no command not print the command
+# - setting `bind '"\C-m": edit-and-execute-command'`  will echo the command
+# - multiline editing is not supported with `edit-and-execute-command`, it will always think you want to execute after pressing enter.
+# - so we'd have to swap what enter does depending on context.
+# so I don't see what using `edit-and-execute-command` gets me.
+# because alternatively, I could either set enter to accept-line, or to send to daemon.
+# and then I would not have to deal with the echoed command.
+# the only benefit I see with `edit-and-execute-command` is that I get to run a function before executing the command.
+# but I could also do that with a DEBUG trap. But maybe it is best not to touch the debug trap.
+# 
+# well `bind '"\C-m": accept-line'` tries to do mulitiline editing, which we might not want.
+
+
+# TODO: execute-named-command seems interesting, but not available in my bash version
+# insert-comment could be useful also. it also accepts commands
+
+
 JOBU_SHOULD_DELETE_ECHOED_COMMAND=0
 dumb_editor() {
     f="$1"
@@ -14,7 +33,7 @@ dumb_editor() {
     if [ "$content" = "exit" ]; then
         return 0
     fi
-    printf '%s' 'ls | head -n 2' > "$f"
+    # printf '%s' 'ls | head -n 2' > "$f"
     JOBU_SHOULD_DELETE_ECHOED_COMMAND=1
 
     return 0
@@ -31,5 +50,19 @@ get_rid_of_echoed_command() {
 
 trap 'get_rid_of_echoed_command' DEBUG
 
+
+testswitch(){
+    echo "switching j"
+    # bind '"j": self-insert'
+    READLINE_LINE='echo "test'
+    READLINE_POINT=${#READLINE_LINE}
+}
+
 export VISUAL=dumb_editor
-bind '"\C-m": edit-and-execute-command'
+bind '"\C-m": accept-line'
+bind '"j": execute-named-command'
+bind '"j": operate-and-get-next'
+
+
+# bind '"\C-m": edit-and-execute-command'
+# bind -x '"\C-m": "edit-and-execute-command\n"'
