@@ -1,4 +1,4 @@
-printf 'hello from jobu\n\r'
+# printf 'hello from jobu\n\r'
 
 bind '"q": "z\C-J"'
 bind '"z": "exit"'

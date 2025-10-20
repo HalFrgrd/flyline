@@ -21,9 +21,11 @@ pub struct EventHandler {
     handler: tokio::task::JoinHandle<()>,
 }
 
+pub const ANIMATION_TICK_RATE_MS: u64 = 50;
+
 impl EventHandler {
     pub fn new() -> Self {
-        let tick_rate = Duration::from_millis(1000);
+        let tick_rate = Duration::from_millis(ANIMATION_TICK_RATE_MS);
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let sender_clone = sender.clone();
         let handler = tokio::spawn(async move {
