@@ -26,7 +26,15 @@ pub async fn get_command() -> String {
     
     let mut app = App::new(starting_cursor_position);
     app.run(terminal).await;
+
     crossterm::terminal::disable_raw_mode().unwrap();
+        crossterm::execute!(
+        std::io::stdout(),
+        crossterm::cursor::MoveTo(
+            starting_cursor_position.0,
+            starting_cursor_position.1
+        )
+    ).unwrap();
     app.buffer
 }
 
