@@ -1,16 +1,8 @@
 use clap::{Parser, Subcommand};
-use daemonize::Daemonize;
-use std::fs::File;
-use std::process;
-use std::thread::sleep;
-use nix;
-use std::fs::OpenOptions;
-use std::io::Write;
-use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
-use std::path::Path;
-use std::io::{BufRead, BufReader};
-use crossterm::{terminal, Command};
+use crossterm::terminal;
+use log::{info, error, debug};
+use simple_logging;
+
 
 mod app;
 mod events;
@@ -33,6 +25,11 @@ enum Commands {
 }
 
 fn main() {
+    // Initialize logging first
+    if let Err(e) = setup_logging() {
+        eprintln!("Failed to setup logging: {}", e);
+    }
+    
     let cli = Cli::parse();
 
     match cli.command {
@@ -40,12 +37,31 @@ fn main() {
             run_activate();
         }
         Commands::GetCommand => {
+            info!("Starting GetCommand operation");
             let runtime = build_runtime();
 
             let command: String = runtime.block_on(app::get_command());
+            debug!("Retrieved command: {}", command);
             println!("FORBASH: {}", command);
+            info!("GetCommand operation completed");
         }
     }
+}
+
+fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
+    use std::env;
+    use std::path::PathBuf;
+    
+    // Get home directory
+    let home_dir = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let log_file_path = PathBuf::from(home_dir).join("jobu.logs");
+    
+    // Initialize simple-logging to write to file
+    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Debug)?;
+    
+    info!("Jobu logging initialized, output will be logged to: {}", log_file_path.display());
+    
+    Ok(())
 }
 
 fn build_runtime() -> tokio::runtime::Runtime {
@@ -79,7 +95,7 @@ fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Erro
         crossterm::cursor::SavePosition,
         crossterm::cursor::MoveTo(center_col, center_row)
     )?;
-    write!(tty, "\x1b[31m{}\x1b[0m", text)?; // Red text and reset
+    tty.write_all(format!("\x1b[31m{}\x1b[0m", text).as_bytes())?; // Red text and reset
     crossterm::execute!(tty, crossterm::cursor::RestorePosition)?;
     tty.flush()?;
     
@@ -87,18 +103,26 @@ fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Erro
 }
 
 fn run_activate() {
+    info!("Starting jobu activation");
+    
     display_center_message("/dev/tty").unwrap_or_else(|err| {
-        eprintln!("Error displaying message: {}", err);
+        error!("Error displaying message: {}", err);
     });
 
     let path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), file!());
     let path = path.trim_end_matches("src/main.rs");
     const EXEC_PATH: &str = "/target/debug/jobu";
 
-    println!("FORBASH: export JOBU_EXEC_PATH={}", path.to_owned() + EXEC_PATH);
+    let exec_path = path.to_owned() + EXEC_PATH;
+    debug!("Setting JOBU_EXEC_PATH to: {}", exec_path);
+    println!("FORBASH: export JOBU_EXEC_PATH={}", exec_path);
 
     const ACTIVATE_SCRIPT: &str = include_str!("activate.sh");
+    info!("Executing activate script with {} lines", ACTIVATE_SCRIPT.lines().count());
+    
     for line in ACTIVATE_SCRIPT.lines() {
         println!("FORBASH: {}", line);
     }
+    
+    info!("Jobu activation completed");
 }
