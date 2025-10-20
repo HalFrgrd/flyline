@@ -12,6 +12,10 @@ use std::path::Path;
 use std::io::{BufRead, BufReader};
 use crossterm::{terminal, Command};
 
+mod app;
+mod events;
+
+
 #[derive(Parser)]
 #[command(name = "jobu")]
 #[command(about = "A job management utility")]
@@ -36,11 +40,22 @@ fn main() {
             run_activate();
         }
         Commands::GetCommand => {
-            sleep(std::time::Duration::from_millis(2000));
-            print!("FORBASH: ls -l | head -n 3");
+            let runtime = build_runtime();
+
+            let command: String = runtime.block_on(app::get_command());
+            println!("FORBASH: {}", command);
         }
     }
 }
+
+fn build_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
 
 fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     use std::fs::OpenOptions;
@@ -72,6 +87,9 @@ fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Erro
 }
 
 fn run_activate() {
+    display_center_message("/dev/tty").unwrap_or_else(|err| {
+        eprintln!("Error displaying message: {}", err);
+    });
 
     let path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), file!());
     let path = path.trim_end_matches("src/main.rs");
