@@ -1,14 +1,11 @@
 
 use crossterm::{cursor, event::{ KeyCode, KeyEvent, KeyModifiers,}};
 use ratatui::{
-    layout::Rect,
-    text::{Span, Text, Line},
-    DefaultTerminal, Frame,
-    TerminalOptions, Viewport,
+    layout::Rect, text::{Line, Span, Text}, widgets::Paragraph, DefaultTerminal, Frame, TerminalOptions, Viewport
 };
 use ratatui::prelude::*;
 use log::{info, error, debug};
-
+use tui_textarea::{TextArea, CursorMove};
 use crate::events;
 
 const PS1: &str = "my prompt: ";
@@ -37,27 +34,26 @@ pub async fn get_command() -> (String, String)   {
             starting_cursor_position.1
         )
     ).unwrap();
-   (PS1.to_string(), app.buffer)
+   (PS1.to_string(), "exit".to_string())
 }
 
-struct App {
+struct App<'a> {
     is_running: bool,
-    buffer: String,
+    buffer: TextArea<'a>,
     starting_cursor_position: (u16, u16),
     cursor_intensity: f32,
     ticks: u64,
-    cursor_position: usize,
+    
 }
 
-impl App {
+impl App<'_> {
     fn new(starting_cursor_position: (u16, u16)) -> Self {
         App { 
             is_running: true, 
-            buffer: String::new(), 
+            buffer: TextArea::default(),
             starting_cursor_position,
             cursor_intensity: 1.0,
             ticks: 0,
-            cursor_position: 0,
         }
     }
 
@@ -86,50 +82,42 @@ impl App {
 
     }
 
+
     fn onkeypress(&mut self, key: KeyEvent) {
         match key {
             KeyEvent{code: KeyCode::Backspace, modifiers: KeyModifiers::NONE, ..} => {
-                if self.cursor_position > 0 {
-                    self.cursor_position -= 1;
-                    self.buffer.remove(self.cursor_position);
-                }
+                self.buffer.delete_char();
             }
             KeyEvent{code: KeyCode::Backspace, modifiers: KeyModifiers::CONTROL, ..} => {
-                while self.cursor_position > 0 {
-                    self.cursor_position -= 1;
-                    self.buffer.remove(self.cursor_position);
-                    if (self.cursor_position == 0 || self.buffer.as_bytes()[self.cursor_position - 1] == b' ') {
-                        break;
-                    }
-                }
+                self.buffer.delete_word();
+            }
+            KeyEvent{code: KeyCode::Char('h'), modifiers: KeyModifiers::CONTROL, ..} => {
+                self.buffer.delete_word();
+            }
+            KeyEvent{code: KeyCode::Delete, modifiers: KeyModifiers::CONTROL, ..} => {
+                self.buffer.delete_next_word();
             }
             KeyEvent{code: KeyCode::Delete, ..} => {
-                if self.cursor_position < self.buffer.len() {
-                    self.buffer.remove(self.cursor_position);
-                }
+                // self.buffer.move_cursor(CursorMove::Forward);
+                self.buffer.delete_next_char();
             }
             KeyEvent{code: KeyCode::Left, ..} => {
-                if self.cursor_position > 0 {
-                    self.cursor_position -= 1;
-                }
+                self.buffer.move_cursor(CursorMove::Back);
             }
             KeyEvent{code: KeyCode::Right, ..} => {
-                if self.cursor_position < self.buffer.len() {
-                    self.cursor_position += 1;
-                }
+                self.buffer.move_cursor(CursorMove::Forward);
             }
             KeyEvent{code: KeyCode::Home, ..} => {
-                self.cursor_position = 0;
+                self.buffer.move_cursor(CursorMove::Head);
             }
             KeyEvent{code: KeyCode::End, ..} => {
-                self.cursor_position = self.buffer.len();
+                self.buffer.move_cursor(CursorMove::End);
             }
             KeyEvent{code: KeyCode::Enter, ..} => {
                 self.is_running = false;
             }
             KeyEvent{code: KeyCode::Char(c), ..} => {
-                self.buffer.insert(self.cursor_position, c);
-                self.cursor_position += 1;
+                self.buffer.insert_char(c);
             }
             _ => {}
         }
@@ -149,26 +137,30 @@ impl App {
         // info!("Current buffer: {}", self.buffer);
         
 
-        let mut line = vec![Span::raw(PS1).style(ratatui::style::Color::Yellow)];
-        let mut b = self.buffer.clone();
-        let mut cursor_pos = self.cursor_position;
-        
-        cursor_pos = cursor_pos.min(b.len());
-        if cursor_pos == b.len() {
-            b.push_str(" ");
-        }
-        line.push(Span::raw(&b[..cursor_pos]));
+        // let mut line = vec![Span::raw(PS1).style(ratatui::style::Color::Yellow)];
+        // let mut b = self.buffer.clone();
+        // let mut cursor_pos = self.cursor_position;
+
+        // cursor_pos = cursor_pos.min(b.len());
+        // if cursor_pos == b.len() {
+        //     b.push_str(" ");
+        // }
+        // line.push(Span::raw(&b[..cursor_pos]));
 
         let intensity = (self.cursor_intensity * 255.0) as u8;
         let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
+        self.buffer.set_cursor_style(ratatui::style::Style::new().bg(color));
 
-        line.push(Span::raw(&b[cursor_pos..cursor_pos+1]).bg(color));
-        if (cursor_pos + 1) < b.len() {
-            line.push(Span::raw(&b[cursor_pos+1..]));
-        }
+        // line.push(Span::raw(&b[cursor_pos..cursor_pos+1]).bg(color));
+        // if (cursor_pos + 1) < b.len() {
+        //     line.push(Span::raw(&b[cursor_pos+1..]));
+        // }
+        
+        // let default_line = "".to_owned();
+        // let first_line = self.buffer.lines().into_iter().next().unwrap_or(&default_line);
 
 
         f.render_widget(
-            Line::from_iter(line), area);
+            &self.buffer, area);
     }
 }
