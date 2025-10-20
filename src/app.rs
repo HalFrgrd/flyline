@@ -44,7 +44,6 @@ struct App {
     is_running: bool,
     buffer: String,
     starting_cursor_position: (u16, u16),
-    cursor_visible: bool,
     cursor_intensity: f32,
     ticks: u64,
     cursor_position: usize,
@@ -56,7 +55,6 @@ impl App {
             is_running: true, 
             buffer: String::new(), 
             starting_cursor_position,
-            cursor_visible: true,
             cursor_intensity: 1.0,
             ticks: 0,
             cursor_position: 0,
@@ -77,7 +75,6 @@ impl App {
                     events::Event::Mouse(_) => {}
                     events::Event::AnimationTick => {
                         // Toggle cursor visibility for blinking effect
-                        // self.cursor_visible = !self.cursor_visible;
                         self.ticks += 1;
                         let mult = 0.004 * events::ANIMATION_TICK_RATE_MS as f32;
                         self.cursor_intensity = (self.ticks as f32 * mult).sin() * 0.4 + 0.6;
@@ -155,23 +152,21 @@ impl App {
         let mut line = vec![Span::raw(PS1).style(ratatui::style::Color::Yellow)];
         let mut b = self.buffer.clone();
         let mut cursor_pos = self.cursor_position;
-        if true {
-            cursor_pos = cursor_pos.min(b.len());
-            if cursor_pos == b.len() {
-                b.push_str(" ");
-            }
-            line.push(Span::raw(&b[..cursor_pos]));
-
-            let intensity = (self.cursor_intensity * 255.0) as u8;
-            let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
-
-            line.push(Span::raw(&b[cursor_pos..cursor_pos+1]).bg(color));
-            if (cursor_pos + 1) < b.len() {
-                line.push(Span::raw(&b[cursor_pos+1..]));
-            }
-        } else {
-            line.push(Span::raw(b));
+        
+        cursor_pos = cursor_pos.min(b.len());
+        if cursor_pos == b.len() {
+            b.push_str(" ");
         }
+        line.push(Span::raw(&b[..cursor_pos]));
+
+        let intensity = (self.cursor_intensity * 255.0) as u8;
+        let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
+
+        line.push(Span::raw(&b[cursor_pos..cursor_pos+1]).bg(color));
+        if (cursor_pos + 1) < b.len() {
+            line.push(Span::raw(&b[cursor_pos+1..]));
+        }
+
 
         f.render_widget(
             Line::from_iter(line), area);

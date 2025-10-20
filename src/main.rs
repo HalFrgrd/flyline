@@ -107,9 +107,9 @@ fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Erro
 fn run_activate() {
     info!("Starting jobu activation");
     
-    display_center_message("/dev/tty").unwrap_or_else(|err| {
-        error!("Error displaying message: {}", err);
-    });
+    // display_center_message("/dev/tty").unwrap_or_else(|err| {
+    //     error!("Error displaying message: {}", err);
+    // });
 
     let path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), file!());
     let path = path.trim_end_matches("src/main.rs");
