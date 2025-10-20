@@ -67,7 +67,7 @@ impl App<'_> {
     pub async fn run(&mut self, mut terminal: DefaultTerminal) {
         // Update application state here
         let mut events = events::EventHandler::new();
-        while self.is_running {
+        loop {
             terminal.draw(|f| self.ui(f)).unwrap();
 
             if let Some(event) = events.receiver.recv().await{
@@ -84,6 +84,11 @@ impl App<'_> {
                     }
                     events::Event::Resize => {}
                 }
+            }
+            if !self.is_running {
+                self.cursor_intensity = 0.0;
+                terminal.draw(|f| self.ui(f)).unwrap();
+                break;
             }
         }
 

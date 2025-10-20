@@ -40,15 +40,16 @@ jobu_start_of_prompt() {
     echo -en "\033[5n"
 
     NEED_RESTORE_OUTPUT=1
-    exec 3>&1
+    # exec 3>&1
     exec 4>&2
     # # Redirect stdout (FD 1) to a file
-    exec 1>output_out.txt
+    # exec 1>output_out.txt
     exec 2>output_err.txt
+
 }
 
 PROMPT_COMMAND='jobu_start_of_prompt'
-
+# bind 'set enable-bracketed-paste off'
 
 jobu_end_of_prompt() {
     # bash will always print the prompt and the READLINE_LINE after this function returns
@@ -60,7 +61,7 @@ jobu_end_of_prompt() {
     bind '"j": self-insert'
     bind -r '\e[0n'
 
-    # stty -echo
+
 
 }
 
@@ -76,8 +77,8 @@ jobu_restore_output() {
     exec 2>&4
     exec 4>&-
 
-    exec 1>&3
-    exec 3>&-
+    # exec 1>&3
+    # exec 3>&-
 }
 
 trap 'jobu_restore_output' DEBUG
