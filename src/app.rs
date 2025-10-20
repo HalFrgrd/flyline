@@ -1,18 +1,13 @@
-use std::io;
 
-use crossterm::event::{ KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{ KeyCode, KeyEvent,};
 use ratatui::{
-    buffer::Buffer,
     layout::Rect,
-    style::Stylize,
-    symbols::border,
-    text::{Line, Text},
-    widgets::{Block, Paragraph, Widget},
+ 
+    text::{ Text},
     DefaultTerminal, Frame,
     TerminalOptions, Viewport,
 };
 use log::{info, error, debug};
-
 
 use crate::events;
 
@@ -23,11 +18,12 @@ pub async fn get_command() -> String {
     };
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
-    let mut terminal = ratatui::try_init_with_options(options).unwrap();
+    crossterm::terminal::enable_raw_mode().unwrap();
+    let backend = ratatui::backend::CrosstermBackend::new(stdout);
+    let mut terminal = ratatui::Terminal::with_options(backend, options).unwrap();
 
     let starting_cursor_position = crossterm::cursor::position().unwrap();
     
-
     let mut app = App::new(starting_cursor_position);
     app.run(terminal).await;
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -38,11 +34,19 @@ struct App {
     is_running: bool,
     buffer: String,
     starting_cursor_position: (u16, u16),
+    cursor_visible: bool,
+    cursor_position: usize,
 }
 
 impl App {
     fn new(starting_cursor_position: (u16, u16)) -> Self {
-        App { is_running: true, buffer: String::new(), starting_cursor_position }
+        App { 
+            is_running: true, 
+            buffer: String::new(), 
+            starting_cursor_position,
+            cursor_visible: true,
+            cursor_position: 0,
+        }
     }
 
     pub async fn run(&mut self, mut terminal: DefaultTerminal) {
@@ -57,7 +61,10 @@ impl App {
                         self.onkeypress(event);
                     }
                     events::Event::Mouse(_) => {}
-                    events::Event::AnimationTick => {}
+                    events::Event::AnimationTick => {
+                        // Toggle cursor visibility for blinking effect
+                        self.cursor_visible = !self.cursor_visible;
+                    }
                     events::Event::Resize => {}
                 }
             }
@@ -68,10 +75,30 @@ impl App {
     fn onkeypress(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char(c) => {
-                self.buffer.push(c);
+                self.buffer.insert(self.cursor_position, c);
+                self.cursor_position += 1;
             }
             KeyCode::Backspace => {
-                self.buffer.pop();
+                if self.cursor_position > 0 {
+                    self.cursor_position -= 1;
+                    self.buffer.remove(self.cursor_position);
+                }
+            }
+            KeyCode::Left => {
+                if self.cursor_position > 0 {
+                    self.cursor_position -= 1;
+                }
+            }
+            KeyCode::Right => {
+                if self.cursor_position < self.buffer.len() {
+                    self.cursor_position += 1;
+                }
+            }
+            KeyCode::Home => {
+                self.cursor_position = 0;
+            }
+            KeyCode::End => {
+                self.cursor_position = self.buffer.len();
             }
             KeyCode::Enter => {
                 self.is_running = false;
@@ -81,7 +108,7 @@ impl App {
     }
 
     fn ui(&mut self, f: &mut Frame) {
-        info!("Rendering UI: {:?}", f);
+        // info!("Rendering UI: {:?}", f);
         let size = f.area();
         info!("starting_cursor_position: {:?}", self.starting_cursor_position);
         let sx = self.starting_cursor_position.0.min(size.width.saturating_sub(1));
@@ -90,12 +117,25 @@ impl App {
         let height = size.height.saturating_sub(sy).max(1);
         let area = Rect { x: sx, y: sy, width, height };
         info!("Calculated drawing area: {:?}", area);
-        // let area = Rect { x: 10, y: 10, width: 10, height: 1 };
-        // let area = Rect { x: 2, y: 2, width: 10, height: 3 };
+        info!("Current buffer: {}", self.buffer);
+        
+        // Create display text with blinking cursor
+        let mut display_text = self.buffer.clone();
+        
+        // Insert cursor at current position if visible
+        if self.cursor_visible {
+            // Use a block character for the cursor
+            let cursor_char = '█';
+            if self.cursor_position <= display_text.len() {
+                display_text.insert(self.cursor_position, cursor_char);
+            }
+        } else {
+            // When cursor is invisible, still show position with a space if at end
+            if self.cursor_position == self.buffer.len() && !self.buffer.is_empty() {
+                display_text.push(' ');
+            }
+        }
 
-        // let paragraph = Paragraph::new(Text::from(self.buffer.as_str()))
-        //     .wrap(ratatui::widgets::Wrap { trim: true });
-
-        f.render_widget(Text::from(self.buffer.as_str()), area);
+        f.render_widget(Text::from(display_text), area);
     }
 }

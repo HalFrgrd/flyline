@@ -42,7 +42,8 @@ fn main() {
 
             let command: String = runtime.block_on(app::get_command());
             debug!("Retrieved command: {}", command);
-            println!("FORBASH: {}", command);
+            // print on stderr because we will be drawing on stdout
+            eprintln!("FORBASH: {}", command);
             info!("GetCommand operation completed");
         }
     }
@@ -88,8 +89,7 @@ fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Erro
     let center_col = cols / 2;
     let center_row = rows / 2;
     
-    // Calculate position to center the text "hello from jobu" (15 characters)
-    let text = "hello from jobu";
+    let text = "JOBU ACTIVE";
     
     crossterm::execute!(tty,
         crossterm::cursor::SavePosition,
