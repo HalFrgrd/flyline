@@ -4,14 +4,12 @@ bind '"q": "z\C-J"'
 bind '"z": "exit"'
 
 # PS1_ORIGINAL="$PS1"
-PS1="my prompt: "
+# PS1="my prompt: "
+PS1=""
 
 jobu_start_of_prompt() {
-    # echo "starting prompt"
-    # PS1
 
-    printf "${PS1}"
-
+    # printf "${PS1}"
 
     # Run get-command directly in current shell, not in subshell
     local temp_output=$(mktemp)
@@ -24,10 +22,9 @@ jobu_start_of_prompt() {
     output=$(cat "$temp_output")
     rm -f "$temp_output"
     
-    # Extract the FORBASH command
-    JOBU_COMMAND=$(echo "$output" | rg -o 'FORBASH: (.*)' -r '$1')
-    # JOBU_COMMAND="${JOBU_COMMAND}"
-    # printf "\n"
+    JOBU_COMMAND=$(echo "$output" | rg -o 'COMMAND: (.*)' -r '$1')
+    PS1=$(echo "$output" | rg -o 'PS1: (.*)' -r '$1')
+
     bind -x '"j": jobu_end_of_prompt'
     bind '"\e[0n": "j\C-J"'
     # bind -x '"\e[0n": echo "received"'
@@ -45,6 +42,5 @@ jobu_end_of_prompt() {
     READLINE_LINE=${JOBU_COMMAND};
     READLINE_POINT=${#READLINE_LINE};
     bind '"j": self-insert'
-    # bind -r '\e[0n'
-    # printf '\n\r'
+    bind -r '\e[0n'
 }

@@ -1,17 +1,19 @@
 
-use crossterm::event::{ KeyCode, KeyEvent,};
+use crossterm::{cursor, event::{ KeyCode, KeyEvent,}};
 use ratatui::{
     layout::Rect,
- 
-    text::{ Text},
+    text::{Span, Text, Line},
     DefaultTerminal, Frame,
     TerminalOptions, Viewport,
 };
+use ratatui::prelude::*;
 use log::{info, error, debug};
 
 use crate::events;
 
-pub async fn get_command() -> String {
+const PS1: &str = "my prompt: ";
+
+pub async fn get_command() -> (String, String)   {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
@@ -35,7 +37,7 @@ pub async fn get_command() -> String {
             starting_cursor_position.1
         )
     ).unwrap();
-    app.buffer
+   (PS1.to_string(), app.buffer)
 }
 
 struct App {
@@ -127,23 +129,26 @@ impl App {
         info!("Calculated drawing area: {:?}", area);
         info!("Current buffer: {}", self.buffer);
         
-        // Create display text with blinking cursor
-        let mut display_text = self.buffer.clone();
-        
-        // Insert cursor at current position if visible
+
+        let mut line = vec![Span::raw(PS1).style(ratatui::style::Color::Yellow)];
+        let mut b = self.buffer.clone();
+        let mut cursor_pos = self.cursor_position;
         if self.cursor_visible {
-            // Use a block character for the cursor
-            let cursor_char = '█';
-            if self.cursor_position <= display_text.len() {
-                display_text.insert(self.cursor_position, cursor_char);
+            cursor_pos = cursor_pos.min(b.len());
+            if cursor_pos == b.len() {
+                b.push_str(" ");
+            }
+            line.push(Span::raw(&b[..cursor_pos]));
+
+            line.push(Span::raw(&b[cursor_pos..cursor_pos+1]).bg(Color::Yellow));
+            if (cursor_pos + 1) < b.len() {
+                line.push(Span::raw(&b[cursor_pos+1..]));
             }
         } else {
-            // When cursor is invisible, still show position with a space if at end
-            if self.cursor_position == self.buffer.len() && !self.buffer.is_empty() {
-                display_text.push(' ');
-            }
+            line.push(Span::raw(b));
         }
 
-        f.render_widget(Text::from(display_text), area);
+        f.render_widget(
+            Line::from_iter(line), area);
     }
 }
