@@ -17,6 +17,7 @@ bind '"z": "exit"'
 PS1=""
 
 jobu_start_of_prompt() {
+    jobu_restore_output
 
     # Run get-command directly in current shell, not in subshell
     local temp_output=$(mktemp)
@@ -30,12 +31,20 @@ jobu_start_of_prompt() {
     rm -f "$temp_output"
     
     JOBU_COMMAND=$(echo "$output" | rg -o 'COMMAND: (.*)' -r '$1')
-    PS1=$(echo "$output" | rg -o 'PS1: (.*)' -r '$1')
+    # PS1=$(echo "$output" | rg -o 'PS1: (.*)' -r '$1')
 
     bind -x '"j": jobu_end_of_prompt'
     bind '"\e[0n": "j\C-J"'
-    # bind -x '"\e[0n": echo "received"'
+    stty -echo
+
     echo -en "\033[5n"
+
+    NEED_RESTORE_OUTPUT=1
+    exec 3>&1
+    exec 4>&2
+    # # Redirect stdout (FD 1) to a file
+    exec 1>output_out.txt
+    exec 2>output_err.txt
 }
 
 PROMPT_COMMAND='jobu_start_of_prompt'
@@ -50,4 +59,25 @@ jobu_end_of_prompt() {
     READLINE_POINT=${#READLINE_LINE};
     bind '"j": self-insert'
     bind -r '\e[0n'
+
+    # stty -echo
+
 }
+
+jobu_restore_output() {
+    if [ -z "$NEED_RESTORE_OUTPUT" ]; then
+        return
+    fi
+    unset NEED_RESTORE_OUTPUT
+    stty echo
+
+    # echo "Restoring output" >&2
+    # Restore stdout from FD 3
+    exec 2>&4
+    exec 4>&-
+
+    exec 1>&3
+    exec 3>&-
+}
+
+trap 'jobu_restore_output' DEBUG

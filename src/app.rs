@@ -34,7 +34,10 @@ pub async fn get_command() -> (String, String)   {
             starting_cursor_position.1
         )
     ).unwrap();
-   (PS1.to_string(), "exit".to_string())
+
+    let command = app.buffer.lines().join("\n");
+
+   (PS1.to_string(), command)
 }
 
 struct App<'a> {
@@ -146,15 +149,19 @@ impl App<'_> {
 
         let cursor = temp.cursor();
         let (row, col): (u16, u16) = (cursor.0 as u16, cursor.1 as u16);
-        log::debug!("Cursor position: row {}, col {}", row, col);
+        // log::debug!("Cursor position: row {}, col {}", row, col);
         temp.move_cursor(CursorMove::Head);
-        temp.insert_str(PS1);
+        let PS1_var = "asdfasdfasdf > ";
+        temp.insert_str(PS1_var);
         let col = if row == 0 {
-            col + PS1.len() as u16
+            col + PS1_var.len() as u16
         } else {
             col
         };
         temp.move_cursor(CursorMove::Jump(row, col));
         f.render_widget(&temp, area);
+
+        let area = Rect { x: sx + 40, y: sy, width, height };
+        f.render_widget(Line::from("test").fg(ratatui::style::Color::Red), area);
     }
 }
