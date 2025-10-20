@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use daemonize::Daemonize;
 use std::fs::File;
 use std::process;
+use std::thread::sleep;
 use nix;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -23,7 +24,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Activate 
+    Activate,
+    GetCommand,
 }
 
 fn main() {
@@ -32,6 +34,10 @@ fn main() {
     match cli.command {
         Commands::Activate => {
             run_activate();
+        }
+        Commands::GetCommand => {
+            sleep(std::time::Duration::from_millis(2000));
+            print!("FORBASH: ls -l | head -n 3");
         }
     }
 }
@@ -66,6 +72,12 @@ fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Erro
 }
 
 fn run_activate() {
+
+    let path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), file!());
+    let path = path.trim_end_matches("src/main.rs");
+    const EXEC_PATH: &str = "/target/debug/jobu";
+
+    println!("FORBASH: export JOBU_EXEC_PATH={}", path.to_owned() + EXEC_PATH);
 
     const ACTIVATE_SCRIPT: &str = include_str!("activate.sh");
     for line in ACTIVATE_SCRIPT.lines() {

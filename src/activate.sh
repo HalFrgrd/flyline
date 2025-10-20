@@ -71,8 +71,9 @@ bind '"q": "z\C-J"'
 bind '"z": "exit"'
 
 jobu_start_of_prompt() {
-    echo "starting prompt"
-    export JOBU_COMMAND="sleep 2 && ls -l | head -n 2"
+    # echo "starting prompt"
+    export JOBU_COMMAND=$($JOBU_EXEC_PATH get-command | rg -o "FORBASH: (.*)" -r '$1')
+    # export JOBU_COMMAND="sleep 2 && ls -l | head -n 2"
     
     bind -x '"j": jobu_end_of_prompt'
     bind '"\e[0n": "j\C-J"'
@@ -83,10 +84,10 @@ jobu_start_of_prompt() {
 PROMPT_COMMAND='jobu_start_of_prompt'
 
 jobu_end_of_prompt() {
-    echo "ending prompt function"
+    # echo "ending prompt function"
     READLINE_LINE=${JOBU_COMMAND};
     READLINE_POINT=${#READLINE_LINE}; 
-    echo "READLINE_LINE is now: $READLINE_LINE"
+    # echo "READLINE_LINE is now: $READLINE_LINE"
     bind '"j": self-insert'
     bind -r '\e[0n'
 }
