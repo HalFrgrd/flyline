@@ -8,7 +8,7 @@ use log::{info, error, debug};
 use tui_textarea::{TextArea, CursorMove};
 use crate::events;
 
-const PS1: &str = "my prompt: ";
+const PS1: &str = "my prompt> ";
 
 pub async fn get_command() -> (String, String)   {
     let options = TerminalOptions {
@@ -48,9 +48,13 @@ struct App<'a> {
 
 impl App<'_> {
     fn new(starting_cursor_position: (u16, u16)) -> Self {
+
+        // let mut buffer = TextArea::new(vec![PS1.to_string()]);
+        // buffer.move_cursor(CursorMove::End);
+        let buffer = TextArea::default();
         App { 
             is_running: true, 
-            buffer: TextArea::default(),
+            buffer,
             starting_cursor_position,
             cursor_intensity: 1.0,
             ticks: 0,
@@ -133,34 +137,24 @@ impl App<'_> {
         let width = size.width.saturating_sub(sx).max(1);
         let height = size.height.saturating_sub(sy).max(1);
         let area = Rect { x: sx, y: sy, width, height };
-        // info!("Calculated drawing area: {:?}", area);
-        // info!("Current buffer: {}", self.buffer);
-        
-
-        // let mut line = vec![Span::raw(PS1).style(ratatui::style::Color::Yellow)];
-        // let mut b = self.buffer.clone();
-        // let mut cursor_pos = self.cursor_position;
-
-        // cursor_pos = cursor_pos.min(b.len());
-        // if cursor_pos == b.len() {
-        //     b.push_str(" ");
-        // }
-        // line.push(Span::raw(&b[..cursor_pos]));
 
         let intensity = (self.cursor_intensity * 255.0) as u8;
         let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
         self.buffer.set_cursor_style(ratatui::style::Style::new().bg(color));
 
-        // line.push(Span::raw(&b[cursor_pos..cursor_pos+1]).bg(color));
-        // if (cursor_pos + 1) < b.len() {
-        //     line.push(Span::raw(&b[cursor_pos+1..]));
-        // }
-        
-        // let default_line = "".to_owned();
-        // let first_line = self.buffer.lines().into_iter().next().unwrap_or(&default_line);
+        let mut temp = self.buffer.clone();
 
-
-        f.render_widget(
-            &self.buffer, area);
+        let cursor = temp.cursor();
+        let (row, col): (u16, u16) = (cursor.0 as u16, cursor.1 as u16);
+        log::debug!("Cursor position: row {}, col {}", row, col);
+        temp.move_cursor(CursorMove::Head);
+        temp.insert_str(PS1);
+        let col = if row == 0 {
+            col + PS1.len() as u16
+        } else {
+            col
+        };
+        temp.move_cursor(CursorMove::Jump(row, col));
+        f.render_widget(&temp, area);
     }
 }
