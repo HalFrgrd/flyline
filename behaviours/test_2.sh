@@ -1,0 +1,17 @@
+# run with `bash --init-file behaviours/test_2.sh`
+# like test_1.sh but automated
+
+bind "set enable-bracketed-paste off"
+
+jobu_start_of_prompt() {
+    sleep 1
+    stty -echo
+    printf "\033[5n"
+}
+
+PROMPT_COMMAND='jobu_start_of_prompt'
+PS1="MYPROMPT>\n"
+bind '"\e[0n": "fj"'
+bind -x '"f": READLINE_LINE="echo hellow"'
+trap 'stty echo' DEBUG
+bind '"j": accept-line'

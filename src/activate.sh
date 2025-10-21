@@ -11,8 +11,8 @@ echo -e "\033[38;5;196m ╚════╝ \033[38;5;208m ╚═════╝ 
 echo -e "\033[38;5;129m            ~ A big hook into bash ~\033[0m"
 echo ""
 
-bind '"q": "z\C-J"'
-bind '"z": "exit"'
+# bind '"q": "z\C-J"'
+# bind '"z": "exit"'
 
 PS1=""
 
@@ -21,31 +21,23 @@ jobu_start_of_prompt() {
 
     # Run get-command directly in current shell, not in subshell
     local temp_output=$(mktemp)
-    
     # Execute directly in current shell and redirect stderr to temp file
     $JOBU_EXEC_PATH get-command 2> "$temp_output"
-    
     # Read the output from temp file (stderr output)
     local output
     output=$(cat "$temp_output")
     rm -f "$temp_output"
     
     JOBU_COMMAND=$(echo "$output" | rg -o 'COMMAND: (.*)' -r '$1')
-    # PS1=$(echo "$output" | rg -o 'PS1: (.*)' -r '$1')
 
+    bind '"a": accept-line'
     bind -x '"j": jobu_end_of_prompt'
-    bind '"\e[0n": "j\C-J"'
-    stty -echo
-
-    echo -en "\033[5n"
+    bind '"\e[0n": "ja"'
+    
+    printf "\033[5n"
 
     NEED_RESTORE_OUTPUT=1
-    # exec 3>&1
-    exec 4>&2
-    # # Redirect stdout (FD 1) to a file
-    # exec 1>output_out.txt
-    exec 2>output_err.txt
-
+    stty -echo
 }
 
 PROMPT_COMMAND='jobu_start_of_prompt'
@@ -59,10 +51,8 @@ jobu_end_of_prompt() {
     READLINE_LINE=${JOBU_COMMAND};
     READLINE_POINT=${#READLINE_LINE};
     bind '"j": self-insert'
+    bind '"a": self-insert'
     bind -r '\e[0n'
-
-
-
 }
 
 jobu_restore_output() {
@@ -72,13 +62,6 @@ jobu_restore_output() {
     unset NEED_RESTORE_OUTPUT
     stty echo
 
-    # echo "Restoring output" >&2
-    # Restore stdout from FD 3
-    exec 2>&4
-    exec 4>&-
-
-    # exec 1>&3
-    # exec 3>&-
 }
 
 trap 'jobu_restore_output' DEBUG

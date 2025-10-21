@@ -32,7 +32,9 @@ pub async fn get_command() -> (String, String)   {
         crossterm::cursor::MoveTo(
             starting_cursor_position.0,
             starting_cursor_position.1
-        )
+        ),
+        crossterm::cursor::Show
+
     ).unwrap();
 
     let command = app.buffer.lines().join("\n");
