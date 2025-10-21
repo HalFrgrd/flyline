@@ -44,6 +44,8 @@ pub async fn get_command() -> String {
     command
 }
 
+
+
 struct App<'a> {
     is_running: bool,
     buffer: TextArea<'a>,
@@ -51,6 +53,7 @@ struct App<'a> {
     cursor_intensity: f32,
     ticks: u64,
     ps1: String,
+    is_multiline_mode: bool,
 }
 
 impl App<'_> {
@@ -63,9 +66,10 @@ impl App<'_> {
             is_running: true, 
             buffer,
             starting_cursor_position,
-            cursor_intensity: 1.0,
+            cursor_intensity: 0.0,
             ticks: 0,
             ps1,
+            is_multiline_mode: false,
         }
     }
 
@@ -74,6 +78,9 @@ impl App<'_> {
         let mut events = events::EventHandler::new();
         loop {
             terminal.draw(|f| self.ui(f)).unwrap();
+            if !self.is_running {
+                break;
+            } 
 
             if let Some(event) = events.receiver.recv().await{
                 match event {
@@ -90,13 +97,23 @@ impl App<'_> {
                     events::Event::Resize => {}
                 }
             }
-            if !self.is_running {
-                self.cursor_intensity = 0.0;
-                terminal.draw(|f| self.ui(f)).unwrap();
-                break;
+
+        }
+    }
+
+    fn unbalanced_quotes(&self) -> bool {
+        let mut single_quotes = 0;
+        let mut double_quotes = 0;
+        for line in self.buffer.lines() {
+            for c in line.chars() {
+                match c {
+                    '\'' => single_quotes += 1,
+                    '"' => double_quotes += 1,
+                    _ => {}
+                }
             }
         }
-
+        single_quotes % 2 != 0 || double_quotes % 2 != 0
     }
 
 
@@ -131,7 +148,18 @@ impl App<'_> {
                 self.buffer.move_cursor(CursorMove::End);
             }
             KeyEvent{code: KeyCode::Enter, ..} => {
-                self.is_running = false;
+                if self.is_multiline_mode {
+                    self.buffer.insert_newline();
+                } else {
+                    if self.unbalanced_quotes() {
+                        self.is_multiline_mode = true;
+                        self.buffer.insert_newline();
+                        println!("");
+                        self.starting_cursor_position.1 -= 1;
+                    } else {
+                        self.is_running = false;
+                    }
+                }
             }
             KeyEvent{code: KeyCode::Char(c), ..} => {
                 self.buffer.insert_char(c);
@@ -151,9 +179,13 @@ impl App<'_> {
         let height = size.height.saturating_sub(sy).max(1);
         let area = Rect { x: sx, y: sy, width, height };
 
-        let intensity = (self.cursor_intensity * 255.0) as u8;
-        let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
-        self.buffer.set_cursor_style(ratatui::style::Style::new().bg(color));
+        if self.is_running {
+            let intensity = (self.cursor_intensity * 255.0) as u8;
+            let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
+            self.buffer.set_cursor_style(ratatui::style::Style::new().bg(color));
+        } else {
+            self.buffer.set_cursor_style(self.buffer.cursor_line_style());
+        }
 
         let mut temp = self.buffer.clone();
 

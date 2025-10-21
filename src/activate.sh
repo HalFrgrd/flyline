@@ -52,6 +52,8 @@ jobu_start_of_prompt() {
     # because it thinks bash might have made the prompt / command dirty
     stty -echo
     printf "\033[5n"
+    printf "\033[5n"
+    
 }
 
 PROMPT_COMMAND='jobu_start_of_prompt'
