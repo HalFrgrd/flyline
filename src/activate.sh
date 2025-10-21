@@ -14,10 +14,11 @@ echo ""
 # bind '"q": "z\C-J"'
 # bind '"z": "exit"'
 
+bind 'set enable-bracketed-paste off'
+
 PS1=""
 
 jobu_start_of_prompt() {
-    jobu_restore_output
 
     # Run get-command directly in current shell, not in subshell
     local temp_output=$(mktemp)
@@ -29,19 +30,17 @@ jobu_start_of_prompt() {
     rm -f "$temp_output"
     
     JOBU_COMMAND=$(echo "$output" | rg -o 'COMMAND: (.*)' -r '$1')
+    printf "\n"
 
-    bind '"a": accept-line'
-    bind -x '"j": jobu_end_of_prompt'
-    bind '"\e[0n": "ja"'
-    
-    printf "\033[5n"
+    JOBU_NEED_RESTORE_OUTPUT=1
+    bind -x '"a": jobu_end_of_prompt'
+    bind '"\e[0n": "a\C-J"'
 
-    NEED_RESTORE_OUTPUT=1
     stty -echo
+    printf "\033[5n"
 }
 
 PROMPT_COMMAND='jobu_start_of_prompt'
-# bind 'set enable-bracketed-paste off'
 
 jobu_end_of_prompt() {
     # bash will always print the prompt and the READLINE_LINE after this function returns
@@ -50,18 +49,18 @@ jobu_end_of_prompt() {
     # and it seems to print READLINE_LINE just before executing the command as well
     READLINE_LINE=${JOBU_COMMAND};
     READLINE_POINT=${#READLINE_LINE};
-    bind '"j": self-insert'
+
     bind '"a": self-insert'
     bind -r '\e[0n'
 }
 
+
 jobu_restore_output() {
-    if [ -z "$NEED_RESTORE_OUTPUT" ]; then
+    if [ -z "$JOBU_NEED_RESTORE_OUTPUT" ]; then
         return
     fi
-    unset NEED_RESTORE_OUTPUT
+    unset JOBU_NEED_RESTORE_OUTPUT
     stty echo
-
 }
 
 trap 'jobu_restore_output' DEBUG
