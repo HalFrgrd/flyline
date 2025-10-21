@@ -28,11 +28,20 @@
 # 20:52:08.180364 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2835661, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
 
 
+
+# output should be:
+# MYPROMPT>              # you press z here
+# hellow           
+# MYPROMPT>              # you press z here
+# hellow
+# MYPROMPT>              # you press z here
+# hellow
+
 bind "set enable-bracketed-paste off"
 
 PROMPT_COMMAND="stty -echo"
 PS1="MYPROMPT>\n"
 bind '"z": "fj"'
-bind -x '"f": READLINE_LINE=echo hellow'
+bind -x '"f": READLINE_LINE="echo hellow"'
 trap 'stty echo' DEBUG
 bind '"j": accept-line'

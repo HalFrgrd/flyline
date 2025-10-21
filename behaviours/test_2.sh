@@ -1,6 +1,14 @@
 # run with `bash --init-file behaviours/test_2.sh`
 # like test_1.sh but automated
 
+# output should be:
+# MYPROMPT>
+# hellow
+# MYPROMPT>
+# hellow
+# MYPROMPT>
+# hellow
+
 bind "set enable-bracketed-paste off"
 
 jobu_start_of_prompt() {
