@@ -8,9 +8,8 @@ use log::{info, error, debug};
 use tui_textarea::{TextArea, CursorMove};
 use crate::events;
 
-const PS1: &str = "my prompt> ";
 
-pub async fn get_command() -> (String, String)   {
+pub async fn get_command() -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
@@ -23,7 +22,10 @@ pub async fn get_command() -> (String, String)   {
 
     let starting_cursor_position = crossterm::cursor::position().unwrap();
     
-    let mut app = App::new(starting_cursor_position);
+    // get PS1 from environment
+    let ps1 = std::env::var("PS1").unwrap_or( "default> ".to_string());
+
+    let mut app = App::new(ps1, starting_cursor_position);
     app.run(terminal).await;
 
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -39,7 +41,7 @@ pub async fn get_command() -> (String, String)   {
 
     let command = app.buffer.lines().join("\n");
 
-   (PS1.to_string(), command)
+    command
 }
 
 struct App<'a> {
@@ -48,11 +50,11 @@ struct App<'a> {
     starting_cursor_position: (u16, u16),
     cursor_intensity: f32,
     ticks: u64,
-    
+    ps1: String,
 }
 
 impl App<'_> {
-    fn new(starting_cursor_position: (u16, u16)) -> Self {
+    fn new(ps1: String, starting_cursor_position: (u16, u16)) -> Self {
 
         // let mut buffer = TextArea::new(vec![PS1.to_string()]);
         // buffer.move_cursor(CursorMove::End);
@@ -63,6 +65,7 @@ impl App<'_> {
             starting_cursor_position,
             cursor_intensity: 1.0,
             ticks: 0,
+            ps1,
         }
     }
 
@@ -158,10 +161,9 @@ impl App<'_> {
         let (row, col): (u16, u16) = (cursor.0 as u16, cursor.1 as u16);
         // log::debug!("Cursor position: row {}, col {}", row, col);
         temp.move_cursor(CursorMove::Head);
-        let PS1_var = "asdfasdfasdf > ";
-        temp.insert_str(PS1_var);
+        temp.insert_str(&self.ps1);
         let col = if row == 0 {
-            col + PS1_var.len() as u16
+            col + self.ps1.len() as u16
         } else {
             col
         };

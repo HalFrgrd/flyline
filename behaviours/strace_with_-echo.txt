@@ -1,0 +1,40 @@
+... bash starts up
+21:29:12.336952 read(3, "", 4096)       = 0
+21:29:12.337029 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902181, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+21:29:20.423988 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902184, si_uid=1000, si_status=0, si_utime=28 /* 0.28 s */, si_stime=0} ---
+jobu is running. it is reading from stdin so we dont see bash reading from stdin
+21:29:20.424655 read(3, "COMMAND: sleep 1\n", 4096) = 17
+21:29:20.425663 read(3, "", 4096)       = 0
+21:29:20.425756 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902411, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+21:29:20.428127 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902412, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+21:29:20.428774 read(3, "sleep 1\n", 4096) = 8
+21:29:20.432020 read(3, "", 4096)       = 0
+21:29:20.432663 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902413, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+21:29:20.432904 write(1, "\n", 1
+)       = 1
+21:29:20.433046 write(1, "\33[5n", 4)   = 4
+^[[0n21:29:20.433749 read(0, "\33", 1)       = 1
+21:29:20.433811 read(0, "[", 1)         = 1
+21:29:20.433875 read(0, "0", 1)         = 1
+21:29:20.433944 read(0, "n", 1)         = 1
+) = 5
+21:29:20.436526 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902416, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+21:29:20.437147 write(2, "sleep 1", 7sleep 1)  = 7
+21:29:20.437197 write(2, "\n", 1
+)       = 1
+21:29:21.439760 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902417, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+... PROMPT_COMMAND is running here for the second time
+21:29:21.440621 read(3, "/tmp/tmp.4mwRmUAlBv\n", 4096) = 20
+21:29:21.441417 read(3, "", 4096)       = 0
+
+
+Now with `stty -echo`
+21:32:13.215140 write(1, "\33[5n", 4)   = 4
+21:32:13.215844 read(0, "\33", 1)       = 1      # readline reads the response like before
+21:32:13.215902 read(0, "[", 1)         = 1
+21:32:13.215963 read(0, "0", 1)         = 1
+21:32:13.216015 read(0, "n", 1)         = 1
+) = 5                                            # but readline doesnt echo READLINE_LINE after it runs jobu_end_of_prompt
+21:32:13.217599 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2907309, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+21:32:14.220250 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2907310, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+21:32:14.221160 read(3, "/tmp/tmp.eGWKb4YbwC\n", 4096) = 20

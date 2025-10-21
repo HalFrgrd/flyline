@@ -16,19 +16,22 @@ echo ""
 
 bind 'set enable-bracketed-paste off'
 
-PS1=""
+PS1="MYPROMPT> "
 
 jobu_start_of_prompt() {
 
     # Run get-command directly in current shell, not in subshell
     local temp_output=$(mktemp)
     # Execute directly in current shell and redirect stderr to temp file
+    # ensure PS1 is exported so the jobu binary inherits it
+    export PS1
     $JOBU_EXEC_PATH get-command 2> "$temp_output"
     # Read the output from temp file (stderr output)
     local output
     output=$(cat "$temp_output")
     rm -f "$temp_output"
     
+
     JOBU_COMMAND=$(echo "$output" | rg -o 'COMMAND: (.*)' -r '$1')
     printf "\n"
 
@@ -36,6 +39,17 @@ jobu_start_of_prompt() {
     bind -x '"a": jobu_end_of_prompt'
     bind '"\e[0n": "a\C-J"'
 
+    # When we use a `bind -x`, readline hands over to bash for execution
+    # then it assumes the prompt is dirty so it tries its best to redraw it.
+    # we dont want anything to be drawn over what jobu has draw to the terminal
+    # so we temporarily clear the PS1 variable
+    JOBU_ORIGINAL_PS1=$PS1
+    PS1=""
+
+    # https://unix.stackexchange.com/questions/797263/tty-line-discipline-echoing-feature
+    # see behaviours/strace_with_-echo.txt
+    # readline will "echo" the READLINE_LINE after running jobu_end_of_prompt
+    # because it thinks bash might have made the prompt / command dirty
     stty -echo
     printf "\033[5n"
 }
@@ -43,10 +57,6 @@ jobu_start_of_prompt() {
 PROMPT_COMMAND='jobu_start_of_prompt'
 
 jobu_end_of_prompt() {
-    # bash will always print the prompt and the READLINE_LINE after this function returns
-    # the prompt is printed because are just in the middle of executing the PROMPT_COMMAND
-    # and bash prints the prompt after PROMPT_COMMAND completes
-    # and it seems to print READLINE_LINE just before executing the command as well
     READLINE_LINE=${JOBU_COMMAND};
     READLINE_POINT=${#READLINE_LINE};
 
@@ -60,6 +70,7 @@ jobu_restore_output() {
         return
     fi
     unset JOBU_NEED_RESTORE_OUTPUT
+    PS1=$JOBU_ORIGINAL_PS1
     stty echo
 }
 

@@ -40,12 +40,10 @@ fn main() {
             info!("Starting GetCommand operation");
             let runtime = build_runtime();
 
-            let (ps1, command) = runtime.block_on(app::get_command());
+            let command = runtime.block_on(app::get_command());
             debug!("Retrieved command: {}", command);
-            debug!("Retrieved PS1: {}", ps1);
             // print on stderr because we will be drawing on stdout
             eprintln!("COMMAND: {}", command);
-            eprintln!("PS1: {}", ps1);
             info!("GetCommand operation completed");
         }
     }
