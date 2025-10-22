@@ -39,7 +39,7 @@ jobu_end_of_prompt() {
 
 jobu_restore_output() {
     if [ -z "$JOBU_NEED_RESTORE_OUTPUT" ]; then
-        return
+        returnp
     fi
     unset JOBU_NEED_RESTORE_OUTPUT
     stty echo
