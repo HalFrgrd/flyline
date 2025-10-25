@@ -14,43 +14,52 @@ echo ""
 # bind '"q": "z\C-J"'
 # bind '"z": "exit"'
 
+# JOBU_SESSION_KEY="$RANDOM$RANDOM$RANDOM$RANDOM$RANDOM"; # Random generates a number b/w 0 - 32767
+# JOBU_SESSION_KEY="${JOBU_SESSION_KEY}0000000000000000" # Pad it to 16+ chars.
+# export JOBU_SESSION_KEY=${JOBU_SESSION_KEY:0:16}; # Trim to 16-digits if excess.
+
 bind 'set enable-bracketed-paste off'
 
 PS1="MYPROMPT> "
 
 jobu_start_of_prompt() {
-    # Run get-command directly in current shell, not in subshell
-    local temp_output=$(mktemp)
-    # Execute directly in current shell and redirect stderr to temp file
-    # ensure PS1 is exported so the jobu binary inherits it
+    printf "\033[?1049l"
+
+    # see test_8.sh for explanation
+    JOBU_ORIGINAL_PS0=$PS0
+    PS0="\033[?1049l"
+    export PS0
     export PS1
-    $JOBU_EXEC_PATH get-command 2> "$temp_output"
-    # Read the output from temp file (stderr output)
-    local output
-    output=$(cat "$temp_output")
-    rm -f "$temp_output"
+    
+    # Create a secure temporary file
+    tmpfile=$(mktemp "/dev/shm/jobu.${JOBU_SESSION_KEY}.XXXXXX")
+    chmod 600 "$tmpfile"
+    "$JOBU_EXEC_PATH" get-command 2> "$tmpfile"
+    ret=$?
+    JOBU_COMMAND=$(<"$tmpfile")
+    rm -f "$tmpfile"
 
-    JOBU_COMMAND=$(printf "%s" "$output" | rg -o 'COMMAND: (.*)' -r '$1')
-
-    # Trim leading/trailing whitespace
-    JOBU_COMMAND="${JOBU_COMMAND#"${JOBU_COMMAND%%[![:space:]]*}"}"
-    JOBU_COMMAND="${JOBU_COMMAND%"${JOBU_COMMAND##*[![:space:]]}"}"
-
-    # If the command is empty or only whitespace, return early
-    if [[ -z "$JOBU_COMMAND" ]]; then
-        return
+    if [ $ret -ne 0 ]; then
+        echo "jobu get-command failed with exit code $ret" >&2
+        sleep 1
     fi
 
-    printf "\n"
+    # If the command is empty or only whitespace, return early
+    # if [[ -z "$JOBU_COMMAND" || "${JOBU_COMMAND:0:1}" = "#" ]]; then
+    #     return
+    # fi
 
     bind -x '"a": jobu_end_of_prompt'
     bind '"\e[0n": "a\C-J"'
     printf "\033[5n"
 }
-PS0="\033[?1049l"
 
-
-PROMPT_COMMAND='jobu_start_of_prompt'
+# Append to existing PROMPT_COMMAND instead of overwriting
+if [[ -n "$PROMPT_COMMAND" ]]; then
+    PROMPT_COMMAND="$PROMPT_COMMAND; jobu_start_of_prompt"
+else
+    PROMPT_COMMAND='jobu_start_of_prompt'
+fi
 
 jobu_end_of_prompt() {
     READLINE_LINE=${JOBU_COMMAND};

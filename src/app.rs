@@ -1,13 +1,14 @@
 
-use crossterm::{cursor, event::{ KeyCode, KeyEvent, KeyModifiers,}};
+use std::vec;
+
+use crossterm::{ event::{ KeyCode, KeyEvent, KeyModifiers,}};
 use ratatui::{
-    layout::Rect, text::{Line, Span, Text}, widgets::Paragraph, DefaultTerminal, Frame, TerminalOptions, Viewport
+    layout::Rect, text::Line, DefaultTerminal, Frame, TerminalOptions, Viewport
 };
 use ratatui::prelude::*;
-use log::{info, error, debug};
 use tui_textarea::{TextArea, CursorMove};
 use crate::events;
-
+use ansi_to_tui::IntoText;
 
 pub async fn get_command() -> String {
     let options = TerminalOptions {
@@ -18,14 +19,19 @@ pub async fn get_command() -> String {
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
-    let mut terminal = ratatui::Terminal::with_options(backend, options).unwrap();
+    let terminal = ratatui::Terminal::with_options(backend, options).unwrap();
 
     let starting_cursor_position = crossterm::cursor::position().unwrap();
     
     // get PS1 from environment
-    let ps1 = std::env::var("PS1").unwrap_or( "default> ".to_string());
+    // let ps1 = std::env::var("PS1").unwrap_or( "default> ".to_string());
+    // let ps1: Text = ps1.into_text().unwrap_or("bad ps1>".into());
+    let ps1 = Text::from("default> ");
 
-    let mut app = App::new(ps1, starting_cursor_position);
+
+    log::debug!("Starting cursor position: {:?}", starting_cursor_position);
+
+    let mut app = App::new(ps1, starting_cursor_position.1);
     app.run(terminal).await;
 
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -45,31 +51,34 @@ pub async fn get_command() -> String {
 }
 
 
-
 struct App<'a> {
     is_running: bool,
     buffer: TextArea<'a>,
-    starting_cursor_position: (u16, u16),
     cursor_intensity: f32,
     ticks: u64,
-    ps1: String,
+    ps1: Text<'a>,
     is_multiline_mode: bool,
+    num_rows_above_prompt: u16,
+    num_rows_of_prompt: u16,
 }
 
-impl App<'_> {
-    fn new(ps1: String, starting_cursor_position: (u16, u16)) -> Self {
+impl<'a> App<'a> {
+    fn new(ps1: Text<'a>, num_rows_above_prompt: u16) -> Self {
+        let num_rows_of_prompt = ps1.lines.len() as u16;
+        assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
 
         // let mut buffer = TextArea::new(vec![PS1.to_string()]);
         // buffer.move_cursor(CursorMove::End);
         let buffer = TextArea::default();
-        App { 
+        App {
             is_running: true, 
             buffer,
-            starting_cursor_position,
             cursor_intensity: 0.0,
             ticks: 0,
-            ps1,
+            ps1: ps1.to_owned(),
             is_multiline_mode: false,
+            num_rows_above_prompt,
+            num_rows_of_prompt,
         }
     }
 
@@ -87,7 +96,9 @@ impl App<'_> {
                     events::Event::Key(event) => {
                         self.onkeypress(event);
                     }
-                    events::Event::Mouse(_) => {}
+                    events::Event::Mouse(mouse_event) => {
+                        todo!("Handle mouse event: {:?}", mouse_event);
+                    }
                     events::Event::AnimationTick => {
                         // Toggle cursor visibility for blinking effect
                         self.ticks += 1;
@@ -97,8 +108,22 @@ impl App<'_> {
                     events::Event::Resize => {}
                 }
             }
-
         }
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::cursor::MoveTo(
+                0,
+                self.num_rows_above_prompt + self.num_rows_of_prompt + 1
+            ),
+        ).unwrap();
+    }
+
+    fn increase_num_rows_below_prompt(&mut self, lines_to_scroll: u16) {
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::ScrollUp(lines_to_scroll),
+        ).unwrap();
+        self.num_rows_above_prompt -= lines_to_scroll;
     }
 
     fn unbalanced_quotes(&self) -> bool {
@@ -154,12 +179,15 @@ impl App<'_> {
                     if self.unbalanced_quotes() {
                         self.is_multiline_mode = true;
                         self.buffer.insert_newline();
-                        println!("");
-                        self.starting_cursor_position.1 -= 1;
+                        // self.increase_num_rows_below_prompt();
                     } else {
                         self.is_running = false;
                     }
                 }
+            }
+            KeyEvent{code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL, ..} => {
+                self.buffer = TextArea::from(vec!["#Ctrl+C pressed"]);
+                self.is_running = false;
             }
             KeyEvent{code: KeyCode::Char(c), ..} => {
                 self.buffer.insert_char(c);
@@ -169,40 +197,44 @@ impl App<'_> {
     }
 
     fn ui(&mut self, f: &mut Frame) {
-        // info!("Rendering UI: {:?}", f);
-        let size = f.area();
-        // info!("starting_cursor_position: {:?}", self.starting_cursor_position);
-        let sx = self.starting_cursor_position.0.min(size.width.saturating_sub(1));
-        assert!(sx == 0);
-        let sy = self.starting_cursor_position.1.min(size.height.saturating_sub(1));
-        let width = size.width.saturating_sub(sx).max(1);
-        let height = size.height.saturating_sub(sy).max(1);
-        let area = Rect { x: sx, y: sy, width, height };
+        let full_terminal_area = f.area();
+        let [_, area] = Layout::vertical([Constraint::Length(self.num_rows_above_prompt), Constraint::Fill(1)]).areas(full_terminal_area);
+        log::info!("area for rendering: {:?} and full_terminal_area: {:?}", area, full_terminal_area);
+
+
+
+        // let mut temp = self.buffer.clone();
+
+        let ps1_lines: Vec<Line> = self.ps1.lines.clone();
+        let buffer_lines: Vec<Line> = self.buffer.lines().iter().map(|line| Line::from(line.as_str())).collect();
+
+        let (mut row, mut col) = self.buffer.cursor();
+        if row == 0 {
+            col += ps1_lines.last().map(|line| line.width()).unwrap_or(0);
+        }
+        row += self.num_rows_of_prompt as usize;
+        let mut temp = TextArea::from(ps1_lines.into_iter().chain(buffer_lines.into_iter()).collect::<Vec<Line>>());
+        temp.move_cursor(CursorMove::Jump(row as u16, col as u16));
 
         if self.is_running {
             let intensity = (self.cursor_intensity * 255.0) as u8;
             let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
-            self.buffer.set_cursor_style(ratatui::style::Style::new().bg(color));
+            temp.set_cursor_style(ratatui::style::Style::new().bg(color));
         } else {
-            self.buffer.set_cursor_style(self.buffer.cursor_line_style());
+            temp.set_cursor_style(temp.cursor_line_style());
         }
 
-        let mut temp = self.buffer.clone();
 
-        let cursor = temp.cursor();
-        let (row, col): (u16, u16) = (cursor.0 as u16, cursor.1 as u16);
-        // log::debug!("Cursor position: row {}, col {}", row, col);
-        temp.move_cursor(CursorMove::Head);
-        temp.insert_str(&self.ps1);
-        let col = if row == 0 {
-            col + self.ps1.len() as u16
-        } else {
-            col
-        };
-        temp.move_cursor(CursorMove::Jump(row, col));
+        let num_lines = temp.lines().len() as u16;
+        if num_lines + self.num_rows_above_prompt > full_terminal_area.height {
+            let lines_to_scroll = num_lines + self.num_rows_above_prompt - full_terminal_area.height;
+            self.increase_num_rows_below_prompt(lines_to_scroll);
+        }
+
+
         f.render_widget(&temp, area);
 
-        let area = Rect { x: sx + 40, y: sy, width, height };
-        f.render_widget(Line::from("test").fg(ratatui::style::Color::Red), area);
+        // let area = Rect { x: sx + 40, y: sy, width, height };
+        // f.render_widget(Line::from("test").fg(ratatui::style::Color::Red), area);
     }
 }

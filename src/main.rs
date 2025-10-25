@@ -1,6 +1,4 @@
 use clap::{Parser, Subcommand};
-use crossterm::terminal;
-use log::{info, error, debug};
 use simple_logging;
 
 
@@ -37,14 +35,15 @@ fn main() {
             run_activate();
         }
         Commands::GetCommand => {
-            info!("Starting GetCommand operation");
+            log::info!("Starting GetCommand operation");
             let runtime = build_runtime();
 
             let command = runtime.block_on(app::get_command());
-            debug!("Retrieved command: {}", command);
+            log::debug!("Retrieved command: {}", command);
             // print on stderr because we will be drawing on stdout
-            eprintln!("COMMAND: {}", command);
-            info!("GetCommand operation completed");
+            eprintln!("{}", command);
+            // println!("\n");
+            log::info!("GetCommand operation completed");
         }
     }
 }
@@ -59,9 +58,9 @@ fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
     
     // Initialize simple-logging to write to file
     simple_logging::log_to_file(&log_file_path, log::LevelFilter::Debug)?;
-    
-    info!("Jobu logging initialized, output will be logged to: {}", log_file_path.display());
-    
+
+    log::info!("Jobu logging initialized, output will be logged to: {}", log_file_path.display());
+
     Ok(())
 }
 
@@ -74,36 +73,36 @@ fn build_runtime() -> tokio::runtime::Runtime {
 }
 
 
-fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use std::fs::OpenOptions;
-    use std::io::Write;
+// fn display_center_message(tty_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+//     use std::fs::OpenOptions;
+//     use std::io::Write;
     
-    // Open the TTY device for writing
-    let mut tty = OpenOptions::new().write(true).open(tty_path)?;
+//     // Open the TTY device for writing
+//     let mut tty = OpenOptions::new().write(true).open(tty_path)?;
     
-    // Get terminal size using a simple approach
-    // We'll use the TIOCGWINSZ ioctl through crossterm
-    let (cols, rows) = terminal::size()?;
+//     // Get terminal size using a simple approach
+//     // We'll use the TIOCGWINSZ ioctl through crossterm
+//     let (cols, rows) = terminal::size()?;
     
-    // Calculate center position
-    let center_col = cols / 2;
-    let center_row = rows / 2;
+//     // Calculate center position
+//     let center_col = cols / 2;
+//     let center_row = rows / 2;
     
-    let text = "JOBU ACTIVE";
+//     let text = "JOBU ACTIVE";
     
-    crossterm::execute!(tty,
-        crossterm::cursor::SavePosition,
-        crossterm::cursor::MoveTo(center_col, center_row)
-    )?;
-    tty.write_all(format!("\x1b[31m{}\x1b[0m", text).as_bytes())?; // Red text and reset
-    crossterm::execute!(tty, crossterm::cursor::RestorePosition)?;
-    tty.flush()?;
+//     crossterm::execute!(tty,
+//         crossterm::cursor::SavePosition,
+//         crossterm::cursor::MoveTo(center_col, center_row)
+//     )?;
+//     tty.write_all(format!("\x1b[31m{}\x1b[0m", text).as_bytes())?; // Red text and reset
+//     crossterm::execute!(tty, crossterm::cursor::RestorePosition)?;
+//     tty.flush()?;
     
-    Ok(())
-}
+//     Ok(())
+// }
 
 fn run_activate() {
-    info!("Starting jobu activation");
+    log::info!("Starting jobu activation");
     
     // display_center_message("/dev/tty").unwrap_or_else(|err| {
     //     error!("Error displaying message: {}", err);
@@ -114,15 +113,15 @@ fn run_activate() {
     const EXEC_PATH: &str = "/target/debug/jobu";
 
     let exec_path = path.to_owned() + EXEC_PATH;
-    debug!("Setting JOBU_EXEC_PATH to: {}", exec_path);
-    println!("FORBASH: export JOBU_EXEC_PATH={}", exec_path);
+    log::debug!("Setting JOBU_EXEC_PATH to: {}", exec_path);
+    println!("export JOBU_EXEC_PATH={}", exec_path);
 
     const ACTIVATE_SCRIPT: &str = include_str!("activate.sh");
-    info!("Executing activate script with {} lines", ACTIVATE_SCRIPT.lines().count());
+   log::info!("Executing activate script with {} lines", ACTIVATE_SCRIPT.lines().count());
     
     for line in ACTIVATE_SCRIPT.lines() {
-        println!("FORBASH: {}", line);
+        println!("{}", line);
     }
     
-    info!("Jobu activation completed");
+    log::info!("Jobu activation completed");
 }
