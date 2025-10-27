@@ -42,7 +42,7 @@ fn main() {
             log::debug!("Retrieved command: {}", command);
             // print on stderr because we will be drawing on stdout
             eprintln!("{}", command);
-            // println!("\n");
+            println!("\n");
             log::info!("GetCommand operation completed");
         }
     }

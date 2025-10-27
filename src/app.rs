@@ -199,21 +199,44 @@ impl<'a> App<'a> {
     fn ui(&mut self, f: &mut Frame) {
         let full_terminal_area = f.area();
         let [_, area] = Layout::vertical([Constraint::Length(self.num_rows_above_prompt), Constraint::Fill(1)]).areas(full_terminal_area);
-        log::info!("area for rendering: {:?} and full_terminal_area: {:?}", area, full_terminal_area);
+        // log::info!("area for rendering: {:?} and full_terminal_area: {:?}", area, full_terminal_area);
 
-
-
-        // let mut temp = self.buffer.clone();
 
         let ps1_lines: Vec<Line> = self.ps1.lines.clone();
         let buffer_lines: Vec<Line> = self.buffer.lines().iter().map(|line| Line::from(line.as_str())).collect();
 
+        // Combine the last line of PS1 with the first line of buffer
+        let mut combined_lines = Vec::new();
+        let ps1_last_line_width = if !ps1_lines.is_empty() && !buffer_lines.is_empty() {
+            // Add all PS1 lines except the last one
+            combined_lines.extend(ps1_lines[..ps1_lines.len()-1].iter().cloned());
+            
+            // Combine last PS1 line with first buffer line
+            let last_ps1_line = &ps1_lines[ps1_lines.len()-1];
+            let last_ps1_width = last_ps1_line.width();
+            let first_buffer_line = &buffer_lines[0];
+            let mut combined_spans = last_ps1_line.spans.clone();
+            combined_spans.extend(first_buffer_line.spans.clone());
+            combined_lines.push(Line::from(combined_spans));
+            
+            // Add remaining buffer lines
+            combined_lines.extend(buffer_lines[1..].iter().cloned());
+            last_ps1_width
+        } else if !ps1_lines.is_empty() {
+            let width = ps1_lines.last().map(|line| line.width()).unwrap_or(0);
+            combined_lines = ps1_lines;
+            width
+        } else {
+            combined_lines = buffer_lines;
+            0
+        };
+
         let (mut row, mut col) = self.buffer.cursor();
         if row == 0 {
-            col += ps1_lines.last().map(|line| line.width()).unwrap_or(0);
+            col += ps1_last_line_width;
         }
-        row += self.num_rows_of_prompt as usize;
-        let mut temp = TextArea::from(ps1_lines.into_iter().chain(buffer_lines.into_iter()).collect::<Vec<Line>>());
+        row += self.num_rows_of_prompt.saturating_sub(1) as usize;
+        let mut temp = TextArea::from(combined_lines);
         temp.move_cursor(CursorMove::Jump(row as u16, col as u16));
 
         if self.is_running {
