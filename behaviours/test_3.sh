@@ -20,6 +20,7 @@ jobu_start_of_prompt() {
     bind '"j": accept-line'
     bind '"\e[0n": "aj"'
 
+    # https://unix.stackexchange.com/questions/797263/tty-line-discipline-echoing-feature
     stty -echo
     printf "\033[5n"
 }

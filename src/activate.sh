@@ -27,6 +27,8 @@ jobu_start_of_prompt() {
     JOBU_COMMAND=$(<"$tmpfile")
     rm -f "$tmpfile"
 
+
+    # This approach is based on test_3.sh
     JOBU_SHOULD_RESTORE=1
     JOBU_BACKUP_PS1=$PS1
     JOBU_BACKUP_STTY=$(stty -g)
