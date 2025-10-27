@@ -1,7 +1,7 @@
 
 source ./bash-preexec/bash-preexec.sh
 
-# eval "$(starship init bash)"
+eval "$(starship init bash)"
 
-source <(target/debug/jobu activate)
+eval "$(target/debug/jobu activate)"
 

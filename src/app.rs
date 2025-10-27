@@ -24,9 +24,9 @@ pub async fn get_command() -> String {
     let starting_cursor_position = crossterm::cursor::position().unwrap();
     
     // get PS1 from environment
-    // let ps1 = std::env::var("PS1").unwrap_or( "default> ".to_string());
-    // let ps1: Text = ps1.into_text().unwrap_or("bad ps1>".into());
-    let ps1 = Text::from("default> ");
+    let ps1: String = std::env::var("PS1").unwrap_or( "default> ".to_string());
+    let ps1: Text = ps1.into_text().unwrap_or("bad ps1>".into());
+    // let ps1 = Text::from("default> ");
 
 
     log::debug!("Starting cursor position: {:?}", starting_cursor_position);

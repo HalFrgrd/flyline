@@ -17,9 +17,8 @@ echo ""
 bind 'set enable-bracketed-paste off'
 
 jobu_start_of_prompt() {
-    PS1="MYPROMPT> "
     export PS1
-    
+
     # Create a secure temporary file
     tmpfile=$(mktemp "/dev/shm/jobu.${JOBU_SESSION_KEY}.XXXXXX")
     chmod 600 "$tmpfile"
@@ -28,6 +27,9 @@ jobu_start_of_prompt() {
     JOBU_COMMAND=$(<"$tmpfile")
     rm -f "$tmpfile"
 
+    JOBU_SHOULD_RESTORE=1
+    JOBU_BACKUP_PS1=$PS1
+    JOBU_BACKUP_STTY=$(stty -g)
     stty -echo
     PS1=""
 
@@ -44,7 +46,11 @@ jobu_end_of_prompt() {
 }
 
 jobu_pre_exec() {
-    stty echo
+    if [[ -n "${JOBU_SHOULD_RESTORE:-}" ]]; then
+        PS1="$JOBU_BACKUP_PS1"
+        stty "$JOBU_BACKUP_STTY"
+        unset JOBU_SHOULD_RESTORE
+    fi
 }
 
 
