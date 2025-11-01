@@ -6,9 +6,27 @@ use ratatui::{
     layout::Rect, text::Line, widgets::{Paragraph, Wrap}, DefaultTerminal, Frame, TerminalOptions, Viewport
 };
 use ratatui::prelude::*;
-use tui_textarea::{TextArea, CursorMove};
+use tui_textarea::{CursorMove, Key, TextArea};
 use crate::events;
 use ansi_to_tui::IntoText;
+use std::fs;
+
+/// Read the user's bash history file into a Vec<String>.
+/// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
+fn parse_bash_history() -> Vec<String> {
+    let hist_path = std::env::var("HISTFILE").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        format!("{}/.bash_history", home)
+    });
+
+    match fs::read_to_string(&hist_path) {
+        Ok(s) => s.lines().map(|l| l.to_string()).collect(),
+        Err(e) => {
+            log::warn!("Could not read history file '{}': {}", hist_path, e);
+            Vec::new()
+        }
+    }
+}
 
 pub async fn get_command() -> String {
     let options = TerminalOptions {
@@ -35,7 +53,10 @@ pub async fn get_command() -> String {
 
     log::debug!("Starting cursor position: {:?}", starting_cursor_position);
 
-    let mut app = App::new(ps1, starting_cursor_position.1);
+    // Parse the user's bash history into a vector of command strings.
+    let history = parse_bash_history();
+
+    let mut app = App::new(ps1, starting_cursor_position.1, history);
     app.run(terminal).await;
 
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -61,25 +82,31 @@ struct App<'a> {
     cursor_intensity: f32,
     ticks: u64,
     ps1: Text<'a>,
+    /// Parsed bash history available at startup.
+    history: Vec<String>,
+    history_index: usize,
     is_multiline_mode: bool,
     num_rows_above_prompt: u16,
     num_rows_of_prompt: u16,
 }
 
 impl<'a> App<'a> {
-    fn new(ps1: Text<'a>, num_rows_above_prompt: u16) -> Self {
+    fn new(ps1: Text<'a>, num_rows_above_prompt: u16, history: Vec<String>) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
 
         // let mut buffer = TextArea::new(vec![PS1.to_string()]);
         // buffer.move_cursor(CursorMove::End);
         let buffer = TextArea::default();
+        let history_index = history.len();
         App {
             is_running: true, 
             buffer,
             cursor_intensity: 0.0,
             ticks: 0,
             ps1: ps1.to_owned(),
+            history,
+            history_index,
             is_multiline_mode: false,
             num_rows_above_prompt,
             num_rows_of_prompt,
@@ -175,6 +202,31 @@ impl<'a> App<'a> {
             }
             KeyEvent{code: KeyCode::End, ..} => {
                 self.buffer.move_cursor(CursorMove::End);
+            }
+            KeyEvent{code: KeyCode::Up, ..} => {
+                let (cursor_row, _) = self.buffer.cursor();
+                let new_hist_index = self.history_index.saturating_sub(1);
+                if cursor_row == 0 && new_hist_index < self.history.len() {
+                    // Replace current buffer with last history entry
+                    let new_command = self.history[new_hist_index].clone();
+                    self.buffer = TextArea::from(vec![new_command.as_str()]);
+                    self.buffer.move_cursor(CursorMove::End);
+                    self.history_index = new_hist_index;
+                } else {
+                    self.buffer.move_cursor(CursorMove::Up);
+                }
+            }
+            KeyEvent{code: KeyCode::Down, ..} => {
+                let (cursor_row, _) = self.buffer.cursor();
+                let new_hist_index = self.history_index.saturating_add(1);
+                if cursor_row + 1 >= self.buffer.lines().len() && new_hist_index < self.history.len() {
+                    let new_command = self.history[new_hist_index].clone();
+                    self.buffer = TextArea::from(vec![new_command.as_str()]);
+                    self.buffer.move_cursor(CursorMove::End);
+                    self.history_index = new_hist_index;
+                } else {
+                    self.buffer.move_cursor(CursorMove::Down);
+                }
             }
             KeyEvent{code: KeyCode::Enter, ..} => {
                 if self.is_multiline_mode {
