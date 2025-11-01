@@ -3,15 +3,15 @@ use std::vec;
 
 use crossterm::{ event::{ KeyCode, KeyEvent, KeyModifiers,}};
 use ratatui::{
-    layout::Rect, text::Line, widgets::{Paragraph, Wrap}, DefaultTerminal, Frame, TerminalOptions, Viewport
+    text::Line, widgets::{Paragraph, Wrap}, DefaultTerminal, Frame, TerminalOptions, Viewport
 };
 use ratatui::prelude::*;
-use tui_textarea::{CursorMove, Key, TextArea};
+use tui_textarea::{CursorMove, TextArea};
 use crate::events;
 use ansi_to_tui::IntoText;
 use std::fs;
 use std::path::PathBuf;
-use std::io::{Write, BufRead, BufReader};
+use std::io::{Write, BufRead};
 
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
@@ -108,12 +108,48 @@ pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> Strin
     command
 }
 
+struct CursorAnimation {
+    currentPos: (u16, u16),
+    prevPos: (u16, u16),
+    tick_of_change: u64,
+}
+
+impl CursorAnimation {
+
+    fn update_position(&mut self, new_pos: (u16, u16), tick: u64) {
+        if new_pos != self.currentPos {
+            self.tick_of_change = tick;
+            self.prevPos = self.currentPos;
+            self.currentPos = new_pos;
+        }
+    }
+
+    fn get_position(&self, tick: u64) -> (u16, u16) {
+        // interpolate between prevPos and currentPos based on time since tick_of_change
+        let ticks_since_change = tick.saturating_sub(self.tick_of_change);
+        let mut factor = (ticks_since_change as f32 * 0.008 * events::ANIMATION_TICK_RATE_MS as f32).min(1.0); // Adjust speed here
+        if (self.prevPos.0.abs_diff(self.currentPos.0) + self.prevPos.1.abs_diff(self.currentPos.1)) < 2 {
+            factor = 1.0;
+        }
+        let x = self.prevPos.0 as f32 + (self.currentPos.0 as f32 - self.prevPos.0 as f32) * factor;
+        let y = self.prevPos.1 as f32 + (self.currentPos.1 as f32 - self.prevPos.1 as f32) * factor;
+        (x as u16, y as u16)
+    }
+
+    fn get_intensity(&self, tick: u64) -> u8 {
+        let mult = 0.004 * events::ANIMATION_TICK_RATE_MS as f32;
+        let intensity_f32 = (tick as f32 * mult).sin() * 0.4 + 0.6;
+        let intensity   = (intensity_f32 * 255.0) as u8;
+        intensity
+        // 255
+    }
+}
 
 struct App<'a> {
     is_running: bool,
     buffer: TextArea<'a>,
-    cursor_intensity: f32,
-    ticks: u64,
+    animation_tick: u64,
+    cursor_animation: CursorAnimation,
     ps1: Text<'a>,
     /// Parsed bash history available at startup.
     history: Vec<String>,
@@ -136,8 +172,12 @@ impl<'a> App<'a> {
         App {
             is_running: true, 
             buffer,
-            cursor_intensity: 0.0,
-            ticks: 0,
+            animation_tick: 0,
+            cursor_animation: CursorAnimation {
+                currentPos: (0, 0),
+                prevPos: (0, 0),
+                tick_of_change: 0,
+            },
             ps1: ps1.to_owned(),
             history,
             history_index,
@@ -167,9 +207,7 @@ impl<'a> App<'a> {
                     }
                     events::Event::AnimationTick => {
                         // Toggle cursor visibility for blinking effect
-                        self.ticks += 1;
-                        let mult = 0.004 * events::ANIMATION_TICK_RATE_MS as f32;
-                        self.cursor_intensity = (self.ticks as f32 * mult).sin() * 0.4 + 0.6;
+                        self.animation_tick = self.animation_tick.wrapping_add(1);
                     }
                     events::Event::Resize => {}
                 }
@@ -320,16 +358,21 @@ impl<'a> App<'a> {
 
         let mut output_lines: Vec<Line> = Self::get_ps1_lines(self.ps1.clone());
 
-        let (row, mut col) = self.buffer.cursor();
+        self.cursor_animation.update_position((self.buffer.cursor().0.try_into().unwrap(), self.buffer.cursor().1.try_into().unwrap()), self.animation_tick);
+
+        let (cursor_row, cursor_col) = self.cursor_animation.get_position(self.animation_tick);
+        let cursor_row = cursor_row as usize;
+        let mut cursor_col = cursor_col as usize;
+        let cursor_intensity = self.cursor_animation.get_intensity(self.animation_tick);
 
         for (i, line) in self.buffer.lines().iter().enumerate() {
             let new_line = if i == 0 {
                 // Combine the last PS1 line with the first buffer line
                 let last_ps1_line = output_lines.pop().unwrap_or_else(|| Line::from(""));
                 
-                if row == 0 {
+                if cursor_row == 0 {
                     // TODO: unicode width and all that
-                    col += last_ps1_line.width();
+                    cursor_col += last_ps1_line.width();
                 }
                 let mut combined_spans = last_ps1_line.spans;
                 combined_spans.push(Span::raw(line.clone()));
@@ -338,9 +381,8 @@ impl<'a> App<'a> {
                 Line::from(line.clone())
             };
 
-            let final_line = if i == row && self.is_running {
-                let intensity = (self.cursor_intensity * 255.0) as u8;
-                let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
+            let final_line = if i == cursor_row && self.is_running {
+                let color = ratatui::style::Color::Rgb(cursor_intensity, cursor_intensity, cursor_intensity);
                 let cursor_style = ratatui::style::Style::new().bg(color);
 
                 // Split the line at cursor position and apply cursor style
@@ -351,17 +393,17 @@ impl<'a> App<'a> {
                     let span_text = &span.content;
                     let span_len = span_text.chars().count();
                     
-                    if current_col + span_len <= col {
+                    if current_col + span_len <= cursor_col {
                         // Cursor is after this span
                         styled_spans.push(span);
                         current_col += span_len;
-                    } else if current_col >= col + 1 {
+                    } else if current_col >= cursor_col + 1 {
                         // Cursor is before this span
                         styled_spans.push(span);
                     } else {
                         // Cursor is within this span
                         let chars: Vec<char> = span_text.chars().collect();
-                        let cursor_pos_in_span = col - current_col;
+                        let cursor_pos_in_span = cursor_col - current_col;
                         
                         // Text before cursor
                         if cursor_pos_in_span > 0 {
@@ -389,7 +431,7 @@ impl<'a> App<'a> {
                 }
                 
                 // If cursor is at the very end of the line, add a space with cursor style
-                if col >= current_col {
+                if cursor_col >= current_col {
                     styled_spans.push(Span::styled(" ", cursor_style));
                 }
                 
@@ -400,14 +442,6 @@ impl<'a> App<'a> {
 
             output_lines.push(final_line);
         }
-
-        // if self.is_running {
-        //     let intensity = (self.cursor_intensity * 255.0) as u8;
-        //     let color = ratatui::style::Color::Rgb(intensity, intensity, intensity);
-        //     let cursor_style = ratatui::style::Style::new().bg(color);
-
-        // }
-
 
         let output = Paragraph::new(output_lines).wrap(Wrap { trim: false });
 

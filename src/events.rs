@@ -21,7 +21,7 @@ pub struct EventHandler {
     handler: tokio::task::JoinHandle<()>,
 }
 
-pub const ANIMATION_TICK_RATE_MS: u64 = 50;
+pub const ANIMATION_TICK_RATE_MS: u64 = 16;
 
 impl EventHandler {
     pub fn new() -> Self {
