@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 use simple_logging;
 
@@ -19,7 +21,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Activate,
-    GetCommand,
+    GetCommand{
+        request_pipe: PathBuf,
+        response_pipe: PathBuf,
+    },
 }
 
 fn main() {
@@ -34,11 +39,11 @@ fn main() {
         Commands::Activate => {
             run_activate();
         }
-        Commands::GetCommand => {
+        Commands::GetCommand { request_pipe, response_pipe } => {
             log::info!("Starting GetCommand operation");
             let runtime = build_runtime();
 
-            let command = runtime.block_on(app::get_command());
+            let command = runtime.block_on(app::get_command(request_pipe, response_pipe));
             log::debug!("Retrieved command: {}", command);
             // print on stderr because we will be drawing on stdout
             eprintln!("{}", command);

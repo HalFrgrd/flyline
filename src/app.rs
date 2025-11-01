@@ -10,6 +10,8 @@ use tui_textarea::{CursorMove, Key, TextArea};
 use crate::events;
 use ansi_to_tui::IntoText;
 use std::fs;
+use std::path::PathBuf;
+use std::io::{Write, BufRead, BufReader};
 
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
@@ -28,7 +30,33 @@ fn parse_bash_history() -> Vec<String> {
     }
 }
 
-pub async fn get_command() -> String {
+struct BashClient {
+    request_pipe: PathBuf,
+    response_pipe: PathBuf,
+}
+
+impl BashClient {
+    fn on_tab(&self, current_input: &str) -> String {
+        {
+            let mut to_bash = std::fs::OpenOptions::new()
+                .write(true)
+                .open(&self.request_pipe)
+                .expect("Failed to open request pipe for writing");
+            writeln!(to_bash, "which {}", current_input).expect("Failed to write TAB request to pipe");
+        }
+
+        let mut from_bash = std::fs::File::open(&self.response_pipe)
+            .expect("Failed to open response pipe for reading");
+        let mut reader = std::io::BufReader::new(&mut from_bash);
+
+        let mut response = String::new();
+        reader.read_line(&mut response).expect("Failed to read response from pipe");
+
+        response
+    }
+}
+
+pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
@@ -56,7 +84,12 @@ pub async fn get_command() -> String {
     // Parse the user's bash history into a vector of command strings.
     let history = parse_bash_history();
 
-    let mut app = App::new(ps1, starting_cursor_position.1, history);
+    let server = BashClient {
+        request_pipe,
+        response_pipe,
+    };
+
+    let mut app = App::new(ps1, starting_cursor_position.1, history, server);
     app.run(terminal).await;
 
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -88,10 +121,11 @@ struct App<'a> {
     is_multiline_mode: bool,
     num_rows_above_prompt: u16,
     num_rows_of_prompt: u16,
+    client: BashClient,
 }
 
 impl<'a> App<'a> {
-    fn new(ps1: Text<'a>, num_rows_above_prompt: u16, history: Vec<String>) -> Self {
+    fn new(ps1: Text<'a>, num_rows_above_prompt: u16, history: Vec<String>, client: BashClient) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
 
@@ -110,6 +144,7 @@ impl<'a> App<'a> {
             is_multiline_mode: false,
             num_rows_above_prompt,
             num_rows_of_prompt,
+            client,
         }
     }
 
@@ -241,6 +276,10 @@ impl<'a> App<'a> {
                     }
                 }
             }
+            KeyEvent{code: KeyCode::Tab, ..} => {
+                let resp = self.client.on_tab("ls");
+                self.buffer.insert_str(&resp);
+            }
             KeyEvent{code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL, ..} => {
                 self.buffer = TextArea::from(vec!["#Ctrl+C pressed"]);
                 self.is_running = false;
@@ -256,7 +295,7 @@ impl<'a> App<'a> {
         let lines = ps1.lines;
         lines.into_iter().map(|line| {
             let spans: Vec<Span> = line.spans.into_iter().map(|span| {
-                if span.content.contains("JOBU_TIME_XXXXX") {
+                if span.content.contains("JOBU_TIME_XXX") {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap();
@@ -266,7 +305,7 @@ impl<'a> App<'a> {
                     let minutes = (secs / 60) % 60;
                     let seconds = secs % 60;
                     let time_str = format!("{:02}:{:02}:{:03}.{:03}", hours, minutes, seconds, millis);
-                    Span::styled(span.content.replace("JOBU_TIME_XXXXX", &time_str), span.style)
+                    Span::styled(span.content.replace("JOBU_TIME_XXX", &time_str), span.style)
                 } else {
                     span
                 }
