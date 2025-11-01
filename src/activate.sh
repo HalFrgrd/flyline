@@ -20,7 +20,12 @@ bind 'set enable-bracketed-paste off'
 run_jobu_bash_server(){
     # Jobu will communicate with this process during cle for stuff like 
     # autocompletions and `which` lookups.
-    
+
+    # redirect everything to /dev/null so it doesn't interfere with the main shell
+    exec 0>/dev/null
+    exec 1>/dev/null
+    exec 2>/dev/null
+
     local request_pipe="/tmp/jobu_request"
     local response_pipe="/tmp/jobu_response"
 
@@ -65,8 +70,11 @@ jobu_start_of_prompt() {
     ret=$?
     JOBU_COMMAND=$(<"$tmpfile")
     rm -f "$tmpfile"
-    # Kill the jobu bash server process
+    # Kill the jobu bash server process silently
+    set +m  # Disable job control to prevent "Terminated" message
     kill "$child_pid" 2>/dev/null || true
+    wait "$child_pid" 2>/dev/null || true  # Wait for process to actually exit
+    set -m  # Re-enable job control
 
     # This approach is based on test_3.sh
     JOBU_SHOULD_RESTORE=1

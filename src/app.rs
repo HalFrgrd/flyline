@@ -42,7 +42,7 @@ impl BashClient {
                 .write(true)
                 .open(&self.request_pipe)
                 .expect("Failed to open request pipe for writing");
-            writeln!(to_bash, "which {}", current_input).expect("Failed to write TAB request to pipe");
+            writeln!(to_bash, "complete {}", current_input).expect("Failed to write TAB request to pipe");
         }
 
         let mut from_bash = std::fs::File::open(&self.response_pipe)
@@ -277,7 +277,7 @@ impl<'a> App<'a> {
                 }
             }
             KeyEvent{code: KeyCode::Tab, ..} => {
-                let resp = self.client.on_tab("ls");
+                let resp = self.client.on_tab(self.buffer.lines().join("\n").as_str());
                 self.buffer.insert_str(&resp);
             }
             KeyEvent{code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL, ..} => {
