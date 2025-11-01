@@ -200,41 +200,36 @@ impl<'a> App<'a> {
         }
     }
 
+    fn get_ps1_lines(ps1: Text) -> Vec<Line> {
+        let lines = ps1.lines;
+        lines.into_iter().map(|line| {
+            let spans: Vec<Span> = line.spans.into_iter().map(|span| {
+                if span.content.contains("JOBU_TIME_XXXXX") {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap();
+                    let secs = now.as_secs();
+                    let millis = now.subsec_millis();
+                    let hours = (secs / 3600) % 24;
+                    let minutes = (secs / 60) % 60;
+                    let seconds = secs % 60;
+                    let time_str = format!("{:02}:{:02}:{:03}.{:03}", hours, minutes, seconds, millis);
+                    Span::styled(span.content.replace("JOBU_TIME_XXXXX", &time_str), span.style)
+                } else {
+                    span
+                }
+            }).collect();
+            Line::from(spans)
+        }).collect()
+    }
+
     fn ui(&mut self, f: &mut Frame) {
         let full_terminal_area = f.area();
         let [_, area] = Layout::vertical([Constraint::Length(self.num_rows_above_prompt), Constraint::Fill(1)]).areas(full_terminal_area);
-        // log::info!("area for rendering: {:?} and full_terminal_area: {:?}", area, full_terminal_area);
 
-        let mut output_lines: Vec<Line> = self.ps1.lines.clone();
-        // let buffer_lines: Vec<Line> = self.buffer.lines().iter().map(|line| Line::from(line.as_str())).collect();
-
-        // let ps1_last_line_width = if !output_lines.is_empty() && !buffer_lines.is_empty() {
-
-        //     // Combine last PS1 line with first buffer line
-        //     let last_ps1_line = &output_lines[output_lines.len()-1];
-        //     let last_ps1_width = last_ps1_line.width();
-        //     let first_buffer_line = &buffer_lines[0];
-        //     let mut combined_spans = last_ps1_line.spans.clone();
-        //     combined_spans.extend(first_buffer_line.spans.clone());
-        //     output_lines.push(Line::from(combined_spans));
-            
-        //     // Add remaining buffer lines
-        //     output_lines.extend(buffer_lines[1..].iter().cloned());
-        //     last_ps1_width
-        // } else if !output_lines.is_empty() {
-        //     let width = output_lines.last().map(|line| line.width()).unwrap_or(0);
-        //     output_lines = output_lines;
-        //     width
-        // } else {
-        //     0
-        // };
-
+        let mut output_lines: Vec<Line> = Self::get_ps1_lines(self.ps1.clone());
 
         let (row, mut col) = self.buffer.cursor();
-        // if row == 0 {
-        //     col += ps1_last_line_width;
-        // }
-        // row += self.num_rows_of_prompt.saturating_sub(1) as usize;
 
         for (i, line) in self.buffer.lines().iter().enumerate() {
             let new_line = if i == 0 {
@@ -314,11 +309,6 @@ impl<'a> App<'a> {
 
             output_lines.push(final_line);
         }
-
-
-
-
-
 
         // if self.is_running {
         //     let intensity = (self.cursor_intensity * 255.0) as u8;

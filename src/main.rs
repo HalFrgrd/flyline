@@ -8,7 +8,7 @@ mod events;
 
 #[derive(Parser)]
 #[command(name = "jobu")]
-#[command(about = "A job management utility")]
+#[command(about = "A replacement for bash readline")]
 #[command(version = "0.1.0")]
 struct Cli {
     #[command(subcommand)]
