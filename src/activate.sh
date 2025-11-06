@@ -22,12 +22,16 @@ jobu_log(){
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$1]: $2" >> "$jobu_log_file"
 }
 
+JOBU_SESSION_ID=$(uuidgen)
+
+
+request_pipe="/tmp/jobu_request_$JOBU_SESSION_ID"
+response_pipe="/tmp/jobu_response_$JOBU_SESSION_ID"
+
 run_jobu_bash_server(){
     # Jobu will communicate with this process during cle for stuff like 
     # autocompletions and `which` lookups.
 
-    local request_pipe="/tmp/jobu_request"
-    local response_pipe="/tmp/jobu_response"
 
     # Redirect stdin to request pipe and stdout to response pipe
     exec 0< "$request_pipe"
@@ -44,17 +48,24 @@ run_jobu_bash_server(){
             "get-var PATH") echo "$PATH" ;;
             "WHICH "*)
                 cmd="${query#WHICH }"
-                jobu_log "SERVER" "Looking up command: $cmd"
                 cmd_path=$(command -v "$cmd")
                 result=$?
+                response_len=${#cmd_path}
+                jobu_log "SERVER" "Response length: $response_len bytes"
                 jobu_log "SERVER" "Command found (exit code $result): $cmd_path"
-                echo "$cmd_path"
+                echo "RESP_LEN=$response_len"
+                echo "RESP_BODY=$cmd_path"
                 ;;
             "COMPLETE "*)
                 partial="${query#COMPLETE }"
                 # Simple completion logic (can be improved)
                 comp_results=$(compgen -c "$partial")
-                echo "$comp_results"
+                result=$?
+                response_len=${#comp_results}
+                jobu_log "SERVER" "Completion results length: $response_len bytes"
+                jobu_log "SERVER" "Completion results for (exit code $result) '$partial': $comp_results"
+                echo "RESP_LEN=$response_len"
+                echo "RESP_BODY=$comp_results"
                 ;;
             *) 
                 echo "Unknown query: $query" ;;
@@ -71,8 +82,8 @@ jobu_start_of_prompt() {
 
     # Create named pipes for jobu communication
     # TODO improve this
-    mkfifo "/tmp/jobu_request" 2>/dev/null || true
-    mkfifo "/tmp/jobu_response" 2>/dev/null || true
+    mkfifo "$request_pipe" 2>/dev/null || true
+    mkfifo "$response_pipe" 2>/dev/null || true
 
     # Start the jobu bash server in background
     run_jobu_bash_server &
@@ -81,7 +92,7 @@ jobu_start_of_prompt() {
     # Create a secure temporary file
     tmpfile=$(mktemp "/dev/shm/jobu.XXXXXX")
     chmod 600 "$tmpfile"
-    "$JOBU_EXEC_PATH" get-command "/tmp/jobu_request" "/tmp/jobu_response" 2> "$tmpfile"
+    "$JOBU_EXEC_PATH" get-command "$request_pipe" "$response_pipe" 2> "$tmpfile"
     ret=$?
     JOBU_COMMAND=$(<"$tmpfile")
     rm -f "$tmpfile"

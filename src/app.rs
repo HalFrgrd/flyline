@@ -296,7 +296,8 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
-                // let resp = self.client.on_tab(self.buffer.lines().join("\n").as_str());
+                let resp = self.client.get_request(BashReq::Complete, self.buffer.lines().join("\n").as_str());
+                log::debug!("Completion response: {:?}", resp);
                 // self.buffer.insert_str(&resp);
             }
             KeyEvent {
@@ -398,7 +399,7 @@ impl<'a> App<'a> {
                 };
 
                 combined_spans.push(Span::styled(first_word.to_string(), first_word_style));
-                combined_spans.push(Span::raw(rest.to_string()));
+                combined_spans.push(Span::styled(rest.to_string(), Style::default()));
 
                 Line::from(combined_spans)
             } else {
