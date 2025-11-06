@@ -16,41 +16,56 @@ echo ""
 
 bind 'set enable-bracketed-paste off'
 
+jobu_log_file="$HOME/jobu_bash.logs"
+
+jobu_log(){
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$1]: $2" >> "$jobu_log_file"
+}
 
 run_jobu_bash_server(){
     # Jobu will communicate with this process during cle for stuff like 
     # autocompletions and `which` lookups.
 
-    # redirect everything to /dev/null so it doesn't interfere with the main shell
-    exec 0>/dev/null
-    exec 1>/dev/null
-    exec 2>/dev/null
-
     local request_pipe="/tmp/jobu_request"
     local response_pipe="/tmp/jobu_response"
 
-    while read -r query < "$request_pipe"; do
+    # Redirect stdin to request pipe and stdout to response pipe
+    exec 0< "$request_pipe"
+    exec 1> "$response_pipe"
+    # Keep stderr redirected to /dev/null
+    exec 2>/dev/null
+
+    jobu_log "SERVER" "Jobu bash server started, waiting for requests..."
+
+    while read -r query; do
         # Handle queries with full access to parent environment
+        jobu_log "SERVER" "Received query: $query"
         case "$query" in
-            "get-var PATH") echo "$PATH" > "$response_pipe" ;;
-            "which "*)
-                cmd="${query#which }"
+            "get-var PATH") echo "$PATH" ;;
+            "WHICH "*)
+                cmd="${query#WHICH }"
+                jobu_log "SERVER" "Looking up command: $cmd"
                 cmd_path=$(command -v "$cmd")
-                echo "$cmd_path" > "$response_pipe"
+                result=$?
+                jobu_log "SERVER" "Command found (exit code $result): $cmd_path"
+                echo "$cmd_path"
                 ;;
-            "complete "*)
-                partial="${query#complete }"
+            "COMPLETE "*)
+                partial="${query#COMPLETE }"
                 # Simple completion logic (can be improved)
                 comp_results=$(compgen -c "$partial")
-                echo "$comp_results" > "$response_pipe"
+                echo "$comp_results"
                 ;;
             *) 
-                echo "Unknown query: $query" > "$response_pipe" ;;
+                echo "Unknown query: $query" ;;
         esac
     done
 }
 
 jobu_start_of_prompt() {
+
+    history -a  # Append to history file so jobu can read latest commands
+
     export PS1
 
 
@@ -75,6 +90,7 @@ jobu_start_of_prompt() {
     kill "$child_pid" 2>/dev/null || true
     wait "$child_pid" 2>/dev/null || true  # Wait for process to actually exit
     set -m  # Re-enable job control
+    jobu_log "MAIN" "killed jobu server with exit code $ret"
 
     # This approach is based on test_3.sh
     JOBU_SHOULD_RESTORE=1

@@ -4,13 +4,12 @@ use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
 use futures::{FutureExt, StreamExt};
 use std::time::Instant;
 
-
 #[derive(Clone, Debug)]
 pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     AnimationTick,
-    Resize
+    Resize,
 }
 
 #[allow(dead_code)]

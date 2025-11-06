@@ -1,17 +1,19 @@
-
 use std::vec;
 
-use crossterm::{ event::{ KeyCode, KeyEvent, KeyModifiers,}};
-use ratatui::{
-    text::Line, widgets::{Paragraph, Wrap}, DefaultTerminal, Frame, TerminalOptions, Viewport
-};
-use ratatui::prelude::*;
-use tui_textarea::{CursorMove, TextArea};
+use crate::bash_coms::{BashClient, BashReq};
+use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use ansi_to_tui::IntoText;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::prelude::*;
+use ratatui::{
+    DefaultTerminal, Frame, TerminalOptions, Viewport,
+    text::Line,
+    widgets::{Paragraph, Wrap},
+};
 use std::fs;
 use std::path::PathBuf;
-use std::io::{Write, BufRead};
+use tui_textarea::{CursorMove, TextArea};
 
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
@@ -30,32 +32,6 @@ fn parse_bash_history() -> Vec<String> {
     }
 }
 
-struct BashClient {
-    request_pipe: PathBuf,
-    response_pipe: PathBuf,
-}
-
-impl BashClient {
-    fn on_tab(&self, current_input: &str) -> String {
-        {
-            let mut to_bash = std::fs::OpenOptions::new()
-                .write(true)
-                .open(&self.request_pipe)
-                .expect("Failed to open request pipe for writing");
-            writeln!(to_bash, "complete {}", current_input).expect("Failed to write TAB request to pipe");
-        }
-
-        let mut from_bash = std::fs::File::open(&self.response_pipe)
-            .expect("Failed to open response pipe for reading");
-        let mut reader = std::io::BufReader::new(&mut from_bash);
-
-        let mut response = String::new();
-        reader.read_line(&mut response).expect("Failed to read response from pipe");
-
-        response
-    }
-}
-
 pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
@@ -68,9 +44,9 @@ pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> Strin
     let terminal = ratatui::Terminal::with_options(backend, options).unwrap();
 
     let starting_cursor_position = crossterm::cursor::position().unwrap();
-    
+
     // get PS1 from environment
-    let ps1: String = std::env::var("PS1").unwrap_or( "default> ".to_string());
+    let ps1: String = std::env::var("PS1").unwrap_or("default> ".to_string());
     // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
     let ps1 = ps1.replace("\\[", "").replace("\\]", "");
     let ps1: Text = ps1.into_text().unwrap_or("bad ps1>".into());
@@ -78,71 +54,27 @@ pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> Strin
     // let ps1: Text = Text::from(ps1);
     // let ps1 = Text::from("default> ");
 
-
     log::debug!("Starting cursor position: {:?}", starting_cursor_position);
 
     // Parse the user's bash history into a vector of command strings.
     let history = parse_bash_history();
 
-    let server = BashClient {
-        request_pipe,
-        response_pipe,
-    };
+    let bash_client = BashClient::new(request_pipe, response_pipe).unwrap();
 
-    let mut app = App::new(ps1, starting_cursor_position.1, history, server);
+    let mut app = App::new(ps1, starting_cursor_position.1, history, bash_client);
     app.run(terminal).await;
 
     crossterm::terminal::disable_raw_mode().unwrap();
-        crossterm::execute!(
+    crossterm::execute!(
         std::io::stdout(),
-        crossterm::cursor::MoveTo(
-            starting_cursor_position.0,
-            starting_cursor_position.1
-        ),
+        crossterm::cursor::MoveTo(starting_cursor_position.0, starting_cursor_position.1),
         crossterm::cursor::Show
-
-    ).unwrap();
+    )
+    .unwrap();
 
     let command = app.buffer.lines().join("\n");
 
     command
-}
-
-struct CursorAnimation {
-    currentPos: (u16, u16),
-    prevPos: (u16, u16),
-    tick_of_change: u64,
-}
-
-impl CursorAnimation {
-
-    fn update_position(&mut self, new_pos: (u16, u16), tick: u64) {
-        if new_pos != self.currentPos {
-            self.tick_of_change = tick;
-            self.prevPos = self.currentPos;
-            self.currentPos = new_pos;
-        }
-    }
-
-    fn get_position(&self, tick: u64) -> (u16, u16) {
-        // interpolate between prevPos and currentPos based on time since tick_of_change
-        let ticks_since_change = tick.saturating_sub(self.tick_of_change);
-        let mut factor = (ticks_since_change as f32 * 0.008 * events::ANIMATION_TICK_RATE_MS as f32).min(1.0); // Adjust speed here
-        if (self.prevPos.0.abs_diff(self.currentPos.0) + self.prevPos.1.abs_diff(self.currentPos.1)) < 2 {
-            factor = 1.0;
-        }
-        let x = self.prevPos.0 as f32 + (self.currentPos.0 as f32 - self.prevPos.0 as f32) * factor;
-        let y = self.prevPos.1 as f32 + (self.currentPos.1 as f32 - self.prevPos.1 as f32) * factor;
-        (x as u16, y as u16)
-    }
-
-    fn get_intensity(&self, tick: u64) -> u8 {
-        let mult = 0.004 * events::ANIMATION_TICK_RATE_MS as f32;
-        let intensity_f32 = (tick as f32 * mult).sin() * 0.4 + 0.6;
-        let intensity   = (intensity_f32 * 255.0) as u8;
-        intensity
-        // 255
-    }
 }
 
 struct App<'a> {
@@ -161,7 +93,12 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(ps1: Text<'a>, num_rows_above_prompt: u16, history: Vec<String>, client: BashClient) -> Self {
+    fn new(
+        ps1: Text<'a>,
+        num_rows_above_prompt: u16,
+        history: Vec<String>,
+        client: BashClient,
+    ) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
 
@@ -170,14 +107,10 @@ impl<'a> App<'a> {
         let buffer = TextArea::default();
         let history_index = history.len();
         App {
-            is_running: true, 
+            is_running: true,
             buffer,
             animation_tick: 0,
-            cursor_animation: CursorAnimation {
-                currentPos: (0, 0),
-                prevPos: (0, 0),
-                tick_of_change: 0,
-            },
+            cursor_animation: CursorAnimation::new(),
             ps1: ps1.to_owned(),
             history,
             history_index,
@@ -195,9 +128,9 @@ impl<'a> App<'a> {
             terminal.draw(|f| self.ui(f)).unwrap();
             if !self.is_running {
                 break;
-            } 
+            }
 
-            if let Some(event) = events.receiver.recv().await{
+            if let Some(event) = events.receiver.recv().await {
                 match event {
                     events::Event::Key(event) => {
                         self.onkeypress(event);
@@ -215,18 +148,17 @@ impl<'a> App<'a> {
         }
         crossterm::execute!(
             std::io::stdout(),
-            crossterm::cursor::MoveTo(
-                0,
-                self.num_rows_above_prompt + self.num_rows_of_prompt + 1
-            ),
-        ).unwrap();
+            crossterm::cursor::MoveTo(0, self.num_rows_above_prompt + self.num_rows_of_prompt + 1),
+        )
+        .unwrap();
     }
 
     fn increase_num_rows_below_prompt(&mut self, lines_to_scroll: u16) {
         crossterm::execute!(
             std::io::stdout(),
             crossterm::terminal::ScrollUp(lines_to_scroll),
-        ).unwrap();
+        )
+        .unwrap();
         self.num_rows_above_prompt -= lines_to_scroll;
     }
 
@@ -245,42 +177,77 @@ impl<'a> App<'a> {
         single_quotes % 2 != 0 || double_quotes % 2 != 0
     }
 
-
     fn onkeypress(&mut self, key: KeyEvent) {
         match key {
-            KeyEvent{code: KeyCode::Backspace, modifiers: KeyModifiers::NONE, ..} => {
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
                 self.buffer.delete_char();
             }
-            KeyEvent{code: KeyCode::Backspace, modifiers: KeyModifiers::CONTROL, ..} => {
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
                 self.buffer.delete_word();
             }
-            KeyEvent{code: KeyCode::Char('h'), modifiers: KeyModifiers::CONTROL, ..} => {
+            KeyEvent {
+                code: KeyCode::Char('h'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
                 self.buffer.delete_word();
             }
-            KeyEvent{code: KeyCode::Delete, modifiers: KeyModifiers::CONTROL, ..} => {
+            KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
                 self.buffer.delete_next_word();
             }
-            KeyEvent{code: KeyCode::Delete, ..} => {
+            KeyEvent {
+                code: KeyCode::Delete,
+                ..
+            } => {
                 // self.buffer.move_cursor(CursorMove::Forward);
                 self.buffer.delete_next_char();
             }
-            KeyEvent{code: KeyCode::Left, ..} => {
+            KeyEvent {
+                code: KeyCode::Left,
+                ..
+            } => {
                 self.buffer.move_cursor(CursorMove::Back);
             }
-            KeyEvent{code: KeyCode::Right, ..} => {
+            KeyEvent {
+                code: KeyCode::Right,
+                ..
+            } => {
                 self.buffer.move_cursor(CursorMove::Forward);
             }
-            KeyEvent{code: KeyCode::Home, ..} => {
+            KeyEvent {
+                code: KeyCode::Home,
+                ..
+            } => {
                 self.buffer.move_cursor(CursorMove::Head);
             }
-            KeyEvent{code: KeyCode::End, ..} => {
+            KeyEvent {
+                code: KeyCode::End, ..
+            } => {
                 self.buffer.move_cursor(CursorMove::End);
             }
-            KeyEvent{code: KeyCode::Up, ..} => {
+            KeyEvent {
+                code: KeyCode::Up, ..
+            } => {
                 let (cursor_row, _) = self.buffer.cursor();
                 let new_hist_index = self.history_index.saturating_sub(1);
                 if cursor_row == 0 && new_hist_index < self.history.len() {
                     // Replace current buffer with last history entry
+                    log::debug!(
+                        "Up key: Replacing buffer with history index {}",
+                        new_hist_index
+                    );
                     let new_command = self.history[new_hist_index].clone();
                     self.buffer = TextArea::from(vec![new_command.as_str()]);
                     self.buffer.move_cursor(CursorMove::End);
@@ -289,10 +256,19 @@ impl<'a> App<'a> {
                     self.buffer.move_cursor(CursorMove::Up);
                 }
             }
-            KeyEvent{code: KeyCode::Down, ..} => {
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } => {
                 let (cursor_row, _) = self.buffer.cursor();
                 let new_hist_index = self.history_index.saturating_add(1);
-                if cursor_row + 1 >= self.buffer.lines().len() && new_hist_index < self.history.len() {
+                if cursor_row + 1 >= self.buffer.lines().len()
+                    && new_hist_index < self.history.len()
+                {
+                    log::debug!(
+                        "Down key: Replacing buffer with history index {}",
+                        new_hist_index
+                    );
                     let new_command = self.history[new_hist_index].clone();
                     self.buffer = TextArea::from(vec![new_command.as_str()]);
                     self.buffer.move_cursor(CursorMove::End);
@@ -301,7 +277,10 @@ impl<'a> App<'a> {
                     self.buffer.move_cursor(CursorMove::Down);
                 }
             }
-            KeyEvent{code: KeyCode::Enter, ..} => {
+            KeyEvent {
+                code: KeyCode::Enter,
+                ..
+            } => {
                 if self.is_multiline_mode {
                     self.buffer.insert_newline();
                 } else {
@@ -314,51 +293,89 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            KeyEvent{code: KeyCode::Tab, ..} => {
-                let resp = self.client.on_tab(self.buffer.lines().join("\n").as_str());
-                self.buffer.insert_str(&resp);
+            KeyEvent {
+                code: KeyCode::Tab, ..
+            } => {
+                // let resp = self.client.on_tab(self.buffer.lines().join("\n").as_str());
+                // self.buffer.insert_str(&resp);
             }
-            KeyEvent{code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL, ..} => {
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
                 self.buffer = TextArea::from(vec!["#Ctrl+C pressed"]);
                 self.is_running = false;
             }
-            KeyEvent{code: KeyCode::Char(c), ..} => {
+            KeyEvent {
+                code: KeyCode::Char(c),
+                ..
+            } => {
                 self.buffer.insert_char(c);
             }
             _ => {}
         }
+
+        let which_response: Option<String> = self
+            .client
+            .get_request(BashReq::Which, self.buffer.lines().join("\n").as_str());
+        log::debug!(
+            "Which response: {}",
+            which_response.unwrap_or("NONE".to_owned())
+        );
     }
 
     fn get_ps1_lines(ps1: Text) -> Vec<Line> {
         let lines = ps1.lines;
-        lines.into_iter().map(|line| {
-            let spans: Vec<Span> = line.spans.into_iter().map(|span| {
-                if span.content.contains("JOBU_TIME_XXX") {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap();
-                    let secs = now.as_secs();
-                    let millis = now.subsec_millis();
-                    let hours = (secs / 3600) % 24;
-                    let minutes = (secs / 60) % 60;
-                    let seconds = secs % 60;
-                    let time_str = format!("{:02}:{:02}:{:03}.{:03}", hours, minutes, seconds, millis);
-                    Span::styled(span.content.replace("JOBU_TIME_XXX", &time_str), span.style)
-                } else {
-                    span
-                }
-            }).collect();
-            Line::from(spans)
-        }).collect()
+        lines
+            .into_iter()
+            .map(|line| {
+                let spans: Vec<Span> = line
+                    .spans
+                    .into_iter()
+                    .map(|span| {
+                        if span.content.contains("JOBU_TIME_XXX") {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap();
+                            let secs = now.as_secs();
+                            let millis = now.subsec_millis();
+                            let hours = (secs / 3600) % 24;
+                            let minutes = (secs / 60) % 60;
+                            let seconds = secs % 60;
+                            let time_str =
+                                format!("{:02}:{:02}:{:03}.{:03}", hours, minutes, seconds, millis);
+                            Span::styled(
+                                span.content.replace("JOBU_TIME_XXX", &time_str),
+                                span.style,
+                            )
+                        } else {
+                            span
+                        }
+                    })
+                    .collect();
+                Line::from(spans)
+            })
+            .collect()
     }
 
     fn ui(&mut self, f: &mut Frame) {
         let full_terminal_area = f.area();
-        let [_, area] = Layout::vertical([Constraint::Length(self.num_rows_above_prompt), Constraint::Fill(1)]).areas(full_terminal_area);
+        let [_, area] = Layout::vertical([
+            Constraint::Length(self.num_rows_above_prompt),
+            Constraint::Fill(1),
+        ])
+        .areas(full_terminal_area);
 
         let mut output_lines: Vec<Line> = Self::get_ps1_lines(self.ps1.clone());
 
-        self.cursor_animation.update_position((self.buffer.cursor().0.try_into().unwrap(), self.buffer.cursor().1.try_into().unwrap()), self.animation_tick);
+        self.cursor_animation.update_position(
+            (
+                self.buffer.cursor().0.try_into().unwrap(),
+                self.buffer.cursor().1.try_into().unwrap(),
+            ),
+            self.animation_tick,
+        );
 
         let (cursor_row, cursor_col) = self.cursor_animation.get_position(self.animation_tick);
         let cursor_row = cursor_row as usize;
@@ -369,7 +386,7 @@ impl<'a> App<'a> {
             let new_line = if i == 0 {
                 // Combine the last PS1 line with the first buffer line
                 let last_ps1_line = output_lines.pop().unwrap_or_else(|| Line::from(""));
-                
+
                 if cursor_row == 0 {
                     // TODO: unicode width and all that
                     cursor_col += last_ps1_line.width();
@@ -382,17 +399,21 @@ impl<'a> App<'a> {
             };
 
             let final_line = if i == cursor_row && self.is_running {
-                let color = ratatui::style::Color::Rgb(cursor_intensity, cursor_intensity, cursor_intensity);
+                let color = ratatui::style::Color::Rgb(
+                    cursor_intensity,
+                    cursor_intensity,
+                    cursor_intensity,
+                );
                 let cursor_style = ratatui::style::Style::new().bg(color);
 
                 // Split the line at cursor position and apply cursor style
                 let mut styled_spans = Vec::new();
                 let mut current_col = 0;
-                
+
                 for span in new_line.spans {
                     let span_text = &span.content;
                     let span_len = span_text.chars().count();
-                    
+
                     if current_col + span_len <= cursor_col {
                         // Cursor is after this span
                         styled_spans.push(span);
@@ -404,37 +425,38 @@ impl<'a> App<'a> {
                         // Cursor is within this span
                         let chars: Vec<char> = span_text.chars().collect();
                         let cursor_pos_in_span = cursor_col - current_col;
-                        
+
                         // Text before cursor
                         if cursor_pos_in_span > 0 {
                             let before: String = chars[..cursor_pos_in_span].iter().collect();
                             styled_spans.push(Span::styled(before, span.style));
                         }
-                        
+
                         // Character at cursor position
                         if cursor_pos_in_span < chars.len() {
                             let cursor_char = chars[cursor_pos_in_span].to_string();
-                            styled_spans.push(Span::styled(cursor_char, span.style.patch(cursor_style)));
+                            styled_spans
+                                .push(Span::styled(cursor_char, span.style.patch(cursor_style)));
                         } else {
                             // Cursor at end of line - add a space with cursor style
                             styled_spans.push(Span::styled(" ", cursor_style));
                         }
-                        
+
                         // Text after cursor
                         if cursor_pos_in_span + 1 < chars.len() {
                             let after: String = chars[cursor_pos_in_span + 1..].iter().collect();
                             styled_spans.push(Span::styled(after, span.style));
                         }
-                        
+
                         current_col += span_len;
                     }
                 }
-                
+
                 // If cursor is at the very end of the line, add a space with cursor style
                 if cursor_col >= current_col {
                     styled_spans.push(Span::styled(" ", cursor_style));
                 }
-                
+
                 Line::from(styled_spans)
             } else {
                 new_line
@@ -447,7 +469,8 @@ impl<'a> App<'a> {
 
         let num_lines = output.line_count(area.width) as u16;
         if num_lines + self.num_rows_above_prompt > full_terminal_area.height {
-            let lines_to_scroll = num_lines + self.num_rows_above_prompt - full_terminal_area.height;
+            let lines_to_scroll =
+                num_lines + self.num_rows_above_prompt - full_terminal_area.height;
             self.increase_num_rows_below_prompt(lines_to_scroll);
         }
 
