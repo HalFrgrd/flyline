@@ -32,7 +32,7 @@ impl BashClient {
 
     pub fn get_request(&mut self, req_type: BashReq, argument: &str) -> Option<String> {
         if let Some(cached_response) = self.cache.get(&(req_type.clone(), argument.to_string())) {
-            log::debug!("Cache hit for {:?} with argument '{}'", req_type, argument);
+            // log::debug!("Cache hit for {:?} with argument '{}'", req_type, argument);
             return cached_response.clone();
         }
 

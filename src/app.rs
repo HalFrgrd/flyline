@@ -316,13 +316,6 @@ impl<'a> App<'a> {
             _ => {}
         }
 
-        let which_response: Option<String> = self
-            .client
-            .get_request(BashReq::Which, self.buffer.lines().join("\n").as_str());
-        log::debug!(
-            "Which response: {}",
-            which_response.unwrap_or("NONE".to_owned())
-        );
     }
 
     fn get_ps1_lines(ps1: Text) -> Vec<Line> {
@@ -392,7 +385,21 @@ impl<'a> App<'a> {
                     cursor_col += last_ps1_line.width();
                 }
                 let mut combined_spans = last_ps1_line.spans;
-                combined_spans.push(Span::raw(line.clone()));
+
+                let space_pos = line.find(' ').unwrap_or(line.len());
+                let (first_word, rest) = line.split_at(space_pos);
+
+                let is_first_word_recognized = self.client.get_request(BashReq::Which, first_word).is_some();
+
+                let first_word_style = if is_first_word_recognized {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::Red)
+                };
+
+                combined_spans.push(Span::styled(first_word.to_string(), first_word_style));
+                combined_spans.push(Span::raw(rest.to_string()));
+
                 Line::from(combined_spans)
             } else {
                 Line::from(line.clone())
