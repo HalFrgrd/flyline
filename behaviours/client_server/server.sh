@@ -1,6 +1,10 @@
 #!/bin/bash
 
-coproc MYCOPROC { bash client.sh; }
+coproc MYCOPROC {
+    exec 3<&0 4>&1
+    exec </dev/tty >/dev/tty
+    bash client.sh;
+    }
 
 read -r query <&"${MYCOPROC[0]}"
 

@@ -77,9 +77,17 @@ jobu_start_of_prompt() {
     JOBU_COMMAND="unbound"
     JOBU_BACKUP_STTY=$(stty -g)
 
+    stty -echo -icanon isig intr ''
+
     coproc JOBUINSTANCE {
         jobu_log "MAIN" "Starting Jobu instance..."
-        "$JOBU_EXEC_PATH" get-command;
+        # Put the pipes on fd 3 (read from bash server) and fd 4 (write to bash server)
+        # while using /dev/tty for actual terminal I/O
+
+        exec 3<&0 4>&1
+        exec </dev/tty >/dev/tty
+
+        "$JOBU_EXEC_PATH" get-command 
         jobu_log "MAIN" "Finished Jobu instance."
 
         }

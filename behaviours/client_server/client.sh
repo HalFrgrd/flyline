@@ -5,8 +5,6 @@
 # we still want to use them for communication with the server, but we also want
 # to be able to read and write to the terminal.
 
-exec 3<&0 4>&1
-exec </dev/tty >/dev/tty
 
 stty -echo -icanon isig intr ''
 

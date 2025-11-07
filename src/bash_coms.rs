@@ -1,4 +1,5 @@
-use std::io::{BufRead, BufReader, BufWriter, Write, Read, Stdout, Stdin};
+use std::io::{BufRead, BufReader, BufWriter, Write, Read};
+use std::fs::File;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BashReq {
@@ -8,19 +9,28 @@ pub enum BashReq {
 }
 
 pub struct BashClient {
-    request_writer: BufWriter<Stdout>,
-    response_reader: BufReader<Stdin>,
+    request_writer: BufWriter<File>,
+    response_reader: BufReader<File>,
 
     cache: std::collections::HashMap<(BashReq, String), Option<String>>,
 }
 
 impl BashClient {
-    pub fn new(request_pipe: Stdout, response_pipe: Stdin) -> std::io::Result<Self> {
+    pub fn new(request_pipe: File, response_pipe: File) -> std::io::Result<Self> {
         Ok(BashClient {
             request_writer: BufWriter::new(request_pipe),
             response_reader: BufReader::new(response_pipe),
             cache: std::collections::HashMap::new(),
         })
+    }
+
+    pub fn test_connection(&mut self) {
+        self.request_writer.write_all(b"PING\n").unwrap();
+        self.request_writer.flush().unwrap();
+
+        let mut response = String::new();
+        self.response_reader.read_line(&mut response).unwrap();
+        log::info!("BashClient test_connection response: {}", response.trim());
     }
 
     pub fn get_request(&mut self, req_type: BashReq, argument: &str) -> Option<String> {

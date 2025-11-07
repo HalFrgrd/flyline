@@ -15,6 +15,7 @@ use ratatui::{
 use std::fs;
 use tui_textarea::{CursorMove, TextArea};
 use std::io::{BufRead, BufReader, Write, Read};
+use std::os::unix::io::FromRawFd;
 
 
 /// Read the user's bash history file into a Vec<String>.
@@ -35,34 +36,23 @@ fn parse_bash_history() -> Vec<String> {
 }
 
 
-// fn configure_fds() -> (std::fs::File, std::fs::File) {
-//     // Assert that stdin and stdout are not TTYs
-//     assert!(!std::io::stdin().is_terminal(), "stdin must not be a TTY");
-//     assert!(!std::io::stdout().is_terminal(), "stdout must not be a TTY");
+fn configure_fds() -> (std::fs::File, std::fs::File) {
+    // Assert that stdin and stdout are not TTYs
+    println!("stdout is a ttty: {}", std::io::stdout().is_terminal());
+    assert!(std::io::stdin().is_terminal(), "stdin must be a TTY");
+    assert!(std::io::stdout().is_terminal(), "stdout must be a TTY");
+    assert!(std::io::stderr().is_terminal(), "stderr must be a TTY");
 
-//     // let server_response_fd = std::io::stdin();
-//     // Redirect stdin and stdout to /dev/tty to allow terminal interaction
-//     let tty = std::fs::OpenOptions::new()
-//         .read(true)
-//         .write(true)
-//         .open("/dev/tty")
-//         .expect("Failed to open /dev/tty");
+    // Open file descriptors 3 and 4 for server communication
+    let request_pipe = unsafe {
+        std::fs::File::from_raw_fd(4)
+    };
+    let response_pipe = unsafe {
+        std::fs::File::from_raw_fd(3)
+    };
+    (request_pipe, response_pipe)
 
-//     let server_request_fd = unsafe {
-//         std::fs::File::from_raw_fd(libc::dup(libc::STDOUT_FILENO))
-//     };
-
-//     let server_response_fd = unsafe {
-//         std::fs::File::from_raw_fd(libc::dup(libc::STDIN_FILENO))
-//     };
-
-//     unsafe {
-//         libc::dup2(tty.as_raw_fd(), libc::STDIN_FILENO);
-//         libc::dup2(tty.as_raw_fd(), libc::STDOUT_FILENO);
-//     }
-//     (server_request_fd, server_response_fd)
-
-// }
+}
 
 pub async fn get_command() -> String {
     let options = TerminalOptions {
@@ -74,40 +64,21 @@ pub async fn get_command() -> String {
 
     log::info!("Process ID: {}", std::process::id());
     
-    // Use stdout directly for requests instead of duplicating
-    let mut request_pipe = std::io::stdout();
-    let response_pipe = std::io::stdin();
-
-
-
-    
-    // println!("PONG");
-    request_pipe.write_all(b"PING\n").expect("Failed to write to request pipe");
-    request_pipe.flush().expect("Failed to flush request pipe");
-
-    // Read response from server
-    let mut buffer = String::new();
-    let mut reader = BufReader::new(std::io::stdin());
-    match reader.read_line(&mut buffer) {
-        Ok(_) => {
-            log::debug!("Received response: {}", buffer.trim());
-        }
-        Err(e) => {
-            log::error!("Failed to read response: {}", e);
-        }
-    }
-
+    let (request_pipe, response_pipe) = configure_fds();
     // return String::new();
+    // std::thread::sleep(std::time::Duration::from_secs(10));
+
+    let mut bash_client = BashClient::new(request_pipe, response_pipe).unwrap();
+    bash_client.test_connection();
 
 
-    // std::thread::sleep(std::time::Duration::from_secs(1));
+    // log::debug!("Enabling raw mode");
 
-    log::debug!("Enabling raw mode");
+    // Since stdin/stdout are pipes, crossterm should automatically detect stderr as the terminal
+    // crossterm::terminal::enable_raw_mode().expect("problem enabling raw mode");
 
-
-    crossterm::terminal::enable_raw_mode().expect("problem enabling raw mode");
-    log::debug!("Raw mode enabled");
-    let backend = ratatui::backend::CrosstermBackend::new(std::io::stderr());
+    // log::debug!("Raw mode enabled");
+    let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     log::debug!("Ratatui backend created");
     let terminal = ratatui::Terminal::with_options(backend, options).unwrap();
 
@@ -126,8 +97,6 @@ pub async fn get_command() -> String {
 
     // Parse the user's bash history into a vector of command strings.
     let history = parse_bash_history();
-
-    let bash_client = BashClient::new(request_pipe, response_pipe).unwrap();
 
     let mut app = App::new(ps1, starting_cursor_position.1, history, bash_client);
     app.run(terminal).await;
@@ -189,7 +158,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub async fn run(&mut self, mut terminal: Terminal<CrosstermBackend<Stderr>>) {
+    pub async fn run(&mut self, mut terminal: DefaultTerminal) {
         // Update application state here
         let mut events = events::EventHandler::new();
         loop {
