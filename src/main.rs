@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use simple_logging;
@@ -20,10 +19,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Activate,
-    GetCommand {
-        request_pipe: PathBuf,
-        response_pipe: PathBuf,
-    },
+    GetCommand,
 }
 
 fn main() {
@@ -38,18 +34,14 @@ fn main() {
         Commands::Activate => {
             run_activate();
         }
-        Commands::GetCommand {
-            request_pipe,
-            response_pipe,
-        } => {
+        Commands::GetCommand => {
             log::info!("Starting GetCommand operation");
             let runtime = build_runtime();
 
-            let command = runtime.block_on(app::get_command(request_pipe, response_pipe));
-            log::debug!("Retrieved command: {}", command);
-            // print on stderr because we will be drawing on stdout
-            eprintln!("{}", command);
-            println!("\n");
+            let command = runtime.block_on(app::get_command());
+            // log::debug!("Retrieved command: {}", command);
+            // eprintln!("{}", command);
+            // println!("\n");
             log::info!("GetCommand operation completed");
         }
     }
@@ -64,7 +56,7 @@ fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
     let log_file_path = PathBuf::from(home_dir).join("jobu.logs");
 
     // Initialize simple-logging to write to file
-    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Debug)?;
+    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Trace)?;
 
     log::info!(
         "Jobu logging initialized, output will be logged to: {}",

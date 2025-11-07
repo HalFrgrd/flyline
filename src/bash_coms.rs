@@ -1,31 +1,24 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write, Read};
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader, BufWriter, Write, Read, Stdout, Stdin};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BashReq {
     Complete,
     Which,
+    SetCmd,
 }
 
 pub struct BashClient {
-    request_writer: BufWriter<File>,
-    response_reader: BufReader<File>,
+    request_writer: BufWriter<Stdout>,
+    response_reader: BufReader<Stdin>,
 
     cache: std::collections::HashMap<(BashReq, String), Option<String>>,
 }
 
 impl BashClient {
-    pub fn new(request_pipe: PathBuf, response_pipe: PathBuf) -> std::io::Result<Self> {
-        let request_file = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&request_pipe)?;
-
-        let response_file = std::fs::File::open(&response_pipe)?;
-
+    pub fn new(request_pipe: Stdout, response_pipe: Stdin) -> std::io::Result<Self> {
         Ok(BashClient {
-            request_writer: BufWriter::new(request_file),
-            response_reader: BufReader::new(response_file),
+            request_writer: BufWriter::new(request_pipe),
+            response_reader: BufReader::new(response_pipe),
             cache: std::collections::HashMap::new(),
         })
     }
@@ -65,6 +58,7 @@ impl BashClient {
         let request_line = match req_type {
             BashReq::Complete => format!("COMPLETE {}\n", argument),
             BashReq::Which => format!("WHICH {}\n", argument),
+            BashReq::SetCmd => format!("SETCMD {}\n", argument),
         };
 
         self.request_writer.write_all(request_line.as_bytes())?;

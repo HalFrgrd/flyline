@@ -1,3 +1,4 @@
+use std::io::{IsTerminal, Stderr};
 use std::vec;
 
 use crate::bash_coms::{BashClient, BashReq};
@@ -12,8 +13,9 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 use std::fs;
-use std::path::PathBuf;
 use tui_textarea::{CursorMove, TextArea};
+use std::io::{BufRead, BufReader, Write, Read};
+
 
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
@@ -32,15 +34,81 @@ fn parse_bash_history() -> Vec<String> {
     }
 }
 
-pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> String {
+
+// fn configure_fds() -> (std::fs::File, std::fs::File) {
+//     // Assert that stdin and stdout are not TTYs
+//     assert!(!std::io::stdin().is_terminal(), "stdin must not be a TTY");
+//     assert!(!std::io::stdout().is_terminal(), "stdout must not be a TTY");
+
+//     // let server_response_fd = std::io::stdin();
+//     // Redirect stdin and stdout to /dev/tty to allow terminal interaction
+//     let tty = std::fs::OpenOptions::new()
+//         .read(true)
+//         .write(true)
+//         .open("/dev/tty")
+//         .expect("Failed to open /dev/tty");
+
+//     let server_request_fd = unsafe {
+//         std::fs::File::from_raw_fd(libc::dup(libc::STDOUT_FILENO))
+//     };
+
+//     let server_response_fd = unsafe {
+//         std::fs::File::from_raw_fd(libc::dup(libc::STDIN_FILENO))
+//     };
+
+//     unsafe {
+//         libc::dup2(tty.as_raw_fd(), libc::STDIN_FILENO);
+//         libc::dup2(tty.as_raw_fd(), libc::STDOUT_FILENO);
+//     }
+//     (server_request_fd, server_response_fd)
+
+// }
+
+pub async fn get_command() -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
     };
-    let mut stdout = std::io::stdout();
-    std::io::Write::flush(&mut stdout).unwrap();
-    crossterm::terminal::enable_raw_mode().unwrap();
-    let backend = ratatui::backend::CrosstermBackend::new(stdout);
+
+    // println!("this should go to server");
+
+    log::info!("Process ID: {}", std::process::id());
+    
+    // Use stdout directly for requests instead of duplicating
+    let mut request_pipe = std::io::stdout();
+    let response_pipe = std::io::stdin();
+
+
+
+    
+    // println!("PONG");
+    request_pipe.write_all(b"PING\n").expect("Failed to write to request pipe");
+    request_pipe.flush().expect("Failed to flush request pipe");
+
+    // Read response from server
+    let mut buffer = String::new();
+    let mut reader = BufReader::new(std::io::stdin());
+    match reader.read_line(&mut buffer) {
+        Ok(_) => {
+            log::debug!("Received response: {}", buffer.trim());
+        }
+        Err(e) => {
+            log::error!("Failed to read response: {}", e);
+        }
+    }
+
+    // return String::new();
+
+
+    // std::thread::sleep(std::time::Duration::from_secs(1));
+
+    log::debug!("Enabling raw mode");
+
+
+    crossterm::terminal::enable_raw_mode().expect("problem enabling raw mode");
+    log::debug!("Raw mode enabled");
+    let backend = ratatui::backend::CrosstermBackend::new(std::io::stderr());
+    log::debug!("Ratatui backend created");
     let terminal = ratatui::Terminal::with_options(backend, options).unwrap();
 
     let starting_cursor_position = crossterm::cursor::position().unwrap();
@@ -66,7 +134,7 @@ pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> Strin
 
     crossterm::terminal::disable_raw_mode().unwrap();
     crossterm::execute!(
-        std::io::stdout(),
+        std::io::stderr(),
         crossterm::cursor::MoveTo(starting_cursor_position.0, starting_cursor_position.1),
         crossterm::cursor::Show
     )
@@ -121,7 +189,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub async fn run(&mut self, mut terminal: DefaultTerminal) {
+    pub async fn run(&mut self, mut terminal: Terminal<CrosstermBackend<Stderr>>) {
         // Update application state here
         let mut events = events::EventHandler::new();
         loop {
@@ -147,7 +215,7 @@ impl<'a> App<'a> {
             }
         }
         crossterm::execute!(
-            std::io::stdout(),
+            std::io::stderr(),
             crossterm::cursor::MoveTo(0, self.num_rows_above_prompt + self.num_rows_of_prompt + 1),
         )
         .unwrap();
@@ -155,7 +223,7 @@ impl<'a> App<'a> {
 
     fn increase_num_rows_below_prompt(&mut self, lines_to_scroll: u16) {
         crossterm::execute!(
-            std::io::stdout(),
+            std::io::stderr(),
             crossterm::terminal::ScrollUp(lines_to_scroll),
         )
         .unwrap();
@@ -289,6 +357,8 @@ impl<'a> App<'a> {
                         self.buffer.insert_newline();
                         // self.increase_num_rows_below_prompt();
                     } else {
+                        let resp = self.client.get_request(BashReq::SetCmd, self.buffer.lines().join("\n").as_str());
+                        log::debug!("SetCmd response: {:?}", resp);
                         self.is_running = false;
                     }
                 }
