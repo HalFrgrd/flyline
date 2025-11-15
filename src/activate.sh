@@ -26,6 +26,16 @@ run_jobu_bash_server(){
     # Jobu will communicate with this process during cle for stuff like
     # autocompletions and `which` lookups.
 
+    jobu_log "SERVER" "Server started - Parent PID: $$, Coproc PID: $BASHPID"
+
+    # Show open file descriptors for debugging
+    jobu_log "SERVER" "Open file descriptors at server start:"
+    for fd in /proc/$BASHPID/fd/*; do
+        if [[ -r "$fd" ]]; then
+            jobu_log "SERVER" "FD $(basename "$fd"): $(readlink "$fd" 2>/dev/null || echo "unreadable")"
+        fi
+    done
+
     jobu_log "SERVER" "Jobu bash server started, waiting for requests..."
 
     while read -r query; do
@@ -61,6 +71,7 @@ run_jobu_bash_server(){
                 echo "RESP_BODY=done"
                 ;;
             "PING")
+                jobu_log "SERVER" "Sending pong"
                 echo "PONG"
                 ;;
             *)
@@ -77,26 +88,42 @@ jobu_start_of_prompt() {
     JOBU_COMMAND="unbound"
     JOBU_BACKUP_STTY=$(stty -g)
 
-    stty -echo -icanon isig intr ''
+    jobu_log "MAIN" "my pid is $$"
 
-    coproc JOBUINSTANCE {
-        jobu_log "MAIN" "Starting Jobu instance..."
-        # Put the pipes on fd 3 (read from bash server) and fd 4 (write to bash server)
-        # while using /dev/tty for actual terminal I/O
+    coproc -a 30 -b 31 BASHSERVER {
+        run_jobu_bash_server;
+        # jobu_log "SERVER" "Finished bashserver instance."
+    }
 
-        exec 3<&0 4>&1
-        exec </dev/tty >/dev/tty
+    jobu_log "MAIN" "my pid is now $$"
 
-        "$JOBU_EXEC_PATH" get-command 
-        jobu_log "MAIN" "Finished Jobu instance."
+        for fd in /proc/$BASHPID/fd/*; do
+        if [[ -r "$fd" ]]; then
+            jobu_log "MAIN" "FD $(basename "$fd"): $(readlink "$fd" 2>/dev/null || echo "unreadable")"
+        fi
+    done
 
-        }
 
-    run_jobu_bash_server <&$"${JOBUINSTANCE[0]}" >&$"${JOBUINSTANCE[1]}"
-    jobu_log "MAIN" "finished running jobu server"
+    jobu_log "MAIN" "Started bashserver coproc with PID ${BASHSERVER_PID}"
 
-    wait "${JOBUINSTANCE_PID}"
+    TEMP_FILE=$(mktemp)
+    echo "Hello from file descriptor 32!" > "$TEMP_FILE"
+    
+    # Run jobu with the coproc file descriptors directly
+    # fd 30 = read from bash server, fd 31 = write to bash server
+    # exec 30<&"${BASHSERVER[0]}" 31>&"${BASHSERVER[1]}"
 
+    echo "PING" >&31
+    read response <&30
+    jobu_log "MAIN" "Ping response: $response"
+
+    exec 32< "$TEMP_FILE"    
+    "$JOBU_EXEC_PATH" get-command
+    # exec 30<&-
+
+    jobu_log "MAIN" "finished running jobu"
+
+    wait "${BASHSERVER_PID}"
 
     # This approach is based on test_3.sh
     JOBU_SHOULD_RESTORE=1

@@ -1,5 +1,6 @@
 
 use clap::{Parser, Subcommand};
+use libc::exit;
 use simple_logging;
 
 mod app;
@@ -22,7 +23,15 @@ enum Commands {
     GetCommand,
 }
 
+use core::panic;
+use std::fs::File;
+use std::io::{self, Read};
+use std::os::unix::io::FromRawFd;
+
 fn main() {
+
+
+
     // Initialize logging first
     if let Err(e) = setup_logging() {
         eprintln!("Failed to setup logging: {}", e);
@@ -35,6 +44,7 @@ fn main() {
             run_activate();
         }
         Commands::GetCommand => {
+
             log::info!("Starting GetCommand operation");
             let runtime = build_runtime();
 

@@ -25,8 +25,12 @@ impl BashClient {
     }
 
     pub fn test_connection(&mut self) {
+        log::debug!("Testing BashClient connection...");
         self.request_writer.write_all(b"PING\n").unwrap();
+        log::debug!("Sent PING");
+        std::thread::sleep(std::time::Duration::from_secs(5));
         self.request_writer.flush().unwrap();
+        log::debug!("Flushed request_writer");
 
         let mut response = String::new();
         self.response_reader.read_line(&mut response).unwrap();

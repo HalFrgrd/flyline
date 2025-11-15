@@ -1,20 +1,15 @@
 #!/bin/bash
 
-coproc MYCOPROC {
-    exec 3<&0 4>&1
-    exec </dev/tty >/dev/tty
-    bash client.sh;
-    }
 
-read -r query <&"${MYCOPROC[0]}"
+read -r query
 
 if [[ "$query" == "FOO" ]]; then
-    echo "BAR" >&"${MYCOPROC[1]}"
+    echo "BAR"
     echo "bash server can still write to terminal if not careful. pid=$$"
 else
-    echo "Unexpected query: $query" >&"${MYCOPROC[1]}"
+    echo "Unexpected query: $query"
 fi
 
-wait "${MYCOPROC_PID}"
+sleep 1
 
 echo "bash server exited"

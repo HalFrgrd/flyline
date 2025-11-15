@@ -5,13 +5,15 @@
 # we still want to use them for communication with the server, but we also want
 # to be able to read and write to the terminal.
 
+coproc MYCOPROC {
+    "$(dirname "$0")/server.sh";
+    }
 
-stty -echo -icanon isig intr ''
-
+coprocpid=${MYCOPROC_PID}
 echo "client direct to terminal: hey there from client pid $$"
-echo "FOO" >&4
+echo "FOO" >&${MYCOPROC[1]}
 
-read -r response <&3
+read -r response <&${MYCOPROC[0]}
 echo "client received response from server: $response"
 
 while true; do
@@ -23,4 +25,5 @@ while true; do
         break
     fi
 done
-    
+echo "coprocpid=$coprocpid"
+wait "$coprocpid"

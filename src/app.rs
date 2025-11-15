@@ -43,12 +43,49 @@ fn configure_fds() -> (std::fs::File, std::fs::File) {
     assert!(std::io::stdout().is_terminal(), "stdout must be a TTY");
     assert!(std::io::stderr().is_terminal(), "stderr must be a TTY");
 
+
+
+    use std::fs;
+    use std::os::unix::io::AsRawFd;
+    
+    // Check if fd 30 and 31 exist
+    for fd_num in [30, 31, 32] {
+        match fs::metadata(format!("/proc/self/fd/{}", fd_num)) {
+            Ok(_) => {
+                log::info!("FD {} exists and is accessible", fd_num);
+                
+                // Try to get file descriptor info
+                if let Ok(file) = fs::File::open(format!("/proc/self/fd/{}", fd_num)) {
+                    log::info!("FD {} opened successfully, raw fd: {}", fd_num, file.as_raw_fd());
+                }
+            }
+            Err(e) => {
+                log::error!("FD {} not accessible: {}", fd_num, e);
+            }
+        }
+    }
+    
+    // List all available file descriptors
+    match fs::read_dir("/proc/self/fd") {
+        Ok(entries) => {
+            let fds: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            log::info!("Available file descriptors: {:?}", fds);
+        }
+        Err(e) => {
+            log::error!("Cannot read /proc/self/fd: {}", e);
+        }
+    }
+
+
     // Open file descriptors 3 and 4 for server communication
     let request_pipe = unsafe {
-        std::fs::File::from_raw_fd(4)
+        std::fs::File::from_raw_fd(31)
     };
     let response_pipe = unsafe {
-        std::fs::File::from_raw_fd(3)
+        std::fs::File::from_raw_fd(30)
     };
     (request_pipe, response_pipe)
 
@@ -60,24 +97,22 @@ pub async fn get_command() -> String {
         viewport: Viewport::Fullscreen,
     };
 
-    // println!("this should go to server");
+
 
     log::info!("Process ID: {}", std::process::id());
     
+    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
+
     let (request_pipe, response_pipe) = configure_fds();
-    // return String::new();
-    // std::thread::sleep(std::time::Duration::from_secs(10));
 
     let mut bash_client = BashClient::new(request_pipe, response_pipe).unwrap();
     bash_client.test_connection();
 
+    log::debug!("Enabling raw mode");
 
-    // log::debug!("Enabling raw mode");
+    crossterm::terminal::enable_raw_mode().expect("problem enabling raw mode");
 
-    // Since stdin/stdout are pipes, crossterm should automatically detect stderr as the terminal
-    // crossterm::terminal::enable_raw_mode().expect("problem enabling raw mode");
-
-    // log::debug!("Raw mode enabled");
+    log::debug!("Raw mode enabled");
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     log::debug!("Ratatui backend created");
     let terminal = ratatui::Terminal::with_options(backend, options).unwrap();
