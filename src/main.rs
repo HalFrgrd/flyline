@@ -1,6 +1,6 @@
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use libc::exit;
 use simple_logging;
 
 mod app;
@@ -20,18 +20,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Activate,
-    GetCommand,
+    GetCommand {
+        request_pipe: PathBuf,
+        response_pipe: PathBuf,
+    },
 }
 
-use core::panic;
-use std::fs::File;
-use std::io::{self, Read};
-use std::os::unix::io::FromRawFd;
-
 fn main() {
-
-
-
     // Initialize logging first
     if let Err(e) = setup_logging() {
         eprintln!("Failed to setup logging: {}", e);
@@ -43,15 +38,16 @@ fn main() {
         Commands::Activate => {
             run_activate();
         }
-        Commands::GetCommand => {
-
+        Commands::GetCommand {
+            request_pipe,
+            response_pipe,
+        } => {
             log::info!("Starting GetCommand operation");
             let runtime = build_runtime();
 
-            let command = runtime.block_on(app::get_command());
-            // log::debug!("Retrieved command: {}", command);
-            // eprintln!("{}", command);
-            // println!("\n");
+            let command = runtime.block_on(app::get_command(request_pipe, response_pipe));
+            log::debug!("Retrieved command: {}", command);
+            println!("\n");
             log::info!("GetCommand operation completed");
         }
     }
@@ -66,7 +62,7 @@ fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
     let log_file_path = PathBuf::from(home_dir).join("jobu.logs");
 
     // Initialize simple-logging to write to file
-    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Trace)?;
+    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Debug)?;
 
     log::info!(
         "Jobu logging initialized, output will be logged to: {}",

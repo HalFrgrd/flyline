@@ -1,4 +1,3 @@
-use std::io::{IsTerminal, Stderr};
 use std::vec;
 
 use crate::bash_coms::{BashClient, BashReq};
@@ -13,10 +12,8 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 use std::fs;
+use std::path::PathBuf;
 use tui_textarea::{CursorMove, TextArea};
-use std::io::{BufRead, BufReader, Write, Read};
-use std::os::unix::io::FromRawFd;
-
 
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
@@ -35,88 +32,18 @@ fn parse_bash_history() -> Vec<String> {
     }
 }
 
-
-fn configure_fds() -> (std::fs::File, std::fs::File) {
-    // Assert that stdin and stdout are not TTYs
-    println!("stdout is a ttty: {}", std::io::stdout().is_terminal());
-    assert!(std::io::stdin().is_terminal(), "stdin must be a TTY");
-    assert!(std::io::stdout().is_terminal(), "stdout must be a TTY");
-    assert!(std::io::stderr().is_terminal(), "stderr must be a TTY");
-
-
-
-    use std::fs;
-    use std::os::unix::io::AsRawFd;
-    
-    // Check if fd 30 and 31 exist
-    for fd_num in [30, 31, 32] {
-        match fs::metadata(format!("/proc/self/fd/{}", fd_num)) {
-            Ok(_) => {
-                log::info!("FD {} exists and is accessible", fd_num);
-                
-                // Try to get file descriptor info
-                if let Ok(file) = fs::File::open(format!("/proc/self/fd/{}", fd_num)) {
-                    log::info!("FD {} opened successfully, raw fd: {}", fd_num, file.as_raw_fd());
-                }
-            }
-            Err(e) => {
-                log::error!("FD {} not accessible: {}", fd_num, e);
-            }
-        }
-    }
-    
-    // List all available file descriptors
-    match fs::read_dir("/proc/self/fd") {
-        Ok(entries) => {
-            let fds: Vec<String> = entries
-                .filter_map(|e| e.ok())
-                .filter_map(|e| e.file_name().into_string().ok())
-                .collect();
-            log::info!("Available file descriptors: {:?}", fds);
-        }
-        Err(e) => {
-            log::error!("Cannot read /proc/self/fd: {}", e);
-        }
-    }
-
-
-    // Open file descriptors 3 and 4 for server communication
-    let request_pipe = unsafe {
-        std::fs::File::from_raw_fd(31)
-    };
-    let response_pipe = unsafe {
-        std::fs::File::from_raw_fd(30)
-    };
-    (request_pipe, response_pipe)
-
-}
-
-pub async fn get_command() -> String {
+pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
     };
-
-
-
-    log::info!("Process ID: {}", std::process::id());
-    
-    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
-
-    let (request_pipe, response_pipe) = configure_fds();
-
-    let mut bash_client = BashClient::new(request_pipe, response_pipe).unwrap();
-    bash_client.test_connection();
-
-    log::debug!("Enabling raw mode");
-
-    crossterm::terminal::enable_raw_mode().expect("problem enabling raw mode");
-
-    log::debug!("Raw mode enabled");
-    let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
-    log::debug!("Ratatui backend created");
+    let mut stdout = std::io::stdout();
+    std::io::Write::flush(&mut stdout).unwrap();
+    log::debug!("Enabling raw mode for terminal");
+    crossterm::terminal::enable_raw_mode().unwrap();
+    let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let terminal = ratatui::Terminal::with_options(backend, options).unwrap();
-
+    log::debug!("Terminal initialized");
     let starting_cursor_position = crossterm::cursor::position().unwrap();
 
     // get PS1 from environment
@@ -124,21 +51,24 @@ pub async fn get_command() -> String {
     // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
     let ps1 = ps1.replace("\\[", "").replace("\\]", "");
     let ps1: Text = ps1.into_text().unwrap_or("bad ps1>".into());
-    // println!("PS1: {}", ps1);
-    // let ps1: Text = Text::from(ps1);
-    // let ps1 = Text::from("default> ");
 
     log::debug!("Starting cursor position: {:?}", starting_cursor_position);
 
     // Parse the user's bash history into a vector of command strings.
     let history = parse_bash_history();
 
+    log::debug!("Bash history loaded");
+
+    let mut bash_client = BashClient::new(request_pipe, response_pipe).unwrap();
+    log::debug!("starting test ");
+    bash_client.test_connection();
+
     let mut app = App::new(ps1, starting_cursor_position.1, history, bash_client);
     app.run(terminal).await;
 
     crossterm::terminal::disable_raw_mode().unwrap();
     crossterm::execute!(
-        std::io::stderr(),
+        std::io::stdout(),
         crossterm::cursor::MoveTo(starting_cursor_position.0, starting_cursor_position.1),
         crossterm::cursor::Show
     )
@@ -219,7 +149,7 @@ impl<'a> App<'a> {
             }
         }
         crossterm::execute!(
-            std::io::stderr(),
+            std::io::stdout(),
             crossterm::cursor::MoveTo(0, self.num_rows_above_prompt + self.num_rows_of_prompt + 1),
         )
         .unwrap();
@@ -227,7 +157,7 @@ impl<'a> App<'a> {
 
     fn increase_num_rows_below_prompt(&mut self, lines_to_scroll: u16) {
         crossterm::execute!(
-            std::io::stderr(),
+            std::io::stdout(),
             crossterm::terminal::ScrollUp(lines_to_scroll),
         )
         .unwrap();
@@ -361,8 +291,6 @@ impl<'a> App<'a> {
                         self.buffer.insert_newline();
                         // self.increase_num_rows_below_prompt();
                     } else {
-                        let resp = self.client.get_request(BashReq::SetCmd, self.buffer.lines().join("\n").as_str());
-                        log::debug!("SetCmd response: {:?}", resp);
                         self.is_running = false;
                     }
                 }

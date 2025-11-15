@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, BufWriter, Write, Read};
 use std::fs::File;
+use std::path::PathBuf;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BashReq {
@@ -16,10 +17,21 @@ pub struct BashClient {
 }
 
 impl BashClient {
-    pub fn new(request_pipe: File, response_pipe: File) -> std::io::Result<Self> {
+    pub fn new(request_pipe: PathBuf, response_pipe: PathBuf) -> std::io::Result<Self> {
+        log::debug!("Initializing BashClient with request_pipe: {:?}, response_pipe: {:?}", request_pipe, response_pipe);
+        let request_file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&request_pipe)?;
+
+        log::debug!("Opened request pipe: {:?}", request_pipe);
+
+        let response_file = std::fs::File::open(&response_pipe)?;
+
+        log::debug!("BashClient connected to pipes: {:?}, {:?}", request_pipe, response_pipe);
+
         Ok(BashClient {
-            request_writer: BufWriter::new(request_pipe),
-            response_reader: BufReader::new(response_pipe),
+            request_writer: BufWriter::new(request_file),
+            response_reader: BufReader::new(response_file),
             cache: std::collections::HashMap::new(),
         })
     }
@@ -28,7 +40,6 @@ impl BashClient {
         log::debug!("Testing BashClient connection...");
         self.request_writer.write_all(b"PING\n").unwrap();
         log::debug!("Sent PING");
-        std::thread::sleep(std::time::Duration::from_secs(5));
         self.request_writer.flush().unwrap();
         log::debug!("Flushed request_writer");
 

@@ -22,26 +22,29 @@ jobu_log(){
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$1]: $2" >> "$jobu_log_file"
 }
 
+
+JOBU_SESSION_ID=$(uuidgen)
+
+
+request_pipe="/tmp/jobu_request_$JOBU_SESSION_ID"
+response_pipe="/tmp/jobu_response_$JOBU_SESSION_ID"
+
 run_jobu_bash_server(){
-    # Jobu will communicate with this process during cle for stuff like
+    # Jobu will communicate with this process during cle for stuff like 
     # autocompletions and `which` lookups.
 
-    jobu_log "SERVER" "Server started - Parent PID: $$, Coproc PID: $BASHPID"
-
-    # Show open file descriptors for debugging
-    jobu_log "SERVER" "Open file descriptors at server start:"
-    for fd in /proc/$BASHPID/fd/*; do
-        if [[ -r "$fd" ]]; then
-            jobu_log "SERVER" "FD $(basename "$fd"): $(readlink "$fd" 2>/dev/null || echo "unreadable")"
-        fi
-    done
-
     jobu_log "SERVER" "Jobu bash server started, waiting for requests..."
+
+    exec 0< "$request_pipe"
+    exec 1> "$response_pipe"
+    # Keep stderr redirected to /dev/null
+    exec 2>/dev/null
 
     while read -r query; do
         # Handle queries with full access to parent environment
         jobu_log "SERVER" "Received query: $query"
         case "$query" in
+            "get-var PATH") echo "$PATH" ;;
             "WHICH "*)
                 cmd="${query#WHICH }"
                 cmd_path=$(command -v "$cmd")
@@ -63,18 +66,14 @@ run_jobu_bash_server(){
                 echo "RESP_LEN=$response_len"
                 echo "RESP_BODY=$comp_results"
                 ;;
-            "SETCMD "*)
-                cmd_to_set="${query#SETCMD }"
-                export JOBU_COMMAND="$cmd_to_set"
-                jobu_log "SERVER" "Set JOBU_COMMAND to: $JOBU_COMMAND"
-                echo "RESP_LEN=4"
-                echo "RESP_BODY=done"
-                ;;
             "PING")
-                jobu_log "SERVER" "Sending pong"
                 echo "PONG"
                 ;;
-            *)
+            "EXIT") 
+                jobu_log "SERVER" "Received EXIT command, shutting down server."
+                break
+                ;;
+            *) 
                 echo "Unknown query: $query" ;;
         esac
     done
@@ -85,46 +84,22 @@ jobu_start_of_prompt() {
 
     export PS1
 
-    JOBU_COMMAND="unbound"
+    # Create named pipes for jobu communication
+    mkfifo "$request_pipe" 2>/dev/null || true
+    mkfifo "$response_pipe" 2>/dev/null || true
+
     JOBU_BACKUP_STTY=$(stty -g)
 
-    jobu_log "MAIN" "my pid is $$"
+    jobu_log "MAIN" "Starting jobu bash server..."
 
-    coproc -a 30 -b 31 BASHSERVER {
-        run_jobu_bash_server;
-        # jobu_log "SERVER" "Finished bashserver instance."
-    }
-
-    jobu_log "MAIN" "my pid is now $$"
-
-        for fd in /proc/$BASHPID/fd/*; do
-        if [[ -r "$fd" ]]; then
-            jobu_log "MAIN" "FD $(basename "$fd"): $(readlink "$fd" 2>/dev/null || echo "unreadable")"
-        fi
-    done
+    run_jobu_bash_server &
 
 
-    jobu_log "MAIN" "Started bashserver coproc with PID ${BASHSERVER_PID}"
+    jobu_log "MAIN" "Received response from jobu bash server: $pong"
 
-    TEMP_FILE=$(mktemp)
-    echo "Hello from file descriptor 32!" > "$TEMP_FILE"
+    "$JOBU_EXEC_PATH" get-command "$request_pipe" "$response_pipe"
+    sleep 1
     
-    # Run jobu with the coproc file descriptors directly
-    # fd 30 = read from bash server, fd 31 = write to bash server
-    # exec 30<&"${BASHSERVER[0]}" 31>&"${BASHSERVER[1]}"
-
-    echo "PING" >&31
-    read response <&30
-    jobu_log "MAIN" "Ping response: $response"
-
-    exec 32< "$TEMP_FILE"    
-    "$JOBU_EXEC_PATH" get-command
-    # exec 30<&-
-
-    jobu_log "MAIN" "finished running jobu"
-
-    wait "${BASHSERVER_PID}"
-
     # This approach is based on test_3.sh
     JOBU_SHOULD_RESTORE=1
     JOBU_BACKUP_PS1=$PS1
@@ -150,6 +125,7 @@ jobu_pre_exec() {
         unset JOBU_SHOULD_RESTORE
     fi
 }
+
 
 precmd_functions+=(jobu_start_of_prompt)
 preexec_functions+=(jobu_pre_exec)
