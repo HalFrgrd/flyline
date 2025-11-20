@@ -40,7 +40,7 @@ run_jobu_bash_server(){
     # Keep stderr redirected to /dev/null
     exec 2>/dev/null
 
-    while read -r query; do
+    while IFS= read -r query; do
         # Handle queries with full access to parent environment
         jobu_log "SERVER" "Received query: $query"
         case "$query" in
@@ -48,34 +48,27 @@ run_jobu_bash_server(){
             "WHICH "*)
                 cmd="${query#WHICH }"
                 cmd_path=$(command -v "$cmd")
-                result=$?
-                response_len=${#cmd_path}
-                jobu_log "SERVER" "Response length: $response_len bytes"
-                jobu_log "SERVER" "Command found (exit code $result): $cmd_path"
-                echo "RESP_LEN=$response_len"
-                echo "RESP_BODY=$cmd_path"
+                jobu_log "SERVER" "cmd= $cmd Command found: $cmd_path"
+                printf "%s" "$cmd_path"
                 ;;
             "COMPLETE "*)
                 partial="${query#COMPLETE }"
                 # Simple completion logic (can be improved)
                 comp_results=$(compgen -c "$partial")
-                result=$?
-                response_len=${#comp_results}
-                jobu_log "SERVER" "Completion results length: $response_len bytes"
-                jobu_log "SERVER" "Completion results for (exit code $result) '$partial': $comp_results"
-                echo "RESP_LEN=$response_len"
-                echo "RESP_BODY=$comp_results"
+                printf "%s" "$comp_results"
                 ;;
             "PING")
-                echo "PONG"
+                printf "PONG"
                 ;;
             "EXIT") 
                 jobu_log "SERVER" "Received EXIT command, shutting down server."
+                printf "exiting"
                 break
                 ;;
             *) 
-                echo "Unknown query: $query" ;;
+                printf "Unknown query: %s" "$query" ;;
         esac
+        printf "\0"
     done
 }
 
@@ -93,9 +86,6 @@ jobu_start_of_prompt() {
     jobu_log "MAIN" "Starting jobu bash server..."
 
     run_jobu_bash_server &
-
-
-    jobu_log "MAIN" "Received response from jobu bash server: $pong"
 
     "$JOBU_EXEC_PATH" get-command "$request_pipe" "$response_pipe"
     sleep 1

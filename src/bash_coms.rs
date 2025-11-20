@@ -7,6 +7,7 @@ pub enum BashReq {
     Complete,
     Which,
     SetCmd,
+    Ping,
 }
 
 pub struct BashClient {
@@ -37,15 +38,18 @@ impl BashClient {
     }
 
     pub fn test_connection(&mut self) {
-        log::debug!("Testing BashClient connection...");
-        self.request_writer.write_all(b"PING\n").unwrap();
-        log::debug!("Sent PING");
-        self.request_writer.flush().unwrap();
-        log::debug!("Flushed request_writer");
+        // log::debug!("Testing BashClient connection...");
+        // self.request_writer.write_all(b"PING\n").unwrap();
+        // log::debug!("Sent PING");
+        // self.request_writer.flush().unwrap();
+        // log::debug!("Flushed request_writer");
 
-        let mut response = String::new();
-        self.response_reader.read_line(&mut response).unwrap();
-        log::info!("BashClient test_connection response: {}", response.trim());
+        // let mut response = Vec::new();
+        // self.response_reader.read_until(b'\0', &mut response).unwrap();
+        // log::info!("BashClient test_connection response: {}", String::from_utf8_lossy(&response));
+
+        log::debug!("Testing BashClient connection...");
+        self.get_request_uncached(BashReq::Ping, "").unwrap();
     }
 
     pub fn get_request(&mut self, req_type: BashReq, argument: &str) -> Option<String> {
@@ -56,13 +60,19 @@ impl BashClient {
 
         // TODO: do we want to retry?
         let mut response = match self.get_request_uncached(req_type.clone(), argument) {
-            Ok(resp) => Some(resp),
+            Ok(resp) => if resp.is_empty() {
+                log::warn!("Received empty response for {:?} with argument '{}'", req_type, argument);
+                None
+            } else {
+                log::debug!("not empty response for {:?} with argument '{}'", resp, argument);
+                Some(resp)
+            },
             Err(e) => {
                 log::error!("Failed to get request for {:?} with argument '{}': {}", req_type, argument, e);
                 None
             }
         };
-        log::debug!("Cache miss for {:?} with argument '{}' res={:?}", req_type, argument, response);
+        // log::debug!("Cache miss for {:?} with argument '{}' res={:?}", req_type, argument, response);
 
         // if  Some("".to_string()) == response {
         //     response = None;
@@ -84,45 +94,27 @@ impl BashClient {
             BashReq::Complete => format!("COMPLETE {}\n", argument),
             BashReq::Which => format!("WHICH {}\n", argument),
             BashReq::SetCmd => format!("SETCMD {}\n", argument),
+            BashReq::Ping => format!("PING {}\n", argument),
         };
+
+        log::debug!("Sending request: '{}'", request_line.replace("\n", "\\n"));
+        // log::debug!("Sending request: {:02x?}", request_line.as_bytes());
 
         self.request_writer.write_all(request_line.as_bytes())?;
         self.request_writer.flush()?;
 
-        let mut response_len = String::new();
-        self.response_reader.read_line(&mut response_len)?;
+        let mut response_len = Vec::new();
 
-        log::debug!("Received response length line: '{}' for argument '{}'", response_len.trim(), argument);
+        // log::debug!("Waiting for response for argument '{}'", argument);
+        self.response_reader.read_until(b'\0', &mut response_len)?;
+        // remove the trailing null byte
+        response_len.retain(|&x| x != b'\0');
 
-        if response_len.starts_with("RESP_LEN=") {
-            log::debug!("Received response length line: {}", response_len.trim());
-            let len_str = response_len.trim_start_matches("RESP_LEN=").trim();
-            if let Ok(len) = len_str.parse::<usize>() {
-                const RESP_BODY_PREFIX: &str = "RESP_BODY=";
-                let mut response_buf = vec![0u8; len+RESP_BODY_PREFIX.len()];
-                self.response_reader.read_exact(&mut response_buf)?;
-                let response_line = String::from_utf8_lossy(&response_buf).to_string();
-                if response_line.starts_with(RESP_BODY_PREFIX) {
-                    let body = response_line[RESP_BODY_PREFIX.len()..].to_string();
-                    return Ok(body);
-                } else {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "Invalid response body prefix",
-                    ));
-                }
-            } else {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid response length",
-                ))
-            }
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Missing response length",
-            ))
-        }
+        let response = String::from_utf8_lossy(&response_len).to_string();
+
+        log::debug!("Received response: '{}' for argument '{}'", response, argument);
+
+        Ok(response)
 
     }
 }
