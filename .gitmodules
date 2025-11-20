@@ -1,3 +1,6 @@
 [submodule "bash-preexec"]
 	path = bash-preexec
 	url = https://github.com/rcaloras/bash-preexec.git
+[submodule "custom_builtin/bash"]
+	path = custom_builtin/bash
+	url = git@boz.github.com:bminor/bash.git
