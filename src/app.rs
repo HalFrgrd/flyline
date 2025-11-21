@@ -1,6 +1,6 @@
 use std::vec;
 
-use crate::bash_coms::{BashClient, BashReq};
+
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use ansi_to_tui::IntoText;
@@ -32,7 +32,7 @@ fn parse_bash_history() -> Vec<String> {
     }
 }
 
-pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> String {
+pub async fn get_command() -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
@@ -59,11 +59,7 @@ pub async fn get_command(request_pipe: PathBuf, response_pipe: PathBuf) -> Strin
 
     log::debug!("Bash history loaded");
 
-    let mut bash_client = BashClient::new(request_pipe, response_pipe).unwrap();
-    log::debug!("starting test ");
-    bash_client.test_connection();
-
-    let mut app = App::new(ps1, starting_cursor_position.1, history, bash_client);
+    let mut app = App::new(ps1, starting_cursor_position.1, history);
     app.run(terminal).await;
 
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -91,7 +87,6 @@ struct App<'a> {
     is_multiline_mode: bool,
     num_rows_above_prompt: u16,
     num_rows_of_prompt: u16,
-    client: BashClient,
 }
 
 impl<'a> App<'a> {
@@ -99,7 +94,6 @@ impl<'a> App<'a> {
         ps1: Text<'a>,
         num_rows_above_prompt: u16,
         history: Vec<String>,
-        client: BashClient,
     ) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
@@ -119,7 +113,6 @@ impl<'a> App<'a> {
             is_multiline_mode: false,
             num_rows_above_prompt,
             num_rows_of_prompt,
-            client,
         }
     }
 
@@ -298,8 +291,8 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
-                let resp = self.client.get_request(BashReq::Complete, self.buffer.lines().join("\n").as_str());
-                log::debug!("Completion response: {:?}", resp);
+                // let resp = self.client.get_request(BashReq::Complete, self.buffer.lines().join("\n").as_str());
+                // log::debug!("Completion response: {:?}", resp);
                 // self.buffer.insert_str(&resp);
             }
             KeyEvent {
@@ -392,7 +385,7 @@ impl<'a> App<'a> {
                 let space_pos = line.find(' ').unwrap_or(line.len());
                 let (first_word, rest) = line.split_at(space_pos);
 
-                let is_first_word_recognized = self.client.get_request(BashReq::Which, first_word).is_some();
+                let is_first_word_recognized = false; // self.client.get_request(BashReq::Which, first_word).is_some();
 
                 let first_word_style = if is_first_word_recognized {
                     Style::default().fg(Color::Green)

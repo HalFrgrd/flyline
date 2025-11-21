@@ -5,6 +5,10 @@ use std::io::{stdout, Write};
 use std::sync::Mutex;
 use std::os::raw::{c_int, c_char};
 
+mod app;
+mod cursor_animation;
+mod events;
+
 // Bash input stream types from bash's input.h
 #[repr(C)]
 #[allow(dead_code)]
@@ -95,30 +99,7 @@ extern "C" fn jobu_unget(c: c_int) -> c_int {
 
 // Function to set the input stream from Rust
 pub fn set_jobu_input(content: String) {
-    let mut stream = JOBU_INPUT.lock().unwrap();
-    *stream = Some(JobuInputStream::new(content));
-    
-    unsafe {
-        // Create a C string for the name
-        let name = std::ffi::CString::new("jobu_input").unwrap();
-        
-        // Create empty location - we don't use it since we have custom getters
-        let location = InputStreamLocation {
-            string: std::ptr::null_mut(),
-        };
-        
-        // Initialize bash's input system with our custom getters
-        init_yy_io(
-            jobu_get,
-            jobu_unget,
-            StreamType::StString,
-            name.as_ptr(),
-            location,
-        );
-        
-        // Keep the name alive by leaking it (bash will use it)
-        std::mem::forget(name);
-    }
+
 }
 
 builtin_metadata!(
@@ -143,7 +124,7 @@ impl Builtin for Jobu {
     fn call(&mut self, args: &mut Args) -> Result<()> {
         // No options: print the current value and increment it.
         if args.is_empty() {
-            return Ok(());
+            return Err(bash_builtins::Error::Usage);
         }
 
 
@@ -151,7 +132,31 @@ impl Builtin for Jobu {
             match opt? {
                 Opt::Set => {
                     // Set the custom input stream for bash
-                    set_jobu_input("echo 'Hello from jobu!'\nsleep 1\necho asdf\nexit".to_string());
+                    let content = "echo 'Hello from jobu!'\nsleep 1\necho asdf\nexit".to_string();
+                    let mut stream = JOBU_INPUT.lock().unwrap();
+                    *stream = Some(JobuInputStream::new(content));
+                    
+                    unsafe {
+                        // Create a C string for the name
+                        let name = std::ffi::CString::new("jobu_input").unwrap();
+                        
+                        // Create empty location - we don't use it since we have custom getters
+                        let location = InputStreamLocation {
+                            string: std::ptr::null_mut(),
+                        };
+                        
+                        // Initialize bash's input system with our custom getters
+                        init_yy_io(
+                            jobu_get,
+                            jobu_unget,
+                            StreamType::StString,
+                            name.as_ptr(),
+                            location,
+                        );
+                        
+                        // Keep the name alive by leaking it (bash will use it)
+                        std::mem::forget(name);
+                    }
                     writeln!(stdout(), "Input stream set to jobu")?;
                 }
             }
