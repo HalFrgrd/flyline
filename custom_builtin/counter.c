@@ -127,7 +127,7 @@ counter_builtin (WORD_LIST *list)
       INPUT_STREAM location;
 
     /* Initialize location to a dummy value - we handle everything in jobu_get() */
-    location.string =  "echo hello && sleep 1";  /* Empty string to avoid NULL dereference */
+    location.string = "";  /* Empty string to avoid NULL dereference */
     /* Use st_stdin since we're providing custom get/unget functions */
     init_yy_io (jobu_get, jobu_unget, st_stdin, "jobu stdin", location);
 
