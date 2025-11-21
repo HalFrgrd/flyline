@@ -31,7 +31,6 @@ union InputStreamLocation {
 
 // External bash_input symbol that bash provides
 unsafe extern "C" {
-
     fn init_yy_io(
         get: extern "C" fn() -> c_int,
         unget: extern "C" fn(c_int) -> c_int,
@@ -47,23 +46,60 @@ static JOBU_INPUT: Mutex<Option<JobuInputStream>> = Mutex::new(None);
 struct JobuInputStream {
     content: Vec<u8>,
     position: usize,
+    counter: usize,
+}
+
+const EOF : c_int = -1;
+
+
+
+fn setup_logging() -> Result<()> {
+    use std::env;
+    use std::path::PathBuf;
+
+    // Get home directory
+    let home_dir = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let log_file_path = PathBuf::from(home_dir).join("jobu.logs");
+
+    // Initialize simple-logging to write to file
+    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Trace)?;
+
+    log::info!(
+        "Jobu logging initialized, output will be logged to: {}",
+        log_file_path.display()
+    );
+
+    Ok(())
 }
 
 impl JobuInputStream {
-    fn new(content: String) -> Self {
+    fn new() -> Self {
         Self {
-            content: content.into_bytes(),
+            content: vec![],
             position: 0,
+            counter: 0,
         }
     }
     
     fn get(&mut self) -> c_int {
+        log::debug!("Getting byte from jobu input stream");
+        if self.content.is_empty() || self.position >= self.content.len() {
+            log::debug!("Input stream is empty or at end, fetching new command");
+            self.counter += 1;
+            self.content = app::get_command().into_bytes();
+            self.content.push(b'\n');
+            self.position = 0;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
         if self.position < self.content.len() {
             let byte = self.content[self.position];
             self.position += 1;
+            log::debug!("Returning byte: {} (asci={})", byte, byte as char);
             byte as c_int
         } else {
-            -1 // EOF
+            log::debug!("End of input stream reached, returning EOF");
+            EOF
         }
     }
     
@@ -83,7 +119,7 @@ extern "C" fn jobu_get() -> c_int {
     if let Some(ref mut s) = *stream {
         s.get()
     } else {
-        -1 // EOF if no stream is set
+        EOF // EOF if no stream is set
     }
 }
 
@@ -97,10 +133,6 @@ extern "C" fn jobu_unget(c: c_int) -> c_int {
     }
 }
 
-// Function to set the input stream from Rust
-pub fn set_jobu_input(content: String) {
-
-}
 
 builtin_metadata!(
     name = "jobu",
@@ -122,6 +154,10 @@ struct Jobu();
 
 impl Builtin for Jobu {
     fn call(&mut self, args: &mut Args) -> Result<()> {
+        setup_logging().unwrap_or_else(|e| {
+            eprintln!("Failed to setup logging: {}", e);
+        });
+
         // No options: print the current value and increment it.
         if args.is_empty() {
             return Err(bash_builtins::Error::Usage);
@@ -132,9 +168,8 @@ impl Builtin for Jobu {
             match opt? {
                 Opt::Set => {
                     // Set the custom input stream for bash
-                    let content = "echo 'Hello from jobu!'\nsleep 1\necho asdf\nexit".to_string();
                     let mut stream = JOBU_INPUT.lock().unwrap();
-                    *stream = Some(JobuInputStream::new(content));
+                    *stream = Some(JobuInputStream::new());
                     
                     unsafe {
                         // Create a C string for the name
@@ -149,7 +184,7 @@ impl Builtin for Jobu {
                         init_yy_io(
                             jobu_get,
                             jobu_unget,
-                            StreamType::StString,
+                            StreamType::StStdin,
                             name.as_ptr(),
                             location,
                         );

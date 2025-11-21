@@ -32,7 +32,19 @@ fn parse_bash_history() -> Vec<String> {
     }
 }
 
-pub async fn get_command() -> String {
+fn build_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
+
+pub fn get_command() -> String {
+
+
+
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
@@ -59,8 +71,10 @@ pub async fn get_command() -> String {
 
     log::debug!("Bash history loaded");
 
+    let runtime = build_runtime();
+
     let mut app = App::new(ps1, starting_cursor_position.1, history);
-    app.run(terminal).await;
+    runtime.block_on(app.run(terminal));
 
     crossterm::terminal::disable_raw_mode().unwrap();
     crossterm::execute!(
@@ -71,7 +85,8 @@ pub async fn get_command() -> String {
     .unwrap();
 
     let command = app.buffer.lines().join("\n");
-
+    println!("");
+    log::debug!("Final command: {}", command);
     command
 }
 
