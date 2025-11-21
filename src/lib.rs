@@ -1,0 +1,199 @@
+//! Bash builtin with custom input stream from Rust.
+
+use bash_builtins::{builtin_metadata, Args, Builtin, BuiltinOptions, Result};
+use std::io::{stdout, Write};
+use std::sync::Mutex;
+use std::os::raw::{c_int, c_char};
+
+// Bash input stream types from bash's input.h
+#[repr(C)]
+#[allow(dead_code)]
+enum StreamType {
+    StNone = 0,
+    StStdin = 1,
+    StStream = 2,
+    StString = 3,
+    StBStream = 4,
+}
+
+// INPUT_STREAM union from bash
+#[repr(C)]
+union InputStreamLocation {
+    string: *mut c_char,
+    _file: *mut libc::c_void, // FILE* - we don't use this
+    _buffered_fd: c_int,       // for st_bstream - we don't use this
+}
+
+// BASH_INPUT structure from bash
+#[repr(C)]
+struct BashInput {
+    type_: StreamType,
+    name: *mut c_char,
+    location: InputStreamLocation,
+    getter: Option<extern "C" fn() -> c_int>,
+    ungetter: Option<extern "C" fn(c_int) -> c_int>,
+}
+
+// External bash_input symbol that bash provides
+unsafe extern "C" {
+    #[link_name = "bash_input"]
+    static mut bash_input: BashInput;
+    
+    fn init_yy_io(
+        get: extern "C" fn() -> c_int,
+        unget: extern "C" fn(c_int) -> c_int,
+        type_: StreamType,
+        name: *const c_char,
+        location: InputStreamLocation,
+    );
+}
+
+// Global state for our custom input stream
+static JOBU_INPUT: Mutex<Option<JobuInputStream>> = Mutex::new(None);
+
+struct JobuInputStream {
+    content: Vec<u8>,
+    position: usize,
+}
+
+impl JobuInputStream {
+    fn new(content: String) -> Self {
+        Self {
+            content: content.into_bytes(),
+            position: 0,
+        }
+    }
+    
+    fn get(&mut self) -> c_int {
+        if self.position < self.content.len() {
+            let byte = self.content[self.position];
+            self.position += 1;
+            byte as c_int
+        } else {
+            -1 // EOF
+        }
+    }
+    
+    fn unget(&mut self, _c: c_int) -> c_int {
+        if self.position > 0 {
+            self.position -= 1;
+            self.content[self.position] as c_int
+        } else {
+            _c
+        }
+    }
+}
+
+// C-compatible getter function that bash will call
+extern "C" fn jobu_get() -> c_int {
+    let mut stream = JOBU_INPUT.lock().unwrap();
+    if let Some(ref mut s) = *stream {
+        s.get()
+    } else {
+        -1 // EOF if no stream is set
+    }
+}
+
+// C-compatible ungetter function that bash will call
+extern "C" fn jobu_unget(c: c_int) -> c_int {
+    let mut stream = JOBU_INPUT.lock().unwrap();
+    if let Some(ref mut s) = *stream {
+        s.unget(c)
+    } else {
+        c
+    }
+}
+
+// Function to set the input stream from Rust
+pub fn set_jobu_input(content: String) {
+    let mut stream = JOBU_INPUT.lock().unwrap();
+    *stream = Some(JobuInputStream::new(content));
+    
+    unsafe {
+        // Create a C string for the name
+        let name = std::ffi::CString::new("jobu_input").unwrap();
+        
+        // Create empty location - we don't use it since we have custom getters
+        let location = InputStreamLocation {
+            string: std::ptr::null_mut(),
+        };
+        
+        // Initialize bash's input system with our custom getters
+        init_yy_io(
+            jobu_get,
+            jobu_unget,
+            StreamType::StString,
+            name.as_ptr(),
+            location,
+        );
+        
+        // Keep the name alive by leaking it (bash will use it)
+        std::mem::forget(name);
+    }
+}
+
+builtin_metadata!(
+    name = "counter",
+    create = Counter::default,
+    short_doc = "counter [-r] [-s value] [-a value] [-i input]",
+    long_doc = "
+        Print a value, and increment it. Can also set custom bash input.
+
+        Options:
+          -r\tReset the value to 0.
+          -s\tSet the counter to a specific value.
+          -a\tIncrement the counter by a value.
+          -i\tSet custom input string for bash to execute.
+    ",
+);
+
+#[derive(BuiltinOptions)]
+enum Opt {
+    #[opt = 'r']
+    Reset,
+
+    #[opt = 's']
+    Set(isize),
+
+    #[opt = 'a']
+    Add(isize),
+    
+    #[opt = 'i']
+    SetInput(String),
+}
+
+#[derive(Default)]
+struct Counter(isize);
+
+impl Builtin for Counter {
+    fn call(&mut self, args: &mut Args) -> Result<()> {
+        // No options: print the current value and increment it.
+        if args.is_empty() {
+            writeln!(stdout(), "{}", self.0)?;
+            self.0 += 1;
+            return Ok(());
+        }
+
+        // Parse options.
+        let mut value = self.0;
+        for opt in args.options() {
+            match opt? {
+                Opt::Reset => value = 0,
+                Opt::Set(v) => value = v,
+                Opt::Add(v) => value += v,
+                Opt::SetInput(input) => {
+                    // Set the custom input stream for bash
+                    set_jobu_input(input);
+                    writeln!(stdout(), "Input stream set")?;
+                }
+            }
+        }
+
+        // It is an error if we receive free arguments.
+        args.finished()?;
+
+        // Update the state and exit.
+        self.0 = value;
+        Ok(())
+    }
+}
