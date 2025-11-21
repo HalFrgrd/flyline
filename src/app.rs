@@ -1,6 +1,5 @@
 use std::vec;
 
-
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use ansi_to_tui::IntoText;
@@ -13,7 +12,7 @@ use ratatui::{
 };
 use std::fs;
 use std::path::PathBuf;
-use tui_textarea::{CursorMove, TextArea};
+use tui_textarea::{CursorMove, Key, TextArea};
 
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
@@ -40,52 +39,31 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-
-pub fn get_command() -> String {
-
-
-
+pub fn get_command(ps1_prompt: String) -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
     };
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
-    log::debug!("Enabling raw mode for terminal");
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let terminal = ratatui::Terminal::with_options(backend, options).unwrap();
-    log::debug!("Terminal initialized");
-    let starting_cursor_position = crossterm::cursor::position().unwrap();
 
-    // get PS1 from environment
-    let ps1: String = std::env::var("PS1").unwrap_or("default> ".to_string());
     // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
-    let ps1 = ps1.replace("\\[", "").replace("\\]", "");
-    let ps1: Text = ps1.into_text().unwrap_or("bad ps1>".into());
-
-    log::debug!("Starting cursor position: {:?}", starting_cursor_position);
+    let ps1_prompt = ps1_prompt.replace("\\[", "").replace("\\]", "");
+    let ps1_prompt: Text = ps1_prompt.into_text().unwrap_or("bad ps1>".into());
 
     // Parse the user's bash history into a vector of command strings.
     let history = parse_bash_history();
 
-    log::debug!("Bash history loaded");
-
     let runtime = build_runtime();
 
-    let mut app = App::new(ps1, starting_cursor_position.1, history);
-    runtime.block_on(app.run(terminal));
+    let mut app = App::new(ps1_prompt, history);
+    let command = runtime.block_on(app.run(terminal));
 
     crossterm::terminal::disable_raw_mode().unwrap();
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::cursor::MoveTo(starting_cursor_position.0, starting_cursor_position.1),
-        crossterm::cursor::Show
-    )
-    .unwrap();
 
-    let command = app.buffer.lines().join("\n");
-    println!("");
     log::debug!("Final command: {}", command);
     command
 }
@@ -105,13 +83,12 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(
-        ps1: Text<'a>,
-        num_rows_above_prompt: u16,
-        history: Vec<String>,
-    ) -> Self {
+    fn new(ps1: Text<'a>, history: Vec<String>) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
+
+        let starting_cursor_position = crossterm::cursor::position().unwrap();
+        let num_rows_above_prompt = starting_cursor_position.1;
 
         // let mut buffer = TextArea::new(vec![PS1.to_string()]);
         // buffer.move_cursor(CursorMove::End);
@@ -131,7 +108,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub async fn run(&mut self, mut terminal: DefaultTerminal) {
+    pub async fn run(&mut self, mut terminal: DefaultTerminal) -> String {
         // Update application state here
         let mut events = events::EventHandler::new();
         loop {
@@ -156,14 +133,23 @@ impl<'a> App<'a> {
                 }
             }
         }
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::cursor::MoveTo(0, self.num_rows_above_prompt + self.num_rows_of_prompt + 1),
-        )
-        .unwrap();
+
+        let num_lines = self.buffer.lines().len() as u16;
+
+        crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveDown(num_lines),).unwrap();
+
+        self.buffer.lines().join("\n")
     }
 
     fn increase_num_rows_below_prompt(&mut self, lines_to_scroll: u16) {
+        if lines_to_scroll == 0 {
+            return;
+        }
+        log::debug!(
+            "Decreasing num_rows_above_prompt by {} (was {})",
+            lines_to_scroll,
+            self.num_rows_above_prompt
+        );
         crossterm::execute!(
             std::io::stdout(),
             crossterm::terminal::ScrollUp(lines_to_scroll),
@@ -188,6 +174,7 @@ impl<'a> App<'a> {
     }
 
     fn onkeypress(&mut self, key: KeyEvent) {
+        log::debug!("Key pressed: {:?}", key);
         match key {
             KeyEvent {
                 code: KeyCode::Backspace,
@@ -200,11 +187,15 @@ impl<'a> App<'a> {
                 code: KeyCode::Backspace,
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } => {
-                self.buffer.delete_word();
             }
-            KeyEvent {
+            | KeyEvent {
+                // control backspace show up as these ones for me
                 code: KeyCode::Char('h'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('w'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
@@ -213,6 +204,11 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Delete,
                 modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('d'),
+                modifiers: KeyModifiers::ALT,
                 ..
             } => {
                 self.buffer.delete_next_word();
@@ -226,9 +222,23 @@ impl<'a> App<'a> {
             }
             KeyEvent {
                 code: KeyCode::Left,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.buffer.move_cursor(CursorMove::WordBack);
+            }
+            KeyEvent {
+                code: KeyCode::Left,
                 ..
             } => {
                 self.buffer.move_cursor(CursorMove::Back);
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.buffer.move_cursor(CursorMove::WordForward);
             }
             KeyEvent {
                 code: KeyCode::Right,
@@ -326,7 +336,6 @@ impl<'a> App<'a> {
             }
             _ => {}
         }
-
     }
 
     fn get_ps1_lines(ps1: Text) -> Vec<Line> {
@@ -486,7 +495,7 @@ impl<'a> App<'a> {
         let output = Paragraph::new(output_lines).wrap(Wrap { trim: false });
 
         let num_lines = output.line_count(area.width) as u16;
-        if num_lines + self.num_rows_above_prompt > full_terminal_area.height {
+        if num_lines + self.num_rows_above_prompt >= full_terminal_area.height {
             let lines_to_scroll =
                 num_lines + self.num_rows_above_prompt - full_terminal_area.height;
             self.increase_num_rows_below_prompt(lines_to_scroll);

@@ -1,9 +1,9 @@
 //! Bash builtin with custom input stream from Rust.
 
-use bash_builtins::{builtin_metadata, Args, Builtin, BuiltinOptions, Result};
-use std::io::{stdout, Write};
+use bash_builtins::{Args, Builtin, BuiltinOptions, Result, builtin_metadata};
+use std::io::{Write, stdout};
+use std::os::raw::{c_char, c_int};
 use std::sync::Mutex;
-use std::os::raw::{c_int, c_char};
 
 mod app;
 mod cursor_animation;
@@ -25,9 +25,8 @@ enum StreamType {
 union InputStreamLocation {
     string: *mut c_char,
     _file: *mut libc::c_void, // FILE* - we don't use this
-    _buffered_fd: c_int,       // for st_bstream - we don't use this
+    _buffered_fd: c_int,      // for st_bstream - we don't use this
 }
-
 
 // External bash_input symbol that bash provides
 unsafe extern "C" {
@@ -46,12 +45,9 @@ static JOBU_INPUT: Mutex<Option<JobuInputStream>> = Mutex::new(None);
 struct JobuInputStream {
     content: Vec<u8>,
     position: usize,
-    counter: usize,
 }
 
-const EOF : c_int = -1;
-
-
+const EOF: c_int = -1;
 
 fn setup_logging() -> Result<()> {
     use std::env;
@@ -62,7 +58,7 @@ fn setup_logging() -> Result<()> {
     let log_file_path = PathBuf::from(home_dir).join("jobu.logs");
 
     // Initialize simple-logging to write to file
-    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Trace)?;
+    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Debug)?;
 
     log::info!(
         "Jobu logging initialized, output will be logged to: {}",
@@ -77,19 +73,24 @@ impl JobuInputStream {
         Self {
             content: vec![],
             position: 0,
-            counter: 0,
         }
     }
-    
+
     fn get(&mut self) -> c_int {
         log::debug!("Getting byte from jobu input stream");
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("Input stream is empty or at end, fetching new command");
-            self.counter += 1;
-            self.content = app::get_command().into_bytes();
+
+            const PS1_VAR_NAME: &str = "PS1";
+            let ps1_prompt = bash_builtins::variables::find_as_string(PS1_VAR_NAME)
+                .as_ref()
+                .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+                .unwrap_or("default> ".into());
+
+            self.content = app::get_command(ps1_prompt).into_bytes();
             self.content.push(b'\n');
             self.position = 0;
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
         if self.position < self.content.len() {
@@ -102,7 +103,7 @@ impl JobuInputStream {
             EOF
         }
     }
-    
+
     fn unget(&mut self, _c: c_int) -> c_int {
         if self.position > 0 {
             self.position -= 1;
@@ -119,6 +120,7 @@ extern "C" fn jobu_get() -> c_int {
     if let Some(ref mut s) = *stream {
         s.get()
     } else {
+        // shoudl never be here
         EOF // EOF if no stream is set
     }
 }
@@ -132,7 +134,6 @@ extern "C" fn jobu_unget(c: c_int) -> c_int {
         c
     }
 }
-
 
 builtin_metadata!(
     name = "jobu",
@@ -163,23 +164,22 @@ impl Builtin for Jobu {
             return Err(bash_builtins::Error::Usage);
         }
 
-
         for opt in args.options() {
             match opt? {
                 Opt::Set => {
                     // Set the custom input stream for bash
                     let mut stream = JOBU_INPUT.lock().unwrap();
                     *stream = Some(JobuInputStream::new());
-                    
+
                     unsafe {
                         // Create a C string for the name
                         let name = std::ffi::CString::new("jobu_input").unwrap();
-                        
+
                         // Create empty location - we don't use it since we have custom getters
                         let location = InputStreamLocation {
                             string: std::ptr::null_mut(),
                         };
-                        
+
                         // Initialize bash's input system with our custom getters
                         init_yy_io(
                             jobu_get,
@@ -188,7 +188,7 @@ impl Builtin for Jobu {
                             name.as_ptr(),
                             location,
                         );
-                        
+
                         // Keep the name alive by leaking it (bash will use it)
                         std::mem::forget(name);
                     }
