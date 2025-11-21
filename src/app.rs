@@ -79,7 +79,6 @@ struct App<'a> {
     history_index: usize,
     is_multiline_mode: bool,
     num_rows_above_prompt: u16,
-    num_rows_of_prompt: u16,
 }
 
 impl<'a> App<'a> {
@@ -104,7 +103,6 @@ impl<'a> App<'a> {
             history_index,
             is_multiline_mode: false,
             num_rows_above_prompt,
-            num_rows_of_prompt,
         }
     }
 
