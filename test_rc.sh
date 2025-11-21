@@ -1,5 +1,5 @@
 
-enable -f ./target/debug/libjobu.so counter
+enable -f ./target/debug/libjobu.so jobu
 
 # source ./bash-preexec/bash-preexec.sh
 

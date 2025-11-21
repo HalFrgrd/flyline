@@ -24,21 +24,10 @@ union InputStreamLocation {
     _buffered_fd: c_int,       // for st_bstream - we don't use this
 }
 
-// BASH_INPUT structure from bash
-#[repr(C)]
-struct BashInput {
-    type_: StreamType,
-    name: *mut c_char,
-    location: InputStreamLocation,
-    getter: Option<extern "C" fn() -> c_int>,
-    ungetter: Option<extern "C" fn(c_int) -> c_int>,
-}
 
 // External bash_input symbol that bash provides
 unsafe extern "C" {
-    #[link_name = "bash_input"]
-    static mut bash_input: BashInput;
-    
+
     fn init_yy_io(
         get: extern "C" fn() -> c_int,
         unget: extern "C" fn(c_int) -> c_int,
@@ -133,58 +122,37 @@ pub fn set_jobu_input(content: String) {
 }
 
 builtin_metadata!(
-    name = "counter",
-    create = Counter::default,
-    short_doc = "counter [-r] [-s value] [-a value] [-i input]",
+    name = "jobu",
+    create = Jobu::default,
+    short_doc = "Set jobu as a custom input stream for bash.",
     long_doc = "
-        Print a value, and increment it. Can also set custom bash input.
-
-        Options:
-          -r\tReset the value to 0.
-          -s\tSet the counter to a specific value.
-          -a\tIncrement the counter by a value.
-          -i\tSet custom input string for bash to execute.
+        Set jobu as a custom input stream for bash.
     ",
 );
 
 #[derive(BuiltinOptions)]
 enum Opt {
-    #[opt = 'r']
-    Reset,
-
     #[opt = 's']
-    Set(isize),
-
-    #[opt = 'a']
-    Add(isize),
-    
-    #[opt = 'i']
-    SetInput(String),
+    Set,
 }
 
 #[derive(Default)]
-struct Counter(isize);
+struct Jobu();
 
-impl Builtin for Counter {
+impl Builtin for Jobu {
     fn call(&mut self, args: &mut Args) -> Result<()> {
         // No options: print the current value and increment it.
         if args.is_empty() {
-            writeln!(stdout(), "{}", self.0)?;
-            self.0 += 1;
             return Ok(());
         }
 
-        // Parse options.
-        let mut value = self.0;
+
         for opt in args.options() {
             match opt? {
-                Opt::Reset => value = 0,
-                Opt::Set(v) => value = v,
-                Opt::Add(v) => value += v,
-                Opt::SetInput(input) => {
+                Opt::Set => {
                     // Set the custom input stream for bash
-                    set_jobu_input(input);
-                    writeln!(stdout(), "Input stream set")?;
+                    set_jobu_input("echo 'Hello from jobu!'\nsleep 1\necho asdf\nexit".to_string());
+                    writeln!(stdout(), "Input stream set to jobu")?;
                 }
             }
         }
@@ -192,8 +160,6 @@ impl Builtin for Counter {
         // It is an error if we receive free arguments.
         args.finished()?;
 
-        // Update the state and exit.
-        self.0 = value;
         Ok(())
     }
 }
