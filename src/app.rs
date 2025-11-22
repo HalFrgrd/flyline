@@ -83,6 +83,7 @@ struct App<'a> {
     history_index: usize,
     is_multiline_mode: bool,
     num_rows_above_prompt: u16,
+    call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
 }
 
 impl<'a> App<'a> {
@@ -107,6 +108,7 @@ impl<'a> App<'a> {
             history_index,
             is_multiline_mode: false,
             num_rows_above_prompt,
+            call_type_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -374,6 +376,16 @@ impl<'a> App<'a> {
             .collect()
     }
 
+    fn get_command_type(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
+        if let Some(cached) = self.call_type_cache.get(cmd) {
+            return cached.clone();
+        }
+        let result = bash_funcs::call_type(cmd);
+        self.call_type_cache.insert(cmd.to_string(), result.clone());
+        log::debug!("call_type result for {}: {:?}", cmd, result);
+        result
+    }
+
     fn ui(&mut self, f: &mut Frame) {
         let full_terminal_area = f.area();
         let [_, area] = Layout::vertical([
@@ -397,7 +409,10 @@ impl<'a> App<'a> {
         let mut cursor_col = cursor_col as usize;
         let cursor_intensity = self.cursor_animation.get_intensity(self.animation_tick);
 
-        for (i, line) in self.buffer.lines().iter().enumerate() {
+        // Clone lines to break the borrow so we can call get_command_type
+        let lines: Vec<String> = self.buffer.lines().to_vec();
+
+        for (i, line) in lines.iter().enumerate() {
             let new_line = if i == 0 {
                 // Combine the last PS1 line with the first buffer line
                 let last_ps1_line = output_lines.pop().unwrap_or_else(|| Line::from(""));
@@ -411,7 +426,9 @@ impl<'a> App<'a> {
                 let space_pos = line.find(' ').unwrap_or(line.len());
                 let (first_word, rest) = line.split_at(space_pos);
 
-                let is_first_word_recognized = false; // self.client.get_request(BashReq::Which, first_word).is_some();
+                let (command_type, _short_desc) = self.get_command_type(first_word);
+
+                let is_first_word_recognized = command_type != bash_funcs::CommandType::Unknown;
 
                 let first_word_style = if is_first_word_recognized {
                     Style::default().fg(Color::Green)
@@ -424,7 +441,7 @@ impl<'a> App<'a> {
 
                 Line::from(combined_spans)
             } else {
-                Line::from(line.clone())
+                Line::from(line.as_str())
             };
 
             let final_line = if i == cursor_row && self.is_running {

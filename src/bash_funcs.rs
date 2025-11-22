@@ -46,7 +46,7 @@ where
     (result, output.trim().to_string())
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum CommandType {
     Unknown,
     Alias,
@@ -97,6 +97,16 @@ pub fn call_type(cmd: &str) -> (CommandType, String) {
             };
             (result, extracted)
         }
+        CommandType::Builtin => {
+            let (result, output) = with_redirected_stdout(|| unsafe {
+                bash_symbols::describe_command(
+                    cmd_c_str.as_ptr(),
+                    bash_symbols::CDescFlag::ShortDesc as c_int,
+                )
+            });
+
+            (result, output)
+        }
         CommandType::File => with_redirected_stdout(|| unsafe {
             bash_symbols::describe_command(
                 cmd_c_str.as_ptr(),
@@ -109,7 +119,5 @@ pub fn call_type(cmd: &str) -> (CommandType, String) {
         }
     };
 
-    let res = (command_type, short_desc);
-    log::debug!("call_type result for {}: {:?}", cmd, res);
-    res
+    (command_type, short_desc)
 }
