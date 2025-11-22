@@ -60,6 +60,8 @@ pub fn get_command(ps1_prompt: String) -> String {
     let runtime = build_runtime();
 
     bash_funcs::call_type("ls");
+    bash_funcs::call_type("ll");
+    bash_funcs::call_type("echo");
 
     let mut app = App::new(ps1_prompt, history);
     let command = runtime.block_on(app.run(terminal));

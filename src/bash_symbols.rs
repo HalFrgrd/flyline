@@ -66,6 +66,7 @@ pub struct StreamSaver {
 // #define CDESC_NOFUNCS		0x040	/* type -f */
 // #define CDESC_ABSPATH		0x080	/* convert to absolute path, no ./ */
 // #define CDESC_STDPATH		0x100	/* command -p */
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CDescFlag {
     All = 0x001,       // CDESC_ALL - type -a
