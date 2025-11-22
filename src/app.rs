@@ -1,5 +1,6 @@
 use std::vec;
 
+use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use ansi_to_tui::IntoText;
@@ -11,8 +12,7 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 use std::fs;
-use std::path::PathBuf;
-use tui_textarea::{CursorMove, Key, TextArea};
+use tui_textarea::{CursorMove, TextArea};
 
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
@@ -58,6 +58,8 @@ pub fn get_command(ps1_prompt: String) -> String {
     let history = parse_bash_history();
 
     let runtime = build_runtime();
+
+    bash_funcs::call_type("ls");
 
     let mut app = App::new(ps1_prompt, history);
     let command = runtime.block_on(app.run(terminal));

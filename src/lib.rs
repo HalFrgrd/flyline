@@ -1,15 +1,12 @@
-
-
 use bash_builtins::{Args, Builtin, BuiltinOptions, Result, builtin_metadata};
-use futures::stream;
-use std::io::{Write, stdout};
-use std::os::raw::{c_int};
+use std::os::raw::c_int;
 use std::sync::Mutex;
 
 mod app;
+mod bash_funcs;
+mod bash_symbols;
 mod cursor_animation;
 mod events;
-mod bash_symbols;
 
 // Global state for our custom input stream
 static JOBU_INPUT: Mutex<Option<JobuInputStream>> = Mutex::new(None);
@@ -18,7 +15,6 @@ struct JobuInputStream {
     content: Vec<u8>,
     position: usize,
 }
-
 
 fn setup_logging() -> Result<()> {
     use std::env;
@@ -98,7 +94,11 @@ extern "C" fn jobu_get() -> c_int {
 
 // C-compatible ungetter function that bash will call
 extern "C" fn jobu_unget(c: c_int) -> c_int {
-    log::debug!("Calling jobu_unget with char: {} (asci={})", c, c as u8 as char);
+    log::debug!(
+        "Calling jobu_unget with char: {} (asci={})",
+        c,
+        c as u8 as char
+    );
     let mut stream = JOBU_INPUT.lock().unwrap();
     if let Some(ref mut s) = *stream {
         s.unget(c)
@@ -145,11 +145,11 @@ impl Builtin for Jobu {
                     unsafe {
                         let mut current = bash_symbols::stream_list;
                         let mut index = 0;
-                        
+
                         println!("=== Stream List ===");
                         while !current.is_null() {
                             let stream = &*current;
-                            
+
                             let name = if stream.bash_input.name.is_null() {
                                 "null".to_string()
                             } else {
@@ -157,7 +157,7 @@ impl Builtin for Jobu {
                                     .to_string_lossy()
                                     .into_owned()
                             };
-                            
+
                             let stream_type = match stream.bash_input.type_ {
                                 bash_symbols::StreamType::StNone => "st_none",
                                 bash_symbols::StreamType::StStdin => "st_stdin",
@@ -165,9 +165,9 @@ impl Builtin for Jobu {
                                 bash_symbols::StreamType::StString => "st_string",
                                 bash_symbols::StreamType::StBStream => "st_bstream",
                             };
-                            
+
                             println!("[{}] name: '{}', type: {}", index, name, stream_type);
-                            
+
                             current = stream.next;
                             index += 1;
                         }
@@ -178,28 +178,29 @@ impl Builtin for Jobu {
                     // TODO: should I try another approach for any reason?
                     // like cehcking if hte current bash_input is readline, and replace the name and getters?
 
-                    // TODO: check if `interactive` is set?
-                    
+                    // TODO: should check interactive or interactive_shell?
+
                     // This is a hacky way to ensure that our custom input stream is used by bash.
                     // This code is run during `run_startup_files` so we cant modify bash_input directly.
                     // bash_input is being used to read the rc files at this point.
                     // set_bash_input() has yet to be called.
                     // stream_list contains only a sentinel input stream at this point.
-                    // normally when it it popped off the list after rc files are read, readline stdin is added 
+                    // normally when it it popped off the list after rc files are read, readline stdin is added
                     // since with_input_from_stdin sees that the current bash_input is not good.
                     // So we modify the sentinel node before that happens so that in set_bash_input,
                     // with_input_from_stdin will see that the current bash_input is fit for purpose and not add readline stdin.
 
                     unsafe {
+                        println!("interactive_shell={}", bash_symbols::interactive_shell);
                         let stream_list_head = &mut *bash_symbols::stream_list;
                         let stream_is_null = bash_symbols::stream_list.is_null();
                         // println!("stream_list is null: {}", stream_is_null);
-                        if !stream_is_null {
-                           let next_is_null = stream_list_head.next.is_null();
+                        if !stream_is_null && bash_symbols::interactive_shell != 0 {
+                            let next_is_null = stream_list_head.next.is_null();
                             // println!("stream_list.next is null: {}", next_is_null);
-                            if next_is_null{
+                            if next_is_null {
                                 // No streams in the list, we can set ours
-                                // and then with_input_from_stdin won't add readline 
+                                // and then with_input_from_stdin won't add readline
                                 // stream_on_stack (st_stdin) will be true.
                                 // This basically takes over the sentinel node at the base of the stream_list
                                 println!("Setting jobu input stream at the head of the list");
@@ -207,30 +208,32 @@ impl Builtin for Jobu {
                                 // let location = bash_symbols::InputStreamLocation {
                                 //     string: std::ffi::CString::new("sdflkjsdf").unwrap().into_raw(),
                                 // };
-                                stream_list_head.bash_input.type_ = bash_symbols::StreamType::StStdin;
+                                stream_list_head.bash_input.type_ =
+                                    bash_symbols::StreamType::StStdin;
                                 stream_list_head.bash_input.name = name.as_ptr() as *mut i8;
                                 // stream_list_head.bash_input.location = location;
                                 stream_list_head.bash_input.getter = Some(jobu_get);
                                 stream_list_head.bash_input.ungetter = Some(jobu_unget);
-                                
+
                                 // std::mem::forget(location);
                                 std::mem::forget(name);
 
-
                                 let mut stream = JOBU_INPUT.lock().unwrap();
                                 *stream = Some(JobuInputStream::new());
-    
                             } else {
-                                log::error!("stream_list has more than one entry, cannot set jobu input stream");
+                                log::error!(
+                                    "stream_list has more than one entry, cannot set jobu input stream"
+                                );
                             }
                         } else {
-                            log::error!("stream_list is null, cannot set jobu input stream");
+                            log::error!(
+                                "{:?} {:?} cannot set jobu input stream",
+                                stream_is_null,
+                                bash_symbols::interactive_shell
+                            );
                         }
                     }
 
-
-
-                    
                     // let stream_saver_head = unsafe { &mut *bash_symbols::stream_list };
                     // let name = unsafe {
                     //     if stream_saver_head.bash_input.name.is_null() {
@@ -253,18 +256,18 @@ impl Builtin for Jobu {
                     //         }
                     //     }
                     //     // Set the custom input stream for bash
-                        // let mut stream = JOBU_INPUT.lock().unwrap();
-                        // *stream = Some(JobuInputStream::new());
-    
+                    // let mut stream = JOBU_INPUT.lock().unwrap();
+                    // *stream = Some(JobuInputStream::new());
+
                     //     unsafe {
                     //         // Create a C string for the name
                     //         // let name = std::ffi::CString::new("jobu_input").unwrap();
-    
+
                     //         // Create empty location - we don't use it since we have custom getters
                     //         // let location = bash_symbols::InputStreamLocation {
                     //         //     string: std::ptr::null_mut(),
                     //         // };
-    
+
                     //         // // Initialize bash's input system with our custom getters
                     //         // bash_symbols::init_yy_io(
                     //         //     jobu_get,
@@ -275,15 +278,13 @@ impl Builtin for Jobu {
                     //         // );
                     //         stream_saver_head.bash_input.getter = Some(jobu_get);
                     //         stream_saver_head.bash_input.ungetter = Some(jobu_unget);
-    
+
                     //         // Keep the name alive by leaking it (bash will use it)
                     //         // std::mem::forget(name);
                     //     }
                     //     writeln!(stdout(), "Input stream set to jobu")?;
 
                     // }
-
-
                 }
             }
         }
