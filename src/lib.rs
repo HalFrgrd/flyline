@@ -44,7 +44,7 @@ impl JobuInputStream {
     }
 
     fn get(&mut self) -> c_int {
-        log::debug!("Getting byte from jobu input stream");
+        // log::debug!("Getting byte from jobu input stream");
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("Input stream is empty or at end, fetching new command");
 
@@ -62,7 +62,7 @@ impl JobuInputStream {
         if self.position < self.content.len() {
             let byte = self.content[self.position];
             self.position += 1;
-            log::debug!("Returning byte: {} (asci={})", byte, byte as char);
+            // log::debug!("Returning byte: {} (asci={})", byte, byte as char);
             byte as c_int
         } else {
             log::debug!("End of input stream reached, returning EOF");
@@ -82,7 +82,7 @@ impl JobuInputStream {
 
 // C-compatible getter function that bash will call
 extern "C" fn jobu_get() -> c_int {
-    log::debug!("Calling jobu_get");
+    // log::debug!("Calling jobu_get");
     let mut stream = JOBU_INPUT.lock().unwrap();
     if let Some(ref mut s) = *stream {
         s.get()
@@ -94,11 +94,11 @@ extern "C" fn jobu_get() -> c_int {
 
 // C-compatible ungetter function that bash will call
 extern "C" fn jobu_unget(c: c_int) -> c_int {
-    log::debug!(
-        "Calling jobu_unget with char: {} (asci={})",
-        c,
-        c as u8 as char
-    );
+    // log::debug!(
+    //     "Calling jobu_unget with char: {} (asci={})",
+    //     c,
+    //     c as u8 as char
+    // );
     let mut stream = JOBU_INPUT.lock().unwrap();
     if let Some(ref mut s) = *stream {
         s.unget(c)

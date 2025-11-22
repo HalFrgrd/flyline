@@ -57,15 +57,6 @@ pub struct StreamSaver {
 
 // builtins/common.h
 // /* Flags for describe_command, shared between type.def and command.def */
-// #define CDESC_ALL		0x001	/* type -a */
-// #define CDESC_SHORTDESC		0x002	/* command -V */
-// #define CDESC_REUSABLE		0x004	/* command -v */
-// #define CDESC_TYPE		0x008	/* type -t */
-// #define CDESC_PATH_ONLY		0x010	/* type -p */
-// #define CDESC_FORCE_PATH	0x020	/* type -ap or type -P */
-// #define CDESC_NOFUNCS		0x040	/* type -f */
-// #define CDESC_ABSPATH		0x080	/* convert to absolute path, no ./ */
-// #define CDESC_STDPATH		0x100	/* command -p */
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CDescFlag {
@@ -90,8 +81,6 @@ unsafe extern "C" {
         name: *const c_char,
         location: InputStreamLocation,
     );
-
-    // pub fn with_input_from_stdin();
 
     // stream_list global from y.tab.c
     #[link_name = "stream_list"]

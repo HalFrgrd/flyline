@@ -5,6 +5,7 @@ use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use ansi_to_tui::IntoText;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::terminal;
 use ratatui::prelude::*;
 use ratatui::{
     DefaultTerminal, Frame, TerminalOptions, Viewport,
@@ -48,7 +49,10 @@ pub fn get_command(ps1_prompt: String) -> String {
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
-    let terminal = ratatui::Terminal::with_options(backend, options).unwrap();
+    let mut terminal = ratatui::Terminal::with_options(backend, options).unwrap();
+    terminal.hide_cursor().unwrap();
+
+    // log::debug!("terminal = {:?}", terminal);
 
     // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
     let ps1_prompt = ps1_prompt.replace("\\[", "").replace("\\]", "");
@@ -59,17 +63,103 @@ pub fn get_command(ps1_prompt: String) -> String {
 
     let runtime = build_runtime();
 
-    bash_funcs::call_type("ls");
-    bash_funcs::call_type("ll");
-    bash_funcs::call_type("echo");
-
-    let mut app = App::new(ps1_prompt, history);
+    let mut app = App::new(ps1_prompt, history, terminal.get_frame().area());
     let command = runtime.block_on(app.run(terminal));
 
     crossterm::terminal::disable_raw_mode().unwrap();
+    app.layout_manager.finalize();
+
+    let final_cursor_pos = crossterm::cursor::position().unwrap();
+    log::debug!("Final cursor position: {:?}", final_cursor_pos);
+    // terminal.show_cursor().unwrap();
 
     log::debug!("Final command: {}", command);
     command
+}
+
+#[derive(Debug)]
+struct LayoutManager {
+    terminal_height: u16,
+    terminal_width: u16,
+    range_start: u16,
+    range_end: u16,
+}
+
+impl LayoutManager {
+
+    fn new(terminal_area: Rect) -> Self {
+
+        let starting_cursor_position = crossterm::cursor::position().unwrap();
+
+        let layout_manager = LayoutManager {
+            terminal_height: terminal_area.height,
+            terminal_width: terminal_area.width,
+            range_start: starting_cursor_position.1,
+            range_end: terminal_area.height,
+        };
+        layout_manager
+    }
+
+
+
+    fn get_area(&mut self, output_num_lines: u16) -> Rect {
+
+        let desired_area = Rect::new(0, self.range_start, self.terminal_width, output_num_lines);
+
+        if desired_area.bottom() > self.terminal_height {
+            let lines_to_scroll = desired_area.bottom().saturating_sub(self.terminal_height);
+            log::debug!(
+                "Desired area {:?} exceeds terminal height {}, scrolling by {}",
+                desired_area,
+                self.terminal_height,
+                lines_to_scroll,
+            );
+            self.scroll_by(lines_to_scroll);
+        }
+
+        // TODO: check we are in bounds
+        let area = Rect::new(0, self.range_start, self.terminal_width, output_num_lines);
+        self.range_end = area.bottom();
+
+        area
+    }
+
+    fn scroll_by(&mut self, lines_to_scroll: u16) {
+        if lines_to_scroll == 0 {
+            return;
+        }
+        log::debug!(
+            "Scrolling by {}",
+            lines_to_scroll,
+        );
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::ScrollUp(lines_to_scroll),
+        )
+        .unwrap();
+
+        self.range_start = self.range_start.saturating_sub(lines_to_scroll);
+        self.range_end = self.range_end.saturating_sub(lines_to_scroll);
+    }
+
+    fn finalize(&mut self) {
+
+        log::debug!("Finalizing layout pre  scroll  {:?}", self);
+        self.scroll_by((self.range_end+1).saturating_sub(self.terminal_height));
+        log::debug!("Finalizing layout post scroll  {:?}", self);
+
+
+       crossterm::execute!(
+           std::io::stdout(),
+           crossterm::cursor::MoveTo(
+               0,
+               self.range_end,
+           ),
+       ).unwrap();
+
+    
+
+    }
 }
 
 struct App<'a> {
@@ -82,17 +172,15 @@ struct App<'a> {
     history: Vec<String>,
     history_index: usize,
     is_multiline_mode: bool,
-    num_rows_above_prompt: u16,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
+    layout_manager: LayoutManager,
 }
 
 impl<'a> App<'a> {
-    fn new(ps1: Text<'a>, history: Vec<String>) -> Self {
+    fn new(ps1: Text<'a>, history: Vec<String>, terminal_area: Rect) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
 
-        let starting_cursor_position = crossterm::cursor::position().unwrap();
-        let num_rows_above_prompt = starting_cursor_position.1;
 
         // let mut buffer = TextArea::new(vec![PS1.to_string()]);
         // buffer.move_cursor(CursorMove::End);
@@ -107,8 +195,8 @@ impl<'a> App<'a> {
             history,
             history_index,
             is_multiline_mode: false,
-            num_rows_above_prompt,
             call_type_cache: std::collections::HashMap::new(),
+            layout_manager: LayoutManager::new(terminal_area),
         }
     }
 
@@ -138,29 +226,11 @@ impl<'a> App<'a> {
             }
         }
 
-        let num_lines = self.buffer.lines().len() as u16;
 
-        crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveDown(num_lines),).unwrap();
 
         self.buffer.lines().join("\n")
     }
 
-    fn increase_num_rows_below_prompt(&mut self, lines_to_scroll: u16) {
-        if lines_to_scroll == 0 {
-            return;
-        }
-        log::debug!(
-            "Decreasing num_rows_above_prompt by {} (was {})",
-            lines_to_scroll,
-            self.num_rows_above_prompt
-        );
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::ScrollUp(lines_to_scroll),
-        )
-        .unwrap();
-        self.num_rows_above_prompt -= lines_to_scroll;
-    }
 
     fn unbalanced_quotes(&self) -> bool {
         let mut single_quotes = 0;
@@ -178,7 +248,7 @@ impl<'a> App<'a> {
     }
 
     fn onkeypress(&mut self, key: KeyEvent) {
-        log::debug!("Key pressed: {:?}", key);
+        // log::debug!("Key pressed: {:?}", key);
         match key {
             KeyEvent {
                 code: KeyCode::Backspace,
@@ -355,13 +425,13 @@ impl<'a> App<'a> {
                             let now = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap();
-                            let secs = now.as_secs();
-                            let millis = now.subsec_millis();
-                            let hours = (secs / 3600) % 24;
-                            let minutes = (secs / 60) % 60;
-                            let seconds = secs % 60;
-                            let time_str =
-                                format!("{:02}:{:02}:{:03}.{:03}", hours, minutes, seconds, millis);
+                            let time_str = format!(
+                                "{:02}:{:02}:{:02}.{:03}",
+                                (now.as_secs() / 3600) % 24,  // hours
+                                (now.as_secs() / 60) % 60,     // minutes
+                                now.as_secs() % 60,            // seconds
+                                now.subsec_millis()            // milliseconds
+                            );
                             Span::styled(
                                 span.content.replace("JOBU_TIME_XXX", &time_str),
                                 span.style,
@@ -387,12 +457,6 @@ impl<'a> App<'a> {
     }
 
     fn ui(&mut self, f: &mut Frame) {
-        let full_terminal_area = f.area();
-        let [_, area] = Layout::vertical([
-            Constraint::Length(self.num_rows_above_prompt),
-            Constraint::Fill(1),
-        ])
-        .areas(full_terminal_area);
 
         let mut output_lines: Vec<Line> = Self::get_ps1_lines(self.ps1.clone());
 
@@ -512,17 +576,12 @@ impl<'a> App<'a> {
         }
 
         let output = Paragraph::new(output_lines).wrap(Wrap { trim: false });
+        let full_terminal_area = f.area();
+        let output_num_lines = output.line_count(full_terminal_area.width) as u16;
 
-        let num_lines = output.line_count(area.width) as u16;
-        if num_lines + self.num_rows_above_prompt >= full_terminal_area.height {
-            let lines_to_scroll =
-                num_lines + self.num_rows_above_prompt - full_terminal_area.height;
-            self.increase_num_rows_below_prompt(lines_to_scroll);
-        }
-
+        let area = self.layout_manager.get_area(output_num_lines);
+    
         f.render_widget(&output, area);
 
-        // let area = Rect { x: sx + 40, y: sy, width, height };
-        // f.render_widget(Line::from("test").fg(ratatui::style::Color::Red), area);
     }
 }
