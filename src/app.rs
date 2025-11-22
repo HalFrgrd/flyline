@@ -3,9 +3,9 @@ use std::vec;
 use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
+use crate::layout_manager::LayoutManager;
 use ansi_to_tui::IntoText;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crossterm::terminal;
 use ratatui::prelude::*;
 use ratatui::{
     DefaultTerminal, Frame, TerminalOptions, Viewport,
@@ -77,91 +77,6 @@ pub fn get_command(ps1_prompt: String) -> String {
     command
 }
 
-#[derive(Debug)]
-struct LayoutManager {
-    terminal_height: u16,
-    terminal_width: u16,
-    range_start: u16,
-    range_end: u16,
-}
-
-impl LayoutManager {
-
-    fn new(terminal_area: Rect) -> Self {
-
-        let starting_cursor_position = crossterm::cursor::position().unwrap();
-
-        let layout_manager = LayoutManager {
-            terminal_height: terminal_area.height,
-            terminal_width: terminal_area.width,
-            range_start: starting_cursor_position.1,
-            range_end: terminal_area.height,
-        };
-        layout_manager
-    }
-
-
-
-    fn get_area(&mut self, output_num_lines: u16) -> Rect {
-
-        let desired_area = Rect::new(0, self.range_start, self.terminal_width, output_num_lines);
-
-        if desired_area.bottom() > self.terminal_height {
-            let lines_to_scroll = desired_area.bottom().saturating_sub(self.terminal_height);
-            log::debug!(
-                "Desired area {:?} exceeds terminal height {}, scrolling by {}",
-                desired_area,
-                self.terminal_height,
-                lines_to_scroll,
-            );
-            self.scroll_by(lines_to_scroll);
-        }
-
-        // TODO: check we are in bounds
-        let area = Rect::new(0, self.range_start, self.terminal_width, output_num_lines);
-        self.range_end = area.bottom();
-
-        area
-    }
-
-    fn scroll_by(&mut self, lines_to_scroll: u16) {
-        if lines_to_scroll == 0 {
-            return;
-        }
-        log::debug!(
-            "Scrolling by {}",
-            lines_to_scroll,
-        );
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::ScrollUp(lines_to_scroll),
-        )
-        .unwrap();
-
-        self.range_start = self.range_start.saturating_sub(lines_to_scroll);
-        self.range_end = self.range_end.saturating_sub(lines_to_scroll);
-    }
-
-    fn finalize(&mut self) {
-
-        log::debug!("Finalizing layout pre  scroll  {:?}", self);
-        self.scroll_by((self.range_end+1).saturating_sub(self.terminal_height));
-        log::debug!("Finalizing layout post scroll  {:?}", self);
-
-
-       crossterm::execute!(
-           std::io::stdout(),
-           crossterm::cursor::MoveTo(
-               0,
-               self.range_end,
-           ),
-       ).unwrap();
-
-    
-
-    }
-}
-
 struct App<'a> {
     is_running: bool,
     buffer: TextArea<'a>,
@@ -180,7 +95,6 @@ impl<'a> App<'a> {
     fn new(ps1: Text<'a>, history: Vec<String>, terminal_area: Rect) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
-
 
         // let mut buffer = TextArea::new(vec![PS1.to_string()]);
         // buffer.move_cursor(CursorMove::End);
@@ -226,11 +140,8 @@ impl<'a> App<'a> {
             }
         }
 
-
-
         self.buffer.lines().join("\n")
     }
-
 
     fn unbalanced_quotes(&self) -> bool {
         let mut single_quotes = 0;
@@ -427,10 +338,10 @@ impl<'a> App<'a> {
                                 .unwrap();
                             let time_str = format!(
                                 "{:02}:{:02}:{:02}.{:03}",
-                                (now.as_secs() / 3600) % 24,  // hours
-                                (now.as_secs() / 60) % 60,     // minutes
-                                now.as_secs() % 60,            // seconds
-                                now.subsec_millis()            // milliseconds
+                                (now.as_secs() / 3600) % 24, // hours
+                                (now.as_secs() / 60) % 60,   // minutes
+                                now.as_secs() % 60,          // seconds
+                                now.subsec_millis()          // milliseconds
                             );
                             Span::styled(
                                 span.content.replace("JOBU_TIME_XXX", &time_str),
@@ -457,7 +368,6 @@ impl<'a> App<'a> {
     }
 
     fn ui(&mut self, f: &mut Frame) {
-
         let mut output_lines: Vec<Line> = Self::get_ps1_lines(self.ps1.clone());
 
         self.cursor_animation.update_position(
@@ -580,8 +490,7 @@ impl<'a> App<'a> {
         let output_num_lines = output.line_count(full_terminal_area.width) as u16;
 
         let area = self.layout_manager.get_area(output_num_lines);
-    
-        f.render_widget(&output, area);
 
+        f.render_widget(&output, area);
     }
 }
