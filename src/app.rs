@@ -4,6 +4,7 @@ use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::layout_manager::LayoutManager;
+use crate::snake_animation::SnakeAnimation;
 use ansi_to_tui::IntoText;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
@@ -89,6 +90,7 @@ struct App<'a> {
     is_multiline_mode: bool,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
     layout_manager: LayoutManager,
+    snake_animation: SnakeAnimation,
 }
 
 impl<'a> App<'a> {
@@ -111,6 +113,7 @@ impl<'a> App<'a> {
             is_multiline_mode: false,
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
+            snake_animation: SnakeAnimation::new(),
         }
     }
 
@@ -410,7 +413,37 @@ impl<'a> App<'a> {
                     Style::default().fg(Color::Red)
                 };
 
-                combined_spans.push(Span::styled(first_word.to_string(), first_word_style));
+                let first_word = if first_word.starts_with("python") {
+                    self.snake_animation.update_anim(self.animation_tick);
+                    let snake_string = self.snake_animation.to_string();
+
+                    let mut result = String::new();
+                    let first_word_chars: Vec<char> = first_word.chars().collect();
+                    let snake_chars: Vec<char> = snake_string.chars().collect();
+
+                    for i in 0..6.min(first_word_chars.len()) {
+                        if i < snake_chars.len() {
+                            if snake_chars[i] == '⠀' {
+                                result.push(first_word_chars[i]);
+                            } else {
+                                result.push(snake_chars[i]);
+                            }
+                        } else {
+                            result.push(first_word_chars[i]);
+                        }
+                    }
+
+                    // Add remaining characters from first_word if it's longer than 6
+                    if first_word_chars.len() > 6 {
+                        result.push_str(&first_word_chars[6..].iter().collect::<String>());
+                    }
+
+                    result
+                } else {
+                    first_word.to_string()
+                };
+
+                combined_spans.push(Span::styled(first_word, first_word_style));
                 combined_spans.push(Span::styled(rest.to_string(), Style::default()));
 
                 Line::from(combined_spans)

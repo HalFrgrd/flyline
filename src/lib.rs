@@ -8,6 +8,7 @@ mod bash_symbols;
 mod cursor_animation;
 mod events;
 mod layout_manager;
+mod snake_animation;
 
 // Global state for our custom input stream
 static JOBU_INPUT: Mutex<Option<JobuInputStream>> = Mutex::new(None);
