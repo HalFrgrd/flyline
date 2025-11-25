@@ -1,6 +1,6 @@
 use bash_builtins::{Args, Builtin, BuiltinOptions, Result, builtin_metadata};
 use std::os::raw::c_int;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 mod app;
 mod bash_funcs;
@@ -11,8 +11,9 @@ mod layout_manager;
 mod snake_animation;
 
 // Global state for our custom input stream
-static JOBU_INPUT: Mutex<Option<JobuInputStream>> = Mutex::new(None);
+static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<JobuInputStream>>>> = Mutex::new(None);
 
+#[derive(Debug)]
 struct JobuInputStream {
     content: Vec<u8>,
     position: usize,
@@ -82,16 +83,18 @@ impl JobuInputStream {
     }
 }
 
+struct Jobu {
+    input_stream: Arc<Mutex<JobuInputStream>>,
+}
+
 // C-compatible getter function that bash will call
 extern "C" fn jobu_get() -> c_int {
-    // log::debug!("Calling jobu_get");
-    let mut stream = JOBU_INPUT.lock().unwrap();
-    if let Some(ref mut s) = *stream {
-        s.get()
-    } else {
-        // shoudl never be here
-        bash_symbols::EOF // EOF if no stream is set
+    if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
+        if let Ok(mut stream) = arc.lock() {
+            return stream.get();
+        }
     }
+    bash_symbols::EOF
 }
 
 // C-compatible ungetter function that bash will call
@@ -101,12 +104,12 @@ extern "C" fn jobu_unget(c: c_int) -> c_int {
     //     c,
     //     c as u8 as char
     // );
-    let mut stream = JOBU_INPUT.lock().unwrap();
-    if let Some(ref mut s) = *stream {
-        s.unget(c)
-    } else {
-        c
+    if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
+        if let Ok(mut stream) = arc.lock() {
+            return stream.unget(c);
+        }
     }
+    c
 }
 
 builtin_metadata!(
@@ -122,10 +125,7 @@ builtin_metadata!(
 enum Opt {
     #[opt = 'r']
     Read,
-
 }
-
-struct Jobu();
 
 impl Default for Jobu {
     fn default() -> Self {
@@ -173,9 +173,6 @@ impl Default for Jobu {
 
                     // std::mem::forget(location);
                     std::mem::forget(name);
-
-                    let mut stream = JOBU_INPUT.lock().unwrap();
-                    *stream = Some(JobuInputStream::new());
                 } else {
                     log::error!(
                         "stream_list has more than one entry, cannot set jobu input stream"
@@ -189,60 +186,11 @@ impl Default for Jobu {
                 );
             }
         }
+        let input_stream = Arc::new(Mutex::new(JobuInputStream::new()));
 
-        // let stream_saver_head = unsafe { &mut *bash_symbols::stream_list };
-        // let name = unsafe {
-        //     if stream_saver_head.bash_input.name.is_null() {
-        //         "null".to_string()
-        //     } else {
-        //         std::ffi::CStr::from_ptr(stream_saver_head.bash_input.name)
-        //             .to_string_lossy()
-        //             .into_owned()
-        //     }
-        // };
-        // let stream_head_is_readline = name == "readline stdin";
-
-        // println!("stream_list: {:?}, is_readline: {:?}", name, stream_head_is_readline);
-        // if stream_head_is_readline {
-
-        //     unsafe {
-        //         let new_name = b"jobujobu";
-        //         for i in 0..8 {
-        //             *stream_saver_head.bash_input.name.offset(i) = new_name[i as usize] as i8;
-        //         }
-        //     }
-        //     // Set the custom input stream for bash
-        // let mut stream = JOBU_INPUT.lock().unwrap();
-        // *stream = Some(JobuInputStream::new());
-
-        //     unsafe {
-        //         // Create a C string for the name
-        //         // let name = std::ffi::CString::new("jobu_input").unwrap();
-
-        //         // Create empty location - we don't use it since we have custom getters
-        //         // let location = bash_symbols::InputStreamLocation {
-        //         //     string: std::ptr::null_mut(),
-        //         // };
-
-        //         // // Initialize bash's input system with our custom getters
-        //         // bash_symbols::init_yy_io(
-        //         //     jobu_get,
-        //         //     jobu_unget,
-        //         //     bash_symbols::StreamType::StStdin,
-        //         //     name.as_ptr(),
-        //         //     location,
-        //         // );
-        //         stream_saver_head.bash_input.getter = Some(jobu_get);
-        //         stream_saver_head.bash_input.ungetter = Some(jobu_unget);
-
-        //         // Keep the name alive by leaking it (bash will use it)
-        //         // std::mem::forget(name);
-        //     }
-        //     writeln!(stdout(), "Input stream set to jobu")?;
-
-        // }
-
-        Jobu()
+        // Store the Arc globally so C callbacks can access it
+        *JOBU_INSTANCE_PTR.lock().unwrap() = Some(input_stream.clone());
+        Jobu { input_stream }
     }
 }
 
