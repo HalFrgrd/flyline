@@ -413,7 +413,7 @@ impl<'a> App<'a> {
                     Style::default().fg(Color::Red)
                 };
 
-                let first_word = if first_word.starts_with("python") {
+                let first_word = if first_word.starts_with("python") && self.is_running {
                     self.snake_animation.update_anim(self.animation_tick);
                     let snake_string = self.snake_animation.to_string();
 

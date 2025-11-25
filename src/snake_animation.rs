@@ -19,21 +19,47 @@ impl SnakeAnimation {
         snake.add_segment(0, 0);
         snake.add_segment(0, 1);
         snake.add_segment(0, 2);
+        snake.add_segment(0, 3);
         snake
     }
 
     fn next_head_pos(&self) -> Coord {
+        const MAX_X: usize = 12;
         match self.body.last() {
             Some(head) => {
-                match (head.x, head.y) {
-                    (0, 0) => Coord { x: 0, y: 1 },
-                    (0, 1) => Coord { x: 0, y: 2 },
-                    (0, 2) => Coord { x: 0, y: 3 },
-                    (0, 3) => Coord { x: 1, y: 3 },
-                    (1, 3) => Coord { x: 1, y: 2 },
-                    (1, 2) => Coord { x: 1, y: 1 },
-                    (1, 1) => Coord { x: 1, y: 0 },
-                    (1, 0) => Coord { x: 0, y: 0 },
+                match (head.x % 2, head.y) {
+                    (0, 0) => Coord {
+                        x: head.x % MAX_X,
+                        y: 1,
+                    },
+                    (0, 1) => Coord {
+                        x: head.x % MAX_X,
+                        y: 2,
+                    },
+                    (0, 2) => Coord {
+                        x: head.x % MAX_X,
+                        y: 3,
+                    },
+                    (0, 3) => Coord {
+                        x: (head.x + 1) % MAX_X,
+                        y: 3,
+                    },
+                    (1, 3) => Coord {
+                        x: head.x % MAX_X,
+                        y: 2,
+                    },
+                    (1, 2) => Coord {
+                        x: head.x % MAX_X,
+                        y: 1,
+                    },
+                    (1, 1) => Coord {
+                        x: head.x % MAX_X,
+                        y: 0,
+                    },
+                    (1, 0) => Coord {
+                        x: (head.x + 1) % MAX_X,
+                        y: 0,
+                    },
                     _ => Coord { x: 0, y: 0 }, // should not happen
                 }
             }
@@ -43,11 +69,14 @@ impl SnakeAnimation {
 
     pub fn update_anim(&mut self, tick: u64) {
         let next_step: u64 = tick * events::ANIMATION_TICK_RATE_MS / 100;
-        for step in self.current_step..next_step {
+        if next_step > self.current_step + 100 {
+            // probably been a while since our last update, reset to avoid huge jumps
+            log::warn!("SnakeAnimation: large jump in animation steps detected, resetting");
+            self.current_step = next_step;
+        }
+        for _ in self.current_step..next_step {
             let next_head = self.next_head_pos();
-
             self.add_segment(next_head.x, next_head.y);
-
             self.remove_tail();
         }
         self.current_step = next_step;
