@@ -122,6 +122,7 @@ builtin_metadata!(
 enum Opt {
     #[opt = 'r']
     Read,
+
 }
 
 struct Jobu();

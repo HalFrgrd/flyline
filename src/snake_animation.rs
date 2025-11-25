@@ -68,7 +68,7 @@ impl SnakeAnimation {
     }
 
     pub fn update_anim(&mut self, tick: u64) {
-        let next_step: u64 = tick * events::ANIMATION_TICK_RATE_MS / 100;
+        let next_step: u64 = tick * events::ANIMATION_TICK_RATE_MS / 120;
         if next_step > self.current_step + 100 {
             // probably been a while since our last update, reset to avoid huge jumps
             log::warn!("SnakeAnimation: large jump in animation steps detected, resetting");
