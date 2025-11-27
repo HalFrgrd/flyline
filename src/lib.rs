@@ -7,16 +7,36 @@ mod bash_funcs;
 mod bash_symbols;
 mod cursor_animation;
 mod events;
+mod history;
 mod layout_manager;
 mod snake_animation;
 
 // Global state for our custom input stream
-static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<JobuInputStream>>>> = Mutex::new(None);
+static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<JobuInternalState>>>> = Mutex::new(None);
 
-#[derive(Debug)]
-struct JobuInputStream {
-    content: Vec<u8>,
-    position: usize,
+// C-compatible getter function that bash will call
+extern "C" fn jobu_get() -> c_int {
+    if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
+        if let Ok(mut stream) = arc.lock() {
+            return stream.get();
+        }
+    }
+    bash_symbols::EOF
+}
+
+// C-compatible ungetter function that bash will call
+extern "C" fn jobu_unget(c: c_int) -> c_int {
+    // log::debug!(
+    //     "Calling jobu_unget with char: {} (asci={})",
+    //     c,
+    //     c as u8 as char
+    // );
+    if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
+        if let Ok(mut stream) = arc.lock() {
+            return stream.unget(c);
+        }
+    }
+    c
 }
 
 fn setup_logging() -> Result<()> {
@@ -38,7 +58,13 @@ fn setup_logging() -> Result<()> {
     Ok(())
 }
 
-impl JobuInputStream {
+#[derive(Debug)]
+struct JobuInternalState {
+    content: Vec<u8>,
+    position: usize,
+}
+
+impl JobuInternalState {
     fn new() -> Self {
         Self {
             content: vec![],
@@ -84,42 +110,8 @@ impl JobuInputStream {
 }
 
 struct Jobu {
-    input_stream: Arc<Mutex<JobuInputStream>>,
+    input_stream: Arc<Mutex<JobuInternalState>>,
 }
-
-// C-compatible getter function that bash will call
-extern "C" fn jobu_get() -> c_int {
-    if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
-        if let Ok(mut stream) = arc.lock() {
-            return stream.get();
-        }
-    }
-    bash_symbols::EOF
-}
-
-// C-compatible ungetter function that bash will call
-extern "C" fn jobu_unget(c: c_int) -> c_int {
-    // log::debug!(
-    //     "Calling jobu_unget with char: {} (asci={})",
-    //     c,
-    //     c as u8 as char
-    // );
-    if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
-        if let Ok(mut stream) = arc.lock() {
-            return stream.unget(c);
-        }
-    }
-    c
-}
-
-builtin_metadata!(
-    name = "jobu",
-    create = Jobu::default,
-    short_doc = "Set jobu as a custom input stream for bash.",
-    long_doc = "
-        Set jobu as a custom input stream for bash.
-    ",
-);
 
 #[derive(BuiltinOptions)]
 enum Opt {
@@ -186,7 +178,7 @@ impl Default for Jobu {
                 );
             }
         }
-        let input_stream = Arc::new(Mutex::new(JobuInputStream::new()));
+        let input_stream = Arc::new(Mutex::new(JobuInternalState::new()));
 
         // Store the Arc globally so C callbacks can access it
         *JOBU_INSTANCE_PTR.lock().unwrap() = Some(input_stream.clone());
@@ -252,3 +244,12 @@ impl Builtin for Jobu {
         Ok(())
     }
 }
+
+builtin_metadata!(
+    name = "jobu",
+    create = Jobu::default,
+    short_doc = "Set jobu as a custom input stream for bash.",
+    long_doc = "
+        Set jobu as a custom input stream for bash.
+    ",
+);

@@ -3,6 +3,7 @@ use std::vec;
 use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
+use crate::history::{HistoryEntry, parse_bash_history};
 use crate::layout_manager::LayoutManager;
 use crate::snake_animation::SnakeAnimation;
 use ansi_to_tui::IntoText;
@@ -13,25 +14,7 @@ use ratatui::{
     text::Line,
     widgets::{Paragraph, Wrap},
 };
-use std::fs;
 use tui_textarea::{CursorMove, TextArea};
-
-/// Read the user's bash history file into a Vec<String>.
-/// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
-fn parse_bash_history() -> Vec<String> {
-    let hist_path = std::env::var("HISTFILE").unwrap_or_else(|_| {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{}/.bash_history", home)
-    });
-
-    match fs::read_to_string(&hist_path) {
-        Ok(s) => s.lines().map(|l| l.to_string()).collect(),
-        Err(e) => {
-            log::warn!("Could not read history file '{}': {}", hist_path, e);
-            Vec::new()
-        }
-    }
-}
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
@@ -85,7 +68,7 @@ struct App<'a> {
     cursor_animation: CursorAnimation,
     ps1: Text<'a>,
     /// Parsed bash history available at startup.
-    history: Vec<String>,
+    history: Vec<HistoryEntry>,
     history_index: usize,
     is_multiline_mode: bool,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
@@ -94,7 +77,7 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(ps1: Text<'a>, history: Vec<String>, terminal_area: Rect) -> Self {
+    fn new(ps1: Text<'a>, history: Vec<HistoryEntry>, terminal_area: Rect) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
 
@@ -256,7 +239,7 @@ impl<'a> App<'a> {
                         "Up key: Replacing buffer with history index {}",
                         new_hist_index
                     );
-                    let new_command = self.history[new_hist_index].clone();
+                    let new_command = self.history[new_hist_index].command.clone();
                     self.buffer = TextArea::from(vec![new_command.as_str()]);
                     self.buffer.move_cursor(CursorMove::End);
                     self.history_index = new_hist_index;
@@ -277,7 +260,7 @@ impl<'a> App<'a> {
                         "Down key: Replacing buffer with history index {}",
                         new_hist_index
                     );
-                    let new_command = self.history[new_hist_index].clone();
+                    let new_command = self.history[new_hist_index].command.clone();
                     self.buffer = TextArea::from(vec![new_command.as_str()]);
                     self.buffer.move_cursor(CursorMove::End);
                     self.history_index = new_hist_index;
