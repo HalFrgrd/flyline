@@ -36,8 +36,6 @@ pub fn get_command(ps1_prompt: String) -> String {
     let mut terminal = ratatui::Terminal::with_options(backend, options).unwrap();
     terminal.hide_cursor().unwrap();
 
-    // log::debug!("terminal = {:?}", terminal);
-
     // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
     let ps1_prompt = ps1_prompt.replace("\\[", "").replace("\\]", "");
     let ps1_prompt: Text = ps1_prompt.into_text().unwrap_or("bad ps1>".into());

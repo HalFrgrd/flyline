@@ -18,13 +18,24 @@ fn parse_timestamp(line: &str) -> Option<u64> {
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
 pub fn parse_bash_history() -> Vec<HistoryEntry> {
+    // TODO if this is too slow, keep the history between commands instead of reloading every time.
+    let start_time = std::time::Instant::now();
+
     let hist_path = std::env::var("HISTFILE").unwrap_or_else(|_| {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         format!("{}/.bash_history", home)
     });
 
     let content = std::fs::read_to_string(hist_path).unwrap_or_default();
-    parse_bash_history_str(&content)
+    let res = parse_bash_history_str(&content);
+
+    let duration = start_time.elapsed();
+    log::info!(
+        "Parsed bash history ({} entries) in {:?}",
+        res.len(),
+        duration
+    );
+    res
 }
 
 fn parse_bash_history_str(s: &str) -> Vec<HistoryEntry> {

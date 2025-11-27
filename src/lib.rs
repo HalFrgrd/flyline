@@ -121,6 +121,10 @@ enum Opt {
 
 impl Default for Jobu {
     fn default() -> Self {
+        setup_logging().unwrap_or_else(|e| {
+            eprintln!("Failed to setup logging: {}", e);
+        });
+
         // TODO: should I try another approach for any reason?
         // like cehcking if hte current bash_input is readline, and replace the name and getters?
 
@@ -189,10 +193,6 @@ impl Default for Jobu {
 impl Builtin for Jobu {
     fn call(&mut self, args: &mut Args) -> Result<()> {
         // let _state = __bash_builtin__state_jobu().lock().unwrap();
-
-        setup_logging().unwrap_or_else(|e| {
-            eprintln!("Failed to setup logging: {}", e);
-        });
 
         // No options: print the current value and increment it.
         if args.is_empty() {
