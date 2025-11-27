@@ -1,5 +1,7 @@
 use bash_builtins::{Args, Builtin, BuiltinOptions, Result, builtin_metadata};
+use std::env;
 use std::os::raw::c_int;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 mod app;
@@ -12,7 +14,7 @@ mod layout_manager;
 mod snake_animation;
 
 // Global state for our custom input stream
-static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<JobuInternalState>>>> = Mutex::new(None);
+static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Jobu>>>> = Mutex::new(None);
 
 // C-compatible getter function that bash will call
 extern "C" fn jobu_get() -> c_int {
@@ -40,10 +42,6 @@ extern "C" fn jobu_unget(c: c_int) -> c_int {
 }
 
 fn setup_logging() -> Result<()> {
-    use std::env;
-    use std::path::PathBuf;
-
-    // Get home directory
     let home_dir = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let log_file_path = PathBuf::from(home_dir).join("jobu.logs");
 
@@ -59,16 +57,18 @@ fn setup_logging() -> Result<()> {
 }
 
 #[derive(Debug)]
-struct JobuInternalState {
+struct Jobu {
     content: Vec<u8>,
     position: usize,
+    history: Vec<history::HistoryEntry>,
 }
 
-impl JobuInternalState {
+impl Jobu {
     fn new() -> Self {
         Self {
             content: vec![],
             position: 0,
+            history: history::parse_bash_history(),
         }
     }
 
@@ -83,7 +83,14 @@ impl JobuInternalState {
                 .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
                 .unwrap_or("default> ".into());
 
-            self.content = app::get_command(ps1_prompt).into_bytes();
+            self.content = app::get_command(ps1_prompt, &self.history).into_bytes();
+            self.history.push(history::HistoryEntry {
+                timestamp: None,
+                command: String::from_utf8_lossy(&self.content)
+                    .trim_end()
+                    .to_string(),
+            });
+
             self.content.push(b'\n');
             self.position = 0;
         }
@@ -109,17 +116,9 @@ impl JobuInternalState {
     }
 }
 
-struct Jobu {
-    input_stream: Arc<Mutex<JobuInternalState>>,
-}
+struct JobuSentinel;
 
-#[derive(BuiltinOptions)]
-enum Opt {
-    #[opt = 'r']
-    Read,
-}
-
-impl Default for Jobu {
+impl Default for JobuSentinel {
     fn default() -> Self {
         setup_logging().unwrap_or_else(|e| {
             eprintln!("Failed to setup logging: {}", e);
@@ -141,10 +140,6 @@ impl Default for Jobu {
         // with_input_from_stdin will see that the current bash_input is fit for purpose and not add readline stdin.
 
         unsafe {
-            println!(
-                "interactive_shell in default={}",
-                bash_symbols::interactive_shell
-            );
             let stream_list_head = &mut *bash_symbols::stream_list;
             let stream_is_null = bash_symbols::stream_list.is_null();
             // println!("stream_list is null: {}", stream_is_null);
@@ -158,16 +153,12 @@ impl Default for Jobu {
                     // This basically takes over the sentinel node at the base of the stream_list
                     println!("Setting jobu input stream at the head of the list");
                     let name = std::ffi::CString::new("jobu_input").unwrap();
-                    // let location = bash_symbols::InputStreamLocation {
-                    //     string: std::ffi::CString::new("sdflkjsdf").unwrap().into_raw(),
-                    // };
+
                     stream_list_head.bash_input.type_ = bash_symbols::StreamType::StStdin;
                     stream_list_head.bash_input.name = name.as_ptr() as *mut i8;
-                    // stream_list_head.bash_input.location = location;
                     stream_list_head.bash_input.getter = Some(jobu_get);
                     stream_list_head.bash_input.ungetter = Some(jobu_unget);
 
-                    // std::mem::forget(location);
                     std::mem::forget(name);
                 } else {
                     log::error!(
@@ -182,15 +173,20 @@ impl Default for Jobu {
                 );
             }
         }
-        let input_stream = Arc::new(Mutex::new(JobuInternalState::new()));
 
         // Store the Arc globally so C callbacks can access it
-        *JOBU_INSTANCE_PTR.lock().unwrap() = Some(input_stream.clone());
-        Jobu { input_stream }
+        *JOBU_INSTANCE_PTR.lock().unwrap() = Some(Arc::new(Mutex::new(Jobu::new())));
+        JobuSentinel {}
     }
 }
 
-impl Builtin for Jobu {
+#[derive(BuiltinOptions)]
+enum Opt {
+    #[opt = 'r']
+    Read,
+}
+
+impl Builtin for JobuSentinel {
     fn call(&mut self, args: &mut Args) -> Result<()> {
         // let _state = __bash_builtin__state_jobu().lock().unwrap();
 
@@ -247,7 +243,7 @@ impl Builtin for Jobu {
 
 builtin_metadata!(
     name = "jobu",
-    create = Jobu::default,
+    create = JobuSentinel::default,
     short_doc = "Set jobu as a custom input stream for bash.",
     long_doc = "
         Set jobu as a custom input stream for bash.

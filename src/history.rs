@@ -1,3 +1,4 @@
+#[derive(Debug, Clone)]
 pub struct HistoryEntry {
     pub timestamp: Option<u64>,
     pub command: String,
@@ -18,7 +19,6 @@ fn parse_timestamp(line: &str) -> Option<u64> {
 /// Read the user's bash history file into a Vec<String>.
 /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
 pub fn parse_bash_history() -> Vec<HistoryEntry> {
-    // TODO if this is too slow, keep the history between commands instead of reloading every time.
     let start_time = std::time::Instant::now();
 
     let hist_path = std::env::var("HISTFILE").unwrap_or_else(|_| {

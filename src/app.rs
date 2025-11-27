@@ -3,7 +3,7 @@ use std::vec;
 use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
-use crate::history::{HistoryEntry, parse_bash_history};
+use crate::history::HistoryEntry;
 use crate::layout_manager::LayoutManager;
 use crate::snake_animation::SnakeAnimation;
 use ansi_to_tui::IntoText;
@@ -24,7 +24,7 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-pub fn get_command(ps1_prompt: String) -> String {
+pub fn get_command(ps1_prompt: String, history: &Vec<HistoryEntry>) -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
@@ -39,9 +39,6 @@ pub fn get_command(ps1_prompt: String) -> String {
     // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
     let ps1_prompt = ps1_prompt.replace("\\[", "").replace("\\]", "");
     let ps1_prompt: Text = ps1_prompt.into_text().unwrap_or("bad ps1>".into());
-
-    // Parse the user's bash history into a vector of command strings.
-    let history = parse_bash_history();
 
     let runtime = build_runtime();
 
@@ -66,7 +63,7 @@ struct App<'a> {
     cursor_animation: CursorAnimation,
     ps1: Text<'a>,
     /// Parsed bash history available at startup.
-    history: Vec<HistoryEntry>,
+    history: &'a Vec<HistoryEntry>,
     history_index: usize,
     is_multiline_mode: bool,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
@@ -75,7 +72,7 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(ps1: Text<'a>, history: Vec<HistoryEntry>, terminal_area: Rect) -> Self {
+    fn new(ps1: Text<'a>, history: &'a Vec<HistoryEntry>, terminal_area: Rect) -> Self {
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
 
