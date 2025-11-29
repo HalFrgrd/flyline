@@ -1,12 +1,12 @@
 use std::vec;
 
+use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::history::{HistoryEntry, HistoryManager};
 use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
-use crate::{Opt, bash_funcs};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::style::Styled;
@@ -175,40 +175,56 @@ impl<'a> App<'a> {
             }
             KeyEvent {
                 code: KeyCode::Left,
-                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.buffer.move_cursor(CursorMove::WordBack);
+                let move_type = if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    CursorMove::WordBack
+                } else {
+                    CursorMove::Back
+                };
+                self.buffer.move_cursor(move_type);
             }
             KeyEvent {
-                code: KeyCode::Left,
+                code: KeyCode::Right | KeyCode::End,
                 ..
             } => {
-                self.buffer.move_cursor(CursorMove::Back);
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.buffer.move_cursor(CursorMove::WordForward);
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                ..
-            } => {
-                self.buffer.move_cursor(CursorMove::Forward);
+                let current_cursor_pos = self.buffer.cursor();
+                self.buffer.move_cursor(CursorMove::Bottom);
+                self.buffer.move_cursor(CursorMove::End);
+                let end_cursor_pos = self.buffer.cursor();
+
+                if current_cursor_pos == end_cursor_pos
+                    && let Some(suf) = &self.suggestion_suffix
+                {
+                    self.buffer.insert_str(suf);
+                    self.buffer.move_cursor(CursorMove::Bottom);
+                    self.buffer.move_cursor(CursorMove::End);
+                } else {
+                    let restore_cursor_pos: (u16, u16) = (
+                        current_cursor_pos.0.try_into().unwrap_or(0),
+                        current_cursor_pos.1.try_into().unwrap_or(0),
+                    );
+                    self.buffer
+                        .move_cursor(CursorMove::Jump(restore_cursor_pos.0, restore_cursor_pos.1));
+                    let move_type = match key {
+                        KeyEvent {
+                            code: KeyCode::Right,
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        } => CursorMove::WordForward,
+                        KeyEvent {
+                            code: KeyCode::End, ..
+                        } => CursorMove::End,
+                        _ => CursorMove::Forward,
+                    };
+                    self.buffer.move_cursor(move_type);
+                }
             }
             KeyEvent {
                 code: KeyCode::Home,
                 ..
             } => {
                 self.buffer.move_cursor(CursorMove::Head);
-            }
-            KeyEvent {
-                code: KeyCode::End, ..
-            } => {
-                self.buffer.move_cursor(CursorMove::End);
             }
             KeyEvent {
                 code: KeyCode::Up, ..
@@ -296,12 +312,16 @@ impl<'a> App<'a> {
         result
     }
 
+    /// Concatenates two vectors of Lines by merging their spans at the boundary.
+    /// The last line of `a` and the first line of `b` are combined into a single line.
     fn splice_lines<'c>(a: Vec<Line<'c>>, b: Vec<Line<'c>>) -> Vec<Line<'c>> {
         let mut result = a;
         if !result.is_empty() && !b.is_empty() {
             let last_line = result.pop().unwrap();
             let first_line = &b[0];
             let mut combined_spans = last_line.spans;
+            // log combined_spans style
+            // log::debug!("Splicing lines. First line: {:?}, First line spans: {:?}", first_line, first_line.spans);
             combined_spans.extend(first_line.spans.clone());
             result.push(Line::from(combined_spans));
             result.extend(b.into_iter().skip(1));
@@ -314,24 +334,18 @@ impl<'a> App<'a> {
     fn ui(&mut self, f: &mut Frame) {
         let mut output_lines: Vec<Line> = self.prompt_manager.get_ps1_lines();
 
-        self.cursor_animation.update_position(
-            (
-                self.buffer.cursor().0.try_into().unwrap(),
-                self.buffer.cursor().1.try_into().unwrap(),
-            ),
-            self.animation_tick,
-        );
-
+        self.cursor_animation
+            .update_position(self.buffer.cursor(), self.animation_tick);
         let (cursor_row, cursor_col) = self.cursor_animation.get_position(self.animation_tick);
-        let cursor_row = cursor_row as usize;
-        let mut cursor_col = cursor_col as usize;
         let cursor_intensity = self.cursor_animation.get_intensity(self.animation_tick);
 
         let suggestion_suffix_lines: Vec<Line> =
             self.suggestion_suffix.as_ref().map_or(vec![], |suf| {
                 suf.lines()
                     .map(|line| {
-                        Line::from(line.to_owned()).style(Style::default().fg(Color::DarkGray))
+                        Span::from(line.to_owned())
+                            .style(Style::default().fg(Color::DarkGray))
+                            .into()
                     })
                     .collect()
             });
@@ -397,9 +411,9 @@ impl<'a> App<'a> {
             })
             .collect();
 
-        // TODO splice last and first lines together
         command_lines = Self::splice_lines(command_lines, suggestion_suffix_lines);
 
+        // Add cursor
         for (i, line) in command_lines.iter_mut().enumerate() {
             if i == cursor_row && self.is_running {
                 let cursor_style = ratatui::style::Style::new().bg(ratatui::style::Color::Rgb(
@@ -463,6 +477,7 @@ impl<'a> App<'a> {
             }
         }
 
+        // Combine with prompt
         output_lines = Self::splice_lines(output_lines, command_lines);
 
         let output = Paragraph::new(output_lines).wrap(Wrap { trim: false });
