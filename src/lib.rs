@@ -60,7 +60,7 @@ fn setup_logging() -> Result<()> {
 struct Jobu {
     content: Vec<u8>,
     position: usize,
-    history: Vec<history::HistoryEntry>,
+    history: history::HistoryManager,
 }
 
 impl Jobu {
@@ -68,7 +68,7 @@ impl Jobu {
         Self {
             content: vec![],
             position: 0,
-            history: history::parse_bash_history(),
+            history: history::HistoryManager::new(),
         }
     }
 
@@ -83,8 +83,8 @@ impl Jobu {
                 .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
                 .unwrap_or("default> ".into());
 
-            self.content = app::get_command(ps1_prompt, &self.history).into_bytes();
-            self.history.push(history::HistoryEntry {
+            self.content = app::get_command(ps1_prompt, &mut self.history).into_bytes();
+            self.history.add_entry(history::HistoryEntry {
                 timestamp: None,
                 command: String::from_utf8_lossy(&self.content)
                     .trim_end()

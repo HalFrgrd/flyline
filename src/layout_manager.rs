@@ -22,6 +22,11 @@ impl LayoutManager {
         layout_manager
     }
 
+    pub fn update_area(&mut self, terminal_area: Rect) {
+        self.terminal_height = terminal_area.height;
+        self.terminal_width = terminal_area.width;
+    }
+
     pub fn get_area(&mut self, output_num_lines: u16) -> Rect {
         let desired_area = Rect::new(0, self.range_start, self.terminal_width, output_num_lines);
 

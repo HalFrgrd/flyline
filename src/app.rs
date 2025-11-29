@@ -3,7 +3,7 @@ use std::vec;
 use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
-use crate::history::HistoryEntry;
+use crate::history::{HistoryEntry, HistoryManager};
 use crate::layout_manager::LayoutManager;
 use crate::snake_animation::SnakeAnimation;
 use ansi_to_tui::IntoText;
@@ -24,7 +24,7 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-pub fn get_command(ps1_prompt: String, history: &Vec<HistoryEntry>) -> String {
+pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
     let options = TerminalOptions {
         // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
@@ -36,10 +36,6 @@ pub fn get_command(ps1_prompt: String, history: &Vec<HistoryEntry>) -> String {
     let mut terminal = ratatui::Terminal::with_options(backend, options).unwrap();
     terminal.hide_cursor().unwrap();
 
-    // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
-    let ps1_prompt = ps1_prompt.replace("\\[", "").replace("\\]", "");
-    let ps1_prompt: Text = ps1_prompt.into_text().unwrap_or("bad ps1>".into());
-
     let runtime = build_runtime();
 
     let mut app = App::new(ps1_prompt, history, terminal.get_frame().area());
@@ -47,10 +43,6 @@ pub fn get_command(ps1_prompt: String, history: &Vec<HistoryEntry>) -> String {
 
     crossterm::terminal::disable_raw_mode().unwrap();
     app.layout_manager.finalize();
-
-    let final_cursor_pos = crossterm::cursor::position().unwrap();
-    log::debug!("Final cursor position: {:?}", final_cursor_pos);
-    // terminal.show_cursor().unwrap();
 
     log::debug!("Final command: {}", command);
     command
@@ -63,8 +55,7 @@ struct App<'a> {
     cursor_animation: CursorAnimation,
     ps1: Text<'a>,
     /// Parsed bash history available at startup.
-    history: &'a Vec<HistoryEntry>,
-    history_index: usize,
+    history: &'a mut HistoryManager,
     is_multiline_mode: bool,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
     layout_manager: LayoutManager,
@@ -72,14 +63,17 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(ps1: Text<'a>, history: &'a Vec<HistoryEntry>, terminal_area: Rect) -> Self {
+    fn new(ps1: String, history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
+        // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
+        let ps1 = ps1.replace("\\[", "").replace("\\]", "");
+        let ps1: Text = ps1.into_text().unwrap_or("bad ps1>".into());
+
         let num_rows_of_prompt = ps1.lines.len() as u16;
         assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
 
-        // let mut buffer = TextArea::new(vec![PS1.to_string()]);
-        // buffer.move_cursor(CursorMove::End);
         let buffer = TextArea::default();
-        let history_index = history.len();
+
+        history.new_session();
         App {
             is_running: true,
             buffer,
@@ -87,7 +81,6 @@ impl<'a> App<'a> {
             cursor_animation: CursorAnimation::new(),
             ps1: ps1.to_owned(),
             history,
-            history_index,
             is_multiline_mode: false,
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
@@ -227,17 +220,13 @@ impl<'a> App<'a> {
                 code: KeyCode::Up, ..
             } => {
                 let (cursor_row, _) = self.buffer.cursor();
-                let new_hist_index = self.history_index.saturating_sub(1);
-                if cursor_row == 0 && new_hist_index < self.history.len() {
+                if cursor_row == 0 {
                     // Replace current buffer with last history entry
-                    log::debug!(
-                        "Up key: Replacing buffer with history index {}",
-                        new_hist_index
-                    );
-                    let new_command = self.history[new_hist_index].command.clone();
-                    self.buffer = TextArea::from(vec![new_command.as_str()]);
-                    self.buffer.move_cursor(CursorMove::End);
-                    self.history_index = new_hist_index;
+                    if let Some(entry) = self.history.go_back_in_history() {
+                        let new_command = entry.command.clone();
+                        self.buffer = TextArea::from(vec![new_command.as_str()]);
+                        self.buffer.move_cursor(CursorMove::End);
+                    }
                 } else {
                     self.buffer.move_cursor(CursorMove::Up);
                 }
@@ -247,18 +236,13 @@ impl<'a> App<'a> {
                 ..
             } => {
                 let (cursor_row, _) = self.buffer.cursor();
-                let new_hist_index = self.history_index.saturating_add(1);
-                if cursor_row + 1 >= self.buffer.lines().len()
-                    && new_hist_index < self.history.len()
-                {
-                    log::debug!(
-                        "Down key: Replacing buffer with history index {}",
-                        new_hist_index
-                    );
-                    let new_command = self.history[new_hist_index].command.clone();
-                    self.buffer = TextArea::from(vec![new_command.as_str()]);
-                    self.buffer.move_cursor(CursorMove::End);
-                    self.history_index = new_hist_index;
+                if cursor_row + 1 >= self.buffer.lines().len() {
+                    // Replace current buffer with next history entry
+                    if let Some(entry) = self.history.go_forward_in_history() {
+                        let new_command = entry.command.clone();
+                        self.buffer = TextArea::from(vec![new_command.as_str()]);
+                        self.buffer.move_cursor(CursorMove::End);
+                    }
                 } else {
                     self.buffer.move_cursor(CursorMove::Down);
                 }
@@ -500,6 +484,7 @@ impl<'a> App<'a> {
         let full_terminal_area = f.area();
         let output_num_lines = output.line_count(full_terminal_area.width) as u16;
 
+        self.layout_manager.update_area(full_terminal_area);
         let area = self.layout_manager.get_area(output_num_lines);
 
         f.render_widget(&output, area);
