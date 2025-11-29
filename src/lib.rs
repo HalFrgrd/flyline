@@ -11,6 +11,7 @@ mod cursor_animation;
 mod events;
 mod history;
 mod layout_manager;
+mod prompt_manager;
 mod snake_animation;
 
 // Global state for our custom input stream

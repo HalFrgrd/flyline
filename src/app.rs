@@ -5,8 +5,8 @@ use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::history::{HistoryEntry, HistoryManager};
 use crate::layout_manager::LayoutManager;
+use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
-use ansi_to_tui::IntoText;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::{
@@ -53,9 +53,9 @@ struct App<'a> {
     buffer: TextArea<'a>,
     animation_tick: u64,
     cursor_animation: CursorAnimation,
-    ps1: Text<'a>,
+    prompt_manager: PromptManager,
     /// Parsed bash history available at startup.
-    history: &'a mut HistoryManager,
+    history_manager: &'a mut HistoryManager,
     is_multiline_mode: bool,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
     layout_manager: LayoutManager,
@@ -64,23 +64,14 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(ps1: String, history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
-        // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
-        let ps1 = ps1.replace("\\[", "").replace("\\]", "");
-        let ps1: Text = ps1.into_text().unwrap_or("bad ps1>".into());
-
-        let num_rows_of_prompt = ps1.lines.len() as u16;
-        assert!(num_rows_of_prompt > 0, "PS1 must have at least one line");
-
-        let buffer = TextArea::default();
-
         history.new_session();
         App {
             is_running: true,
-            buffer,
+            buffer: TextArea::default(),
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
-            ps1: ps1.to_owned(),
-            history,
+            prompt_manager: PromptManager::new(ps1),
+            history_manager: history,
             is_multiline_mode: false,
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
@@ -222,7 +213,7 @@ impl<'a> App<'a> {
                 let (cursor_row, _) = self.buffer.cursor();
                 if cursor_row == 0 {
                     // Replace current buffer with last history entry
-                    if let Some(entry) = self.history.go_back_in_history() {
+                    if let Some(entry) = self.history_manager.go_back_in_history() {
                         let new_command = entry.command.clone();
                         self.buffer = TextArea::from(vec![new_command.as_str()]);
                         self.buffer.move_cursor(CursorMove::End);
@@ -238,7 +229,7 @@ impl<'a> App<'a> {
                 let (cursor_row, _) = self.buffer.cursor();
                 if cursor_row + 1 >= self.buffer.lines().len() {
                     // Replace current buffer with next history entry
-                    if let Some(entry) = self.history.go_forward_in_history() {
+                    if let Some(entry) = self.history_manager.go_forward_in_history() {
                         let new_command = entry.command.clone();
                         self.buffer = TextArea::from(vec![new_command.as_str()]);
                         self.buffer.move_cursor(CursorMove::End);
@@ -288,40 +279,6 @@ impl<'a> App<'a> {
         }
     }
 
-    fn get_ps1_lines(ps1: Text) -> Vec<Line> {
-        let lines = ps1.lines;
-        lines
-            .into_iter()
-            .map(|line| {
-                let spans: Vec<Span> = line
-                    .spans
-                    .into_iter()
-                    .map(|span| {
-                        if span.content.contains("JOBU_TIME_XXX") {
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap();
-                            let time_str = format!(
-                                "{:02}:{:02}:{:02}.{:03}",
-                                (now.as_secs() / 3600) % 24, // hours
-                                (now.as_secs() / 60) % 60,   // minutes
-                                now.as_secs() % 60,          // seconds
-                                now.subsec_millis()          // milliseconds
-                            );
-                            Span::styled(
-                                span.content.replace("JOBU_TIME_XXX", &time_str),
-                                span.style,
-                            )
-                        } else {
-                            span
-                        }
-                    })
-                    .collect();
-                Line::from(spans)
-            })
-            .collect()
-    }
-
     fn get_command_type(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
         if let Some(cached) = self.call_type_cache.get(cmd) {
             return cached.clone();
@@ -333,7 +290,7 @@ impl<'a> App<'a> {
     }
 
     fn ui(&mut self, f: &mut Frame) {
-        let mut output_lines: Vec<Line> = Self::get_ps1_lines(self.ps1.clone());
+        let mut output_lines: Vec<Line> = self.prompt_manager.get_ps1_lines();
 
         self.cursor_animation.update_position(
             (
