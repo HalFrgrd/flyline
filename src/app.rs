@@ -9,7 +9,6 @@ use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
-use ratatui::style::Styled;
 use ratatui::{
     DefaultTerminal, Frame, TerminalOptions, Viewport,
     text::Line,
@@ -194,7 +193,7 @@ impl<'a> App<'a> {
                 let end_cursor_pos = self.buffer.cursor();
 
                 if current_cursor_pos == end_cursor_pos
-                    && let Some((sug, suf)) = &self.suggestion
+                    && let Some((_, suf)) = &self.suggestion
                 {
                     self.buffer.insert_str(suf);
                     self.buffer.move_cursor(CursorMove::Bottom);
@@ -344,6 +343,7 @@ impl<'a> App<'a> {
         let (cursor_row, cursor_col) = self.cursor_animation.get_position(self.animation_tick);
         let cursor_intensity = self.cursor_animation.get_intensity(self.animation_tick);
 
+        // TODO: cache this
         let suggestion_suffix_lines: Vec<Line> =
             self.suggestion.as_ref().map_or(vec![], |(sug, suf)| {
                 suf.lines()
