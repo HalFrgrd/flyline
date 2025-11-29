@@ -61,7 +61,7 @@ struct App<'a> {
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
     layout_manager: LayoutManager,
     snake_animation: SnakeAnimation,
-    suggestion_suffix: Option<String>,
+    suggestion: Option<(HistoryEntry, String)>,
 }
 
 impl<'a> App<'a> {
@@ -78,7 +78,7 @@ impl<'a> App<'a> {
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
             snake_animation: SnakeAnimation::new(),
-            suggestion_suffix: None,
+            suggestion: None,
         }
     }
 
@@ -194,7 +194,7 @@ impl<'a> App<'a> {
                 let end_cursor_pos = self.buffer.cursor();
 
                 if current_cursor_pos == end_cursor_pos
-                    && let Some(suf) = &self.suggestion_suffix
+                    && let Some((sug, suf)) = &self.suggestion
                 {
                     self.buffer.insert_str(suf);
                     self.buffer.move_cursor(CursorMove::Bottom);
@@ -232,7 +232,10 @@ impl<'a> App<'a> {
                 let (cursor_row, _) = self.buffer.cursor();
                 if cursor_row == 0 {
                     // Replace current buffer with last history entry
-                    if let Some(entry) = self.history_manager.go_back_in_history() {
+                    if let Some(entry) = self
+                        .history_manager
+                        .go_back_in_history(self.buffer.lines().join("\n").as_str())
+                    {
                         let new_command = entry.command.clone();
                         self.buffer = TextArea::from(vec![new_command.as_str()]);
                         self.buffer.move_cursor(CursorMove::End);
@@ -297,9 +300,11 @@ impl<'a> App<'a> {
             _ => {}
         }
 
-        self.suggestion_suffix = self
+        self.suggestion = self
             .history_manager
             .get_command_suggestion_suffix(self.buffer.lines().join("\n").as_str());
+
+        log::debug!("Suggestion updated: {:?}", self.suggestion);
     }
 
     fn get_command_type(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
@@ -340,12 +345,41 @@ impl<'a> App<'a> {
         let cursor_intensity = self.cursor_animation.get_intensity(self.animation_tick);
 
         let suggestion_suffix_lines: Vec<Line> =
-            self.suggestion_suffix.as_ref().map_or(vec![], |suf| {
+            self.suggestion.as_ref().map_or(vec![], |(sug, suf)| {
                 suf.lines()
-                    .map(|line| {
-                        Span::from(line.to_owned())
-                            .style(Style::default().fg(Color::DarkGray))
-                            .into()
+                    .enumerate()
+                    .map(|(i, line)| {
+                        let mut line_parts = vec![];
+
+                        line_parts.push(
+                            Span::from(line.to_owned())
+                                .style(Style::default().fg(Color::DarkGray))
+                                .into(),
+                        );
+
+                        if i == suf.lines().count() - 1 {
+                            let mut extra_info_text = format!(" # idx={}", sug.index);
+                            if let Some(ts) = sug.timestamp {
+                                use timeago;
+                                let duration = std::time::Duration::from_secs(
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_secs()
+                                        .saturating_sub(ts),
+                                );
+                                let time_ago_str = timeago::Formatter::new().convert(duration);
+                                extra_info_text.push_str(&format!(" t={}", time_ago_str));
+                            }
+
+                            line_parts.push(
+                                Span::from(extra_info_text)
+                                    .style(Style::default().fg(Color::DarkGray))
+                                    .into(),
+                            );
+                        }
+
+                        Line::from(line_parts)
                     })
                     .collect()
             });
@@ -411,7 +445,9 @@ impl<'a> App<'a> {
             })
             .collect();
 
-        command_lines = Self::splice_lines(command_lines, suggestion_suffix_lines);
+        if self.is_running {
+            command_lines = Self::splice_lines(command_lines, suggestion_suffix_lines);
+        }
 
         // Add cursor
         for (i, line) in command_lines.iter_mut().enumerate() {

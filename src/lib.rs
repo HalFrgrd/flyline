@@ -85,12 +85,16 @@ impl Jobu {
                 .unwrap_or("default> ".into());
 
             self.content = app::get_command(ps1_prompt, &mut self.history).into_bytes();
-            self.history.add_entry(history::HistoryEntry {
-                timestamp: None,
-                command: String::from_utf8_lossy(&self.content)
+            let timestamp: Option<u64> = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs());
+            self.history.add_entry(
+                timestamp,
+                String::from_utf8_lossy(&self.content)
                     .trim_end()
                     .to_string(),
-            });
+            );
 
             self.content.push(b'\n');
             self.position = 0;

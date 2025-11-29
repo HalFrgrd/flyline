@@ -1,6 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
     pub timestamp: Option<u64>,
+    pub index: usize,
     pub command: String,
 }
 
@@ -43,7 +44,12 @@ impl HistoryManager {
         self.index = self.entries.len();
     }
 
-    pub fn add_entry(&mut self, entry: HistoryEntry) {
+    pub fn add_entry(&mut self, ts: Option<u64>, command: String) {
+        let entry = HistoryEntry {
+            timestamp: ts,
+            index: self.entries.len(),
+            command,
+        };
         self.entries.push(entry);
     }
 
@@ -75,6 +81,7 @@ impl HistoryManager {
                 // It's a command line
                 let entry = HistoryEntry {
                     timestamp: my_ts,
+                    index: res.len(),
                     command: l.to_string(),
                 };
                 res.push(entry);
@@ -86,18 +93,24 @@ impl HistoryManager {
         res
     }
 
-    pub fn get_command_suggestion_suffix(&self, prefix: &str) -> Option<String> {
-        for entry in self.entries.iter().rev() {
+    pub fn get_command_suggestion_suffix(&self, prefix: &str) -> Option<(HistoryEntry, String)> {
+        for entry in self.entries.iter().take(self.index).rev() {
             if entry.command.starts_with(prefix) {
-                return Some(entry.command[prefix.len()..].to_string());
+                return Some((entry.clone(), entry.command[prefix.len()..].to_string()));
             }
         }
         None
     }
 
-    pub fn go_back_in_history(&mut self) -> Option<&HistoryEntry> {
-        self.index = self.index.saturating_sub(1);
-        self.entries.get(self.index)
+    pub fn go_back_in_history(&mut self, current_cmd: &str) -> Option<&HistoryEntry> {
+        for (i, entry) in self.entries.iter().enumerate().take(self.index).rev() {
+            if entry.command.starts_with(current_cmd) {
+                self.index = i;
+                return Some(entry);
+            }
+        }
+
+        None
     }
 
     pub fn go_forward_in_history(&mut self) -> Option<&HistoryEntry> {
@@ -142,17 +155,18 @@ cd /home/user2
 
         let mut entries_iter = entries.iter();
 
-        let mut check = |expected_ts: Option<u64>, expected_cmd: &str| {
+        let mut check = |expected_ts: Option<u64>, expected_index: usize, expected_cmd: &str| {
             let entry = entries_iter.next().unwrap();
             assert_eq!(entry.timestamp, expected_ts);
+            assert_eq!(entry.index, expected_index);
             assert_eq!(entry.command, expected_cmd);
         };
 
-        check(Some(1625078400), "ls -al");
-        check(Some(1625078460), "echo 'Hello, World!'");
-        check(None, "pwd");
-        check(None, "#cd /asdf/asdf");
-        check(None, "cd /home/user");
-        check(Some(1625078460), "cd /home/user2");
+        check(Some(1625078400), 0, "ls -al");
+        check(Some(1625078460), 1, "echo 'Hello, World!'");
+        check(None, 2, "pwd");
+        check(None, 3, "#cd /asdf/asdf");
+        check(None, 4, "cd /home/user");
+        check(Some(1625078460), 5, "cd /home/user2");
     }
 }
