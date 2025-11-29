@@ -1,14 +1,15 @@
 use std::vec;
 
-use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::history::{HistoryEntry, HistoryManager};
 use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
+use crate::{Opt, bash_funcs};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
+use ratatui::style::Styled;
 use ratatui::{
     DefaultTerminal, Frame, TerminalOptions, Viewport,
     text::Line,
@@ -60,6 +61,7 @@ struct App<'a> {
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
     layout_manager: LayoutManager,
     snake_animation: SnakeAnimation,
+    suggestion_suffix: Option<String>,
 }
 
 impl<'a> App<'a> {
@@ -76,6 +78,7 @@ impl<'a> App<'a> {
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
             snake_animation: SnakeAnimation::new(),
+            suggestion_suffix: None,
         }
     }
 
@@ -277,6 +280,10 @@ impl<'a> App<'a> {
             }
             _ => {}
         }
+
+        self.suggestion_suffix = self
+            .history_manager
+            .get_command_suggestion_suffix(self.buffer.lines().join("\n").as_str());
     }
 
     fn get_command_type(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
@@ -286,6 +293,21 @@ impl<'a> App<'a> {
         let result = bash_funcs::call_type(cmd);
         self.call_type_cache.insert(cmd.to_string(), result.clone());
         log::debug!("call_type result for {}: {:?}", cmd, result);
+        result
+    }
+
+    fn splice_lines<'c>(a: Vec<Line<'c>>, b: Vec<Line<'c>>) -> Vec<Line<'c>> {
+        let mut result = a;
+        if !result.is_empty() && !b.is_empty() {
+            let last_line = result.pop().unwrap();
+            let first_line = &b[0];
+            let mut combined_spans = last_line.spans;
+            combined_spans.extend(first_line.spans.clone());
+            result.push(Line::from(combined_spans));
+            result.extend(b.into_iter().skip(1));
+        } else {
+            result.extend(b);
+        }
         result
     }
 
@@ -305,84 +327,92 @@ impl<'a> App<'a> {
         let mut cursor_col = cursor_col as usize;
         let cursor_intensity = self.cursor_animation.get_intensity(self.animation_tick);
 
+        let suggestion_suffix_lines: Vec<Line> =
+            self.suggestion_suffix.as_ref().map_or(vec![], |suf| {
+                suf.lines()
+                    .map(|line| {
+                        Line::from(line.to_owned()).style(Style::default().fg(Color::DarkGray))
+                    })
+                    .collect()
+            });
+
         // Clone lines to break the borrow so we can call get_command_type
-        let lines: Vec<String> = self.buffer.lines().to_vec();
+        let command_lines_str: Vec<String> = self.buffer.lines().to_vec();
 
-        for (i, line) in lines.iter().enumerate() {
-            let new_line = if i == 0 {
-                // Combine the last PS1 line with the first buffer line
-                let last_ps1_line = output_lines.pop().unwrap_or_else(|| Line::from(""));
+        let mut command_lines: Vec<Line> = command_lines_str
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                if i == 0 {
+                    let space_pos = line.find(' ').unwrap_or(line.len());
+                    let (first_word, rest) = line.split_at(space_pos);
 
-                if cursor_row == 0 {
-                    // TODO: unicode width and all that
-                    cursor_col += last_ps1_line.width();
-                }
-                let mut combined_spans = last_ps1_line.spans;
+                    let (command_type, _short_desc) = self.get_command_type(first_word);
 
-                let space_pos = line.find(' ').unwrap_or(line.len());
-                let (first_word, rest) = line.split_at(space_pos);
+                    let first_word = if first_word.starts_with("python") && self.is_running {
+                        self.snake_animation.update_anim(self.animation_tick);
+                        let snake_string = self.snake_animation.to_string();
 
-                let (command_type, _short_desc) = self.get_command_type(first_word);
+                        let mut result = String::new();
+                        let first_word_chars: Vec<char> = first_word.chars().collect();
+                        let snake_chars: Vec<char> = snake_string.chars().collect();
 
-                let is_first_word_recognized = command_type != bash_funcs::CommandType::Unknown;
-
-                let first_word_style = if is_first_word_recognized {
-                    Style::default().fg(Color::Green)
-                } else {
-                    Style::default().fg(Color::Red)
-                };
-
-                let first_word = if first_word.starts_with("python") && self.is_running {
-                    self.snake_animation.update_anim(self.animation_tick);
-                    let snake_string = self.snake_animation.to_string();
-
-                    let mut result = String::new();
-                    let first_word_chars: Vec<char> = first_word.chars().collect();
-                    let snake_chars: Vec<char> = snake_string.chars().collect();
-
-                    for i in 0..6.min(first_word_chars.len()) {
-                        if i < snake_chars.len() {
-                            if snake_chars[i] == '⠀' {
-                                result.push(first_word_chars[i]);
+                        for i in 0..6.min(first_word_chars.len()) {
+                            if i < snake_chars.len() {
+                                if snake_chars[i] == '⠀' {
+                                    result.push(first_word_chars[i]);
+                                } else {
+                                    result.push(snake_chars[i]);
+                                }
                             } else {
-                                result.push(snake_chars[i]);
+                                result.push(first_word_chars[i]);
                             }
-                        } else {
-                            result.push(first_word_chars[i]);
                         }
-                    }
 
-                    // Add remaining characters from first_word if it's longer than 6
-                    if first_word_chars.len() > 6 {
-                        result.push_str(&first_word_chars[6..].iter().collect::<String>());
-                    }
+                        // Add remaining characters from first_word if it's longer than 6
+                        if first_word_chars.len() > 6 {
+                            result.push_str(&first_word_chars[6..].iter().collect::<String>());
+                        }
 
-                    result
+                        result
+                    } else {
+                        first_word.to_string()
+                    };
+
+                    let is_first_word_recognized = command_type != bash_funcs::CommandType::Unknown;
+
+                    let first_word_style = Style::default().fg(if is_first_word_recognized {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    });
+
+                    let mut combined_spans = Vec::new();
+                    combined_spans.push(Span::styled(first_word, first_word_style));
+                    combined_spans.push(Span::styled(rest.to_string(), Style::default()));
+                    Line::from(combined_spans)
                 } else {
-                    first_word.to_string()
-                };
+                    Line::from(line.as_str())
+                }
+            })
+            .collect();
 
-                combined_spans.push(Span::styled(first_word, first_word_style));
-                combined_spans.push(Span::styled(rest.to_string(), Style::default()));
+        // TODO splice last and first lines together
+        command_lines = Self::splice_lines(command_lines, suggestion_suffix_lines);
 
-                Line::from(combined_spans)
-            } else {
-                Line::from(line.as_str())
-            };
-
-            let final_line = if i == cursor_row && self.is_running {
-                let color = ratatui::style::Color::Rgb(
+        for (i, line) in command_lines.iter_mut().enumerate() {
+            if i == cursor_row && self.is_running {
+                let cursor_style = ratatui::style::Style::new().bg(ratatui::style::Color::Rgb(
                     cursor_intensity,
                     cursor_intensity,
                     cursor_intensity,
-                );
-                let cursor_style = ratatui::style::Style::new().bg(color);
+                ));
 
                 // Split the line at cursor position and apply cursor style
                 let mut styled_spans = Vec::new();
                 let mut current_col = 0;
 
-                for span in new_line.spans {
+                for span in line.spans.clone() {
                     let span_text = &span.content;
                     let span_len = span_text.chars().count();
 
@@ -429,13 +459,11 @@ impl<'a> App<'a> {
                     styled_spans.push(Span::styled(" ", cursor_style));
                 }
 
-                Line::from(styled_spans)
-            } else {
-                new_line
-            };
-
-            output_lines.push(final_line);
+                *line = Line::from(styled_spans);
+            }
         }
+
+        output_lines = Self::splice_lines(output_lines, command_lines);
 
         let output = Paragraph::new(output_lines).wrap(Wrap { trim: false });
         let full_terminal_area = f.area();

@@ -86,14 +86,13 @@ impl HistoryManager {
         res
     }
 
-    pub fn get_command_suggestions(history: &Vec<HistoryEntry>, prefix: &str) -> Vec<String> {
-        let mut suggestions = Vec::new();
-        for entry in history.iter().rev() {
-            if entry.command.starts_with(prefix) && !suggestions.contains(&entry.command) {
-                suggestions.push(entry.command.clone());
+    pub fn get_command_suggestion_suffix(&self, prefix: &str) -> Option<String> {
+        for entry in self.entries.iter().rev() {
+            if entry.command.starts_with(prefix) {
+                return Some(entry.command[prefix.len()..].to_string());
             }
         }
-        suggestions
+        None
     }
 
     pub fn go_back_in_history(&mut self) -> Option<&HistoryEntry> {
