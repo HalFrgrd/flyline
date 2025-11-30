@@ -120,7 +120,7 @@ impl HistoryManager {
             .as_ref()
             .map_or(true, |c| c != current_cmd);
 
-        if self.last_search_prefix == None || is_command_different_to_last_buffered {
+        if self.last_search_prefix.is_none() || is_command_different_to_last_buffered {
             self.last_search_prefix = Some(current_cmd.to_string());
         }
 
@@ -142,7 +142,7 @@ impl HistoryManager {
             .as_ref()
             .map_or(true, |c| c != current_cmd);
 
-        if self.last_search_prefix == None || is_command_different_to_last_buffered {
+        if self.last_search_prefix.is_none() || is_command_different_to_last_buffered {
             self.last_search_prefix = Some(current_cmd.to_string());
         }
 
