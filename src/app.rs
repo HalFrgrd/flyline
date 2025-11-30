@@ -250,7 +250,10 @@ impl<'a> App<'a> {
                 let (cursor_row, _) = self.buffer.cursor();
                 if cursor_row + 1 >= self.buffer.lines().len() {
                     // Replace current buffer with next history entry
-                    if let Some(entry) = self.history_manager.go_forward_in_history() {
+                    if let Some(entry) = self
+                        .history_manager
+                        .go_forward_in_history(self.buffer.lines().join("\n").as_str())
+                    {
                         let new_command = entry.command.clone();
                         self.buffer = TextArea::from(vec![new_command.as_str()]);
                         self.buffer.move_cursor(CursorMove::End);

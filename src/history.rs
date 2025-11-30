@@ -9,6 +9,8 @@ pub struct HistoryEntry {
 pub struct HistoryManager {
     entries: Vec<HistoryEntry>,
     index: usize,
+    last_search_prefix: Option<String>,
+    last_buffered_command: Option<String>,
 }
 
 impl HistoryManager {
@@ -37,11 +39,18 @@ impl HistoryManager {
     pub fn new() -> HistoryManager {
         let entries = Self::parse_bash_history();
         let index = entries.len();
-        HistoryManager { entries, index }
+        HistoryManager {
+            entries,
+            index,
+            last_search_prefix: None,
+            last_buffered_command: None,
+        }
     }
 
     pub fn new_session(&mut self) {
         self.index = self.entries.len();
+        self.last_buffered_command = None;
+        self.last_search_prefix = None;
     }
 
     pub fn add_entry(&mut self, ts: Option<u64>, command: String) {
@@ -93,18 +102,32 @@ impl HistoryManager {
         res
     }
 
-    pub fn get_command_suggestion_suffix(&self, prefix: &str) -> Option<(HistoryEntry, String)> {
+    pub fn get_command_suggestion_suffix(
+        &mut self,
+        command: &str,
+    ) -> Option<(HistoryEntry, String)> {
         for entry in self.entries.iter().take(self.index).rev() {
-            if entry.command.starts_with(prefix) {
-                return Some((entry.clone(), entry.command[prefix.len()..].to_string()));
+            if entry.command.starts_with(command) {
+                return Some((entry.clone(), entry.command[command.len()..].to_string()));
             }
         }
         None
     }
 
     pub fn go_back_in_history(&mut self, current_cmd: &str) -> Option<&HistoryEntry> {
+        let is_command_different_to_last_buffered = self
+            .last_buffered_command
+            .as_ref()
+            .map_or(true, |c| c != current_cmd);
+
+        if self.last_search_prefix == None || is_command_different_to_last_buffered {
+            self.last_search_prefix = Some(current_cmd.to_string());
+        }
+
+        let prefix = self.last_search_prefix.as_ref().unwrap();
         for (i, entry) in self.entries.iter().enumerate().take(self.index).rev() {
-            if entry.command.starts_with(current_cmd) {
+            if entry.command.starts_with(prefix) {
+                self.last_buffered_command = Some(entry.command.clone());
                 self.index = i;
                 return Some(entry);
             }
@@ -113,9 +136,26 @@ impl HistoryManager {
         None
     }
 
-    pub fn go_forward_in_history(&mut self) -> Option<&HistoryEntry> {
-        self.index = (self.index + 1).min(self.entries.len() - 1);
-        self.entries.get(self.index)
+    pub fn go_forward_in_history(&mut self, current_cmd: &str) -> Option<&HistoryEntry> {
+        let is_command_different_to_last_buffered = self
+            .last_buffered_command
+            .as_ref()
+            .map_or(true, |c| c != current_cmd);
+
+        if self.last_search_prefix == None || is_command_different_to_last_buffered {
+            self.last_search_prefix = Some(current_cmd.to_string());
+        }
+
+        let prefix = self.last_search_prefix.as_ref().unwrap();
+        for (i, entry) in self.entries.iter().enumerate().skip(self.index + 1) {
+            if entry.command.starts_with(prefix) {
+                self.last_buffered_command = Some(entry.command.clone());
+                self.index = i;
+                return Some(entry);
+            }
+        }
+
+        None
     }
 }
 
