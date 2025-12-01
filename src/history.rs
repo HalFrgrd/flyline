@@ -13,6 +13,11 @@ pub struct HistoryManager {
     last_buffered_command: Option<String>,
 }
 
+pub enum HistorySearchDirection {
+    Backward,
+    Forward,
+}
+
 impl HistoryManager {
     /// Read the user's bash history file into a Vec<String>.
     /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
@@ -114,7 +119,11 @@ impl HistoryManager {
         None
     }
 
-    pub fn go_back_in_history(&mut self, current_cmd: &str) -> Option<&HistoryEntry> {
+    pub fn search_in_history(
+        &mut self,
+        current_cmd: &str,
+        direction: HistorySearchDirection,
+    ) -> Option<HistoryEntry> {
         let is_command_different_to_last_buffered = self
             .last_buffered_command
             .as_ref()
@@ -125,33 +134,18 @@ impl HistoryManager {
         }
 
         let prefix = self.last_search_prefix.as_ref().unwrap();
-        for (i, entry) in self.entries.iter().enumerate().take(self.index).rev() {
+
+        let indices: Vec<usize> = match direction {
+            HistorySearchDirection::Backward => (0..self.index).rev().collect(),
+            HistorySearchDirection::Forward => (self.index + 1..self.entries.len()).collect(),
+        };
+
+        for i in indices {
+            let entry = &self.entries[i];
             if entry.command.starts_with(prefix) {
                 self.last_buffered_command = Some(entry.command.clone());
                 self.index = i;
-                return Some(entry);
-            }
-        }
-
-        None
-    }
-
-    pub fn go_forward_in_history(&mut self, current_cmd: &str) -> Option<&HistoryEntry> {
-        let is_command_different_to_last_buffered = self
-            .last_buffered_command
-            .as_ref()
-            .map_or(true, |c| c != current_cmd);
-
-        if self.last_search_prefix.is_none() || is_command_different_to_last_buffered {
-            self.last_search_prefix = Some(current_cmd.to_string());
-        }
-
-        let prefix = self.last_search_prefix.as_ref().unwrap();
-        for (i, entry) in self.entries.iter().enumerate().skip(self.index + 1) {
-            if entry.command.starts_with(prefix) {
-                self.last_buffered_command = Some(entry.command.clone());
-                self.index = i;
-                return Some(entry);
+                return Some(entry.clone());
             }
         }
 

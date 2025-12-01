@@ -3,11 +3,11 @@ use std::vec;
 use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
-use crate::history::{HistoryEntry, HistoryManager};
+use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{
     DefaultTerminal, Frame, TerminalOptions, Viewport,
@@ -31,8 +31,9 @@ pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
     };
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
+    crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
-    let backend = ratatui::backend::CrosstermBackend::new(stdout);
+    let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::with_options(backend, options).unwrap();
     terminal.hide_cursor().unwrap();
 
@@ -42,6 +43,7 @@ pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
     let command = runtime.block_on(app.run(terminal));
 
     crossterm::terminal::disable_raw_mode().unwrap();
+    crossterm::execute!(stdout, crossterm::event::DisableMouseCapture).unwrap();
     app.layout_manager.finalize();
 
     log::debug!("Final command: {}", command);
@@ -61,6 +63,8 @@ struct App<'a> {
     layout_manager: LayoutManager,
     snake_animation: SnakeAnimation,
     suggestion: Option<(HistoryEntry, String)>,
+    last_first_word_cells: Vec<(u16, u16)>,
+    should_show_command_info: bool,
 }
 
 impl<'a> App<'a> {
@@ -78,6 +82,8 @@ impl<'a> App<'a> {
             layout_manager: LayoutManager::new(terminal_area),
             snake_animation: SnakeAnimation::new(),
             suggestion: None,
+            last_first_word_cells: Vec::new(),
+            should_show_command_info: false,
         }
     }
 
@@ -96,7 +102,7 @@ impl<'a> App<'a> {
                         self.onkeypress(event);
                     }
                     events::Event::Mouse(mouse_event) => {
-                        todo!("Handle mouse event: {:?}", mouse_event);
+                        self.on_mouse(mouse_event);
                     }
                     events::Event::AnimationTick => {
                         // Toggle cursor visibility for blinking effect
@@ -123,6 +129,28 @@ impl<'a> App<'a> {
             }
         }
         single_quotes % 2 != 0 || double_quotes % 2 != 0
+    }
+
+    fn on_mouse(&mut self, mouse: MouseEvent) {
+        log::debug!("Mouse event: {:?}", mouse);
+        log::debug!(
+            " self.last_first_word_cells: {:?}",
+            self.last_first_word_cells
+        );
+        match mouse.kind {
+            MouseEventKind::Moved => {
+                self.should_show_command_info = false;
+                for (cell_row, cell_col) in &self.last_first_word_cells {
+                    if *cell_row == mouse.row && *cell_col == mouse.column {
+                        log::debug!("Hovering on first word at ({}, {})", cell_row, cell_col);
+                        // Additional logic can be added here if needed
+                        self.should_show_command_info = true;
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     fn onkeypress(&mut self, key: KeyEvent) {
@@ -231,10 +259,10 @@ impl<'a> App<'a> {
                 let (cursor_row, _) = self.buffer.cursor();
                 if cursor_row == 0 {
                     // Replace current buffer with last history entry
-                    if let Some(entry) = self
-                        .history_manager
-                        .go_back_in_history(self.buffer.lines().join("\n").as_str())
-                    {
+                    if let Some(entry) = self.history_manager.search_in_history(
+                        self.buffer.lines().join("\n").as_str(),
+                        HistorySearchDirection::Backward,
+                    ) {
                         let new_command = entry.command.clone();
                         self.buffer = TextArea::from(vec![new_command.as_str()]);
                         self.buffer.move_cursor(CursorMove::End);
@@ -250,10 +278,10 @@ impl<'a> App<'a> {
                 let (cursor_row, _) = self.buffer.cursor();
                 if cursor_row + 1 >= self.buffer.lines().len() {
                     // Replace current buffer with next history entry
-                    if let Some(entry) = self
-                        .history_manager
-                        .go_forward_in_history(self.buffer.lines().join("\n").as_str())
-                    {
+                    if let Some(entry) = self.history_manager.search_in_history(
+                        self.buffer.lines().join("\n").as_str(),
+                        HistorySearchDirection::Forward,
+                    ) {
                         let new_command = entry.command.clone();
                         self.buffer = TextArea::from(vec![new_command.as_str()]);
                         self.buffer.move_cursor(CursorMove::End);
@@ -346,6 +374,8 @@ impl<'a> App<'a> {
         let (cursor_row, cursor_col) = self.cursor_animation.get_position(self.animation_tick);
         let cursor_intensity = self.cursor_animation.get_intensity(self.animation_tick);
 
+        self.last_first_word_cells = vec![];
+
         // TODO: cache this
         let suggestion_suffix_lines: Vec<Line> =
             self.suggestion.as_ref().map_or(vec![], |(sug, suf)| {
@@ -390,6 +420,8 @@ impl<'a> App<'a> {
         // Clone lines to break the borrow so we can call get_command_type
         let command_lines_str: Vec<String> = self.buffer.lines().to_vec();
 
+        let mut command_description: Option<String> = None;
+
         let mut command_lines: Vec<Line> = command_lines_str
             .iter()
             .enumerate()
@@ -398,7 +430,10 @@ impl<'a> App<'a> {
                     let space_pos = line.find(' ').unwrap_or(line.len());
                     let (first_word, rest) = line.split_at(space_pos);
 
-                    let (command_type, _short_desc) = self.get_command_type(first_word);
+                    let (command_type, short_desc) = self.get_command_type(first_word);
+                    if self.should_show_command_info && !short_desc.is_empty() {
+                        command_description = Some(short_desc);
+                    }
 
                     let first_word = if first_word.starts_with("python") && self.is_running {
                         self.snake_animation.update_anim(self.animation_tick);
@@ -437,6 +472,10 @@ impl<'a> App<'a> {
                     } else {
                         Color::Red
                     });
+
+                    for (col_offset, _ch) in first_word.chars().enumerate() {
+                        self.last_first_word_cells.push((0, col_offset as u16));
+                    }
 
                     let mut combined_spans = Vec::new();
                     combined_spans.push(Span::styled(first_word, first_word_style));
@@ -517,7 +556,25 @@ impl<'a> App<'a> {
         }
 
         // Combine with prompt
+        if let Some(last_ps1_lines) = output_lines.last() {
+            let last_ps1_line_len = last_ps1_lines.width() as u16;
+            let row_offset = output_lines.len().saturating_sub(1) as u16;
+            // log::debug!("last_ps1_line_len: {}, row_offset: {}", last_ps1_line_len, row_offset);
+            self.last_first_word_cells
+                .iter_mut()
+                .for_each(|(row, col)| {
+                    *col += last_ps1_line_len;
+                    *row += row_offset;
+                });
+        }
         output_lines = Self::splice_lines(output_lines, command_lines);
+        // log::debug!("command_description: {:?}", command_description);
+        if let Some(desc) = command_description {
+            output_lines.push(Line::from(Span::styled(
+                format!(" # {}", desc),
+                Style::default().fg(Color::Red),
+            )));
+        }
 
         let output = Paragraph::new(output_lines).wrap(Wrap { trim: false });
         let full_terminal_area = f.area();
@@ -527,5 +584,15 @@ impl<'a> App<'a> {
         let area = self.layout_manager.get_area(output_num_lines);
 
         f.render_widget(&output, area);
+
+        // log::debug!("area.top(): {} area.left(): {}", area.top(), area.left());
+
+        // TODO: this might be split across multiple lines. the current tracking logic makes some assumptions
+        self.last_first_word_cells
+            .iter_mut()
+            .for_each(|(row, col)| {
+                *row += area.top();
+                *col += area.left();
+            });
     }
 }
