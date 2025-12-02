@@ -31,7 +31,6 @@ pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
     };
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
-    crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::with_options(backend, options).unwrap();
@@ -43,11 +42,53 @@ pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
     let command = runtime.block_on(app.run(terminal));
 
     crossterm::terminal::disable_raw_mode().unwrap();
-    crossterm::execute!(stdout, crossterm::event::DisableMouseCapture).unwrap();
+    app.mouse_state.disable();
     app.layout_manager.finalize();
 
     log::debug!("Final command: {}", command);
     command
+}
+
+struct MouseState {
+    is_enabled: bool,
+    time_of_last_enable_attempt: std::time::Instant,
+}
+
+impl MouseState {
+    fn new() -> Self {
+        let mut mouse_state = MouseState {
+            is_enabled: false,
+            time_of_last_enable_attempt: std::time::Instant::now(),
+        };
+        mouse_state.enable();
+        mouse_state
+    }
+
+    fn enable(&mut self) {
+        if !self.is_enabled {
+            let mut stdout = std::io::stdout();
+            crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
+            self.is_enabled = true;
+            self.time_of_last_enable_attempt = std::time::Instant::now();
+        }
+    }
+
+    fn maybe_enable(&mut self) {
+        const MOUSE_ENABLE_TIMEOUT_MS: u128 = 200;
+        if !self.is_enabled
+            && self.time_of_last_enable_attempt.elapsed().as_millis() >= MOUSE_ENABLE_TIMEOUT_MS
+        {
+            self.enable();
+        }
+    }
+
+    fn disable(&mut self) {
+        if self.is_enabled {
+            let mut stdout = std::io::stdout();
+            crossterm::execute!(stdout, crossterm::event::DisableMouseCapture).unwrap();
+            self.is_enabled = false;
+        }
+    }
 }
 
 struct App<'a> {
@@ -65,6 +106,7 @@ struct App<'a> {
     suggestion: Option<(HistoryEntry, String)>,
     last_first_word_cells: Vec<(u16, u16)>,
     should_show_command_info: bool,
+    mouse_state: MouseState,
 }
 
 impl<'a> App<'a> {
@@ -84,6 +126,7 @@ impl<'a> App<'a> {
             suggestion: None,
             last_first_word_cells: Vec::new(),
             should_show_command_info: false,
+            mouse_state: MouseState::new(),
         }
     }
 
@@ -99,6 +142,9 @@ impl<'a> App<'a> {
             if let Some(event) = events.receiver.recv().await {
                 match event {
                     events::Event::Key(event) => {
+                        // The user has stopped scrolling and wants to use the app
+                        self.mouse_state.enable();
+
                         self.onkeypress(event);
                     }
                     events::Event::Mouse(mouse_event) => {
@@ -107,6 +153,8 @@ impl<'a> App<'a> {
                     events::Event::AnimationTick => {
                         // Toggle cursor visibility for blinking effect
                         self.animation_tick = self.animation_tick.wrapping_add(1);
+
+                        self.mouse_state.maybe_enable();
                     }
                     events::Event::Resize => {}
                 }
@@ -133,10 +181,6 @@ impl<'a> App<'a> {
 
     fn on_mouse(&mut self, mouse: MouseEvent) {
         log::debug!("Mouse event: {:?}", mouse);
-        log::debug!(
-            " self.last_first_word_cells: {:?}",
-            self.last_first_word_cells
-        );
         match mouse.kind {
             MouseEventKind::Moved => {
                 self.should_show_command_info = false;
@@ -148,6 +192,9 @@ impl<'a> App<'a> {
                         return;
                     }
                 }
+            }
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                self.mouse_state.disable();
             }
             _ => {}
         }
