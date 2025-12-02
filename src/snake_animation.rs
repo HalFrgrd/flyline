@@ -1,4 +1,4 @@
-use crate::events;
+use std::time::Instant;
 
 struct Coord {
     x: usize,
@@ -7,14 +7,15 @@ struct Coord {
 
 pub struct SnakeAnimation {
     body: Vec<Coord>,
-    current_step: u64,
+    last_update_time: Instant,
 }
 
 impl SnakeAnimation {
     pub fn new() -> Self {
+        let now = Instant::now();
         let mut snake = SnakeAnimation {
             body: Vec::new(),
-            current_step: 0,
+            last_update_time: now,
         };
         snake.add_segment(0, 0);
         snake.add_segment(0, 1);
@@ -67,19 +68,29 @@ impl SnakeAnimation {
         }
     }
 
-    pub fn update_anim(&mut self, tick: u64) {
-        let next_step: u64 = tick * events::ANIMATION_TICK_RATE_MS / 120;
-        if next_step > self.current_step + 100 {
+    pub fn update_anim(&mut self) {
+        let now = Instant::now();
+        let elapsed_since_last = now.duration_since(self.last_update_time).as_secs_f32();
+
+        // Calculate how many steps should have occurred (120ms per step)
+        let steps_to_advance = (elapsed_since_last * 1000.0 / 120.0) as u64;
+
+        if steps_to_advance > 100 {
             // probably been a while since our last update, reset to avoid huge jumps
             log::warn!("SnakeAnimation: large jump in animation steps detected, resetting");
-            self.current_step = next_step;
+            self.last_update_time = now;
+            return;
         }
-        for _ in self.current_step..next_step {
+
+        for _ in 0..steps_to_advance {
             let next_head = self.next_head_pos();
             self.add_segment(next_head.x, next_head.y);
             self.remove_tail();
         }
-        self.current_step = next_step;
+
+        if steps_to_advance > 0 {
+            self.last_update_time = now;
+        }
     }
 
     fn remove_tail(&mut self) {

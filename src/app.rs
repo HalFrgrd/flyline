@@ -369,10 +369,9 @@ impl<'a> App<'a> {
     fn ui(&mut self, f: &mut Frame) {
         let mut output_lines: Vec<Line> = self.prompt_manager.get_ps1_lines();
 
-        self.cursor_animation
-            .update_position(self.buffer.cursor(), self.animation_tick);
-        let (cursor_row, cursor_col) = self.cursor_animation.get_position(self.animation_tick);
-        let cursor_intensity = self.cursor_animation.get_intensity(self.animation_tick);
+        self.cursor_animation.update_position(self.buffer.cursor());
+        let (cursor_row, cursor_col) = self.cursor_animation.get_position();
+        let cursor_intensity = self.cursor_animation.get_intensity();
 
         self.last_first_word_cells = vec![];
 
@@ -436,7 +435,7 @@ impl<'a> App<'a> {
                     }
 
                     let first_word = if first_word.starts_with("python") && self.is_running {
-                        self.snake_animation.update_anim(self.animation_tick);
+                        self.snake_animation.update_anim();
                         let snake_string = self.snake_animation.to_string();
 
                         let mut result = String::new();
