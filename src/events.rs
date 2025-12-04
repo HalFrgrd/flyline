@@ -10,6 +10,7 @@ pub enum Event {
     Mouse(MouseEvent),
     AnimationTick,
     Resize,
+    ReenableMouseAttempt,
 }
 
 #[allow(dead_code)]
@@ -34,17 +35,23 @@ impl EventHandler {
         let handler = tokio::spawn(async move {
             let mut reader = crossterm::event::EventStream::new();
 
-            let tick_rate = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
-            let mut tick = tokio::time::interval(tick_rate);
+            let anim_period = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
+            let mut anim_tick = tokio::time::interval(anim_period);
+
+            let mut mouse_reenable_tick = tokio::time::interval(Duration::from_millis(200));
 
             const SCROLL_COOLDOWN_MS: u128 = 5;
             let mut last_scroll_time: Option<Instant> = None;
             loop {
-                let tick_delay = tick.tick();
+                let anim_tick_delay = anim_tick.tick();
+                let mouse_reenable_delay = mouse_reenable_tick.tick();
                 let crossterm_event = reader.next().fuse();
                 tokio::select! {
                     _ = sender_clone.closed() => break,
-                    _ = tick_delay => {
+                    _ = mouse_reenable_delay => {
+                        sender_clone.send(Event::ReenableMouseAttempt).unwrap();
+                    }
+                    _ = anim_tick_delay => {
                         sender_clone.send(Event::AnimationTick).unwrap();
 
                         let inactivity_duration = time_since_last_input.elapsed().as_millis();
@@ -54,7 +61,7 @@ impl EventHandler {
                         assert!(fps >= 0.0);
                         // log::debug!("Inactivity duration: {}ms, setting animation FPS to {:.2}", inactivity_duration, fps);
                         let period = Duration::from_millis((1000.0 / fps) as u64);
-                        tick = tokio::time::interval_at((Instant::now() + period).into(), period);
+                        anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
                     }
                     Some(Ok(evt)) = crossterm_event =>{
                         match evt {

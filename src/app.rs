@@ -52,6 +52,7 @@ pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
 struct MouseState {
     is_enabled: bool,
     time_of_last_enable_attempt: std::time::Instant,
+    time_of_last_move: std::time::Instant,
 }
 
 impl MouseState {
@@ -59,9 +60,18 @@ impl MouseState {
         let mut mouse_state = MouseState {
             is_enabled: false,
             time_of_last_enable_attempt: std::time::Instant::now(),
+            time_of_last_move: std::time::Instant::now(),
         };
         mouse_state.enable();
         mouse_state
+    }
+
+    fn update_on_move(&mut self) -> bool {
+        if self.time_of_last_move.elapsed().as_millis() < 50 {
+            return false;
+        }
+        self.time_of_last_move = std::time::Instant::now();
+        true
     }
 
     fn enable(&mut self) {
@@ -70,15 +80,6 @@ impl MouseState {
             crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
             self.is_enabled = true;
             self.time_of_last_enable_attempt = std::time::Instant::now();
-        }
-    }
-
-    fn maybe_enable(&mut self) {
-        const MOUSE_ENABLE_TIMEOUT_MS: u128 = 200;
-        if !self.is_enabled
-            && self.time_of_last_enable_attempt.elapsed().as_millis() >= MOUSE_ENABLE_TIMEOUT_MS
-        {
-            self.enable();
         }
     }
 
@@ -133,30 +134,40 @@ impl<'a> App<'a> {
     pub async fn run(&mut self, mut terminal: DefaultTerminal) -> String {
         // Update application state here
         let mut events = events::EventHandler::new();
+        let mut redraw = true;
         loop {
-            terminal.draw(|f| self.ui(f)).unwrap();
+            if redraw {
+                terminal.draw(|f| self.ui(f)).unwrap();
+            }
             if !self.is_running {
                 break;
             }
 
             if let Some(event) = events.receiver.recv().await {
-                match event {
+                redraw = match event {
                     events::Event::Key(event) => {
                         // The user has stopped scrolling and wants to use the app
                         self.mouse_state.enable();
 
                         self.onkeypress(event);
+                        true
                     }
                     events::Event::Mouse(mouse_event) => {
-                        self.on_mouse(mouse_event);
+                        self.on_mouse(mouse_event)
+                        
                     }
                     events::Event::AnimationTick => {
                         // Toggle cursor visibility for blinking effect
                         self.animation_tick = self.animation_tick.wrapping_add(1);
-
-                        self.mouse_state.maybe_enable();
+                        true
                     }
-                    events::Event::Resize => {}
+                    events::Event::ReenableMouseAttempt => {
+                        self.mouse_state.enable();
+                        false
+                    }
+                    events::Event::Resize => {
+                        true
+                    }
                 }
             }
         }
@@ -179,17 +190,20 @@ impl<'a> App<'a> {
         single_quotes % 2 != 0 || double_quotes % 2 != 0
     }
 
-    fn on_mouse(&mut self, mouse: MouseEvent) {
+    fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::debug!("Mouse event: {:?}", mouse);
         match mouse.kind {
             MouseEventKind::Moved => {
+                if !self.mouse_state.update_on_move() {
+                    log::debug!("Mouse move ignored due to rapid movement");
+                    return false;
+                }
                 self.should_show_command_info = false;
                 for (cell_row, cell_col) in &self.last_first_word_cells {
                     if *cell_row == mouse.row && *cell_col == mouse.column {
                         log::debug!("Hovering on first word at ({}, {})", cell_row, cell_col);
                         // Additional logic can be added here if needed
                         self.should_show_command_info = true;
-                        return;
                     }
                 }
             }
@@ -197,7 +211,8 @@ impl<'a> App<'a> {
                 self.mouse_state.disable();
             }
             _ => {}
-        }
+        };
+        true
     }
 
     fn onkeypress(&mut self, key: KeyEvent) {
