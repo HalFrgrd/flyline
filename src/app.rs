@@ -443,44 +443,27 @@ impl<'a> App<'a> {
 
                 let first_word = if first_word.starts_with("python") && self.is_running {
                     self.snake_animation.update_anim();
-                    let snake_string = self.snake_animation.to_string();
+                    let snake_chars: Vec<char> = self.snake_animation.to_string().chars().collect();
 
-                    let mut result = String::new();
-                    let first_word_chars: Vec<char> = first_word.chars().collect();
-                    let snake_chars: Vec<char> = snake_string.chars().collect();
-
-                    for i in 0..6.min(first_word_chars.len()) {
-                        if i < snake_chars.len() {
-                            if snake_chars[i] == '⠀' {
-                                result.push(first_word_chars[i]);
-                            } else {
-                                result.push(snake_chars[i]);
-                            }
-                        } else {
-                            result.push(first_word_chars[i]);
-                        }
-                    }
-
-                    // Add remaining characters from first_word if it's longer than 6
-                    if first_word_chars.len() > 6 {
-                        result.push_str(&first_word_chars[6..].iter().collect::<String>());
-                    }
-                    result
+                    first_word
+                        .chars()
+                        .enumerate()
+                        .map(|(i, original_char)| {
+                            snake_chars
+                                .get(i)
+                                .filter(|&&snake_char| snake_char != '⠀')
+                                .unwrap_or(&original_char)
+                                .to_owned()
+                        })
+                        .collect()
                 } else {
                     first_word.to_string()
                 };
 
-                let is_first_word_recognized = command_type != bash_funcs::CommandType::Unknown;
-
-                let first_word_style = Style::default().fg(if is_first_word_recognized {
-                    Color::Green
-                } else {
-                    Color::Red
-                });
-
-                for (col_offset, _ch) in first_word.chars().enumerate() {
-                    self.last_first_word_cells.push((0, col_offset as u16));
-                }
+                let first_word_style: Style = match command_type {
+                    bash_funcs::CommandType::Unknown => Style::default().fg(Color::Red),
+                    _ => Style::default().fg(Color::Green),
+                };
 
                 fb.write_span(&Span::styled(first_word, first_word_style));
                 fb.write_span(&Span::styled(rest.to_string(), Style::default()));
