@@ -49,11 +49,6 @@ impl FrameBuilder {
                 self.cursor_pos_x = 0;
             }
             assert!(w + self.cursor_pos_x < self.buf.area().width as usize);
-            // if (w + self.cursor_pos_x > self.buf.area().width as usize) {
-            //     // If the grapheme doesn't fit, skip it
-            //     log::debug!("Skipping grapheme '{}' as it doesn't fit in the line", graph.symbol);
-            //     assert!(false)
-            // }
 
             self.buf.set_stringn(
                 self.cursor_pos_x.try_into().unwrap_or(0),

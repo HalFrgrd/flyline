@@ -3,6 +3,7 @@ use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::frame_builder::FrameBuilder;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
+use crate::iter_first_last::FirstLast;
 use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
@@ -387,8 +388,6 @@ impl<'a> App<'a> {
             .history_manager
             .get_command_suggestion_suffix(self.buffer.lines().join("\n").as_str());
 
-        log::debug!("Suggestion updated: {:?}", self.suggestion);
-
         let first_word = self
             .buffer
             .lines()
@@ -432,8 +431,8 @@ impl<'a> App<'a> {
 
         let mut command_description: Option<String> = None;
 
-        for (i, line) in self.buffer.lines().iter().enumerate() {
-            if i == 0 {
+        for (is_first, _, line) in self.buffer.lines().iter().flag_first_last() {
+            if is_first {
                 let space_pos = line.find(' ').unwrap_or(line.len());
                 let (first_word, rest) = line.split_at(space_pos);
 
@@ -483,10 +482,8 @@ impl<'a> App<'a> {
                     self.last_first_word_cells.push((0, col_offset as u16));
                 }
 
-                let mut combined_spans = Vec::new();
-                combined_spans.push(Span::styled(first_word, first_word_style));
-                combined_spans.push(Span::styled(rest.to_string(), Style::default()));
-                fb.write_line(&Line::from(combined_spans), false);
+                fb.write_span(&Span::styled(first_word, first_word_style));
+                fb.write_span(&Span::styled(rest.to_string(), Style::default()));
             } else {
                 fb.newline();
                 fb.write_line(&Line::from(line.as_str()), false);
@@ -494,42 +491,37 @@ impl<'a> App<'a> {
         }
 
         if let Some((sug, suf)) = &self.suggestion {
-            suf.lines().enumerate().for_each(|(i, line)| {
-                let mut line_parts = vec![];
+            let suggestion_style: Style = Style::default().fg(Color::DarkGray);
 
-                line_parts.push(
-                    Span::from(line.to_owned())
-                        .style(Style::default().fg(Color::DarkGray))
-                        .into(),
-                );
-
-                if i == suf.lines().count() - 1 {
-                    let mut extra_info_text = format!(" # idx={}", sug.index);
-                    if let Some(ts) = sug.timestamp {
-                        use timeago;
-                        let duration = std::time::Duration::from_secs(
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs()
-                                .saturating_sub(ts),
-                        );
-                        let time_ago_str = timeago::Formatter::new().convert(duration);
-                        extra_info_text.push_str(&format!(" t={}", time_ago_str));
+            suf.lines()
+                .collect::<Vec<_>>()
+                .iter()
+                .flag_first_last()
+                .for_each(|(is_first, is_last, line)| {
+                    if !is_first {
+                        fb.newline();
                     }
 
-                    line_parts.push(
-                        Span::from(extra_info_text)
-                            .style(Style::default().fg(Color::DarkGray))
-                            .into(),
-                    );
-                }
-                if i != 0 {
-                    fb.newline();
-                }
+                    fb.write_span(&Span::from(line.to_owned()).style(suggestion_style));
 
-                fb.write_line(&Line::from(line_parts), false);
-            });
+                    if is_last {
+                        let mut extra_info_text = format!(" # idx={}", sug.index);
+                        if let Some(ts) = sug.timestamp {
+                            use timeago;
+                            let duration = std::time::Duration::from_secs(
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs()
+                                    .saturating_sub(ts),
+                            );
+                            let time_ago_str = timeago::Formatter::new().convert(duration);
+                            extra_info_text.push_str(&format!(" t={}", time_ago_str));
+                        }
+
+                        fb.write_span(&Span::from(extra_info_text).style(suggestion_style));
+                    }
+                });
         }
 
         // Draw cursor
@@ -587,9 +579,5 @@ impl<'a> App<'a> {
                 }
             }
         }
-
-        // f.render_widget(fb.into_buffer(), area);
-        // f.buffer_mut().reset();
-        // f.buffer_mut().merge(&fb.into_buffer());
     }
 }
