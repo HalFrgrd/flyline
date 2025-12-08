@@ -437,7 +437,7 @@ impl<'a> App<'a> {
                 let (first_word, rest) = line.split_at(space_pos);
 
                 let (command_type, short_desc) = self.get_command_type(first_word);
-                if self.should_show_command_info && !short_desc.is_empty() {
+                if !short_desc.is_empty() {
                     command_description = Some(short_desc.to_owned());
                 }
 
@@ -507,6 +507,16 @@ impl<'a> App<'a> {
                 });
         }
 
+        if self.should_show_command_info && self.is_running && let Some(desc) = command_description { 
+            fb.newline();
+            fb.write_span(
+                &Span::styled(
+                    format!("# {}", desc),
+                    Style::default().fg(Color::Blue).italic(),
+                ),
+            );
+        }
+
         // Draw cursor
         if self.is_running {
             self.cursor_animation.update_position(self.buffer.cursor());
@@ -547,20 +557,10 @@ impl<'a> App<'a> {
             .layout_manager
             .get_area(max_buf_row.try_into().unwrap_or(0) + 1);
 
-        for y in 0..drawing_area.height {
-            for x in 0..drawing_area.width {
-                let buf_x = x as usize;
-                let buf_y = y as usize;
-                if buf_x < fb.buffer().area().width as usize
-                    && buf_y < fb.buffer().area().height as usize
-                {
-                    let cell = fb.buffer().cell((buf_x as u16, buf_y as u16)).unwrap();
-                    let term_x: usize = (drawing_area.x + x) as usize;
-                    let term_y: usize = (drawing_area.y + y) as usize;
-                    let term_idx: usize = term_y * (full_terminal_area.width as usize) + term_x;
-                    f.buffer_mut().content[term_idx] = cell.clone();
-                }
-            }
-        }
+        let starting_row = drawing_area.top();
+        fb.insert_blank_rows_at_top(starting_row);
+
+        f.buffer_mut().reset();
+        f.buffer_mut().merge(&fb.into_buffer());
     }
 }

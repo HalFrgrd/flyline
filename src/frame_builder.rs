@@ -1,4 +1,4 @@
-use ratatui::buffer::Buffer;
+use ratatui::buffer::{Buffer, Cell};
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
@@ -39,6 +39,13 @@ impl FrameBuilder {
         self.buf
     }
 
+    pub fn insert_blank_rows_at_top(&mut self, count: u16) {
+        let area = self.buf.area();
+        let blank_raw = vec![Cell::default(); area.width as usize * count as usize];
+        self.buf.content.splice(0..0, blank_raw);
+
+    }
+
     /// Write a single span at the current cursor position
     pub fn write_span(&mut self, span: &Span) {
         let graphemes = span.styled_graphemes(span.style);
@@ -71,19 +78,6 @@ impl FrameBuilder {
             self.cursor_pos_y += 1;
             self.cursor_pos_x = 0;
         }
-    }
-
-    /// Write multiple lines, each followed by a newline
-    pub fn write_lines(&mut self, lines: &[Line]) {
-        for line in lines {
-            self.write_line(line, true);
-        }
-    }
-
-    /// Move the cursor to a specific position
-    pub fn set_cursor(&mut self, x: usize, y: usize) {
-        self.cursor_pos_x = x;
-        self.cursor_pos_y = y;
     }
 
     /// Move to the next line (carriage return + line feed)
