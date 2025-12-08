@@ -9,6 +9,7 @@ mod bash_funcs;
 mod bash_symbols;
 mod cursor_animation;
 mod events;
+mod frame_builder;
 mod history;
 mod layout_manager;
 mod prompt_manager;
