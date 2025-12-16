@@ -106,6 +106,9 @@ struct App<'a> {
     should_show_command_info: bool,
     mouse_state: MouseState,
     defined_aliases: Vec<String>,
+    defined_reserved_words: Vec<String>,
+    defined_shell_functions: Vec<String>,
+    defined_builtins: Vec<String>,
 }
 
 impl<'a> App<'a> {
@@ -131,6 +134,9 @@ impl<'a> App<'a> {
             mouse_state: MouseState::new(),
             // TODO: fetch these in background thread
             defined_aliases: bash_funcs::get_all_aliases(),
+            defined_reserved_words: bash_funcs::get_all_reserved_words(),
+            defined_shell_functions: bash_funcs::get_all_shell_functions(),
+            defined_builtins: bash_funcs::get_all_shell_builtins(),
         }
     }
 
@@ -369,12 +375,7 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
-                let completions =
-                    bash_funcs::tab_completion(self.buffer.lines().join("\n").as_str());
-                log::debug!("Completions: {:?}", completions);
-                // let resp = self.client.get_request(BashReq::Complete, self.buffer.lines().join("\n").as_str());
-                // log::debug!("Completion response: {:?}", resp);
-                // self.buffer.insert_str(&resp);
+                self.tab_complete();
             }
             KeyEvent {
                 code: KeyCode::Char('c'),
@@ -408,6 +409,70 @@ impl<'a> App<'a> {
             .unwrap_or("")
             .to_owned();
         self.cache_command_type(&first_word);
+    }
+
+    fn identify_word_under_cursor(&self) -> Option<(String, String)> {
+        let (cursor_row, cursor_col) = self.buffer.cursor();
+        let line = self.buffer.lines().get(cursor_row as usize)?;
+        let mut start = cursor_col as isize - 1;
+        let mut end = cursor_col as usize;
+
+        while start >= 0 && !line.chars().nth(start as usize).unwrap().is_whitespace() {
+            start -= 1;
+        }
+        start += 1; // Move to the first character of the word
+
+        let left_part = line
+            .chars()
+            .skip(start as usize)
+            .take(cursor_col - start as usize)
+            .collect::<String>();
+
+        while end < line.len() && !line.chars().nth(end).unwrap().is_whitespace() {
+            end += 1;
+        }
+
+        let right_part = line
+            .chars()
+            .skip(cursor_col)
+            .take(end - cursor_col)
+            .collect::<String>();
+
+        Some((left_part, right_part))
+    }
+
+    fn tab_complete(&mut self) -> Option<()> {
+        let word_under_cursor = self.identify_word_under_cursor();
+        log::debug!("Word under cursor: {:?}", word_under_cursor);
+        let (left_part, right_part) = word_under_cursor?;
+
+        if left_part.is_empty() {
+            return None;
+        }
+
+        let mut res = Vec::new();
+
+        for poss_completion in self
+            .defined_aliases
+            .iter()
+            .chain(self.defined_reserved_words.iter())
+            .chain(self.defined_shell_functions.iter())
+            .chain(self.defined_builtins.iter())
+        {
+            if poss_completion.starts_with(&left_part) {
+                res.push(poss_completion[left_part.len()..].to_string());
+            }
+        }
+
+        res.sort_by_key(|s| s.len());
+
+        // If we found any completions, we can use the first one
+        if let Some(completion) = res.first() {
+            self.buffer.insert_str(completion);
+            self.buffer.insert_char(' ');
+        }
+
+        Some(())
     }
 
     fn get_command_type(&self, cmd: &str) -> (bash_funcs::CommandType, String) {

@@ -153,43 +153,14 @@ pub fn get_all_aliases() -> Vec<String> {
     aliases
 }
 
-pub fn get_reserved_words() -> Vec<&'static str> {
-    //       { "if", IF },
-    //   { "then", THEN },
-    //   { "else", ELSE },
-    //   { "elif", ELIF },
-    //   { "fi", FI },
-    //   { "case", CASE },
-    //   { "esac", ESAC },
-    //   { "for", FOR },
-    // #if defined (SELECT_COMMAND)
-    //   { "select", SELECT },
-    // #endif
-    //   { "while", WHILE },
-    //   { "until", UNTIL },
-    //   { "do", DO },
-    //   { "done", DONE },
-    //   { "in", IN },
-    //   { "function", FUNCTION },
-    // #if defined (COMMAND_TIMING)
-    //   { "time", TIME },
-    // #endif
-    //   { "{", '{' },
-    //   { "}", '}' },
-    //   { "!", BANG },
-    // #if defined (COND_COMMAND)
-    //   { "[[", COND_START },
-    //   { "]]", COND_END },
-    // #endif
-    // #if defined (COPROCESS_SUPPORT)
-    //   { "coproc", COPROC },
-    // #endif
-    //   { (char *)NULL, 0}
-
+pub fn get_all_reserved_words() -> Vec<String> {
     return vec![
         "if", "then", "else", "elif", "fi", "case", "esac", "for", "select", "while", "until",
         "do", "done", "in", "function", "time", "{", "}", "!", "[[", "]]", "coproc",
-    ];
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
 }
 
 // pub fn get_shell_functions() -> Vec<String> {
@@ -300,68 +271,4 @@ pub fn get_all_shell_builtins() -> Vec<String> {
 
     log::debug!("Found shell builtins: {:?}", builtins);
     builtins
-}
-
-pub fn tab_completion(_buffer: &str) -> Vec<String> {
-    // TODO: better first word extraction. see bash source code
-    // let first_word = buffer
-    //     .split_whitespace()
-    //     .next()
-    //     .unwrap_or("")
-    //     .to_string();
-
-    // let buffer = "gre";
-    // unsafe {
-    //     bash_symbols::rl_line_buffer = std::ffi::CString::new(buffer).unwrap().into_raw();
-    //     bash_symbols::rl_line_buffer_len = buffer.len() as c_int;
-    //     let start: c_int = 0;
-    //     let end: c_int = buffer.len() as c_int;
-    //     let completions_ptr = bash_symbols::attempt_shell_completion(
-    //         bash_symbols::rl_line_buffer,
-    //         start,
-    //         end,
-    //     );
-
-    //     if completions_ptr.is_null() {
-    //         log::debug!("No completions returned from attempt_shell_completion");
-    //     } else {
-    //         log::debug!("Completions pointer: {:?}", completions_ptr);
-    //         let mut completions = vec![];
-    //         let mut offset = 0;
-    //         loop {
-    //             let ptr = *completions_ptr.add(offset);
-    //             if ptr.is_null() {
-    //                 break;
-    //             }
-    //             let c_str = std::ffi::CStr::from_ptr(ptr);
-    //             if let Ok(str_slice) = c_str.to_str() {
-    //                 completions.push(str_slice.to_string());
-    //             }
-    //             offset += 1;
-    //         }
-    //         log::debug!("Completions: {:?}", completions);
-    //         return completions;
-    //     }
-
-    // }
-
-    // let cmd = std::ffi::CString::new("less").unwrap();
-    // unsafe {
-    //     let compspec = bash_symbols::progcomp_search(cmd.as_ptr());
-
-    //     if !compspec.is_null() {
-    //         log::debug!("Found completion spec for command");
-    //         log::debug!("{:?}", *compspec);
-
-    //         // Access fields safely
-    //         // if !(*compspec).funcname.is_null() {
-    //         //     let funcname = std::ffi::CStr::from_ptr((*compspec).funcname);
-    //         //     log::debug!("Function name: {:?}", funcname);
-    //     // }
-    //     } else {
-    //         log::debug!("No completion spec found");
-    //     }
-    // }
-
-    vec![]
 }
