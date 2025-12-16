@@ -93,4 +93,155 @@ unsafe extern "C" {
     // int describe_command (char *command, int dflags)
     pub fn describe_command(command: *const c_char, dflags: c_int) -> c_int;
 
+    // from pcomplete.c
+    // COMPSPEC *progcomp_search (const char *cmd)
+    pub fn progcomp_search(cmd: *const c_char) -> *mut CompSpec;
+
+    // from pcomplete.c
+    // char ** programmable_completions (const char *cmd, const char *word, int start, int end, int *foundp)
+    pub fn programmable_completions(
+        cmd: *const c_char,
+        word: *const c_char,
+        start: c_int,
+        end: c_int,
+        foundp: *mut c_int,
+    ) -> *mut *mut c_char;
+
+    // from readline/readline.h
+    // Line buffer and maintenance
+    // char *rl_line_buffer
+    #[link_name = "rl_line_buffer"]
+    pub static mut rl_line_buffer: *mut c_char;
+
+    // int rl_line_buffer_len
+    #[link_name = "rl_line_buffer_len"]
+    pub static mut rl_line_buffer_len: c_int;
+
+    // alias.h
+    // alias_t **all_aliases (void);
+    pub fn all_aliases() -> *mut *mut Alias;
+
+    // char **all_variables_matching_prefix (const char *prefix)
+    pub fn all_variables_matching_prefix(prefix: *const c_char) -> *mut *mut c_char;
+
+    // extern SHELL_VAR **all_shell_functions (void);
+    pub fn all_shell_functions() -> *mut *mut ShellVar;
+
+    // extern struct builtin *shell_builtins;
+    #[link_name = "shell_builtins"]
+    pub static mut shell_builtins: *mut BashBuiltinType;
+
+    // num_shell_builtins
+    #[link_name = "num_shell_builtins"]
+    pub static mut num_shell_builtins: c_int;
+
 }
+
+// COMPSPEC structure from pcomplete.h
+#[repr(C)]
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct CompSpec {
+    pub refcount: c_int,
+    pub actions: libc::c_ulong,
+    pub options: libc::c_ulong,
+    pub globpat: *mut c_char,
+    pub words: *mut c_char,
+    pub prefix: *mut c_char,
+    pub suffix: *mut c_char,
+    pub funcname: *mut c_char,
+    pub command: *mut c_char,
+    pub lcommand: *mut c_char,
+    pub filterpat: *mut c_char,
+}
+
+// typedef struct alias {
+//   char *name;
+//   char *value;
+//   char flags;
+// } alias_t;
+#[repr(C)]
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct Alias {
+    pub name: *mut c_char,
+    pub value: *mut c_char,
+    pub flags: c_char,
+}
+
+// typedef struct variable {
+//   char *name;			/* Symbol that the user types. */
+//   char *value;			/* Value that is returned. */
+//   char *exportstr;		/* String for the environment. */
+//   sh_var_value_func_t *dynamic_value;	/* Function called to return a `dynamic'
+// 				   value for a variable, like $SECONDS
+// 				   or $RANDOM. */
+//   sh_var_assign_func_t *assign_func; /* Function called when this `special
+// 				   variable' is assigned a value in
+// 				   bind_variable. */
+//   int attributes;		/* export, readonly, array, invisible... */
+//   int context;			/* Which context this variable belongs to. */
+// } SHELL_VAR;
+#[repr(C)]
+#[allow(dead_code)]
+pub struct ShellVar {
+    pub name: *mut c_char,      // Symbol that the user types.
+    pub value: *mut c_char,     // Value that is returned.
+    pub exportstr: *mut c_char, // String for the environment.
+    pub dynamic_value: Option<extern "C" fn() -> *mut c_char>, // Function called to return a `dynamic' value for a variable, like $SECONDS or $RANDOM.
+    pub assign_func: Option<extern "C" fn(*const c_char)>, // Function called when this `special variable' is assigned a value in bind_variable.
+    pub attributes: c_int,                                 // export, readonly, array, invisible...
+    pub context: c_int, // Which context this variable belongs to.
+}
+
+// struct builtin {
+//   char *name;			/* The name that the user types. */
+//   sh_builtin_func_t *function;	/* The address of the invoked function. */
+//   int flags;			/* One of the #defines above. */
+//   char * const *long_doc;	/* NULL terminated array of strings. */
+//   const char *short_doc;	/* Short version of documentation. */
+//   char *handle;			/* for future use */
+// };
+#[repr(C)]
+#[allow(dead_code)]
+pub struct BashBuiltinType {
+    pub name: *mut c_char, // The name that the user types.
+    pub function: Option<extern "C" fn(c_int, *mut *mut c_char, *mut c_char) -> c_int>, // The address of the invoked function.
+    pub flags: c_int,               // One of the #defines above.
+    pub long_doc: *mut *mut c_char, // NULL terminated array of strings.
+    pub short_doc: *mut c_char,     // Short version of documentation.
+    pub handle: *mut c_char,        // for future use
+}
+
+// typedef struct compspec {
+//   int refcount;
+//   unsigned long actions;
+//   unsigned long options;
+//   char *globpat;
+//   char *words;
+//   char *prefix;
+//   char *suffix;
+//   char *funcname;
+//   char *command;
+//   char *lcommand;
+//   char *filterpat;
+// } COMPSPEC;
+
+// COMPSPEC *
+// progcomp_search (const char *cmd)
+// {
+//   register BUCKET_CONTENTS *item;
+//   COMPSPEC *cs;
+
+//   if (prog_completes == 0)
+//     return ((COMPSPEC *)NULL);
+
+//   item = hash_search (cmd, prog_completes, 0);
+
+//   if (item == NULL)
+//     return ((COMPSPEC *)NULL);
+
+//   cs = (COMPSPEC *)item->data;
+
+//   return (cs);
+// }

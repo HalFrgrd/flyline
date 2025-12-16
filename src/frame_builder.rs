@@ -43,7 +43,6 @@ impl FrameBuilder {
         let area = self.buf.area();
         let blank_raw = vec![Cell::default(); area.width as usize * count as usize];
         self.buf.content.splice(0..0, blank_raw);
-
     }
 
     /// Write a single span at the current cursor position

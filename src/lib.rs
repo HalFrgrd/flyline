@@ -20,7 +20,7 @@ mod snake_animation;
 static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Jobu>>>> = Mutex::new(None);
 
 // C-compatible getter function that bash will call
-extern "C" fn jobu_get() -> c_int {
+extern "C" fn jobu_get_char() -> c_int {
     if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
         if let Ok(mut stream) = arc.lock() {
             return stream.get();
@@ -30,7 +30,7 @@ extern "C" fn jobu_get() -> c_int {
 }
 
 // C-compatible ungetter function that bash will call
-extern "C" fn jobu_unget(c: c_int) -> c_int {
+extern "C" fn jobu_unget_char(c: c_int) -> c_int {
     // log::debug!(
     //     "Calling jobu_unget with char: {} (asci={})",
     //     c,
@@ -163,8 +163,8 @@ impl Default for JobuSentinel {
 
                     stream_list_head.bash_input.type_ = bash_symbols::StreamType::StStdin;
                     stream_list_head.bash_input.name = name.as_ptr() as *mut i8;
-                    stream_list_head.bash_input.getter = Some(jobu_get);
-                    stream_list_head.bash_input.ungetter = Some(jobu_unget);
+                    stream_list_head.bash_input.getter = Some(jobu_get_char);
+                    stream_list_head.bash_input.ungetter = Some(jobu_unget_char);
 
                     std::mem::forget(name);
                 } else {
@@ -191,6 +191,9 @@ impl Default for JobuSentinel {
 enum Opt {
     #[opt = 'r']
     Read,
+    #[opt = 's']
+    SetKeyBinding(String),
+    // #[opt = 'h']
 }
 
 impl Builtin for JobuSentinel {
@@ -237,6 +240,14 @@ impl Builtin for JobuSentinel {
                         }
                         println!("===================");
                     }
+                }
+                Opt::SetKeyBinding(binding) => {
+                    println!("Setting key binding for jobu: {}", binding);
+                    // if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
+                    //     if let Ok(mut jobu) = arc.lock() {
+                    //         jobu.new_setting(&binding);
+                    //     }
+                    // }
                 }
             }
         }

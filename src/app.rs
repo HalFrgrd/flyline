@@ -105,10 +105,14 @@ struct App<'a> {
     last_first_word_cells: Vec<(u16, u16)>,
     should_show_command_info: bool,
     mouse_state: MouseState,
+    defined_aliases: Vec<String>,
 }
 
 impl<'a> App<'a> {
     fn new(ps1: String, history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
+        // bash_funcs::get_all_variables_with_prefix("");
+        // bash_funcs::get_all_shell_functions();
+        bash_funcs::get_all_shell_builtins();
         history.new_session();
         App {
             is_running: true,
@@ -125,6 +129,8 @@ impl<'a> App<'a> {
             last_first_word_cells: Vec::new(),
             should_show_command_info: false,
             mouse_state: MouseState::new(),
+            // TODO: fetch these in background thread
+            defined_aliases: bash_funcs::get_all_aliases(),
         }
     }
 
@@ -363,6 +369,9 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
+                let completions =
+                    bash_funcs::tab_completion(self.buffer.lines().join("\n").as_str());
+                log::debug!("Completions: {:?}", completions);
                 // let resp = self.client.get_request(BashReq::Complete, self.buffer.lines().join("\n").as_str());
                 // log::debug!("Completion response: {:?}", resp);
                 // self.buffer.insert_str(&resp);
@@ -507,14 +516,15 @@ impl<'a> App<'a> {
                 });
         }
 
-        if self.should_show_command_info && self.is_running && let Some(desc) = command_description { 
+        if self.should_show_command_info
+            && self.is_running
+            && let Some(desc) = command_description
+        {
             fb.newline();
-            fb.write_span(
-                &Span::styled(
-                    format!("# {}", desc),
-                    Style::default().fg(Color::Blue).italic(),
-                ),
-            );
+            fb.write_span(&Span::styled(
+                format!("# {}", desc),
+                Style::default().fg(Color::Blue).italic(),
+            ));
         }
 
         // Draw cursor
