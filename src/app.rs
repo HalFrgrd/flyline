@@ -10,6 +10,8 @@ use crate::snake_animation::SnakeAnimation;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::vec;
 use tui_textarea::{CursorMove, TextArea};
 
@@ -109,13 +111,29 @@ struct App<'a> {
     defined_reserved_words: Vec<String>,
     defined_shell_functions: Vec<String>,
     defined_builtins: Vec<String>,
+    defined_executables: Vec<(PathBuf, String)>,
 }
 
 impl<'a> App<'a> {
     fn new(ps1: String, history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
         // bash_funcs::get_all_variables_with_prefix("");
         // bash_funcs::get_all_shell_functions();
-        bash_funcs::get_all_shell_builtins();
+        // bash_funcs::get_all_shell_builtins();
+
+        const PATH_VAR: &str = "PATH";
+        let path_var = bash_builtins::variables::find_as_string(PATH_VAR);
+        // log::debug!("PATH variable: {:?}", path_var);
+
+        let executables = if let Some(path_str) = path_var.as_ref().and_then(|v| v.to_str().ok()) {
+            App::get_executables_from_path(path_str)
+        } else {
+            Vec::new()
+        };
+        // log::debug!("Executables in PATH: {:?}", executables);
+        // for (exe_path, exe_name) in &executables {
+        //     log::debug!("Executable: {} at path {:?}", exe_name, exe_path);
+        // }
+
         history.new_session();
         App {
             is_running: true,
@@ -137,6 +155,7 @@ impl<'a> App<'a> {
             defined_reserved_words: bash_funcs::get_all_reserved_words(),
             defined_shell_functions: bash_funcs::get_all_shell_functions(),
             defined_builtins: bash_funcs::get_all_shell_builtins(),
+            defined_executables: executables,
         }
     }
 
@@ -177,6 +196,31 @@ impl<'a> App<'a> {
         }
 
         self.buffer.lines().join("\n")
+    }
+
+    fn get_executables_from_path(path: &str) -> Vec<(PathBuf, String)> {
+        let mut executables = Vec::new();
+        for dir in path.split(':') {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file()
+                        && path
+                            .metadata()
+                            .map(|m| m.permissions().mode() & 0o111 != 0)
+                            .unwrap_or(false)
+                    {
+                        if let Some(file_name) = path
+                            .file_name()
+                            .and_then(|n| n.to_str().map(|s| s.to_string()))
+                        {
+                            executables.push((path, file_name));
+                        }
+                    }
+                }
+            }
+        }
+        executables
     }
 
     fn unbalanced_quotes(&self) -> bool {
@@ -458,6 +502,7 @@ impl<'a> App<'a> {
             .chain(self.defined_reserved_words.iter())
             .chain(self.defined_shell_functions.iter())
             .chain(self.defined_builtins.iter())
+            .chain(self.defined_executables.iter().map(|(_, name)| name))
         {
             if poss_completion.starts_with(&left_part) {
                 res.push(poss_completion[left_part.len()..].to_string());
@@ -547,7 +592,9 @@ impl<'a> App<'a> {
             }
         }
 
-        if let Some((sug, suf)) = &self.suggestion {
+        if let Some((sug, suf)) = &self.suggestion
+            && self.is_running
+        {
             let suggestion_style: Style = Style::default().fg(Color::DarkGray);
 
             suf.lines()
