@@ -272,3 +272,70 @@ pub fn get_all_shell_builtins() -> Vec<String> {
     log::debug!("Found shell builtins: {:?}", builtins);
     builtins
 }
+
+
+pub fn run_autocomplete_compspec(
+    full_command: &str,
+    command_word: &str,
+    word_under_cursor: &str,
+     ) -> Vec<String> {
+    
+    let mut res: Vec<String> = Vec::new();
+    
+    if !full_command.contains(command_word) {
+        log::debug!("Command word '{}' not found in full command '{}'", command_word, full_command);
+        return res;
+    }
+
+    // TODO better logic here
+    let word_end_pos = if let Some(word_start) = full_command.rfind(word_under_cursor) {
+        word_start + word_under_cursor.len()
+    } else {
+        full_command.len()
+    };
+
+
+    unsafe {
+        bash_symbols::pcomp_line = std::ffi::CString::new(full_command).unwrap().into_raw();
+        bash_symbols::pcomp_ind = word_end_pos as std::ffi::c_int;
+
+        let found: std::ffi::c_int = 0;
+        let foundp = &found as *const std::ffi::c_int as *mut std::ffi::c_int;
+
+        let command_word_cstr = std::ffi::CString::new(command_word).unwrap();
+        let comp_spec = bash_symbols::progcomp_search(command_word_cstr.as_ptr());
+        if !comp_spec.is_null() {
+
+            let compspec_comp = bash_symbols::gen_compspec_completions(
+                comp_spec,
+                command_word_cstr.as_ptr(),
+                std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
+                0,
+                word_end_pos as std::ffi::c_int,
+                foundp,
+            );
+            log::debug!("found value: {}", found);
+
+
+            if !compspec_comp.is_null() {
+                // TODO: verify list len is correct. see the comment in bash_symbols.rs
+                log::debug!("compspec_comp result: {:?}", *compspec_comp);
+                for i in 0..((*compspec_comp).list_len) {
+                    let ptr = *(*compspec_comp).list.add(i as usize);
+                    if ptr.is_null() {
+                        continue;
+                    }
+                    let c_str = std::ffi::CStr::from_ptr(ptr);
+                    if let Ok(str_slice) = c_str.to_str() {
+                        res.push(str_slice.to_string());
+                    }
+                }
+            } else {
+                log::debug!("No completions returned from gen_compspec_completions");
+            }
+        } else {
+            log::debug!("No compspec found for command");
+        }
+    }
+    res
+} 
