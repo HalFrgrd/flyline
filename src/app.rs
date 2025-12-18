@@ -1,4 +1,3 @@
-use crate::{bash_funcs, bash_symbols};
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::frame_builder::FrameBuilder;
@@ -7,6 +6,7 @@ use crate::iter_first_last::FirstLast;
 use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
+use crate::{bash_funcs, bash_symbols};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
@@ -495,7 +495,6 @@ impl<'a> App<'a> {
         }
 
         unsafe {
-
             let full_command = "grep --ignor";
 
             bash_symbols::pcomp_line = std::ffi::CString::new(full_command).unwrap().into_raw();
@@ -530,7 +529,6 @@ impl<'a> App<'a> {
                             log::debug!("Completion from compspec: {}", str_slice);
                         }
                     }
-                    
                 } else {
                     log::debug!("No completions returned from gen_compspec_completions");
                 }

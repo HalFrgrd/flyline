@@ -1,5 +1,7 @@
 use std::os::raw::{c_char, c_int};
 
+use libc::c_uint;
+
 pub const EOF: c_int = -1;
 
 // Bash input stream types from bash's input.h
@@ -135,7 +137,6 @@ unsafe extern "C" {
     #[link_name = "num_shell_builtins"]
     pub static mut num_shell_builtins: c_int;
 
-
     // STRINGLIST * gen_compspec_completions (COMPSPEC *cs, const char *cmd, const char *word,int start, int end, int *foundp)
     pub fn gen_compspec_completions(
         cs: *mut CompSpec,
@@ -232,7 +233,6 @@ pub struct BashBuiltinType {
     pub handle: *mut c_char,        // for future use
 }
 
-
 // typedef struct _list_of_strings {
 //   char **list;
 //   size_t list_size;
@@ -243,10 +243,9 @@ pub struct BashBuiltinType {
 #[derive(Debug)]
 pub struct StringList {
     pub list: *mut *mut c_char,
-    pub list_size: usize,
-    pub list_len: usize,
+    pub list_size: c_uint, // TODO verify this is the correct type
+    pub list_len: c_uint,
 }
-
 
 // typedef struct compspec {
 //   int refcount;
