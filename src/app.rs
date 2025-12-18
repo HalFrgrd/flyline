@@ -1,4 +1,4 @@
-use crate::bash_funcs;
+use crate::{bash_funcs, bash_symbols};
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::frame_builder::FrameBuilder;
@@ -492,6 +492,51 @@ impl<'a> App<'a> {
 
         if left_part.is_empty() {
             return None;
+        }
+
+        unsafe {
+
+            let full_command = "grep --ignor";
+
+            bash_symbols::pcomp_line = std::ffi::CString::new(full_command).unwrap().into_raw();
+            bash_symbols::pcomp_ind = 12 as std::ffi::c_int;
+
+            let found: std::ffi::c_int = 0;
+            let foundp = &found as *const std::ffi::c_int as *mut std::ffi::c_int;
+
+            let cmd_c_str = std::ffi::CString::new("grep").unwrap();
+            let comp_spec = bash_symbols::progcomp_search(cmd_c_str.as_ptr());
+            if !comp_spec.is_null() {
+                // let func_name = std::ffi::CStr::from_ptr((*comp_spec).funcname).to_str().unwrap_or("");
+                // log::debug!("progcomp_search result: {:?}", func_name);
+                let compspec_comp = bash_symbols::gen_compspec_completions(
+                    comp_spec,
+                    cmd_c_str.as_ptr(),
+                    std::ffi::CString::new("--ignor").unwrap().as_ptr(),
+                    0,
+                    12 as std::ffi::c_int,
+                    foundp,
+                );
+                log::debug!("found value: {}", *foundp);
+                if !compspec_comp.is_null() {
+                    log::debug!("compspec_comp result: {:?}", *compspec_comp);
+                    for i in 0..((*compspec_comp).list_len) {
+                        let ptr = *(*compspec_comp).list.add(i as usize);
+                        if ptr.is_null() {
+                            continue;
+                        }
+                        let c_str = std::ffi::CStr::from_ptr(ptr);
+                        if let Ok(str_slice) = c_str.to_str() {
+                            log::debug!("Completion from compspec: {}", str_slice);
+                        }
+                    }
+                    
+                } else {
+                    log::debug!("No completions returned from gen_compspec_completions");
+                }
+            } else {
+                log::debug!("No compspec found for command");
+            }
         }
 
         let mut res = Vec::new();

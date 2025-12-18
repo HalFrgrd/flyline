@@ -135,6 +135,25 @@ unsafe extern "C" {
     #[link_name = "num_shell_builtins"]
     pub static mut num_shell_builtins: c_int;
 
+
+    // STRINGLIST * gen_compspec_completions (COMPSPEC *cs, const char *cmd, const char *word,int start, int end, int *foundp)
+    pub fn gen_compspec_completions(
+        cs: *mut CompSpec,
+        cmd: *const c_char,
+        word: *const c_char,
+        start: c_int,
+        end: c_int,
+        foundp: *mut c_int,
+    ) -> *mut StringList;
+
+    // char *pcomp_line;
+    #[link_name = "pcomp_line"]
+    pub static mut pcomp_line: *mut c_char;
+
+    // int pcomp_ind;
+    #[link_name = "pcomp_ind"]
+    pub static mut pcomp_ind: c_int;
+
 }
 
 // COMPSPEC structure from pcomplete.h
@@ -212,6 +231,22 @@ pub struct BashBuiltinType {
     pub short_doc: *mut c_char,     // Short version of documentation.
     pub handle: *mut c_char,        // for future use
 }
+
+
+// typedef struct _list_of_strings {
+//   char **list;
+//   size_t list_size;
+//   size_t list_len;
+// } STRINGLIST;
+#[repr(C)]
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct StringList {
+    pub list: *mut *mut c_char,
+    pub list_size: usize,
+    pub list_len: usize,
+}
+
 
 // typedef struct compspec {
 //   int refcount;
