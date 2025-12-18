@@ -20,6 +20,7 @@ libc = "0.2.177"
 bash-builtins = "0.4.1"
 timeago = "0.5.0"
 unicode-width = "0.2.0"
+flash = "0.0.6"
 
 [dependencies.crossterm]
 version = "0.29.0"

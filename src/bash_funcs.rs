@@ -273,17 +273,19 @@ pub fn get_all_shell_builtins() -> Vec<String> {
     builtins
 }
 
-
 pub fn run_autocomplete_compspec(
     full_command: &str,
     command_word: &str,
     word_under_cursor: &str,
-     ) -> Vec<String> {
-    
+) -> Vec<String> {
     let mut res: Vec<String> = Vec::new();
-    
+
     if !full_command.contains(command_word) {
-        log::debug!("Command word '{}' not found in full command '{}'", command_word, full_command);
+        log::debug!(
+            "Command word '{}' not found in full command '{}'",
+            command_word,
+            full_command
+        );
         return res;
     }
 
@@ -293,7 +295,6 @@ pub fn run_autocomplete_compspec(
     } else {
         full_command.len()
     };
-
 
     unsafe {
         bash_symbols::pcomp_line = std::ffi::CString::new(full_command).unwrap().into_raw();
@@ -305,7 +306,6 @@ pub fn run_autocomplete_compspec(
         let command_word_cstr = std::ffi::CString::new(command_word).unwrap();
         let comp_spec = bash_symbols::progcomp_search(command_word_cstr.as_ptr());
         if !comp_spec.is_null() {
-
             let compspec_comp = bash_symbols::gen_compspec_completions(
                 comp_spec,
                 command_word_cstr.as_ptr(),
@@ -315,7 +315,6 @@ pub fn run_autocomplete_compspec(
                 foundp,
             );
             log::debug!("found value: {}", found);
-
 
             if !compspec_comp.is_null() {
                 // TODO: verify list len is correct. see the comment in bash_symbols.rs
@@ -338,4 +337,4 @@ pub fn run_autocomplete_compspec(
         }
     }
     res
-} 
+}

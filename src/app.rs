@@ -1,3 +1,4 @@
+use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::frame_builder::FrameBuilder;
@@ -6,7 +7,7 @@ use crate::iter_first_last::FirstLast;
 use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
-use crate::{bash_funcs, bash_symbols};
+use crate::tab_completion;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
@@ -419,7 +420,8 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
-                self.tab_complete();
+                let res = tab_completion::tab_complete(self.buffer.lines(), self.buffer.cursor());
+                log::debug!("Tab completion result: {:?}", res);
             }
             KeyEvent {
                 code: KeyCode::Char('c'),
@@ -455,7 +457,7 @@ impl<'a> App<'a> {
         self.cache_command_type(&first_word);
     }
 
-    fn identify_word_under_cursor(&self) -> Option<(String, String, bool )> {
+    fn identify_word_under_cursor(&self) -> Option<(String, String, bool)> {
         let (cursor_row, cursor_col) = self.buffer.cursor();
         let line = self.buffer.lines().get(cursor_row as usize)?;
         let mut start = cursor_col as isize - 1;
@@ -483,77 +485,6 @@ impl<'a> App<'a> {
             .collect::<String>();
 
         Some((left_part, right_part, start == 0))
-    }
-
-    fn tab_complete(&mut self) -> Option<()> { 
-        let word_under_cursor = self.identify_word_under_cursor();
-        log::debug!("Word under cursor: {:?}", word_under_cursor);
-        let (left_part, right_part, is_first_word) = word_under_cursor?;
-
-        match is_first_word {
-            true => {
-                if let Some(completion) = self.tab_complete_first_word(&left_part) {
-                    self.buffer.insert_str(completion);
-                    self.buffer.insert_char(' ');
-                }
-            },
-            false => { 
-                let full_command = self.buffer.lines().join("\n");
-                let command_word = full_command
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("");
-                let word_under_cursor = left_part.clone() + &right_part;
-
-                let res = bash_funcs::run_autocomplete_compspec(
-                    &full_command,
-                    command_word,
-                    &word_under_cursor,
-                );
-
-                log::debug!("Compspec completions: {:?}", res);
-                if let Some(completion) = res.first() {
-
-                    for _ in 0..left_part.len() {
-                        self.buffer.delete_char();
-                    }
-                    self.buffer.insert_str(completion);
-                    self.buffer.insert_char(' ');
-                }
-            }
-        }
-
-
-
-        Some(())
-    }
-
-    fn tab_complete_first_word(&self, left_part: &str) -> Option<String> {
-
-        if left_part.is_empty() {
-            return None;
-        }
-
-        let mut res = Vec::new();
-
-        for poss_completion in self
-            .defined_aliases
-            .iter()
-            .chain(self.defined_reserved_words.iter())
-            .chain(self.defined_shell_functions.iter())
-            .chain(self.defined_builtins.iter())
-            .chain(self.defined_executables.iter().map(|(_, name)| name))
-        {
-            if poss_completion.starts_with(&left_part) {
-                res.push(poss_completion[left_part.len()..].to_string());
-            }
-        }
-
-        res.sort_by_key(|s| s.len());
-
-        // If we found any completions, we can use the first one
-        res.first().cloned()
-
     }
 
     fn get_command_type(&self, cmd: &str) -> (bash_funcs::CommandType, String) {

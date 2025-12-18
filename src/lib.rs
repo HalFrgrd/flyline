@@ -9,12 +9,14 @@ mod bash_funcs;
 mod bash_symbols;
 mod cursor_animation;
 mod events;
+mod flash_testing;
 mod frame_builder;
 mod history;
 mod iter_first_last;
 mod layout_manager;
 mod prompt_manager;
 mod snake_animation;
+mod tab_completion;
 
 // Global state for our custom input stream
 static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Jobu>>>> = Mutex::new(None);
