@@ -455,7 +455,7 @@ impl<'a> App<'a> {
         self.cache_command_type(&first_word);
     }
 
-    fn identify_word_under_cursor(&self) -> Option<(String, String)> {
+    fn identify_word_under_cursor(&self) -> Option<(String, String, bool )> {
         let (cursor_row, cursor_col) = self.buffer.cursor();
         let line = self.buffer.lines().get(cursor_row as usize)?;
         let mut start = cursor_col as isize - 1;
@@ -482,20 +482,57 @@ impl<'a> App<'a> {
             .take(end - cursor_col)
             .collect::<String>();
 
-        Some((left_part, right_part))
+        Some((left_part, right_part, start == 0))
     }
 
-    fn tab_complete(&mut self) -> Option<()> {
+    fn tab_complete(&mut self) -> Option<()> { 
         let word_under_cursor = self.identify_word_under_cursor();
         log::debug!("Word under cursor: {:?}", word_under_cursor);
-        let (left_part, right_part) = word_under_cursor?;
+        let (left_part, right_part, is_first_word) = word_under_cursor?;
+
+        match is_first_word {
+            true => {
+                if let Some(completion) = self.tab_complete_first_word(&left_part) {
+                    self.buffer.insert_str(completion);
+                    self.buffer.insert_char(' ');
+                }
+            },
+            false => { 
+                let full_command = self.buffer.lines().join("\n");
+                let command_word = full_command
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("");
+                let word_under_cursor = left_part.clone() + &right_part;
+
+                let res = bash_funcs::run_autocomplete_compspec(
+                    &full_command,
+                    command_word,
+                    &word_under_cursor,
+                );
+
+                log::debug!("Compspec completions: {:?}", res);
+                if let Some(completion) = res.first() {
+
+                    for _ in 0..left_part.len() {
+                        self.buffer.delete_char();
+                    }
+                    self.buffer.insert_str(completion);
+                    self.buffer.insert_char(' ');
+                }
+            }
+        }
+
+
+
+        Some(())
+    }
+
+    fn tab_complete_first_word(&self, left_part: &str) -> Option<String> {
 
         if left_part.is_empty() {
             return None;
         }
-
-        let asdf = bash_funcs::run_autocomplete_compspec("grep sdf --ignor", "grep", "--ignor");
-        log::debug!("Compspec completions: {:?}", asdf);
 
         let mut res = Vec::new();
 
@@ -515,12 +552,8 @@ impl<'a> App<'a> {
         res.sort_by_key(|s| s.len());
 
         // If we found any completions, we can use the first one
-        if let Some(completion) = res.first() {
-            self.buffer.insert_str(completion);
-            self.buffer.insert_char(' ');
-        }
+        res.first().cloned()
 
-        Some(())
     }
 
     fn get_command_type(&self, cmd: &str) -> (bash_funcs::CommandType, String) {
