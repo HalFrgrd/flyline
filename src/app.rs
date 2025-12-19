@@ -8,6 +8,7 @@ use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
+use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
@@ -420,7 +421,7 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
-                let res = tab_completion::tab_complete(self.buffer.lines(), self.buffer.cursor());
+                let res = self.tab_complete();
                 log::debug!("Tab completion result: {:?}", res);
             }
             KeyEvent {
@@ -457,34 +458,101 @@ impl<'a> App<'a> {
         self.cache_command_type(&first_word);
     }
 
-    fn identify_word_under_cursor(&self) -> Option<(String, String, bool)> {
-        let (cursor_row, cursor_col) = self.buffer.cursor();
-        let line = self.buffer.lines().get(cursor_row as usize)?;
-        let mut start = cursor_col as isize - 1;
-        let mut end = cursor_col as usize;
-
-        while start >= 0 && !line.chars().nth(start as usize).unwrap().is_whitespace() {
-            start -= 1;
-        }
-        start += 1; // Move to the first character of the word
-
-        let left_part = line
-            .chars()
-            .skip(start as usize)
-            .take(cursor_col - start as usize)
-            .collect::<String>();
-
-        while end < line.len() && !line.chars().nth(end).unwrap().is_whitespace() {
-            end += 1;
+    fn delete_word_under_cursor(buffer: &mut TextArea) -> Result<()> {
+        // delete chars to the left
+        loop {
+            let (cursor_row, cursor_col) = buffer.cursor();
+            let line = buffer
+                .lines()
+                .get(cursor_row as usize)
+                .ok_or(anyhow::anyhow!("Invalid cursor row"))?;
+            if cursor_col == 0 {
+                break;
+            }
+            let char_at_pos = line.chars().nth(cursor_col as usize - 1).unwrap_or(' ');
+            if char_at_pos.is_whitespace() {
+                break;
+            } else {
+                buffer.delete_char();
+            }
         }
 
-        let right_part = line
-            .chars()
-            .skip(cursor_col)
-            .take(end - cursor_col)
-            .collect::<String>();
+        // delete chars to the right
+        loop {
+            let (cursor_row, cursor_col) = buffer.cursor();
+            let line = buffer
+                .lines()
+                .get(cursor_row as usize)
+                .ok_or(anyhow::anyhow!("Invalid cursor row"))?;
+            let char_at_pos = line.chars().nth(cursor_col as usize).unwrap_or(' ');
+            if char_at_pos.is_whitespace() {
+                break;
+            } else {
+                buffer.delete_next_char();
+            }
+        }
 
-        Some((left_part, right_part, start == 0))
+        Ok(())
+    }
+
+    fn tab_complete(&mut self) -> Option<()> {
+        let lines = self.buffer.lines().join("\n");
+        let completion_context =
+            tab_completion::get_completion_context(&lines, self.buffer.cursor())?;
+
+        match completion_context {
+            tab_completion::CompletionContext::FirstWord(command) => {
+                if let Some(completion) = self.tab_complete_first_word(&command) {
+                    App::delete_word_under_cursor(&mut self.buffer).ok()?;
+                    self.buffer.insert_str(completion);
+                    self.buffer.insert_char(' ');
+                }
+            }
+            tab_completion::CompletionContext::CommandComp {
+                full_command,
+                command_word,
+                word_under_cursor,
+            } => {
+                let res = bash_funcs::run_autocomplete_compspec(
+                    &full_command,
+                    &command_word,
+                    &word_under_cursor,
+                );
+
+                if let Some(completion) = res.first() {
+                    App::delete_word_under_cursor(&mut self.buffer).ok()?;
+                    self.buffer.insert_str(completion);
+                    self.buffer.insert_char(' ');
+                }
+            }
+        }
+
+        Some(())
+    }
+
+    fn tab_complete_first_word(&self, command: &str) -> Option<String> {
+        if command.is_empty() {
+            return None;
+        }
+
+        let mut res = Vec::new();
+
+        for poss_completion in self
+            .defined_aliases
+            .iter()
+            .chain(self.defined_reserved_words.iter())
+            .chain(self.defined_shell_functions.iter())
+            .chain(self.defined_builtins.iter())
+            .chain(self.defined_executables.iter().map(|(_, name)| name))
+        {
+            if poss_completion.starts_with(&command) {
+                res.push(poss_completion.to_string());
+            }
+        }
+
+        res.sort_by_key(|s| s.len());
+
+        res.first().cloned()
     }
 
     fn get_command_type(&self, cmd: &str) -> (bash_funcs::CommandType, String) {
@@ -651,5 +719,40 @@ impl<'a> App<'a> {
 
         f.buffer_mut().reset();
         f.buffer_mut().merge(&fb.into_buffer());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_delete_under_word() {
+        //                                0123456789
+        let mut buffer = TextArea::from(["Hello world asd"]);
+        buffer.move_cursor(CursorMove::Jump(0, 8)); // Move cursor to end
+        App::delete_word_under_cursor(&mut buffer).unwrap();
+        assert_eq!(buffer.lines(), ["Hello  asd"]);
+        assert_eq!(buffer.cursor(), (0, 6));
+    }
+
+    #[test]
+    fn test_delete_under_word2() {
+        //                                0123456789
+        let mut buffer = TextArea::from(["Hello world asd"]);
+        buffer.move_cursor(CursorMove::Jump(0, 5)); // Move cursor to end
+        App::delete_word_under_cursor(&mut buffer).unwrap();
+        assert_eq!(buffer.lines(), [" world asd"]);
+        assert_eq!(buffer.cursor(), (0, 0));
+    }
+
+    #[test]
+    fn test_delete_under_word3() {
+        //                                0123456789
+        let mut buffer = TextArea::from(["Hello world asd"]);
+        buffer.move_cursor(CursorMove::Jump(0, 6)); // Move cursor to end
+        App::delete_word_under_cursor(&mut buffer).unwrap();
+        assert_eq!(buffer.lines(), ["Hello  asd"]);
+        assert_eq!(buffer.cursor(), (0, 6));
     }
 }

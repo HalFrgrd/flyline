@@ -24,11 +24,6 @@ impl FrameBuilder {
         (self.cursor_pos_x, self.cursor_pos_y)
     }
 
-    /// Get a reference to the internal buffer
-    pub fn buffer(&self) -> &Buffer {
-        &self.buf
-    }
-
     /// Get a mutable reference to the internal buffer
     pub fn buffer_mut(&mut self) -> &mut Buffer {
         &mut self.buf

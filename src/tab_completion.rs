@@ -4,8 +4,7 @@ use flash::lexer;
 use crate::bash_funcs;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-#[allow(dead_code)]
-enum CompletionContext {
+pub enum CompletionContext {
     FirstWord(
         String, // left part of the word under cursor
     ),
@@ -16,8 +15,7 @@ enum CompletionContext {
     },
 }
 
-#[allow(dead_code)]
-fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<CompletionContext> {
+pub fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<CompletionContext> {
     // Not aiming to get this perfect, just a good enough effort
     let cursor_line = cursor.0 + 1;
     let cursor_col = cursor.1 + 1;
@@ -36,15 +34,18 @@ fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<Comple
         if token.kind == lexer::TokenKind::EOF {
             break;
         }
-        dbg!(&token);
+        log::debug!("token={:?}", &token);
 
         while buffer.as_bytes().get(byte_offset_in_buffer) == Some(&b' ') {
             byte_offset_in_buffer += 1;
         }
-        dbg!(&buffer[byte_offset_in_buffer..]);
+        log::debug!(
+            "buffer[{}..]: {:?}",
+            byte_offset_in_buffer,
+            &buffer[byte_offset_in_buffer..]
+        );
 
         assert!(buffer[byte_offset_in_buffer..].starts_with(&token.value));
-        // dbg!(&token, byte_offset_in_buffer);
         match token.kind {
             lexer::TokenKind::Word(_) => {
                 if prev_token
@@ -109,12 +110,12 @@ fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<Comple
 
     if let Some((first_word, first_word_start)) = first_word {
         if let Some((current_word, current_word_start)) = current_word {
-            dbg!(
+            log::debug!(
                 "First word: {:?}, current word: {:?}",
                 &first_word,
                 &current_word
             );
-            dbg!(
+            log::debug!(
                 "First word start: {}, current word start: {}",
                 first_word_start,
                 current_word_start
@@ -124,7 +125,6 @@ fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<Comple
             } else {
                 let full_command =
                     &buffer[first_word_start..(current_word_start + current_word.value.len())];
-                dbg!("Full command: {:?}", full_command);
                 return Some(CompletionContext::CommandComp {
                     full_command: full_command.to_string(),
                     command_word: first_word.value.clone(),
@@ -138,75 +138,6 @@ fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<Comple
         None
     }
 }
-
-pub fn tab_complete(_lines: &[String], _cursor: (usize, usize)) -> Option<()> {
-    // let word_under_cursor = self.identify_word_under_cursor();
-    // log::debug!("Word under cursor: {:?}", word_under_cursor);
-    // let (left_part, right_part, is_first_word) = word_under_cursor?;
-
-    // match is_first_word {
-    //     true => {
-    //         if let Some(completion) = self.tab_complete_first_word(&left_part) {
-    //             self.buffer.insert_str(completion);
-    //             self.buffer.insert_char(' ');
-    //         }
-    //     },
-    //     false => {
-    //         let full_command = self.buffer.lines().join("\n");
-    //         let command_word = full_command
-    //             .split_whitespace()
-    //             .next()
-    //             .unwrap_or("");
-    //         let word_under_cursor = left_part.clone() + &right_part;
-
-    //         let res = bash_funcs::run_autocomplete_compspec(
-    //             &full_command,
-    //             command_word,
-    //             &word_under_cursor,
-    //         );
-
-    //         log::debug!("Compspec completions: {:?}", res);
-    //         // if let Some(completion) = res.first() {
-
-    //         //     for _ in 0..left_part.len() {
-    //         //         self.buffer.delete_char();
-    //         //     }
-    //         //     self.buffer.insert_str(completion);
-    //         //     self.buffer.insert_char(' ');
-    //         // }
-    //     }
-    // }
-
-    Some(())
-}
-
-// fn tab_complete_first_word(&self, left_part: &str) -> Option<String> {
-
-//     if left_part.is_empty() {
-//         return None;
-//     }
-
-//     let mut res = Vec::new();
-
-//     for poss_completion in self
-//         .defined_aliases
-//         .iter()
-//         .chain(self.defined_reserved_words.iter())
-//         .chain(self.defined_shell_functions.iter())
-//         .chain(self.defined_builtins.iter())
-//         .chain(self.defined_executables.iter().map(|(_, name)| name))
-//     {
-//         if poss_completion.starts_with(&left_part) {
-//             res.push(poss_completion[left_part.len()..].to_string());
-//         }
-//     }
-
-//     res.sort_by_key(|s| s.len());
-
-//     // If we found any completions, we can use the first one
-//     res.first().cloned()
-
-// }
 
 #[cfg(test)]
 mod tests {
@@ -460,4 +391,21 @@ mod tests {
             res
         );
     }
+
+    // TODO: something like this probably requires full parsing
+
+    // #[test]
+    // fn test_inside_subshell() {
+    //     let line = "echo $(grep --inv".to_string();
+    //     let cursor = (0, line.len());
+    //     let res = get_completion_context(&line, cursor);
+    //     assert_eq!(
+    //         Some(CompletionContext::CommandComp {
+    //             full_command: "grep --inv".to_string(),
+    //             command_word: "grep".to_string(),
+    //             word_under_cursor: "--inv".to_string(),
+    //         }),
+    //         res
+    //     );
+    // }
 }
