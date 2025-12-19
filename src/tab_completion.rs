@@ -1,11 +1,10 @@
-use std::vec;
-
-use crate::flash_testing;
 use flash::lexer;
 
+#[allow(unused_imports)]
 use crate::bash_funcs;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[allow(dead_code)]
 enum CompletionContext {
     FirstWord(
         String, // left part of the word under cursor
@@ -17,7 +16,9 @@ enum CompletionContext {
     },
 }
 
+#[allow(dead_code)]
 fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<CompletionContext> {
+    // Not aiming to get this perfect, just a good enough effort
     let cursor_line = cursor.0 + 1;
     let cursor_col = cursor.1 + 1;
 
@@ -54,7 +55,19 @@ fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<Comple
                     first_word = first_word.or(Some((token.clone(), byte_offset_in_buffer)));
                 }
             }
-            lexer::TokenKind::Quote | lexer::TokenKind::SingleQuote => {}
+            lexer::TokenKind::Quote
+            | lexer::TokenKind::SingleQuote
+            | lexer::TokenKind::Backtick
+            | lexer::TokenKind::Dollar
+            | lexer::TokenKind::LBrace
+            | lexer::TokenKind::RBrace
+            | lexer::TokenKind::LParen
+            | lexer::TokenKind::RParen
+            | lexer::TokenKind::CmdSubst
+            | lexer::TokenKind::ArithSubst
+            | lexer::TokenKind::ArithCommand
+            | lexer::TokenKind::ParamExpansion
+            | lexer::TokenKind::ParamExpansionOp(_) => {}
             lexer::TokenKind::Assignment => {
                 first_word = None;
                 current_word = None;
@@ -126,7 +139,7 @@ fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<Comple
     }
 }
 
-pub fn tab_complete(lines: &[String], cursor: (usize, usize)) -> Option<()> {
+pub fn tab_complete(_lines: &[String], _cursor: (usize, usize)) -> Option<()> {
     // let word_under_cursor = self.identify_word_under_cursor();
     // log::debug!("Word under cursor: {:?}", word_under_cursor);
     // let (left_part, right_part, is_first_word) = word_under_cursor?;
@@ -199,8 +212,17 @@ pub fn tab_complete(lines: &[String], cursor: (usize, usize)) -> Option<()> {
 mod tests {
     use super::*;
 
+    // First word completion tests
     #[test]
-    fn test_tab_complete_first_word() {
+    fn test_first_word_simple() {
+        let line = "ech".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(Some(CompletionContext::FirstWord("ech".to_string())), res);
+    }
+
+    #[test]
+    fn test_first_word_with_assignment() {
         let line = "ASDF=1 ech".to_string();
         let cursor = (0, line.len());
         let res = get_completion_context(&line, cursor);
@@ -208,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn test_first_word_multi_command() {
+    fn test_first_word_after_semicolon() {
         let line = "grep asdf a.txt; ech".to_string();
         let cursor = (0, line.len());
         let res = get_completion_context(&line, cursor);
@@ -216,12 +238,40 @@ mod tests {
     }
 
     #[test]
-    fn test_command_context() {
+    fn test_first_word_after_pipe() {
+        let line = "cat file.txt | gre".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(Some(CompletionContext::FirstWord("gre".to_string())), res);
+    }
+
+    #[test]
+    fn test_first_word_after_and() {
+        let line = "make && ./te".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(Some(CompletionContext::FirstWord("./te".to_string())), res);
+    }
+
+    // Command completion tests
+    #[test]
+    fn test_command_arg_simple() {
+        let line = "grep --inv".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(
+            Some(CompletionContext::CommandComp {
+                full_command: "grep --inv".to_string(),
+                command_word: "grep".to_string(),
+                word_under_cursor: "--inv".to_string(),
+            }),
+            res
+        );
+    }
+
+    #[test]
+    fn test_command_arg_with_assignment() {
         let line = "ASDF=1;      grep   asdf --inv".to_string();
-
-        let tokens = flash_testing::tokenize(&line);
-        dbg!("Tokens: {:?}", tokens);
-
         let cursor = (0, line.len());
         let res = get_completion_context(&line, cursor);
         assert_eq!(
@@ -235,12 +285,8 @@ mod tests {
     }
 
     #[test]
-    fn test_command_context_subshell() {
+    fn test_command_arg_with_quotes() {
         let line = "grep \"sdf$(echo 2)sdf\" --inv".to_string();
-
-        // let tokens = flash_testing::tokenize(&line);
-        // dbg!(tokens);
-
         let cursor = (0, line.len());
         let res = get_completion_context(&line, cursor);
         assert_eq!(
@@ -254,9 +300,8 @@ mod tests {
     }
 
     #[test]
-    fn test_command_context_multiline() {
+    fn test_command_arg_multiline() {
         let line = "some command\ngit commi mymessage".to_string();
-
         let cursor = (1, "git commi".len());
         let res = get_completion_context(&line, cursor);
         assert_eq!(
@@ -269,8 +314,9 @@ mod tests {
         );
     }
 
+    // Mid-word cursor position tests
     #[test]
-    fn test_mid_word_1() {
+    fn test_cursor_mid_word() {
         let line = "git commi mymessage".to_string();
         let cursor = (0, "git com".len());
         let res = get_completion_context(&line, cursor);
@@ -285,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mid_word_2() {
+    fn test_cursor_after_space() {
         let line = "git commi mymessage".to_string();
         let cursor = (0, "git ".len());
         let res = get_completion_context(&line, cursor);
@@ -300,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mid_word_3() {
+    fn test_cursor_end_of_word() {
         let line = "git commi mymessage".to_string();
         let cursor = (0, "git commi".len());
         let res = get_completion_context(&line, cursor);
@@ -315,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mid_word_4() {
+    fn test_cursor_space_before_next_word() {
         let line = "git commi mymessage".to_string();
         let cursor = (0, "git commi ".len());
         let res = get_completion_context(&line, cursor);
@@ -324,6 +370,92 @@ mod tests {
                 full_command: "git commi mymessage".to_string(),
                 command_word: "git".to_string(),
                 word_under_cursor: "mymessage".to_string(),
+            }),
+            res
+        );
+    }
+
+    // Path completion tests
+    #[test]
+    fn test_path_argument() {
+        let line = "cat ./src/ma".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(
+            Some(CompletionContext::CommandComp {
+                full_command: "cat ./src/ma".to_string(),
+                command_word: "cat".to_string(),
+                word_under_cursor: "./src/ma".to_string(),
+            }),
+            res
+        );
+    }
+
+    #[test]
+    fn test_absolute_path_argument() {
+        let line = "ls /usr/loc".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(
+            Some(CompletionContext::CommandComp {
+                full_command: "ls /usr/loc".to_string(),
+                command_word: "ls".to_string(),
+                word_under_cursor: "/usr/loc".to_string(),
+            }),
+            res
+        );
+    }
+
+    // Edge cases
+    #[test]
+    fn test_empty_line() {
+        let line = "".to_string();
+        let cursor = (0, 0);
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(None, res);
+    }
+
+    #[test]
+    fn test_only_whitespace() {
+        let line = "   ".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(None, res);
+    }
+
+    #[test]
+    fn test_cursor_at_start() {
+        let line = "grep pattern".to_string();
+        let cursor = (0, 0);
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(Some(CompletionContext::FirstWord("grep".to_string())), res);
+    }
+
+    #[test]
+    fn test_with_cmd_sub() {
+        let line = "echo ${VAR}_sdf qwe".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(
+            Some(CompletionContext::CommandComp {
+                full_command: "echo ${VAR}_sdf qwe".to_string(),
+                command_word: "echo".to_string(),
+                word_under_cursor: "qwe".to_string(),
+            }),
+            res
+        );
+    }
+
+    #[test]
+    fn test_with_var() {
+        let line = "echo $(cat sdf) qwe".to_string();
+        let cursor = (0, line.len());
+        let res = get_completion_context(&line, cursor);
+        assert_eq!(
+            Some(CompletionContext::CommandComp {
+                full_command: "echo $(cat sdf) qwe".to_string(),
+                command_word: "echo".to_string(),
+                word_under_cursor: "qwe".to_string(),
             }),
             res
         );

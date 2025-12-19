@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn test_lexer2() {
-        let input = "ASDF=1 ech";
+        let input = "echo $(VAR(_sdf qwe ";
         let tokens = tokenize(input);
         dbg!("Tokens: {:?}", tokens);
         assert!(false);
