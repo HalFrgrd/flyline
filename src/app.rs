@@ -266,7 +266,7 @@ impl<'a> App<'a> {
     }
 
     fn onkeypress(&mut self, key: KeyEvent) {
-        // log::debug!("Key pressed: {:?}", key);
+        log::debug!("Key pressed: {:?}", key);
         match key {
             KeyEvent {
                 code: KeyCode::Backspace,
@@ -430,6 +430,15 @@ impl<'a> App<'a> {
                 ..
             } => {
                 self.buffer = TextArea::from(vec!["#Ctrl+C pressed"]);
+                self.is_running = false;
+            }
+            KeyEvent {
+                code: KeyCode::Char('7'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.buffer.move_cursor(CursorMove::Jump(0, 0));
+                self.buffer.insert_str("#");
                 self.is_running = false;
             }
             KeyEvent {
