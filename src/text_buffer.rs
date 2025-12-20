@@ -40,12 +40,76 @@ impl TextBuffer {
             .map_or(0, |(i, _)| i);
     }
 
+    pub fn move_cursor_right(&mut self) {
+        self.cursor_col = self.cursor_pos_right_move();
+    }
+
+    fn cursor_pos_right_move(&self) -> usize {
+        // the next grapheme boundary after the cursor
+        self.buf
+            .grapheme_indices(true)
+            .skip_while(|(i, _)| *i <= self.cursor_col)
+            .next()
+            .map_or(self.buf.len(), |(i, _)| i)
+    }
+
     pub fn delete_backwards(&mut self) {
         // delete one grapheme to the left
         let old_cursor_col = self.cursor_col;
         self.move_cursor_left();
         assert!(self.cursor_col <= old_cursor_col);
         self.buf.drain(self.cursor_col..old_cursor_col);
+    }
+
+    pub fn delete_forwards(&mut self) {
+        // delete one grapheme to the right
+        let cursor_pos_right = self.cursor_pos_right_move();
+        assert!(self.cursor_col <= cursor_pos_right);
+        self.buf.drain(self.cursor_col..cursor_pos_right);
+    }
+
+    pub fn move_one_word_left(&mut self) {
+        let mut chars = self
+            .buf
+            .char_indices()
+            .rev()
+            .skip_while(|(i, _)| *i >= self.cursor_col)
+            .skip_while(|(_, c)| c.is_whitespace())
+            .peekable();
+
+        self.cursor_col = loop {
+            match chars.next() {
+                None => break 0,
+                Some((i, c)) if !c.is_whitespace() => {
+                    // Check if next char is whitespace (or end)
+                    match chars.peek() {
+                        None => break 0, // At start of buffer
+                        Some((_, next_c)) if next_c.is_whitespace() => break i,
+                        _ => continue, // Keep looking
+                    }
+                }
+                Some((i, _)) => break i, // Found whitespace
+            }
+        };
+    }
+
+    pub fn move_one_word_right(&mut self) {
+        self.cursor_col = self
+            .buf
+            .char_indices()
+            .skip_while(|(i, _)| *i < self.cursor_col)
+            .skip_while(|(_, c)| !c.is_whitespace())
+            .skip_while(|(_, c)| c.is_whitespace())
+            .next()
+            .map_or(self.buf.len(), |(i, _)| i);
+    }
+
+    pub fn move_to_start(&mut self) {
+        self.cursor_col = 0;
+    }
+
+    pub fn move_to_end(&mut self) {
+        self.cursor_col = self.buf.len();
     }
 }
 
@@ -55,9 +119,9 @@ mod tests {
 
     #[test]
     fn text_buffer_creation() {
-        let tb = TextBuffer::new("Hello, World!");
-        assert_eq!(tb.buffer(), "Hello, World!");
-        assert_eq!(tb.cursor_col, 13);
+        let tb = TextBuffer::new("abc");
+        assert_eq!(tb.buffer(), "abc");
+        assert_eq!(tb.cursor_col, 3);
     }
 
     #[test]
@@ -78,9 +142,65 @@ mod tests {
         tb.move_cursor_left();
         assert_eq!(tb.cursor_col, 5);
         tb.move_cursor_left();
-        assert_eq!(tb.cursor_col, 4);
+        tb.move_cursor_left();
+        tb.move_cursor_left();
+        tb.move_cursor_left();
+        assert_eq!(tb.cursor_col, 1);
+        tb.move_cursor_left();
+        assert_eq!(tb.cursor_col, 0);
+        tb.move_cursor_left();
+        assert_eq!(tb.cursor_col, 0);
+    }
+
+    #[test]
+    fn move_cursor_right() {
+        let mut tb = TextBuffer::new("test 👩‍💻");
+        tb.move_cursor_left();
+        tb.move_cursor_left();
         tb.move_cursor_left();
         assert_eq!(tb.cursor_col, 3);
+        tb.move_cursor_right();
+        assert_eq!(tb.cursor_col, 4);
+        tb.move_cursor_right();
+        assert_eq!(tb.cursor_col, 5);
+        tb.move_cursor_right();
+        assert_eq!(tb.cursor_col, 16);
+        tb.move_cursor_right();
+        assert_eq!(tb.cursor_col, 16);
+    }
+
+    #[test]
+    fn move_one_word_left() {
+        let mut tb = TextBuffer::new("abc def");
+        assert_eq!(tb.cursor_col, 7);
+        tb.move_one_word_left();
+        assert_eq!(tb.cursor_col, "abc ".len());
+        tb.move_one_word_left();
+        assert_eq!(tb.cursor_col, "".len());
+    }
+
+    #[test]
+    fn move_one_word_left_start_on_whitespace() {
+        let mut tb = TextBuffer::new("abc def   ");
+        assert_eq!(tb.cursor_col, "abc def   ".len());
+        tb.move_one_word_left();
+        assert_eq!(tb.cursor_col, "abc ".len());
+        tb.move_cursor_left();
+        assert_eq!(tb.cursor_col, "abc".len());
+        tb.move_one_word_left();
+        assert_eq!(tb.cursor_col, "".len());
+    }
+
+    #[test]
+    fn move_one_word_right() {
+        let mut tb = TextBuffer::new("  abc def");
+        tb.move_to_start();
+        tb.move_one_word_right();
+        assert_eq!(tb.cursor_col, "  ".len());
+        tb.move_one_word_right();
+        assert_eq!(tb.cursor_col, "  abc ".len());
+        tb.move_one_word_right();
+        assert_eq!(tb.cursor_col, "  abc def".len());
     }
 
     // === insert_char tests ===
