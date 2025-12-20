@@ -110,26 +110,33 @@ pub fn get_completion_context(buffer: &str, cursor: (usize, usize)) -> Option<Co
 
     if let Some((first_word, first_word_start)) = first_word {
         if let Some((current_word, current_word_start)) = current_word {
-            log::debug!(
-                "First word: {:?}, current word: {:?}",
-                &first_word,
-                &current_word
-            );
-            log::debug!(
-                "First word start: {}, current word start: {}",
-                first_word_start,
-                current_word_start
-            );
+            // log::debug!(
+            //     "First word: {:?}, current word: {:?}",
+            //     &first_word,
+            //     &current_word
+            // );
+            // log::debug!(
+            //     "First word start: {}, current word start: {}",
+            //     first_word_start,
+            //     current_word_start
+            // );
             if first_word_start == current_word_start {
-                return Some(CompletionContext::FirstWord(current_word.value.clone()));
+                // if cursor_col
+                //     > (current_word_start + current_word.value.len())
+                // {
+                //     log::debug!("Cursor is after current word");
+                //     None
+                // } else {
+                Some(CompletionContext::FirstWord(first_word.value.clone()))
+                // }
             } else {
                 let full_command =
                     &buffer[first_word_start..(current_word_start + current_word.value.len())];
-                return Some(CompletionContext::CommandComp {
+                Some(CompletionContext::CommandComp {
                     full_command: full_command.to_string(),
                     command_word: first_word.value.clone(),
                     word_under_cursor: current_word.value.clone(),
-                });
+                })
             }
         } else {
             Some(CompletionContext::FirstWord(first_word.value.clone()))

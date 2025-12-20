@@ -433,6 +433,7 @@ impl<'a> App<'a> {
                 self.is_running = false;
             }
             KeyEvent {
+                // Ctrl+/ comes up as this for me
                 code: KeyCode::Char('7'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
