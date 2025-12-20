@@ -1,5 +1,6 @@
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use itertools::Itertools;
 
 struct TextBuffer {
     buf: String,
@@ -69,28 +70,21 @@ impl TextBuffer {
     }
 
     pub fn move_one_word_left(&mut self) {
-        let mut chars = self
+        self.cursor_col = self
             .buf
             .char_indices()
             .rev()
             .skip_while(|(i, _)| *i >= self.cursor_col)
             .skip_while(|(_, c)| c.is_whitespace())
-            .peekable();
-
-        self.cursor_col = loop {
-            match chars.next() {
-                None => break 0,
-                Some((i, c)) if !c.is_whitespace() => {
-                    // Check if next char is whitespace (or end)
-                    match chars.peek() {
-                        None => break 0, // At start of buffer
-                        Some((_, next_c)) if next_c.is_whitespace() => break i,
-                        _ => continue, // Keep looking
-                    }
+            .tuple_windows()
+            .find_map(|((i, c), (_, next_c))| {
+                if !c.is_whitespace() && next_c.is_whitespace() {
+                    Some(i)
+                } else {
+                    None
                 }
-                Some((i, _)) => break i, // Found whitespace
-            }
-        };
+            })
+            .unwrap_or(0);
     }
 
     pub fn move_one_word_right(&mut self) {
