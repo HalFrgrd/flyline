@@ -8,6 +8,7 @@ use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
+use crate::text_buffer::TextBuffer;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
@@ -95,7 +96,7 @@ impl MouseState {
 
 struct App<'a> {
     is_running: bool,
-    buffer: TextArea<'a>,
+    buffer: TextBuffer,
     animation_tick: u64,
     cursor_animation: CursorAnimation,
     prompt_manager: PromptManager,
@@ -139,7 +140,7 @@ impl<'a> App<'a> {
         history.new_session();
         App {
             is_running: true,
-            buffer: TextArea::default(),
+            buffer: TextBuffer::new(""),
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(ps1),
@@ -197,7 +198,7 @@ impl<'a> App<'a> {
             }
         }
 
-        self.buffer.lines().join("\n")
+        self.buffer.buffer().to_owned()
     }
 
     fn get_executables_from_path(path: &str) -> Vec<(PathBuf, String)> {
@@ -228,13 +229,11 @@ impl<'a> App<'a> {
     fn unbalanced_quotes(&self) -> bool {
         let mut single_quotes = 0;
         let mut double_quotes = 0;
-        for line in self.buffer.lines() {
-            for c in line.chars() {
-                match c {
-                    '\'' => single_quotes += 1,
-                    '"' => double_quotes += 1,
-                    _ => {}
-                }
+        for c in self.buffer.buffer().chars() {
+            match c {
+                '\'' => single_quotes += 1,
+                '"' => double_quotes += 1,
+                _ => {}
             }
         }
         single_quotes % 2 != 0 || double_quotes % 2 != 0
@@ -273,7 +272,7 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.delete_char();
+                self.buffer.delete_backwards();
             }
             KeyEvent {
                 code: KeyCode::Backspace,
@@ -291,7 +290,7 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.buffer.delete_word();
+                self.buffer.delete_one_word_left();
             }
             KeyEvent {
                 code: KeyCode::Delete,
@@ -303,103 +302,86 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::ALT,
                 ..
             } => {
-                self.buffer.delete_next_word();
+                self.buffer.delete_one_word_right();
             }
             KeyEvent {
                 code: KeyCode::Delete,
                 ..
             } => {
-                // self.buffer.move_cursor(CursorMove::Forward);
-                self.buffer.delete_next_char();
+                self.buffer.delete_forwards();
             }
             KeyEvent {
                 code: KeyCode::Left,
                 ..
             } => {
-                let move_type = if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    CursorMove::WordBack
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.buffer.move_one_word_left();
                 } else {
-                    CursorMove::Back
+                    self.buffer.move_cursor_left();
                 };
-                self.buffer.move_cursor(move_type);
             }
             KeyEvent {
                 code: KeyCode::Right | KeyCode::End,
                 ..
             } => {
-                let current_cursor_pos = self.buffer.cursor();
-                self.buffer.move_cursor(CursorMove::Bottom);
-                self.buffer.move_cursor(CursorMove::End);
-                let end_cursor_pos = self.buffer.cursor();
 
-                if current_cursor_pos == end_cursor_pos
+                if self.buffer.is_cursor_at_end()
                     && let Some((_, suf)) = &self.suggestion
                 {
                     self.buffer.insert_str(suf);
-                    self.buffer.move_cursor(CursorMove::Bottom);
-                    self.buffer.move_cursor(CursorMove::End);
+                    self.buffer.move_to_end();
                 } else {
-                    let restore_cursor_pos: (u16, u16) = (
-                        current_cursor_pos.0.try_into().unwrap_or(0),
-                        current_cursor_pos.1.try_into().unwrap_or(0),
-                    );
-                    self.buffer
-                        .move_cursor(CursorMove::Jump(restore_cursor_pos.0, restore_cursor_pos.1));
-                    let move_type = match key {
+                    match key {
                         KeyEvent {
                             code: KeyCode::Right,
                             modifiers: KeyModifiers::CONTROL,
                             ..
-                        } => CursorMove::WordForward,
+                        } => self.buffer.move_one_word_right(),
                         KeyEvent {
                             code: KeyCode::End, ..
-                        } => CursorMove::End,
-                        _ => CursorMove::Forward,
+                        } => self.buffer.move_end_of_line(),
+                        _ => self.buffer.move_cursor_right(),
                     };
-                    self.buffer.move_cursor(move_type);
                 }
             }
             KeyEvent {
                 code: KeyCode::Home,
                 ..
             } => {
-                self.buffer.move_cursor(CursorMove::Head);
+                self.buffer.move_start_of_line();
             }
             KeyEvent {
                 code: KeyCode::Up, ..
             } => {
-                let (cursor_row, _) = self.buffer.cursor();
+                let cursor_row = self.buffer.cursor_row();
                 if cursor_row == 0 {
                     // Replace current buffer with last history entry
                     if let Some(entry) = self.history_manager.search_in_history(
-                        self.buffer.lines().join("\n").as_str(),
+                        self.buffer.buffer(),
                         HistorySearchDirection::Backward,
                     ) {
                         let new_command = entry.command.clone();
-                        self.buffer = TextArea::from(vec![new_command.as_str()]);
-                        self.buffer.move_cursor(CursorMove::End);
+                        self.buffer = TextBuffer::new(new_command.as_str());
                     }
                 } else {
-                    self.buffer.move_cursor(CursorMove::Up);
+                    self.buffer.move_line_up();
                 }
             }
             KeyEvent {
                 code: KeyCode::Down,
                 ..
             } => {
-                let (cursor_row, _) = self.buffer.cursor();
-                if cursor_row + 1 >= self.buffer.lines().len() {
+                if self.buffer.is_cursor_on_final_line() {
                     // Replace current buffer with next history entry
                     if let Some(entry) = self.history_manager.search_in_history(
-                        self.buffer.lines().join("\n").as_str(),
+                        self.buffer.buffer(),
                         HistorySearchDirection::Forward,
                     ) {
                         let new_command = entry.command.clone();
-                        self.buffer = TextArea::from(vec![new_command.as_str()]);
-                        self.buffer.move_cursor(CursorMove::End);
+                        self.buffer = TextBuffer::new(new_command.as_str());
                     }
                 } else {
-                    self.buffer.move_cursor(CursorMove::Down);
+                    self.buffer.move_line_down();
                 }
             }
             KeyEvent {
@@ -429,7 +411,7 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.buffer = TextArea::from(vec!["#Ctrl+C pressed"]);
+                self.buffer = TextBuffer::new("#Ctrl+C pressed");
                 self.is_running = false;
             }
             KeyEvent {
@@ -438,7 +420,7 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.buffer.move_cursor(CursorMove::Jump(0, 0));
+                self.buffer.move_to_start();
                 self.buffer.insert_str("#");
                 self.is_running = false;
             }
@@ -453,18 +435,13 @@ impl<'a> App<'a> {
 
         self.suggestion = self
             .history_manager
-            .get_command_suggestion_suffix(self.buffer.lines().join("\n").as_str());
+            .get_command_suggestion_suffix(self.buffer.buffer());
 
-        let first_word = self
-            .buffer
-            .lines()
-            .get(0)
-            .and_then(|line| {
-                let space_pos = line.find(' ').unwrap_or(line.len());
-                Some(&line[0..space_pos])
-            })
-            .unwrap_or("")
-            .to_owned();
+        let first_word = {
+            let line = self.buffer.buffer();
+            let space_pos = line.find(' ').unwrap_or(line.len());
+            &line[0..space_pos]
+        }.to_owned();
         self.cache_command_type(&first_word);
     }
 
@@ -506,15 +483,15 @@ impl<'a> App<'a> {
     }
 
     fn tab_complete(&mut self) -> Option<()> {
-        let lines = self.buffer.lines().join("\n");
+        let lines = self.buffer.buffer();
         let completion_context =
-            tab_completion::get_completion_context(&lines, self.buffer.cursor())?;
+            tab_completion::get_completion_context(&lines, self.buffer.cursor_2d_position())?;
 
         match completion_context {
             tab_completion::CompletionContext::FirstWord(command) => {
                 if let Some(completion) = self.tab_complete_first_word(&command) {
-                    App::delete_word_under_cursor(&mut self.buffer).ok()?;
-                    self.buffer.insert_str(completion);
+                    self.buffer.delete_word_under_cursor();
+                    self.buffer.insert_str(&completion);
                     self.buffer.insert_char(' ');
                 }
             }
@@ -530,7 +507,7 @@ impl<'a> App<'a> {
                 );
 
                 if let Some(completion) = res.first() {
-                    App::delete_word_under_cursor(&mut self.buffer).ok()?;
+                    self.buffer.delete_word_under_cursor();
                     self.buffer.insert_str(completion);
                     self.buffer.insert_char(' ');
                 }
@@ -633,7 +610,7 @@ impl<'a> App<'a> {
                 fb.write_span(&Span::styled(rest.to_string(), Style::default()));
             } else {
                 fb.newline();
-                fb.write_line(&Line::from(line.as_str()), false);
+                fb.write_line(&Line::from(line.to_owned()), false);
             }
         }
 
@@ -686,7 +663,7 @@ impl<'a> App<'a> {
 
         // Draw cursor
         if self.is_running {
-            self.cursor_animation.update_position(self.buffer.cursor());
+            self.cursor_animation.update_position(self.buffer.cursor_2d_position());
             let (cursor_row, cursor_col) = self.cursor_animation.get_position();
             let cursor_intensity = self.cursor_animation.get_intensity();
 

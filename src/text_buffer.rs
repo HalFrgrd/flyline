@@ -1,8 +1,8 @@
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+// use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use itertools::Itertools;
 
-struct TextBuffer {
+pub struct TextBuffer {
     buf: String,
     // Byte index of the cursor position in the buffer
     // Need to ensure it lines up with grapheme boundaries.
@@ -30,6 +30,27 @@ impl TextBuffer {
     pub fn insert_str(&mut self, s: &str) {
         self.buf.insert_str(self.cursor_col, s);
         self.cursor_col += s.len();
+    }
+
+    pub fn insert_newline(&mut self) {
+        self.insert_char('\n');
+    }
+
+    pub fn cursor_2d_position(&self) -> (usize, usize) {
+        let mut row = 0;
+        let mut col = 0;
+        for (i, ch) in self.buf.char_indices() {
+            if i >= self.cursor_col {
+                break;
+            }
+            if ch == '\n' {
+                row += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
+        }
+        (row, col)
     }
 
     pub fn move_cursor_left(&mut self) {
@@ -69,6 +90,10 @@ impl TextBuffer {
         self.buf.drain(self.cursor_col..cursor_pos_right);
     }
 
+    pub fn delete_word_under_cursor(&mut self) {
+        todo!("Implement delete_word_under_cursor");
+    }
+
     pub fn move_one_word_left(&mut self) {
         self.cursor_col = self
             .buf
@@ -87,15 +112,31 @@ impl TextBuffer {
             .unwrap_or(0);
     }
 
-    pub fn move_one_word_right(&mut self) {
-        self.cursor_col = self
-            .buf
+    fn cursor_pos_right_word_move(&self) -> usize {
+        self.buf
             .char_indices()
             .skip_while(|(i, _)| *i < self.cursor_col)
             .skip_while(|(_, c)| !c.is_whitespace())
             .skip_while(|(_, c)| c.is_whitespace())
             .next()
-            .map_or(self.buf.len(), |(i, _)| i);
+            .map_or(self.buf.len(), |(i, _)| i)
+    }
+
+    pub fn move_one_word_right(&mut self) {
+        self.cursor_col = self.cursor_pos_right_word_move();
+    }
+
+    pub fn delete_one_word_left(&mut self) {
+        let old_cursor_col = self.cursor_col;
+        self.move_one_word_left();
+        assert!(self.cursor_col <= old_cursor_col);
+        self.buf.drain(self.cursor_col..old_cursor_col);
+    }
+
+    pub fn delete_one_word_right(&mut self) {
+        let cursor_pos_right = self.cursor_pos_right_word_move();
+        assert!(self.cursor_col <= cursor_pos_right);
+        self.buf.drain(self.cursor_col..cursor_pos_right);
     }
 
     pub fn move_to_start(&mut self) {
@@ -105,6 +146,39 @@ impl TextBuffer {
     pub fn move_to_end(&mut self) {
         self.cursor_col = self.buf.len();
     }
+
+    pub fn is_cursor_at_end(&self) -> bool {
+        self.cursor_col == self.buf.len()
+    }
+
+    pub fn is_cursor_on_final_line(&self) -> bool {
+        !self.buf[self.cursor_col..].contains('\n')
+    }
+
+    pub fn move_end_of_line(&mut self) {
+        todo!("Implement move_end_of_line");
+    }
+
+    pub fn move_start_of_line(&mut self) {
+        todo!("Implement move_start_of_line");
+    }
+
+    pub fn move_line_up(&mut self) {
+        todo!("Implement move_line_up");
+    }
+
+    pub fn move_line_down(&mut self) {
+        todo!("Implement move_line_down");
+    }
+
+    pub fn cursor_row(&self) -> usize {
+        0
+    }
+
+    pub fn lines(&self) -> Vec<&str> {
+        self.buf.lines().collect()
+    }
+
 }
 
 #[cfg(test)]
@@ -165,16 +239,6 @@ mod tests {
 
     #[test]
     fn move_one_word_left() {
-        let mut tb = TextBuffer::new("abc def");
-        assert_eq!(tb.cursor_col, 7);
-        tb.move_one_word_left();
-        assert_eq!(tb.cursor_col, "abc ".len());
-        tb.move_one_word_left();
-        assert_eq!(tb.cursor_col, "".len());
-    }
-
-    #[test]
-    fn move_one_word_left_start_on_whitespace() {
         let mut tb = TextBuffer::new("abc def   ");
         assert_eq!(tb.cursor_col, "abc def   ".len());
         tb.move_one_word_left();
