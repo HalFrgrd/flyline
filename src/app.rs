@@ -9,6 +9,7 @@ use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
 use crate::text_buffer::TextBuffer;
+use crate::active_suggestions;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
@@ -104,8 +105,8 @@ struct App<'a> {
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
     layout_manager: LayoutManager,
     snake_animation: SnakeAnimation,
-    suggestion: Option<(HistoryEntry, String)>,
-    last_first_word_cells: Vec<(u16, u16)>,
+    autocomplete_suggestion: Option<(HistoryEntry, String)>,
+    command_word_cells: Vec<(u16, u16)>,
     should_show_command_info: bool,
     mouse_state: MouseState,
     defined_aliases: Vec<String>,
@@ -113,6 +114,7 @@ struct App<'a> {
     defined_shell_functions: Vec<String>,
     defined_builtins: Vec<String>,
     defined_executables: Vec<(PathBuf, String)>,
+    active_suggestions: Option<active_suggestions::ActiveSuggestions>,
 }
 
 impl<'a> App<'a> {
@@ -138,8 +140,8 @@ impl<'a> App<'a> {
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
             snake_animation: SnakeAnimation::new(),
-            suggestion: None,
-            last_first_word_cells: Vec::new(),
+            autocomplete_suggestion: None,
+            command_word_cells: Vec::new(),
             should_show_command_info: false,
             mouse_state: MouseState::new(),
             // TODO: fetch these in background thread
@@ -148,6 +150,7 @@ impl<'a> App<'a> {
             defined_shell_functions: bash_funcs::get_all_shell_functions(),
             defined_builtins: bash_funcs::get_all_shell_builtins(),
             defined_executables: executables,
+            active_suggestions: None,
         }
     }
 
@@ -237,7 +240,7 @@ impl<'a> App<'a> {
                     return false;
                 }
                 self.should_show_command_info = false;
-                for (cell_row, cell_col) in &self.last_first_word_cells {
+                for (cell_row, cell_col) in &self.command_word_cells {
                     if *cell_row == mouse.row && *cell_col == mouse.column {
                         log::debug!("Hovering on first word at ({}, {})", cell_row, cell_col);
                         // Additional logic can be added here if needed
@@ -314,7 +317,7 @@ impl<'a> App<'a> {
                 ..
             } => {
                 if self.buffer.is_cursor_at_end()
-                    && let Some((_, suf)) = &self.suggestion
+                    && let Some((_, suf)) = &self.autocomplete_suggestion
                 {
                     self.buffer.insert_str(suf);
                     self.buffer.move_to_end();
@@ -376,7 +379,10 @@ impl<'a> App<'a> {
                 code: KeyCode::Enter,
                 ..
             } => {
-                if self.is_multiline_mode {
+                if let Some(active_suggestions) = &mut self.active_suggestions {
+                    let selected_command = active_suggestions.on_enter();
+                    
+                } else if self.is_multiline_mode {
                     self.buffer.insert_newline();
                 } else {
                     if self.unbalanced_quotes() {
@@ -391,8 +397,12 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
-                let res = self.tab_complete();
-                log::debug!("Tab completion result: {:?}", res);
+                if let Some(active_suggestions) = &mut self.active_suggestions {
+                    active_suggestions.on_tab();
+                } else {
+                    let res = self.tab_complete();
+                    log::debug!("Tab completion result: {:?}", res);
+                }
             }
             KeyEvent {
                 code: KeyCode::Char('c'),
@@ -421,7 +431,7 @@ impl<'a> App<'a> {
             _ => {}
         }
 
-        self.suggestion = self
+        self.autocomplete_suggestion = self
             .history_manager
             .get_command_suggestion_suffix(self.buffer.buffer());
 
@@ -435,9 +445,9 @@ impl<'a> App<'a> {
     }
 
     fn tab_complete(&mut self) -> Option<()> {
-        let lines = self.buffer.buffer();
+        let buffer: &str = self.buffer.buffer();
         let completion_context =
-            tab_completion::get_completion_context(&lines, self.buffer.cursor_char_pos())?;
+            tab_completion::get_completion_context(buffer, self.buffer.cursor_char_pos())?;
 
         match completion_context {
             tab_completion::CompletionContext::FirstWord(command) => {
@@ -491,6 +501,7 @@ impl<'a> App<'a> {
             }
         }
 
+        // TODO: could prioritize based on frequency of use
         res.sort_by_key(|s| s.len());
 
         res.first().cloned()
@@ -522,7 +533,7 @@ impl<'a> App<'a> {
 
         let (ps1_cursor_col, ps1_cursor_row) = fb.cursor_position();
 
-        self.last_first_word_cells = vec![];
+        self.command_word_cells = vec![];
 
         let mut command_description: Option<String> = None;
 
@@ -568,7 +579,7 @@ impl<'a> App<'a> {
             }
         }
 
-        if let Some((sug, suf)) = &self.suggestion
+        if let Some((sug, suf)) = &self.autocomplete_suggestion
             && self.is_running
         {
             let suggestion_style: Style = Style::default().fg(Color::DarkGray);

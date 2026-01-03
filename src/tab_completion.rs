@@ -6,18 +6,49 @@ use flash::lexer::{Lexer, Token, TokenKind};
 use crate::bash_funcs;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum CompletionContext {
+pub enum CompType<'a> {
     FirstWord(
-        String, // left part of the word under cursor
+        &'a str, // left part of the word under cursor
     ),
     CommandComp {
-        full_command: String,              // "git commi asdf" with cursor just after com
-        command_word: String,              // "git"
-        word_under_cursor: String,         // "commi"
+        full_command: &'a str,              // "git commi asdf" with cursor just after com
+        command_word: &'a str,              // "git"
+        word_under_cursor: &'a str,         // "commi"
         cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
         word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
     },
 }
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CompletionContext<'a> {
+    pub buffer: &'a str,
+    pub command_until_cursor: &'a str,
+    pub command: &'a str,
+    pub comp_type: CompType<'a>,
+}
+
+impl<'a> CompletionContext<'a> {
+    pub fn new(buffer: &'a str, command_until_cursor: &'a str, command: &'a str) -> Self {
+        let comp_type = if command.trim().is_empty() {
+            CompType::FirstWord(command_until_cursor.trim())
+        } else {
+            let cursor_byte_pos = command_until_cursor.len();
+            let (_, word_under_cursor_byte_end, word_under_cursor) =
+                crate::text_buffer::extract_word_at_byte(command, cursor_byte_pos);
+
+            CompType::CommandComp {
+                full_command: command,
+                command_word: command.split_whitespace().next().unwrap_or(""),
+                word_under_cursor,
+                cursor_byte_pos,
+                word_under_cursor_byte_end,
+            }
+        };
+
+        CompletionContext { buffer, command_until_cursor, command, comp_type}
+    }
+}
+
 
 pub fn get_completion_context(buffer: &str, cursor_char_pos: usize) -> Option<CompletionContext> {
     // probably not perfect but good enough
@@ -28,47 +59,6 @@ pub fn get_completion_context(buffer: &str, cursor_char_pos: usize) -> Option<Co
     extracted.try_into().ok()
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-struct ExtractedCommand {
-    command_until_cursor: String,
-    command: String,
-}
-
-
-
-impl TryInto<CompletionContext> for ExtractedCommand {
-    type Error = ();
-
-    fn try_into(self) -> Result<CompletionContext, Self::Error> {
-        if self.command.trim().is_empty() {
-            return Err(());
-        }
-        // dbg!(&self);
-        if self.command_until_cursor.split_whitespace().count() <= 1 {
-            return Ok(CompletionContext::FirstWord(self.command_until_cursor.trim().to_string()));
-        }
-
-        let command_word = self
-            .command
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .to_string();
-
-        let cursor_byte_pos = self.command_until_cursor.len();
-
-        let (_, word_under_cursor_byte_end, word_under_cursor) =
-            crate::text_buffer::extract_word_at_byte(&self.command, cursor_byte_pos);
-
-        Ok(CompletionContext::CommandComp {
-            full_command: self.command,
-            command_word,
-            word_under_cursor,
-            cursor_byte_pos,
-            word_under_cursor_byte_end,
-        })
-    }
-}
 
 struct CommandExtractor<'a> {
     input: &'a str,
@@ -135,7 +125,7 @@ impl<'a> CommandExtractor<'a> {
         toks: &mut std::iter::Peekable<std::slice::Iter<(Token, usize)>>,
     ) -> usize {
         toks.peek()
-            .map_or(self.input.chars().count(), |(t, pos)| *pos)
+            .map_or(self.input.chars().count(), |(_token, pos)| *pos)
     }
 
     fn nested_opening_satisfied(
@@ -177,7 +167,7 @@ impl<'a> CommandExtractor<'a> {
         }
     }
 
-    pub fn extract_command(&self) -> ExtractedCommand {
+    pub fn extract_command(self) -> CompletionContext<'a> {
         let mut nestings = Vec::new();
         let mut current_command_start = 0;
         let mut current_command_end = 0;
@@ -253,20 +243,30 @@ impl<'a> CommandExtractor<'a> {
                 }
             }
         }
-        ExtractedCommand {
-            command_until_cursor: self
-                .input
-                .chars()
-                .skip(current_command_start)
-                .take(self.cursor_char - current_command_start)
-                .collect(),
-            command: self
-                .input
-                .chars()
-                .skip(current_command_start)
-                .take(current_command_end - current_command_start)
-                .collect(),
-        }
+        
+        // Build slices from the original input by converting char indices to byte indices.
+        let start_byte = self
+            .input
+            .char_indices()
+            .nth(current_command_start)
+            .map(|(b, _)| b)
+            .unwrap_or(self.input.len());
+        let cursor_byte = self
+            .input
+            .char_indices()
+            .nth(self.cursor_char)
+            .map(|(b, _)| b)
+            .unwrap_or(self.input.len());
+        let end_byte = self
+            .input
+            .char_indices()
+            .nth(current_command_end)
+            .map(|(b, _)| b)
+            .unwrap_or(self.input.len());
+
+        let command_until_cursor = &self.input[start_byte..cursor_byte];
+        let command = &self.input[start_byte..end_byte];
+        CompletionContext::new(self.input, &command_until_cursor, &command)
     }
 }
 
@@ -274,7 +274,7 @@ impl<'a> CommandExtractor<'a> {
 mod tests {
     use super::*;
 
-    fn run(input: &str, cursor_char: usize) -> ExtractedCommand {
+    fn run(input: &str, cursor_char: usize) -> CompletionContext {
         CommandExtractor::new(input, cursor_char).extract_command()
     }
 
@@ -285,17 +285,23 @@ mod tests {
         assert_eq!(res.command_until_cursor, "git com");
         assert_eq!(res.command, "git commi café");
 
-        let ctx: CompletionContext = res.try_into().unwrap();
-        assert_eq!(
-            ctx,
-            CompletionContext::CommandComp {
-                full_command: "git commi café".to_string(),
-                command_word: "git".to_string(),
-                word_under_cursor: "commi".to_string(),
-                cursor_byte_pos: "git com".len(),
-                word_under_cursor_byte_end: "git commi".len(),
+        match res.comp_type {
+            CompType::CommandComp {
+            full_command,
+            command_word,
+            word_under_cursor,
+            cursor_byte_pos,
+            word_under_cursor_byte_end,
+            } => {
+            assert_eq!(full_command, "git commi café");
+            assert_eq!(command_word, "git");
+            assert_eq!(word_under_cursor, "commi");
+            assert_eq!(cursor_byte_pos, "git com".len());
+            assert_eq!(word_under_cursor_byte_end, "git commi".len());
             }
-        );
+            _ => panic!("Expected CommandComp"),
+        }
+        
     }
 
     #[test]

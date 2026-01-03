@@ -45,11 +45,7 @@ impl PromptManager {
                     .spans
                     .into_iter()
                     .map(|span| {
-                        if span.content.contains(JOBU_TIME_STR) {
-                            Span::styled(span.content.replace(JOBU_TIME_STR, &time_str), span.style)
-                        } else {
-                            span
-                        }
+                        Span::styled(span.content.replace(JOBU_TIME_STR, &time_str), span.style)
                     })
                     .collect();
                 Line::from(spans)

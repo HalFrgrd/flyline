@@ -217,9 +217,9 @@ impl TextBuffer {
         self.cursor_2d_position().0
     }
 
-    pub fn cursor_col(&self) -> usize {
-        self.cursor_2d_position().1
-    }
+    // pub fn cursor_col(&self) -> usize {
+    //     self.cursor_2d_position().1
+    // }
 
     pub fn cursor_char_pos(&self) -> usize {
         self.buf[..self.cursor_byte].chars().count()
@@ -230,7 +230,7 @@ impl TextBuffer {
     }
 }
 
-pub fn extract_word_at_byte(s: &str, byte_pos: usize) -> (usize, usize, String) {
+pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> (usize, usize, &'a str) {
     // Find the start of the word (last whitespace before byte_pos, or 0)
     let start = s
         .char_indices()
@@ -247,7 +247,7 @@ pub fn extract_word_at_byte(s: &str, byte_pos: usize) -> (usize, usize, String) 
         .next()
         .map_or(s.len(), |(idx, _)| idx);
 
-    (start, end, s[start..end].to_string())
+    (start, end, &s[start..end])
 }
 
 #[cfg(test)]

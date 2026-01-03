@@ -190,6 +190,7 @@ pub fn get_all_reserved_words() -> Vec<String> {
 //     functions
 // }
 
+#[allow(dead_code)]
 pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
     let mut variables = Vec::new();
     let prefix_c_str = std::ffi::CString::new(prefix).unwrap();
