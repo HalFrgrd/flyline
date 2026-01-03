@@ -117,7 +117,6 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(ps1: String, history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
-
         const PATH_VAR: &str = "PATH";
         let path_var = bash_builtins::variables::find_as_string(PATH_VAR);
 
@@ -453,14 +452,14 @@ impl<'a> App<'a> {
                 command_word,
                 word_under_cursor,
                 cursor_byte_pos,
-                end_of_word_under_cursor_byte,
+                word_under_cursor_byte_end,
             } => {
                 let res = bash_funcs::run_autocomplete_compspec(
                     &full_command,
                     &command_word,
                     &word_under_cursor,
                     cursor_byte_pos,
-                    end_of_word_under_cursor_byte,
+                    word_under_cursor_byte_end,
                 );
 
                 if let Some(completion) = res.first() {

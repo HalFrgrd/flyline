@@ -274,10 +274,10 @@ pub fn get_all_shell_builtins() -> Vec<String> {
 }
 
 pub fn run_autocomplete_compspec(
-    full_command: &str, // "git commi asdf" with cursor just after com
-    command_word: &str,  // "git"
-    word_under_cursor: &str, // "commi"
-    cursor_byte_pos: usize, // 7 since cursor is after "com" in "git com|mi asdf"
+    full_command: &str,                // "git commi asdf" with cursor just after com
+    command_word: &str,                // "git"
+    word_under_cursor: &str,           // "commi"
+    cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
 ) -> Vec<String> {
     let mut res: Vec<String> = Vec::new();
