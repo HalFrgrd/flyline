@@ -442,8 +442,7 @@ impl<'a> App<'a> {
         match completion_context {
             tab_completion::CompletionContext::FirstWord(command) => {
                 if let Some(completion) = self.tab_complete_first_word(&command) {
-                    self.buffer.delete_word_under_cursor();
-                    self.buffer.insert_str(&completion);
+                    self.buffer.replace_word_under_cursor(&completion);
                     self.buffer.insert_char(' ');
                 }
             }
@@ -461,10 +460,9 @@ impl<'a> App<'a> {
                     cursor_byte_pos,
                     word_under_cursor_byte_end,
                 );
-
+                
                 if let Some(completion) = res.first() {
-                    self.buffer.delete_word_under_cursor();
-                    self.buffer.insert_str(completion);
+                    self.buffer.replace_word_under_cursor(&completion);
                     self.buffer.insert_char(' ');
                 }
             }

@@ -34,45 +34,7 @@ struct ExtractedCommand {
     command: String,
 }
 
-fn extract_word_at_byte(s: &str, byte_pos: usize) -> (usize, usize, String) {
-    // Find the start of the word (last whitespace before byte_pos, or 0)
-    let start = s
-        .char_indices()
-        .filter(|(_, c)| c.is_whitespace())
-        .filter(|(idx, _)| *idx < byte_pos)
-        .last()
-        .map_or(0, |(idx, c)| idx + c.len_utf8());
 
-    // Find the end of the word (next whitespace at or after byte_pos, or end of string)
-    let end = s
-        .char_indices()
-        .filter(|(_, c)| c.is_whitespace())
-        .filter(|(idx, _)| *idx >= byte_pos)
-        .next()
-        .map_or(s.len(), |(idx, _)| idx);
-
-    (start, end, s[start..end].to_string())
-}
-
-#[cfg(test)]
-mod word_extraction_tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_word_at_byte() {
-        let (_start, _end, word) = extract_word_at_byte("café option", "café o".len());
-        assert_eq!(word, "option");
-
-        let (_start, _end, word) = extract_word_at_byte("café option", "café ".len());
-        assert_eq!(word, "option");
-
-        let (_start, _end, word) = extract_word_at_byte("café option", "café".len());
-        assert_eq!(word, "café");
-
-        let (_start, _end, word) = extract_word_at_byte("grep 'pättërn' файл.txt 日本語", "grep 'pättërn' ".len());
-        assert_eq!(word, "файл.txt");
-    }
-}
 
 impl TryInto<CompletionContext> for ExtractedCommand {
     type Error = ();
@@ -96,7 +58,7 @@ impl TryInto<CompletionContext> for ExtractedCommand {
         let cursor_byte_pos = self.command_until_cursor.len();
 
         let (_, word_under_cursor_byte_end, word_under_cursor) =
-            extract_word_at_byte(&self.command, cursor_byte_pos);
+            crate::text_buffer::extract_word_at_byte(&self.command, cursor_byte_pos);
 
         Ok(CompletionContext::CommandComp {
             full_command: self.command,
