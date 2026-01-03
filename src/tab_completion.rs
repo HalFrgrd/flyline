@@ -81,7 +81,7 @@ impl TryInto<CompletionContext> for ExtractedCommand {
         if self.command.trim().is_empty() {
             return Err(());
         }
-        dbg!(&self);
+        // dbg!(&self);
         if self.command_until_cursor.split_whitespace().count() <= 1 {
             return Ok(CompletionContext::FirstWord(self.command_until_cursor.trim().to_string()));
         }

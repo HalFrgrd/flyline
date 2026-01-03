@@ -75,7 +75,30 @@ impl TextBuffer {
     }
 
     pub fn delete_word_under_cursor(&mut self) {
-        todo!("Implement delete_word_under_cursor");
+        // Find the start of the word (go backwards to find whitespace or start)
+        let word_start = self
+            .buf
+            .char_indices()
+            .rev()
+            .skip_while(|(i, _)| *i >= self.cursor_byte)
+            .take_while(|(_, c)| !c.is_whitespace())
+            .last()
+            .map_or(self.cursor_byte, |(i, _)| i);
+
+        // Find the end of the word (go forwards to find whitespace or end)
+        let word_end = self
+            .buf
+            .char_indices()
+            .skip_while(|(i, _)| *i < self.cursor_byte)
+            .take_while(|(_, c)| !c.is_whitespace())
+            .last()
+            .map_or(self.cursor_byte, |(i, c)| i + c.len_utf8());
+
+        // Delete the word and position cursor at the start
+        if word_start < word_end {
+            self.buf.drain(word_start..word_end);
+            self.cursor_byte = word_start;
+        }
     }
 
     pub fn move_one_word_left(&mut self) {
@@ -176,15 +199,15 @@ impl TextBuffer {
         let mut cur_row = 0;
         let mut cur_col = 0;
         for (i, grapheme) in self.buf.grapheme_indices(true) {
+            if cur_row == target_row && cur_col >= target_col {
+                self.cursor_byte = i;
+                return;
+            }
             if grapheme.contains('\n') {
                 cur_row += 1;
                 cur_col = 0;
             } else {
                 cur_col += grapheme.width_cjk();
-            }
-            if cur_row == target_row && cur_col >= target_col {
-                self.cursor_byte = i;
-                return;
             }
         }
     }
@@ -308,6 +331,7 @@ mod tests {
     #[test]
     fn move_line_up() {
         let mut tb = TextBuffer::new("Line 1\nLine 2\nLine 3");
+        tb.move_end_of_line();
         tb.move_line_up();
         assert_eq!(tb.cursor_byte, "Line 1\nLine 2".len());
         tb.move_line_up();
@@ -317,10 +341,16 @@ mod tests {
     #[test]
     fn move_line_down() {
         let mut tb = TextBuffer::new("Line 1\nLine 2\nLine 3");
+        tb.move_to_start();
         tb.move_line_down();
-        assert_eq!(tb.cursor_byte, "Line 1\nLine 2\n".len());
+        assert_eq!(tb.cursor_2d_position(), (1, 0));
+        tb.move_right();
+        tb.move_right();
+        tb.move_right();
+        tb.move_right();
+        assert_eq!(tb.cursor_byte, "Line 1\nLine".len());
         tb.move_line_down();
-        assert_eq!(tb.cursor_byte, tb.buffer().len());
+        assert_eq!(tb.cursor_byte,  "Line 1\nLine 2\nLine".len());
     }
 
     // === insert_char tests ===
@@ -409,4 +439,217 @@ mod tests {
         // 👨‍💻 = 11 bytes, " and " = 5 bytes, 👩‍🔬 = 11 bytes
         assert_eq!(tb.cursor_byte, 27);
     }
+
+    // === delete_word_under_cursor tests ===
+
+    #[test]
+    fn delete_word_under_cursor_at_start() {
+        // Cursor at the start of a word with non-ASCII
+        let mut tb = TextBuffer::new("café option 🎯");
+        tb.move_to_start(); // Cursor at position 0
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), " option 🎯");
+        assert_eq!(tb.cursor_byte, 0);
+    }
+
+    #[test]
+    fn delete_word_under_cursor_in_middle() {
+        // Cursor in the middle of a word with accented characters
+        let mut tb = TextBuffer::new("git commi café");
+        // Position cursor at "commi" - after "git com"
+        tb.move_to_start();
+        tb.insert_str("git com");
+        tb = TextBuffer::new("git commi café");
+        tb.move_to_start();
+        for _ in 0..7 {
+            tb.move_right();
+        } // Position at "git com|mi café"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "git  café");
+        assert_eq!(tb.cursor_byte, "git ".len());
+    }
+
+    #[test]
+    fn delete_word_under_cursor_at_end() {
+        // Cursor at the end of a line with emoji
+        let mut tb = TextBuffer::new("hello world 🚀");
+        // Cursor is already at the end
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "hello world ");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_on_space() {
+        // Cursor on a space between words - should delete nothing
+        let mut tb = TextBuffer::new("git café résumé");
+        tb.move_to_start();
+        for _ in 0..4 {
+            tb.move_right();
+        } 
+        // Now on the space: "git |café résumé"
+        
+        let original = tb.buffer().to_string();
+        tb.delete_word_under_cursor();
+        // Should not delete anything when on whitespace
+        assert_eq!(tb.buffer(), original);
+    }
+
+    #[test]
+    fn delete_word_under_cursor_chinese_characters() {
+        // Delete word with Chinese characters, cursor in middle
+        let mut tb = TextBuffer::new("git 提交 message 🎯");
+        tb.move_to_start();
+        for _ in 0..5 {
+            tb.move_right();
+        } // Position at "git 提|交 message 🎯"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "git  message 🎯");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_emoji_word() {
+        // Delete word that is entirely emoji
+        let mut tb = TextBuffer::new("hello 🚀🎯🔥 world");
+        tb.move_to_start();
+        for _ in 0..7 {
+            tb.move_right();
+        } // Position in middle of emoji sequence
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "hello  world");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_arabic_text() {
+        // Delete word with Arabic text (RTL script)
+        let mut tb = TextBuffer::new("cat مرحبا --option 🔥");
+        tb.move_to_start();
+        for _ in 0..5 {
+            tb.move_right();
+        } // Position in middle of "مرحبا"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "cat  --option 🔥");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_cyrillic() {
+        // Delete word with Cyrillic characters, cursor at start
+        let mut tb = TextBuffer::new("ls файл --size привет 🎯");
+        tb.move_to_start();
+        for _ in 0..3 {
+            tb.move_right();
+        } // Position at "ls |файл"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "ls  --size привет 🎯");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_thai_text() {
+        // Delete word with Thai characters, cursor at end of word
+        let mut tb = TextBuffer::new("cat ไฟล์ --option วันนี้ 🌟");
+        tb.move_to_start();
+        for _ in 0..7 {
+            tb.move_right();
+        } // Position at "cat ไฟล์|"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "cat  --option วันนี้ 🌟");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_mixed_scripts() {
+        // Delete word in text with mixed scripts
+        let mut tb = TextBuffer::new("grep 'pättërn' файл.txt 日本語 🚀");
+        tb.move_to_start();
+        for _ in 0..24 {
+            tb.move_right();
+        } // Position in "файл.txt"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "grep 'pättërn'  日本語 🚀");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_accented_chars() {
+        // Delete word with heavily accented characters
+        let mut tb = TextBuffer::new("find . -näme 'fîlé' 🔍");
+        tb.move_to_start();
+        for _ in 0..9 {
+            tb.move_right();
+        } // Position in "-näme"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "find .  'fîlé' 🔍");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_emoji_with_zwj() {
+        // Delete word containing ZWJ emoji sequence
+        let mut tb = TextBuffer::new("hello 👨‍💻 world 🎉");
+        tb.move_to_start();
+        for _ in 0..6 {
+            tb.move_right();
+        } // Position in the programmer emoji
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "hello  world 🎉");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_single_word() {
+        // Delete the only word with unicode
+        let mut tb = TextBuffer::new("café");
+        tb.move_to_start();
+        tb.move_right();
+        tb.move_right(); // Position at "ca|fé"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "");
+        assert_eq!(tb.cursor_byte, 0);
+    }
+
+    #[test]
+    fn delete_word_under_cursor_at_word_boundary_start() {
+        // Cursor right at the start of a word (after space)
+        let mut tb = TextBuffer::new("hello café world");
+        tb.move_to_start();
+        for _ in 0..6 {
+            tb.move_right();
+        } // Position at "hello |café world"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "hello  world");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_at_word_boundary_end() {
+        // Cursor right at the end of a word (before space)
+        let mut tb = TextBuffer::new("hello café world");
+        tb.move_to_start();
+        for _ in 0..10 {
+            tb.move_right();
+        } // Position at "hello café| world"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "hello  world");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_multiple_emojis() {
+        // Delete word that's a sequence of multiple emojis
+        let mut tb = TextBuffer::new("start 🎉🎊🎈🎁 end");
+        tb.move_to_start();
+        for _ in 0..8 {
+            tb.move_right();
+        } // Position in middle of emoji sequence
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "start  end");
+    }
+
+    #[test]
+    fn delete_word_under_cursor_hebrew_text() {
+        // Delete word with Hebrew text (RTL script)
+        let mut tb = TextBuffer::new("file שלום --flag 📄");
+        tb.move_to_start();
+        for _ in 0..6 {
+            tb.move_right();
+        } // Position in "שלום"
+        tb.delete_word_under_cursor();
+        assert_eq!(tb.buffer(), "file  --flag 📄");
+    }
+
+    
+
 }
