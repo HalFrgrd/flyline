@@ -117,23 +117,15 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(ps1: String, history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
-        // bash_funcs::get_all_variables_with_prefix("");
-        // bash_funcs::get_all_shell_functions();
-        // bash_funcs::get_all_shell_builtins();
 
         const PATH_VAR: &str = "PATH";
         let path_var = bash_builtins::variables::find_as_string(PATH_VAR);
-        // log::debug!("PATH variable: {:?}", path_var);
 
         let executables = if let Some(path_str) = path_var.as_ref().and_then(|v| v.to_str().ok()) {
             App::get_executables_from_path(path_str)
         } else {
             Vec::new()
         };
-        // log::debug!("Executables in PATH: {:?}", executables);
-        // for (exe_path, exe_name) in &executables {
-        //     log::debug!("Executable: {} at path {:?}", exe_name, exe_path);
-        // }
 
         history.new_session();
         App {
@@ -446,7 +438,7 @@ impl<'a> App<'a> {
     fn tab_complete(&mut self) -> Option<()> {
         let lines = self.buffer.buffer();
         let completion_context =
-            tab_completion::get_completion_context(&lines, self.buffer.cursor_2d_position())?;
+            tab_completion::get_completion_context(&lines, self.buffer.cursor_char_pos())?;
 
         match completion_context {
             tab_completion::CompletionContext::FirstWord(command) => {
@@ -460,11 +452,15 @@ impl<'a> App<'a> {
                 full_command,
                 command_word,
                 word_under_cursor,
+                cursor_byte_pos,
+                end_of_word_under_cursor_byte,
             } => {
                 let res = bash_funcs::run_autocomplete_compspec(
                     &full_command,
                     &command_word,
                     &word_under_cursor,
+                    cursor_byte_pos,
+                    end_of_word_under_cursor_byte,
                 );
 
                 if let Some(completion) = res.first() {

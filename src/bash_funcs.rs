@@ -274,9 +274,11 @@ pub fn get_all_shell_builtins() -> Vec<String> {
 }
 
 pub fn run_autocomplete_compspec(
-    full_command: &str,
-    command_word: &str,
-    word_under_cursor: &str,
+    full_command: &str, // "git commi asdf" with cursor just after com
+    command_word: &str,  // "git"
+    word_under_cursor: &str, // "commi"
+    cursor_byte_pos: usize, // 7 since cursor is after "com" in "git com|mi asdf"
+    word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
 ) -> Vec<String> {
     let mut res: Vec<String> = Vec::new();
 
@@ -289,16 +291,9 @@ pub fn run_autocomplete_compspec(
         return res;
     }
 
-    // TODO better logic here
-    let word_end_pos = if let Some(word_start) = full_command.rfind(word_under_cursor) {
-        word_start + word_under_cursor.len()
-    } else {
-        full_command.len()
-    };
-
     unsafe {
-        bash_symbols::pcomp_line = std::ffi::CString::new(full_command).unwrap().into_raw();
-        bash_symbols::pcomp_ind = word_end_pos as std::ffi::c_int;
+        bash_symbols::pcomp_line = std::ffi::CString::new(full_command).unwrap().into_raw(); // git commi asdf
+        bash_symbols::pcomp_ind = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
 
         let found: std::ffi::c_int = 0;
         let foundp = &found as *const std::ffi::c_int as *mut std::ffi::c_int;
@@ -311,7 +306,7 @@ pub fn run_autocomplete_compspec(
                 command_word_cstr.as_ptr(),
                 std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
                 0,
-                word_end_pos as std::ffi::c_int,
+                word_under_cursor_byte_end as std::ffi::c_int,
                 foundp,
             );
             log::debug!("found value: {}", found);

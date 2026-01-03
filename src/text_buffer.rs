@@ -214,6 +214,10 @@ impl TextBuffer {
         self.cursor_2d_position().1
     }
 
+    pub fn cursor_char_pos(&self) -> usize {
+        self.buf[..self.cursor_byte].chars().count()
+    }
+
     pub fn lines(&self) -> Vec<&str> {
         self.buf.lines().collect()
     }
