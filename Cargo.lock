@@ -682,7 +682,6 @@ dependencies = [
  "simple-logging",
  "timeago",
  "tokio",
- "tui-textarea",
  "unicode-segmentation",
  "unicode-width 0.2.0",
 ]
@@ -1244,17 +1243,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.107",
-]
-
-[[package]]
-name = "tui-textarea"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a5318dd619ed73c52a9417ad19046724effc1287fb75cdcc4eca1d6ac1acbae"
-dependencies = [
- "crossterm 0.28.1",
- "ratatui",
- "unicode-width 0.2.0",
 ]
 
 [[package]]

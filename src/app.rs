@@ -9,14 +9,12 @@ use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
 use crate::text_buffer::TextBuffer;
-use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::vec;
-use tui_textarea::{CursorMove, TextArea};
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
@@ -317,14 +315,13 @@ impl<'a> App<'a> {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.buffer.move_one_word_left();
                 } else {
-                    self.buffer.move_cursor_left();
+                    self.buffer.move_left();
                 };
             }
             KeyEvent {
                 code: KeyCode::Right | KeyCode::End,
                 ..
             } => {
-
                 if self.buffer.is_cursor_at_end()
                     && let Some((_, suf)) = &self.suggestion
                 {
@@ -340,7 +337,7 @@ impl<'a> App<'a> {
                         KeyEvent {
                             code: KeyCode::End, ..
                         } => self.buffer.move_end_of_line(),
-                        _ => self.buffer.move_cursor_right(),
+                        _ => self.buffer.move_right(),
                     };
                 }
             }
@@ -356,10 +353,10 @@ impl<'a> App<'a> {
                 let cursor_row = self.buffer.cursor_row();
                 if cursor_row == 0 {
                     // Replace current buffer with last history entry
-                    if let Some(entry) = self.history_manager.search_in_history(
-                        self.buffer.buffer(),
-                        HistorySearchDirection::Backward,
-                    ) {
+                    if let Some(entry) = self
+                        .history_manager
+                        .search_in_history(self.buffer.buffer(), HistorySearchDirection::Backward)
+                    {
                         let new_command = entry.command.clone();
                         self.buffer = TextBuffer::new(new_command.as_str());
                     }
@@ -373,10 +370,10 @@ impl<'a> App<'a> {
             } => {
                 if self.buffer.is_cursor_on_final_line() {
                     // Replace current buffer with next history entry
-                    if let Some(entry) = self.history_manager.search_in_history(
-                        self.buffer.buffer(),
-                        HistorySearchDirection::Forward,
-                    ) {
+                    if let Some(entry) = self
+                        .history_manager
+                        .search_in_history(self.buffer.buffer(), HistorySearchDirection::Forward)
+                    {
                         let new_command = entry.command.clone();
                         self.buffer = TextBuffer::new(new_command.as_str());
                     }
@@ -441,45 +438,9 @@ impl<'a> App<'a> {
             let line = self.buffer.buffer();
             let space_pos = line.find(' ').unwrap_or(line.len());
             &line[0..space_pos]
-        }.to_owned();
+        }
+        .to_owned();
         self.cache_command_type(&first_word);
-    }
-
-    fn delete_word_under_cursor(buffer: &mut TextArea) -> Result<()> {
-        // delete chars to the left
-        loop {
-            let (cursor_row, cursor_col) = buffer.cursor();
-            let line = buffer
-                .lines()
-                .get(cursor_row as usize)
-                .ok_or(anyhow::anyhow!("Invalid cursor row"))?;
-            if cursor_col == 0 {
-                break;
-            }
-            let char_at_pos = line.chars().nth(cursor_col as usize - 1).unwrap_or(' ');
-            if char_at_pos.is_whitespace() {
-                break;
-            } else {
-                buffer.delete_char();
-            }
-        }
-
-        // delete chars to the right
-        loop {
-            let (cursor_row, cursor_col) = buffer.cursor();
-            let line = buffer
-                .lines()
-                .get(cursor_row as usize)
-                .ok_or(anyhow::anyhow!("Invalid cursor row"))?;
-            let char_at_pos = line.chars().nth(cursor_col as usize).unwrap_or(' ');
-            if char_at_pos.is_whitespace() {
-                break;
-            } else {
-                buffer.delete_next_char();
-            }
-        }
-
-        Ok(())
     }
 
     fn tab_complete(&mut self) -> Option<()> {
@@ -663,7 +624,8 @@ impl<'a> App<'a> {
 
         // Draw cursor
         if self.is_running {
-            self.cursor_animation.update_position(self.buffer.cursor_2d_position());
+            self.cursor_animation
+                .update_position(self.buffer.cursor_2d_position());
             let (cursor_row, cursor_col) = self.cursor_animation.get_position();
             let cursor_intensity = self.cursor_animation.get_intensity();
 
@@ -706,40 +668,5 @@ impl<'a> App<'a> {
 
         f.buffer_mut().reset();
         f.buffer_mut().merge(&fb.into_buffer());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_delete_under_word() {
-        //                                0123456789
-        let mut buffer = TextArea::from(["Hello world asd"]);
-        buffer.move_cursor(CursorMove::Jump(0, 8)); // Move cursor to end
-        App::delete_word_under_cursor(&mut buffer).unwrap();
-        assert_eq!(buffer.lines(), ["Hello  asd"]);
-        assert_eq!(buffer.cursor(), (0, 6));
-    }
-
-    #[test]
-    fn test_delete_under_word2() {
-        //                                0123456789
-        let mut buffer = TextArea::from(["Hello world asd"]);
-        buffer.move_cursor(CursorMove::Jump(0, 5)); // Move cursor to end
-        App::delete_word_under_cursor(&mut buffer).unwrap();
-        assert_eq!(buffer.lines(), [" world asd"]);
-        assert_eq!(buffer.cursor(), (0, 0));
-    }
-
-    #[test]
-    fn test_delete_under_word3() {
-        //                                0123456789
-        let mut buffer = TextArea::from(["Hello world asd"]);
-        buffer.move_cursor(CursorMove::Jump(0, 6)); // Move cursor to end
-        App::delete_word_under_cursor(&mut buffer).unwrap();
-        assert_eq!(buffer.lines(), ["Hello  asd"]);
-        assert_eq!(buffer.cursor(), (0, 6));
     }
 }
