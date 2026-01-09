@@ -53,6 +53,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
                 None => return false,
             };
             match (&token.kind, current_nesting) {
+            (TokenKind::RParen, TokenKind::LParen) => true,
             (TokenKind::RParen, TokenKind::CmdSubst) => true,
             (TokenKind::RParen, TokenKind::ProcessSubstIn) => true,
             (TokenKind::RParen, TokenKind::ProcessSubstOut) => true,
@@ -66,6 +67,11 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
             (TokenKind::Quote, TokenKind::Quote) => true,
             (TokenKind::SingleQuote, TokenKind::SingleQuote) => true,
+            (TokenKind::Esac, TokenKind::Case) => true,
+            (TokenKind::Done, TokenKind::For) => true,
+            (TokenKind::Done, TokenKind::While) => true,
+            (TokenKind::Done, TokenKind::Until) => true,
+            (TokenKind::Fi, TokenKind::If) => true,
             _ => false,
         }
         };
@@ -91,7 +97,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             None => break,
         };
         dbg!("Current token:");
-        dbg!(&token);
+        dbg!(&token.kind);
 
         match token.kind {
             TokenKind::LParen
@@ -116,7 +122,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             if nested_opening_satisfied(&token, nestings.last())
              => {
                 dbg!("Pushing nesting:");
-                dbg!(&token);
+                dbg!(&token.kind);
                 dbg!(&nestings);
                 nestings.push(token.kind.clone());
             }
@@ -126,10 +132,13 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             | TokenKind::DoubleRBracket
             | TokenKind::Quote
             | TokenKind::SingleQuote
+            | TokenKind::Esac
+            | TokenKind::Done
+            | TokenKind::Fi
             if nested_closing_satisfied(&token, nestings.last(), toks.peek()) =>
                 {
                     dbg!("Popping nesting:");
-                    dbg!(&token);
+                    dbg!(&token.kind);
                     dbg!(&nestings);
                     let kind = nestings.pop().unwrap();
                     if kind == TokenKind::ArithSubst {
