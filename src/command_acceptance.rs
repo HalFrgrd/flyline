@@ -118,7 +118,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             | TokenKind::For
             | TokenKind::While
             | TokenKind::Until
-            // | TokenKind::Function // TODO
+            | TokenKind::HereDoc
             if nested_opening_satisfied(&token, nestings.last())
              => {
                 dbg!("Pushing nesting:");
@@ -291,6 +291,18 @@ mod tests {
     fn test_function_def() {
         assert_eq!(will_bash_accept_buffer("my_func() { echo hello"), false);
         assert_eq!(will_bash_accept_buffer("my_func() { echo hello; }"), true);
+    }
+
+    #[test]
+    fn test_multiple_heredocs() {
+        assert_eq!(
+            will_bash_accept_buffer("cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\n"),
+            false
+        );
+        assert_eq!(
+            will_bash_accept_buffer("cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\nEOF2"),
+            true
+        );
     }
 
     // TODO test ones that will be syntax errors but complete commands
