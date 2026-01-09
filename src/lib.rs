@@ -8,6 +8,7 @@ mod active_suggestions;
 mod app;
 mod bash_funcs;
 mod bash_symbols;
+mod command_acceptance;
 mod cursor_animation;
 mod events;
 mod flash_testing;
@@ -80,9 +81,17 @@ impl Jobu {
     }
 
     fn get(&mut self) -> c_int {
-        // log::debug!("Getting byte from jobu input stream");
+        log::debug!("Getting byte from jobu input stream");
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("Input stream is empty or at end, fetching new command");
+            log::debug!(
+                "self.content.len() = {}, self.position = {}",
+                self.content.len(),
+                self.position
+            );
+            for b in &self.content {
+                log::debug!("Existing content byte: {} (asci={})", b, *b as char);
+            }
 
             const PS1_VAR_NAME: &str = "PS1";
             let ps1_prompt = bash_builtins::variables::find_as_string(PS1_VAR_NAME)
@@ -90,7 +99,9 @@ impl Jobu {
                 .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
                 .unwrap_or("default> ".into());
 
+            log::debug!("---------------------- Starting app ------------------------");
             self.content = app::get_command(ps1_prompt, &mut self.history).into_bytes();
+            log::debug!("---------------------- App finished ------------------------");
             let timestamp: Option<u64> = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .ok()

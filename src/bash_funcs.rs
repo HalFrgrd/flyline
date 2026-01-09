@@ -149,7 +149,7 @@ pub fn get_all_aliases() -> Vec<String> {
         }
     }
 
-    log::debug!("Found aliases: {:?}", aliases);
+    // log::debug!("Found aliases: {:?}", aliases);
     aliases
 }
 
@@ -245,7 +245,7 @@ pub fn get_all_shell_functions() -> Vec<String> {
         }
     }
 
-    log::debug!("Found shell functions: {:?}", functions);
+    // log::debug!("Found shell functions: {:?}", functions);
     functions
 }
 
@@ -270,7 +270,7 @@ pub fn get_all_shell_builtins() -> Vec<String> {
         }
     }
 
-    log::debug!("Found shell builtins: {:?}", builtins);
+    // log::debug!("Found shell builtins: {:?}", builtins);
     builtins
 }
 

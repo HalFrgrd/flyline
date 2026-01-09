@@ -9,7 +9,7 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     AnimationTick,
-    Resize,
+    Resize(u16, u16),
     ReenableMouseAttempt,
 }
 
@@ -80,8 +80,8 @@ impl EventHandler {
                                     sender_clone.send(Event::Mouse(mouse)).unwrap();
                                 }
                             }
-                            CrosstermEvent::Resize(_, _) => {
-                                sender_clone.send(Event::Resize).unwrap();
+                            CrosstermEvent::Resize(new_cols, new_rows) => {
+                                sender_clone.send(Event::Resize(new_cols, new_rows)).unwrap();
                             }
                             CrosstermEvent::FocusLost => {}
                             CrosstermEvent::FocusGained => {}

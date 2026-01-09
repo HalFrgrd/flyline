@@ -279,7 +279,7 @@ impl<'a> CommandExtractor<'a> {
 mod tests {
     use super::*;
 
-    fn run(input: &str, cursor_char: usize) -> CompletionContext {
+    fn run<'a>(input: &'a str, cursor_char: usize) -> CompletionContext<'a> {
         CommandExtractor::new(input, cursor_char).extract_command()
     }
 
@@ -895,7 +895,7 @@ mod tests {
         // Cursor in middle of Cyrillic word
         let input = "ls файл --süze привет 🎯";
         let cursor_pos = "ls фай".chars().count();
-        let ctx = get_completion_context(input, cursor_pos) ;
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
             CompType::CommandComp {
@@ -1003,5 +1003,35 @@ mod tests {
             }
             _ => panic!("Expected CommandComp"),
         }
+    }
+
+    #[test]
+    fn lexer_test() {
+        let input = "echo \\$(ls -ls)";
+        let mut lexer = Lexer::new(input);
+        let mut tokens: Vec<Token> = Vec::new();
+        // let mut i = 0;
+        // while lexer.peek_next_token().kind != TokenKind::EOF {
+        //     let token = lexer.next_token();
+        //     dbg!("Token: {:?}", &token);
+        //     tokens.push(token);
+        //     i += 1;
+        //     if i > 20 {
+        //         panic!("Too many tokens generated, possible infinite loop");
+        //     }
+        // }
+        // let expected_kinds = vec![
+        //     TokenKind::Word("echo".to_string()),
+        //     TokenKind::CmdSubst,
+        //     TokenKind::EOF,
+        // ];
+        // for (i, token) in tokens.iter().enumerate() {
+        //     assert_eq!(token.kind, expected_kinds[i]);
+        // }
+
+        let mut parser = flash::parser::Parser::new(lexer);
+        let ast = parser.parse_script();
+        dbg!("AST: {:?}", &ast);
+        panic!("End of lexer_test")
     }
 }

@@ -11,6 +11,7 @@ use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
 use crate::text_buffer::TextBuffer;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use flash;
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
 use std::os::unix::fs::PermissionsExt;
@@ -185,7 +186,10 @@ impl<'a> App<'a> {
                         self.mouse_state.enable();
                         false
                     }
-                    events::Event::Resize => true,
+                    events::Event::Resize(new_cols, new_rows) => {
+                        log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
+                        true
+                    }
                 }
             }
         }
@@ -218,21 +222,8 @@ impl<'a> App<'a> {
         executables
     }
 
-    fn unbalanced_quotes(&self) -> bool {
-        let mut single_quotes = 0;
-        let mut double_quotes = 0;
-        for c in self.buffer.buffer().chars() {
-            match c {
-                '\'' => single_quotes += 1,
-                '"' => double_quotes += 1,
-                _ => {}
-            }
-        }
-        single_quotes % 2 != 0 || double_quotes % 2 != 0
-    }
-
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
-        log::debug!("Mouse event: {:?}", mouse);
+        // log::debug!("Mouse event: {:?}", mouse);
         match mouse.kind {
             MouseEventKind::Moved => {
                 if !self.mouse_state.update_on_move() {
@@ -395,13 +386,15 @@ impl<'a> App<'a> {
                     }
                 } else if self.is_multiline_mode {
                     self.buffer.insert_newline();
+                    // TODO: two consecutive Enters should exit multiline mode
                 } else {
-                    if self.unbalanced_quotes() {
+                    if self.will_bash_accept_buffer() {
+                        // shut down the app loop
+                        self.is_running = false;
+                    } else {
+                        log::debug!("Buffer incomplete, entering multiline mode");
                         self.is_multiline_mode = true;
                         self.buffer.insert_newline();
-                        // self.increase_num_rows_below_prompt();
-                    } else {
-                        self.is_running = false;
                     }
                 }
             }
@@ -480,6 +473,22 @@ impl<'a> App<'a> {
         }
         .to_owned();
         self.cache_command_type(&first_word);
+    }
+
+    fn will_bash_accept_buffer(&self) -> bool {
+        // we will be in a weird state if we return true and we're wrong...
+        // TODO: can we detect if bash is waiting for more input in a more robust way?
+        // and in such a way we can edit the previously accepted lines?
+        let lexer = flash::lexer::Lexer::new(self.buffer.buffer());
+        let mut parser = flash::parser::Parser::new(lexer);
+        log::debug!(
+            "Parsing buffer for completeness check: {}",
+            self.buffer.buffer()
+        );
+        match parser.parse_script() {
+            flash::parser::Node::List { .. } => true,
+            _ => false,
+        }
     }
 
     fn tab_complete(&mut self) -> Option<()> {
