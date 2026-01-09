@@ -1,6 +1,5 @@
 use crate::text_buffer::SubString;
 use flash::lexer::{Lexer, Token, TokenKind};
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
@@ -73,56 +72,13 @@ struct CommandExtractor<'a> {
 
 impl<'a> CommandExtractor<'a> {
     fn new(input: &'a str, cursor_char: usize) -> Self {
-        let mut i = 0;
-        let mut lexer = Lexer::new(input);
-        let mut tokens: Vec<(Token, usize)> = Vec::new();
-
-        let line_col_to_char = Self::line_column_to_char_pos(input);
-
-        loop {
-            let token = lexer.next_token();
-            if token.kind == TokenKind::EOF {
-                break;
-            }
-            let num_chars = input.chars().count();
-            let char_pos = *line_col_to_char
-                .get(&(token.position.line, token.position.column))
-                .unwrap_or(&num_chars);
-
-            tokens.push((token.clone(), char_pos));
-
-            i += 1;
-            if i > 99999 {
-                panic!("Infinite loop detected in lexer during command extraction");
-            }
-        }
+        let tokens = crate::lexer::safe_into_tokens_and_char_pos(input);
 
         Self {
             input,
             tokens,
             cursor_char,
         }
-    }
-
-    fn line_column_to_char_pos(input: &str) -> HashMap<(usize, usize), usize> {
-        let mut current_line = 1; // flash lexer uses 1 based indexing
-        let mut current_column = 1;
-        let mut char_pos = 0;
-        let mut line_col_map = HashMap::new();
-
-        for c in input.chars() {
-            line_col_map.insert((current_line, current_column), char_pos);
-
-            if c == '\n' {
-                current_line += 1;
-                current_column = 1;
-            } else {
-                current_column += 1;
-            }
-            char_pos += 1;
-        }
-
-        line_col_map
     }
 
     fn get_next_token_start(

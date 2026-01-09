@@ -16,6 +16,7 @@ mod frame_builder;
 mod history;
 mod iter_first_last;
 mod layout_manager;
+mod lexer;
 mod prompt_manager;
 mod snake_animation;
 mod tab_completion;

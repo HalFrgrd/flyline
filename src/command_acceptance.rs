@@ -1,34 +1,12 @@
-use flash::lexer::{Lexer, Token, TokenKind};
+use crate::lexer;
+use flash::lexer::{Token, TokenKind};
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command
     // e.g. unclosed quotes, unclosed parens/braces/brackets, etc.
     // its ok if there are syntax errors, as long as the command is "complete"
 
-    let mut lexer = Lexer::new(buffer);
-    let mut tokens: Vec<Token> = Vec::new();
-
-    loop {
-        let token = lexer.next_token();
-        if let Some(prev_token) = tokens.last() {
-            // prevent infinite loops on malformed input
-            if token.position.line == prev_token.position.line
-                && token.position.column == prev_token.position.column
-                && token.kind == prev_token.kind
-            {
-                log::error!(
-                    "Lexer stuck on token at pos {:?}: {:?}",
-                    token.position,
-                    token.kind
-                );
-                break;
-            }
-        }
-        tokens.push(token.clone());
-        if let TokenKind::EOF = token.kind {
-            break;
-        }
-    }
+    let tokens: Vec<Token> = lexer::safe_into_tokens(buffer);
 
     let mut nestings: Vec<TokenKind> = Vec::new();
 
