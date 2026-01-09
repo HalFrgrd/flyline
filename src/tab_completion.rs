@@ -14,6 +14,7 @@ pub enum CompType {
         cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
         word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
     },
+    CursorOnBlank,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -27,7 +28,9 @@ pub struct CompletionContext<'a> {
 impl<'a> CompletionContext<'a> {
     pub fn new(buffer: &'a str, command_until_cursor: &'a str, command: &'a str) -> Self {
         let comp_type =
-            if command.trim().is_empty() || command_until_cursor.split_whitespace().count() <= 1 {
+            if command.trim().is_empty() || command_until_cursor.ends_with(char::is_whitespace) {
+                CompType::CursorOnBlank
+            } else if command_until_cursor.split_whitespace().count() <= 1 {
                 CompType::FirstWord(SubString::new(buffer, command_until_cursor.trim()))
             } else {
                 let cursor_byte_pos = command_until_cursor.len();
@@ -55,13 +58,11 @@ impl<'a> CompletionContext<'a> {
 pub fn get_completion_context<'a>(
     buffer: &'a str,
     cursor_char_pos: usize,
-) -> Option<CompletionContext<'a>> {
+) -> CompletionContext<'a> {
     // probably not perfect but good enough
 
     let extractor = CommandExtractor::new(buffer, cursor_char_pos);
-    let extracted = extractor.extract_command();
-
-    extracted.try_into().ok()
+    extractor.extract_command()
 }
 
 struct CommandExtractor<'a> {
@@ -712,7 +713,7 @@ mod tests {
     fn test_completion_context_cursor_at_start_of_line() {
         // Cursor at position 0 (start of line)
         let input = "café --option 🎯";
-        let ctx = get_completion_context(input, 0).unwrap();
+        let ctx = get_completion_context(input, 0);
         match ctx.comp_type {
             CompType::FirstWord(cursor_word) => {
                 assert_eq!(cursor_word.s, "");
@@ -726,7 +727,7 @@ mod tests {
         // Cursor in the middle of first word with non-ASCII
         let input = "café --option 🎯";
         let cursor_pos = "caf".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
         match ctx.comp_type {
             CompType::FirstWord(cursor_word) => {
                 assert_eq!(cursor_word.s, "caf");
@@ -740,7 +741,7 @@ mod tests {
         // Cursor after first word that contains emoji
         let input = "🚀rocket --verbose naïve";
         let cursor_pos = "🚀rock".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
         match ctx.comp_type {
             CompType::FirstWord(cursor_word) => {
                 assert_eq!(cursor_word.s, "🚀rock");
@@ -754,13 +755,11 @@ mod tests {
         // Cursor on a blank space between words
         let input = "gi café --message 'héllo'";
         let cursor_pos = "gi ".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::FirstWord(cursor_word) => {
-                assert_eq!(cursor_word.s, "gi");
-            }
-            _ => panic!("Expected FirstWord"),
+            CompType::CursorOnBlank => {}
+            _ => panic!("Expected CursorOnBlank"),
         }
     }
 
@@ -769,7 +768,7 @@ mod tests {
         // Cursor at end of line with non-ASCII
         let input = "echo 'Tëst message' résumé 📄";
         let cursor_pos = input.chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
             CompType::CommandComp {
@@ -794,7 +793,7 @@ mod tests {
         // Cursor in middle of word with unicode characters
         let input = "ls --sïze café 日本語";
         let cursor_pos = "ls --sïze caf".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
             CompType::CommandComp {
@@ -819,23 +818,11 @@ mod tests {
         // Cursor on space between emoji-containing words
         let input = "🎨 paint --cölor 🌈";
         let cursor_pos = "🎨 paint ".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CommandComp {
-                full_command,
-                command_word,
-                word_under_cursor,
-                cursor_byte_pos,
-                word_under_cursor_byte_end,
-            } => {
-                assert_eq!(full_command, "🎨 paint --cölor 🌈");
-                assert_eq!(command_word, "🎨");
-                assert_eq!(word_under_cursor.s, "--cölor");
-                assert_eq!(cursor_byte_pos, "🎨 paint ".len());
-                assert_eq!(word_under_cursor_byte_end, "🎨 paint --cölor".len());
-            }
-            _ => panic!("Expected CommandComp"),
+            CompType::CursorOnBlank => {}
+            _ => panic!("Expected CursorOnBlank"),
         }
     }
 
@@ -844,7 +831,7 @@ mod tests {
         // Cursor at start with Chinese characters
         let input = "文件 --option värde";
         let cursor_pos = 0;
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
         match ctx.comp_type {
             CompType::FirstWord(cursor_word) => {
                 assert_eq!(cursor_word.s, "");
@@ -858,7 +845,7 @@ mod tests {
         // Cursor in middle of Chinese word
         let input = "git 提交 --mëssage 'hëllo'";
         let cursor_pos = "git 提".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
             CompType::CommandComp {
@@ -883,7 +870,7 @@ mod tests {
         // Cursor at end with Arabic text
         let input = "cat مرحبا --öption 🔥";
         let cursor_pos = input.chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
             CompType::CommandComp {
@@ -908,7 +895,7 @@ mod tests {
         // Cursor in middle of Cyrillic word
         let input = "ls файл --süze привет 🎯";
         let cursor_pos = "ls фай".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos) ;
 
         match ctx.comp_type {
             CompType::CommandComp {
@@ -933,23 +920,11 @@ mod tests {
         // Cursor on blank space with mixed scripts
         let input = "grep 'pättërn' файл.txt 日本語 🚀";
         let cursor_pos = "grep 'pättërn' ".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CommandComp {
-                full_command,
-                command_word,
-                word_under_cursor,
-                cursor_byte_pos,
-                word_under_cursor_byte_end,
-            } => {
-                assert_eq!(full_command, "grep 'pättërn' файл.txt 日本語 🚀");
-                assert_eq!(command_word, "grep");
-                assert_eq!(word_under_cursor.s, "файл.txt");
-                assert_eq!(cursor_byte_pos, "grep 'pättërn' ".len());
-                assert_eq!(word_under_cursor_byte_end, "grep 'pättërn' файл.txt".len());
-            }
-            _ => panic!("Expected CommandComp"),
+            CompType::CursorOnBlank => {}
+            _ => panic!("Expected CursorOnBlank"),
         }
     }
 
@@ -958,7 +933,7 @@ mod tests {
         // Cursor at start of emoji-only command
         let input = "🎉 🎊 🎈 --flâg";
         let cursor_pos = 0;
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
         match ctx.comp_type {
             CompType::FirstWord(cursor_word) => {
                 assert_eq!(cursor_word.s, "");
@@ -972,7 +947,7 @@ mod tests {
         // Cursor at end with heavily accented text
         let input = "find . -näme 'fîlé' -type f 🔍";
         let cursor_pos = input.chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
             CompType::CommandComp {
@@ -997,23 +972,11 @@ mod tests {
         // Cursor on space between multibyte characters
         let input = "écho 'mëssagé' 文件 🎨";
         let cursor_pos = "écho 'mëssagé' ".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CommandComp {
-                full_command,
-                command_word,
-                word_under_cursor,
-                cursor_byte_pos,
-                word_under_cursor_byte_end,
-            } => {
-                assert_eq!(full_command, "écho 'mëssagé' 文件 🎨");
-                assert_eq!(command_word, "écho");
-                assert_eq!(word_under_cursor.s, "文件");
-                assert_eq!(cursor_byte_pos, "écho 'mëssagé' ".len());
-                assert_eq!(word_under_cursor_byte_end, "écho 'mëssagé' 文件".len());
-            }
-            _ => panic!("Expected CommandComp"),
+            CompType::CursorOnBlank => {}
+            _ => panic!("Expected CursorOnBlank"),
         }
     }
 
@@ -1022,7 +985,7 @@ mod tests {
         // Cursor in middle of Thai text
         let input = "cat ไฟล์ --öption วันนี้ 🌟";
         let cursor_pos = "cat ไฟ".chars().count();
-        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
             CompType::CommandComp {

@@ -421,6 +421,20 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
+                // if the word under the cursor has changed, reset active suggestions
+                if let Some(active_suggestions) = &mut self.active_tab_suggestions {
+                    if !self
+                        .buffer
+                        .substring_matches(&active_suggestions.word_under_cursor)
+                        || !self
+                            .buffer
+                            .cursor_in_substring(&active_suggestions.word_under_cursor)
+                    {
+                        log::debug!("Word under cursor changed, clearing active suggestions");
+                        self.active_tab_suggestions = None;
+                    }
+                }
+
                 if let Some(active_suggestions) = &mut self.active_tab_suggestions {
                     active_suggestions.on_tab(false);
                 } else {
@@ -471,7 +485,7 @@ impl<'a> App<'a> {
     fn tab_complete(&mut self) -> Option<()> {
         let buffer: &str = self.buffer.buffer();
         let completion_context =
-            tab_completion::get_completion_context(buffer, self.buffer.cursor_char_pos())?;
+            tab_completion::get_completion_context(buffer, self.buffer.cursor_char_pos());
 
         log::debug!("Completion context: {:?}", completion_context);
 
@@ -533,6 +547,9 @@ impl<'a> App<'a> {
                         }
                     }
                 }
+            }
+            tab_completion::CompType::CursorOnBlank => {
+                log::debug!("Cursor is on blank space, no tab completion performed");
             }
         }
 

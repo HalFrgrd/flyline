@@ -128,6 +128,25 @@ impl TextBuffer {
         Ok(())
     }
 
+    pub fn substring_matches(&self, sub_string: &SubString) -> bool {
+        if sub_string.start > sub_string.end {
+            return false;
+        }
+        if sub_string.end > self.buf.len() {
+            return false;
+        }
+        if !self.buf.is_char_boundary(sub_string.start)
+            || !self.buf.is_char_boundary(sub_string.end)
+        {
+            return false;
+        }
+        self.buf[sub_string.start..sub_string.end] == *sub_string.s
+    }
+
+    pub fn cursor_in_substring(&self, sub_string: &SubString) -> bool {
+        self.cursor_byte >= sub_string.start && self.cursor_byte <= sub_string.end
+    }
+
     pub fn move_one_word_left(&mut self) {
         self.cursor_byte = self
             .buf
@@ -540,7 +559,7 @@ mod text_buffer_tests {
         // Cursor at position 0 (start of line) with non-ASCII word
         let mut tb = TextBuffer::new("café option 日本語 🎯");
         tb.move_to_start(); // Cursor at position 0, at start of "café"
-        tb.replace_word_under_cursor("coffee");
+        tb.replace_word_under_cursor("coffee", &SubString::new(&tb.buffer(), "café")).unwrap();
         assert_eq!(tb.buffer(), "coffee option 日本語 🎯");
         assert_eq!(tb.cursor_byte, "coffee".len());
     }
@@ -553,7 +572,7 @@ mod text_buffer_tests {
         for _ in 0..6 {
             tb.move_right();
         } // Position at "git фа|йл" (middle of "файл")
-        tb.replace_word_under_cursor("file");
+        tb.replace_word_under_cursor("file", &SubString::new(&tb.buffer(), "файл")).unwrap();
         assert_eq!(tb.buffer(), "git file --message 'привет' 🚀");
         assert_eq!(tb.cursor_byte, "git file".len());
     }
@@ -563,7 +582,7 @@ mod text_buffer_tests {
         // Cursor at the end of line on an emoji word
         let mut tb = TextBuffer::new("hello world 🎉🎊🎈");
         // Cursor is already at the end, on the emoji sequence
-        tb.replace_word_under_cursor("celebration");
+        tb.replace_word_under_cursor("celebration", &SubString::new(&tb.buffer(), "🎉🎊🎈")).unwrap();
         assert_eq!(tb.buffer(), "hello world celebration");
         assert_eq!(tb.cursor_byte, "hello world celebration".len());
     }
@@ -579,7 +598,7 @@ mod text_buffer_tests {
         tb.move_right(); // Now on the space: "cat | مرحبا"
 
         // When on whitespace, should replace the next word
-        tb.replace_word_under_cursor("hello");
+        tb.replace_word_under_cursor("hello", &SubString::new(&tb.buffer(), "مرحبا")).unwrap();
         assert_eq!(tb.buffer(), "cat hello --option 🔥");
         assert_eq!(tb.cursor_byte, "cat hello".len());
     }
@@ -592,7 +611,7 @@ mod text_buffer_tests {
         for _ in 0..5 {
             tb.move_right();
         } // Position at "echo |文件名" (right at start of Chinese word)
-        tb.replace_word_under_cursor("filename");
+        tb.replace_word_under_cursor("filename", &SubString::new(&tb.buffer(), "文件名")).unwrap();
         assert_eq!(tb.buffer(), "echo filename --verbose 日本語");
         assert_eq!(tb.cursor_byte, "echo filename".len());
     }
@@ -605,7 +624,7 @@ mod text_buffer_tests {
         for _ in 0..10 {
             tb.move_right();
         } // Position at "find naïve| résumé" (end of "naïve")
-        tb.replace_word_under_cursor("simple");
+        tb.replace_word_under_cursor("simple", &SubString::new(&tb.buffer(), "naïve")).unwrap();
         assert_eq!(tb.buffer(), "find simple résumé café 📄");
         assert_eq!(tb.cursor_byte, "find simple".len());
     }
@@ -618,7 +637,7 @@ mod text_buffer_tests {
         for _ in 0..7 {
             tb.move_right();
         } // Position in the middle of the family emoji
-        tb.replace_word_under_cursor("family");
+        tb.replace_word_under_cursor("family", &SubString::new(&tb.buffer(), "👨‍👩‍👧‍👦")).unwrap();
         assert_eq!(tb.buffer(), "hello family world ไฟล์ 🌟");
         assert_eq!(tb.cursor_byte, "hello family".len());
     }
