@@ -1,5 +1,5 @@
 use crate::text_buffer::SubString;
-use flash::lexer::{Lexer, Token, TokenKind};
+use flash::lexer::{Token, TokenKind};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
@@ -30,7 +30,7 @@ impl<'a> CompletionContext<'a> {
             if command.trim().is_empty() || command_until_cursor.ends_with(char::is_whitespace) {
                 CompType::CursorOnBlank
             } else if command_until_cursor.split_whitespace().count() <= 1 {
-                CompType::FirstWord(SubString::new(buffer, command_until_cursor.trim()))
+                CompType::FirstWord(SubString::new(buffer, command_until_cursor.trim()).unwrap())
             } else {
                 let cursor_byte_pos = command_until_cursor.len();
                 let (_, word_under_cursor_byte_end, word_under_cursor) =
@@ -39,7 +39,7 @@ impl<'a> CompletionContext<'a> {
                 CompType::CommandComp {
                     full_command: command.to_string(),
                     command_word: command.split_whitespace().next().unwrap_or("").to_string(),
-                    word_under_cursor: SubString::new(buffer, word_under_cursor),
+                    word_under_cursor: SubString::new(buffer, word_under_cursor).unwrap(),
                     cursor_byte_pos,
                     word_under_cursor_byte_end,
                 }
@@ -961,33 +961,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn lexer_test() {
-        let input = "echo \\$(ls -ls)";
-        let mut lexer = Lexer::new(input);
-        let mut tokens: Vec<Token> = Vec::new();
-        // let mut i = 0;
-        // while lexer.peek_next_token().kind != TokenKind::EOF {
-        //     let token = lexer.next_token();
-        //     dbg!("Token: {:?}", &token);
-        //     tokens.push(token);
-        //     i += 1;
-        //     if i > 20 {
-        //         panic!("Too many tokens generated, possible infinite loop");
-        //     }
-        // }
-        // let expected_kinds = vec![
-        //     TokenKind::Word("echo".to_string()),
-        //     TokenKind::CmdSubst,
-        //     TokenKind::EOF,
-        // ];
-        // for (i, token) in tokens.iter().enumerate() {
-        //     assert_eq!(token.kind, expected_kinds[i]);
-        // }
-
-        let mut parser = flash::parser::Parser::new(lexer);
-        let ast = parser.parse_script();
-        dbg!("AST: {:?}", &ast);
-        panic!("End of lexer_test")
-    }
 }

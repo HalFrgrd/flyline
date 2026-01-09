@@ -325,26 +325,28 @@ pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> (usize, usize, &
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SubString {
-    pub s: String,
-    pub start: usize,
-    pub end: usize,
+    pub s: String, // contents expected to be found between start and end
+    pub start: usize, // byte index in the original buffer
+    pub end: usize, // byte index in the original buffer
 }
 
 impl SubString {
-    pub fn new(buffer: &str, substring: &str) -> Self {
-        // Get the pointer to the start of substring and self.buf
+    pub fn new(buffer: &str, substring: &str) -> anyhow::Result<Self> {
         let substring_ptr = substring.as_ptr() as usize;
         let buf_ptr = buffer.as_ptr() as usize;
 
-        // Calculate the byte offset from the start of buf
+        if substring_ptr < buf_ptr || substring_ptr + substring.len() > buf_ptr + buffer.len() {
+            return Err(anyhow::anyhow!("Substring not found in buffer"));
+        }
+
         let start = substring_ptr - buf_ptr;
         let end = start + substring.len();
 
-        Self {
+        Ok(Self {
             s: substring.to_string(),
             start,
             end,
-        }
+        })
     }
 }
 
@@ -565,12 +567,22 @@ mod text_buffer_tests {
 
     // === replace_word_under_cursor tests ===
 
+    fn create_substring(buffer: &str, word: &str) -> SubString {
+        let start = buffer.find(word).unwrap();
+        let end = start + word.len();
+        SubString {
+            s: word.to_string(),
+            start,
+            end,
+        }
+    }
+
     #[test]
     fn replace_word_under_cursor_at_start_of_line() {
         // Cursor at position 0 (start of line) with non-ASCII word
         let mut tb = TextBuffer::new("café option 日本語 🎯");
         tb.move_to_start(); // Cursor at position 0, at start of "café"
-        tb.replace_word_under_cursor("coffee", &SubString::new(&tb.buffer(), "café"))
+        tb.replace_word_under_cursor("coffee", &create_substring(&tb.buffer(), "café"))
             .unwrap();
         assert_eq!(tb.buffer(), "coffee option 日本語 🎯");
         assert_eq!(tb.cursor_byte, "coffee".len());
@@ -584,7 +596,7 @@ mod text_buffer_tests {
         for _ in 0..6 {
             tb.move_right();
         } // Position at "git фа|йл" (middle of "файл")
-        tb.replace_word_under_cursor("file", &SubString::new(&tb.buffer(), "файл"))
+        tb.replace_word_under_cursor("file", &create_substring(&tb.buffer(), "файл"))
             .unwrap();
         assert_eq!(tb.buffer(), "git file --message 'привет' 🚀");
         assert_eq!(tb.cursor_byte, "git file".len());
@@ -595,7 +607,7 @@ mod text_buffer_tests {
         // Cursor at the end of line on an emoji word
         let mut tb = TextBuffer::new("hello world 🎉🎊🎈");
         // Cursor is already at the end, on the emoji sequence
-        tb.replace_word_under_cursor("celebration", &SubString::new(&tb.buffer(), "🎉🎊🎈"))
+        tb.replace_word_under_cursor("celebration", &create_substring(&tb.buffer(), "🎉🎊🎈"))
             .unwrap();
         assert_eq!(tb.buffer(), "hello world celebration");
         assert_eq!(tb.cursor_byte, "hello world celebration".len());
@@ -612,7 +624,7 @@ mod text_buffer_tests {
         tb.move_right(); // Now on the space: "cat | مرحبا"
 
         // When on whitespace, should replace the next word
-        tb.replace_word_under_cursor("hello", &SubString::new(&tb.buffer(), "مرحبا"))
+        tb.replace_word_under_cursor("hello", &create_substring(&tb.buffer(), "مرحبا"))
             .unwrap();
         assert_eq!(tb.buffer(), "cat hello --option 🔥");
         assert_eq!(tb.cursor_byte, "cat hello".len());
@@ -626,7 +638,7 @@ mod text_buffer_tests {
         for _ in 0..5 {
             tb.move_right();
         } // Position at "echo |文件名" (right at start of Chinese word)
-        tb.replace_word_under_cursor("filename", &SubString::new(&tb.buffer(), "文件名"))
+        tb.replace_word_under_cursor("filename", &create_substring(&tb.buffer(), "文件名"))
             .unwrap();
         assert_eq!(tb.buffer(), "echo filename --verbose 日本語");
         assert_eq!(tb.cursor_byte, "echo filename".len());
@@ -640,7 +652,7 @@ mod text_buffer_tests {
         for _ in 0..10 {
             tb.move_right();
         } // Position at "find naïve| résumé" (end of "naïve")
-        tb.replace_word_under_cursor("simple", &SubString::new(&tb.buffer(), "naïve"))
+        tb.replace_word_under_cursor("simple", &create_substring(&tb.buffer(), "naïve"))
             .unwrap();
         assert_eq!(tb.buffer(), "find simple résumé café 📄");
         assert_eq!(tb.cursor_byte, "find simple".len());
@@ -654,7 +666,7 @@ mod text_buffer_tests {
         for _ in 0..7 {
             tb.move_right();
         } // Position in the middle of the family emoji
-        tb.replace_word_under_cursor("family", &SubString::new(&tb.buffer(), "👨‍👩‍👧‍👦"))
+        tb.replace_word_under_cursor("family", &create_substring(&tb.buffer(), "👨‍👩‍👧‍👦"))
             .unwrap();
         assert_eq!(tb.buffer(), "hello family world ไฟล์ 🌟");
         assert_eq!(tb.cursor_byte, "hello family".len());
