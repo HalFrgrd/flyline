@@ -1,5 +1,6 @@
 use crate::active_suggestions;
 use crate::bash_funcs;
+use crate::command_acceptance;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::frame_builder::FrameBuilder;
@@ -11,7 +12,6 @@ use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
 use crate::text_buffer::TextBuffer;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
-use flash;
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
 use std::os::unix::fs::PermissionsExt;
@@ -102,7 +102,6 @@ struct App<'a> {
     prompt_manager: PromptManager,
     /// Parsed bash history available at startup.
     history_manager: &'a mut HistoryManager,
-    is_multiline_mode: bool,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
     layout_manager: LayoutManager,
     snake_animation: SnakeAnimation,
@@ -137,7 +136,6 @@ impl<'a> App<'a> {
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(ps1),
             history_manager: history,
-            is_multiline_mode: false,
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
             snake_animation: SnakeAnimation::new(),
@@ -384,16 +382,12 @@ impl<'a> App<'a> {
                             log::error!("Error during tab completion accepting: {}", e)
                         }
                     }
-                } else if self.is_multiline_mode {
-                    self.buffer.insert_newline();
-                    // TODO: two consecutive Enters should exit multiline mode
                 } else {
-                    if self.will_bash_accept_buffer() {
-                        // shut down the app loop
+                    if self.buffer.is_cursor_at_end()
+                        && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
+                    {
                         self.is_running = false;
                     } else {
-                        log::debug!("Buffer incomplete, entering multiline mode");
-                        self.is_multiline_mode = true;
                         self.buffer.insert_newline();
                     }
                 }
@@ -473,22 +467,6 @@ impl<'a> App<'a> {
         }
         .to_owned();
         self.cache_command_type(&first_word);
-    }
-
-    fn will_bash_accept_buffer(&self) -> bool {
-        // we will be in a weird state if we return true and we're wrong...
-        // TODO: can we detect if bash is waiting for more input in a more robust way?
-        // and in such a way we can edit the previously accepted lines?
-        let lexer = flash::lexer::Lexer::new(self.buffer.buffer());
-        let mut parser = flash::parser::Parser::new(lexer);
-        log::debug!(
-            "Parsing buffer for completeness check: {}",
-            self.buffer.buffer()
-        );
-        match parser.parse_script() {
-            flash::parser::Node::List { .. } => true,
-            _ => false,
-        }
     }
 
     fn tab_complete(&mut self) -> Option<()> {

@@ -86,7 +86,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
         })
     {
         // last_token_needs_more_input
-        dbg!("Last token needs more input");
+        log::debug!("Last token needs more input");
         return false;
     }
 
@@ -96,8 +96,8 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             Some(t) => t,
             None => break,
         };
-        dbg!("Current token:");
-        dbg!(&token.kind);
+        log::debug!("Current token:");
+        log::debug!("{:?}", &token.kind);
 
         match token.kind {
             TokenKind::LParen
@@ -119,11 +119,11 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             | TokenKind::While
             | TokenKind::Until
             | TokenKind::HereDoc
-            if nested_opening_satisfied(&token, nestings.last())
-             => {
-                dbg!("Pushing nesting:");
-                dbg!(&token.kind);
-                dbg!(&nestings);
+                if nested_opening_satisfied(&token, nestings.last()) =>
+            {
+                // dbg!("Pushing nesting:");
+                // dbg!(&token.kind);
+                // dbg!(&nestings);
                 nestings.push(token.kind.clone());
             }
             TokenKind::RParen
@@ -135,26 +135,26 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             | TokenKind::Esac
             | TokenKind::Done
             | TokenKind::Fi
-            if nested_closing_satisfied(&token, nestings.last(), toks.peek()) =>
-                {
-                    dbg!("Popping nesting:");
-                    dbg!(&token.kind);
-                    dbg!(&nestings);
-                    let kind = nestings.pop().unwrap();
-                    if kind == TokenKind::ArithSubst {
-                        assert!(
-                            toks.peek().unwrap().kind == TokenKind::RParen,
-                            "expected two RParen tokens"
-                        );
-                        toks.next(); // consume the extra RParen
-                    }
+                if nested_closing_satisfied(&token, nestings.last(), toks.peek()) =>
+            {
+                // dbg!("Popping nesting:");
+                // dbg!(&token.kind);
+                // dbg!(&nestings);
+                let kind = nestings.pop().unwrap();
+                if kind == TokenKind::ArithSubst {
+                    assert!(
+                        toks.peek().unwrap().kind == TokenKind::RParen,
+                        "expected two RParen tokens"
+                    );
+                    toks.next(); // consume the extra RParen
                 }
+            }
             _ => {}
         }
     }
 
-    dbg!("Final nestings:");
-    dbg!(&nestings);
+    // dbg!("Final nestings:");
+    // dbg!(&nestings);
 
     nestings.is_empty()
 }
