@@ -1,19 +1,40 @@
-use std::collections::HashMap;
-
 use flash::lexer::{Lexer, Token, TokenKind};
-
-#[allow(unused_imports)]
-use crate::bash_funcs;
+use std::{collections::HashMap, ops::Sub};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum CompType<'a> {
+pub struct SubString {
+    pub s: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl SubString {
+    pub fn new(buffer: &str, substring: &str) -> Self {
+        // Get the pointer to the start of substring and self.buf
+        let substring_ptr = substring.as_ptr() as usize;
+        let buf_ptr = buffer.as_ptr() as usize;
+
+        // Calculate the byte offset from the start of buf
+        let start = substring_ptr - buf_ptr;
+        let end = start + substring.len();
+
+        Self {
+            s: substring.to_string(),
+            start,
+            end,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum CompType {
     FirstWord(
-        &'a str, // left part of the word under cursor
+        SubString, // left part of the word under cursor
     ),
     CommandComp {
-        full_command: &'a str,              // "git commi asdf" with cursor just after com
-        command_word: &'a str,              // "git"
-        word_under_cursor: &'a str,         // "commi"
+        full_command: String,              // "git commi asdf" with cursor just after com
+        command_word: String,              // "git"
+        word_under_cursor: SubString,      // "commi"
         cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
         word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
     },
@@ -24,33 +45,41 @@ pub struct CompletionContext<'a> {
     pub buffer: &'a str,
     pub command_until_cursor: &'a str,
     pub command: &'a str,
-    pub comp_type: CompType<'a>,
+    pub comp_type: CompType,
 }
 
 impl<'a> CompletionContext<'a> {
     pub fn new(buffer: &'a str, command_until_cursor: &'a str, command: &'a str) -> Self {
-        let comp_type = if command.trim().is_empty() {
-            CompType::FirstWord(command_until_cursor.trim())
-        } else {
-            let cursor_byte_pos = command_until_cursor.len();
-            let (_, word_under_cursor_byte_end, word_under_cursor) =
-                crate::text_buffer::extract_word_at_byte(command, cursor_byte_pos);
+        let comp_type =
+            if command.trim().is_empty() || command_until_cursor.split_whitespace().count() <= 1 {
+                CompType::FirstWord(SubString::new(buffer, command_until_cursor.trim()))
+            } else {
+                let cursor_byte_pos = command_until_cursor.len();
+                let (_, word_under_cursor_byte_end, word_under_cursor) =
+                    crate::text_buffer::extract_word_at_byte(command, cursor_byte_pos);
 
-            CompType::CommandComp {
-                full_command: command,
-                command_word: command.split_whitespace().next().unwrap_or(""),
-                word_under_cursor,
-                cursor_byte_pos,
-                word_under_cursor_byte_end,
-            }
-        };
+                CompType::CommandComp {
+                    full_command: command.to_string(),
+                    command_word: command.split_whitespace().next().unwrap_or("").to_string(),
+                    word_under_cursor: SubString::new(buffer, word_under_cursor),
+                    cursor_byte_pos,
+                    word_under_cursor_byte_end,
+                }
+            };
 
-        CompletionContext { buffer, command_until_cursor, command, comp_type}
+        CompletionContext {
+            buffer,
+            command_until_cursor,
+            command,
+            comp_type,
+        }
     }
 }
 
-
-pub fn get_completion_context(buffer: &str, cursor_char_pos: usize) -> Option<CompletionContext> {
+pub fn get_completion_context<'a>(
+    buffer: &'a str,
+    cursor_char_pos: usize,
+) -> Option<CompletionContext<'a>> {
     // probably not perfect but good enough
 
     let extractor = CommandExtractor::new(buffer, cursor_char_pos);
@@ -58,7 +87,6 @@ pub fn get_completion_context(buffer: &str, cursor_char_pos: usize) -> Option<Co
 
     extracted.try_into().ok()
 }
-
 
 struct CommandExtractor<'a> {
     input: &'a str,
@@ -243,7 +271,7 @@ impl<'a> CommandExtractor<'a> {
                 }
             }
         }
-        
+
         // Build slices from the original input by converting char indices to byte indices.
         let start_byte = self
             .input
@@ -287,21 +315,20 @@ mod tests {
 
         match res.comp_type {
             CompType::CommandComp {
-            full_command,
-            command_word,
-            word_under_cursor,
-            cursor_byte_pos,
-            word_under_cursor_byte_end,
+                full_command,
+                command_word,
+                word_under_cursor,
+                cursor_byte_pos,
+                word_under_cursor_byte_end,
             } => {
-            assert_eq!(full_command, "git commi café");
-            assert_eq!(command_word, "git");
-            assert_eq!(word_under_cursor, "commi");
-            assert_eq!(cursor_byte_pos, "git com".len());
-            assert_eq!(word_under_cursor_byte_end, "git commi".len());
+                assert_eq!(full_command, "git commi café");
+                assert_eq!(command_word, "git");
+                assert_eq!(word_under_cursor.s, "commi");
+                assert_eq!(cursor_byte_pos, "git com".len());
+                assert_eq!(word_under_cursor_byte_end, "git commi".len());
             }
             _ => panic!("Expected CommandComp"),
         }
-        
     }
 
     #[test]
@@ -348,17 +375,22 @@ mod tests {
             "echo $(git rev-parse HEAD) résumé"
         );
 
-        let ctx: CompletionContext = res.try_into().unwrap();
-        assert_eq!(
-            ctx,
-            CompletionContext::CommandComp {
-                full_command: "echo $(git rev-parse HEAD) résumé".to_string(),
-                command_word: "echo".to_string(),
-                word_under_cursor: "résumé".to_string(),
-                cursor_byte_pos: input.len(),
-                word_under_cursor_byte_end: input.len(),
+        match res.comp_type {
+            CompType::CommandComp {
+                full_command,
+                command_word,
+                word_under_cursor,
+                cursor_byte_pos,
+                word_under_cursor_byte_end,
+            } => {
+                assert_eq!(full_command, "echo $(git rev-parse HEAD) résumé");
+                assert_eq!(command_word, "echo");
+                assert_eq!(word_under_cursor.s, "résumé");
+                assert_eq!(cursor_byte_pos, input.len());
+                assert_eq!(word_under_cursor_byte_end, input.len());
             }
-        );
+            _ => panic!("Expected CommandComp"),
+        }
     }
 
     #[test]
@@ -704,8 +736,13 @@ mod tests {
     fn test_completion_context_cursor_at_start_of_line() {
         // Cursor at position 0 (start of line)
         let input = "café --option 🎯";
-        let ctx = get_completion_context(input, 0);
-        assert_eq!(ctx, Some(CompletionContext::FirstWord("".to_string())));
+        let ctx = get_completion_context(input, 0).unwrap();
+        match ctx.comp_type {
+            CompType::FirstWord(cursor_word) => {
+                assert_eq!(cursor_word.s, "");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
     }
 
     #[test]
@@ -713,8 +750,13 @@ mod tests {
         // Cursor in the middle of first word with non-ASCII
         let input = "café --option 🎯";
         let cursor_pos = "caf".chars().count();
-        let ctx = get_completion_context(input, cursor_pos);
-        assert_eq!(ctx, Some(CompletionContext::FirstWord("caf".to_string())));
+        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        match ctx.comp_type {
+            CompType::FirstWord(cursor_word) => {
+                assert_eq!(cursor_word.s, "caf");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
     }
 
     #[test]
@@ -722,11 +764,13 @@ mod tests {
         // Cursor after first word that contains emoji
         let input = "🚀rocket --verbose naïve";
         let cursor_pos = "🚀rock".chars().count();
-        let ctx = get_completion_context(input, cursor_pos);
-        assert_eq!(
-            ctx,
-            Some(CompletionContext::FirstWord("🚀rock".to_string()))
-        );
+        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        match ctx.comp_type {
+            CompType::FirstWord(cursor_word) => {
+                assert_eq!(cursor_word.s, "🚀rock");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
     }
 
     #[test]
@@ -736,9 +780,9 @@ mod tests {
         let cursor_pos = "gi ".chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::FirstWord(cursor_word) => {
-                assert_eq!(cursor_word, "gi");
+        match ctx.comp_type {
+            CompType::FirstWord(cursor_word) => {
+                assert_eq!(cursor_word.s, "gi");
             }
             _ => panic!("Expected FirstWord"),
         }
@@ -751,8 +795,8 @@ mod tests {
         let cursor_pos = input.chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -761,7 +805,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "echo 'Tëst message' résumé 📄");
                 assert_eq!(command_word, "echo");
-                assert_eq!(word_under_cursor, "📄");
+                assert_eq!(word_under_cursor.s, "📄");
                 assert_eq!(cursor_byte_pos, input.len());
                 assert_eq!(word_under_cursor_byte_end, input.len());
             }
@@ -776,8 +820,8 @@ mod tests {
         let cursor_pos = "ls --sïze caf".chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -786,7 +830,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "ls --sïze café 日本語");
                 assert_eq!(command_word, "ls");
-                assert_eq!(word_under_cursor, "café");
+                assert_eq!(word_under_cursor.s, "café");
                 assert_eq!(cursor_byte_pos, "ls --sïze caf".len());
                 assert_eq!(word_under_cursor_byte_end, "ls --sïze café".len());
             }
@@ -801,8 +845,8 @@ mod tests {
         let cursor_pos = "🎨 paint ".chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -811,7 +855,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "🎨 paint --cölor 🌈");
                 assert_eq!(command_word, "🎨");
-                assert_eq!(word_under_cursor, "--cölor");
+                assert_eq!(word_under_cursor.s, "--cölor");
                 assert_eq!(cursor_byte_pos, "🎨 paint ".len());
                 assert_eq!(word_under_cursor_byte_end, "🎨 paint --cölor".len());
             }
@@ -824,8 +868,13 @@ mod tests {
         // Cursor at start with Chinese characters
         let input = "文件 --option värde";
         let cursor_pos = 0;
-        let ctx = get_completion_context(input, cursor_pos);
-        assert_eq!(ctx, Some(CompletionContext::FirstWord("".to_string())));
+        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        match ctx.comp_type {
+            CompType::FirstWord(cursor_word) => {
+                assert_eq!(cursor_word.s, "");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
     }
 
     #[test]
@@ -835,8 +884,8 @@ mod tests {
         let cursor_pos = "git 提".chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -845,7 +894,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "git 提交 --mëssage 'hëllo'");
                 assert_eq!(command_word, "git");
-                assert_eq!(word_under_cursor, "提交");
+                assert_eq!(word_under_cursor.s, "提交");
                 assert_eq!(cursor_byte_pos, "git 提".len());
                 assert_eq!(word_under_cursor_byte_end, "git 提交".len());
             }
@@ -860,8 +909,8 @@ mod tests {
         let cursor_pos = input.chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -870,7 +919,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "cat مرحبا --öption 🔥");
                 assert_eq!(command_word, "cat");
-                assert_eq!(word_under_cursor, "🔥");
+                assert_eq!(word_under_cursor.s, "🔥");
                 assert_eq!(cursor_byte_pos, input.len());
                 assert_eq!(word_under_cursor_byte_end, input.len());
             }
@@ -885,8 +934,8 @@ mod tests {
         let cursor_pos = "ls фай".chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -895,7 +944,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "ls файл --süze привет 🎯");
                 assert_eq!(command_word, "ls");
-                assert_eq!(word_under_cursor, "файл");
+                assert_eq!(word_under_cursor.s, "файл");
                 assert_eq!(cursor_byte_pos, "ls фай".len());
                 assert_eq!(word_under_cursor_byte_end, "ls файл".len());
             }
@@ -910,8 +959,8 @@ mod tests {
         let cursor_pos = "grep 'pättërn' ".chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -920,7 +969,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "grep 'pättërn' файл.txt 日本語 🚀");
                 assert_eq!(command_word, "grep");
-                assert_eq!(word_under_cursor, "файл.txt");
+                assert_eq!(word_under_cursor.s, "файл.txt");
                 assert_eq!(cursor_byte_pos, "grep 'pättërn' ".len());
                 assert_eq!(word_under_cursor_byte_end, "grep 'pättërn' файл.txt".len());
             }
@@ -933,8 +982,13 @@ mod tests {
         // Cursor at start of emoji-only command
         let input = "🎉 🎊 🎈 --flâg";
         let cursor_pos = 0;
-        let ctx = get_completion_context(input, cursor_pos);
-        assert_eq!(ctx, Some(CompletionContext::FirstWord("".to_string())));
+        let ctx = get_completion_context(input, cursor_pos).unwrap();
+        match ctx.comp_type {
+            CompType::FirstWord(cursor_word) => {
+                assert_eq!(cursor_word.s, "");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
     }
 
     #[test]
@@ -944,8 +998,8 @@ mod tests {
         let cursor_pos = input.chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -954,7 +1008,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "find . -näme 'fîlé' -type f 🔍");
                 assert_eq!(command_word, "find");
-                assert_eq!(word_under_cursor, "🔍");
+                assert_eq!(word_under_cursor.s, "🔍");
                 assert_eq!(cursor_byte_pos, input.len());
                 assert_eq!(word_under_cursor_byte_end, input.len());
             }
@@ -969,8 +1023,8 @@ mod tests {
         let cursor_pos = "écho 'mëssagé' ".chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -979,7 +1033,7 @@ mod tests {
             } => {
                 assert_eq!(full_command, "écho 'mëssagé' 文件 🎨");
                 assert_eq!(command_word, "écho");
-                assert_eq!(word_under_cursor, "文件");
+                assert_eq!(word_under_cursor.s, "文件");
                 assert_eq!(cursor_byte_pos, "écho 'mëssagé' ".len());
                 assert_eq!(word_under_cursor_byte_end, "écho 'mëssagé' 文件".len());
             }
@@ -994,8 +1048,8 @@ mod tests {
         let cursor_pos = "cat ไฟ".chars().count();
         let ctx = get_completion_context(input, cursor_pos).unwrap();
 
-        match ctx {
-            CompletionContext::CommandComp {
+        match ctx.comp_type {
+            CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -1004,12 +1058,11 @@ mod tests {
             } => {
                 assert_eq!(full_command, "cat ไฟล์ --öption วันนี้ 🌟");
                 assert_eq!(command_word, "cat");
-                assert_eq!(word_under_cursor, "ไฟล์");
+                assert_eq!(word_under_cursor.s, "ไฟล์");
                 assert_eq!(cursor_byte_pos, "cat ไฟ".len());
                 assert_eq!(word_under_cursor_byte_end, "cat ไฟล์".len());
             }
             _ => panic!("Expected CommandComp"),
         }
     }
-
 }

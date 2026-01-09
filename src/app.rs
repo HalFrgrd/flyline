@@ -1,3 +1,4 @@
+use crate::active_suggestions;
 use crate::bash_funcs;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
@@ -9,7 +10,6 @@ use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
 use crate::text_buffer::TextBuffer;
-use crate::active_suggestions;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
@@ -381,7 +381,6 @@ impl<'a> App<'a> {
             } => {
                 if let Some(active_suggestions) = &mut self.active_suggestions {
                     let selected_command = active_suggestions.on_enter();
-                    
                 } else if self.is_multiline_mode {
                     self.buffer.insert_newline();
                 } else {
@@ -449,14 +448,26 @@ impl<'a> App<'a> {
         let completion_context =
             tab_completion::get_completion_context(buffer, self.buffer.cursor_char_pos())?;
 
-        match completion_context {
-            tab_completion::CompletionContext::FirstWord(command) => {
-                if let Some(completion) = self.tab_complete_first_word(&command) {
-                    self.buffer.replace_word_under_cursor(&completion);
-                    self.buffer.insert_char(' ');
+        log::debug!("Completion context: {:?}", completion_context);
+
+        match completion_context.comp_type {
+            tab_completion::CompType::FirstWord(word_under_cursor) => {
+                if let Some(completion) = self.tab_complete_first_word(&word_under_cursor.s) {
+                    let res = self.buffer.replace_word_under_cursor(
+                        &completion,
+                        word_under_cursor.start,
+                        word_under_cursor.end,
+                        &word_under_cursor.s,
+                    );
+                    match res {
+                        Ok(_) => self.buffer.insert_char(' '),
+                        Err(e) => {
+                            log::error!("Error during tab completion: {}", e)
+                        }
+                    }
                 }
             }
-            tab_completion::CompletionContext::CommandComp {
+            tab_completion::CompType::CommandComp {
                 full_command,
                 command_word,
                 word_under_cursor,
@@ -466,14 +477,24 @@ impl<'a> App<'a> {
                 let res = bash_funcs::run_autocomplete_compspec(
                     &full_command,
                     &command_word,
-                    &word_under_cursor,
+                    &word_under_cursor.s,
                     cursor_byte_pos,
                     word_under_cursor_byte_end,
                 );
-                
+                log::debug!("Bash autocomplete results: {:?}", res);
                 if let Some(completion) = res.first() {
-                    self.buffer.replace_word_under_cursor(&completion);
-                    self.buffer.insert_char(' ');
+                    let res = self.buffer.replace_word_under_cursor(
+                        &completion,
+                        word_under_cursor.start,
+                        word_under_cursor.end,
+                        &word_under_cursor.s,
+                    );
+                    match res {
+                        Ok(_) => self.buffer.insert_char(' '),
+                        Err(e) => {
+                            log::error!("Error during tab completion: {}", e)
+                        }
+                    }
                 }
             }
         }

@@ -74,15 +74,59 @@ impl TextBuffer {
         self.buf.drain(self.cursor_byte..cursor_pos_right);
     }
 
-    pub fn replace_word_under_cursor(&mut self, new_word: &str) {
-        let (word_start, word_end, _) = extract_word_at_byte(&self.buf, self.cursor_byte);
+    pub fn replace_word_under_cursor(
+        &mut self,
+        new_word: &str,
+        word_start_byte: usize,
+        word_end_byte: usize,
+        expected_word: &str,
+    ) -> anyhow::Result<()> {
+        if word_start_byte > word_end_byte {
+            return Err(anyhow::anyhow!("Invalid word boundaries"));
+        }
+
+        // Ensure indices are within buffer bounds
+        if word_start_byte > self.buf.len() || word_end_byte > self.buf.len() {
+            log::warn!(
+                "Word bounds out of range: {}..{} (buf len {})",
+                word_start_byte,
+                word_end_byte,
+                self.buf.len()
+            );
+            return Err(anyhow::anyhow!("Word bounds out of range"));
+        }
+
+        // Ensure indices lie on valid UTF-8 char boundaries
+        if !self.buf.is_char_boundary(word_start_byte) || !self.buf.is_char_boundary(word_end_byte)
+        {
+            log::warn!(
+                "Word bounds not on char boundaries: {}..{}",
+                word_start_byte,
+                word_end_byte
+            );
+            return Err(anyhow::anyhow!("Word bounds not on char boundaries"));
+        }
+
+        if self.buf[word_start_byte..word_end_byte] != *expected_word {
+            log::warn!(
+                "Expected word '{}' at position {}, but found '{}'",
+                expected_word,
+                word_start_byte,
+                &self.buf[word_start_byte..word_end_byte]
+            );
+            return Err(anyhow::anyhow!(
+                "Expected word '{}' at position {}, but found '{}'",
+                expected_word,
+                word_start_byte,
+                &self.buf[word_start_byte..word_end_byte]
+            ));
+        }
 
         // Delete the word and position cursor at the start
-        if word_start < word_end {
-            self.buf.drain(word_start..word_end);
-            self.cursor_byte = word_start;
-        }
+        self.buf.drain(word_start_byte..word_end_byte);
+        self.cursor_byte = word_start_byte;
         self.insert_str(new_word);
+        Ok(())
     }
 
     pub fn move_one_word_left(&mut self) {
@@ -265,7 +309,8 @@ mod word_extraction_tests {
         let (_start, _end, word) = extract_word_at_byte("café option", "café".len());
         assert_eq!(word, "café");
 
-        let (_start, _end, word) = extract_word_at_byte("grep 'pättërn' файл.txt 日本語", "grep 'pättërn' ".len());
+        let (_start, _end, word) =
+            extract_word_at_byte("grep 'pättërn' файл.txt 日本語", "grep 'pättërn' ".len());
         assert_eq!(word, "файл.txt");
     }
 }
@@ -374,7 +419,7 @@ mod text_buffer_tests {
         tb.move_right();
         assert_eq!(tb.cursor_byte, "Line 1\nLine".len());
         tb.move_line_down();
-        assert_eq!(tb.cursor_byte,  "Line 1\nLine 2\nLine".len());
+        assert_eq!(tb.cursor_byte, "Line 1\nLine 2\nLine".len());
     }
 
     // === insert_char tests ===
@@ -508,7 +553,7 @@ mod text_buffer_tests {
             tb.move_right();
         } // Position at "cat| مرحبا"
         tb.move_right(); // Now on the space: "cat | مرحبا"
-        
+
         // When on whitespace, should replace the next word
         tb.replace_word_under_cursor("hello");
         assert_eq!(tb.buffer(), "cat hello --option 🔥");

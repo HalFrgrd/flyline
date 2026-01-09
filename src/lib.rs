@@ -4,6 +4,7 @@ use std::os::raw::c_int;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+mod active_suggestions;
 mod app;
 mod bash_funcs;
 mod bash_symbols;
@@ -18,7 +19,6 @@ mod prompt_manager;
 mod snake_animation;
 mod tab_completion;
 mod text_buffer;
-mod active_suggestions;
 
 // Global state for our custom input stream
 static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Jobu>>>> = Mutex::new(None);
