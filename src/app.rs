@@ -105,7 +105,7 @@ struct App<'a> {
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
     layout_manager: LayoutManager,
     snake_animation: SnakeAnimation,
-    autocomplete_suggestion: Option<(HistoryEntry, String)>,
+    history_suggestion: Option<(HistoryEntry, String)>,
     command_word_cells: Vec<(u16, u16)>,
     should_show_command_info: bool,
     mouse_state: MouseState,
@@ -114,7 +114,7 @@ struct App<'a> {
     defined_shell_functions: Vec<String>,
     defined_builtins: Vec<String>,
     defined_executables: Vec<(PathBuf, String)>,
-    active_suggestions: Option<active_suggestions::ActiveSuggestions>,
+    active_tab_suggestions: Option<active_suggestions::ActiveSuggestions>,
 }
 
 impl<'a> App<'a> {
@@ -140,7 +140,7 @@ impl<'a> App<'a> {
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
             snake_animation: SnakeAnimation::new(),
-            autocomplete_suggestion: None,
+            history_suggestion: None,
             command_word_cells: Vec::new(),
             should_show_command_info: false,
             mouse_state: MouseState::new(),
@@ -150,7 +150,7 @@ impl<'a> App<'a> {
             defined_shell_functions: bash_funcs::get_all_shell_functions(),
             defined_builtins: bash_funcs::get_all_shell_builtins(),
             defined_executables: executables,
-            active_suggestions: None,
+            active_tab_suggestions: None,
         }
     }
 
@@ -317,7 +317,7 @@ impl<'a> App<'a> {
                 ..
             } => {
                 if self.buffer.is_cursor_at_end()
-                    && let Some((_, suf)) = &self.autocomplete_suggestion
+                    && let Some((_, suf)) = &self.history_suggestion
                 {
                     self.buffer.insert_str(suf);
                     self.buffer.move_to_end();
@@ -379,8 +379,20 @@ impl<'a> App<'a> {
                 code: KeyCode::Enter,
                 ..
             } => {
-                if let Some(active_suggestions) = &mut self.active_suggestions {
-                    let selected_command = active_suggestions.on_enter();
+                if let Some(active_suggestions) = &mut self.active_tab_suggestions {
+                    let (selected_command, word_under_cursor) = active_suggestions.on_enter();
+                    self.active_tab_suggestions = None;
+                    let res = self
+                        .buffer
+                        .replace_word_under_cursor(&selected_command, &word_under_cursor);
+                    match res {
+                        Ok(_) => {
+                            self.buffer.insert_char(' ');
+                        }
+                        Err(e) => {
+                            log::error!("Error during tab completion accepting: {}", e)
+                        }
+                    }
                 } else if self.is_multiline_mode {
                     self.buffer.insert_newline();
                 } else {
@@ -394,10 +406,23 @@ impl<'a> App<'a> {
                 }
             }
             KeyEvent {
+                code: KeyCode::Tab,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::BackTab,
+                ..
+            } => {
+                if let Some(active_suggestions) = &mut self.active_tab_suggestions {
+                    active_suggestions.on_tab(true);
+                }
+            }
+            KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
-                if let Some(active_suggestions) = &mut self.active_suggestions {
-                    active_suggestions.on_tab();
+                if let Some(active_suggestions) = &mut self.active_tab_suggestions {
+                    active_suggestions.on_tab(false);
                 } else {
                     let res = self.tab_complete();
                     log::debug!("Tab completion result: {:?}", res);
@@ -430,7 +455,7 @@ impl<'a> App<'a> {
             _ => {}
         }
 
-        self.autocomplete_suggestion = self
+        self.history_suggestion = self
             .history_manager
             .get_command_suggestion_suffix(self.buffer.buffer());
 
@@ -452,18 +477,33 @@ impl<'a> App<'a> {
 
         match completion_context.comp_type {
             tab_completion::CompType::FirstWord(word_under_cursor) => {
-                if let Some(completion) = self.tab_complete_first_word(&word_under_cursor.s) {
-                    let res = self.buffer.replace_word_under_cursor(
-                        &completion,
-                        word_under_cursor.start,
-                        word_under_cursor.end,
-                        &word_under_cursor.s,
-                    );
-                    match res {
-                        Ok(_) => self.buffer.insert_char(' '),
-                        Err(e) => {
-                            log::error!("Error during tab completion: {}", e)
+                let completions = self.tab_complete_first_word(&word_under_cursor.s);
+                match completions.as_slice() {
+                    [completion] => {
+                        let res = self
+                            .buffer
+                            .replace_word_under_cursor(&completion, &word_under_cursor);
+                        match res {
+                            Ok(_) => self.buffer.insert_char(' '),
+                            Err(e) => {
+                                log::error!("Error during tab completion: {}", e)
+                            }
                         }
+                    }
+                    [] => {
+                        log::debug!(
+                            "No completions found for first word: {}",
+                            word_under_cursor.s
+                        );
+                    }
+                    _ => {
+                        log::debug!("Multiple completions available: {:?}", completions);
+                        // TODO: show active suggestions UI for the user to pick from
+                        self.active_tab_suggestions =
+                            Some(active_suggestions::ActiveSuggestions::new(
+                                completions,
+                                word_under_cursor,
+                            ));
                     }
                 }
             }
@@ -483,12 +523,9 @@ impl<'a> App<'a> {
                 );
                 log::debug!("Bash autocomplete results: {:?}", res);
                 if let Some(completion) = res.first() {
-                    let res = self.buffer.replace_word_under_cursor(
-                        &completion,
-                        word_under_cursor.start,
-                        word_under_cursor.end,
-                        &word_under_cursor.s,
-                    );
+                    let res = self
+                        .buffer
+                        .replace_word_under_cursor(&completion, &word_under_cursor);
                     match res {
                         Ok(_) => self.buffer.insert_char(' '),
                         Err(e) => {
@@ -502,12 +539,12 @@ impl<'a> App<'a> {
         Some(())
     }
 
-    fn tab_complete_first_word(&self, command: &str) -> Option<String> {
-        if command.is_empty() {
-            return None;
-        }
-
+    fn tab_complete_first_word(&self, command: &str) -> Vec<String> {
         let mut res = Vec::new();
+
+        if command.is_empty() {
+            return res;
+        }
 
         for poss_completion in self
             .defined_aliases
@@ -523,9 +560,12 @@ impl<'a> App<'a> {
         }
 
         // TODO: could prioritize based on frequency of use
+        res.sort();
         res.sort_by_key(|s| s.len());
 
-        res.first().cloned()
+        let mut seen = std::collections::HashSet::new();
+        res.retain(|s| seen.insert(s.clone()));
+        res
     }
 
     fn get_command_type(&self, cmd: &str) -> (bash_funcs::CommandType, String) {
@@ -600,7 +640,7 @@ impl<'a> App<'a> {
             }
         }
 
-        if let Some((sug, suf)) = &self.autocomplete_suggestion
+        if let Some((sug, suf)) = &self.history_suggestion
             && self.is_running
         {
             let suggestion_style: Style = Style::default().fg(Color::DarkGray);
@@ -645,6 +685,28 @@ impl<'a> App<'a> {
                 format!("# {}", desc),
                 Style::default().fg(Color::Blue).italic(),
             ));
+        }
+
+        if self.is_running
+            && let Some(tab_suggestions) = &self.active_tab_suggestions
+        {
+            fb.newline();
+            for (_, is_last, (suggestion, is_selected)) in tab_suggestions.iter().flag_first_last()
+            {
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+
+                fb.write_span(&Span::styled(suggestion, style));
+                if !is_last {
+                    fb.write_span(&Span::from(" "));
+                }
+            }
         }
 
         // Draw cursor

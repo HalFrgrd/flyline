@@ -77,54 +77,53 @@ impl TextBuffer {
     pub fn replace_word_under_cursor(
         &mut self,
         new_word: &str,
-        word_start_byte: usize,
-        word_end_byte: usize,
-        expected_word: &str,
+        sub_string: &SubString,
     ) -> anyhow::Result<()> {
-        if word_start_byte > word_end_byte {
+        if sub_string.start > sub_string.end {
             return Err(anyhow::anyhow!("Invalid word boundaries"));
         }
 
         // Ensure indices are within buffer bounds
-        if word_start_byte > self.buf.len() || word_end_byte > self.buf.len() {
+        if sub_string.start > self.buf.len() || sub_string.end > self.buf.len() {
             log::warn!(
                 "Word bounds out of range: {}..{} (buf len {})",
-                word_start_byte,
-                word_end_byte,
+                sub_string.start,
+                sub_string.end,
                 self.buf.len()
             );
             return Err(anyhow::anyhow!("Word bounds out of range"));
         }
 
         // Ensure indices lie on valid UTF-8 char boundaries
-        if !self.buf.is_char_boundary(word_start_byte) || !self.buf.is_char_boundary(word_end_byte)
+        if !self.buf.is_char_boundary(sub_string.start)
+            || !self.buf.is_char_boundary(sub_string.end)
         {
             log::warn!(
                 "Word bounds not on char boundaries: {}..{}",
-                word_start_byte,
-                word_end_byte
+                sub_string.start,
+                sub_string.end
             );
             return Err(anyhow::anyhow!("Word bounds not on char boundaries"));
         }
 
-        if self.buf[word_start_byte..word_end_byte] != *expected_word {
+        if self.buf[sub_string.start..sub_string.end] != *sub_string.s {
             log::warn!(
                 "Expected word '{}' at position {}, but found '{}'",
-                expected_word,
-                word_start_byte,
-                &self.buf[word_start_byte..word_end_byte]
+                sub_string.s,
+                sub_string.start,
+                &self.buf[sub_string.start..sub_string.end]
             );
             return Err(anyhow::anyhow!(
                 "Expected word '{}' at position {}, but found '{}'",
-                expected_word,
-                word_start_byte,
-                &self.buf[word_start_byte..word_end_byte]
+                sub_string.s,
+                sub_string.start,
+                &self.buf[sub_string.start..sub_string.end]
             ));
         }
 
         // Delete the word and position cursor at the start
-        self.buf.drain(word_start_byte..word_end_byte);
-        self.cursor_byte = word_start_byte;
+        self.buf.drain(sub_string.start..sub_string.end);
+        self.cursor_byte = sub_string.start;
         self.insert_str(new_word);
         Ok(())
     }
@@ -292,6 +291,31 @@ pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> (usize, usize, &
         .map_or(s.len(), |(idx, _)| idx);
 
     (start, end, &s[start..end])
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SubString {
+    pub s: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl SubString {
+    pub fn new(buffer: &str, substring: &str) -> Self {
+        // Get the pointer to the start of substring and self.buf
+        let substring_ptr = substring.as_ptr() as usize;
+        let buf_ptr = buffer.as_ptr() as usize;
+
+        // Calculate the byte offset from the start of buf
+        let start = substring_ptr - buf_ptr;
+        let end = start + substring.len();
+
+        Self {
+            s: substring.to_string(),
+            start,
+            end,
+        }
+    }
 }
 
 #[cfg(test)]

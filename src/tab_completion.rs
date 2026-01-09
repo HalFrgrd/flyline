@@ -1,30 +1,6 @@
+use crate::text_buffer::SubString;
 use flash::lexer::{Lexer, Token, TokenKind};
-use std::{collections::HashMap, ops::Sub};
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct SubString {
-    pub s: String,
-    pub start: usize,
-    pub end: usize,
-}
-
-impl SubString {
-    pub fn new(buffer: &str, substring: &str) -> Self {
-        // Get the pointer to the start of substring and self.buf
-        let substring_ptr = substring.as_ptr() as usize;
-        let buf_ptr = buffer.as_ptr() as usize;
-
-        // Calculate the byte offset from the start of buf
-        let start = substring_ptr - buf_ptr;
-        let end = start + substring.len();
-
-        Self {
-            s: substring.to_string(),
-            start,
-            end,
-        }
-    }
-}
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
