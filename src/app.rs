@@ -94,8 +94,21 @@ impl MouseState {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum AppRunningState {
+    Running,
+    ExitingWithCommand,
+    ExitingWithoutCommand,
+}
+
+impl AppRunningState {
+    pub fn is_running(&self) -> bool {
+        *self == AppRunningState::Running
+    }
+}
+
 struct App<'a> {
-    is_running: bool,
+    mode: AppRunningState,
     buffer: TextBuffer,
     animation_tick: u64,
     cursor_animation: CursorAnimation,
@@ -130,7 +143,7 @@ impl<'a> App<'a> {
 
         history.new_session();
         App {
-            is_running: true,
+            mode: AppRunningState::Running,
             buffer: TextBuffer::new(""),
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
@@ -161,7 +174,7 @@ impl<'a> App<'a> {
             if redraw {
                 terminal.draw(|f| self.ui(f)).unwrap();
             }
-            if !self.is_running {
+            if self.mode != AppRunningState::Running {
                 break;
             }
 
@@ -192,7 +205,11 @@ impl<'a> App<'a> {
             }
         }
 
-        self.buffer.buffer().to_owned()
+        if self.mode == AppRunningState::ExitingWithCommand {
+            self.buffer.buffer().to_owned()
+        } else {
+            String::new()
+        }
     }
 
     fn get_executables_from_path(path: &str) -> Vec<(PathBuf, String)> {
@@ -344,7 +361,9 @@ impl<'a> App<'a> {
                         self.buffer = TextBuffer::new(new_command.as_str());
                     }
                 } else {
+                    // log::debug!("cursor starting in     {:?}", self.buffer.cursor_2d_position());
                     self.buffer.move_line_up();
+                    // log::debug!("Moved cursor up to row {:?}", self.buffer.cursor_row());
                 }
             }
             KeyEvent {
@@ -386,7 +405,7 @@ impl<'a> App<'a> {
                     if self.buffer.is_cursor_at_end()
                         && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
                     {
-                        self.is_running = false;
+                        self.mode = AppRunningState::ExitingWithCommand;
                     } else {
                         self.buffer.insert_newline();
                     }
@@ -434,8 +453,12 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.buffer = TextBuffer::new("#Ctrl+C pressed");
-                self.is_running = false;
+                self.buffer.move_to_end();
+                if !self.buffer.last_line_is_empty() {
+                    self.buffer.insert_newline();
+                }
+                self.buffer.insert_str("#[Ctrl+C pressed] ");
+                self.mode = AppRunningState::ExitingWithoutCommand;
             }
             KeyEvent {
                 // Ctrl+/ comes up as this for me
@@ -445,7 +468,7 @@ impl<'a> App<'a> {
             } => {
                 self.buffer.move_to_start();
                 self.buffer.insert_str("#");
-                self.is_running = false;
+                self.mode = AppRunningState::ExitingWithCommand;
             }
             KeyEvent {
                 code: KeyCode::Char(c),
@@ -612,7 +635,7 @@ impl<'a> App<'a> {
                     command_description = Some(short_desc.to_owned());
                 }
 
-                let first_word = if first_word.starts_with("python") && self.is_running {
+                let first_word = if first_word.starts_with("python") && self.mode.is_running() {
                     self.snake_animation.update_anim();
                     let snake_chars: Vec<char> = self.snake_animation.to_string().chars().collect();
 
@@ -645,7 +668,7 @@ impl<'a> App<'a> {
         }
 
         if let Some((sug, suf)) = &self.history_suggestion
-            && self.is_running
+            && self.mode.is_running()
         {
             let suggestion_style: Style = Style::default().fg(Color::DarkGray);
 
@@ -681,7 +704,7 @@ impl<'a> App<'a> {
         }
 
         if self.should_show_command_info
-            && self.is_running
+            && self.mode.is_running()
             && let Some(desc) = command_description
         {
             fb.newline();
@@ -691,7 +714,7 @@ impl<'a> App<'a> {
             ));
         }
 
-        if self.is_running
+        if self.mode.is_running()
             && let Some(tab_suggestions) = &self.active_tab_suggestions
         {
             fb.newline();
@@ -714,7 +737,7 @@ impl<'a> App<'a> {
         }
 
         // Draw cursor
-        if self.is_running {
+        if self.mode.is_running() {
             self.cursor_animation
                 .update_position(self.buffer.cursor_2d_position());
             let (cursor_row, cursor_col) = self.cursor_animation.get_position();
@@ -756,6 +779,11 @@ impl<'a> App<'a> {
 
         let starting_row = drawing_area.top();
         fb.insert_blank_rows_at_top(starting_row);
+        fb.insert_blank_rows_at_bottom(
+            full_terminal_area
+                .height
+                .saturating_sub(drawing_area.bottom()),
+        );
 
         f.buffer_mut().reset();
         f.buffer_mut().merge(&fb.into_buffer());

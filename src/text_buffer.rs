@@ -242,14 +242,21 @@ impl TextBuffer {
     }
 
     fn move_to_cursor_pos(&mut self, target_row: usize, target_col: usize) {
+        // tries to first go to target_row
+        // then tries to get close to target_col
         let mut cur_row = 0;
         let mut cur_col = 0;
+        // log::debug!("Moving cursor to position {:?}", (target_row, target_col));
         for (i, grapheme) in self.buf.grapheme_indices(true) {
             if cur_row == target_row && cur_col >= target_col {
                 self.cursor_byte = i;
                 return;
             }
             if grapheme.contains('\n') {
+                if cur_row == target_row {
+                    self.cursor_byte = i;
+                    return;
+                }
                 cur_row += 1;
                 cur_col = 0;
             } else {
@@ -289,6 +296,10 @@ impl TextBuffer {
 
     pub fn lines(&self) -> Vec<&str> {
         self.buf.lines().collect()
+    }
+
+    pub fn last_line_is_empty(&self) -> bool {
+        self.buf.lines().last().map_or(true, |line| line.is_empty())
     }
 }
 

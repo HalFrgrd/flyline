@@ -40,6 +40,12 @@ impl FrameBuilder {
         self.buf.content.splice(0..0, blank_raw);
     }
 
+    pub fn insert_blank_rows_at_bottom(&mut self, count: u16) {
+        let area = self.buf.area();
+        let blank_raw = vec![Cell::default(); area.width as usize * count as usize];
+        self.buf.content.extend(blank_raw);
+    }
+
     /// Write a single span at the current cursor position
     pub fn write_span(&mut self, span: &Span) {
         let graphemes = span.styled_graphemes(span.style);
