@@ -457,15 +457,20 @@ impl<'a> App<'a> {
                 }
             }
             KeyEvent {
+                code: KeyCode::Esc, ..
+            } => {
+                self.active_tab_suggestions = None;
+            }
+            KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 self.buffer.move_to_end();
-                if !self.buffer.last_line_is_empty() {
-                    self.buffer.insert_newline();
-                }
-                self.buffer.insert_str("#[Ctrl+C pressed] ");
+                // if !self.buffer.last_line_is_empty() {
+                //     self.buffer.insert_newline();
+                // }
+                self.buffer.insert_str(" #[Ctrl+C pressed] ");
                 self.mode = AppRunningState::ExitingWithoutCommand;
             }
             KeyEvent {
@@ -530,7 +535,6 @@ impl<'a> App<'a> {
                     }
                     _ => {
                         log::debug!("Multiple completions available: {:?}", completions);
-                        // TODO: show active suggestions UI for the user to pick from
                         self.active_tab_suggestions =
                             Some(active_suggestions::ActiveSuggestions::new(
                                 completions,
@@ -544,14 +548,13 @@ impl<'a> App<'a> {
                 command_word,
                 word_under_cursor,
                 cursor_byte_pos,
-                word_under_cursor_byte_end,
             } => {
                 let res = bash_funcs::run_autocomplete_compspec(
                     &full_command,
                     &command_word,
                     &word_under_cursor.s,
                     cursor_byte_pos,
-                    word_under_cursor_byte_end,
+                    word_under_cursor.end,
                 );
                 log::debug!("Bash autocomplete results: {:?}", res);
                 match res.as_slice() {
@@ -582,6 +585,12 @@ impl<'a> App<'a> {
             }
             tab_completion::CompType::CursorOnBlank => {
                 log::debug!("Cursor is on blank space, no tab completion performed");
+            }
+            tab_completion::CompType::EnvVariable(word_under_cursor) => {
+                log::debug!(
+                    "Environment variable completion not yet implemented: {:?}",
+                    word_under_cursor
+                );
             }
         }
 

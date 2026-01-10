@@ -26,28 +26,30 @@ pub fn parse(input: &str) -> Node {
 
 #[cfg(test)]
 mod tests {
+    // This is to understand how the lexer and parser work
+
     use super::*;
 
-    #[test]
-    fn test_lexer() {
-        let tokens = tokenize(
-            "TEST=1 grep 'patte\"sdf\"rn' file.txt > out.txt ; if asdfd; then echo hi; fi",
-        );
-        dbg!("Tokens: {:?}", tokens);
-        assert!(false);
-    }
+    // #[test]
+    // fn test_lexer() {
+    //     let tokens = tokenize(
+    //         "TEST=1 grep 'patte\"sdf\"rn' file.txt > out.txt ; if asdfd; then echo hi; fi",
+    //     );
+    //     dbg!("Tokens: {:?}", tokens);
+    //     assert!(false);
+    // }
 
-    #[test]
-    fn test_parser() {
-        let ast = parse("TEST=1 grep 'patte\"sdf\"rn' file.txt > out.txt");
-        dbg!("AST: {:?}", ast);
-        assert!(false);
-    }
+    // #[test]
+    // fn test_parser() {
+    //     let ast = parse("TEST=1 grep 'patte\"sdf\"rn' file.txt > out.txt");
+    //     dbg!("AST: {:?}", ast);
+    //     assert!(false);
+    // }
 
-    #[test]
-    fn test_lexer2() {
-        let tokens = tokenize("echo $(VAR(_sdf qwe ");
-        dbg!("Tokens: {:?}", tokens);
-        assert!(false);
-    }
+    // #[test]
+    // fn test_lexer2() {
+    //     let tokens = tokenize("echo $(VAR(_sdf qwe ");
+    //     dbg!("Tokens: {:?}", tokens);
+    //     assert!(false);
+    // }
 }

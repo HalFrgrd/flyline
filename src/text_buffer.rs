@@ -362,7 +362,7 @@ impl TextBuffer {
     }
 }
 
-pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> (usize, usize, &'a str) {
+pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> SubString {
     // Find the start of the word (last whitespace before byte_pos, or 0)
     let start = s
         .char_indices()
@@ -379,7 +379,7 @@ pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> (usize, usize, &
         .next()
         .map_or(s.len(), |(idx, _)| idx);
 
-    (start, end, &s[start..end])
+    SubString::new(s, &s[start..end]).unwrap()
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -415,18 +415,18 @@ mod word_extraction_tests {
 
     #[test]
     fn test_extract_word_at_byte() {
-        let (_start, _end, word) = extract_word_at_byte("café option", "café o".len());
-        assert_eq!(word, "option");
+        let substring = extract_word_at_byte("café option", "café o".len());
+        assert_eq!(substring.s, "option");
 
-        let (_start, _end, word) = extract_word_at_byte("café option", "café ".len());
-        assert_eq!(word, "option");
+        let substring = extract_word_at_byte("café option", "café ".len());
+        assert_eq!(substring.s, "option");
 
-        let (_start, _end, word) = extract_word_at_byte("café option", "café".len());
-        assert_eq!(word, "café");
+        let substring = extract_word_at_byte("café option", "café".len());
+        assert_eq!(substring.s, "café");
 
-        let (_start, _end, word) =
+        let substring =
             extract_word_at_byte("grep 'pättërn' файл.txt 日本語", "grep 'pättërn' ".len());
-        assert_eq!(word, "файл.txt");
+        assert_eq!(substring.s, "файл.txt");
     }
 }
 
