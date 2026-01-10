@@ -74,8 +74,8 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             Some(t) => t,
             None => break,
         };
-        log::debug!("Current token:");
-        log::debug!("{:?}", &token.kind);
+        // log::debug!("Current token:");
+        // log::debug!("{:?}", &token.kind);
 
         match token.kind {
             TokenKind::LParen

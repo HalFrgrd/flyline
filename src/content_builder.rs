@@ -8,6 +8,7 @@ pub struct Contents {
     pub width: u16,
     cursor_pos_x: u16,
     cursor_pos_y: u16,
+    pub edit_cursor_pos: Option<(u16, u16)>,
 }
 
 impl Contents {
@@ -21,6 +22,7 @@ impl Contents {
             width,
             cursor_pos_x: 0,
             cursor_pos_y: 0,
+            edit_cursor_pos: None,
         }
     }
 
@@ -28,28 +30,6 @@ impl Contents {
     pub fn cursor_position(&self) -> (u16, u16) {
         (self.cursor_pos_x, self.cursor_pos_y)
     }
-
-    /// Get a mutable reference to the internal buffer
-    // pub fn buffer_mut(&mut self) -> &mut Buffer {
-    //     &mut self.buf
-    // }
-
-    // /// Consume the Content and return the buffer
-    // pub fn into_buffer(self) -> Buffer {
-    //     self.buf
-    // }
-
-    // pub fn insert_blank_rows_at_top(&mut self, count: u16) {
-    //     let area = self.buf.area();
-    //     let blank_raw = vec![Cell::default(); area.width as usize * count as usize];
-    //     self.buf.content.splice(0..0, blank_raw);
-    // }
-
-    // pub fn insert_blank_rows_at_bottom(&mut self, count: u16) {
-    //     let area = self.buf.area();
-    //     let blank_raw = vec![Cell::default(); area.width as usize * count as usize];
-    //     self.buf.content.extend(blank_raw);
-    // }
 
     pub fn append_blank_row(&mut self) {
         let blank_row = vec![Cell::default(); self.width as usize];
@@ -140,6 +120,7 @@ impl Contents {
     ) {
         let wrapped_cursor_row = visual_cursor_row + (visual_cursor_col / self.width) as u16;
         let wrapped_cursor_col = visual_cursor_col % self.width;
+        self.edit_cursor_pos = Some((wrapped_cursor_col, wrapped_cursor_row));
         self.set_style(
             Rect::new(wrapped_cursor_col, wrapped_cursor_row, 1, 1),
             style,

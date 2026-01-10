@@ -204,6 +204,10 @@ impl TextBuffer {
         self.cursor_byte == self.buf.len()
     }
 
+    pub fn is_cursor_at_trimmed_end(&self) -> bool {
+        self.cursor_byte == self.buf.trim_end().len()
+    }
+
     pub fn is_cursor_on_final_line(&self) -> bool {
         !self.buf[self.cursor_byte..].contains('\n')
     }

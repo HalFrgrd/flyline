@@ -403,7 +403,15 @@ impl<'a> App<'a> {
                         }
                     }
                 } else {
-                    if self.buffer.is_cursor_at_end()
+                    log::debug!("enter pressed with buffer: ");
+                    for c in self.buffer.buffer().chars() {
+                        match c {
+                            '\n' => log::debug!("\\n"),
+                            ' ' => log::debug!("(space)"),
+                            other => log::debug!("{}", other),
+                        }
+                    }
+                    if self.buffer.is_cursor_at_trimmed_end()
                         && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
                     {
                         self.mode = AppRunningState::ExitingWithCommand;
