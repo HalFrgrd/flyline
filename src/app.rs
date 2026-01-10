@@ -14,7 +14,6 @@ use crate::text_buffer::TextBuffer;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
-use std::fmt::format;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::vec;
@@ -29,7 +28,6 @@ fn build_runtime() -> tokio::runtime::Runtime {
 
 pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
     let options = TerminalOptions {
-        // TODO: consider restricting viewport
         viewport: Viewport::Fullscreen,
     };
     let mut stdout = std::io::stdout();
@@ -388,6 +386,11 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Enter,
                 ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('j'), // Without this, when I hold enter, sometimes 'j' is read as input
+                modifiers: KeyModifiers::CONTROL,
+                ..
             } => {
                 if let Some(active_suggestions) = &mut self.active_tab_suggestions {
                     let (selected_command, word_under_cursor) = active_suggestions.on_enter();
@@ -404,14 +407,9 @@ impl<'a> App<'a> {
                         }
                     }
                 } else {
-                    log::debug!("enter pressed with buffer: ");
-                    for c in self.buffer.buffer().chars() {
-                        match c {
-                            '\n' => log::debug!("\\n"),
-                            ' ' => log::debug!("(space)"),
-                            other => log::debug!("{}", other),
-                        }
-                    }
+                    // log::debug!("enter pressed with buffer: ");
+                    // self.buffer.debug_buffer();
+
                     if self.buffer.is_cursor_at_trimmed_end()
                         && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
                     {
@@ -556,15 +554,29 @@ impl<'a> App<'a> {
                     word_under_cursor_byte_end,
                 );
                 log::debug!("Bash autocomplete results: {:?}", res);
-                if let Some(completion) = res.first() {
-                    let res = self
-                        .buffer
-                        .replace_word_under_cursor(&completion, &word_under_cursor);
-                    match res {
-                        Ok(_) => self.buffer.insert_char(' '),
-                        Err(e) => {
-                            log::error!("Error during tab completion: {}", e)
+                match res.as_slice() {
+                    [] => {
+                        log::debug!(
+                            "No completions found for command word: {}",
+                            word_under_cursor.s
+                        );
+                    }
+                    [completion] => {
+                        let res = self
+                            .buffer
+                            .replace_word_under_cursor(&completion, &word_under_cursor);
+                        match res {
+                            Ok(_) => self.buffer.insert_char(' '),
+                            Err(e) => {
+                                log::error!("Error during tab completion: {}", e)
+                            }
                         }
+                    }
+                    _ => {
+                        log::debug!("Multiple completions available: {:?}", res);
+                        self.active_tab_suggestions = Some(
+                            active_suggestions::ActiveSuggestions::new(res, word_under_cursor),
+                        );
                     }
                 }
             }
@@ -630,8 +642,6 @@ impl<'a> App<'a> {
         for line in self.prompt_manager.get_ps1_lines() {
             content.write_line(&line, false);
         }
-
-        let (ps1_cursor_col, ps1_cursor_row) = content.cursor_position();
 
         self.command_word_cells = vec![];
 

@@ -205,7 +205,7 @@ impl TextBuffer {
     }
 
     pub fn is_cursor_at_trimmed_end(&self) -> bool {
-        self.cursor_byte == self.buf.trim_end().len()
+        self.cursor_byte >= self.buf.trim_end().len()
     }
 
     pub fn is_cursor_on_final_line(&self) -> bool {
@@ -245,6 +245,7 @@ impl TextBuffer {
         self.move_to_cursor_pos(target_row, col);
     }
 
+    #[allow(dead_code)]
     pub fn debug_buffer(&self) {
         for (i, char) in self.buf.chars().enumerate() {
             let cursor_marker = if i == self.cursor_byte {
