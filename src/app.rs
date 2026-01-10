@@ -1,9 +1,9 @@
 use crate::active_suggestions;
 use crate::bash_funcs;
 use crate::command_acceptance;
+use crate::content_builder::Contents;
 use crate::cursor_animation::CursorAnimation;
 use crate::events;
-use crate::frame_builder::FrameBuilder;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::layout_manager::LayoutManager;
@@ -45,7 +45,6 @@ pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
 
     crossterm::terminal::disable_raw_mode().unwrap();
     app.mouse_state.disable();
-    app.layout_manager.finalize();
 
     log::debug!("Final command: {}", command);
     command
@@ -174,7 +173,9 @@ impl<'a> App<'a> {
             if redraw {
                 terminal.draw(|f| self.ui(f)).unwrap();
             }
-            if self.mode != AppRunningState::Running {
+            self.layout_manager.post_draw(self.mode.is_running());
+
+            if !self.mode.is_running() {
                 break;
             }
 
@@ -613,15 +614,15 @@ impl<'a> App<'a> {
     }
 
     fn ui(&mut self, f: &mut Frame) {
-        // Basically build the entire frame in a FrameBuilder first
+        // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
-        let mut fb = FrameBuilder::new(f.area().width);
+        let mut content = Contents::new(f.area().width);
 
         for line in self.prompt_manager.get_ps1_lines() {
-            fb.write_line(&line, false);
+            content.write_line(&line, false);
         }
 
-        let (ps1_cursor_col, ps1_cursor_row) = fb.cursor_position();
+        let (ps1_cursor_col, ps1_cursor_row) = content.cursor_position();
 
         self.command_word_cells = vec![];
 
@@ -661,11 +662,11 @@ impl<'a> App<'a> {
                     _ => Style::default().fg(Color::Green),
                 };
 
-                fb.write_span(&Span::styled(first_word, first_word_style));
-                fb.write_span(&Span::styled(rest.to_string(), Style::default()));
+                content.write_span(&Span::styled(first_word, first_word_style));
+                content.write_span(&Span::styled(rest.to_string(), Style::default()));
             } else {
-                fb.newline();
-                fb.write_line(&Line::from(line.to_owned()), false);
+                content.newline();
+                content.write_line(&Line::from(line.to_owned()), false);
             }
         }
 
@@ -680,10 +681,10 @@ impl<'a> App<'a> {
                 .flag_first_last()
                 .for_each(|(is_first, is_last, line)| {
                     if !is_first {
-                        fb.newline();
+                        content.newline();
                     }
 
-                    fb.write_span(&Span::from(line.to_owned()).style(suggestion_style));
+                    content.write_span(&Span::from(line.to_owned()).style(suggestion_style));
 
                     if is_last {
                         let mut extra_info_text = format!(" # idx={}", sug.index);
@@ -700,7 +701,7 @@ impl<'a> App<'a> {
                             extra_info_text.push_str(&format!(" t={}", time_ago_str));
                         }
 
-                        fb.write_span(&Span::from(extra_info_text).style(suggestion_style));
+                        content.write_span(&Span::from(extra_info_text).style(suggestion_style));
                     }
                 });
         }
@@ -709,8 +710,8 @@ impl<'a> App<'a> {
             && self.mode.is_running()
             && let Some(desc) = command_description
         {
-            fb.newline();
-            fb.write_span(&Span::styled(
+            content.newline();
+            content.write_span(&Span::styled(
                 format!("# {}", desc),
                 Style::default().fg(Color::Blue).italic(),
             ));
@@ -719,7 +720,7 @@ impl<'a> App<'a> {
         if self.mode.is_running()
             && let Some(tab_suggestions) = &self.active_tab_suggestions
         {
-            fb.newline();
+            content.newline();
             for (_, is_last, (suggestion, is_selected)) in tab_suggestions.iter().flag_first_last()
             {
                 let style = if is_selected {
@@ -731,9 +732,9 @@ impl<'a> App<'a> {
                     Style::default().fg(Color::Gray)
                 };
 
-                fb.write_span(&Span::styled(suggestion, style));
+                content.write_span(&Span::styled(suggestion, style));
                 if !is_last {
-                    fb.write_span(&Span::from(" "));
+                    content.write_span(&Span::from(" "));
                 }
             }
         }
@@ -758,27 +759,22 @@ impl<'a> App<'a> {
                 cursor_col
             };
 
-            let wrapped_cursor_row = final_cursor_row + (final_cursor_col / fb.width) as u16;
-            let wrapped_cursor_col = final_cursor_col % fb.width;
-
-            fb.set_style(
-                Rect::new(wrapped_cursor_col, wrapped_cursor_row, 1, 1),
-                cursor_style,
-            );
+            // the line wrapping is handled in Content
+            content.set_edit_cursor_style(final_cursor_row, final_cursor_col, cursor_style);
         }
 
         // what should happen
-        // framebuilder should be of the correct width but indefinitely tall
+        // content should be of the correct width but indefinitely tall
         // after we write everything to it, we figure out how many rows it used
-        // then self.layout_manager tries and puts the framebuilder contents
+        // then self.layout_manager tries and puts the content contents
         // into the frame area appropriately. It might need to scroll some rows off the top
-        // of the screen to make framebuilder fit.
-        // if framebuilder is longer than the display area, we try and center the cursor.
-        // care needs to be taken to ensure that everything from the start of framebuilder
+        // of the screen to make content fit.
+        // if content is longer than the display area, we try and center the cursor.
+        // care needs to be taken to ensure that everything from the start of content
         // down the bottom of the screen is cleared.
 
         // Draw the buffer
 
-        self.layout_manager.fit_frame_builder_to_frame(&mut fb, f);
+        self.layout_manager.fit_content_to_frame(&mut content, f);
     }
 }

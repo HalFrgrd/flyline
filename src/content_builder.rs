@@ -1,19 +1,22 @@
-use ratatui::buffer::{Buffer, Cell};
+use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
-pub struct FrameBuilder {
-    pub buf: Vec<Vec<Cell>>,
+pub struct Contents {
+    pub buf: Vec<Vec<Cell>>, // each inner Vec is a row of Cells of width `width`
     pub width: u16,
     cursor_pos_x: u16,
     cursor_pos_y: u16,
 }
 
-impl FrameBuilder {
-    /// Create a new FrameBuilder with an empty buffer for the given area
+impl Contents {
+    // All the line wrapping logic is handled here.
+    // So app::ui just handles lines according to the edit buffer
+
+    /// Create a new Content with an empty buffer for the given area
     pub fn new(width: u16) -> Self {
-        FrameBuilder {
+        Contents {
             buf: vec![],
             width,
             cursor_pos_x: 0,
@@ -31,7 +34,7 @@ impl FrameBuilder {
     //     &mut self.buf
     // }
 
-    // /// Consume the FrameBuilder and return the buffer
+    // /// Consume the Content and return the buffer
     // pub fn into_buffer(self) -> Buffer {
     //     self.buf
     // }
@@ -113,7 +116,7 @@ impl FrameBuilder {
         self.cursor_pos_x = 0;
     }
 
-    pub fn set_style(&mut self, area: Rect, style: ratatui::style::Style) {
+    fn set_style(&mut self, area: Rect, style: ratatui::style::Style) {
         for _ in self.buf.len()..area.bottom() as usize {
             self.append_blank_row();
         }
@@ -127,5 +130,19 @@ impl FrameBuilder {
                 }
             }
         }
+    }
+
+    pub fn set_edit_cursor_style(
+        &mut self,
+        visual_cursor_row: u16,
+        visual_cursor_col: u16,
+        style: ratatui::style::Style,
+    ) {
+        let wrapped_cursor_row = visual_cursor_row + (visual_cursor_col / self.width) as u16;
+        let wrapped_cursor_col = visual_cursor_col % self.width;
+        self.set_style(
+            Rect::new(wrapped_cursor_col, wrapped_cursor_row, 1, 1),
+            style,
+        );
     }
 }

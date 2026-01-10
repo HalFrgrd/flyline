@@ -5,8 +5,8 @@ use ratatui::prelude::*;
 pub struct LayoutManager {
     terminal_height: u16,
     // terminal_width: u16,
-    range_start: u16,
-    range_end: u16,
+    drawing_row_start: u16,
+    drawing_row_end: u16,
 }
 
 impl LayoutManager {
@@ -16,37 +16,11 @@ impl LayoutManager {
         let layout_manager = LayoutManager {
             terminal_height: terminal_area.height,
             // terminal_width: terminal_area.width,
-            range_start: starting_cursor_position.1,
-            range_end: terminal_area.height,
+            drawing_row_start: starting_cursor_position.1, // we can draw from here downwards
+            drawing_row_end: starting_cursor_position.1, // used to keep track of how far down the terminal we've drawn, exclusive
         };
         layout_manager
     }
-
-    pub fn update_area(&mut self, terminal_area: Rect) {
-        self.terminal_height = terminal_area.height;
-        // self.terminal_width = terminal_area.width;
-    }
-
-    // pub fn get_area(&mut self, output_num_lines: u16) -> Rect {
-    //     let desired_area = Rect::new(0, self.range_start, self.terminal_width, output_num_lines);
-
-    //     if desired_area.bottom() > self.terminal_height {
-    //         let lines_to_scroll = desired_area.bottom().saturating_sub(self.terminal_height);
-    //         log::debug!(
-    //             "Desired area {:?} exceeds terminal height {}, scrolling by {}",
-    //             desired_area,
-    //             self.terminal_height,
-    //             lines_to_scroll,
-    //         );
-    //         self.scroll_by(lines_to_scroll);
-    //     }
-
-    //     // TODO: check we are in bounds
-    //     let area = Rect::new(0, self.range_start, self.terminal_width, output_num_lines);
-    //     self.range_end = area.bottom();
-
-    //     area
-    // }
 
     fn scroll_by(&mut self, lines_to_scroll: u16) {
         if lines_to_scroll == 0 {
@@ -59,61 +33,82 @@ impl LayoutManager {
         )
         .unwrap();
 
-        self.range_start = self.range_start.saturating_sub(lines_to_scroll);
-        self.range_end = self.range_end.saturating_sub(lines_to_scroll);
+        self.drawing_row_start = self.drawing_row_start.saturating_sub(lines_to_scroll);
+        // self.drawing_row_end = self.drawing_row_end.saturating_sub(lines_to_scroll);
     }
 
-    pub fn fit_frame_builder_to_frame(
+    pub fn fit_content_to_frame(
         &mut self,
-        fb: &mut crate::frame_builder::FrameBuilder,
+        content: &mut crate::content_builder::Contents,
         frame: &mut Frame,
     ) {
         let frame_area = frame.area();
-        assert!(fb.width == frame_area.width);
-        let num_rows_to_draw = fb.height();
-        log::debug!(
-            "Fitting FrameBuilder of height {} into Frame area {:?} with range_start {}",
-            num_rows_to_draw,
-            frame_area,
-            self.range_start,
-        );
+        assert!(content.width == frame_area.width);
+        let content_num_rows = content.height();
 
-        if num_rows_to_draw + self.range_start > self.terminal_height {
+        // log::debug!(
+        //     "Fitting Content of height {} into Frame area {:?} with range_start {}",
+        //     content_num_rows,
+        //     frame_area,
+        //     self.drawing_row_start,
+        // );
+
+        if content_num_rows + self.drawing_row_start > self.terminal_height {
             let lines_to_scroll =
-                (num_rows_to_draw + self.range_start).saturating_sub(self.terminal_height);
+                (content_num_rows + self.drawing_row_start).saturating_sub(self.terminal_height);
             log::debug!(
-                "FrameBuilder height {} plus range_start {} exceeds terminal height {}, scrolling by {}",
-                num_rows_to_draw,
-                self.range_start,
+                "Content height {} plus drawing_row_start {} exceeds terminal height {}, scrolling by {}",
+                content_num_rows,
+                self.drawing_row_start,
                 self.terminal_height,
                 lines_to_scroll,
             );
             self.scroll_by(lines_to_scroll);
         }
 
-        // Copy the contents of the FrameBuilder into the Frame at the correct offset
+        // Draw the bottom part of the Content if it exceeds the frame area height
+        let frame_buffer_subrange_to_draw =
+            (content.height().saturating_sub(frame_area.height))..content.height();
+        assert!(
+            frame_buffer_subrange_to_draw.len() as u16 <= frame_area.height,
+            "FrameBuffer subrange to draw length {} exceeds frame area height {}",
+            frame_buffer_subrange_to_draw.len(),
+            frame_area.height,
+        );
+
+        // Copy the contents of the Content into the Frame at the correct offset
         frame.buffer_mut().reset();
-        let offset_into_frame = self.range_start;
-        for (y, row) in fb.buf.iter().enumerate() {
-            for (x, cell) in row.iter().enumerate() {
-                let frame_y = offset_into_frame as usize + y;
-                if frame_y < frame_area.height as usize && x < frame_area.width as usize {
-                    frame.buffer_mut().content[frame_y * frame_area.width as usize + x] =
-                        cell.clone();
+        let offset_into_frame = self.drawing_row_start;
+        for (content_row_idx, content_row) in content.buf.iter().enumerate() {
+            if !frame_buffer_subrange_to_draw.contains(&(content_row_idx as u16)) {
+                continue;
+            }
+            let frame_row_idx = offset_into_frame as usize + content_row_idx;
+            if frame_row_idx < frame_area.height as usize {
+                self.drawing_row_end = self.drawing_row_end.max(frame_row_idx as u16 + 1);
+                for (x, cell) in content_row.iter().enumerate() {
+                    if x < frame_area.width as usize {
+                        frame.buffer_mut().content[frame_row_idx * frame_area.width as usize + x] =
+                            cell.clone();
+                    }
                 }
             }
         }
     }
 
-    pub fn finalize(&mut self) {
-        log::debug!("Finalizing layout pre  scroll  {:?}", self);
-        self.scroll_by((self.range_end + 1).saturating_sub(self.terminal_height));
-        log::debug!("Finalizing layout post scroll  {:?}", self);
+    pub fn post_draw(&mut self, is_running: bool) {
+        if !is_running {
+            // If we've drawn on the last line, scroll up to make room for the cursor
+            self.scroll_by((self.drawing_row_end + 1).saturating_sub(self.terminal_height));
 
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::cursor::MoveTo(0, self.range_end,),
-        )
-        .unwrap();
+            // Put the cursor just after the drawn content
+            crossterm::execute!(
+                std::io::stdout(),
+                crossterm::cursor::MoveTo(0, self.drawing_row_end),
+            )
+            .unwrap_or_else(|e| log::error!("{}", e));
+        } else {
+            // TODO: if we want to keep the terminal emulators cursor in sync while running, do it here.
+        }
     }
 }
