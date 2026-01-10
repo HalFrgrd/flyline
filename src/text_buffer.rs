@@ -245,20 +245,53 @@ impl TextBuffer {
         self.move_to_cursor_pos(target_row, col);
     }
 
+    pub fn debug_buffer(&self) {
+        for (i, char) in self.buf.chars().enumerate() {
+            let cursor_marker = if i == self.cursor_byte {
+                "<-- cursor"
+            } else {
+                ""
+            };
+
+            let char_display = match char {
+                '\n' => "\\n".to_string(),
+                '\r' => "\\r".to_string(),
+                '\t' => "\\t".to_string(),
+                _ => char.to_string(),
+            };
+            log::debug!("Byte {}: '{}' {}", i, char_display, cursor_marker);
+        }
+
+        for (i, grapheme) in self.buf.graphemes(true).enumerate() {
+            let cursor_marker = if self.buf[..self.cursor_byte].graphemes(true).count() == i {
+                "<-- cursor"
+            } else {
+                ""
+            };
+            let grapheme_display = match grapheme {
+                "\n" => "\\n".to_string(),
+                "\r" => "\\r".to_string(),
+                "\t" => "\\t".to_string(),
+                _ => grapheme.to_string(),
+            };
+            log::debug!("Grapheme {}: '{}' {}", i, grapheme_display, cursor_marker);
+        }
+    }
+
     fn move_to_cursor_pos(&mut self, target_row: usize, target_col: usize) {
+        // Not a great implementation, but it works well for small buffers
         // tries to first go to target_row
         // then tries to get close to target_col
         let mut cur_row = 0;
         let mut cur_col = 0;
-        // log::debug!("Moving cursor to position {:?}", (target_row, target_col));
+        // self.debug_buffer();
         for (i, grapheme) in self.buf.grapheme_indices(true) {
+            self.cursor_byte = i;
             if cur_row == target_row && cur_col >= target_col {
-                self.cursor_byte = i;
                 return;
             }
             if grapheme.contains('\n') {
                 if cur_row == target_row {
-                    self.cursor_byte = i;
                     return;
                 }
                 cur_row += 1;
@@ -267,6 +300,7 @@ impl TextBuffer {
                 cur_col += grapheme.width_cjk();
             }
         }
+        self.cursor_byte = self.buf.len();
     }
 
     pub fn cursor_2d_position(&self) -> (usize, usize) {
@@ -500,6 +534,17 @@ mod text_buffer_tests {
         assert_eq!(tb.cursor_byte, "Line 1\nLine".len());
         tb.move_line_down();
         assert_eq!(tb.cursor_byte, "Line 1\nLine 2\nLine".len());
+    }
+
+    #[test]
+    fn move_line_to_down_onto_empty_final_line() {
+        let mut tb = TextBuffer::new("Line 1\nLine 2\n");
+        tb.move_to_start();
+        tb.move_line_down();
+        assert_eq!(tb.cursor_2d_position(), (1, 0));
+        tb.move_line_down();
+        assert_eq!(tb.cursor_2d_position(), (2, 0));
+        assert_eq!(tb.cursor_byte, "Line 1\nLine 2\n".len());
     }
 
     // === insert_char tests ===

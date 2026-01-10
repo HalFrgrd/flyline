@@ -683,7 +683,7 @@ impl<'a> App<'a> {
             } else {
                 content.newline();
                 let ps2 = Span::styled(
-                    format!("{}∙", line_idx),
+                    format!("{}∙", line_idx + 1),
                     Style::default()
                         .fg(Color::Indexed(242))
                         .add_modifier(Modifier::DIM),
