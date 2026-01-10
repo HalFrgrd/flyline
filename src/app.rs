@@ -14,6 +14,7 @@ use crate::text_buffer::TextBuffer;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
+use std::fmt::format;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::vec;
@@ -636,7 +637,14 @@ impl<'a> App<'a> {
 
         let mut command_description: Option<String> = None;
 
-        for (is_first, _, line) in self.buffer.lines().iter().flag_first_last() {
+        for (is_first, _, (line_idx, (line, cursor_col))) in self
+            .buffer
+            .lines_with_cursor()
+            .iter()
+            .enumerate()
+            .flag_first_last()
+        {
+            let line_offset: u16;
             if is_first {
                 let space_pos = line.find(' ').unwrap_or(line.len());
                 let (first_word, rest) = line.split_at(space_pos);
@@ -669,12 +677,43 @@ impl<'a> App<'a> {
                     bash_funcs::CommandType::Unknown => Style::default().fg(Color::Red),
                     _ => Style::default().fg(Color::Green),
                 };
-
+                line_offset = content.cursor_position().0;
                 content.write_span(&Span::styled(first_word, first_word_style));
                 content.write_span(&Span::styled(rest.to_string(), Style::default()));
             } else {
                 content.newline();
+                let ps2 = Span::styled(
+                    format!("{}∙", line_idx),
+                    Style::default()
+                        .fg(Color::Indexed(242))
+                        .add_modifier(Modifier::DIM),
+                );
+                content.write_span(&ps2);
+                line_offset = content.cursor_position().0;
                 content.write_line(&Line::from(line.to_owned()), false);
+            }
+            // Draw cursor
+            if self.mode.is_running()
+                && let Some(cursor_col_in_line) = cursor_col
+            {
+                let formatted_cursor_col = cursor_col_in_line + line_offset;
+                let formatted_cursor_row = content.cursor_position().1;
+
+                self.cursor_animation
+                    .update_position(formatted_cursor_row, formatted_cursor_col);
+                let (cursor_col, cursor_row) = self.cursor_animation.get_position();
+
+                let cursor_style = {
+                    let cursor_intensity = self.cursor_animation.get_intensity();
+                    Style::new().bg(Color::Rgb(
+                        cursor_intensity,
+                        cursor_intensity,
+                        cursor_intensity,
+                    ))
+                };
+
+                // Note that the line wrapping is handled in Content
+                content.set_edit_cursor_style(cursor_row, cursor_col, cursor_style);
             }
         }
 
@@ -745,30 +784,6 @@ impl<'a> App<'a> {
                     content.write_span(&Span::from(" "));
                 }
             }
-        }
-
-        // Draw cursor
-        if self.mode.is_running() {
-            self.cursor_animation
-                .update_position(self.buffer.cursor_2d_position());
-            let (cursor_row, cursor_col) = self.cursor_animation.get_position();
-            let cursor_intensity = self.cursor_animation.get_intensity();
-
-            let cursor_style = ratatui::style::Style::new().bg(ratatui::style::Color::Rgb(
-                cursor_intensity,
-                cursor_intensity,
-                cursor_intensity,
-            ));
-
-            let final_cursor_row = ps1_cursor_row + cursor_row;
-            let final_cursor_col = if cursor_row == 0 {
-                ps1_cursor_col + cursor_col
-            } else {
-                cursor_col
-            };
-
-            // the line wrapping is handled in Content
-            content.set_edit_cursor_style(final_cursor_row, final_cursor_col, cursor_style);
         }
 
         // what should happen

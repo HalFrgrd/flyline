@@ -5,7 +5,6 @@ use ratatui::prelude::*;
 #[derive(Debug)]
 pub struct LayoutManager {
     terminal_height: u16,
-    // terminal_width: u16,
     drawing_row_start: u16,
     drawing_row_end: u16,
 }
@@ -16,7 +15,6 @@ impl LayoutManager {
 
         let layout_manager = LayoutManager {
             terminal_height: terminal_area.height,
-            // terminal_width: terminal_area.width,
             drawing_row_start: starting_cursor_position.1, // we can draw from here downwards
             drawing_row_end: starting_cursor_position.1, // used to keep track of how far down the terminal we've drawn, exclusive
         };
@@ -40,10 +38,10 @@ impl LayoutManager {
         assert!(content.width == frame_area.width);
         let content_num_rows = content.height();
 
-        assert!(self.terminal_height == frame_area.height);
+        // assert!(self.terminal_height == frame_area.height);
 
         let lines_to_scroll =
-            (self.drawing_row_start + content_num_rows).saturating_sub(self.terminal_height);
+            (self.drawing_row_start + content_num_rows).saturating_sub(frame_area.height);
         let mut scrolled = false;
         if self.drawing_row_start > 0 && lines_to_scroll > 0 {
             self.scroll_by(lines_to_scroll);
@@ -60,7 +58,7 @@ impl LayoutManager {
 
         let content_row_idx_to_frame_row_idx = |content_row_idx: u16| -> Option<u16> {
             let num_rows_available_in_frame =
-                self.terminal_height.saturating_sub(self.drawing_row_start);
+                frame_area.height.saturating_sub(self.drawing_row_start);
 
             let content_row_start_idx: u16;
             let content_row_end_idx: u16;
@@ -90,7 +88,7 @@ impl LayoutManager {
             if content_row_start_idx <= content_row_idx && content_row_idx < content_row_end_idx {
                 let frame_row_idx = self.drawing_row_start
                     + (content_row_idx.saturating_sub(content_row_start_idx));
-                if frame_row_idx < self.terminal_height {
+                if frame_row_idx < frame_area.height {
                     return Some(frame_row_idx);
                 } else {
                     return None;

@@ -44,8 +44,8 @@ impl CursorAnimation {
         }
     }
 
-    pub fn update_position(&mut self, new_pos: (usize, usize)) {
-        let new_pos = Coord::new(new_pos.0, new_pos.1);
+    pub fn update_position(&mut self, new_row: u16, new_col: u16) {
+        let new_pos = Coord::new(new_col as usize, new_row as usize);
         if new_pos != self.target_pos {
             self.time_of_change = Instant::now();
             self.prev_pos = self.target_pos;
@@ -63,11 +63,11 @@ impl CursorAnimation {
             factor = 1.0;
         }
 
-        let (c1, c2) = self
+        let (interpolated_x, _) = self
             .prev_pos
             .interpolate(&self.target_pos, factor.min(1.0))
             .to_tuple();
-        (c1 as u16, c2 as u16)
+        (interpolated_x as u16, self.target_pos.y as u16) // Trying to keep y stable
     }
 
     pub fn get_intensity(&self) -> u8 {

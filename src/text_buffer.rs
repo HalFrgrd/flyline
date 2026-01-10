@@ -298,8 +298,28 @@ impl TextBuffer {
         self.buf[..self.cursor_byte].chars().count()
     }
 
-    pub fn lines(&self) -> Vec<&str> {
-        self.buf.lines().collect()
+    pub fn lines_with_cursor(&self) -> Vec<(&str, Option<u16>)> {
+        // additionally return and empty string if the buffer finishes with a newline
+        let mut lines = self.buf.lines().collect::<Vec<_>>();
+        if self.buf.ends_with('\n') {
+            lines.push("");
+        }
+        if lines.is_empty() {
+            lines.push("");
+        }
+        let (cursor_row, cursor_col) = self.cursor_2d_position();
+
+        lines
+            .into_iter()
+            .enumerate()
+            .map(|(i, line)| {
+                if i == cursor_row {
+                    (line, Some(cursor_col as u16))
+                } else {
+                    (line, None)
+                }
+            })
+            .collect()
     }
 
     pub fn last_line_is_empty(&self) -> bool {
