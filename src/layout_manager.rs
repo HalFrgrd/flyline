@@ -49,6 +49,12 @@ impl LayoutManager {
             self.scroll_by(lines_to_scroll);
             self.drawing_row_start = self.drawing_row_start.saturating_sub(lines_to_scroll);
             // When we scroll, it messes up ratatui's buffer diffing
+            // The old cursor is now on a cell one row up.
+            // But the old frame buffer thinks there is e.g. a white space cell there.
+            // And the new frame buffer thinks there is also a white space cell there.
+            // So ratatui thinks nothing has changed for that, and doesn't redraw that cell.
+            // This leaves visual artifacts on the terminal.
+            // To fix this, we force a redraw of all cells by adding a rarely used modifier
             scrolled = true;
         }
 
