@@ -960,5 +960,4 @@ mod tests {
             _ => panic!("Expected CommandComp"),
         }
     }
-
 }

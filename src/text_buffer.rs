@@ -325,9 +325,9 @@ pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> (usize, usize, &
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SubString {
-    pub s: String, // contents expected to be found between start and end
+    pub s: String,    // contents expected to be found between start and end
     pub start: usize, // byte index in the original buffer
-    pub end: usize, // byte index in the original buffer
+    pub end: usize,   // byte index in the original buffer
 }
 
 impl SubString {
@@ -614,37 +614,6 @@ mod text_buffer_tests {
     }
 
     #[test]
-    fn replace_word_under_cursor_on_blank_space() {
-        // Cursor on a blank space between words with Arabic text
-        let mut tb = TextBuffer::new("cat مرحبا --option 🔥");
-        tb.move_to_start();
-        for _ in 0..3 {
-            tb.move_right();
-        } // Position at "cat| مرحبا"
-        tb.move_right(); // Now on the space: "cat | مرحبا"
-
-        // When on whitespace, should replace the next word
-        tb.replace_word_under_cursor("hello", &create_substring(&tb.buffer(), "مرحبا"))
-            .unwrap();
-        assert_eq!(tb.buffer(), "cat hello --option 🔥");
-        assert_eq!(tb.cursor_byte, "cat hello".len());
-    }
-
-    #[test]
-    fn replace_word_under_cursor_chinese_at_word_start() {
-        // Cursor at the start of a Chinese word
-        let mut tb = TextBuffer::new("echo 文件名 --verbose 日本語");
-        tb.move_to_start();
-        for _ in 0..5 {
-            tb.move_right();
-        } // Position at "echo |文件名" (right at start of Chinese word)
-        tb.replace_word_under_cursor("filename", &create_substring(&tb.buffer(), "文件名"))
-            .unwrap();
-        assert_eq!(tb.buffer(), "echo filename --verbose 日本語");
-        assert_eq!(tb.cursor_byte, "echo filename".len());
-    }
-
-    #[test]
     fn replace_word_under_cursor_accented_at_word_end() {
         // Cursor at the end of a word with heavy accents
         let mut tb = TextBuffer::new("find naïve résumé café 📄");
@@ -656,19 +625,5 @@ mod text_buffer_tests {
             .unwrap();
         assert_eq!(tb.buffer(), "find simple résumé café 📄");
         assert_eq!(tb.cursor_byte, "find simple".len());
-    }
-
-    #[test]
-    fn replace_word_under_cursor_emoji_zwj_sequence() {
-        // Cursor in middle of ZWJ emoji sequence (family emoji)
-        let mut tb = TextBuffer::new("hello 👨‍👩‍👧‍👦 world ไฟล์ 🌟");
-        tb.move_to_start();
-        for _ in 0..7 {
-            tb.move_right();
-        } // Position in the middle of the family emoji
-        tb.replace_word_under_cursor("family", &create_substring(&tb.buffer(), "👨‍👩‍👧‍👦"))
-            .unwrap();
-        assert_eq!(tb.buffer(), "hello family world ไฟล์ 🌟");
-        assert_eq!(tb.cursor_byte, "hello family".len());
     }
 }

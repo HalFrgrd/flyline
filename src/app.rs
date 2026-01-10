@@ -132,9 +132,9 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(ps1: String, history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
+        // TODO: fetch these in background
         const PATH_VAR: &str = "PATH";
         let path_var = bash_builtins::variables::find_as_string(PATH_VAR);
-
         let executables = if let Some(path_str) = path_var.as_ref().and_then(|v| v.to_str().ok()) {
             App::get_executables_from_path(path_str)
         } else {
@@ -613,7 +613,9 @@ impl<'a> App<'a> {
     }
 
     fn ui(&mut self, f: &mut Frame) {
-        let mut fb = FrameBuilder::new(f.area());
+        // Basically build the entire frame in a FrameBuilder first
+        // Then figure out how to fit that into the actual frame area
+        let mut fb = FrameBuilder::new(f.area().width);
 
         for line in self.prompt_manager.get_ps1_lines() {
             fb.write_line(&line, false);
@@ -756,36 +758,27 @@ impl<'a> App<'a> {
                 cursor_col
             };
 
-            fb.buffer_mut().set_style(
-                Rect::new(
-                    final_cursor_col.try_into().unwrap_or(0),
-                    final_cursor_row.try_into().unwrap_or(0),
-                    1,
-                    1,
-                ),
+            let wrapped_cursor_row = final_cursor_row + (final_cursor_col / fb.width) as u16;
+            let wrapped_cursor_col = final_cursor_col % fb.width;
+
+            fb.set_style(
+                Rect::new(wrapped_cursor_col, wrapped_cursor_row, 1, 1),
                 cursor_style,
             );
         }
 
+        // what should happen
+        // framebuilder should be of the correct width but indefinitely tall
+        // after we write everything to it, we figure out how many rows it used
+        // then self.layout_manager tries and puts the framebuilder contents
+        // into the frame area appropriately. It might need to scroll some rows off the top
+        // of the screen to make framebuilder fit.
+        // if framebuilder is longer than the display area, we try and center the cursor.
+        // care needs to be taken to ensure that everything from the start of framebuilder
+        // down the bottom of the screen is cleared.
+
         // Draw the buffer
-        let (_, max_buf_row) = fb.cursor_position();
 
-        let full_terminal_area = f.area();
-
-        self.layout_manager.update_area(full_terminal_area);
-        let drawing_area = self
-            .layout_manager
-            .get_area(max_buf_row.try_into().unwrap_or(0) + 1);
-
-        let starting_row = drawing_area.top();
-        fb.insert_blank_rows_at_top(starting_row);
-        fb.insert_blank_rows_at_bottom(
-            full_terminal_area
-                .height
-                .saturating_sub(drawing_area.bottom()),
-        );
-
-        f.buffer_mut().reset();
-        f.buffer_mut().merge(&fb.into_buffer());
+        self.layout_manager.fit_frame_builder_to_frame(&mut fb, f);
     }
 }

@@ -25,7 +25,7 @@ impl PromptManager {
     }
 
     pub fn get_ps1_lines(&self) -> Vec<Line<'static>> {
-        const JOBU_TIME_STR: &str = "JOBU_TIME_XXX";
+        const JOBU_TIME_STR: &str = "JOBU_TIME_XX";
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap();

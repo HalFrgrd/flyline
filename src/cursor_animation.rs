@@ -53,7 +53,7 @@ impl CursorAnimation {
         }
     }
 
-    pub fn get_position(&self) -> (usize, usize) {
+    pub fn get_position(&self) -> (u16, u16) {
         // interpolate between prevPos and currentPos based on time since time_of_change
         let time_since_change = self.time_of_change.elapsed().as_secs_f32();
         let mut factor = time_since_change * 16.0 + 0.2;
@@ -63,9 +63,11 @@ impl CursorAnimation {
             factor = 1.0;
         }
 
-        self.prev_pos
+        let (c1, c2) = self
+            .prev_pos
             .interpolate(&self.target_pos, factor.min(1.0))
-            .to_tuple()
+            .to_tuple();
+        (c1 as u16, c2 as u16)
     }
 
     pub fn get_intensity(&self) -> u8 {
