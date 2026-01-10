@@ -592,6 +592,28 @@ impl<'a> App<'a> {
                     word_under_cursor
                 );
             }
+            tab_completion::CompType::TildeExpansion(word_under_cursor) => {
+                log::debug!(
+                    "Tilde expansion completion not yet implemented: {:?}",
+                    word_under_cursor
+                );
+            }
+            tab_completion::CompType::GlobExpansion(word_under_cursor) => {
+                log::debug!(
+                    "Glob expansion completion not yet implemented: {:?}",
+                    word_under_cursor
+                );
+                let completions = self.tab_complete_glob_expansion(&word_under_cursor.s);
+                if completions.len() > 0 {
+                    self.buffer
+                        .replace_word_under_cursor("", &word_under_cursor)
+                        .ok()?;
+                    for completion in completions {
+                        self.buffer.insert_str(&completion);
+                        self.buffer.insert_char(' ');
+                    }
+                }
+            }
         }
 
         Some(())
@@ -624,6 +646,54 @@ impl<'a> App<'a> {
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
         res
+    }
+
+    fn tab_complete_glob_expansion(&self, pattern: &str) -> Vec<String> {
+        use glob::glob;
+        use std::path::Path;
+
+        // Get the current working directory for relative paths
+        let cwd = match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(_) => return vec![],
+        };
+
+        // Resolve the pattern relative to cwd if it's not absolute
+        let full_pattern = if Path::new(pattern).is_absolute() {
+            pattern.to_string()
+        } else {
+            cwd.join(pattern).to_string_lossy().to_string()
+        };
+
+        // Use glob to find matching paths
+        let mut results = Vec::new();
+
+        if let Ok(paths) = glob(&full_pattern) {
+            for path_result in paths {
+                if let Ok(path) = path_result {
+                    // Convert the path to a string relative to cwd (or absolute if pattern was absolute)
+                    let path_str = if Path::new(pattern).is_absolute() {
+                        path.to_string_lossy().to_string()
+                    } else {
+                        // Strip the cwd prefix to get relative path
+                        path.strip_prefix(&cwd)
+                            .unwrap_or(&path)
+                            .to_string_lossy()
+                            .to_string()
+                    };
+
+                    // Add trailing slash for directories
+                    if path.is_dir() {
+                        results.push(format!("{}/", path_str));
+                    } else {
+                        results.push(path_str);
+                    }
+                }
+            }
+        }
+
+        results.sort();
+        results
     }
 
     fn get_command_type(&self, cmd: &str) -> (bash_funcs::CommandType, String) {

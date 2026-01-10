@@ -14,6 +14,8 @@ pub enum CompType {
     },
     CursorOnBlank,
     EnvVariable(SubString), // the env variable under the cursor, with the leading $
+    TildeExpansion(SubString), // the tilde under the cursor, e.g. "~us|erna"
+    GlobExpansion(SubString), // the glob pattern under the cursor, e.g. "*.rs|t"
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -25,6 +27,19 @@ pub struct CompletionContext<'a> {
 }
 
 impl<'a> CompletionContext<'a> {
+    fn classify_word_type(word: &SubString) -> Option<CompType> {
+        if word.s.starts_with('$') {
+            Some(CompType::EnvVariable(word.clone()))
+        } else if word.s.starts_with('~') {
+            Some(CompType::TildeExpansion(word.clone()))
+        } else if word.s.contains('*') || word.s.contains('?') || word.s.contains('[') {
+            // TODO is this good
+            Some(CompType::GlobExpansion(word.clone()))
+        } else {
+            None
+        }
+    }
+
     pub fn new(buffer: &'a str, command_until_cursor: &'a str, command: &'a str) -> Self {
         let comp_type = if command.trim().is_empty()
             || command_until_cursor.ends_with(char::is_whitespace)
@@ -33,8 +48,8 @@ impl<'a> CompletionContext<'a> {
         } else if command_until_cursor.split_whitespace().count() <= 1 {
             let first_word =
                 SubString::new(buffer, command.split_whitespace().next().unwrap_or("")).unwrap();
-            if first_word.s.starts_with('$') {
-                CompType::EnvVariable(first_word)
+            if let Some(comp_type) = Self::classify_word_type(&first_word) {
+                comp_type
             } else {
                 CompType::FirstWord(first_word)
             }
@@ -43,8 +58,8 @@ impl<'a> CompletionContext<'a> {
             let word_under_cursor =
                 crate::text_buffer::extract_word_at_byte(command, cursor_byte_pos);
 
-            if word_under_cursor.s.starts_with('$') {
-                CompType::EnvVariable(word_under_cursor)
+            if let Some(comp_type) = Self::classify_word_type(&word_under_cursor) {
+                comp_type
             } else {
                 CompType::CommandComp {
                     full_command: command.to_string(),
