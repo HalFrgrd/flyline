@@ -387,6 +387,7 @@ pub struct SubString {
     pub s: String,    // contents expected to be found between start and end
     pub start: usize, // byte index in the original buffer
     pub end: usize,   // byte index in the original buffer
+    pub cursor_offset: usize, // byte offset of the cursor within the substring
 }
 
 impl SubString {
@@ -405,6 +406,7 @@ impl SubString {
             s: substring.to_string(),
             start,
             end,
+            cursor_offset: substring_ptr - start,
         })
     }
 }

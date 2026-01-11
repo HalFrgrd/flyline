@@ -30,10 +30,10 @@ impl<'a> CompletionContext<'a> {
     fn classify_word_type(word: &SubString) -> Option<CompType> {
         if word.s.starts_with('$') {
             Some(CompType::EnvVariable(word.clone()))
-        } else if word.s.starts_with('~') {
+        } else if word.s.starts_with('~') && !word.s.contains("/") {
             Some(CompType::TildeExpansion(word.clone()))
         } else if word.s.contains('*') || word.s.contains('?') || word.s.contains('[') {
-            // TODO is this good
+            // TODO "*.md will match this. need some better logic here
             Some(CompType::GlobExpansion(word.clone()))
         } else {
             None
