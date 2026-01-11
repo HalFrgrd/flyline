@@ -1,4 +1,4 @@
-use crate::active_suggestions;
+use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::bash_funcs;
 use crate::command_acceptance;
 use crate::content_builder::Contents;
@@ -10,7 +10,7 @@ use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
-use crate::text_buffer::{SubString, TextBuffer};
+use crate::text_buffer::TextBuffer;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
@@ -125,7 +125,7 @@ struct App<'a> {
     defined_shell_functions: Vec<String>,
     defined_builtins: Vec<String>,
     defined_executables: Vec<(PathBuf, String)>,
-    active_tab_suggestions: Option<active_suggestions::ActiveSuggestions>,
+    active_tab_suggestions: Option<ActiveSuggestions>,
 }
 
 impl<'a> App<'a> {
@@ -510,8 +510,8 @@ impl<'a> App<'a> {
         match completion_context.comp_type {
             tab_completion::CompType::FirstWord(word_under_cursor) => {
                 let completions = self.tab_complete_first_word(&word_under_cursor.s);
-                self.active_tab_suggestions = active_suggestions::ActiveSuggestions::try_new(
-                    completions,
+                self.active_tab_suggestions = ActiveSuggestions::try_new(
+                    Suggestion::from_string_vec(completions, "".to_string(), " ".to_string()),
                     word_under_cursor,
                     &mut self.buffer,
                 );
@@ -532,12 +532,15 @@ impl<'a> App<'a> {
                 match poss_completions {
                     Some(completions) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
-                        self.active_tab_suggestions =
-                            active_suggestions::ActiveSuggestions::try_new(
+                        self.active_tab_suggestions = ActiveSuggestions::try_new(
+                            Suggestion::from_string_vec(
                                 completions,
-                                word_under_cursor,
-                                &mut self.buffer,
-                            );
+                                "".to_string(),
+                                " ".to_string(),
+                            ),
+                            word_under_cursor,
+                            &mut self.buffer,
+                        );
                     }
                     None => {
                         log::debug!(
@@ -547,20 +550,25 @@ impl<'a> App<'a> {
                         let completions = Self::tab_complete_glob_expansion(
                             &(word_under_cursor.s.to_string() + "*"),
                         );
-                        self.active_tab_suggestions =
-                            active_suggestions::ActiveSuggestions::try_new(
-                                completions,
-                                word_under_cursor,
-                                &mut self.buffer,
-                            );
+                        self.active_tab_suggestions = ActiveSuggestions::try_new(
+                            completions,
+                            word_under_cursor,
+                            &mut self.buffer,
+                        );
                     }
                 }
             }
             tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
                 log::debug!("Cursor is on blank space, no tab completion performed");
                 let completions = Self::tab_complete_glob_expansion("*");
-                self.active_tab_suggestions = active_suggestions::ActiveSuggestions::try_new(
-                    completions,
+                self.active_tab_suggestions = ActiveSuggestions::try_new(
+                    completions
+                        .into_iter()
+                        .map(|mut sug| {
+                            sug.prefix = " ".to_string();
+                            sug
+                        })
+                        .collect(),
                     word_under_cursor,
                     &mut self.buffer,
                 );
@@ -574,11 +582,8 @@ impl<'a> App<'a> {
             tab_completion::CompType::TildeExpansion(word_under_cursor) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = Self::tab_complete_tilde_expansion(&word_under_cursor.s);
-                self.active_tab_suggestions = active_suggestions::ActiveSuggestions::try_new(
-                    completions,
-                    word_under_cursor,
-                    &mut self.buffer,
-                );
+                self.active_tab_suggestions =
+                    ActiveSuggestions::try_new(completions, word_under_cursor, &mut self.buffer);
             }
             tab_completion::CompType::GlobExpansion(word_under_cursor) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
@@ -586,15 +591,28 @@ impl<'a> App<'a> {
 
                 // Unlike other completions, if there are multiple glob completions,
                 // we join them with spaces and insert them all at once.
-                let completions_as_string = completions.join(" ");
+                let completions_as_string = completions.iter().map(|sug| sug.s.clone()).fold(
+                    String::new(),
+                    |mut acc, s| {
+                        if !acc.is_empty() {
+                            acc.push(' ');
+                        }
+                        acc.push_str(&s);
+                        acc
+                    },
+                );
                 if completions_as_string.is_empty() {
                     log::debug!(
                         "No glob expansion completions found for pattern: {}",
                         word_under_cursor.s
                     );
                 } else {
-                    self.active_tab_suggestions = active_suggestions::ActiveSuggestions::try_new(
-                        vec![completions_as_string],
+                    self.active_tab_suggestions = ActiveSuggestions::try_new(
+                        Suggestion::from_string_vec(
+                            vec![completions_as_string],
+                            "".to_string(),
+                            " ".to_string(),
+                        ),
                         word_under_cursor,
                         &mut self.buffer,
                     );
@@ -634,7 +652,7 @@ impl<'a> App<'a> {
         res
     }
 
-    fn tab_complete_glob_expansion(pattern: &str) -> Vec<String> {
+    fn tab_complete_glob_expansion(pattern: &str) -> Vec<Suggestion> {
         // TODO: make this async and kill it if it takes too long
         use glob::glob;
         use std::path::Path;
@@ -678,9 +696,15 @@ impl<'a> App<'a> {
 
                     // Add trailing slash for directories
                     if path.is_dir() {
-                        results.push(format!("{}/", path_str));
+                        // no trailing space for directories
+                        results.push(Suggestion::new(
+                            format!("{}/", path_str),
+                            "".to_string(),
+                            "".to_string(),
+                        ));
                     } else {
-                        results.push(path_str);
+                        // trailing space for files
+                        results.push(Suggestion::new(path_str, "".to_string(), " ".to_string()));
                     }
                 }
             }
@@ -690,7 +714,7 @@ impl<'a> App<'a> {
         results
     }
 
-    fn tab_complete_tilde_expansion(pattern: &str) -> Vec<String> {
+    fn tab_complete_tilde_expansion(pattern: &str) -> Vec<Suggestion> {
         let user_pattern = if pattern.starts_with('~') {
             &pattern[1..]
         } else {

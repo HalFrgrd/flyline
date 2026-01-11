@@ -1,14 +1,53 @@
 use crate::text_buffer::{SubString, TextBuffer};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Suggestion {
+    pub s: String,
+    pub prefix: String,
+    pub suffix: String,
+}
+
+impl Suggestion {
+    pub fn new(s: String, prefix: String, suffix: String) -> Self {
+        Suggestion { s, prefix, suffix }
+    }
+
+    pub fn formatted(&self) -> String {
+        format!("{}{}{}", self.prefix, self.s, self.suffix)
+    }
+
+    pub fn from_string_vec(
+        suggestions: Vec<String>,
+        prefix: String,
+        suffix: String,
+    ) -> Vec<Suggestion> {
+        suggestions
+            .into_iter()
+            .map(|s| Suggestion::new(s, prefix.clone(), suffix.clone()))
+            .collect()
+    }
+}
+
+impl PartialOrd for Suggestion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.s.partial_cmp(&other.s)
+    }
+}
+impl Ord for Suggestion {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.s.cmp(&other.s)
+    }
+}
+
 pub struct ActiveSuggestions {
-    pub suggestions: Vec<String>,
+    pub suggestions: Vec<Suggestion>,
     selected_index: usize,
     pub word_under_cursor: SubString,
 }
 
 impl ActiveSuggestions {
     pub fn try_new(
-        suggestions: Vec<String>,
+        suggestions: Vec<Suggestion>,
         word_under_cursor: SubString,
         buffer: &mut TextBuffer,
     ) -> Option<Self> {
@@ -50,21 +89,22 @@ impl ActiveSuggestions {
         }
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&String, bool)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, bool)> {
+        // prefix and suffix aren't shown in the suggestion list
+        // but are applied when the suggestion is accepted
         self.suggestions
             .iter()
             .enumerate()
-            .map(move |(idx, suggestion)| (suggestion, idx == self.selected_index))
+            .map(|(idx, suggestion)| (suggestion.s.as_str(), idx == self.selected_index))
     }
 
     pub fn accept(self, buffer: &mut TextBuffer) {
         let completion = &self.suggestions[self.selected_index];
-        let res = buffer.replace_word_under_cursor(&completion, &self.word_under_cursor);
-        match res {
-            Ok(_) => buffer.insert_char(' '),
-            Err(e) => {
-                log::error!("Error during tab completion: {}", e);
-            }
+
+        if let Err(e) =
+            buffer.replace_word_under_cursor(&completion.formatted(), &self.word_under_cursor)
+        {
+            log::error!("Error during tab completion: {}", e);
         }
     }
 }
