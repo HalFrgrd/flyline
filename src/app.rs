@@ -10,7 +10,7 @@ use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
-use crate::text_buffer::{TextBuffer, SubString};
+use crate::text_buffer::{SubString, TextBuffer};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
@@ -393,24 +393,17 @@ impl<'a> App<'a> {
                 ..
             } => {
                 if let Some(active_suggestions) = &mut self.active_tab_suggestions {
-                    let (selected_command, word_under_cursor) = active_suggestions.on_enter();
+                    let (selected_completion, word_under_cursor) = active_suggestions.on_enter();
+                    self.handle_completion(vec![selected_completion], word_under_cursor);
                     self.active_tab_suggestions = None;
-                    let res = self
-                        .buffer
-                        .replace_word_under_cursor(&selected_command, &word_under_cursor);
-                    match res {
-                        Ok(_) => {
-                            self.buffer.insert_char(' ');
-                        }
-                        Err(e) => {
-                            log::error!("Error during tab completion accepting: {}", e)
-                        }
-                    }
                 } else {
                     // log::debug!("enter pressed with buffer: ");
                     // self.buffer.debug_buffer();
 
-                    if self.buffer.is_cursor_at_trimmed_end()
+                    // If it's a single line complete command, exit
+                    // If it's a multi-line complete command, cursor needs to be at end to exit
+                    if ((self.buffer.lines_with_cursor().iter().count() == 1)
+                        || self.buffer.is_cursor_at_trimmed_end())
                         && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
                     {
                         self.mode = AppRunningState::ExitingWithCommand;
@@ -492,6 +485,10 @@ impl<'a> App<'a> {
             _ => {}
         }
 
+        self.on_possible_buffer_change();
+    }
+
+    fn on_possible_buffer_change(&mut self) {
         self.history_suggestion = self
             .history_manager
             .get_command_suggestion_suffix(self.buffer.buffer());
@@ -512,7 +509,6 @@ impl<'a> App<'a> {
 
         log::debug!("Completion context: {:?}", completion_context);
 
-
         match completion_context.comp_type {
             tab_completion::CompType::FirstWord(word_under_cursor) => {
                 let completions = self.tab_complete_first_word(&word_under_cursor.s);
@@ -524,18 +520,34 @@ impl<'a> App<'a> {
                 word_under_cursor,
                 cursor_byte_pos,
             } => {
-                let completions = bash_funcs::run_autocomplete_compspec(
+                let poss_completions = bash_funcs::run_autocomplete_compspec(
                     &full_command,
                     &command_word,
                     &word_under_cursor.s,
                     cursor_byte_pos,
                     word_under_cursor.end,
                 );
-                log::debug!("Bash autocomplete results: {:?}", completions);
-                self.handle_completion(completions, word_under_cursor);
+                match poss_completions {
+                    Some(completions) => {
+                        log::debug!("Bash autocomplete results for command: {}", full_command);
+                        self.handle_completion(completions, word_under_cursor);
+                    }
+                    None => {
+                        log::debug!(
+                            "No bash autocomplete results for command: {}. Falling back to glob expansion.",
+                            full_command
+                        );
+                        let completions = Self::tab_complete_glob_expansion(
+                            &(word_under_cursor.s.to_string() + "*"),
+                        );
+                        self.handle_completion(completions, word_under_cursor);
+                    }
+                }
             }
-            tab_completion::CompType::CursorOnBlank => {
+            tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
                 log::debug!("Cursor is on blank space, no tab completion performed");
+                let completions = Self::tab_complete_glob_expansion("*");
+                self.handle_completion(completions, word_under_cursor);
             }
             tab_completion::CompType::EnvVariable(word_under_cursor) => {
                 log::debug!(
@@ -544,10 +556,7 @@ impl<'a> App<'a> {
                 );
             }
             tab_completion::CompType::TildeExpansion(word_under_cursor) => {
-                log::debug!(
-                    "Tilde expansion completion: {:?}",
-                    word_under_cursor
-                );
+                log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = Self::tab_complete_tilde_expansion(&word_under_cursor.s);
                 self.handle_completion(completions, word_under_cursor);
             }
@@ -593,15 +602,13 @@ impl<'a> App<'a> {
             }
             _ => {
                 log::debug!("Multiple completions available: {:?}", completions);
-                self.active_tab_suggestions =
-                    Some(active_suggestions::ActiveSuggestions::new(
-                        completions,
-                        word_under_cursor,
-                    ));
+                self.active_tab_suggestions = Some(active_suggestions::ActiveSuggestions::new(
+                    completions,
+                    word_under_cursor,
+                ));
             }
         }
     }
-
 
     fn tab_complete_first_word(&self, command: &str) -> Vec<String> {
         let mut res = Vec::new();
@@ -639,7 +646,7 @@ impl<'a> App<'a> {
 
         log::debug!("Performing glob expansion for pattern: {}", pattern);
 
-        if pattern.contains("**"){
+        if pattern.contains("**") {
             log::debug!("Pattern contains '**', which is not supported. Returning no completions.");
             return vec![];
         }
@@ -689,7 +696,6 @@ impl<'a> App<'a> {
     }
 
     fn tab_complete_tilde_expansion(pattern: &str) -> Vec<String> {
-
         let user_pattern = if pattern.starts_with('~') {
             &pattern[1..]
         } else {

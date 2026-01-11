@@ -12,10 +12,10 @@ pub enum CompType {
         word_under_cursor: SubString, // "commi"
         cursor_byte_pos: usize,       // 7 since cursor is after "com" in "git com|mi asdf"
     },
-    CursorOnBlank,
-    EnvVariable(SubString), // the env variable under the cursor, with the leading $
+    CursorOnBlank(SubString),  // the blank space under the cursor
+    EnvVariable(SubString),    // the env variable under the cursor, with the leading $
     TildeExpansion(SubString), // the tilde under the cursor, e.g. "~us|erna"
-    GlobExpansion(SubString), // the glob pattern under the cursor, e.g. "*.rs|t"
+    GlobExpansion(SubString),  // the glob pattern under the cursor, e.g. "*.rs|t"
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -41,11 +41,15 @@ impl<'a> CompletionContext<'a> {
     }
 
     pub fn new(buffer: &'a str, command_until_cursor: &'a str, command: &'a str) -> Self {
-        let comp_type = if command.trim().is_empty()
-            || command_until_cursor.ends_with(char::is_whitespace)
+        let comp_type = if command_until_cursor.ends_with(char::is_whitespace) {
+            let cursor_white_space = match command_until_cursor.char_indices().next_back() {
+                Some((byte, _)) => &command_until_cursor[byte..],
+                None => "",
+            };
+
+            CompType::CursorOnBlank(SubString::new(buffer, cursor_white_space).unwrap())
+        } else if command.trim().is_empty() || command_until_cursor.split_whitespace().count() <= 1
         {
-            CompType::CursorOnBlank
-        } else if command_until_cursor.split_whitespace().count() <= 1 {
             let first_word =
                 SubString::new(buffer, command.split_whitespace().next().unwrap_or("")).unwrap();
             if let Some(comp_type) = Self::classify_word_type(&first_word) {

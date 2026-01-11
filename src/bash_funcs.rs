@@ -280,16 +280,14 @@ pub fn run_autocomplete_compspec(
     word_under_cursor: &str,           // "commi"
     cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
-) -> Vec<String> {
-    let mut res: Vec<String> = Vec::new();
-
+) -> Option<Vec<String>> {
     if !full_command.contains(command_word) {
         log::debug!(
             "Command word '{}' not found in full command '{}'",
             command_word,
             full_command
         );
-        return res;
+        return None;
     }
 
     unsafe {
@@ -313,6 +311,7 @@ pub fn run_autocomplete_compspec(
             log::debug!("found value: {}", found);
 
             if !compspec_comp.is_null() {
+                let mut res: Vec<String> = Vec::new();
                 // TODO: verify list len is correct. see the comment in bash_symbols.rs
                 log::debug!("compspec_comp result: {:?}", *compspec_comp);
                 for i in 0..((*compspec_comp).list_len) {
@@ -325,12 +324,14 @@ pub fn run_autocomplete_compspec(
                         res.push(str_slice.to_string());
                     }
                 }
+                Some(res)
             } else {
                 log::debug!("No completions returned from gen_compspec_completions");
+                None
             }
         } else {
             log::debug!("No compspec found for command");
+            None
         }
     }
-    res
 }
