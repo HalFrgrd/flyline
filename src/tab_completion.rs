@@ -741,7 +741,7 @@ mod tests {
         let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CursorOnBlank => {}
+            CompType::CursorOnBlank(_) => {}
             _ => panic!("Expected CursorOnBlank"),
         }
     }
@@ -802,7 +802,7 @@ mod tests {
         let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CursorOnBlank => {}
+            CompType::CursorOnBlank(_) => {}
             _ => panic!("Expected CursorOnBlank"),
         }
     }
@@ -901,7 +901,7 @@ mod tests {
         let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CursorOnBlank => {}
+            CompType::CursorOnBlank(_) => {}
             _ => panic!("Expected CursorOnBlank"),
         }
     }
@@ -952,7 +952,7 @@ mod tests {
         let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CursorOnBlank => {}
+            CompType::CursorOnBlank(_) => {}
             _ => panic!("Expected CursorOnBlank"),
         }
     }

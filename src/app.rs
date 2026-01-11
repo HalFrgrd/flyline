@@ -547,9 +547,7 @@ impl<'a> App<'a> {
                             "No bash autocomplete results for command: {}. Falling back to glob expansion.",
                             full_command
                         );
-                        let completions = Self::tab_complete_glob_expansion(
-                            &(word_under_cursor.s.to_string() + "*"),
-                        );
+                        let completions = Self::tab_complete_current_path(&word_under_cursor.s);
                         self.active_tab_suggestions = ActiveSuggestions::try_new(
                             completions,
                             word_under_cursor,
@@ -560,7 +558,7 @@ impl<'a> App<'a> {
             }
             tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
                 log::debug!("Cursor is on blank space, no tab completion performed");
-                let completions = Self::tab_complete_glob_expansion("*");
+                let completions = Self::tab_complete_current_path("");
                 self.active_tab_suggestions = ActiveSuggestions::try_new(
                     completions
                         .into_iter()
@@ -650,6 +648,29 @@ impl<'a> App<'a> {
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
         res
+    }
+
+    fn tab_complete_current_path(pattern: &str) -> Vec<Suggestion> {
+        let glob_results = Self::tab_complete_glob_expansion(&(pattern.to_string() + "*"));
+        let prefix_to_remove = pattern
+            .rsplit_once('/')
+            .map(|(p, _)| format!("{}/", p))
+            .unwrap_or_default();
+        log::debug!(
+            "Removing prefix '{}' from glob results for pattern '{}'",
+            prefix_to_remove,
+            pattern
+        );
+        glob_results
+            .into_iter()
+            .map(|mut sug| {
+                if let Some(rest) = sug.s.strip_prefix(&prefix_to_remove) {
+                    sug.prefix = prefix_to_remove.clone();
+                    sug.s = rest.to_string();
+                }
+                sug
+            })
+            .collect()
     }
 
     fn tab_complete_glob_expansion(pattern: &str) -> Vec<Suggestion> {
@@ -916,5 +937,20 @@ impl<'a> App<'a> {
         // Draw the buffer
 
         self.layout_manager.fit_content_to_frame(&mut content, f);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tab_complete_glob_expansion() {
+        for entry in glob::glob("*.md").unwrap() {
+            if let Ok(path) = entry {
+                println!("{:?}", path.display())
+            }
+        }
+        panic!("debug")
     }
 }
