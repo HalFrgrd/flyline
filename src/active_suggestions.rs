@@ -1,4 +1,4 @@
-use crate::text_buffer::SubString;
+use crate::text_buffer::{SubString, TextBuffer};
 
 pub struct ActiveSuggestions {
     pub suggestions: Vec<String>,
@@ -7,15 +7,34 @@ pub struct ActiveSuggestions {
 }
 
 impl ActiveSuggestions {
-    pub fn new(suggestions: Vec<String>, word_under_cursor: SubString) -> Self {
-        assert!(
-            suggestions.len() >= 2,
-            "ActiveSuggestions requires at least two suggestions"
-        );
-        ActiveSuggestions {
+    pub fn try_new(
+        suggestions: Vec<String>,
+        word_under_cursor: SubString,
+        buffer: &mut TextBuffer,
+    ) -> Option<Self> {
+        let active_suggestions = ActiveSuggestions {
             suggestions,
             selected_index: 0,
             word_under_cursor,
+        };
+
+        match active_suggestions.suggestions.as_slice() {
+            [] => {
+                log::debug!("No completions found");
+                None
+            }
+            [_] => {
+                active_suggestions.accept(buffer);
+                log::debug!("Only one completion found for first word: auto-accepted");
+                None
+            }
+            _ => {
+                log::debug!(
+                    "Multiple completions available: {:?}",
+                    active_suggestions.suggestions
+                );
+                Some(active_suggestions)
+            }
         }
     }
 
@@ -24,25 +43,11 @@ impl ActiveSuggestions {
         log::info!("Active suggestions: {:?}", self.suggestions);
         if shift_tab {
             let un_wrapped_index = self.selected_index as i64 - 1;
-            log::info!("Unwrapped index: {}", un_wrapped_index);
             let wrapped_index = un_wrapped_index.rem_euclid(self.suggestions.len() as i64);
-            log::info!("Wrapped index: {}", wrapped_index);
             self.selected_index = wrapped_index as usize;
         } else {
             self.selected_index = (self.selected_index + 1) % self.suggestions.len();
         }
-        log::info!(
-            "Selected suggestion: {}",
-            self.suggestions[self.selected_index]
-        );
-    }
-
-    pub fn on_enter(&self) -> (String, SubString) {
-        // Logic to handle enter key when active suggestions are present
-        (
-            self.suggestions[self.selected_index].clone(),
-            self.word_under_cursor.clone(),
-        )
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (&String, bool)> {
@@ -50,5 +55,16 @@ impl ActiveSuggestions {
             .iter()
             .enumerate()
             .map(move |(idx, suggestion)| (suggestion, idx == self.selected_index))
+    }
+
+    pub fn accept(self, buffer: &mut TextBuffer) {
+        let completion = &self.suggestions[self.selected_index];
+        let res = buffer.replace_word_under_cursor(&completion, &self.word_under_cursor);
+        match res {
+            Ok(_) => buffer.insert_char(' '),
+            Err(e) => {
+                log::error!("Error during tab completion: {}", e);
+            }
+        }
     }
 }

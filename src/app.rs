@@ -392,10 +392,8 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if let Some(active_suggestions) = &mut self.active_tab_suggestions {
-                    let (selected_completion, word_under_cursor) = active_suggestions.on_enter();
-                    self.handle_completion(vec![selected_completion], word_under_cursor);
-                    self.active_tab_suggestions = None;
+                if let Some(active_suggestions) = self.active_tab_suggestions.take() {
+                    active_suggestions.accept(&mut self.buffer);
                 } else {
                     // log::debug!("enter pressed with buffer: ");
                     // self.buffer.debug_buffer();
@@ -512,7 +510,11 @@ impl<'a> App<'a> {
         match completion_context.comp_type {
             tab_completion::CompType::FirstWord(word_under_cursor) => {
                 let completions = self.tab_complete_first_word(&word_under_cursor.s);
-                self.handle_completion(completions, word_under_cursor);
+                self.active_tab_suggestions = active_suggestions::ActiveSuggestions::try_new(
+                    completions,
+                    word_under_cursor,
+                    &mut self.buffer,
+                );
             }
             tab_completion::CompType::CommandComp {
                 full_command,
@@ -530,7 +532,12 @@ impl<'a> App<'a> {
                 match poss_completions {
                     Some(completions) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
-                        self.handle_completion(completions, word_under_cursor);
+                        self.active_tab_suggestions =
+                            active_suggestions::ActiveSuggestions::try_new(
+                                completions,
+                                word_under_cursor,
+                                &mut self.buffer,
+                            );
                     }
                     None => {
                         log::debug!(
@@ -540,14 +547,23 @@ impl<'a> App<'a> {
                         let completions = Self::tab_complete_glob_expansion(
                             &(word_under_cursor.s.to_string() + "*"),
                         );
-                        self.handle_completion(completions, word_under_cursor);
+                        self.active_tab_suggestions =
+                            active_suggestions::ActiveSuggestions::try_new(
+                                completions,
+                                word_under_cursor,
+                                &mut self.buffer,
+                            );
                     }
                 }
             }
             tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
                 log::debug!("Cursor is on blank space, no tab completion performed");
                 let completions = Self::tab_complete_glob_expansion("*");
-                self.handle_completion(completions, word_under_cursor);
+                self.active_tab_suggestions = active_suggestions::ActiveSuggestions::try_new(
+                    completions,
+                    word_under_cursor,
+                    &mut self.buffer,
+                );
             }
             tab_completion::CompType::EnvVariable(word_under_cursor) => {
                 log::debug!(
@@ -558,7 +574,11 @@ impl<'a> App<'a> {
             tab_completion::CompType::TildeExpansion(word_under_cursor) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = Self::tab_complete_tilde_expansion(&word_under_cursor.s);
-                self.handle_completion(completions, word_under_cursor);
+                self.active_tab_suggestions = active_suggestions::ActiveSuggestions::try_new(
+                    completions,
+                    word_under_cursor,
+                    &mut self.buffer,
+                );
             }
             tab_completion::CompType::GlobExpansion(word_under_cursor) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
@@ -573,41 +593,16 @@ impl<'a> App<'a> {
                         word_under_cursor.s
                     );
                 } else {
-                    self.handle_completion(vec![completions_as_string], word_under_cursor);
+                    self.active_tab_suggestions = active_suggestions::ActiveSuggestions::try_new(
+                        vec![completions_as_string],
+                        word_under_cursor,
+                        &mut self.buffer,
+                    );
                 }
             }
         }
 
         Some(())
-    }
-
-    fn handle_completion(&mut self, completions: Vec<String>, word_under_cursor: SubString) {
-        match completions.as_slice() {
-            [completion] => {
-                let res = self
-                    .buffer
-                    .replace_word_under_cursor(&completion, &word_under_cursor);
-                match res {
-                    Ok(_) => self.buffer.insert_char(' '),
-                    Err(e) => {
-                        log::error!("Error during tab completion: {}", e)
-                    }
-                }
-            }
-            [] => {
-                log::debug!(
-                    "No completions found for first word: {}",
-                    word_under_cursor.s
-                );
-            }
-            _ => {
-                log::debug!("Multiple completions available: {:?}", completions);
-                self.active_tab_suggestions = Some(active_suggestions::ActiveSuggestions::new(
-                    completions,
-                    word_under_cursor,
-                ));
-            }
-        }
     }
 
     fn tab_complete_first_word(&self, command: &str) -> Vec<String> {
