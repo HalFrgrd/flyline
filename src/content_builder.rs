@@ -118,25 +118,28 @@ impl Contents {
         self.logical_row_to_vis_row.len().saturating_sub(1) as u16
     }
 
-    pub fn set_edit_cursor_style(
-        &mut self,
-        unwrapped_cursor_row: u16,
-        unwrapped_cursor_col: u16,
-        style: ratatui::style::Style,
-    ) {
-        let wrapped_row_offset_from_this_line = unwrapped_cursor_col / self.width;
+    pub fn cursor_logical_to_visual(&self, logical_row: u16, logical_col: u16) -> (u16, u16) {
+        // takes coordinates in the formatted edit buffer
+        // and returns the coordinates in the visual buffer with line wrapping.
+        // These correspond to the coordinates on the terminal screen up to row translation by layout manager
+        let wrapped_row_offset_from_this_line = logical_col / self.width;
         let mut wrapped_cursor_row = self
             .logical_row_to_vis_row
-            .get(unwrapped_cursor_row as usize)
+            .get(logical_row as usize)
             .cloned()
             .unwrap_or(0);
         wrapped_cursor_row += wrapped_row_offset_from_this_line as u16;
-        let wrapped_cursor_col = unwrapped_cursor_col % self.width;
+        let wrapped_cursor_col = logical_col % self.width;
+        (wrapped_cursor_row, wrapped_cursor_col)
+    }
 
-        self.edit_cursor_pos = Some((wrapped_cursor_col, wrapped_cursor_row));
-        self.set_style(
-            Rect::new(wrapped_cursor_col, wrapped_cursor_row, 1, 1),
-            style,
-        );
+    pub fn set_edit_cursor_style(
+        &mut self,
+        vis_row: u16,
+        vis_col: u16,
+        style: ratatui::style::Style,
+    ) {
+        self.edit_cursor_pos = Some((vis_col, vis_row));
+        self.set_style(Rect::new(vis_col, vis_row, 1, 1), style);
     }
 }

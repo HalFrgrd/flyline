@@ -844,13 +844,13 @@ impl<'a> App<'a> {
             if self.mode.is_running()
                 && let Some(cursor_col_in_line) = cursor_col
             {
-                let formatted_cursor_col = cursor_col_in_line + line_offset;
-                // let row = (line_idx + ps1_line_count.saturating_sub(1)) as u16;
+                let cursor_logical_col = cursor_col_in_line + line_offset;
                 let cursor_logical_row = content.cursor_logical_row();
 
-                self.cursor_animation
-                    .update_position(0, formatted_cursor_col);
-                let (animated_cursor_col, _) = self.cursor_animation.get_position();
+                let (vis_row, vis_col) =
+                    content.cursor_logical_to_visual(cursor_logical_row, cursor_logical_col);
+                self.cursor_animation.update_position(vis_row, vis_col);
+                let (animated_vis_col, animated_vis_row) = self.cursor_animation.get_position();
 
                 let cursor_style = {
                     let cursor_intensity = self.cursor_animation.get_intensity();
@@ -861,12 +861,7 @@ impl<'a> App<'a> {
                     ))
                 };
 
-                // Note that the line wrapping is handled in Content
-                content.set_edit_cursor_style(
-                    cursor_logical_row,
-                    animated_cursor_col,
-                    cursor_style,
-                );
+                content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
             }
         }
 
