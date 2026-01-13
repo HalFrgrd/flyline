@@ -674,7 +674,6 @@ impl<'a> App<'a> {
     }
 
     fn tab_complete_glob_expansion(pattern: &str) -> Vec<Suggestion> {
-        // TODO: make this async and kill it if it takes too long
         use glob::glob;
         use std::path::Path;
 
@@ -701,8 +700,17 @@ impl<'a> App<'a> {
         // Use glob to find matching paths
         let mut results = Vec::new();
 
+        const MAX_GLOB_RESULTS: usize = 10_000;
+
         if let Ok(paths) = glob(&full_pattern) {
-            for path_result in paths {
+            for (idx, path_result) in paths.enumerate() {
+                if idx >= MAX_GLOB_RESULTS {
+                    log::debug!(
+                        "Reached maximum glob results limit of {}. Stopping further processing.",
+                        MAX_GLOB_RESULTS
+                    );
+                    break;
+                }
                 if let Ok(path) = path_result {
                     // Convert the path to a string relative to cwd (or absolute if pattern was absolute)
                     let path_str = if Path::new(pattern).is_absolute() {
@@ -767,8 +775,10 @@ impl<'a> App<'a> {
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(f.area().width);
 
-        for line in self.prompt_manager.get_ps1_lines() {
-            content.write_line(&line, false);
+        let mut ps1_line_count: usize = 0;
+        for (_, is_last, line) in self.prompt_manager.get_ps1_lines().iter().flag_first_last() {
+            content.write_line(&line, !is_last);
+            ps1_line_count += 1;
         }
 
         self.command_word_cells = vec![];
@@ -830,16 +840,17 @@ impl<'a> App<'a> {
                 line_offset = content.cursor_position().0;
                 content.write_line(&Line::from(line.to_owned()), false);
             }
-            // Draw cursor
+            // Draw cursor on this line
             if self.mode.is_running()
                 && let Some(cursor_col_in_line) = cursor_col
             {
                 let formatted_cursor_col = cursor_col_in_line + line_offset;
-                let formatted_cursor_row = content.cursor_position().1;
+                // let row = (line_idx + ps1_line_count.saturating_sub(1)) as u16;
+                let cursor_logical_row = content.cursor_logical_row();
 
                 self.cursor_animation
-                    .update_position(formatted_cursor_row, formatted_cursor_col);
-                let (cursor_col, cursor_row) = self.cursor_animation.get_position();
+                    .update_position(0, formatted_cursor_col);
+                let (animated_cursor_col, _) = self.cursor_animation.get_position();
 
                 let cursor_style = {
                     let cursor_intensity = self.cursor_animation.get_intensity();
@@ -851,7 +862,11 @@ impl<'a> App<'a> {
                 };
 
                 // Note that the line wrapping is handled in Content
-                content.set_edit_cursor_style(cursor_row, cursor_col, cursor_style);
+                content.set_edit_cursor_style(
+                    cursor_logical_row,
+                    animated_cursor_col,
+                    cursor_style,
+                );
             }
         }
 

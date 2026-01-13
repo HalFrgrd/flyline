@@ -6,8 +6,9 @@ use unicode_width::UnicodeWidthStr;
 pub struct Contents {
     pub buf: Vec<Vec<Cell>>, // each inner Vec is a row of Cells of width `width`
     pub width: u16,
-    cursor_pos_x: u16,
-    cursor_pos_y: u16,
+    cursor_vis_col: u16,
+    cursor_vis_row: u16,              // visual cursor position with line wrapping
+    logical_row_to_vis_row: Vec<u16>, // mapping from logical row to visual row
     pub edit_cursor_pos: Option<(u16, u16)>,
 }
 
@@ -20,18 +21,19 @@ impl Contents {
         Contents {
             buf: vec![],
             width,
-            cursor_pos_x: 0,
-            cursor_pos_y: 0,
+            cursor_vis_col: 0,
+            cursor_vis_row: 0,
+            logical_row_to_vis_row: vec![0],
             edit_cursor_pos: None,
         }
     }
 
     /// Get the current cursor position (x, y)
     pub fn cursor_position(&self) -> (u16, u16) {
-        (self.cursor_pos_x, self.cursor_pos_y)
+        (self.cursor_vis_col, self.cursor_vis_row)
     }
 
-    pub fn append_blank_row(&mut self) {
+    pub fn increase_buf_single_row(&mut self) {
         let blank_row = vec![Cell::default(); self.width as usize];
         self.buf.push(blank_row);
     }
@@ -46,12 +48,12 @@ impl Contents {
         let graphemes = span.styled_graphemes(span.style);
         for graph in graphemes {
             let graph_w = graph.symbol.width() as u16;
-            if graph_w + self.cursor_pos_x > self.width {
-                self.cursor_pos_y += 1;
-                self.cursor_pos_x = 0;
+            if graph_w + self.cursor_vis_col > self.width {
+                self.cursor_vis_row += 1;
+                self.cursor_vis_col = 0;
             }
 
-            let next_graph_x = self.cursor_pos_x + graph_w;
+            let next_graph_x = self.cursor_vis_col + graph_w;
             if next_graph_x > self.width {
                 // If the grapheme is still too wide after wrapping, skip it
                 // We probably start at cursor_pos_x=0 here, so very unlikely to happen
@@ -63,17 +65,17 @@ impl Contents {
                 continue;
             }
 
-            for _ in self.buf.len()..=self.cursor_pos_y as usize {
-                self.append_blank_row();
+            for _ in self.buf.len()..=self.cursor_vis_row as usize {
+                self.increase_buf_single_row();
             }
-            self.buf[self.cursor_pos_y as usize][self.cursor_pos_x as usize]
+            self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize]
                 .set_symbol(&graph.symbol)
                 .set_style(graph.style);
-            self.cursor_pos_x += 1;
+            self.cursor_vis_col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
-            while self.cursor_pos_x < next_graph_x {
-                self.buf[self.cursor_pos_y as usize][self.cursor_pos_x as usize].reset();
-                self.cursor_pos_x += 1;
+            while self.cursor_vis_col < next_graph_x {
+                self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize].reset();
+                self.cursor_vis_col += 1;
             }
         }
     }
@@ -85,20 +87,20 @@ impl Contents {
             self.write_span(span);
         }
         if insert_new_line {
-            self.cursor_pos_y += 1;
-            self.cursor_pos_x = 0;
+            self.newline();
         }
     }
 
     /// Move to the next line (carriage return + line feed)
     pub fn newline(&mut self) {
-        self.cursor_pos_y += 1;
-        self.cursor_pos_x = 0;
+        self.cursor_vis_row += 1;
+        self.logical_row_to_vis_row.push(self.cursor_vis_row);
+        self.cursor_vis_col = 0;
     }
 
     fn set_style(&mut self, area: Rect, style: ratatui::style::Style) {
         for _ in self.buf.len()..area.bottom() as usize {
-            self.append_blank_row();
+            self.increase_buf_single_row();
         }
 
         for y in area.top()..area.bottom() {
@@ -112,14 +114,25 @@ impl Contents {
         }
     }
 
+    pub fn cursor_logical_row(&self) -> u16 {
+        self.logical_row_to_vis_row.len().saturating_sub(1) as u16
+    }
+
     pub fn set_edit_cursor_style(
         &mut self,
-        visual_cursor_row: u16,
-        visual_cursor_col: u16,
+        unwrapped_cursor_row: u16,
+        unwrapped_cursor_col: u16,
         style: ratatui::style::Style,
     ) {
-        let wrapped_cursor_row = visual_cursor_row + (visual_cursor_col / self.width) as u16;
-        let wrapped_cursor_col = visual_cursor_col % self.width;
+        let wrapped_row_offset_from_this_line = unwrapped_cursor_col / self.width;
+        let mut wrapped_cursor_row = self
+            .logical_row_to_vis_row
+            .get(unwrapped_cursor_row as usize)
+            .cloned()
+            .unwrap_or(0);
+        wrapped_cursor_row += wrapped_row_offset_from_this_line as u16;
+        let wrapped_cursor_col = unwrapped_cursor_col % self.width;
+
         self.edit_cursor_pos = Some((wrapped_cursor_col, wrapped_cursor_row));
         self.set_style(
             Rect::new(wrapped_cursor_col, wrapped_cursor_row, 1, 1),
