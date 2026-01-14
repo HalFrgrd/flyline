@@ -850,7 +850,7 @@ impl<'a> App<'a> {
                 let (vis_row, vis_col) =
                     content.cursor_logical_to_visual(cursor_logical_row, cursor_logical_col);
                 self.cursor_animation.update_position(vis_row, vis_col);
-                let (animated_vis_col, animated_vis_row) = self.cursor_animation.get_position();
+                let (animated_vis_row, animated_vis_col) = self.cursor_animation.get_position();
 
                 let cursor_style = {
                     let cursor_intensity = self.cursor_animation.get_intensity();

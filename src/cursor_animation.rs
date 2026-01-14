@@ -2,29 +2,29 @@ use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Coord {
-    x: usize,
-    y: usize,
+    row: u16,
+    col: u16,
 }
 
 impl Coord {
-    fn new(x: usize, y: usize) -> Self {
-        Coord { x, y }
+    fn new(row: u16, col: u16) -> Self {
+        Coord { row, col }
     }
 
     fn abs_diff(&self, other: &Coord) -> usize {
-        self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
+        self.col.abs_diff(other.col) as usize + self.row.abs_diff(other.row) as usize
     }
 
     fn interpolate(&self, other: &Coord, factor: f32) -> Coord {
         // factor = 0.0 => self
         // factor = 1.0 => other
-        let x = self.x as f32 + (other.x as f32 - self.x as f32) * factor;
-        let y = self.y as f32 + (other.y as f32 - self.y as f32) * factor;
-        Coord::new(x as usize, y as usize)
+        let col = self.col as f32 + (other.col as f32 - self.col as f32) * factor;
+        let row = self.row as f32 + (other.row as f32 - self.row as f32) * factor;
+        Coord::new(row as u16, col as u16)
     }
 
-    fn to_tuple(&self) -> (usize, usize) {
-        (self.x, self.y)
+    fn to_tuple(&self) -> (u16, u16) {
+        (self.row, self.col)
     }
 }
 
@@ -45,10 +45,14 @@ impl CursorAnimation {
     }
 
     pub fn update_position(&mut self, new_row: u16, new_col: u16) {
-        let new_pos = Coord::new(new_col as usize, new_row as usize);
+        let new_pos = Coord::new(new_row, new_col);
         if new_pos != self.target_pos {
             self.time_of_change = Instant::now();
             self.prev_pos = self.target_pos;
+            if self.prev_pos == Coord::new(0, 0) {
+                // First time setting position, no animation
+                self.prev_pos = new_pos;
+            }
             self.target_pos = new_pos;
         }
     }
@@ -63,11 +67,11 @@ impl CursorAnimation {
             factor = 1.0;
         }
 
-        let (interpolated_x, _) = self
+        let (interpolated_row, interpolated_col) = self
             .prev_pos
             .interpolate(&self.target_pos, factor.min(1.0))
             .to_tuple();
-        (interpolated_x as u16, self.target_pos.y as u16) // Trying to keep y stable
+        (interpolated_row as u16, interpolated_col as u16)
     }
 
     pub fn get_intensity(&self) -> u8 {
