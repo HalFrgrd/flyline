@@ -1,6 +1,6 @@
 
 18:17:43.200323 write(2, "\33[?2004h", 8) = 8
-18:17:43.200659 write(2, "myprompt> ooutput of jobu\r\n", 27) = 27
+18:17:43.200659 write(2, "myprompt> ooutput of flyline\r\n", 27) = 27
 18:17:44.879938 read(0, "j", 1)         = 1
 18:17:44.880070 write(2, "\r\33[K\r", 5) = 5
 18:17:44.880345 write(1, "\33[?1049h", 8) = 8
@@ -10,7 +10,7 @@
 18:17:44.881106 write(2, "\33[?1049l", 8) = 8
 18:17:44.883426 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=179504, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
 18:17:44.883776 write(2, "\33[?2004h", 8) = 8
-18:17:44.884182 write(2, "myprompt> ooutput of jobu\r\n", 27) = 27
+18:17:44.884182 write(2, "myprompt> ooutput of flyline\r\n", 27) = 27
 18:17:45.885104 read(0, "e", 1)         = 1
 18:17:45.885223 write(2, "e", 1)        = 1
 18:17:46.088326 read(0, "x", 1)         = 1

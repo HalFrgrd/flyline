@@ -11,13 +11,13 @@
 
 bind "set enable-bracketed-paste off"
 
-jobu_start_of_prompt() {
+flyline_start_of_prompt() {
     sleep 1
     stty -echo
     printf "\033[5n"
 }
 
-PROMPT_COMMAND='jobu_start_of_prompt'
+PROMPT_COMMAND='flyline_start_of_prompt'
 PS1="MYPROMPT>\n"
 bind '"\e[0n": "fj"'
 bind -x '"f": READLINE_LINE="echo hellow"'

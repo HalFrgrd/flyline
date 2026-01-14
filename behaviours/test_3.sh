@@ -11,10 +11,10 @@
 
 bind "set enable-bracketed-paste off"
 
-jobu_start_of_prompt() {
-    JOBU_NEED_RESTORE_OUTPUT=1
+flyline_start_of_prompt() {
+    FLYLINE_NEED_RESTORE_OUTPUT=1
     sleep 2
-    JOBU_COMMAND="ls -l | head"
+    FLYLINE_COMMAND="ls -l | head"
 
     bind -x '"a": READLINE_LINE="echo hellow"'
     bind '"j": accept-line'
@@ -25,12 +25,12 @@ jobu_start_of_prompt() {
     printf "\033[5n"
 }
 
-PROMPT_COMMAND='jobu_start_of_prompt'
+PROMPT_COMMAND='flyline_start_of_prompt'
 PS1="MYPROMPT>\n"
 
 
-jobu_end_of_prompt() {
-    READLINE_LINE=${JOBU_COMMAND};
+flyline_end_of_prompt() {
+    READLINE_LINE=${FLYLINE_COMMAND};
     READLINE_POINT=${#READLINE_LINE};
 
     bind '"a": self-insert'
@@ -38,12 +38,12 @@ jobu_end_of_prompt() {
     bind -r '\e[0n'
 }
 
-jobu_restore_output() {
-    if [ -z "$JOBU_NEED_RESTORE_OUTPUT" ]; then
+flyline_restore_output() {
+    if [ -z "$FLYLINE_NEED_RESTORE_OUTPUT" ]; then
         returnp
     fi
-    unset JOBU_NEED_RESTORE_OUTPUT
+    unset FLYLINE_NEED_RESTORE_OUTPUT
     stty echo
 }
 
-trap 'jobu_restore_output' DEBUG
+trap 'flyline_restore_output' DEBUG

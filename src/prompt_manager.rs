@@ -25,7 +25,7 @@ impl PromptManager {
     }
 
     pub fn get_ps1_lines(&self) -> Vec<Line<'static>> {
-        const JOBU_TIME_STR: &str = "JOBU_TIME_XX";
+        const FLYLINE_TIME_STR: &str = "FLYLINE_TIME";
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap();
@@ -45,7 +45,10 @@ impl PromptManager {
                     .spans
                     .into_iter()
                     .map(|span| {
-                        Span::styled(span.content.replace(JOBU_TIME_STR, &time_str), span.style)
+                        Span::styled(
+                            span.content.replace(FLYLINE_TIME_STR, &time_str),
+                            span.style,
+                        )
                     })
                     .collect();
                 Line::from(spans)

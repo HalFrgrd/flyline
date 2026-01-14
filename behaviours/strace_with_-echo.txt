@@ -2,7 +2,7 @@
 21:29:12.336952 read(3, "", 4096)       = 0
 21:29:12.337029 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902181, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
 21:29:20.423988 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902184, si_uid=1000, si_status=0, si_utime=28 /* 0.28 s */, si_stime=0} ---
-jobu is running. it is reading from stdin so we dont see bash reading from stdin
+flyline is running. it is reading from stdin so we dont see bash reading from stdin
 21:29:20.424655 read(3, "COMMAND: sleep 1\n", 4096) = 17
 21:29:20.425663 read(3, "", 4096)       = 0
 21:29:20.425756 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2902411, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
@@ -34,7 +34,7 @@ Now with `stty -echo`
 21:32:13.215902 read(0, "[", 1)         = 1
 21:32:13.215963 read(0, "0", 1)         = 1
 21:32:13.216015 read(0, "n", 1)         = 1
-) = 5                                            # but readline doesnt echo READLINE_LINE after it runs jobu_end_of_prompt
+) = 5                                            # but readline doesnt echo READLINE_LINE after it runs flyline_end_of_prompt
 21:32:13.217599 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2907309, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
 21:32:14.220250 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=2907310, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
 21:32:14.221160 read(3, "/tmp/tmp.eGWKb4YbwC\n", 4096) = 20

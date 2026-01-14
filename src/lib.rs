@@ -23,11 +23,11 @@ mod tab_completion;
 mod text_buffer;
 
 // Global state for our custom input stream
-static JOBU_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Jobu>>>> = Mutex::new(None);
+static FLYLINE_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Flyline>>>> = Mutex::new(None);
 
 // C-compatible getter function that bash will call
-extern "C" fn jobu_get_char() -> c_int {
-    if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
+extern "C" fn flyline_get_char() -> c_int {
+    if let Some(arc) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_ref() {
         if let Ok(mut stream) = arc.lock() {
             return stream.get();
         }
@@ -36,13 +36,13 @@ extern "C" fn jobu_get_char() -> c_int {
 }
 
 // C-compatible ungetter function that bash will call
-extern "C" fn jobu_unget_char(c: c_int) -> c_int {
+extern "C" fn flyline_unget_char(c: c_int) -> c_int {
     // log::debug!(
-    //     "Calling jobu_unget with char: {} (asci={})",
+    //     "Calling flyline_unget with char: {} (asci={})",
     //     c,
     //     c as u8 as char
     // );
-    if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
+    if let Some(arc) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_ref() {
         if let Ok(mut stream) = arc.lock() {
             return stream.unget(c);
         }
@@ -52,13 +52,13 @@ extern "C" fn jobu_unget_char(c: c_int) -> c_int {
 
 fn setup_logging() -> Result<()> {
     let home_dir = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let log_file_path = PathBuf::from(home_dir).join("jobu.logs");
+    let log_file_path = PathBuf::from(home_dir).join("flyline.logs");
 
     // Initialize simple-logging to write to file
     simple_logging::log_to_file(&log_file_path, log::LevelFilter::Debug)?;
 
     log::info!(
-        "Jobu logging initialized, output will be logged to: {}",
+        "Flyline logging initialized, output will be logged to: {}",
         log_file_path.display()
     );
 
@@ -66,13 +66,13 @@ fn setup_logging() -> Result<()> {
 }
 
 #[derive(Debug)]
-struct Jobu {
+struct Flyline {
     content: Vec<u8>,
     position: usize,
     history: history::HistoryManager,
 }
 
-impl Jobu {
+impl Flyline {
     fn new() -> Self {
         Self {
             content: vec![],
@@ -82,7 +82,7 @@ impl Jobu {
     }
 
     fn get(&mut self) -> c_int {
-        log::debug!("Getting byte from jobu input stream");
+        log::debug!("Getting byte from flyline input stream");
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("Input stream is empty or at end, fetching new command");
             log::debug!(
@@ -139,9 +139,9 @@ impl Jobu {
     }
 }
 
-struct JobuSentinel;
+struct FlylineSentinel;
 
-impl Default for JobuSentinel {
+impl Default for FlylineSentinel {
     fn default() -> Self {
         setup_logging().unwrap_or_else(|e| {
             eprintln!("Failed to setup logging: {}", e);
@@ -174,23 +174,23 @@ impl Default for JobuSentinel {
                     // and then with_input_from_stdin won't add readline
                     // stream_on_stack (st_stdin) will be true.
                     // This basically takes over the sentinel node at the base of the stream_list
-                    println!("Setting jobu input stream at the head of the list");
-                    let name = std::ffi::CString::new("jobu_input").unwrap();
+                    println!("Setting flyline input stream at the head of the list");
+                    let name = std::ffi::CString::new("flyline_input").unwrap();
 
                     stream_list_head.bash_input.type_ = bash_symbols::StreamType::StStdin;
                     stream_list_head.bash_input.name = name.as_ptr() as *mut i8;
-                    stream_list_head.bash_input.getter = Some(jobu_get_char);
-                    stream_list_head.bash_input.ungetter = Some(jobu_unget_char);
+                    stream_list_head.bash_input.getter = Some(flyline_get_char);
+                    stream_list_head.bash_input.ungetter = Some(flyline_unget_char);
 
                     std::mem::forget(name);
                 } else {
                     log::error!(
-                        "stream_list has more than one entry, cannot set jobu input stream"
+                        "stream_list has more than one entry, cannot set flyline input stream"
                     );
                 }
             } else {
                 log::error!(
-                    "{:?} {:?} cannot set jobu input stream",
+                    "{:?} {:?} cannot set flyline input stream",
                     stream_is_null,
                     bash_symbols::interactive_shell
                 );
@@ -198,8 +198,8 @@ impl Default for JobuSentinel {
         }
 
         // Store the Arc globally so C callbacks can access it
-        *JOBU_INSTANCE_PTR.lock().unwrap() = Some(Arc::new(Mutex::new(Jobu::new())));
-        JobuSentinel {}
+        *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Arc::new(Mutex::new(Flyline::new())));
+        FlylineSentinel {}
     }
 }
 
@@ -212,9 +212,9 @@ enum Opt {
     // #[opt = 'h']
 }
 
-impl Builtin for JobuSentinel {
+impl Builtin for FlylineSentinel {
     fn call(&mut self, args: &mut Args) -> Result<()> {
-        // let _state = __bash_builtin__state_jobu().lock().unwrap();
+        // let _state = __bash_builtin__state_flyline().lock().unwrap();
 
         // No options: print the current value and increment it.
         if args.is_empty() {
@@ -258,10 +258,10 @@ impl Builtin for JobuSentinel {
                     }
                 }
                 Opt::SetKeyBinding(binding) => {
-                    println!("Setting key binding for jobu: {}", binding);
-                    // if let Some(arc) = JOBU_INSTANCE_PTR.lock().unwrap().as_ref() {
-                    //     if let Ok(mut jobu) = arc.lock() {
-                    //         jobu.new_setting(&binding);
+                    println!("Setting key binding for flyline: {}", binding);
+                    // if let Some(arc) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_ref() {
+                    //     if let Ok(mut flyline) = arc.lock() {
+                    //         flyline.new_setting(&binding);
                     //     }
                     // }
                 }
@@ -276,10 +276,10 @@ impl Builtin for JobuSentinel {
 }
 
 builtin_metadata!(
-    name = "jobu",
-    create = JobuSentinel::default,
-    short_doc = "Set jobu as a custom input stream for bash.",
+    name = "flyline",
+    create = FlylineSentinel::default,
+    short_doc = "Set flyline as a custom input stream for bash.",
     long_doc = "
-        Set jobu as a custom input stream for bash.
+        Set flyline as a custom input stream for bash.
     ",
 );
