@@ -26,7 +26,7 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
+pub fn get_command(history: &mut HistoryManager) -> String {
     let options = TerminalOptions {
         viewport: Viewport::Fullscreen,
     };
@@ -39,7 +39,9 @@ pub fn get_command(ps1_prompt: String, history: &mut HistoryManager) -> String {
 
     let runtime = build_runtime();
 
-    let mut app = App::new(ps1_prompt, history, terminal.get_frame().area());
+
+
+    let mut app = App::new(history, terminal.get_frame().area());
     let command = runtime.block_on(app.run(terminal));
 
     crossterm::terminal::disable_raw_mode().unwrap();
@@ -111,6 +113,7 @@ struct App<'a> {
     animation_tick: u64,
     cursor_animation: CursorAnimation,
     prompt_manager: PromptManager,
+    home_path: String,
     /// Parsed bash history available at startup.
     history_manager: &'a mut HistoryManager,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
@@ -129,10 +132,26 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(ps1: String, history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
+    fn new(history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
         // TODO: fetch these in background
-        const PATH_VAR: &str = "PATH";
-        let path_var = bash_builtins::variables::find_as_string(PATH_VAR);
+       
+        let ps1_prompt = bash_builtins::variables::find_as_string("PS1")
+            .as_ref()
+            .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+            .unwrap_or("default> ".into());
+
+        let user = bash_builtins::variables::find_as_string("USER")
+            .as_ref()
+            .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+            .unwrap_or("user".into());
+
+        let home_path = bash_builtins::variables::find_as_string("HOME")
+            .as_ref()
+            .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+            .unwrap_or("/home/".to_string() + &user);
+       
+       
+        let path_var = bash_builtins::variables::find_as_string("PATH");
         let executables = if let Some(path_str) = path_var.as_ref().and_then(|v| v.to_str().ok()) {
             App::get_executables_from_path(path_str)
         } else {
@@ -145,7 +164,8 @@ impl<'a> App<'a> {
             buffer: TextBuffer::new(""),
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
-            prompt_manager: PromptManager::new(ps1),
+            prompt_manager: PromptManager::new(ps1_prompt),
+            home_path: home_path,
             history_manager: history,
             call_type_cache: std::collections::HashMap::new(),
             layout_manager: LayoutManager::new(terminal_area),
@@ -547,7 +567,7 @@ impl<'a> App<'a> {
                             "No bash autocomplete results for command: {}. Falling back to glob expansion.",
                             full_command
                         );
-                        let completions = Self::tab_complete_current_path(&word_under_cursor.s);
+                        let completions = self.tab_complete_current_path(&word_under_cursor.s);
                         self.active_tab_suggestions = ActiveSuggestions::try_new(
                             completions,
                             word_under_cursor,
@@ -558,7 +578,7 @@ impl<'a> App<'a> {
             }
             tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
                 log::debug!("Cursor is on blank space, no tab completion performed");
-                let completions = Self::tab_complete_current_path("");
+                let completions = self.tab_complete_current_path("");
                 self.active_tab_suggestions = ActiveSuggestions::try_new(
                     completions
                         .into_iter()
@@ -579,13 +599,13 @@ impl<'a> App<'a> {
             }
             tab_completion::CompType::TildeExpansion(word_under_cursor) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
-                let completions = Self::tab_complete_tilde_expansion(&word_under_cursor.s);
+                let completions = self.tab_complete_tilde_expansion(&word_under_cursor.s);
                 self.active_tab_suggestions =
                     ActiveSuggestions::try_new(completions, word_under_cursor, &mut self.buffer);
             }
             tab_completion::CompType::GlobExpansion(word_under_cursor) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
-                let completions = Self::tab_complete_glob_expansion(&word_under_cursor.s);
+                let completions = self.tab_complete_glob_expansion(&word_under_cursor.s);
 
                 // Unlike other completions, if there are multiple glob completions,
                 // we join them with spaces and insert them all at once.
@@ -650,8 +670,8 @@ impl<'a> App<'a> {
         res
     }
 
-    fn tab_complete_current_path(pattern: &str) -> Vec<Suggestion> {
-        let glob_results = Self::tab_complete_glob_expansion(&(pattern.to_string() + "*"));
+    fn tab_complete_current_path(&self, pattern: &str) -> Vec<Suggestion> {
+        let glob_results = self.tab_complete_glob_expansion(&(pattern.to_string() + "*"));
         let prefix_to_remove = pattern
             .rsplit_once('/')
             .map(|(p, _)| format!("{}/", p))
@@ -673,16 +693,18 @@ impl<'a> App<'a> {
             .collect()
     }
 
-    fn tab_complete_glob_expansion(pattern: &str) -> Vec<Suggestion> {
+    fn expand_path_pattern(&self, pattern: &str) -> String {
+        // TODO expand other variables?
+        pattern.replace("~/", &(self.home_path.to_string() + "/"))
+    }
+
+    fn tab_complete_glob_expansion(&self, pattern: &str) -> Vec<Suggestion> {
         use glob::glob;
         use std::path::Path;
 
         log::debug!("Performing glob expansion for pattern: {}", pattern);
 
-        if pattern.contains("**") {
-            log::debug!("Pattern contains '**', which is not supported. Returning no completions.");
-            return vec![];
-        }
+        let pattern = &self.expand_path_pattern(pattern);
 
         // Get the current working directory for relative paths
         let cwd = match std::env::current_dir() {
@@ -700,7 +722,7 @@ impl<'a> App<'a> {
         // Use glob to find matching paths
         let mut results = Vec::new();
 
-        const MAX_GLOB_RESULTS: usize = 10_000;
+        const MAX_GLOB_RESULTS: usize = 1_000;
 
         if let Ok(paths) = glob(&full_pattern) {
             for (idx, path_result) in paths.enumerate() {
@@ -743,14 +765,14 @@ impl<'a> App<'a> {
         results
     }
 
-    fn tab_complete_tilde_expansion(pattern: &str) -> Vec<Suggestion> {
+    fn tab_complete_tilde_expansion(&self, pattern: &str) -> Vec<Suggestion> {
         let user_pattern = if pattern.starts_with('~') {
             &pattern[1..]
         } else {
             return vec![];
         };
 
-        Self::tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
+        self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
     }
 
     fn get_command_type(&self, cmd: &str) -> (bash_funcs::CommandType, String) {
@@ -775,10 +797,8 @@ impl<'a> App<'a> {
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(f.area().width);
 
-        let mut ps1_line_count: usize = 0;
         for (_, is_last, line) in self.prompt_manager.get_ps1_lines().iter().flag_first_last() {
             content.write_line(&line, !is_last);
-            ps1_line_count += 1;
         }
 
         self.command_word_cells = vec![];
@@ -950,17 +970,3 @@ impl<'a> App<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tab_complete_glob_expansion() {
-        for entry in glob::glob("*.md").unwrap() {
-            if let Ok(path) = entry {
-                println!("{:?}", path.display())
-            }
-        }
-        panic!("debug")
-    }
-}

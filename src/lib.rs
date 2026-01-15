@@ -94,14 +94,9 @@ impl Flyline {
                 log::debug!("Existing content byte: {} (asci={})", b, *b as char);
             }
 
-            const PS1_VAR_NAME: &str = "PS1";
-            let ps1_prompt = bash_builtins::variables::find_as_string(PS1_VAR_NAME)
-                .as_ref()
-                .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
-                .unwrap_or("default> ".into());
 
             log::debug!("---------------------- Starting app ------------------------");
-            self.content = app::get_command(ps1_prompt, &mut self.history).into_bytes();
+            self.content = app::get_command(&mut self.history).into_bytes();
             log::debug!("---------------------- App finished ------------------------");
             let timestamp: Option<u64> = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
