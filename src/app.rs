@@ -38,7 +38,7 @@ fn set_panic_hook() {
     }));
 }
 
-pub fn get_command(history: &mut HistoryManager) -> AppRunningState {
+pub fn get_command(history: &mut HistoryManager, starting_content: String) -> AppRunningState {
     // if let Err(e) = color_eyre::install() {
     //     log::error!("Failed to install color_eyre panic handler: {}", e);
     // }
@@ -51,17 +51,11 @@ pub fn get_command(history: &mut HistoryManager) -> AppRunningState {
 
     // backend.get_cursor_position().unwrap();
 
-    let options = TerminalOptions {
-        viewport: Viewport::Inline(1),
-    };
-    let mut terminal =
-        ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
-    terminal.hide_cursor().unwrap();
 
     let runtime = build_runtime();
 
-    let mut app = App::new(history);
-    let end_state = runtime.block_on(app.run(terminal));
+    let mut app = App::new(history, starting_content);
+    let end_state = runtime.block_on(app.run(backend));
 
     restore();
     app.mouse_state.disable();
@@ -118,7 +112,7 @@ pub enum AppRunningState {
     Running,
     ExitingWithCommand(String),
     ExitingWithoutCommand,
-    ExitingForResize,
+    ExitingForResize(String),
 }
 
 impl AppRunningState {
@@ -151,7 +145,7 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(history: &'a mut HistoryManager) -> Self {
+    fn new(history: &'a mut HistoryManager, starting_content: String) -> Self {
         // TODO: fetch these in background
 
         let ps1_prompt = bash_builtins::variables::find_as_string("PS1")
@@ -179,7 +173,7 @@ impl<'a> App<'a> {
         history.new_session();
         App {
             mode: AppRunningState::Running,
-            buffer: TextBuffer::new(""),
+            buffer: TextBuffer::new(&starting_content),
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(ps1_prompt),
@@ -201,7 +195,16 @@ impl<'a> App<'a> {
         }
     }
 
-    pub async fn run(&mut self, mut terminal: DefaultTerminal) -> AppRunningState {
+    pub async fn run(&mut self, backend: ratatui::backend::CrosstermBackend<std::io::Stdout>) -> AppRunningState {
+
+        let options = TerminalOptions {
+            viewport: Viewport::Inline(1),
+        };
+        let mut terminal =
+            ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
+        terminal.hide_cursor().unwrap();
+
+
         // Update application state here
         let mut events = events::EventHandler::new();
         let mut redraw = true;
@@ -209,15 +212,17 @@ impl<'a> App<'a> {
         loop {
             if redraw {
                 let width = terminal.get_frame().area().width;
-                let mut content = if self.mode == AppRunningState::ExitingForResize {
+                let mut content = if let AppRunningState::ExitingForResize(_) = self.mode {
                     // Basically clear the contents
+                    if let Err(e) = terminal.clear() {
+                        log::error!("Failed to clear terminal: {}", e);
+                    }
                     Contents::new(width)
                 } else {
                     self.create_content(width)
                 };
 
-                let put_cursor_below_content =
-                    !self.mode.is_running() && self.mode != AppRunningState::ExitingForResize;
+                let put_cursor_below_content = !self.mode.is_running();
 
                 if put_cursor_below_content {
                     content.increase_buf_single_row(); // so that we can put the terminal emulators cursor below the content
@@ -228,11 +233,14 @@ impl<'a> App<'a> {
                 }
                 // TODO: "scroll" content if needed
 
-                // The problem is that draw might try and query the cursor_position if it needs resizing
-                // and we are using Inline viewport.
-                // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
-                if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
-                    log::error!("Failed to draw terminal UI: {}", e);
+                if let AppRunningState::ExitingForResize(_) = self.mode {
+                } else {
+                    // The problem is that draw might try and query the cursor_position if it needs resizing
+                    // and we are using Inline viewport.
+                    // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
+                    if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
+                        log::error!("Failed to draw terminal UI: {}", e);
+                    }
                 }
 
                 // let content_height = content.height();
@@ -277,7 +285,8 @@ impl<'a> App<'a> {
                     }
                     events::Event::Resize(new_cols, new_rows) => {
                         log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
-                        self.mode = AppRunningState::ExitingForResize;
+                        self.mode =
+                            AppRunningState::ExitingForResize(self.buffer.buffer().to_string());
 
                         // Pause the event handler to prevent it from consuming cursor position responses
                         if let Err(e) = terminal.resize(Rect {
