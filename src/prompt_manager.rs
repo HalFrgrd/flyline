@@ -1,5 +1,5 @@
 use ansi_to_tui::IntoText;
-use ratatui::text::{Line, Span, Text};
+use ratatui::prelude::*;
 
 pub struct PromptManager {
     // TODO think of lifetimes

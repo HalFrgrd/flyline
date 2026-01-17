@@ -26,7 +26,7 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-pub fn get_command(history: &mut HistoryManager) -> String {
+pub fn get_command(history: &mut HistoryManager) -> AppRunningState {
     let options = TerminalOptions {
         viewport: Viewport::Fullscreen,
     };
@@ -40,13 +40,13 @@ pub fn get_command(history: &mut HistoryManager) -> String {
     let runtime = build_runtime();
 
     let mut app = App::new(history, terminal.get_frame().area());
-    let command = runtime.block_on(app.run(terminal));
+    let end_state = runtime.block_on(app.run(terminal));
 
     crossterm::terminal::disable_raw_mode().unwrap();
     app.mouse_state.disable();
 
-    log::debug!("Final command: {}", command);
-    command
+    log::debug!("Final state: {:?}", end_state);
+    end_state
 }
 
 struct MouseState {
@@ -92,11 +92,12 @@ impl MouseState {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum AppRunningState {
     Running,
-    ExitingWithCommand,
+    ExitingWithCommand(String),
     ExitingWithoutCommand,
+    ExitingForResize,
 }
 
 impl AppRunningState {
@@ -181,11 +182,15 @@ impl<'a> App<'a> {
         }
     }
 
-    pub async fn run(&mut self, mut terminal: DefaultTerminal) -> String {
+    pub async fn run(&mut self, mut terminal: DefaultTerminal) -> AppRunningState {
         // Update application state here
         let mut events = events::EventHandler::new();
         let mut redraw = true;
         loop {
+            if self.mode == AppRunningState::ExitingForResize {
+                break;
+            }
+
             if redraw {
                 terminal.draw(|f| self.ui(f)).unwrap();
             }
@@ -216,17 +221,14 @@ impl<'a> App<'a> {
                     }
                     events::Event::Resize(new_cols, new_rows) => {
                         log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
+                        self.mode = AppRunningState::ExitingForResize;
                         true
                     }
                 }
             }
         }
 
-        if self.mode == AppRunningState::ExitingWithCommand {
-            self.buffer.buffer().to_owned()
-        } else {
-            String::new()
-        }
+        self.mode.clone()
     }
 
     fn get_executables_from_path(path: &str) -> Vec<(PathBuf, String)> {
@@ -421,7 +423,8 @@ impl<'a> App<'a> {
                         || self.buffer.is_cursor_at_trimmed_end())
                         && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
                     {
-                        self.mode = AppRunningState::ExitingWithCommand;
+                        self.mode =
+                            AppRunningState::ExitingWithCommand(self.buffer.buffer().to_string());
                     } else {
                         self.buffer.insert_newline();
                     }
@@ -489,7 +492,7 @@ impl<'a> App<'a> {
             } => {
                 self.buffer.move_to_start();
                 self.buffer.insert_str("#");
-                self.mode = AppRunningState::ExitingWithCommand;
+                self.mode = AppRunningState::ExitingWithCommand(self.buffer.buffer().to_string());
             }
             KeyEvent {
                 code: KeyCode::Char(c),

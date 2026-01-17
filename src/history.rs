@@ -93,11 +93,11 @@ impl HistoryManager {
         self.last_search_prefix = None;
     }
 
-    pub fn add_entry(&mut self, ts: Option<u64>, command: String) {
+    pub fn add_entry(&mut self, ts: Option<u64>, command: &str) {
         let entry = HistoryEntry {
             timestamp: ts,
             index: self.entries.len(),
-            command,
+            command: command.to_string(),
         };
         self.entries.push(entry);
     }

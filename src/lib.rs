@@ -95,19 +95,20 @@ impl Flyline {
             }
 
             log::debug!("---------------------- Starting app ------------------------");
-            self.content = app::get_command(&mut self.history).into_bytes();
+            self.content = match app::get_command(&mut self.history) {
+                app::AppRunningState::ExitingWithCommand(cmd) => {
+                    let timestamp: Option<u64> = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|d| d.as_secs());
+                    self.history.add_entry(timestamp, &cmd);
+                    cmd.into_bytes()
+                }
+                app::AppRunningState::ExitingForResize => vec![],
+                app::AppRunningState::Running => vec![],
+                app::AppRunningState::ExitingWithoutCommand => vec![],
+            };
             log::debug!("---------------------- App finished ------------------------");
-            let timestamp: Option<u64> = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_secs());
-            self.history.add_entry(
-                timestamp,
-                String::from_utf8_lossy(&self.content)
-                    .trim_end()
-                    .to_string(),
-            );
-
             self.content.push(b'\n');
             self.position = 0;
         }
