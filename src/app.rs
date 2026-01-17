@@ -50,7 +50,7 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
 
     // backend.get_cursor_position().unwrap();
-
+    
 
     let runtime = build_runtime();
 
@@ -92,7 +92,7 @@ impl MouseState {
     fn enable(&mut self) {
         if !self.is_enabled {
             let mut stdout = std::io::stdout();
-            crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
+            // crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
             self.is_enabled = true;
             self.time_of_last_enable_attempt = std::time::Instant::now();
         }
@@ -256,6 +256,8 @@ impl<'a> App<'a> {
                         y: final_cursor_row,
                     }) {
                         log::error!("Failed to set cursor position: {}", e);
+                    } else {
+                        log::debug!("Set cursor position to ({}, {})", 0, final_cursor_row);
                     }
                 }
             }
@@ -289,16 +291,16 @@ impl<'a> App<'a> {
                             AppRunningState::ExitingForResize(self.buffer.buffer().to_string());
 
                         // Pause the event handler to prevent it from consuming cursor position responses
-                        if let Err(e) = terminal.resize(Rect {
-                            x: 0,
-                            y: 0,
-                            width: new_cols,
-                            height: new_rows,
-                        }) {
-                            log::error!("Failed to resize terminal: {}", e);
-                        } else {
-                            log::debug!("Terminal resized successfully");
-                        }
+                        // if let Err(e) = terminal.resize(Rect {
+                        //     x: 0,
+                        //     y: 0,
+                        //     width: new_cols,
+                        //     height: new_rows,
+                        // }) {
+                        //     log::error!("Failed to resize terminal: {}", e);
+                        // } else {
+                        //     log::debug!("Terminal resized successfully");
+                        // }
 
                         true
                     }

@@ -53,8 +53,19 @@ fn setup_logging() -> Result<()> {
     let home_dir = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let log_file_path = PathBuf::from(home_dir).join("flyline.logs");
 
-    // Initialize simple-logging to write to file
-    simple_logging::log_to_file(&log_file_path, log::LevelFilter::Debug)?;
+    // Initialize simplelog to write to file with file and line number information
+    use simplelog::*;
+    let log_file = std::fs::File::create(&log_file_path)?;
+    
+    WriteLogger::init(
+        LevelFilter::Debug,
+        ConfigBuilder::new()
+            .set_time_format_rfc3339()
+            .set_target_level(LevelFilter::Off)
+            .set_location_level(LevelFilter::Debug)
+            .build(),
+        log_file,
+    )?;
 
     log::info!(
         "Flyline logging initialized, output will be logged to: {}",
