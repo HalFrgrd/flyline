@@ -15,7 +15,7 @@ mod events;
 mod flash_testing;
 mod history;
 mod iter_first_last;
-mod layout_manager;
+// mod layout_manager;
 mod lexer;
 mod prompt_manager;
 mod snake_animation;

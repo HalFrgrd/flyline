@@ -98,42 +98,8 @@ impl LayoutManager {
             }
         };
 
-        // Copy the contents of the Content into the Frame at the correct offset
-        frame.buffer_mut().reset();
-        self.drawing_row_end = self.drawing_row_start;
-        for (content_row_idx, content_row) in content.buf.iter().enumerate() {
-            if let Some(frame_row_idx) = content_row_idx_to_frame_row_idx(content_row_idx as u16) {
-                self.drawing_row_end = self.drawing_row_end.max(frame_row_idx as u16 + 1);
-                for (x, cell) in content_row.iter().enumerate() {
-                    if x < frame_area.width as usize {
-                        let mut new_cell = cell.clone();
-                        if scrolled {
-                            // Try this rarely implemented modifier to force a redraw of the cell
-                            let style = new_cell.style();
-                            new_cell.set_style(style.add_modifier(Modifier::SLOW_BLINK));
-                        }
 
-                        frame.buffer_mut().content
-                            [frame_row_idx as usize * frame_area.width as usize + x] = new_cell;
-                    }
-                }
-            }
-        }
     }
 
-    pub fn post_draw(&mut self, is_running: bool) {
-        if !is_running {
-            // If the terminal is height 10, and self.drawing_row_end is 10, we need to scroll up 1 row
-            // If the terminal is height 10, and self.drawing_row_end is 9, we don't need to scroll
-            let rows_to_scroll = (self.drawing_row_end + 1).saturating_sub(self.terminal_height);
-            self.scroll_by(rows_to_scroll);
-            let target_row = self.drawing_row_end.saturating_sub(rows_to_scroll);
 
-            // Put the cursor just after the drawn content
-            crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveTo(0, target_row),)
-                .unwrap_or_else(|e| log::error!("{}", e));
-        } else {
-            // TODO: if we want to keep the terminal emulator's cursor in sync while running, do it here.
-        }
-    }
 }

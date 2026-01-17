@@ -6,7 +6,7 @@ use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
-use crate::layout_manager::LayoutManager;
+// use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
@@ -28,7 +28,7 @@ fn build_runtime() -> tokio::runtime::Runtime {
 
 pub fn get_command(history: &mut HistoryManager) -> AppRunningState {
     let options = TerminalOptions {
-        viewport: Viewport::Fullscreen,
+        viewport: Viewport::Inline(1),
     };
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
@@ -116,7 +116,7 @@ struct App<'a> {
     /// Parsed bash history available at startup.
     history_manager: &'a mut HistoryManager,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
-    layout_manager: LayoutManager,
+    // layout_manager: LayoutManager,
     snake_animation: SnakeAnimation,
     history_suggestion: Option<(HistoryEntry, String)>,
     command_word_cells: Vec<(u16, u16)>,
@@ -166,7 +166,7 @@ impl<'a> App<'a> {
             home_path: home_path,
             history_manager: history,
             call_type_cache: std::collections::HashMap::new(),
-            layout_manager: LayoutManager::new(terminal_area),
+            // layout_manager: LayoutManager::new(terminal_area),
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
             command_word_cells: Vec::new(),
@@ -182,19 +182,62 @@ impl<'a> App<'a> {
         }
     }
 
+    // pub fn post_draw(&mut self, is_running: bool) {
+    //     if !is_running {
+    //         // If the terminal is height 10, and self.drawing_row_end is 10, we need to scroll up 1 row
+    //         // If the terminal is height 10, and self.drawing_row_end is 9, we don't need to scroll
+    //         let rows_to_scroll = (self.drawing_row_end + 1).saturating_sub(self.terminal_height);
+    //         self.scroll_by(rows_to_scroll);
+    //         let target_row = self.drawing_row_end.saturating_sub(rows_to_scroll);
+
+    //         // Put the cursor just after the drawn content
+    //         crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveTo(0, target_row),)
+    //             .unwrap_or_else(|e| log::error!("{}", e));
+    //     } else {
+    //         // TODO: if we want to keep the terminal emulator's cursor in sync while running, do it here.
+    //     }
+    // }
+
     pub async fn run(&mut self, mut terminal: DefaultTerminal) -> AppRunningState {
         // Update application state here
         let mut events = events::EventHandler::new();
         let mut redraw = true;
         loop {
-            if self.mode == AppRunningState::ExitingForResize {
-                break;
-            }
+
 
             if redraw {
-                terminal.draw(|f| self.ui(f)).unwrap();
+                let width = terminal.get_frame().area().width;
+                let mut content = self.create_content(width);
+
+                if !self.mode.is_running() {
+                    content.increase_buf_single_row(); // so that we can put the terminal emulators cursor below the content
+                }
+
+                if let Err(e) = terminal.set_viewport_height(content.height()) {
+                    log::error!("Failed to set viewport height: {}", e);
+                }
+                // TODO: "scroll" content if needed
+
+                let content_height = content.height();
+                
+                
+                terminal.draw(|f| self.ui(f, content)).unwrap();
+                if !self.mode.is_running() {
+                    // put the terminal emulators cursor just below the content
+                    log::debug!("content_height: {}", content_height);
+                    log::debug!("frame area: {:?}", terminal.get_frame().area());
+                    // remove one row because we appended one row to ensure space for cursor
+                    let final_cursor_row = terminal.get_frame().area().bottom().saturating_sub(1);
+                    log::debug!("Setting final cursor row to {}", final_cursor_row);
+                    if let Err(e) = terminal.set_cursor_position(Position{
+                        x: 0,
+                        y: final_cursor_row,
+                    }) {
+                        log::error!("Failed to set cursor position: {}", e);
+                    }
+                }
             }
-            self.layout_manager.post_draw(self.mode.is_running());
+            // self.post_draw(self.mode.is_running());
 
             if !self.mode.is_running() {
                 break;
@@ -792,10 +835,11 @@ impl<'a> App<'a> {
         result
     }
 
-    fn ui(&mut self, f: &mut Frame) {
+
+    fn create_content(self: &mut Self, width: u16) -> Contents {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
-        let mut content = Contents::new(f.area().width);
+        let mut content = Contents::new(width);
 
         for (_, is_last, line) in self.prompt_manager.get_ps1_lines().iter().flag_first_last() {
             content.write_line(&line, !is_last);
@@ -953,19 +997,24 @@ impl<'a> App<'a> {
                 }
             }
         }
+        content
+    }
 
-        // what should happen
-        // content should be of the correct width but indefinitely tall
-        // after we write everything to it, we figure out how many rows it used
-        // then self.layout_manager tries and puts the content contents
-        // into the frame area appropriately. It might need to scroll some rows off the top
-        // of the screen to make content fit.
-        // if content is longer than the display area, we try and center the cursor.
-        // care needs to be taken to ensure that everything from the start of content
-        // down the bottom of the screen is cleared.
-
-        // Draw the buffer
-
-        self.layout_manager.fit_content_to_frame(&mut content, f);
+    fn ui(&mut self, frame: &mut Frame, content: Contents) {
+        let frame_area = frame.area();
+        frame.buffer_mut().reset();
+        for row_idx in 0..frame_area.height {
+            match content.buf.get(row_idx as usize) {
+                Some(row) => {
+                    for (x, cell) in row.iter().enumerate() {
+                        if x < frame_area.width as usize {
+                            frame.buffer_mut().content
+                            [row_idx as usize * frame_area.width as usize + x] = cell.clone();
+                        }
+                    }
+                },
+                None => break,
+            };
+        }
     }
 }
