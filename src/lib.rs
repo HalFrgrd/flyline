@@ -56,7 +56,7 @@ fn setup_logging() -> Result<()> {
     // Initialize simplelog to write to file with file and line number information
     use simplelog::*;
     let log_file = std::fs::File::create(&log_file_path)?;
-    
+
     WriteLogger::init(
         LevelFilter::Debug,
         ConfigBuilder::new()

@@ -50,7 +50,6 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
 
     // backend.get_cursor_position().unwrap();
-    
 
     let runtime = build_runtime();
 
@@ -195,15 +194,16 @@ impl<'a> App<'a> {
         }
     }
 
-    pub async fn run(&mut self, backend: ratatui::backend::CrosstermBackend<std::io::Stdout>) -> AppRunningState {
-
+    pub async fn run(
+        &mut self,
+        backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
+    ) -> AppRunningState {
         let options = TerminalOptions {
             viewport: Viewport::Inline(1),
         };
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
         terminal.hide_cursor().unwrap();
-
 
         // Update application state here
         let mut events = events::EventHandler::new();
@@ -213,7 +213,6 @@ impl<'a> App<'a> {
             if redraw {
                 let width = terminal.get_frame().area().width;
                 let mut content = if let AppRunningState::ExitingForResize(_) = self.mode {
-                    // Basically clear the contents
                     if let Err(e) = terminal.clear() {
                         log::error!("Failed to clear terminal: {}", e);
                     }
@@ -222,10 +221,9 @@ impl<'a> App<'a> {
                     self.create_content(width)
                 };
 
-                let put_cursor_below_content = !self.mode.is_running();
-
-                if put_cursor_below_content {
-                    content.increase_buf_single_row(); // so that we can put the terminal emulators cursor below the content
+                if !self.mode.is_running() {
+                    // so that we can put the terminal emulators cursor below the content
+                    content.increase_buf_single_row();
                 }
 
                 if let Err(e) = terminal.set_viewport_height(content.height()) {
@@ -243,12 +241,8 @@ impl<'a> App<'a> {
                     }
                 }
 
-                // let content_height = content.height();
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
-                    // log::debug!("content_height: {}", content_height);
-                    // log::debug!("frame area: {:?}", terminal.get_frame().area());
-                    // remove one row because we appended one row to ensure space for cursor
                     let final_cursor_row = terminal.get_frame().area().bottom().saturating_sub(1);
                     // log::debug!("Setting final cursor row to {}", final_cursor_row);
                     if let Err(e) = terminal.set_cursor_position(Position {
@@ -289,19 +283,6 @@ impl<'a> App<'a> {
                         log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
                         self.mode =
                             AppRunningState::ExitingForResize(self.buffer.buffer().to_string());
-
-                        // Pause the event handler to prevent it from consuming cursor position responses
-                        // if let Err(e) = terminal.resize(Rect {
-                        //     x: 0,
-                        //     y: 0,
-                        //     width: new_cols,
-                        //     height: new_rows,
-                        // }) {
-                        //     log::error!("Failed to resize terminal: {}", e);
-                        // } else {
-                        //     log::debug!("Terminal resized successfully");
-                        // }
-
                         true
                     }
                 }

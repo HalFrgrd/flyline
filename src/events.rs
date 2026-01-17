@@ -81,7 +81,6 @@ impl EventHandler {
                                 }
                             }
                             CrosstermEvent::Resize(new_cols, new_rows) => {
-                                // log::debug!("Received resize event: {} cols, {} rows", new_cols, new_rows);
                                 sender_clone.send(Event::Resize(new_cols, new_rows)).unwrap();
                             }
                             CrosstermEvent::FocusLost => {}
