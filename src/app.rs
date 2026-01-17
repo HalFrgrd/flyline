@@ -12,7 +12,7 @@ use crate::tab_completion;
 use crate::text_buffer::TextBuffer;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
-use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
+use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -90,7 +90,7 @@ impl MouseState {
 
     fn enable(&mut self) {
         if !self.is_enabled {
-            let mut stdout = std::io::stdout();
+            let mut _stdout = std::io::stdout();
             // crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
             self.is_enabled = true;
             self.time_of_last_enable_attempt = std::time::Instant::now();
@@ -216,6 +216,7 @@ impl<'a> App<'a> {
                     if let Err(e) = terminal.clear() {
                         log::error!("Failed to clear terminal: {}", e);
                     }
+                    // terminal.clear()
                     Contents::new(width)
                 } else {
                     self.create_content(width)

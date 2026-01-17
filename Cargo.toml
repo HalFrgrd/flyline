@@ -14,7 +14,7 @@ chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3.31"
 simplelog = "0.12"
 log = "0.4"
-ansi-to-tui = "7.0.0"
+ansi-to-tui = { path = "../ansi-to-tui" }
 libc = "0.2.177"
 bash-builtins = "0.4.1"
 timeago = "0.5.0"
