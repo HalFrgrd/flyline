@@ -1,8 +1,8 @@
 use ansi_to_tui::IntoText;
-use ratatui::prelude::*;
+use ratatui::prelude::Line;
+use ratatui::text::Span;
 
 pub struct PromptManager {
-    // TODO think of lifetimes
     ps1: Vec<Line<'static>>,
 }
 
@@ -12,13 +12,30 @@ impl PromptManager {
         let ps1 = ps1.replace("\\[", "").replace("\\]", "");
         const PS1_DEFAULT: &str = "bad ps1> ";
 
-        let ps1: Vec<Line<'static>> = match ps1.into_text().unwrap_or(Text::from(PS1_DEFAULT)).lines
-        {
-            lines if lines.is_empty() => {
-                log::warn!("Failed to parse PS1, defaulting to '>'");
+        // Convert from ansi-to-tui types (old ratatui 0.29) to new ratatui types
+        let ps1: Vec<Line<'static>> = match ps1.into_text() {
+            Ok(text) => {
+                text.lines
+                    .into_iter()
+                    .map(|old_line| {
+                        // Convert each span from old to new ratatui types
+                        let new_spans: Vec<Span<'static>> = old_line
+                            .spans
+                            .into_iter()
+                            .map(|old_span| {
+                                // Just convert content to owned string, ignore styling for now
+                                // TODO: convert color/modifier types properly
+                                Span::raw(old_span.content.to_string())
+                            })
+                            .collect();
+                        Line::from(new_spans)
+                    })
+                    .collect()
+            }
+            Err(_) => {
+                log::warn!("Failed to parse PS1, defaulting to '{}'", PS1_DEFAULT);
                 vec![Line::from(PS1_DEFAULT)]
             }
-            lines => lines,
         };
 
         PromptManager { ps1 }
