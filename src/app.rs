@@ -39,8 +39,6 @@ pub fn get_command(history: &mut HistoryManager) -> String {
 
     let runtime = build_runtime();
 
-
-
     let mut app = App::new(history, terminal.get_frame().area());
     let command = runtime.block_on(app.run(terminal));
 
@@ -134,7 +132,7 @@ struct App<'a> {
 impl<'a> App<'a> {
     fn new(history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
         // TODO: fetch these in background
-       
+
         let ps1_prompt = bash_builtins::variables::find_as_string("PS1")
             .as_ref()
             .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
@@ -149,8 +147,7 @@ impl<'a> App<'a> {
             .as_ref()
             .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
             .unwrap_or("/home/".to_string() + &user);
-       
-       
+
         let path_var = bash_builtins::variables::find_as_string("PATH");
         let executables = if let Some(path_str) = path_var.as_ref().and_then(|v| v.to_str().ok()) {
             App::get_executables_from_path(path_str)
@@ -969,4 +966,3 @@ impl<'a> App<'a> {
         self.layout_manager.fit_content_to_frame(&mut content, f);
     }
 }
-

@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
     pub timestamp: Option<u64>,
@@ -29,6 +31,8 @@ impl HistoryManager {
             format!("{}/.bash_history", home)
         });
 
+        log::debug!("Reading bash history from: {}", hist_path);
+
         let content = std::fs::read_to_string(hist_path).unwrap_or_default();
         let res = HistoryManager::parse_bash_history_str(&content);
 
@@ -41,8 +45,39 @@ impl HistoryManager {
         res
     }
 
+    fn parse_zsh_history() -> Vec<HistoryEntry> {
+        let start_time = std::time::Instant::now();
+
+        let hist_path = {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            format!("{}/.zsh_history", home)
+        };
+
+        log::debug!("Reading zsh history from: {}", hist_path);
+
+        let content = std::fs::read_to_string(hist_path).unwrap_or_default();
+        let res = HistoryManager::parse_zsh_history_str(&content);
+
+        let duration = start_time.elapsed();
+        log::info!(
+            "Parsed zsh history ({} entries) in {:?}",
+            res.len(),
+            duration
+        );
+        res
+    }
+
     pub fn new() -> HistoryManager {
-        let entries = Self::parse_bash_history();
+        let bash_entries = Self::parse_bash_history();
+        let zsh_entries = Self::parse_zsh_history();
+
+        let entries: Vec<_> = bash_entries
+            .into_iter()
+            .merge_by(zsh_entries, |a, b| {
+                a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
+            })
+            .collect();
+
         let index = entries.len();
         HistoryManager {
             entries,
@@ -103,6 +138,49 @@ impl HistoryManager {
             }
             // TODO multiline commands
         });
+
+        res
+    }
+
+    fn parse_zsh_history_str(s: &str) -> Vec<HistoryEntry> {
+        let mut res = Vec::<HistoryEntry>::new();
+
+        for line in s.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            // Zsh extended history format: ": timestamp:duration;command"
+            // Simple format: "command"
+            let (timestamp, command) = if line.starts_with(": ") {
+                // Extended history format
+                if let Some(rest) = line.strip_prefix(": ") {
+                    if let Some((ts_dur, cmd)) = rest.split_once(';') {
+                        // ts_dur is like "1234567890:0"
+                        let timestamp = ts_dur
+                            .split(':')
+                            .next()
+                            .and_then(|ts| ts.parse::<u64>().ok());
+                        (timestamp, cmd.to_string())
+                    } else {
+                        // Malformed extended format, treat as simple
+                        (None, line.to_string())
+                    }
+                } else {
+                    (None, line.to_string())
+                }
+            } else {
+                // Simple format (no timestamp)
+                (None, line.to_string())
+            };
+
+            let entry = HistoryEntry {
+                timestamp,
+                index: res.len(),
+                command,
+            };
+            res.push(entry);
+        }
 
         res
     }
@@ -202,5 +280,34 @@ cd /home/user2
         check(None, 3, "#cd /asdf/asdf");
         check(None, 4, "cd /home/user");
         check(Some(1625078460), 5, "cd /home/user2");
+    }
+
+    #[test]
+    fn test_parse_zsh_history() {
+        // Test simple format (no timestamps)
+        const SIMPLE_HISTORY: &str = r"cd ~
+ls -la
+git status
+";
+        let entries = HistoryManager::parse_zsh_history_str(SIMPLE_HISTORY);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].command, "cd ~");
+        assert_eq!(entries[0].timestamp, None);
+        assert_eq!(entries[1].command, "ls -la");
+        assert_eq!(entries[2].command, "git status");
+
+        // Test extended format (with timestamps)
+        const EXTENDED_HISTORY: &str = r": 1625078400:0;ls -al
+: 1625078460:5;echo 'Hello, World!'
+: 1625078520:0;cd /tmp
+";
+        let entries = HistoryManager::parse_zsh_history_str(EXTENDED_HISTORY);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].command, "ls -al");
+        assert_eq!(entries[0].timestamp, Some(1625078400));
+        assert_eq!(entries[1].command, "echo 'Hello, World!'");
+        assert_eq!(entries[1].timestamp, Some(1625078460));
+        assert_eq!(entries[2].command, "cd /tmp");
+        assert_eq!(entries[2].timestamp, Some(1625078520));
     }
 }

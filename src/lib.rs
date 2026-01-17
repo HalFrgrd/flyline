@@ -94,7 +94,6 @@ impl Flyline {
                 log::debug!("Existing content byte: {} (asci={})", b, *b as char);
             }
 
-
             log::debug!("---------------------- Starting app ------------------------");
             self.content = app::get_command(&mut self.history).into_bytes();
             log::debug!("---------------------- App finished ------------------------");
