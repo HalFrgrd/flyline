@@ -15,7 +15,6 @@ mod events;
 mod flash_testing;
 mod history;
 mod iter_first_last;
-// mod layout_manager;
 mod lexer;
 mod prompt_manager;
 mod snake_animation;
@@ -82,17 +81,17 @@ impl Flyline {
     }
 
     fn get(&mut self) -> c_int {
-        log::debug!("Getting byte from flyline input stream");
+        // log::debug!("Getting byte from flyline input stream");
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("Input stream is empty or at end, fetching new command");
-            log::debug!(
-                "self.content.len() = {}, self.position = {}",
-                self.content.len(),
-                self.position
-            );
-            for b in &self.content {
-                log::debug!("Existing content byte: {} (asci={})", b, *b as char);
-            }
+            // log::debug!(
+            //     "self.content.len() = {}, self.position = {}",
+            //     self.content.len(),
+            //     self.position
+            // );
+            // for b in &self.content {
+            //     log::debug!("Existing content byte: {} (asci={})", b, *b as char);
+            // }
 
             log::debug!("---------------------- Starting app ------------------------");
             self.content = match app::get_command(&mut self.history) {

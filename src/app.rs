@@ -6,7 +6,6 @@ use crate::cursor_animation::CursorAnimation;
 use crate::events;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
-// use crate::layout_manager::LayoutManager;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
@@ -14,6 +13,7 @@ use crate::text_buffer::TextBuffer;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, Frame, TerminalOptions, Viewport, text::Line};
+use std::boxed::Box;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::vec;
@@ -26,23 +26,44 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
+fn restore() {
+    crossterm::terminal::disable_raw_mode().unwrap();
+}
+
+fn set_panic_hook() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore();
+        hook(info);
+    }));
+}
+
 pub fn get_command(history: &mut HistoryManager) -> AppRunningState {
-    let options = TerminalOptions {
-        viewport: Viewport::Inline(1),
-    };
+    // if let Err(e) = color_eyre::install() {
+    //     log::error!("Failed to install color_eyre panic handler: {}", e);
+    // }
+    set_panic_hook();
+
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
-    let mut terminal = ratatui::Terminal::with_options(backend, options).unwrap();
+
+    // backend.get_cursor_position().unwrap();
+
+    let options = TerminalOptions {
+        viewport: Viewport::Inline(1),
+    };
+    let mut terminal =
+        ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
     terminal.hide_cursor().unwrap();
 
     let runtime = build_runtime();
 
-    let mut app = App::new(history, terminal.get_frame().area());
+    let mut app = App::new(history);
     let end_state = runtime.block_on(app.run(terminal));
 
-    crossterm::terminal::disable_raw_mode().unwrap();
+    restore();
     app.mouse_state.disable();
 
     log::debug!("Final state: {:?}", end_state);
@@ -116,7 +137,6 @@ struct App<'a> {
     /// Parsed bash history available at startup.
     history_manager: &'a mut HistoryManager,
     call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
-    // layout_manager: LayoutManager,
     snake_animation: SnakeAnimation,
     history_suggestion: Option<(HistoryEntry, String)>,
     command_word_cells: Vec<(u16, u16)>,
@@ -131,7 +151,7 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(history: &'a mut HistoryManager, terminal_area: Rect) -> Self {
+    fn new(history: &'a mut HistoryManager) -> Self {
         // TODO: fetch these in background
 
         let ps1_prompt = bash_builtins::variables::find_as_string("PS1")
@@ -166,7 +186,6 @@ impl<'a> App<'a> {
             home_path: home_path,
             history_manager: history,
             call_type_cache: std::collections::HashMap::new(),
-            // layout_manager: LayoutManager::new(terminal_area),
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
             command_word_cells: Vec::new(),
@@ -182,34 +201,25 @@ impl<'a> App<'a> {
         }
     }
 
-    // pub fn post_draw(&mut self, is_running: bool) {
-    //     if !is_running {
-    //         // If the terminal is height 10, and self.drawing_row_end is 10, we need to scroll up 1 row
-    //         // If the terminal is height 10, and self.drawing_row_end is 9, we don't need to scroll
-    //         let rows_to_scroll = (self.drawing_row_end + 1).saturating_sub(self.terminal_height);
-    //         self.scroll_by(rows_to_scroll);
-    //         let target_row = self.drawing_row_end.saturating_sub(rows_to_scroll);
-
-    //         // Put the cursor just after the drawn content
-    //         crossterm::execute!(std::io::stdout(), crossterm::cursor::MoveTo(0, target_row),)
-    //             .unwrap_or_else(|e| log::error!("{}", e));
-    //     } else {
-    //         // TODO: if we want to keep the terminal emulator's cursor in sync while running, do it here.
-    //     }
-    // }
-
     pub async fn run(&mut self, mut terminal: DefaultTerminal) -> AppRunningState {
         // Update application state here
         let mut events = events::EventHandler::new();
         let mut redraw = true;
+
         loop {
-
-
             if redraw {
                 let width = terminal.get_frame().area().width;
-                let mut content = self.create_content(width);
+                let mut content = if self.mode == AppRunningState::ExitingForResize {
+                    // Basically clear the contents
+                    Contents::new(width)
+                } else {
+                    self.create_content(width)
+                };
 
-                if !self.mode.is_running() {
+                let put_cursor_below_content =
+                    !self.mode.is_running() && self.mode != AppRunningState::ExitingForResize;
+
+                if put_cursor_below_content {
                     content.increase_buf_single_row(); // so that we can put the terminal emulators cursor below the content
                 }
 
@@ -218,18 +228,22 @@ impl<'a> App<'a> {
                 }
                 // TODO: "scroll" content if needed
 
-                let content_height = content.height();
-                
-                
-                terminal.draw(|f| self.ui(f, content)).unwrap();
+                // The problem is that draw might try and query the cursor_position if it needs resizing
+                // and we are using Inline viewport.
+                // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
+                if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
+                    log::error!("Failed to draw terminal UI: {}", e);
+                }
+
+                // let content_height = content.height();
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
-                    log::debug!("content_height: {}", content_height);
-                    log::debug!("frame area: {:?}", terminal.get_frame().area());
+                    // log::debug!("content_height: {}", content_height);
+                    // log::debug!("frame area: {:?}", terminal.get_frame().area());
                     // remove one row because we appended one row to ensure space for cursor
                     let final_cursor_row = terminal.get_frame().area().bottom().saturating_sub(1);
-                    log::debug!("Setting final cursor row to {}", final_cursor_row);
-                    if let Err(e) = terminal.set_cursor_position(Position{
+                    // log::debug!("Setting final cursor row to {}", final_cursor_row);
+                    if let Err(e) = terminal.set_cursor_position(Position {
                         x: 0,
                         y: final_cursor_row,
                     }) {
@@ -237,7 +251,6 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            // self.post_draw(self.mode.is_running());
 
             if !self.mode.is_running() {
                 break;
@@ -265,6 +278,19 @@ impl<'a> App<'a> {
                     events::Event::Resize(new_cols, new_rows) => {
                         log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
                         self.mode = AppRunningState::ExitingForResize;
+
+                        // Pause the event handler to prevent it from consuming cursor position responses
+                        if let Err(e) = terminal.resize(Rect {
+                            x: 0,
+                            y: 0,
+                            width: new_cols,
+                            height: new_rows,
+                        }) {
+                            log::error!("Failed to resize terminal: {}", e);
+                        } else {
+                            log::debug!("Terminal resized successfully");
+                        }
+
                         true
                     }
                 }
@@ -304,7 +330,7 @@ impl<'a> App<'a> {
         match mouse.kind {
             MouseEventKind::Moved => {
                 if !self.mouse_state.update_on_move() {
-                    log::debug!("Mouse move ignored due to rapid movement");
+                    // log::debug!("Mouse move ignored due to rapid movement");
                     return false;
                 }
                 self.should_show_command_info = false;
@@ -835,7 +861,6 @@ impl<'a> App<'a> {
         result
     }
 
-
     fn create_content(self: &mut Self, width: u16) -> Contents {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
@@ -1009,10 +1034,10 @@ impl<'a> App<'a> {
                     for (x, cell) in row.iter().enumerate() {
                         if x < frame_area.width as usize {
                             frame.buffer_mut().content
-                            [row_idx as usize * frame_area.width as usize + x] = cell.clone();
+                                [row_idx as usize * frame_area.width as usize + x] = cell.clone();
                         }
                     }
-                },
+                }
                 None => break,
             };
         }

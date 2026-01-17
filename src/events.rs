@@ -82,6 +82,7 @@ impl EventHandler {
                             }
                             CrosstermEvent::Resize(new_cols, new_rows) => {
                                 sender_clone.send(Event::Resize(new_cols, new_rows)).unwrap();
+                                tokio::time::sleep(Duration::from_millis(100)).await;
                             }
                             CrosstermEvent::FocusLost => {}
                             CrosstermEvent::FocusGained => {}
@@ -98,5 +99,12 @@ impl EventHandler {
             receiver,
             handler,
         }
+    }
+}
+
+impl Drop for EventHandler {
+    fn drop(&mut self) {
+        log::debug!("Dropping EventHandler, aborting handler task");
+        self.handler.abort();
     }
 }
