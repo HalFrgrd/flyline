@@ -14,6 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
+use std::env::current_exe;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::vec;
@@ -48,8 +49,6 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
-
-    // backend.get_cursor_position().unwrap();
 
     let runtime = build_runtime();
 
@@ -111,7 +110,7 @@ pub enum AppRunningState {
     Running,
     ExitingWithCommand(String),
     ExitingWithoutCommand,
-    ExitingForResize(String),
+    ExitingForResize(String, u16, u16),
 }
 
 impl AppRunningState {
@@ -204,23 +203,30 @@ impl<'a> App<'a> {
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
         terminal.hide_cursor().unwrap();
+        log::debug!("Terminal cursor position: {:?}", terminal.get_cursor_position());
 
         // Update application state here
         let mut events = events::EventHandler::new();
         let mut redraw = true;
 
+        let old_height = terminal.size().unwrap().height;
+
         loop {
             if redraw {
                 let width = terminal.get_frame().area().width;
-                let mut content = if let AppRunningState::ExitingForResize(_) = self.mode {
-                    if let Err(e) = terminal.clear() {
-                        log::error!("Failed to clear terminal: {}", e);
-                    }
-                    // terminal.clear()
-                    Contents::new(width)
-                } else {
-                    self.create_content(width)
-                };
+                // let height = terminal.get_frame().area().height;
+                // let is_resizing = matches!(self.mode, AppRunningState::ExitingForResize(_, _, _));
+
+                //  = if is_resizing {
+                //     // if let Err(e) = terminal.clear() {
+                //     //     log::error!("Failed to clear terminal: {}", e);
+                //     // }
+                //     // tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                //     Contents::new(width)
+                // } else {
+                //     self.create_content(width)
+                // };
+                let mut content = self.create_content(width)
 
                 if !self.mode.is_running() {
                     // so that we can put the terminal emulators cursor below the content
@@ -232,20 +238,20 @@ impl<'a> App<'a> {
                 }
                 // TODO: "scroll" content if needed
 
-                if let AppRunningState::ExitingForResize(_) = self.mode {
-                } else {
+                // if !is_resizing {
                     // The problem is that draw might try and query the cursor_position if it needs resizing
                     // and we are using Inline viewport.
                     // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
                     if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
                         log::error!("Failed to draw terminal UI: {}", e);
                     }
-                }
+                // }
 
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
+
+
                     let final_cursor_row = terminal.get_frame().area().bottom().saturating_sub(1);
-                    // log::debug!("Setting final cursor row to {}", final_cursor_row);
                     if let Err(e) = terminal.set_cursor_position(Position {
                         x: 0,
                         y: final_cursor_row,
@@ -282,8 +288,8 @@ impl<'a> App<'a> {
                     }
                     events::Event::Resize(new_cols, new_rows) => {
                         log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
-                        self.mode =
-                            AppRunningState::ExitingForResize(self.buffer.buffer().to_string());
+                        // self.mode =
+                        //     AppRunningState::ExitingForResize(self.buffer.buffer().to_string(), new_cols, new_rows);
                         true
                     }
                 }
