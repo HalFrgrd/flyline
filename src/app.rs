@@ -14,14 +14,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
-use std::env::current_exe;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::vec;
 
 fn build_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
@@ -110,7 +108,6 @@ pub enum AppRunningState {
     Running,
     ExitingWithCommand(String),
     ExitingWithoutCommand,
-    ExitingForResize(String, u16, u16),
 }
 
 impl AppRunningState {
@@ -209,48 +206,30 @@ impl<'a> App<'a> {
         let mut events = events::EventHandler::new();
         let mut redraw = true;
 
-        let old_height = terminal.size().unwrap().height;
-
         loop {
             if redraw {
                 let width = terminal.get_frame().area().width;
-                // let height = terminal.get_frame().area().height;
-                // let is_resizing = matches!(self.mode, AppRunningState::ExitingForResize(_, _, _));
 
-                //  = if is_resizing {
-                //     // if let Err(e) = terminal.clear() {
-                //     //     log::error!("Failed to clear terminal: {}", e);
-                //     // }
-                //     // tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                //     Contents::new(width)
-                // } else {
-                //     self.create_content(width)
-                // };
-                let mut content = self.create_content(width)
+                let mut content = self.create_content(width);
 
                 if !self.mode.is_running() {
                     // so that we can put the terminal emulators cursor below the content
                     content.increase_buf_single_row();
                 }
-
-                if let Err(e) = terminal.set_viewport_height(content.height()) {
+                terminal.set_viewport_height(content.height()).unwrap_or_else(|e| {
                     log::error!("Failed to set viewport height: {}", e);
-                }
+                });
                 // TODO: "scroll" content if needed
 
-                // if !is_resizing {
-                    // The problem is that draw might try and query the cursor_position if it needs resizing
-                    // and we are using Inline viewport.
-                    // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
-                    if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
-                        log::error!("Failed to draw terminal UI: {}", e);
-                    }
-                // }
+                // The problem is that draw might try and query the cursor_position if it needs resizing
+                // and we are using Inline viewport.
+                // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
+                if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
+                    log::error!("Failed to draw terminal UI: {}", e);
+                }
 
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
-
-
                     let final_cursor_row = terminal.get_frame().area().bottom().saturating_sub(1);
                     if let Err(e) = terminal.set_cursor_position(Position {
                         x: 0,
@@ -278,7 +257,6 @@ impl<'a> App<'a> {
                     }
                     events::Event::Mouse(mouse_event) => self.on_mouse(mouse_event),
                     events::Event::AnimationTick => {
-                        // Toggle cursor visibility for blinking effect
                         self.animation_tick = self.animation_tick.wrapping_add(1);
                         true
                     }
@@ -288,8 +266,16 @@ impl<'a> App<'a> {
                     }
                     events::Event::Resize(new_cols, new_rows) => {
                         log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
-                        // self.mode =
-                        //     AppRunningState::ExitingForResize(self.buffer.buffer().to_string(), new_cols, new_rows);
+                        // Pause briefly to allow resize to settle (debounce)
+                        // tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        terminal.resize(ratatui::prelude::Rect {
+                            x: 0,
+                            y: 0,
+                            width: new_cols,
+                            height: new_rows,
+                        }).unwrap_or_else(|e| {
+                            log::error!("Failed to resize terminal: {}", e);
+                        });
                         true
                     }
                 }

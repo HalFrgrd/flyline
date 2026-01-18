@@ -1365,6 +1365,7 @@ dependencies = [
  "indoc",
  "itertools",
  "kasuari",
+ "log",
  "lru",
  "strum",
  "thiserror 2.0.17",

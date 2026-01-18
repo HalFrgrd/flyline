@@ -119,10 +119,6 @@ impl Flyline {
                     self.history.add_entry(timestamp, &cmd);
                     cmd.into_bytes()
                 }
-                app::AppRunningState::ExitingForResize(buf, _, _) => {
-                    self.cached_content_during_resize = buf;
-                    vec![]
-                }
                 app::AppRunningState::Running => vec![],
                 app::AppRunningState::ExitingWithoutCommand => vec![],
             };
