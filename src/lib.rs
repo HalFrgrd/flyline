@@ -11,7 +11,6 @@ mod bash_symbols;
 mod command_acceptance;
 mod content_builder;
 mod cursor_animation;
-mod events;
 mod flash_testing;
 mod history;
 mod iter_first_last;

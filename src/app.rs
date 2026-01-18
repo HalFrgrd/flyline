@@ -3,19 +3,21 @@ use crate::bash_funcs;
 use crate::command_acceptance;
 use crate::content_builder::Contents;
 use crate::cursor_animation::CursorAnimation;
-use crate::events;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion;
 use crate::text_buffer::TextBuffer;
+use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use futures::{FutureExt, StreamExt};
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use std::vec;
 
 fn build_runtime() -> tokio::runtime::Runtime {
@@ -194,16 +196,47 @@ impl<'a> App<'a> {
         &mut self,
         backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
     ) -> AppRunningState {
+        // Clear any pending events before creating terminal
+        // This helps prevent cursor position query timeouts
+        log::debug!("Clearing any pending events before terminal creation");
+        let clear_start = Instant::now();
+        while crossterm::event::poll(Duration::from_millis(0)).unwrap_or(false) {
+            if let Ok(event) = crossterm::event::read() {
+                log::debug!("Discarded pending event: {:?}", event);
+            }
+            if clear_start.elapsed().as_millis() > 50 {
+                log::warn!("Took too long clearing events, continuing anyway");
+                break;
+            }
+        }
+
         let options = TerminalOptions {
             viewport: Viewport::Inline(1),
         };
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
         terminal.hide_cursor().unwrap();
-        log::debug!("Terminal cursor position: {:?}", terminal.get_cursor_position());
+        log::debug!(
+            "Terminal cursor position: {:?}",
+            terminal.get_cursor_position()
+        );
 
-        // Update application state here
-        let mut events = events::EventHandler::new();
+        // Set up event stream and timers directly
+        let mut reader = crossterm::event::EventStream::new();
+        let mut time_since_last_input = Instant::now();
+
+        const ANIMATION_FPS_MAX: u64 = 10;
+        const ANIMATION_FPS_MIN: u64 = 5;
+        const ANIM_SWITCH_INACTIVITY_START: u128 = 10000;
+        const ANIM_SWITCH_INACTIVITY_LEN: u128 = 10000;
+
+        let anim_period = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
+        let mut anim_tick = tokio::time::interval(anim_period);
+        let mut mouse_reenable_tick = tokio::time::interval(Duration::from_millis(200));
+
+        const SCROLL_COOLDOWN_MS: u128 = 5;
+        let mut last_scroll_time: Option<Instant> = None;
+
         let mut redraw = true;
 
         loop {
@@ -216,9 +249,11 @@ impl<'a> App<'a> {
                     // so that we can put the terminal emulators cursor below the content
                     content.increase_buf_single_row();
                 }
-                terminal.set_viewport_height(content.height()).unwrap_or_else(|e| {
-                    log::error!("Failed to set viewport height: {}", e);
-                });
+                terminal
+                    .set_viewport_height(content.height())
+                    .unwrap_or_else(|e| {
+                        log::error!("Failed to set viewport height: {}", e);
+                    });
                 // TODO: "scroll" content if needed
 
                 // The problem is that draw might try and query the cursor_position if it needs resizing
@@ -246,40 +281,80 @@ impl<'a> App<'a> {
                 break;
             }
 
-            if let Some(event) = events.receiver.recv().await {
-                redraw = match event {
-                    events::Event::Key(event) => {
-                        // The user has stopped scrolling and wants to use the app
-                        self.mouse_state.enable();
+            // Event handling with tokio::select
+            let anim_tick_delay = anim_tick.tick();
+            let mouse_reenable_delay = mouse_reenable_tick.tick();
+            let crossterm_event = reader.next().fuse();
 
-                        self.onkeypress(event);
-                        true
-                    }
-                    events::Event::Mouse(mouse_event) => self.on_mouse(mouse_event),
-                    events::Event::AnimationTick => {
-                        self.animation_tick = self.animation_tick.wrapping_add(1);
-                        true
-                    }
-                    events::Event::ReenableMouseAttempt => {
-                        self.mouse_state.enable();
-                        false
-                    }
-                    events::Event::Resize(new_cols, new_rows) => {
-                        log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
-                        // Pause briefly to allow resize to settle (debounce)
-                        // tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        terminal.resize(ratatui::prelude::Rect {
-                            x: 0,
-                            y: 0,
-                            width: new_cols,
-                            height: new_rows,
-                        }).unwrap_or_else(|e| {
-                            log::error!("Failed to resize terminal: {}", e);
-                        });
-                        true
+            redraw = tokio::select! {
+                _ = anim_tick_delay => {
+                    self.animation_tick = self.animation_tick.wrapping_add(1);
+
+                    // Adjust animation FPS based on inactivity
+                    let inactivity_duration = time_since_last_input.elapsed().as_millis();
+                    let x: f32 = inactivity_duration.saturating_sub(ANIM_SWITCH_INACTIVITY_START) as f32 / ANIM_SWITCH_INACTIVITY_LEN as f32;
+                    let x = x.max(0.0).min(1.0);
+                    let fps = (ANIMATION_FPS_MAX as f32 * (1.0 - x)) + (ANIMATION_FPS_MIN as f32 * x);
+                    assert!(fps >= 0.0);
+                    let period = Duration::from_millis((1000.0 / fps) as u64);
+                    anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
+
+                    true
+                }
+                _ = mouse_reenable_delay => {
+                    self.mouse_state.enable();
+                    false
+                }
+                Some(Ok(evt)) = crossterm_event => {
+                    time_since_last_input = Instant::now();
+
+                    match evt {
+                        CrosstermEvent::Key(key) => {
+                            if key.kind == crossterm::event::KeyEventKind::Press {
+                                // The user has stopped scrolling and wants to use the app
+                                self.mouse_state.enable();
+                                self.onkeypress(key);
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        CrosstermEvent::Mouse(mouse) => {
+                            if mouse.kind == MouseEventKind::ScrollDown || mouse.kind == MouseEventKind::ScrollUp {
+                                if last_scroll_time.is_none() || last_scroll_time.unwrap().elapsed().as_millis() > SCROLL_COOLDOWN_MS {
+                                    last_scroll_time = Some(Instant::now());
+                                    self.on_mouse(mouse)
+                                } else {
+                                    false
+                                }
+                            } else {
+                                self.on_mouse(mouse)
+                            }
+                        }
+                        CrosstermEvent::Resize(new_cols, new_rows) => {
+                            log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
+
+                            // Before resizing, set cursor to bottom of viewport to anchor it properly
+                            // This prevents the viewport from jumping up when the terminal grows
+
+
+                            // tokio::time::sleep(Duration::from_millis(50)).await;
+                            terminal.resize(ratatui::prelude::Rect {
+                                x: 0,
+                                y: 0,
+                                width: new_cols,
+                                height: new_rows,
+                            }).unwrap_or_else(|e| {
+                                log::error!("Failed to resize terminal: {}", e);
+                            });
+                            true
+                        }
+                        CrosstermEvent::FocusLost => false,
+                        CrosstermEvent::FocusGained => false,
+                        CrosstermEvent::Paste(_) => false,
                     }
                 }
-            }
+            };
         }
 
         self.mode.clone()
