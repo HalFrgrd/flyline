@@ -237,6 +237,10 @@ impl<'a> App<'a> {
         const SCROLL_COOLDOWN_MS: u128 = 5;
         let mut last_scroll_time: Option<Instant> = None;
 
+        // Track last resize time to suppress animations during and after resize
+        let mut last_resize_time: Option<Instant> = None;
+        const RESIZE_COOLDOWN_MS: u128 = 1000;
+
         let mut redraw = true;
 
         loop {
@@ -286,20 +290,43 @@ impl<'a> App<'a> {
             let mouse_reenable_delay = mouse_reenable_tick.tick();
             let crossterm_event = reader.next().fuse();
 
+            log::debug!("Waiting for events...");
+
             redraw = tokio::select! {
                 _ = anim_tick_delay => {
-                    self.animation_tick = self.animation_tick.wrapping_add(1);
+                    // Skip animation ticks if we recently resized (within last 1000ms)
+                    if let Some(resize_time) = last_resize_time {
+                        if resize_time.elapsed().as_millis() < RESIZE_COOLDOWN_MS {
+                            log::debug!("Skipping animation tick due to recent resize ({}ms ago)", resize_time.elapsed().as_millis());
+                            false // Don't redraw
+                        } else {
+                            self.animation_tick = self.animation_tick.wrapping_add(1);
 
-                    // Adjust animation FPS based on inactivity
-                    let inactivity_duration = time_since_last_input.elapsed().as_millis();
-                    let x: f32 = inactivity_duration.saturating_sub(ANIM_SWITCH_INACTIVITY_START) as f32 / ANIM_SWITCH_INACTIVITY_LEN as f32;
-                    let x = x.max(0.0).min(1.0);
-                    let fps = (ANIMATION_FPS_MAX as f32 * (1.0 - x)) + (ANIMATION_FPS_MIN as f32 * x);
-                    assert!(fps >= 0.0);
-                    let period = Duration::from_millis((1000.0 / fps) as u64);
-                    anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
+                            // Adjust animation FPS based on inactivity
+                            let inactivity_duration = time_since_last_input.elapsed().as_millis();
+                            let x: f32 = inactivity_duration.saturating_sub(ANIM_SWITCH_INACTIVITY_START) as f32 / ANIM_SWITCH_INACTIVITY_LEN as f32;
+                            let x = x.max(0.0).min(1.0);
+                            let fps = (ANIMATION_FPS_MAX as f32 * (1.0 - x)) + (ANIMATION_FPS_MIN as f32 * x);
+                            assert!(fps >= 0.0);
+                            let period = Duration::from_millis((1000.0 / fps) as u64);
+                            anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
 
-                    true
+                            true // Redraw after cooldown expires
+                        }
+                    } else {
+                        self.animation_tick = self.animation_tick.wrapping_add(1);
+
+                        // Adjust animation FPS based on inactivity
+                        let inactivity_duration = time_since_last_input.elapsed().as_millis();
+                        let x: f32 = inactivity_duration.saturating_sub(ANIM_SWITCH_INACTIVITY_START) as f32 / ANIM_SWITCH_INACTIVITY_LEN as f32;
+                        let x = x.max(0.0).min(1.0);
+                        let fps = (ANIMATION_FPS_MAX as f32 * (1.0 - x)) + (ANIMATION_FPS_MIN as f32 * x);
+                        assert!(fps >= 0.0);
+                        let period = Duration::from_millis((1000.0 / fps) as u64);
+                        anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
+
+                        false
+                    }
                 }
                 _ = mouse_reenable_delay => {
                     self.mouse_state.enable();
@@ -334,6 +361,9 @@ impl<'a> App<'a> {
                         CrosstermEvent::Resize(new_cols, new_rows) => {
                             log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
 
+                            // Mark the time of this resize to suppress animations for 1 second
+                            last_resize_time = Some(Instant::now());
+
                             // Before resizing, set cursor to bottom of viewport to anchor it properly
                             // This prevents the viewport from jumping up when the terminal grows
 
@@ -347,6 +377,7 @@ impl<'a> App<'a> {
                             }).unwrap_or_else(|e| {
                                 log::error!("Failed to resize terminal: {}", e);
                             });
+                            log::debug!("Resized terminal to {}x{}", new_cols, new_rows);
                             true
                         }
                         CrosstermEvent::FocusLost => false,
