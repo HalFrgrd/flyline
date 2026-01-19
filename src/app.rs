@@ -55,8 +55,8 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
     let mut app = App::new(history, starting_content);
     let end_state = runtime.block_on(app.run(backend));
 
-    restore();
     app.mouse_state.disable();
+    restore();
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -98,8 +98,8 @@ impl MouseState {
 
     fn disable(&mut self) {
         if self.is_enabled {
-            let mut stdout = std::io::stdout();
-            crossterm::execute!(stdout, crossterm::event::DisableMouseCapture).unwrap();
+            // let mut stdout = std::io::stdout();
+            // crossterm::execute!(stdout, crossterm::event::DisableMouseCapture).unwrap();
             self.is_enabled = false;
         }
     }
@@ -211,13 +211,13 @@ impl<'a> App<'a> {
         }
 
         let options = TerminalOptions {
-            viewport: Viewport::Inline(1),
+            viewport: Viewport::Inline(0),
         };
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
         terminal.hide_cursor().unwrap();
         log::debug!(
-            "Terminal cursor position: {:?}",
+            "Initial terminal cursor position: {:?}",
             terminal.get_cursor_position()
         );
 
@@ -225,7 +225,7 @@ impl<'a> App<'a> {
         let mut reader = crossterm::event::EventStream::new();
         let mut time_since_last_input = Instant::now();
 
-        const ANIMATION_FPS_MAX: u64 = 10;
+        const ANIMATION_FPS_MAX: u64 = 60;
         const ANIMATION_FPS_MIN: u64 = 5;
         const ANIM_SWITCH_INACTIVITY_START: u128 = 10000;
         const ANIM_SWITCH_INACTIVITY_LEN: u128 = 10000;
@@ -239,12 +239,22 @@ impl<'a> App<'a> {
 
         // Track last resize time to suppress animations during and after resize
         let mut last_resize_time: Option<Instant> = None;
-        const RESIZE_COOLDOWN_MS: u128 = 1000;
+        const RESIZE_COOLDOWN_MS: u128 = 200;
 
         let mut redraw = true;
 
         loop {
-            if redraw {
+            let been_long_enough_since_last_resize = if let Some(resize_time) = last_resize_time {
+                resize_time.elapsed().as_millis() >= RESIZE_COOLDOWN_MS
+            } else {
+                true
+            };
+
+            if redraw && been_long_enough_since_last_resize {
+                terminal.autoresize().unwrap_or_else(|e| {
+                    log::error!("Failed to autoresize terminal: {}", e);
+                });
+
                 let width = terminal.get_frame().area().width;
 
                 let mut content = self.create_content(width);
@@ -270,13 +280,54 @@ impl<'a> App<'a> {
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
                     let final_cursor_row = terminal.get_frame().area().bottom().saturating_sub(1);
-                    if let Err(e) = terminal.set_cursor_position(Position {
+                    let pos = Position {
                         x: 0,
                         y: final_cursor_row,
-                    }) {
+                    };
+
+                    if let Err(e) = terminal.set_cursor_position(pos) {
                         log::error!("Failed to set cursor position: {}", e);
                     } else {
                         log::debug!("Set cursor position to ({}, {})", 0, final_cursor_row);
+                    }
+
+                    // Retry up to 10 times to verify cursor position
+                    for attempt in 0..10 {
+                        match terminal.get_cursor_position() {
+                            Ok(actual_pos) => {
+                                if actual_pos == pos {
+                                    log::debug!(
+                                        "Cursor position verified at ({}, {}) on attempt {}",
+                                        actual_pos.x,
+                                        actual_pos.y,
+                                        attempt + 1
+                                    );
+                                    break;
+                                } else {
+                                    log::debug!(
+                                        "Cursor position mismatch: expected ({}, {}), got ({}, {}) on attempt {}",
+                                        pos.x,
+                                        pos.y,
+                                        actual_pos.x,
+                                        actual_pos.y,
+                                        attempt + 1
+                                    );
+                                    if attempt < 9 {
+                                        tokio::time::sleep(Duration::from_millis(10)).await;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to get cursor position on attempt {}: {}",
+                                    attempt + 1,
+                                    e
+                                );
+                                if attempt < 9 {
+                                    tokio::time::sleep(Duration::from_millis(10)).await;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -288,51 +339,29 @@ impl<'a> App<'a> {
             // Event handling with tokio::select
             let anim_tick_delay = anim_tick.tick();
             let mouse_reenable_delay = mouse_reenable_tick.tick();
-            let crossterm_event = reader.next().fuse();
 
-            log::debug!("Waiting for events...");
+            // log::debug!("Waiting for events...");
 
             redraw = tokio::select! {
                 _ = anim_tick_delay => {
-                    // Skip animation ticks if we recently resized (within last 1000ms)
-                    if let Some(resize_time) = last_resize_time {
-                        if resize_time.elapsed().as_millis() < RESIZE_COOLDOWN_MS {
-                            log::debug!("Skipping animation tick due to recent resize ({}ms ago)", resize_time.elapsed().as_millis());
-                            false // Don't redraw
-                        } else {
-                            self.animation_tick = self.animation_tick.wrapping_add(1);
+                    self.animation_tick = self.animation_tick.wrapping_add(1);
 
-                            // Adjust animation FPS based on inactivity
-                            let inactivity_duration = time_since_last_input.elapsed().as_millis();
-                            let x: f32 = inactivity_duration.saturating_sub(ANIM_SWITCH_INACTIVITY_START) as f32 / ANIM_SWITCH_INACTIVITY_LEN as f32;
-                            let x = x.max(0.0).min(1.0);
-                            let fps = (ANIMATION_FPS_MAX as f32 * (1.0 - x)) + (ANIMATION_FPS_MIN as f32 * x);
-                            assert!(fps >= 0.0);
-                            let period = Duration::from_millis((1000.0 / fps) as u64);
-                            anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
+                    // Adjust animation FPS based on inactivity
+                    let inactivity_duration = time_since_last_input.elapsed().as_millis();
+                    let x: f32 = inactivity_duration.saturating_sub(ANIM_SWITCH_INACTIVITY_START) as f32 / ANIM_SWITCH_INACTIVITY_LEN as f32;
+                    let x = x.max(0.0).min(1.0);
+                    let fps = (ANIMATION_FPS_MAX as f32 * (1.0 - x)) + (ANIMATION_FPS_MIN as f32 * x);
+                    assert!(fps >= 0.0);
+                    let period = Duration::from_millis((1000.0 / fps) as u64);
+                    anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
 
-                            true // Redraw after cooldown expires
-                        }
-                    } else {
-                        self.animation_tick = self.animation_tick.wrapping_add(1);
-
-                        // Adjust animation FPS based on inactivity
-                        let inactivity_duration = time_since_last_input.elapsed().as_millis();
-                        let x: f32 = inactivity_duration.saturating_sub(ANIM_SWITCH_INACTIVITY_START) as f32 / ANIM_SWITCH_INACTIVITY_LEN as f32;
-                        let x = x.max(0.0).min(1.0);
-                        let fps = (ANIMATION_FPS_MAX as f32 * (1.0 - x)) + (ANIMATION_FPS_MIN as f32 * x);
-                        assert!(fps >= 0.0);
-                        let period = Duration::from_millis((1000.0 / fps) as u64);
-                        anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
-
-                        false
-                    }
+                    true
                 }
-                _ = mouse_reenable_delay => {
-                    self.mouse_state.enable();
-                    false
-                }
-                Some(Ok(evt)) = crossterm_event => {
+                // _ = mouse_reenable_delay => {
+                //     self.mouse_state.enable();
+                //     false
+                // }
+                Some(Ok(evt)) = reader.next() => {
                     time_since_last_input = Instant::now();
 
                     match evt {
@@ -361,23 +390,7 @@ impl<'a> App<'a> {
                         CrosstermEvent::Resize(new_cols, new_rows) => {
                             log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
 
-                            // Mark the time of this resize to suppress animations for 1 second
                             last_resize_time = Some(Instant::now());
-
-                            // Before resizing, set cursor to bottom of viewport to anchor it properly
-                            // This prevents the viewport from jumping up when the terminal grows
-
-
-                            // tokio::time::sleep(Duration::from_millis(50)).await;
-                            terminal.resize(ratatui::prelude::Rect {
-                                x: 0,
-                                y: 0,
-                                width: new_cols,
-                                height: new_rows,
-                            }).unwrap_or_else(|e| {
-                                log::error!("Failed to resize terminal: {}", e);
-                            });
-                            log::debug!("Resized terminal to {}x{}", new_cols, new_rows);
                             true
                         }
                         CrosstermEvent::FocusLost => false,
