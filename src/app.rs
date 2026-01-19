@@ -32,7 +32,9 @@ fn restore() {
     let _ = crossterm::execute!(
         std::io::stdout(),
         crossterm::event::DisableBracketedPaste,
-        crossterm::event::DisableFocusChange
+        crossterm::event::DisableFocusChange,
+        crossterm::event::DisableMouseCapture,
+        crossterm::event::PopKeyboardEnhancementFlags
     );
 }
 
@@ -57,7 +59,14 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
     crossterm::execute!(
         std::io::stdout(),
         crossterm::event::EnableBracketedPaste,
-        crossterm::event::EnableFocusChange
+        crossterm::event::EnableFocusChange,
+        // crossterm::event::EnableMouseCapture,
+        crossterm::event::PushKeyboardEnhancementFlags(
+            crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                | crossterm::event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+                | crossterm::event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+        )
     )
     .unwrap();
 
@@ -66,7 +75,6 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
     let mut app = App::new(history, starting_content);
     let end_state = runtime.block_on(app.run(backend));
 
-    app.mouse_state.disable();
     restore();
 
     log::debug!("Final state: {:?}", end_state);
@@ -74,44 +82,52 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
 }
 
 struct MouseState {
-    is_enabled: bool,
-    time_of_last_enable_attempt: std::time::Instant,
-    time_of_last_move: std::time::Instant,
+    enabled: bool,
 }
 
 impl MouseState {
     fn new() -> Self {
-        let mut mouse_state = MouseState {
-            is_enabled: false,
-            time_of_last_enable_attempt: std::time::Instant::now(),
-            time_of_last_move: std::time::Instant::now(),
-        };
-        mouse_state.enable();
-        mouse_state
-    }
-
-    fn update_on_move(&mut self) -> bool {
-        if self.time_of_last_move.elapsed().as_millis() < 50 {
-            return false;
-        }
-        self.time_of_last_move = std::time::Instant::now();
-        true
+        MouseState { enabled: false }
     }
 
     fn enable(&mut self) {
-        if !self.is_enabled {
-            let mut _stdout = std::io::stdout();
-            // crossterm::execute!(stdout, crossterm::event::EnableMouseCapture).unwrap();
-            self.is_enabled = true;
-            self.time_of_last_enable_attempt = std::time::Instant::now();
-        }
+        use std::io::Write;
+
+        let mut f = std::io::stdout();
+
+        let _ = f.write_all(
+            concat!(
+                // Normal tracking: Send mouse X & Y on button press and release
+                "\x1b[?1000h",
+                // Button-event tracking: Report button motion events (dragging)
+                "\x1b[?1002h",
+                // Any-event tracking: Report all motion events
+                // "\x1b[?1003h",
+                // RXVT mouse mode: Allows mouse coordinates of >223
+                "\x1b[?1015h",
+                // SGR mouse mode: Allows mouse coordinates of >223, preferred over RXVT mode
+                "\x1b[?1006h",
+            )
+            .as_bytes(),
+        );
+
+        let _ = f.flush();
+        self.enabled = true;
+    }
+    fn disable(&mut self) {
+        crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture)
+            .unwrap_or_else(|e| {
+                log::error!("Failed to disable mouse capture: {}", e);
+            });
+
+        self.enabled = false;
     }
 
-    fn disable(&mut self) {
-        if self.is_enabled {
-            // let mut stdout = std::io::stdout();
-            // crossterm::execute!(stdout, crossterm::event::DisableMouseCapture).unwrap();
-            self.is_enabled = false;
+    fn toggle(&mut self) {
+        if self.enabled {
+            self.disable();
+        } else {
+            self.enable();
         }
     }
 }
@@ -243,10 +259,6 @@ impl<'a> App<'a> {
 
         let anim_period = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
         let mut anim_tick = tokio::time::interval(anim_period);
-        let mut mouse_reenable_tick = tokio::time::interval(Duration::from_millis(200));
-
-        const SCROLL_COOLDOWN_MS: u128 = 5;
-        let mut last_scroll_time: Option<Instant> = None;
 
         // Track last resize time to suppress animations during and after resize
         let mut last_resize_time: Option<Instant> = None;
@@ -349,7 +361,6 @@ impl<'a> App<'a> {
 
             // Event handling with tokio::select
             let anim_tick_delay = anim_tick.tick();
-            let mouse_reenable_delay = mouse_reenable_tick.tick();
 
             // log::debug!("Waiting for events...");
 
@@ -368,18 +379,12 @@ impl<'a> App<'a> {
 
                     true
                 }
-                // _ = mouse_reenable_delay => {
-                //     self.mouse_state.enable();
-                //     false
-                // }
                 Some(Ok(evt)) = reader.next() => {
                     time_since_last_input = Instant::now();
 
                     match evt {
                         CrosstermEvent::Key(key) => {
                             if key.kind == crossterm::event::KeyEventKind::Press {
-                                // The user has stopped scrolling and wants to use the app
-                                self.mouse_state.enable();
                                 self.onkeypress(key);
                                 true
                             } else {
@@ -387,16 +392,9 @@ impl<'a> App<'a> {
                             }
                         }
                         CrosstermEvent::Mouse(mouse) => {
-                            if mouse.kind == MouseEventKind::ScrollDown || mouse.kind == MouseEventKind::ScrollUp {
-                                if last_scroll_time.is_none() || last_scroll_time.unwrap().elapsed().as_millis() > SCROLL_COOLDOWN_MS {
-                                    last_scroll_time = Some(Instant::now());
-                                    self.on_mouse(mouse)
-                                } else {
-                                    false
-                                }
-                            } else {
-                                self.on_mouse(mouse)
-                            }
+
+                            self.on_mouse(mouse)
+
                         }
                         CrosstermEvent::Resize(new_cols, new_rows) => {
                             log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
@@ -450,28 +448,26 @@ impl<'a> App<'a> {
     }
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
-        // log::debug!("Mouse event: {:?}", mouse);
         match mouse.kind {
-            MouseEventKind::Moved => {
-                if !self.mouse_state.update_on_move() {
-                    // log::debug!("Mouse move ignored due to rapid movement");
-                    return false;
-                }
-                self.should_show_command_info = false;
-                for (cell_row, cell_col) in &self.command_word_cells {
-                    if *cell_row == mouse.row && *cell_col == mouse.column {
-                        log::debug!("Hovering on first word at ({}, {})", cell_row, cell_col);
-                        // Additional logic can be added here if needed
-                        self.should_show_command_info = true;
-                    }
-                }
+            // MouseEventKind::Moved => {
+            //     if !self.mouse_state.update_on_move() {
+            //         // log::debug!("Mouse move ignored due to rapid movement");
+            //         return false;
+            //     }
+            //     self.should_show_command_info = false;
+            //     for (cell_row, cell_col) in &self.command_word_cells {
+            //         if *cell_row == mouse.row && *cell_col == mouse.column {
+            //             log::debug!("Hovering on first word at ({}, {})", cell_row, cell_col);
+            //             // Additional logic can be added here if needed
+            //             self.should_show_command_info = true;
+            //         }
+            //     }
+            // }
+            e => {
+                log::debug!("Mouse event: {:?}", e);
             }
-            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                self.mouse_state.disable();
-            }
-            _ => {}
         };
-        true
+        false
     }
 
     fn onkeypress(&mut self, key: KeyEvent) {
@@ -663,7 +659,11 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => {
-                self.active_tab_suggestions = None;
+                if self.active_tab_suggestions.is_some() {
+                    self.active_tab_suggestions = None;
+                } else {
+                    self.mouse_state.toggle();
+                }
             }
             KeyEvent {
                 code: KeyCode::Char('c'),
