@@ -29,7 +29,11 @@ fn build_runtime() -> tokio::runtime::Runtime {
 
 fn restore() {
     crossterm::terminal::disable_raw_mode().unwrap();
-    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
+    let _ = crossterm::execute!(
+        std::io::stdout(),
+        crossterm::event::DisableBracketedPaste,
+        crossterm::event::DisableFocusChange
+    );
 }
 
 fn set_panic_hook() {
@@ -50,7 +54,12 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
-    crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste).unwrap();
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::event::EnableBracketedPaste,
+        crossterm::event::EnableFocusChange
+    )
+    .unwrap();
 
     let runtime = build_runtime();
 
@@ -395,8 +404,14 @@ impl<'a> App<'a> {
                             last_resize_time = Some(Instant::now());
                             true
                         }
-                        CrosstermEvent::FocusLost => false,
-                        CrosstermEvent::FocusGained => false,
+                        CrosstermEvent::FocusLost => {
+                            log::debug!("Terminal focus lost");
+                            false
+                        },
+                        CrosstermEvent::FocusGained => {
+                            log::debug!("Terminal focus gained");
+                            false
+                        },
                         CrosstermEvent::Paste(pasted) => {
                             self.buffer.insert_str(&pasted);
                             true
