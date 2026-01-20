@@ -1,3 +1,4 @@
+use crossterm::event::KeyEvent;
 use unicode_segmentation::UnicodeSegmentation;
 // use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use itertools::Itertools;
@@ -357,9 +358,116 @@ impl TextBuffer {
             .collect()
     }
 
-    pub fn last_line_is_empty(&self) -> bool {
-        self.buf.lines().last().map_or(true, |line| line.is_empty())
+    // pub fn last_line_is_empty(&self) -> bool {
+    //     self.buf.lines().last().map_or(true, |line| line.is_empty())
+    // }
+
+    /// Handle basic text editing keypresses. Returns true if the key was handled.
+    pub fn on_keypress(&mut self, key: KeyEvent) {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        
+        match key {
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.delete_backwards();
+            }
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+            | KeyEvent {
+                // control backspace show up as these ones for me
+                code: KeyCode::Char('h'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('w'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.delete_one_word_left();
+            }
+            KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('d'),
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.delete_one_word_right();
+            }
+            KeyEvent {
+                code: KeyCode::Delete,
+                ..
+            } => {
+                self.delete_forwards();
+            }
+            KeyEvent {
+                code: KeyCode::Left,
+                ..
+            } => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_one_word_left();
+                } else {
+                    self.move_left();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                ..
+            } => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_one_word_right();
+                } else {
+                    self.move_right();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Home,
+                ..
+            } => {
+                self.move_start_of_line();
+            }
+            KeyEvent {
+                code: KeyCode::End,
+                ..
+            } => {
+                self.move_end_of_line();
+            }
+            KeyEvent {
+                code: KeyCode::Up, ..
+            } => {
+                if self.cursor_row() > 0 {
+                    self.move_line_up();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } => {
+                if !self.is_cursor_on_final_line() {
+                    self.move_line_down();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                ..
+            } => {
+                self.insert_char(c);
+            }
+            _ => {}
+        }
     }
+
 }
 
 pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> SubString {

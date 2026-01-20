@@ -385,7 +385,7 @@ impl<'a> App<'a> {
                     match evt {
                         CrosstermEvent::Key(key) => {
                             if key.kind == crossterm::event::KeyEventKind::Press {
-                                self.onkeypress(key);
+                                self.on_keypress(key);
                                 true
                             } else {
                                 false
@@ -470,127 +470,46 @@ impl<'a> App<'a> {
         false
     }
 
-    fn onkeypress(&mut self, key: KeyEvent) {
+    fn on_keypress(&mut self, key: KeyEvent) {
         log::debug!("Key pressed: {:?}", key);
+        
         match key {
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.buffer.delete_backwards();
-            }
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                // control backspace show up as these ones for me
-                code: KeyCode::Char('h'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('w'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.buffer.delete_one_word_left();
-            }
-            KeyEvent {
-                code: KeyCode::Delete,
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::ALT,
-                ..
-            } => {
-                self.buffer.delete_one_word_right();
-            }
-            KeyEvent {
-                code: KeyCode::Delete,
-                ..
-            } => {
-                self.buffer.delete_forwards();
-            }
-            KeyEvent {
-                code: KeyCode::Left,
-                ..
-            } => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.buffer.move_one_word_left();
-                } else {
-                    self.buffer.move_left();
-                };
-            }
+            // Handle Right/End with history suggestion logic
             KeyEvent {
                 code: KeyCode::Right | KeyCode::End,
                 ..
-            } => {
-                if self.buffer.is_cursor_at_end()
-                    && let Some((_, suf)) = &self.history_suggestion
-                {
+            } if self.buffer.is_cursor_at_end() && self.history_suggestion.is_some() => {
+                if let Some((_, suf)) = &self.history_suggestion {
                     self.buffer.insert_str(suf);
                     self.buffer.move_to_end();
-                } else {
-                    match key {
-                        KeyEvent {
-                            code: KeyCode::Right,
-                            modifiers: KeyModifiers::CONTROL,
-                            ..
-                        } => self.buffer.move_one_word_right(),
-                        KeyEvent {
-                            code: KeyCode::End, ..
-                        } => self.buffer.move_end_of_line(),
-                        _ => self.buffer.move_right(),
-                    };
                 }
             }
-            KeyEvent {
-                code: KeyCode::Home,
-                ..
-            } => {
-                self.buffer.move_start_of_line();
-            }
+            // Handle Up with history navigation when at first line
             KeyEvent {
                 code: KeyCode::Up, ..
-            } => {
-                let cursor_row = self.buffer.cursor_row();
-                if cursor_row == 0 {
-                    // Replace current buffer with last history entry
-                    if let Some(entry) = self
-                        .history_manager
-                        .search_in_history(self.buffer.buffer(), HistorySearchDirection::Backward)
-                    {
-                        let new_command = entry.command.clone();
-                        self.buffer = TextBuffer::new(new_command.as_str());
-                    }
-                } else {
-                    // log::debug!("cursor starting in     {:?}", self.buffer.cursor_2d_position());
-                    self.buffer.move_line_up();
-                    // log::debug!("Moved cursor up to row {:?}", self.buffer.cursor_row());
+            } if self.buffer.cursor_row() == 0 => {
+                if let Some(entry) = self
+                    .history_manager
+                    .search_in_history(self.buffer.buffer(), HistorySearchDirection::Backward)
+                {
+                    let new_command = entry.command.clone();
+                    self.buffer = TextBuffer::new(new_command.as_str());
                 }
             }
+            // Handle Down with history navigation when at last line
             KeyEvent {
                 code: KeyCode::Down,
                 ..
-            } => {
-                if self.buffer.is_cursor_on_final_line() {
-                    // Replace current buffer with next history entry
-                    if let Some(entry) = self
-                        .history_manager
-                        .search_in_history(self.buffer.buffer(), HistorySearchDirection::Forward)
-                    {
-                        let new_command = entry.command.clone();
-                        self.buffer = TextBuffer::new(new_command.as_str());
-                    }
-                } else {
-                    self.buffer.move_line_down();
+            } if self.buffer.is_cursor_on_final_line() => {
+                if let Some(entry) = self
+                    .history_manager
+                    .search_in_history(self.buffer.buffer(), HistorySearchDirection::Forward)
+                {
+                    let new_command = entry.command.clone();
+                    self.buffer = TextBuffer::new(new_command.as_str());
                 }
             }
+            // Enter key - accept suggestions or submit command
             KeyEvent {
                 code: KeyCode::Enter,
                 ..
@@ -603,9 +522,6 @@ impl<'a> App<'a> {
                 if let Some(active_suggestions) = self.active_tab_suggestions.take() {
                     active_suggestions.accept(&mut self.buffer);
                 } else {
-                    // log::debug!("enter pressed with buffer: ");
-                    // self.buffer.debug_buffer();
-
                     // If it's a single line complete command, exit
                     // If it's a multi-line complete command, cursor needs to be at end to exit
                     if ((self.buffer.lines_with_cursor().iter().count() == 1)
@@ -619,6 +535,7 @@ impl<'a> App<'a> {
                     }
                 }
             }
+            // Shift+Tab or BackTab - cycle suggestions backward
             KeyEvent {
                 code: KeyCode::Tab,
                 modifiers: KeyModifiers::SHIFT,
@@ -632,6 +549,7 @@ impl<'a> App<'a> {
                     active_suggestions.on_tab(true);
                 }
             }
+            // Tab - cycle suggestions or trigger completion
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
@@ -656,6 +574,7 @@ impl<'a> App<'a> {
                     log::debug!("Tab completion result: {:?}", res);
                 }
             }
+            // Escape - clear suggestions or toggle mouse
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => {
@@ -665,20 +584,18 @@ impl<'a> App<'a> {
                     self.mouse_state.toggle();
                 }
             }
+            // Ctrl+C - cancel with comment
             KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 self.buffer.move_to_end();
-                // if !self.buffer.last_line_is_empty() {
-                //     self.buffer.insert_newline();
-                // }
                 self.buffer.insert_str(" #[Ctrl+C pressed] ");
                 self.mode = AppRunningState::ExitingWithoutCommand;
             }
+            // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             KeyEvent {
-                // Ctrl+/ comes up as this for me
                 code: KeyCode::Char('7'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
@@ -687,13 +604,10 @@ impl<'a> App<'a> {
                 self.buffer.insert_str("#");
                 self.mode = AppRunningState::ExitingWithCommand(self.buffer.buffer().to_string());
             }
-            KeyEvent {
-                code: KeyCode::Char(c),
-                ..
-            } => {
-                self.buffer.insert_char(c);
+            // Delegate basic text editing to TextBuffer
+            _ => {
+                self.buffer.on_keypress(key)    ;
             }
-            _ => {}
         }
 
         self.on_possible_buffer_change();
