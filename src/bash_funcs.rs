@@ -300,6 +300,9 @@ pub fn run_autocomplete_compspec(
         let command_word_cstr = std::ffi::CString::new(command_word).unwrap();
         let comp_spec = bash_symbols::progcomp_search(command_word_cstr.as_ptr());
         if !comp_spec.is_null() {
+            bash_symbols::pcomp_curcs = comp_spec;
+            bash_symbols::rl_readline_state |= 0x00004000;
+
             let compspec_comp = bash_symbols::gen_compspec_completions(
                 comp_spec,
                 command_word_cstr.as_ptr(),

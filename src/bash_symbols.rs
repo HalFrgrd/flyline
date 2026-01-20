@@ -147,6 +147,9 @@ unsafe extern "C" {
         foundp: *mut c_int,
     ) -> *mut StringList;
 
+    // COMPSPEC *pcomp_curcs;
+    pub static mut pcomp_curcs: *mut CompSpec;
+
     // char *pcomp_line;
     #[link_name = "pcomp_line"]
     pub static mut pcomp_line: *mut c_char;
@@ -154,6 +157,10 @@ unsafe extern "C" {
     // int pcomp_ind;
     #[link_name = "pcomp_ind"]
     pub static mut pcomp_ind: c_int;
+
+    //extern unsigned long rl_readline_state;
+    #[link_name = "rl_readline_state"]
+    pub static mut rl_readline_state: libc::c_ulong;
 
 }
 
