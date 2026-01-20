@@ -472,7 +472,7 @@ impl<'a> App<'a> {
 
     fn on_keypress(&mut self, key: KeyEvent) {
         log::debug!("Key pressed: {:?}", key);
-        
+
         match key {
             // Handle Right/End with history suggestion logic
             KeyEvent {
@@ -606,7 +606,7 @@ impl<'a> App<'a> {
             }
             // Delegate basic text editing to TextBuffer
             _ => {
-                self.buffer.on_keypress(key)    ;
+                self.buffer.on_keypress(key);
             }
         }
 

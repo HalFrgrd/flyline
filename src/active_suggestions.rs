@@ -23,7 +23,14 @@ impl Suggestion {
     ) -> Vec<Suggestion> {
         suggestions
             .into_iter()
-            .map(|s| Suggestion::new(s, prefix.clone(), suffix.clone()))
+            .map(|s| {
+                let new_suffix = if suffix == " " && s.ends_with(' ') {
+                    "".to_string()
+                } else {
+                    suffix.clone()
+                };
+                Suggestion::new(s, prefix.clone(), new_suffix)
+            })
             .collect()
     }
 }

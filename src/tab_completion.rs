@@ -41,14 +41,15 @@ impl<'a> CompletionContext<'a> {
     }
 
     pub fn new(buffer: &'a str, command_until_cursor: &'a str, command: &'a str) -> Self {
-        let comp_type = if command_until_cursor.ends_with(char::is_whitespace) {
+        let comp_type = if false && command_until_cursor.ends_with(char::is_whitespace) {
             let cursor_white_space = match command_until_cursor.char_indices().next_back() {
                 Some((byte, _)) => &command_until_cursor[byte..],
                 None => "",
             };
 
             CompType::CursorOnBlank(SubString::new(buffer, cursor_white_space).unwrap())
-        } else if command.trim().is_empty() || command_until_cursor.split_whitespace().count() <= 1
+        } else if command.trim().is_empty()
+            || !command_until_cursor.chars().any(|c| c.is_whitespace())
         {
             let first_word =
                 SubString::new(buffer, command.split_whitespace().next().unwrap_or("")).unwrap();
@@ -734,19 +735,6 @@ mod tests {
     }
 
     #[test]
-    fn test_completion_context_cursor_on_blank_space() {
-        // Cursor on a blank space between words
-        let input = "gi café --message 'héllo'";
-        let cursor_pos = "gi ".chars().count();
-        let ctx = get_completion_context(input, cursor_pos);
-
-        match ctx.comp_type {
-            CompType::CursorOnBlank(_) => {}
-            _ => panic!("Expected CursorOnBlank"),
-        }
-    }
-
-    #[test]
     fn test_completion_context_cursor_at_end_of_line() {
         // Cursor at end of line with non-ASCII
         let input = "echo 'Tëst message' résumé 📄";
@@ -791,19 +779,6 @@ mod tests {
                 assert_eq!(word_under_cursor.end, "ls --sïze café".len());
             }
             _ => panic!("Expected CommandComp"),
-        }
-    }
-
-    #[test]
-    fn test_completion_context_cursor_on_space_with_emoji() {
-        // Cursor on space between emoji-containing words
-        let input = "🎨 paint --cölor 🌈";
-        let cursor_pos = "🎨 paint ".chars().count();
-        let ctx = get_completion_context(input, cursor_pos);
-
-        match ctx.comp_type {
-            CompType::CursorOnBlank(_) => {}
-            _ => panic!("Expected CursorOnBlank"),
         }
     }
 
@@ -901,8 +876,19 @@ mod tests {
         let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CursorOnBlank(_) => {}
-            _ => panic!("Expected CursorOnBlank"),
+            CompType::CommandComp {
+                full_command,
+                command_word,
+                word_under_cursor,
+                cursor_byte_pos,
+            } => {
+                assert_eq!(full_command, "grep 'pättërn' файл.txt 日本語 🚀");
+                assert_eq!(command_word, "grep");
+                assert_eq!(word_under_cursor.s, "файл.txt");
+                assert_eq!(cursor_byte_pos, "grep 'pättërn' ".len());
+                assert_eq!(word_under_cursor.end, "grep 'pättërn' файл.txt".len());
+            }
+            _ => panic!("Expected CommandComp"),
         }
     }
 
@@ -952,8 +938,19 @@ mod tests {
         let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
-            CompType::CursorOnBlank(_) => {}
-            _ => panic!("Expected CursorOnBlank"),
+            CompType::CommandComp {
+                full_command,
+                command_word,
+                word_under_cursor,
+                cursor_byte_pos,
+            } => {
+                assert_eq!(full_command, "écho 'mëssagé' 文件 🎨");
+                assert_eq!(command_word, "écho");
+                assert_eq!(word_under_cursor.s, "文件");
+                assert_eq!(cursor_byte_pos, "écho 'mëssagé' ".len());
+                assert_eq!(word_under_cursor.end, "écho 'mëssagé' 文件".len());
+            }
+            _ => panic!("Expected CommandComp"),
         }
     }
 

@@ -365,7 +365,7 @@ impl TextBuffer {
     /// Handle basic text editing keypresses. Returns true if the key was handled.
     pub fn on_keypress(&mut self, key: KeyEvent) {
         use crossterm::event::{KeyCode, KeyModifiers};
-        
+
         match key {
             KeyEvent {
                 code: KeyCode::Backspace,
@@ -437,8 +437,7 @@ impl TextBuffer {
                 self.move_start_of_line();
             }
             KeyEvent {
-                code: KeyCode::End,
-                ..
+                code: KeyCode::End, ..
             } => {
                 self.move_end_of_line();
             }
@@ -467,7 +466,6 @@ impl TextBuffer {
             _ => {}
         }
     }
-
 }
 
 pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> SubString {
