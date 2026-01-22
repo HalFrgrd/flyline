@@ -267,6 +267,7 @@ impl<'a> App<'a> {
         let mut redraw = true;
 
         let mut last_terminal_area = terminal.size().unwrap();
+        let mut last_terminal_area_on_render = terminal.size().unwrap();
 
         loop {
             let been_long_enough_since_last_resize = if let Some(resize_time) = last_resize_time {
@@ -276,9 +277,12 @@ impl<'a> App<'a> {
             };
 
             if redraw && been_long_enough_since_last_resize {
-                terminal.autoresize().unwrap_or_else(|e| {
-                    log::error!("Failed to autoresize terminal: {}", e);
-                });
+                if last_terminal_area_on_render != last_terminal_area {
+                    terminal.autoresize().unwrap_or_else(|e| {
+                        log::error!("Failed to autoresize terminal: {}", e);
+                    });
+                    last_terminal_area_on_render = last_terminal_area;
+                }
 
                 let frame_area = terminal.get_frame().area();
 
