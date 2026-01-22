@@ -266,6 +266,8 @@ impl<'a> App<'a> {
 
         let mut redraw = true;
 
+        let mut last_terminal_area = terminal.size().unwrap();
+
         loop {
             let been_long_enough_since_last_resize = if let Some(resize_time) = last_resize_time {
                 resize_time.elapsed().as_millis() >= RESIZE_COOLDOWN_MS
@@ -278,20 +280,21 @@ impl<'a> App<'a> {
                     log::error!("Failed to autoresize terminal: {}", e);
                 });
 
-                let width = terminal.get_frame().area().width;
+                let frame_area = terminal.get_frame().area();
 
-                let mut content = self.create_content(width);
+                let mut content = self.create_content(frame_area.width);
 
                 if !self.mode.is_running() {
                     // so that we can put the terminal emulators cursor below the content
                     content.increase_buf_single_row();
                 }
+
+                let desired_height = content.height().min(last_terminal_area.height);
                 terminal
-                    .set_viewport_height(content.height())
+                    .set_viewport_height(desired_height)
                     .unwrap_or_else(|e| {
                         log::error!("Failed to set viewport height: {}", e);
                     });
-                // TODO: "scroll" content if needed
 
                 // The problem is that draw might try and query the cursor_position if it needs resizing
                 // and we are using Inline viewport.
@@ -398,6 +401,10 @@ impl<'a> App<'a> {
                         }
                         CrosstermEvent::Resize(new_cols, new_rows) => {
                             log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
+                            last_terminal_area = Size {
+                                width: new_cols,
+                                height: new_rows,
+                            };
 
                             last_resize_time = Some(Instant::now());
                             true
@@ -1066,8 +1073,12 @@ impl<'a> App<'a> {
     fn ui(&mut self, frame: &mut Frame, content: Contents) {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
+
+        let (start_content_row, _end_content_row) =
+            content.get_row_range_to_show(frame_area.height);
+
         for row_idx in 0..frame_area.height {
-            match content.buf.get(row_idx as usize) {
+            match content.buf.get((start_content_row + row_idx) as usize) {
                 Some(row) => {
                     for (x, cell) in row.iter().enumerate() {
                         if x < frame_area.width as usize {

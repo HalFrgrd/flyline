@@ -142,4 +142,19 @@ impl Contents {
         self.edit_cursor_pos = Some((vis_col, vis_row));
         self.set_style(Rect::new(vis_col, vis_row, 1, 1), style);
     }
+
+    pub fn get_row_range_to_show(&self, height: u16) -> (u16, u16) {
+        // Returns the range of visual rows to show given the available height
+        let total_rows = self.height();
+        if total_rows <= height {
+            (0, total_rows)
+        } else if let Some((_, vis_row)) = self.edit_cursor_pos {
+            let bottom = std::cmp::min(vis_row.saturating_add(1), total_rows);
+            let top = bottom.saturating_sub(height);
+            (top, bottom)
+        } else {
+            // Show the final rows
+            (total_rows.saturating_sub(height), total_rows)
+        }
+    }
 }
