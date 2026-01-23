@@ -334,6 +334,10 @@ impl TextBuffer {
         self.buf[..self.cursor_byte].chars().count()
     }
 
+    pub fn cursor_byte_pos(&self) -> usize {
+        self.cursor_byte
+    }
+
     pub fn lines_with_cursor(&self) -> Vec<(&str, Option<u16>)> {
         // additionally return and empty string if the buffer finishes with a newline
         let mut lines = self.buf.lines().collect::<Vec<_>>();

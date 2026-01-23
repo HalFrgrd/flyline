@@ -641,7 +641,7 @@ impl<'a> App<'a> {
     fn tab_complete(&mut self) -> Option<()> {
         let buffer: &str = self.buffer.buffer();
         let completion_context =
-            tab_completion::get_completion_context(buffer, self.buffer.cursor_char_pos());
+            tab_completion::get_completion_context(buffer, self.buffer.cursor_byte_pos());
 
         log::debug!("Completion context: {:?}", completion_context);
 
