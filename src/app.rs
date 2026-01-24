@@ -11,7 +11,7 @@ use crate::tab_completion_context;
 use crate::text_buffer::TextBuffer;
 use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
-use futures::{ StreamExt};
+use futures::StreamExt;
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;

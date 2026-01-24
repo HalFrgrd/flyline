@@ -101,9 +101,9 @@ unsafe extern "C" {
 
     // from pcomplete.c
     /* The driver function for the programmable completion code.  Returns a list
-   of matches for WORD, which is an argument to command CMD.  START and END
-   bound the command currently being completed in pcomp_line (usually
-   rl_line_buffer). */
+    of matches for WORD, which is an argument to command CMD.  START and END
+    bound the command currently being completed in pcomp_line (usually
+    rl_line_buffer). */
     // char ** programmable_completions (const char *cmd, const char *word, int start, int end, int *foundp)
     pub fn programmable_completions(
         cmd: *const c_char,
@@ -118,6 +118,14 @@ unsafe extern "C" {
     // char *rl_line_buffer
     #[link_name = "rl_line_buffer"]
     pub static mut rl_line_buffer: *mut c_char;
+
+    /* The location of point, and end. */
+    // extern int rl_point;
+    #[link_name = "rl_point"]
+    pub static mut rl_point: c_int;
+    // extern int rl_end;
+    #[link_name = "rl_end"]
+    pub static mut rl_end: c_int;
 
     // int rl_line_buffer_len
     #[link_name = "rl_line_buffer_len"]

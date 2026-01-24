@@ -297,49 +297,31 @@ pub fn run_autocomplete_compspec(
     }
 
     unsafe {
-        bash_symbols::pcomp_line = std::ffi::CString::new(full_command).unwrap().into_raw(); // git commi asdf
-        bash_symbols::pcomp_ind = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
+        bash_symbols::rl_line_buffer = std::ffi::CString::new(full_command).unwrap().into_raw(); // git commi asdf
+        bash_symbols::rl_point = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
 
         let found: std::ffi::c_int = 0;
         let foundp = &found as *const std::ffi::c_int as *mut std::ffi::c_int;
 
-        let command_word_cstr = std::ffi::CString::new(command_word).unwrap();
-        let comp_spec = bash_symbols::progcomp_search(command_word_cstr.as_ptr());
-
-        if comp_spec.is_null() {
-            return Err(anyhow::anyhow!(
-                "No completion specification found for command '{}'",
-                command_word
-            ));
-        }
-
-        bash_symbols::pcomp_curcs = comp_spec;
-        bash_symbols::rl_readline_state |= 0x00004000;
-
-        let compspec_comp = bash_symbols::gen_compspec_completions(
-            comp_spec,
-            command_word_cstr.as_ptr(),
+        let list_of_strs = bash_symbols::programmable_completions(
+            std::ffi::CString::new(command_word).unwrap().as_ptr(),
             std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
             0,
             word_under_cursor_byte_end as std::ffi::c_int,
             foundp,
         );
-        log::debug!("found value: {}", found);
-
-        if compspec_comp.is_null() {
-            return Err(anyhow::anyhow!("gen_compspec_completions returned null"));
+        if list_of_strs.is_null() {
+            return Err(anyhow::anyhow!("programmable_completions returned null"));
         }
-
         let mut res: Vec<String> = Vec::new();
-        // TODO: verify list len is correct. see the comment in bash_symbols.rs
-        log::debug!("compspec_comp result: {:?}", *compspec_comp);
-        for i in 0..((*compspec_comp).list_len) {
-            let ptr = *(*compspec_comp).list.add(i as usize);
+        for i in 0.. {
+            let ptr = *list_of_strs.add(i as usize);
             if ptr.is_null() {
-                continue;
+                break;
             }
             let c_str = std::ffi::CStr::from_ptr(ptr);
             if let Ok(str_slice) = c_str.to_str() {
+                log::debug!("programmable_completions result[{}]: {}", i, str_slice);
                 res.push(str_slice.to_string());
             }
         }
