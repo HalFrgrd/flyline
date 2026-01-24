@@ -7,30 +7,31 @@ use itertools::Itertools;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Eq, PartialEq)]
-struct BufSnapshot {
+struct Snapshot {
     buf: String,
     cursor_byte: usize,
 }
 
-impl BufSnapshot {
+impl Snapshot {
     pub fn new(buf: &str, cursor_byte: usize) -> Self {
-        BufSnapshot {
+        Snapshot {
             buf: buf.to_string(),
             cursor_byte,
         }
     }
 }
 
-impl Debug for BufSnapshot {
+impl Debug for Snapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Snap({:?})", self.buf)
     }
 }
 
 #[derive(Debug)]
-struct Snapshots {
-    undos: Vec<BufSnapshot>,
-    redos: Vec<BufSnapshot>,
+struct SnapshotManager {
+    undos: Vec<Snapshot>,
+    redos: Vec<Snapshot>,
+    last_snapshot_time: std::time::Instant,
 }
 
 pub struct TextBuffer {
@@ -39,7 +40,7 @@ pub struct TextBuffer {
     // Need to ensure it lines up with grapheme boundaries.
     // The cursor is on the left of the grapheme at this index.
     cursor_byte: usize,
-    undo_redo: Snapshots,
+    undo_redo: SnapshotManager,
 }
 
 ///////////////////////////////////////////////////////// misc
@@ -48,7 +49,7 @@ impl TextBuffer {
         TextBuffer {
             buf: starting_str.to_string(),
             cursor_byte: starting_str.len(),
-            undo_redo: Snapshots::new(),
+            undo_redo: SnapshotManager::new(),
         }
     }
 
@@ -420,19 +421,17 @@ impl TextBuffer {
         self.buf.insert_str(self.cursor_byte, s);
         self.cursor_byte += s.len();
     }
-
 }
-
 
 ///////////////////////////////////////////////////////// editing primitives with snapshots
 impl TextBuffer {
     pub fn insert_char(&mut self, c: char) {
-        self.push_snapshot();
+        self.push_snapshot(true);
         self.insert_char_no_snapshot(c);
     }
 
     pub fn insert_str(&mut self, s: &str) {
-        self.push_snapshot();
+        self.push_snapshot(true);
         self.insert_str_no_snapshot(s);
     }
 
@@ -533,6 +532,7 @@ mod test_editing_primitives {
 impl TextBuffer {
     pub fn delete_backwards(&mut self) {
         // delete one grapheme to the left
+        self.push_snapshot(true);
         let old_cursor_col = self.cursor_byte;
         self.move_left();
         assert!(self.cursor_byte <= old_cursor_col);
@@ -541,12 +541,14 @@ impl TextBuffer {
 
     pub fn delete_forwards(&mut self) {
         // delete one grapheme to the right
+        self.push_snapshot(true);
         let cursor_pos_right = self.right_move_pos();
         assert!(self.cursor_byte <= cursor_pos_right);
         self.buf.drain(self.cursor_byte..cursor_pos_right);
     }
 
     pub fn delete_one_word_left(&mut self) {
+        self.push_snapshot(true);
         let old_cursor_col = self.cursor_byte;
         self.move_one_word_left();
         assert!(self.cursor_byte <= old_cursor_col);
@@ -554,6 +556,7 @@ impl TextBuffer {
     }
 
     pub fn delete_one_word_right(&mut self) {
+        self.push_snapshot(true);
         let cursor_pos_right = self.right_word_move_pos();
         assert!(self.cursor_byte <= cursor_pos_right);
         self.buf.drain(self.cursor_byte..cursor_pos_right);
@@ -607,7 +610,7 @@ impl TextBuffer {
         }
 
         // Delete the word and position cursor at the start
-        self.push_snapshot();
+        self.push_snapshot(false);
         self.buf.drain(sub_string.start..sub_string.end);
         self.cursor_byte = sub_string.start;
         self.insert_str_no_snapshot(new_word);
@@ -830,18 +833,15 @@ mod test_accessors {
 
 ///////////////////////////////////////////////////////// undo and redo
 impl TextBuffer {
-    fn create_snapshot(&self) -> BufSnapshot {
-        BufSnapshot {
-            buf: self.buf.clone(),
-            cursor_byte: self.cursor_byte,
-        }
+    fn create_snapshot(&self) -> Snapshot {
+        Snapshot::new(&self.buf, self.cursor_byte)
     }
 
-    fn push_snapshot(&mut self) {
+    fn push_snapshot(&mut self, merge_with_recent: bool) {
         let snapshot = self.create_snapshot();
         log::debug!("Pushing snapshot: snapshot={:?}", snapshot);
 
-        self.undo_redo.push(snapshot);
+        self.undo_redo.add_snapshot(snapshot, merge_with_recent);
     }
 
     fn undo(&mut self) {
@@ -879,28 +879,43 @@ impl TextBuffer {
     }
 }
 
-impl Snapshots {
+impl SnapshotManager {
     // Most of the time the edit buffer will be small so Im choosing to push and pop the entire edit buffer
     // as opposed to a more complex diffing approach.
     fn new() -> Self {
-        Snapshots {
+        SnapshotManager {
             undos: Vec::new(),
             redos: Vec::new(),
+            last_snapshot_time: std::time::Instant::now(),
         }
     }
 
-    fn push(&mut self, snapshot: BufSnapshot) -> bool {
+    fn add_snapshot(&mut self, snapshot: Snapshot, merge_with_recent: bool) -> bool {
         if Some(&snapshot) == self.undos.last() {
             log::debug!("Snapshot identical to last one, not pushing a new one");
             return false;
         }
 
-        self.undos.push(snapshot);
+        let now = std::time::Instant::now();
+        let duration_since_last = now.duration_since(self.last_snapshot_time);
+
+        if merge_with_recent
+            && !cfg!(test)
+            && duration_since_last < std::time::Duration::from_millis(1000)
+            && self.undos.len() > 0
+        {
+            log::debug!("Reusing recent snapshot: age {:?} ", duration_since_last);
+        } else {
+            self.last_snapshot_time = now;
+            log::debug!("Pushing new snapshot onto undo stack: {:?}", snapshot);
+            self.undos.push(snapshot);
+        }
+
         self.redos.clear(); // clear redo stack on new edit
         true
     }
 
-    fn next_snapshot(&mut self, current_state: BufSnapshot) -> Option<BufSnapshot> {
+    fn next_snapshot(&mut self, current_state: Snapshot) -> Option<Snapshot> {
         if self.redos.is_empty() {
             log::debug!("No redos available");
             None
@@ -917,7 +932,7 @@ impl Snapshots {
         }
     }
 
-    fn prev_snapshot(&mut self, current_state: BufSnapshot) -> Option<BufSnapshot> {
+    fn prev_snapshot(&mut self, current_state: Snapshot) -> Option<Snapshot> {
         if self.undos.is_empty() {
             log::debug!("At oldest snapshot, cannot undo further");
             None
@@ -962,21 +977,21 @@ mod test_undo_redo {
     fn undo_stack() {
         setup_logging();
 
-        let snap = |s: &str| BufSnapshot::new(s, 0);
+        let snap = |s: &str| Snapshot::new(s, 0);
 
-        let mut s = Snapshots::new();
+        let mut s = SnapshotManager::new();
         assert_eq!(s.undos, vec![]);
         assert_eq!(s.redos, vec![]);
 
-        s.push(snap("apple"));
+        s.add_snapshot(snap("apple"), false);
         assert_eq!(s.undos, vec![snap("apple")]);
         assert_eq!(s.redos, vec![]);
 
-        s.push(snap("banana"));
+        s.add_snapshot(snap("banana"), false);
         assert_eq!(s.undos, vec![snap("apple"), snap("banana")]);
         assert_eq!(s.redos, vec![]);
 
-        s.push(snap("cow"));
+        s.add_snapshot(snap("cow"), false);
         assert_eq!(s.undos, vec![snap("apple"), snap("banana"), snap("cow")]);
         assert_eq!(s.redos, vec![]);
 
