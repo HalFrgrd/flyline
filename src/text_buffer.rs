@@ -21,7 +21,7 @@ impl TextBuffer {
         }
     }
 
-    /// Handle basic text editing keypresses. Returns true if the key was handled.
+    /// Handle basic text editing keypresses
     pub fn on_keypress(&mut self, key: KeyEvent) {
         use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -124,6 +124,18 @@ impl TextBuffer {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod test_misc {
+    use super::*;
+
+    #[test]
+    fn text_buffer_creation() {
+        let tb = TextBuffer::new("abc");
+        assert_eq!(tb.buffer(), "abc");
+        assert_eq!(tb.cursor_byte, 3);
     }
 }
 
@@ -250,6 +262,105 @@ impl TextBuffer {
     }
 }
 
+#[cfg(test)]
+mod test_movement {
+    use super::*;
+
+    #[test]
+    fn move_cursor_left() {
+        let mut tb = TextBuffer::new("test 👩‍💻");
+        assert_eq!(tb.cursor_byte, 16);
+        tb.move_left();
+        assert_eq!(tb.cursor_byte, 5);
+        tb.move_left();
+        tb.move_left();
+        tb.move_left();
+        tb.move_left();
+        assert_eq!(tb.cursor_byte, 1);
+        tb.move_left();
+        assert_eq!(tb.cursor_byte, 0);
+        tb.move_left();
+        assert_eq!(tb.cursor_byte, 0);
+    }
+
+    #[test]
+    fn move_cursor_right() {
+        let mut tb = TextBuffer::new("test 👩‍💻");
+        tb.move_left();
+        tb.move_left();
+        tb.move_left();
+        assert_eq!(tb.cursor_byte, 3);
+        tb.move_right();
+        assert_eq!(tb.cursor_byte, 4);
+        tb.move_right();
+        assert_eq!(tb.cursor_byte, 5);
+        tb.move_right();
+        assert_eq!(tb.cursor_byte, 16);
+        tb.move_right();
+        assert_eq!(tb.cursor_byte, 16);
+    }
+
+    #[test]
+    fn move_one_word_left() {
+        let mut tb = TextBuffer::new("abc def   ");
+        assert_eq!(tb.cursor_byte, "abc def   ".len());
+        tb.move_one_word_left();
+        assert_eq!(tb.cursor_byte, "abc ".len());
+        tb.move_left();
+        assert_eq!(tb.cursor_byte, "abc".len());
+        tb.move_one_word_left();
+        assert_eq!(tb.cursor_byte, "".len());
+    }
+
+    #[test]
+    fn move_one_word_right() {
+        let mut tb = TextBuffer::new("  abc def");
+        tb.move_to_start();
+        tb.move_one_word_right();
+        assert_eq!(tb.cursor_byte, "  ".len());
+        tb.move_one_word_right();
+        assert_eq!(tb.cursor_byte, "  abc ".len());
+        tb.move_one_word_right();
+        assert_eq!(tb.cursor_byte, "  abc def".len());
+    }
+
+    #[test]
+    fn move_line_up() {
+        let mut tb = TextBuffer::new("Line 1\nLine 2\nLine 3");
+        tb.move_end_of_line();
+        tb.move_line_up();
+        assert_eq!(tb.cursor_byte, "Line 1\nLine 2".len());
+        tb.move_line_up();
+        assert_eq!(tb.cursor_byte, "Line 1".len());
+    }
+
+    #[test]
+    fn move_line_down() {
+        let mut tb = TextBuffer::new("Line 1\nLine 2\nLine 3");
+        tb.move_to_start();
+        tb.move_line_down();
+        assert_eq!(tb.cursor_2d_position(), (1, 0));
+        tb.move_right();
+        tb.move_right();
+        tb.move_right();
+        tb.move_right();
+        assert_eq!(tb.cursor_byte, "Line 1\nLine".len());
+        tb.move_line_down();
+        assert_eq!(tb.cursor_byte, "Line 1\nLine 2\nLine".len());
+    }
+
+    #[test]
+    fn move_line_to_down_onto_empty_final_line() {
+        let mut tb = TextBuffer::new("Line 1\nLine 2\n");
+        tb.move_to_start();
+        tb.move_line_down();
+        assert_eq!(tb.cursor_2d_position(), (1, 0));
+        tb.move_line_down();
+        assert_eq!(tb.cursor_2d_position(), (2, 0));
+        assert_eq!(tb.cursor_byte, "Line 1\nLine 2\n".len());
+    }
+}
+
 ///////////////////////////////////////////////////////// editing primitves
 impl TextBuffer {
     pub fn insert_char(&mut self, c: char) {
@@ -264,6 +375,94 @@ impl TextBuffer {
 
     pub fn insert_newline(&mut self) {
         self.insert_char('\n');
+    }
+}
+
+#[cfg(test)]
+mod test_editing_primitives {
+    use super::*;
+
+    #[test]
+    fn zwj_emoji_insertion() {
+        let mut tb = TextBuffer::new("test ");
+        assert_eq!(tb.cursor_byte, 5);
+        tb.insert_char('👩');
+        assert_eq!(tb.cursor_byte, 5 + 4);
+        tb.insert_char('\u{200d}'); // ZWJ
+        assert_eq!(tb.cursor_byte, 5 + 4 + 3);
+        tb.insert_char('💻');
+        assert_eq!(tb.buffer(), "test 👩‍💻");
+        assert_eq!(tb.cursor_byte, 5 + 4 + 3 + 4);
+    }
+
+    #[test]
+    fn insert_char_emoji_with_modifier() {
+        // Emoji with skin tone modifier (should be treated as single grapheme)
+        let mut tb = TextBuffer::new("wave ");
+        tb.insert_char('👋');
+        tb.insert_char('\u{1F3FB}'); // Light skin tone modifier
+        assert_eq!(tb.buffer(), "wave 👋🏻");
+        assert_eq!(tb.cursor_byte, 13); // Base emoji (4 bytes) + modifier (4 bytes) + "wave " (5 bytes)
+    }
+
+    #[test]
+    fn insert_char_combining_diacritics() {
+        // Character with combining diacritical marks (NFD form)
+        let mut tb = TextBuffer::new("caf");
+        tb.insert_char('e');
+        tb.insert_char('\u{0301}'); // Combining acute accent
+        assert_eq!(tb.buffer(), "cafe\u{0301}"); // NFD (decomposed) form
+        assert_eq!(tb.cursor_byte, 6); // 'e' (1 byte) + combining accent (2 bytes) + "caf" (3 bytes)
+    }
+
+    #[test]
+    fn insert_char_regional_indicator() {
+        // Regional indicator symbols (flag emojis are pairs of these)
+        let mut tb = TextBuffer::new("Flag: ");
+        tb.insert_char('🇺'); // Regional indicator U
+        tb.insert_char('🇸'); // Regional indicator S
+        assert_eq!(tb.buffer(), "Flag: 🇺🇸");
+        assert_eq!(tb.cursor_byte, 14); // Each regional indicator is 4 bytes
+    }
+
+    #[test]
+    fn insert_str_mixed_width_characters() {
+        // Mix of ASCII, wide characters (CJK), and emoji
+        let mut tb = TextBuffer::new("Start: ");
+        tb.insert_str("Hello 世界 🌍");
+        assert_eq!(tb.buffer(), "Start: Hello 世界 🌍");
+        // "Start: " = 7, "Hello " = 6, "世界" = 6, " " = 1, "🌍" = 4 = 24 bytes total
+        assert_eq!(tb.cursor_byte, 24);
+    }
+
+    #[test]
+    fn insert_str_family_emoji_sequence() {
+        // Family emoji is a ZWJ sequence of multiple emojis
+        let mut tb = TextBuffer::new("Family: ");
+        tb.insert_str("👨‍👩‍👧‍👦"); // Man, woman, girl, boy with ZWJ
+        assert_eq!(tb.buffer(), "Family: 👨‍👩‍👧‍👦");
+        // This is: 👨 (4) + ZWJ (3) + 👩 (4) + ZWJ (3) + 👧 (4) + ZWJ (3) + 👦 (4) = 25 bytes
+        assert_eq!(tb.cursor_byte, 33); // "Family: " (8) + emoji sequence (25)
+    }
+
+    #[test]
+    fn insert_str_right_to_left_text() {
+        // Arabic and Hebrew text (right-to-left scripts)
+        let mut tb = TextBuffer::new("Text: ");
+        tb.insert_str("مرحبا שלום"); // Arabic "hello" + space + Hebrew "hello"
+        assert_eq!(tb.buffer(), "Text: مرحبا שלום");
+        // "Text: " = 6, "مرحبا" = 10 bytes, " " = 1, "שלום" = 8 bytes
+        assert_eq!(tb.cursor_byte, 25);
+    }
+
+    #[test]
+    fn insert_str_zero_width_joiner_sequences() {
+        // Multiple ZWJ sequences in one string
+        let mut tb = TextBuffer::new("");
+        tb.insert_str("👨‍💻 and 👩‍🔬"); // Programmer and scientist
+        assert_eq!(tb.buffer(), "👨‍💻 and 👩‍🔬");
+        // 👨‍💻 = 11 bytes, " and " = 5 bytes, 👩‍🔬 = 11 bytes
+        assert_eq!(tb.cursor_byte, 27);
     }
 }
 
@@ -349,6 +548,82 @@ impl TextBuffer {
         self.cursor_byte = sub_string.start;
         self.insert_str(new_word);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test_editing_advanced {
+    use super::*;
+
+    #[test]
+    fn delete_back() {
+        let mut tb = TextBuffer::new("Hello, World!");
+        tb.delete_backwards();
+        assert_eq!(tb.buffer(), "Hello, World");
+        tb.delete_backwards();
+        assert_eq!(tb.buffer(), "Hello, Worl");
+        tb.delete_backwards();
+        assert_eq!(tb.buffer(), "Hello, Wor");
+    }
+
+    fn create_substring(buffer: &str, word: &str) -> SubString {
+        let start = buffer.find(word).unwrap();
+        let end = start + word.len();
+        SubString {
+            s: word.to_string(),
+            start,
+            end,
+        }
+    }
+
+    #[test]
+    fn replace_word_under_cursor_at_start_of_line() {
+        // Cursor at position 0 (start of line) with non-ASCII word
+        let mut tb = TextBuffer::new("café option 日本語 🎯");
+        tb.move_to_start(); // Cursor at position 0, at start of "café"
+        tb.replace_word_under_cursor("coffee", &create_substring(&tb.buffer(), "café"))
+            .unwrap();
+        assert_eq!(tb.buffer(), "coffee option 日本語 🎯");
+        assert_eq!(tb.cursor_byte, "coffee".len());
+    }
+
+    #[test]
+    fn replace_word_under_cursor_in_middle_of_word() {
+        // Cursor in the middle of a word with Cyrillic characters
+        let mut tb = TextBuffer::new("git файл --message 'привет' 🚀");
+        tb.move_to_start();
+        for _ in 0..6 {
+            tb.move_right();
+        } // Position at "git фа|йл" (middle of "файл")
+        tb.replace_word_under_cursor("file", &create_substring(&tb.buffer(), "файл"))
+            .unwrap();
+        assert_eq!(tb.buffer(), "git file --message 'привет' 🚀");
+        assert_eq!(tb.cursor_byte, "git file".len());
+    }
+
+    #[test]
+    fn replace_word_under_cursor_at_end_of_line() {
+        // Cursor at the end of line on an emoji word
+        let mut tb = TextBuffer::new("hello world 🎉🎊🎈");
+        // Cursor is already at the end, on the emoji sequence
+        tb.replace_word_under_cursor("celebration", &create_substring(&tb.buffer(), "🎉🎊🎈"))
+            .unwrap();
+        assert_eq!(tb.buffer(), "hello world celebration");
+        assert_eq!(tb.cursor_byte, "hello world celebration".len());
+    }
+
+    #[test]
+    fn replace_word_under_cursor_accented_at_word_end() {
+        // Cursor at the end of a word with heavy accents
+        let mut tb = TextBuffer::new("find naïve résumé café 📄");
+        tb.move_to_start();
+        for _ in 0..10 {
+            tb.move_right();
+        } // Position at "find naïve| résumé" (end of "naïve")
+        tb.replace_word_under_cursor("simple", &create_substring(&tb.buffer(), "naïve"))
+            .unwrap();
+        assert_eq!(tb.buffer(), "find simple résumé café 📄");
+        assert_eq!(tb.cursor_byte, "find simple".len());
     }
 }
 
@@ -484,6 +759,11 @@ impl TextBuffer {
     // }
 }
 
+mod test_accessors {
+    // Add accessor-specific tests here if needed
+    // Currently most accessor methods are tested implicitly in other modules
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SubString {
     pub s: String,    // contents expected to be found between start and end
@@ -508,273 +788,5 @@ impl SubString {
             start,
             end,
         })
-    }
-}
-
-#[cfg(test)]
-mod text_buffer_tests {
-    use super::*;
-
-    #[test]
-    fn text_buffer_creation() {
-        let tb = TextBuffer::new("abc");
-        assert_eq!(tb.buffer(), "abc");
-        assert_eq!(tb.cursor_byte, 3);
-    }
-
-    #[test]
-    fn delete_back() {
-        let mut tb = TextBuffer::new("Hello, World!");
-        tb.delete_backwards();
-        assert_eq!(tb.buffer(), "Hello, World");
-        tb.delete_backwards();
-        assert_eq!(tb.buffer(), "Hello, Worl");
-        tb.delete_backwards();
-        assert_eq!(tb.buffer(), "Hello, Wor");
-    }
-
-    #[test]
-    fn move_cursor_left() {
-        let mut tb = TextBuffer::new("test 👩‍💻");
-        assert_eq!(tb.cursor_byte, 16);
-        tb.move_left();
-        assert_eq!(tb.cursor_byte, 5);
-        tb.move_left();
-        tb.move_left();
-        tb.move_left();
-        tb.move_left();
-        assert_eq!(tb.cursor_byte, 1);
-        tb.move_left();
-        assert_eq!(tb.cursor_byte, 0);
-        tb.move_left();
-        assert_eq!(tb.cursor_byte, 0);
-    }
-
-    #[test]
-    fn move_cursor_right() {
-        let mut tb = TextBuffer::new("test 👩‍💻");
-        tb.move_left();
-        tb.move_left();
-        tb.move_left();
-        assert_eq!(tb.cursor_byte, 3);
-        tb.move_right();
-        assert_eq!(tb.cursor_byte, 4);
-        tb.move_right();
-        assert_eq!(tb.cursor_byte, 5);
-        tb.move_right();
-        assert_eq!(tb.cursor_byte, 16);
-        tb.move_right();
-        assert_eq!(tb.cursor_byte, 16);
-    }
-
-    #[test]
-    fn move_one_word_left() {
-        let mut tb = TextBuffer::new("abc def   ");
-        assert_eq!(tb.cursor_byte, "abc def   ".len());
-        tb.move_one_word_left();
-        assert_eq!(tb.cursor_byte, "abc ".len());
-        tb.move_left();
-        assert_eq!(tb.cursor_byte, "abc".len());
-        tb.move_one_word_left();
-        assert_eq!(tb.cursor_byte, "".len());
-    }
-
-    #[test]
-    fn move_one_word_right() {
-        let mut tb = TextBuffer::new("  abc def");
-        tb.move_to_start();
-        tb.move_one_word_right();
-        assert_eq!(tb.cursor_byte, "  ".len());
-        tb.move_one_word_right();
-        assert_eq!(tb.cursor_byte, "  abc ".len());
-        tb.move_one_word_right();
-        assert_eq!(tb.cursor_byte, "  abc def".len());
-    }
-
-    // === moving lines tests ===
-
-    #[test]
-    fn move_line_up() {
-        let mut tb = TextBuffer::new("Line 1\nLine 2\nLine 3");
-        tb.move_end_of_line();
-        tb.move_line_up();
-        assert_eq!(tb.cursor_byte, "Line 1\nLine 2".len());
-        tb.move_line_up();
-        assert_eq!(tb.cursor_byte, "Line 1".len());
-    }
-
-    #[test]
-    fn move_line_down() {
-        let mut tb = TextBuffer::new("Line 1\nLine 2\nLine 3");
-        tb.move_to_start();
-        tb.move_line_down();
-        assert_eq!(tb.cursor_2d_position(), (1, 0));
-        tb.move_right();
-        tb.move_right();
-        tb.move_right();
-        tb.move_right();
-        assert_eq!(tb.cursor_byte, "Line 1\nLine".len());
-        tb.move_line_down();
-        assert_eq!(tb.cursor_byte, "Line 1\nLine 2\nLine".len());
-    }
-
-    #[test]
-    fn move_line_to_down_onto_empty_final_line() {
-        let mut tb = TextBuffer::new("Line 1\nLine 2\n");
-        tb.move_to_start();
-        tb.move_line_down();
-        assert_eq!(tb.cursor_2d_position(), (1, 0));
-        tb.move_line_down();
-        assert_eq!(tb.cursor_2d_position(), (2, 0));
-        assert_eq!(tb.cursor_byte, "Line 1\nLine 2\n".len());
-    }
-
-    // === insert_char tests ===
-
-    #[test]
-    fn zwj_emoji_insertion() {
-        let mut tb = TextBuffer::new("test ");
-        assert_eq!(tb.cursor_byte, 5);
-        tb.insert_char('👩');
-        assert_eq!(tb.cursor_byte, 5 + 4);
-        tb.insert_char('\u{200d}'); // ZWJ
-        assert_eq!(tb.cursor_byte, 5 + 4 + 3);
-        tb.insert_char('💻');
-        assert_eq!(tb.buffer(), "test 👩‍💻");
-        assert_eq!(tb.cursor_byte, 5 + 4 + 3 + 4);
-    }
-
-    #[test]
-    fn insert_char_emoji_with_modifier() {
-        // Emoji with skin tone modifier (should be treated as single grapheme)
-        let mut tb = TextBuffer::new("wave ");
-        tb.insert_char('👋');
-        tb.insert_char('\u{1F3FB}'); // Light skin tone modifier
-        assert_eq!(tb.buffer(), "wave 👋🏻");
-        assert_eq!(tb.cursor_byte, 13); // Base emoji (4 bytes) + modifier (4 bytes) + "wave " (5 bytes)
-    }
-
-    #[test]
-    fn insert_char_combining_diacritics() {
-        // Character with combining diacritical marks (NFD form)
-        let mut tb = TextBuffer::new("caf");
-        tb.insert_char('e');
-        tb.insert_char('\u{0301}'); // Combining acute accent
-        assert_eq!(tb.buffer(), "cafe\u{0301}"); // NFD (decomposed) form
-        assert_eq!(tb.cursor_byte, 6); // 'e' (1 byte) + combining accent (2 bytes) + "caf" (3 bytes)
-    }
-
-    #[test]
-    fn insert_char_regional_indicator() {
-        // Regional indicator symbols (flag emojis are pairs of these)
-        let mut tb = TextBuffer::new("Flag: ");
-        tb.insert_char('🇺'); // Regional indicator U
-        tb.insert_char('🇸'); // Regional indicator S
-        assert_eq!(tb.buffer(), "Flag: 🇺🇸");
-        assert_eq!(tb.cursor_byte, 14); // Each regional indicator is 4 bytes
-    }
-
-    // === insert_str tests ===
-
-    #[test]
-    fn insert_str_mixed_width_characters() {
-        // Mix of ASCII, wide characters (CJK), and emoji
-        let mut tb = TextBuffer::new("Start: ");
-        tb.insert_str("Hello 世界 🌍");
-        assert_eq!(tb.buffer(), "Start: Hello 世界 🌍");
-        // "Start: " = 7, "Hello " = 6, "世界" = 6, " " = 1, "🌍" = 4 = 24 bytes total
-        assert_eq!(tb.cursor_byte, 24);
-    }
-
-    #[test]
-    fn insert_str_family_emoji_sequence() {
-        // Family emoji is a ZWJ sequence of multiple emojis
-        let mut tb = TextBuffer::new("Family: ");
-        tb.insert_str("👨‍👩‍👧‍👦"); // Man, woman, girl, boy with ZWJ
-        assert_eq!(tb.buffer(), "Family: 👨‍👩‍👧‍👦");
-        // This is: 👨 (4) + ZWJ (3) + 👩 (4) + ZWJ (3) + 👧 (4) + ZWJ (3) + 👦 (4) = 25 bytes
-        assert_eq!(tb.cursor_byte, 33); // "Family: " (8) + emoji sequence (25)
-    }
-
-    #[test]
-    fn insert_str_right_to_left_text() {
-        // Arabic and Hebrew text (right-to-left scripts)
-        let mut tb = TextBuffer::new("Text: ");
-        tb.insert_str("مرحبا שלום"); // Arabic "hello" + space + Hebrew "hello"
-        assert_eq!(tb.buffer(), "Text: مرحبا שלום");
-        // "Text: " = 6, "مرحبا" = 10 bytes, " " = 1, "שלום" = 8 bytes
-        assert_eq!(tb.cursor_byte, 25);
-    }
-
-    #[test]
-    fn insert_str_zero_width_joiner_sequences() {
-        // Multiple ZWJ sequences in one string
-        let mut tb = TextBuffer::new("");
-        tb.insert_str("👨‍💻 and 👩‍🔬"); // Programmer and scientist
-        assert_eq!(tb.buffer(), "👨‍💻 and 👩‍🔬");
-        // 👨‍💻 = 11 bytes, " and " = 5 bytes, 👩‍🔬 = 11 bytes
-        assert_eq!(tb.cursor_byte, 27);
-    }
-
-    // === replace_word_under_cursor tests ===
-
-    fn create_substring(buffer: &str, word: &str) -> SubString {
-        let start = buffer.find(word).unwrap();
-        let end = start + word.len();
-        SubString {
-            s: word.to_string(),
-            start,
-            end,
-        }
-    }
-
-    #[test]
-    fn replace_word_under_cursor_at_start_of_line() {
-        // Cursor at position 0 (start of line) with non-ASCII word
-        let mut tb = TextBuffer::new("café option 日本語 🎯");
-        tb.move_to_start(); // Cursor at position 0, at start of "café"
-        tb.replace_word_under_cursor("coffee", &create_substring(&tb.buffer(), "café"))
-            .unwrap();
-        assert_eq!(tb.buffer(), "coffee option 日本語 🎯");
-        assert_eq!(tb.cursor_byte, "coffee".len());
-    }
-
-    #[test]
-    fn replace_word_under_cursor_in_middle_of_word() {
-        // Cursor in the middle of a word with Cyrillic characters
-        let mut tb = TextBuffer::new("git файл --message 'привет' 🚀");
-        tb.move_to_start();
-        for _ in 0..6 {
-            tb.move_right();
-        } // Position at "git фа|йл" (middle of "файл")
-        tb.replace_word_under_cursor("file", &create_substring(&tb.buffer(), "файл"))
-            .unwrap();
-        assert_eq!(tb.buffer(), "git file --message 'привет' 🚀");
-        assert_eq!(tb.cursor_byte, "git file".len());
-    }
-
-    #[test]
-    fn replace_word_under_cursor_at_end_of_line() {
-        // Cursor at the end of line on an emoji word
-        let mut tb = TextBuffer::new("hello world 🎉🎊🎈");
-        // Cursor is already at the end, on the emoji sequence
-        tb.replace_word_under_cursor("celebration", &create_substring(&tb.buffer(), "🎉🎊🎈"))
-            .unwrap();
-        assert_eq!(tb.buffer(), "hello world celebration");
-        assert_eq!(tb.cursor_byte, "hello world celebration".len());
-    }
-
-    #[test]
-    fn replace_word_under_cursor_accented_at_word_end() {
-        // Cursor at the end of a word with heavy accents
-        let mut tb = TextBuffer::new("find naïve résumé café 📄");
-        tb.move_to_start();
-        for _ in 0..10 {
-            tb.move_right();
-        } // Position at "find naïve| résumé" (end of "naïve")
-        tb.replace_word_under_cursor("simple", &create_substring(&tb.buffer(), "naïve"))
-            .unwrap();
-        assert_eq!(tb.buffer(), "find simple résumé café 📄");
-        assert_eq!(tb.cursor_byte, "find simple".len());
     }
 }
