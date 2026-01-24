@@ -115,7 +115,6 @@ pub fn get_completion_context<'a>(
     let root_node = tree.root_node();
 
     // Find the deepest node that the cursor is part of
-
     let cursor_node = find_cursor_node(&root_node, cursor_byte_pos);
 
     let word_under_cursor_range = if cursor_node
@@ -123,22 +122,17 @@ pub fn get_completion_context<'a>(
         .to_inclusive()
         .contains(&cursor_byte_pos)
     {
-        println!("Cursor is inside the node: {:?}", cursor_node);
-        // dbg!(&buffer.as_bytes());
         if buffer
             .char_indices()
             .any(|(i, c)| i == cursor_byte_pos && c.is_whitespace())
             || (cursor_byte_pos >= buffer.len()
                 && buffer.chars().last().map_or(false, |c| c.is_whitespace()))
         {
-            println!("Cursor is at whitespace inside the node");
             cursor_byte_pos..cursor_byte_pos
         } else {
-            println!("Cursor is at non-whitespace inside the node");
             cursor_node.byte_range()
         }
     } else {
-        println!("Cursor is NOT inside the node: {:?}", cursor_node);
         cursor_byte_pos..cursor_byte_pos
     };
     let word_under_cursor = &buffer[word_under_cursor_range.clone()];
@@ -181,10 +175,10 @@ pub fn get_completion_context<'a>(
 fn find_cursor_node<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
     // Check children to find the deepest node containing the cursor
     for child in node.children(&mut node.walk()) {
-        if !child.is_named() {
-            // This prevents matching on punctuation nodes like ; or & or ))
-            continue;
-        }
+        // if !child.is_named() {
+        //     // This prevents matching on punctuation nodes like ; or & or ))
+        //     continue;
+        // }
         if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
             return find_cursor_node(&child, cursor_byte_pos);
         }
@@ -230,8 +224,20 @@ fn find_comp_context_from_cursor<'tree>(cursor_node: &Node<'tree>) -> Node<'tree
             | "test_command"
             | "arithmetic_expansion"
             | "expansion"
-            | "process_substitution" => {
+            | "process_substitution"
+                if current_node.is_named() =>
+            {
                 return current_node;
+            }
+
+            "command_substitution"
+            | "test_command"
+            | "arithmetic_expansion"
+            | "expansion"
+            | "process_substitution"
+                if !current_node.is_named() =>
+            {
+                return parent;
             }
 
             _ => {
@@ -410,6 +416,15 @@ mod tests {
     }
 
     #[test]
+    fn test_dollar_sign() {
+        let input = "echo $";
+        let res = run(input, input.len());
+        assert_eq!(res.context, "echo $");
+        assert_eq!(res.context_until_cursor, "echo $");
+        assert_eq!(res.word_under_cursor, "$");
+    }
+
+    #[test]
     fn test_with_pipeline() {
         let input = r#"cat filé.txt | grep "pattern" | sort"#;
         let res = run(input, input.len());
@@ -469,8 +484,8 @@ mod tests {
     fn test_command_at_end_of_subshell() {
         let input = r#"echo $(ls -la)"#;
         let res = run(input, input.len());
-        assert_eq!(res.context, "echo $(ls -la)");
-        assert_eq!(res.context_until_cursor, "echo $(ls -la)");
+        assert_eq!(res.context, "$(ls -la)");
+        assert_eq!(res.context_until_cursor, "$(ls -la)");
     }
 
     #[test]
@@ -495,16 +510,16 @@ mod tests {
         let input = r#"echo ${HOME} asdf"#;
         let cursor_pos = "echo ${HOME}".len();
         let res = run(input, cursor_pos);
-        assert_eq!(res.context, r#"echo ${HOME} asdf"#);
-        assert_eq!(res.context_until_cursor, r#"echo ${HOME}"#);
+        assert_eq!(res.context, "${HOME}");
+        assert_eq!(res.context_until_cursor, "${HOME}");
     }
 
     #[test]
     fn test_command_at_end_of_param_expansion() {
         let input = r#"ls -la ${PWD}"#;
         let res = run(input, input.len());
-        assert_eq!(res.context, r#"ls -la ${PWD}"#);
-        assert_eq!(res.context_until_cursor, r#"ls -la ${PWD}"#);
+        assert_eq!(res.context, "${PWD}");
+        assert_eq!(res.context_until_cursor, "${PWD}");
     }
 
     #[test]
@@ -558,8 +573,8 @@ mod tests {
         let input = r#"echo `ls -la` qwe"#;
         let cursor_pos = "echo `ls -la`".len();
         let res = run(input, cursor_pos);
-        assert_eq!(res.context, "echo `ls -la` qwe");
-        assert_eq!(res.context_until_cursor, "echo `ls -la`");
+        assert_eq!(res.context, "`ls -la`");
+        assert_eq!(res.context_until_cursor, "`ls -la`");
     }
 
     #[test]
@@ -601,8 +616,8 @@ mod tests {
         let input = r#"echo $((5 + 3)) result"#;
         let cursor_pos = "echo $((5 + 3)".len();
         let res = run(input, cursor_pos);
-        assert_eq!(res.context, "echo $((5 + 3)) result");
-        assert_eq!(res.context_until_cursor, "echo $((5 + 3)");
+        assert_eq!(res.context, "$((5 + 3))");
+        assert_eq!(res.context_until_cursor, "$((5 + 3)");
     }
 
     #[test]
@@ -610,16 +625,24 @@ mod tests {
         let input = r#"echo $((10 * 2)) done"#;
         let cursor_pos = "echo $((10 * 2))".len();
         let res = run(input, cursor_pos);
-        assert_eq!(res.context, r#"echo $((10 * 2)) done"#);
-        assert_eq!(res.context_until_cursor, r#"echo $((10 * 2))"#);
+        assert_eq!(res.context, "$((10 * 2))");
+        assert_eq!(res.context_until_cursor, "$((10 * 2))");
     }
 
     #[test]
-    fn test_command_at_end_of_arith_subst() {
+    fn test_command_at_mid_end_of_arith_subst() {
+        let input = r#"result=$((100 / 5))"#;
+        let res = run(input, input.len() - 1);
+        assert_eq!(res.context, r#"$((100 / 5))"#);
+        assert_eq!(res.context_until_cursor, r#"$((100 / 5)"#);
+    }
+
+    #[test]
+    fn test_command_at_end_end_of_arith_subst() {
         let input = r#"result=$((100 / 5))"#;
         let res = run(input, input.len());
-        assert_eq!(res.context, r#"result=$((100 / 5))"#);
-        assert_eq!(res.context_until_cursor, r#"result=$((100 / 5))"#);
+        assert_eq!(res.context, r#"$((100 / 5))"#);
+        assert_eq!(res.context_until_cursor, r#"$((100 / 5))"#);
     }
 
     #[test]
@@ -680,8 +703,8 @@ mod tests {
     fn test_command_at_end_of_proc_subst_in() {
         let input = r#"cat <(echo test)"#;
         let res = run(input, input.len());
-        assert_eq!(res.context, r#"cat <(echo test)"#);
-        assert_eq!(res.context_until_cursor, r#"cat <(echo test)"#);
+        assert_eq!(res.context, r#"<(echo test)"#);
+        assert_eq!(res.context_until_cursor, r#"<(echo test)"#);
     }
 
     #[test]

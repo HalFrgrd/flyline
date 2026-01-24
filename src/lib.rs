@@ -62,8 +62,9 @@ fn setup_logging() -> Result<()> {
             .set_target_level(LevelFilter::Off)
             .set_location_level(LevelFilter::Debug)
             .add_filter_ignore_str("flyline::text_buffer")
-            .add_filter_ignore_str("flyline::tab_completion")
+            // .add_filter_ignore_str("flyline::tab_completion")
             .add_filter_ignore_str("flyline::history")
+            .add_filter_ignore_str("flyline::bash_funcs")
             .build(),
         log_file,
     )?;
