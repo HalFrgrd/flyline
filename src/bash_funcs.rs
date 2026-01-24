@@ -71,6 +71,22 @@ impl CommandType {
     }
 }
 
+pub fn find_alias(cmd: &str) -> Option<String> {
+    unsafe {
+        let alias_ptr =
+            bash_symbols::get_alias_value(std::ffi::CString::new(cmd).unwrap().as_ptr());
+        if alias_ptr.is_null() {
+            return None;
+        }
+
+        let c_str = std::ffi::CStr::from_ptr(alias_ptr);
+        if let Ok(str_slice) = c_str.to_str() {
+            return Some(str_slice.to_string());
+        }
+    }
+    None
+}
+
 pub fn call_type(cmd: &str) -> (CommandType, String) {
     // Call the `type` builtin to check if the command exists
     let cmd_c_str = std::ffi::CString::new(cmd).unwrap();
@@ -283,7 +299,16 @@ pub fn run_autocomplete_compspec(
     cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
 ) -> Result<Vec<String>> {
-    if !full_command.contains(command_word) {
+    log::debug!(
+        "run_autocomplete_compspec called with full_command='{}'\ncommand_word='{}'\nword_under_cursor='{}'\ncursor_byte_pos={}\nword_under_cursor_byte_end={}",
+        full_command,
+        command_word,
+        word_under_cursor,
+        cursor_byte_pos,
+        word_under_cursor_byte_end
+    );
+
+    if !full_command.starts_with(command_word) {
         log::debug!(
             "Command word '{}' not found in full command '{}'",
             command_word,

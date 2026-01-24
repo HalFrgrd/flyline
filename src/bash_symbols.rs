@@ -91,6 +91,11 @@ unsafe extern "C" {
     // from shell.h
     pub static interactive_shell: c_int;
 
+    // alias.h
+    /* Return the value of the alias for NAME, or NULL if there is none. */
+    // extern char *get_alias_value (const char *);
+    pub fn get_alias_value(name: *const c_char) -> *mut c_char;
+
     // from type.def
     // int describe_command (char *command, int dflags)
     pub fn describe_command(command: *const c_char, dflags: c_int) -> c_int;

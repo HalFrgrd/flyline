@@ -657,16 +657,58 @@ impl<'a> App<'a> {
                 )
                 .try_accept(&mut self.buffer);
             }
-            tab_completion_context::CompType::CommandComp { command_word } => {
-                let full_command = completion_context.context;
-                // this it the cursor position relative to the start of the completion context
-                let cursor_byte_pos = completion_context.context_until_cursor.len();
+            tab_completion_context::CompType::CommandComp { mut command_word } => {
+                // This isnt just for commands like `git`, `cargo`
+                // Because we call bash_symbols::programmable_completions
+                // Bash also completes env vars (`echo $HO`) and other useful completions.
+                // Bash doesnt handle alias expansion well:
+                // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
+                // Since aliases are the highest priority in command word resolution,
+                // If it is an alias, lets expand it here for better completion results.
+                let poss_alias = bash_funcs::find_alias(&command_word);
+                log::debug!(
+                    "Checking for alias for command word '{}': {:?}",
+                    command_word,
+                    poss_alias
+                );
 
-                let word_under_cursor_end = {
-                    let word_start_offset_in_context =
-                        word_under_cursor.as_ptr() as usize - full_command.as_ptr() as usize;
+                let mut word_under_cursor_end = {
+                    let word_start_offset_in_context = word_under_cursor.as_ptr() as usize
+                        - completion_context.context.as_ptr() as usize;
                     word_start_offset_in_context + word_under_cursor.len()
                 };
+
+                let full_command: String;
+
+                // this it the cursor position relative to the start of the completion context
+                let mut cursor_byte_pos = completion_context.context_until_cursor.len();
+
+                match poss_alias {
+                    Some(alias)
+                        if alias.len() > 0
+                            && completion_context.context.starts_with(&command_word)
+                            && completion_context.context_until_cursor.len()
+                                > command_word.len() =>
+                    {
+                        let len_delta = alias.len() as isize - command_word.len() as isize;
+                        // adjust based on signed delta
+                        word_under_cursor_end =
+                            word_under_cursor_end.saturating_add_signed(len_delta);
+                        cursor_byte_pos = cursor_byte_pos.saturating_add_signed(len_delta);
+
+                        // build the new full_command by replacing the leading command_word with the alias
+                        full_command =
+                            alias.to_string() + &completion_context.context[command_word.len()..];
+                        command_word = alias
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or(&alias)
+                            .to_string();
+                    }
+                    _ => {
+                        full_command = completion_context.context.to_string();
+                    }
+                }
 
                 let poss_completions = bash_funcs::run_autocomplete_compspec(
                     &full_command,

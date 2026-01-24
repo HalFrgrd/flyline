@@ -49,7 +49,7 @@ impl<'a> CompletionContext<'a> {
             Some(CompType::EnvVariable)
         } else if false && word.starts_with('~') && !word.contains("/") {
             Some(CompType::TildeExpansion)
-        } else if false && word.contains('*') || word.contains('?') || word.contains('[') {
+        } else if word.contains('*') || word.contains('?') || word.contains('[') {
             // TODO "*.md will match this. need some better logic here
             Some(CompType::GlobExpansion)
         } else {
