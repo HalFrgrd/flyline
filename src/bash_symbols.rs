@@ -179,6 +179,10 @@ unsafe extern "C" {
     #[link_name = "rl_readline_state"]
     pub static mut rl_readline_state: libc::c_ulong;
 
+    // int current_command_line_count;
+    #[link_name = "current_command_line_count"]
+    pub static mut current_command_line_count: c_int;
+
 }
 
 // COMPSPEC structure from pcomplete.h

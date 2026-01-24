@@ -3,11 +3,39 @@ use ratatui::text::{Line, Span, Text};
 
 pub struct PromptManager {
     // TODO think of lifetimes
-    ps1: Vec<Line<'static>>,
+    prompt: Vec<Line<'static>>,
 }
 
 impl PromptManager {
-    pub fn new(ps1: String) -> Self {
+    pub fn new(ps1: String, unfinished_from_prev_command: bool) -> Self {
+        if unfinished_from_prev_command {
+            // If the previous command was unfinished, use a simple prompt to avoid confusion
+
+            let style = ratatui::style::Style::default()
+                .bg(ratatui::style::Color::Red)
+                .fg(ratatui::style::Color::Black);
+
+            return PromptManager {
+                prompt: vec![
+                    Line::from(vec![
+                        Span::styled(
+                            "Bash is waiting for more input to finish the previous command .",
+                            style.clone(),
+                        ),
+                        Span::styled(
+                            "Flyline thought the previous command was complete. ",
+                            style.clone(),
+                        ),
+                        Span::styled(
+                            "Please open an issue on GitHub with the previous command that caused this message ",
+                            style.clone(),
+                        ),
+                    ]),
+                    Line::from("> "),
+                ],
+            };
+        }
+
         // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
         let ps1 = ps1.replace("\\[", "").replace("\\]", "");
         const PS1_DEFAULT: &str = "bad ps1> ";
@@ -21,7 +49,7 @@ impl PromptManager {
             lines => lines,
         };
 
-        PromptManager { ps1 }
+        PromptManager { prompt: ps1 }
     }
 
     pub fn get_ps1_lines(&self) -> Vec<Line<'static>> {
@@ -37,7 +65,7 @@ impl PromptManager {
             now.subsec_millis()          // milliseconds
         );
 
-        self.ps1
+        self.prompt
             .clone()
             .into_iter()
             .map(|line| {

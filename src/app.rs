@@ -181,13 +181,16 @@ impl<'a> App<'a> {
             .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
             .unwrap_or("/home/".to_string() + &user);
 
+        let unfinished_from_prev_command =
+            unsafe { crate::bash_symbols::current_command_line_count } > 0;
+
         history.new_session();
         App {
             mode: AppRunningState::Running,
             buffer: TextBuffer::new(&starting_content),
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
-            prompt_manager: PromptManager::new(ps1_prompt),
+            prompt_manager: PromptManager::new(ps1_prompt, unfinished_from_prev_command),
             home_path: home_path,
             history_manager: history,
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
