@@ -52,16 +52,21 @@ impl<'a> CompletionContext<'a> {
     }
 
     pub fn new(buffer: &'a str, command_until_cursor: &'a str, command: &'a str) -> Self {
-        let comp_type = if false && command_until_cursor.ends_with(char::is_whitespace) {
+        if cfg!(test) {
+            dbg!(&command_until_cursor);
+            dbg!(&command);
+        }
+
+        let comp_type = if command.trim().is_empty() {
+            CompType::FirstWord(SubString::new(buffer, command).unwrap())
+        } else if false && command_until_cursor.ends_with(char::is_whitespace) {
             let cursor_white_space = match command_until_cursor.char_indices().next_back() {
                 Some((byte, _)) => &command_until_cursor[byte..],
                 None => "",
             };
 
             CompType::CursorOnBlank(SubString::new(buffer, cursor_white_space).unwrap())
-        } else if command.trim().is_empty()
-            || !command_until_cursor.chars().any(|c| c.is_whitespace())
-        {
+        } else if !command_until_cursor.chars().any(|c| c.is_whitespace()) {
             let first_word =
                 SubString::new(buffer, command.split_whitespace().next().unwrap_or("")).unwrap();
             if let Some(comp_type) = Self::classify_word_type(&first_word) {
@@ -112,8 +117,6 @@ pub fn get_completion_context<'a>(
     let root_node = tree.root_node();
 
     // Find the deepest node that contains the cursor
-    // TODO
-    // let cusor_node = &root_node.descendant_for_byte_range(cursor_byte_pos, cursor_byte_pos+1).unwrap();
     let cursor_node = find_deepest_node_at_position(&root_node, cursor_byte_pos);
     
     if cfg!(test) {
@@ -121,9 +124,9 @@ pub fn get_completion_context<'a>(
         dbg!(&cursor_node);
     }
 
-
     // Find the command context for this cursor position
-    let (command_start, command_end) = find_command_bounds_from_node(&cursor_node);
+    let completion_context_node = find_command_bounds_from_node(&cursor_node);
+    let (command_start, command_end) = trim_command_node(&completion_context_node, cursor_byte_pos);
 
     let command = &buffer[command_start..command_end];
     let command_until_cursor = if cursor_byte_pos > command_start {
@@ -156,57 +159,124 @@ fn find_deepest_node_at_position<'a>(node: &Node<'a>, cursor_byte_pos: usize) ->
     *node
 }
 
-fn find_command_bounds_from_node(cursor_node: &Node) -> (usize, usize) {
+fn find_command_bounds_from_node<'tree>(cursor_node: &Node<'tree>) -> Node<'tree> {
 
-    let found_node: &Node = ||{
-        let mut current_node = *cursor_node;
+    let mut current_node = *cursor_node;
 
-        // Traverse up the tree to find the appropriate command context
-        loop {
-            if cfg!(test) {
-                dbg!(&current_node);
-                dbg!(&current_node.parent());
+    // Traverse up the tree to find the appropriate command context
+    loop {
+        if cfg!(test) {
+            dbg!(&current_node);
+            dbg!(&current_node.parent());
+        }
+
+        match current_node.kind() {
+            "test_command" => {
+                return current_node;
+            }
+            _ => {}
+        }
+
+        let parent = match current_node.parent() {
+            Some(p) => p,
+            None => {
+                return current_node;
+            }
+        };
+
+        match parent.kind() {
+            "command"  => {
+                return parent;
             }
 
-            match current_node.kind() {
-                "test_command" => {
-                    return current_node;
-                }
-                _ => {}
+            "program"
+            | "pipeline"
+            | "command_substitution"
+            | "test_command"
+            | "arithmetic_expansion"
+            | "expansion"
+            | "process_substitution" => {
+                return current_node;
             }
 
-            let parent = match current_node.parent() {
-                Some(p) => p,
-                None => {
-                    return current_node;
-                }
-            };
-
-            match parent.kind() {
-                "command"  => {
-                    return parent_node;
-                }
-
-                "program"
-                | "pipeline"
-                | "command_substitution"
-                | "test_command"
-                | "arithmetic_expansion"
-                | "expansion"
-                | "process_substitution" => {
-                    return current_node;
-                }
-
-                _ => {
-                    current_node = parent;
-                }
+            _ => {
+                current_node = parent;
             }
         }
-        current_node
+    }
 
-    }();
+}
 
-    (found_node.start_byte(), found_node.end_byte())
+fn trim_command_node(node: &Node, cursor_byte_pos: usize) -> (usize, usize) {
+    if node.kind() != "command" {
+        return (node.start_byte(), node.end_byte());
+    }
+
+    let mut start = node.start_byte();
+
+    // Determine the start of the "real" command by skipping leading variable assignments.
+    for child in node.children(&mut node.walk()) {
+        if child.kind() == "variable_assignment" {
+            if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
+                // cursor is inside the assignment, so return the assignment as the command
+                return (child.start_byte(), child.end_byte());
+            } else if child.end_byte() < cursor_byte_pos {
+                // skip leading assignments
+                start = child.end_byte();
+                if cfg!(test) {
+                    println!("Skipping leading assignment, new start: {}", start);
+                }
+            }
+        } else {
+            break;
+        }
+    }
+
+    if cfg!(test) {
+        dbg!(&node);
+        dbg!(&start);
+        println!("first child for byte {}", start);
+        dbg!(node.first_child_for_byte(start));
+    }
+
+    match node.first_child_for_byte(start) {
+        Some(child) => {
+            if cfg!(test) {
+                println!("Found first child for byte {}", start);
+                dbg!(&child);
+            }
+
+            if (child.start_byte()..=node.end_byte()).contains(&cursor_byte_pos) {
+                if cfg!(test) {
+                    println!(
+                        "Cursor byte pos {} is within command bounds {}-{}",
+                        cursor_byte_pos,
+                        child.start_byte(),
+                        node.end_byte()
+                    );
+                }
+                (child.start_byte(), node.end_byte())
+            } else {
+                if cfg!(test) {
+                    println!(
+                        "Cursor byte pos {} is NOT within command bounds {}-{}, returning cursor pos as both start and end",
+                        cursor_byte_pos,
+                        child.start_byte(),
+                        node.end_byte()
+                    );
+                }
+                (cursor_byte_pos, cursor_byte_pos)
+            }
+        }
+        _ => {
+            if cfg!(test) {
+                println!("No child found for byte {}", start);
+            }
+
+            (start, start)
+        }
+    }
+
 }
 
 #[cfg(test)]
@@ -242,20 +312,30 @@ mod tests {
     }
 
     #[test]
-    fn test_with_assignment() {
-        let input = r#"VAR=valué ABC=qwe ls -la"#;
-        let res = run(input, input.len());
+    fn test_with_assignment_basic() {
+        let input = "A=b ls -la";
+        let cursor_pos = "A=b ".len();
+        let res = run(input, cursor_pos);
         assert_eq!(res.command, "ls -la");
-        assert_eq!(res.command_until_cursor, "ls -la");
+        assert_eq!(res.command_until_cursor, "");
     }
 
     #[test]
     fn test_with_assignment_before_command() {
         let input = r#"VAR=valué ABC=qwe         ls -la"#;
-        let cursor_pos = "VAR=valué ABC=qwe     ".len();
+        let cursor_pos = "VAR=valué ABC=qwe   ".len();
         let res = run(input, cursor_pos);
         assert_eq!(res.command, "");
         assert_eq!(res.command_until_cursor, "");
+    }
+
+    #[test]
+    fn test_with_assignment_at_assignment() {
+        let input = r#"VAR=valué ABC=qwe ls -la"#;
+        let cursor_pos = "VAR=valué ABC=qwe".len();
+        let res = run(input, cursor_pos);
+        assert_eq!(res.command, "ABC=qwe");
+        assert_eq!(res.command_until_cursor, "ABC=qwe");
     }
 
     #[test]
