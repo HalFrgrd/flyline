@@ -12,6 +12,7 @@ pub struct TextBuffer {
     cursor_byte: usize,
 }
 
+///////////////////////////////////////////////////////// misc
 impl TextBuffer {
     pub fn new(starting_str: &str) -> Self {
         TextBuffer {
@@ -19,352 +20,6 @@ impl TextBuffer {
             cursor_byte: starting_str.len(),
         }
     }
-
-    pub fn buffer(&self) -> &str {
-        &self.buf
-    }
-
-    pub fn insert_char(&mut self, c: char) {
-        self.buf.insert(self.cursor_byte, c);
-        self.cursor_byte += c.len_utf8();
-    }
-
-    pub fn insert_str(&mut self, s: &str) {
-        self.buf.insert_str(self.cursor_byte, s);
-        self.cursor_byte += s.len();
-    }
-
-    pub fn insert_newline(&mut self) {
-        self.insert_char('\n');
-    }
-
-    pub fn move_left(&mut self) {
-        self.cursor_byte = self
-            .buf
-            .grapheme_indices(true)
-            .take_while(|(i, _)| *i < self.cursor_byte)
-            .last()
-            .map_or(0, |(i, _)| i);
-    }
-
-    pub fn move_right(&mut self) {
-        self.cursor_byte = self.right_move_pos();
-    }
-
-    fn right_move_pos(&self) -> usize {
-        // the next grapheme boundary after the cursor
-        self.buf
-            .grapheme_indices(true)
-            .skip_while(|(i, _)| *i <= self.cursor_byte)
-            .next()
-            .map_or(self.buf.len(), |(i, _)| i)
-    }
-
-    pub fn delete_backwards(&mut self) {
-        // delete one grapheme to the left
-        let old_cursor_col = self.cursor_byte;
-        self.move_left();
-        assert!(self.cursor_byte <= old_cursor_col);
-        self.buf.drain(self.cursor_byte..old_cursor_col);
-    }
-
-    pub fn delete_forwards(&mut self) {
-        // delete one grapheme to the right
-        let cursor_pos_right = self.right_move_pos();
-        assert!(self.cursor_byte <= cursor_pos_right);
-        self.buf.drain(self.cursor_byte..cursor_pos_right);
-    }
-
-    pub fn replace_word_under_cursor(
-        &mut self,
-        new_word: &str,
-        sub_string: &SubString,
-    ) -> anyhow::Result<()> {
-        if sub_string.start > sub_string.end {
-            return Err(anyhow::anyhow!("Invalid word boundaries"));
-        }
-
-        // Ensure indices are within buffer bounds
-        if sub_string.start > self.buf.len() || sub_string.end > self.buf.len() {
-            log::warn!(
-                "Word bounds out of range: {}..{} (buf len {})",
-                sub_string.start,
-                sub_string.end,
-                self.buf.len()
-            );
-            return Err(anyhow::anyhow!("Word bounds out of range"));
-        }
-
-        // Ensure indices lie on valid UTF-8 char boundaries
-        if !self.buf.is_char_boundary(sub_string.start)
-            || !self.buf.is_char_boundary(sub_string.end)
-        {
-            log::warn!(
-                "Word bounds not on char boundaries: {}..{}",
-                sub_string.start,
-                sub_string.end
-            );
-            return Err(anyhow::anyhow!("Word bounds not on char boundaries"));
-        }
-
-        if self.buf[sub_string.start..sub_string.end] != *sub_string.s {
-            log::warn!(
-                "Expected word '{}' at position {}, but found '{}'",
-                sub_string.s,
-                sub_string.start,
-                &self.buf[sub_string.start..sub_string.end]
-            );
-            return Err(anyhow::anyhow!(
-                "Expected word '{}' at position {}, but found '{}'",
-                sub_string.s,
-                sub_string.start,
-                &self.buf[sub_string.start..sub_string.end]
-            ));
-        }
-
-        // Delete the word and position cursor at the start
-        self.buf.drain(sub_string.start..sub_string.end);
-        self.cursor_byte = sub_string.start;
-        self.insert_str(new_word);
-        Ok(())
-    }
-
-    pub fn substring_matches(&self, sub_string: &SubString) -> bool {
-        if sub_string.start > sub_string.end {
-            return false;
-        }
-        if sub_string.end > self.buf.len() {
-            return false;
-        }
-        if !self.buf.is_char_boundary(sub_string.start)
-            || !self.buf.is_char_boundary(sub_string.end)
-        {
-            return false;
-        }
-        self.buf[sub_string.start..sub_string.end] == *sub_string.s
-    }
-
-    pub fn cursor_in_substring(&self, sub_string: &SubString) -> bool {
-        self.cursor_byte >= sub_string.start && self.cursor_byte <= sub_string.end
-    }
-
-    pub fn move_one_word_left(&mut self) {
-        self.cursor_byte = self
-            .buf
-            .char_indices()
-            .rev()
-            .skip_while(|(i, _)| *i >= self.cursor_byte)
-            .skip_while(|(_, c)| c.is_whitespace())
-            .tuple_windows()
-            .find_map(|((i, c), (_, next_c))| {
-                if !c.is_whitespace() && next_c.is_whitespace() {
-                    Some(i)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
-    }
-
-    fn right_word_move_pos(&self) -> usize {
-        self.buf
-            .char_indices()
-            .skip_while(|(i, _)| *i < self.cursor_byte)
-            .skip_while(|(_, c)| !c.is_whitespace())
-            .skip_while(|(_, c)| c.is_whitespace())
-            .next()
-            .map_or(self.buf.len(), |(i, _)| i)
-    }
-
-    pub fn move_one_word_right(&mut self) {
-        self.cursor_byte = self.right_word_move_pos();
-    }
-
-    pub fn delete_one_word_left(&mut self) {
-        let old_cursor_col = self.cursor_byte;
-        self.move_one_word_left();
-        assert!(self.cursor_byte <= old_cursor_col);
-        self.buf.drain(self.cursor_byte..old_cursor_col);
-    }
-
-    pub fn delete_one_word_right(&mut self) {
-        let cursor_pos_right = self.right_word_move_pos();
-        assert!(self.cursor_byte <= cursor_pos_right);
-        self.buf.drain(self.cursor_byte..cursor_pos_right);
-    }
-
-    pub fn move_to_start(&mut self) {
-        self.cursor_byte = 0;
-    }
-
-    pub fn move_to_end(&mut self) {
-        self.cursor_byte = self.buf.len();
-    }
-
-    pub fn is_cursor_at_end(&self) -> bool {
-        self.cursor_byte == self.buf.len()
-    }
-
-    pub fn is_cursor_at_trimmed_end(&self) -> bool {
-        self.cursor_byte >= self.buf.trim_end().len()
-    }
-
-    pub fn is_cursor_on_final_line(&self) -> bool {
-        !self.buf[self.cursor_byte..].contains('\n')
-    }
-
-    pub fn move_end_of_line(&mut self) {
-        self.cursor_byte = self
-            .buf
-            .char_indices()
-            .skip_while(|(i, _)| *i < self.cursor_byte)
-            .find_map(|(i, c)| if c == '\n' { Some(i) } else { None })
-            .unwrap_or(self.buf.len());
-    }
-
-    pub fn move_start_of_line(&mut self) {
-        self.cursor_byte = self
-            .buf
-            .char_indices()
-            .rev()
-            .skip_while(|(i, _)| *i >= self.cursor_byte)
-            .find_map(|(i, c)| if c == '\n' { Some(i + 1) } else { None })
-            .unwrap_or(0);
-    }
-
-    pub fn move_line_up(&mut self) {
-        let (row, col) = self.cursor_2d_position();
-        let target_row = row.max(1) - 1;
-
-        self.move_to_cursor_pos(target_row, col);
-    }
-
-    pub fn move_line_down(&mut self) {
-        let (row, col) = self.cursor_2d_position();
-        let target_row = row + 1;
-
-        self.move_to_cursor_pos(target_row, col);
-    }
-
-    #[allow(dead_code)]
-    pub fn debug_buffer(&self) {
-        for (i, char) in self.buf.chars().enumerate() {
-            let cursor_marker = if i == self.cursor_byte {
-                "<-- cursor"
-            } else {
-                ""
-            };
-
-            let char_display = match char {
-                '\n' => "\\n".to_string(),
-                '\r' => "\\r".to_string(),
-                '\t' => "\\t".to_string(),
-                _ => char.to_string(),
-            };
-            log::debug!("Byte {}: '{}' {}", i, char_display, cursor_marker);
-        }
-
-        for (i, grapheme) in self.buf.graphemes(true).enumerate() {
-            let cursor_marker = if self.buf[..self.cursor_byte].graphemes(true).count() == i {
-                "<-- cursor"
-            } else {
-                ""
-            };
-            let grapheme_display = match grapheme {
-                "\n" => "\\n".to_string(),
-                "\r" => "\\r".to_string(),
-                "\t" => "\\t".to_string(),
-                _ => grapheme.to_string(),
-            };
-            log::debug!("Grapheme {}: '{}' {}", i, grapheme_display, cursor_marker);
-        }
-    }
-
-    fn move_to_cursor_pos(&mut self, target_row: usize, target_col: usize) {
-        // Not a great implementation, but it works well for small buffers
-        // tries to first go to target_row
-        // then tries to get close to target_col
-        let mut cur_row = 0;
-        let mut cur_col = 0;
-        // self.debug_buffer();
-        for (i, grapheme) in self.buf.grapheme_indices(true) {
-            self.cursor_byte = i;
-            if cur_row == target_row && cur_col >= target_col {
-                return;
-            }
-            if grapheme.contains('\n') {
-                if cur_row == target_row {
-                    return;
-                }
-                cur_row += 1;
-                cur_col = 0;
-            } else {
-                cur_col += grapheme.width_cjk();
-            }
-        }
-        self.cursor_byte = self.buf.len();
-    }
-
-    pub fn cursor_2d_position(&self) -> (usize, usize) {
-        let mut row = 0;
-        let mut col = 0;
-        for (i, grapheme) in self.buf.grapheme_indices(true) {
-            if i >= self.cursor_byte {
-                break;
-            }
-            if grapheme.contains('\n') {
-                row += 1;
-                col = 0;
-            } else {
-                col += grapheme.width_cjk(); // TOOD is cjk correct here?
-            }
-        }
-        (row, col)
-    }
-
-    pub fn cursor_row(&self) -> usize {
-        self.cursor_2d_position().0
-    }
-
-    // pub fn cursor_col(&self) -> usize {
-    //     self.cursor_2d_position().1
-    // }
-
-    pub fn cursor_char_pos(&self) -> usize {
-        self.buf[..self.cursor_byte].chars().count()
-    }
-
-    pub fn cursor_byte_pos(&self) -> usize {
-        self.cursor_byte
-    }
-
-    pub fn lines_with_cursor(&self) -> Vec<(&str, Option<u16>)> {
-        // additionally return and empty string if the buffer finishes with a newline
-        let mut lines = self.buf.lines().collect::<Vec<_>>();
-        if self.buf.ends_with('\n') {
-            lines.push("");
-        }
-        if lines.is_empty() {
-            lines.push("");
-        }
-        let (cursor_row, cursor_col) = self.cursor_2d_position();
-
-        lines
-            .into_iter()
-            .enumerate()
-            .map(|(i, line)| {
-                if i == cursor_row {
-                    (line, Some(cursor_col as u16))
-                } else {
-                    (line, None)
-                }
-            })
-            .collect()
-    }
-
-    // pub fn last_line_is_empty(&self) -> bool {
-    //     self.buf.lines().last().map_or(true, |line| line.is_empty())
-    // }
 
     /// Handle basic text editing keypresses. Returns true if the key was handled.
     pub fn on_keypress(&mut self, key: KeyEvent) {
@@ -470,6 +125,363 @@ impl TextBuffer {
             _ => {}
         }
     }
+}
+
+///////////////////////////////////////////////////////// movement
+impl TextBuffer {
+    pub fn move_left(&mut self) {
+        self.cursor_byte = self
+            .buf
+            .grapheme_indices(true)
+            .take_while(|(i, _)| *i < self.cursor_byte)
+            .last()
+            .map_or(0, |(i, _)| i);
+    }
+
+    pub fn move_right(&mut self) {
+        self.cursor_byte = self.right_move_pos();
+    }
+
+    fn right_move_pos(&self) -> usize {
+        // the next grapheme boundary after the cursor
+        self.buf
+            .grapheme_indices(true)
+            .skip_while(|(i, _)| *i <= self.cursor_byte)
+            .next()
+            .map_or(self.buf.len(), |(i, _)| i)
+    }
+
+    pub fn move_one_word_left(&mut self) {
+        self.cursor_byte = self
+            .buf
+            .char_indices()
+            .rev()
+            .skip_while(|(i, _)| *i >= self.cursor_byte)
+            .skip_while(|(_, c)| c.is_whitespace())
+            .tuple_windows()
+            .find_map(|((i, c), (_, next_c))| {
+                if !c.is_whitespace() && next_c.is_whitespace() {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+    }
+
+    fn right_word_move_pos(&self) -> usize {
+        self.buf
+            .char_indices()
+            .skip_while(|(i, _)| *i < self.cursor_byte)
+            .skip_while(|(_, c)| !c.is_whitespace())
+            .skip_while(|(_, c)| c.is_whitespace())
+            .next()
+            .map_or(self.buf.len(), |(i, _)| i)
+    }
+
+    pub fn move_one_word_right(&mut self) {
+        self.cursor_byte = self.right_word_move_pos();
+    }
+
+    pub fn move_to_start(&mut self) {
+        self.cursor_byte = 0;
+    }
+
+    pub fn move_to_end(&mut self) {
+        self.cursor_byte = self.buf.len();
+    }
+
+    pub fn move_end_of_line(&mut self) {
+        self.cursor_byte = self
+            .buf
+            .char_indices()
+            .skip_while(|(i, _)| *i < self.cursor_byte)
+            .find_map(|(i, c)| if c == '\n' { Some(i) } else { None })
+            .unwrap_or(self.buf.len());
+    }
+
+    pub fn move_start_of_line(&mut self) {
+        self.cursor_byte = self
+            .buf
+            .char_indices()
+            .rev()
+            .skip_while(|(i, _)| *i >= self.cursor_byte)
+            .find_map(|(i, c)| if c == '\n' { Some(i + 1) } else { None })
+            .unwrap_or(0);
+    }
+
+    pub fn move_line_up(&mut self) {
+        let (row, col) = self.cursor_2d_position();
+        let target_row = row.max(1) - 1;
+
+        self.move_to_cursor_pos(target_row, col);
+    }
+
+    pub fn move_line_down(&mut self) {
+        let (row, col) = self.cursor_2d_position();
+        let target_row = row + 1;
+
+        self.move_to_cursor_pos(target_row, col);
+    }
+
+    fn move_to_cursor_pos(&mut self, target_row: usize, target_col: usize) {
+        // Not a great implementation, but it works well for small buffers
+        // tries to first go to target_row
+        // then tries to get close to target_col
+        let mut cur_row = 0;
+        let mut cur_col = 0;
+        // self.debug_buffer();
+        for (i, grapheme) in self.buf.grapheme_indices(true) {
+            self.cursor_byte = i;
+            if cur_row == target_row && cur_col >= target_col {
+                return;
+            }
+            if grapheme.contains('\n') {
+                if cur_row == target_row {
+                    return;
+                }
+                cur_row += 1;
+                cur_col = 0;
+            } else {
+                cur_col += grapheme.width_cjk();
+            }
+        }
+        self.cursor_byte = self.buf.len();
+    }
+}
+
+///////////////////////////////////////////////////////// editing primitves
+impl TextBuffer {
+    pub fn insert_char(&mut self, c: char) {
+        self.buf.insert(self.cursor_byte, c);
+        self.cursor_byte += c.len_utf8();
+    }
+
+    pub fn insert_str(&mut self, s: &str) {
+        self.buf.insert_str(self.cursor_byte, s);
+        self.cursor_byte += s.len();
+    }
+
+    pub fn insert_newline(&mut self) {
+        self.insert_char('\n');
+    }
+}
+
+///////////////////////////////////////////////////////// editing advanced
+impl TextBuffer {
+    pub fn delete_backwards(&mut self) {
+        // delete one grapheme to the left
+        let old_cursor_col = self.cursor_byte;
+        self.move_left();
+        assert!(self.cursor_byte <= old_cursor_col);
+        self.buf.drain(self.cursor_byte..old_cursor_col);
+    }
+
+    pub fn delete_forwards(&mut self) {
+        // delete one grapheme to the right
+        let cursor_pos_right = self.right_move_pos();
+        assert!(self.cursor_byte <= cursor_pos_right);
+        self.buf.drain(self.cursor_byte..cursor_pos_right);
+    }
+
+    pub fn delete_one_word_left(&mut self) {
+        let old_cursor_col = self.cursor_byte;
+        self.move_one_word_left();
+        assert!(self.cursor_byte <= old_cursor_col);
+        self.buf.drain(self.cursor_byte..old_cursor_col);
+    }
+
+    pub fn delete_one_word_right(&mut self) {
+        let cursor_pos_right = self.right_word_move_pos();
+        assert!(self.cursor_byte <= cursor_pos_right);
+        self.buf.drain(self.cursor_byte..cursor_pos_right);
+    }
+
+    pub fn replace_word_under_cursor(
+        &mut self,
+        new_word: &str,
+        sub_string: &SubString,
+    ) -> anyhow::Result<()> {
+        if sub_string.start > sub_string.end {
+            return Err(anyhow::anyhow!("Invalid word boundaries"));
+        }
+
+        // Ensure indices are within buffer bounds
+        if sub_string.start > self.buf.len() || sub_string.end > self.buf.len() {
+            log::warn!(
+                "Word bounds out of range: {}..{} (buf len {})",
+                sub_string.start,
+                sub_string.end,
+                self.buf.len()
+            );
+            return Err(anyhow::anyhow!("Word bounds out of range"));
+        }
+
+        // Ensure indices lie on valid UTF-8 char boundaries
+        if !self.buf.is_char_boundary(sub_string.start)
+            || !self.buf.is_char_boundary(sub_string.end)
+        {
+            log::warn!(
+                "Word bounds not on char boundaries: {}..{}",
+                sub_string.start,
+                sub_string.end
+            );
+            return Err(anyhow::anyhow!("Word bounds not on char boundaries"));
+        }
+
+        if self.buf[sub_string.start..sub_string.end] != *sub_string.s {
+            log::warn!(
+                "Expected word '{}' at position {}, but found '{}'",
+                sub_string.s,
+                sub_string.start,
+                &self.buf[sub_string.start..sub_string.end]
+            );
+            return Err(anyhow::anyhow!(
+                "Expected word '{}' at position {}, but found '{}'",
+                sub_string.s,
+                sub_string.start,
+                &self.buf[sub_string.start..sub_string.end]
+            ));
+        }
+
+        // Delete the word and position cursor at the start
+        self.buf.drain(sub_string.start..sub_string.end);
+        self.cursor_byte = sub_string.start;
+        self.insert_str(new_word);
+        Ok(())
+    }
+}
+
+///////////////////////////////////////////////////////// Accessors
+impl TextBuffer {
+    pub fn buffer(&self) -> &str {
+        &self.buf
+    }
+    pub fn substring_matches(&self, sub_string: &SubString) -> bool {
+        if sub_string.start > sub_string.end {
+            return false;
+        }
+        if sub_string.end > self.buf.len() {
+            return false;
+        }
+        if !self.buf.is_char_boundary(sub_string.start)
+            || !self.buf.is_char_boundary(sub_string.end)
+        {
+            return false;
+        }
+        self.buf[sub_string.start..sub_string.end] == *sub_string.s
+    }
+
+    pub fn cursor_in_substring(&self, sub_string: &SubString) -> bool {
+        self.cursor_byte >= sub_string.start && self.cursor_byte <= sub_string.end
+    }
+
+    pub fn is_cursor_at_end(&self) -> bool {
+        self.cursor_byte == self.buf.len()
+    }
+
+    pub fn is_cursor_at_trimmed_end(&self) -> bool {
+        self.cursor_byte >= self.buf.trim_end().len()
+    }
+
+    pub fn is_cursor_on_final_line(&self) -> bool {
+        !self.buf[self.cursor_byte..].contains('\n')
+    }
+
+    #[allow(dead_code)]
+    pub fn debug_buffer(&self) {
+        for (i, char) in self.buf.chars().enumerate() {
+            let cursor_marker = if i == self.cursor_byte {
+                "<-- cursor"
+            } else {
+                ""
+            };
+
+            let char_display = match char {
+                '\n' => "\\n".to_string(),
+                '\r' => "\\r".to_string(),
+                '\t' => "\\t".to_string(),
+                _ => char.to_string(),
+            };
+            log::debug!("Byte {}: '{}' {}", i, char_display, cursor_marker);
+        }
+
+        for (i, grapheme) in self.buf.graphemes(true).enumerate() {
+            let cursor_marker = if self.buf[..self.cursor_byte].graphemes(true).count() == i {
+                "<-- cursor"
+            } else {
+                ""
+            };
+            let grapheme_display = match grapheme {
+                "\n" => "\\n".to_string(),
+                "\r" => "\\r".to_string(),
+                "\t" => "\\t".to_string(),
+                _ => grapheme.to_string(),
+            };
+            log::debug!("Grapheme {}: '{}' {}", i, grapheme_display, cursor_marker);
+        }
+    }
+
+    pub fn cursor_2d_position(&self) -> (usize, usize) {
+        let mut row = 0;
+        let mut col = 0;
+        for (i, grapheme) in self.buf.grapheme_indices(true) {
+            if i >= self.cursor_byte {
+                break;
+            }
+            if grapheme.contains('\n') {
+                row += 1;
+                col = 0;
+            } else {
+                col += grapheme.width_cjk(); // TOOD is cjk correct here?
+            }
+        }
+        (row, col)
+    }
+
+    pub fn cursor_row(&self) -> usize {
+        self.cursor_2d_position().0
+    }
+
+    // pub fn cursor_col(&self) -> usize {
+    //     self.cursor_2d_position().1
+    // }
+
+    // pub fn cursor_char_pos(&self) -> usize {
+    //     self.buf[..self.cursor_byte].chars().count()
+    // }
+
+    pub fn cursor_byte_pos(&self) -> usize {
+        self.cursor_byte
+    }
+
+    pub fn lines_with_cursor(&self) -> Vec<(&str, Option<u16>)> {
+        // additionally return and empty string if the buffer finishes with a newline
+        let mut lines = self.buf.lines().collect::<Vec<_>>();
+        if self.buf.ends_with('\n') {
+            lines.push("");
+        }
+        if lines.is_empty() {
+            lines.push("");
+        }
+        let (cursor_row, cursor_col) = self.cursor_2d_position();
+
+        lines
+            .into_iter()
+            .enumerate()
+            .map(|(i, line)| {
+                if i == cursor_row {
+                    (line, Some(cursor_col as u16))
+                } else {
+                    (line, None)
+                }
+            })
+            .collect()
+    }
+
+    // pub fn last_line_is_empty(&self) -> bool {
+    //     self.buf.lines().last().map_or(true, |line| line.is_empty())
+    // }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

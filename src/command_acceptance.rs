@@ -421,5 +421,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_line_continuation_basic() {
+        // Basic line continuation at end of line
+        assert_eq!(will_bash_accept_buffer("echo hello \\"), false);
+        assert_eq!(will_bash_accept_buffer("echo hello \\\nworld"), true);
+
+        // Line continuation with trailing whitespace (tricky!)
+        assert_eq!(will_bash_accept_buffer("echo hello \\  "), false);
+        assert_eq!(will_bash_accept_buffer("echo hello \\\t"), false);
+    }
+
+    #[test]
+    fn test_line_continuation_in_strings() {
+        // Line continuation inside double quotes - bash still expects more input
+        assert_eq!(will_bash_accept_buffer("echo \"hello \\"), false);
+        assert_eq!(will_bash_accept_buffer("echo \"hello \\\nworld\""), true);
+
+        // Multiple line continuations in a complex command
+        assert_eq!(
+            will_bash_accept_buffer("if [ \"$var\" = \"value\" ] && \\"),
+            false
+        );
+        assert_eq!(
+            will_bash_accept_buffer(
+                "if [ \"$var\" = \"value\" ] && \\\n   [ \"$other\" = \"test\" ]; then echo ok; fi"
+            ),
+            true
+        );
+
+        // Line continuation before pipe (very tricky edge case)
+        assert_eq!(will_bash_accept_buffer("echo hello \\\n|"), false);
+        assert_eq!(will_bash_accept_buffer("echo hello \\\n| grep l"), true);
+    }
+
+    #[test]
+    fn test_line_continuation_edge_cases() {
+        // Line continuation in command substitution
+        assert_eq!(will_bash_accept_buffer("echo $(ls \\"), false);
+        assert_eq!(will_bash_accept_buffer("echo $(ls \\\n-la)"), true);
+
+        // Line continuation with heredoc (super tricky!)
+        assert_eq!(will_bash_accept_buffer("cat <<EOF \\"), false);
+        assert_eq!(will_bash_accept_buffer("cat <<EOF \\\nhello\nEOF"), true);
+
+        // Multiple backslashes - only the last one matters for continuation
+        assert_eq!(will_bash_accept_buffer("echo hello\\\\\\"), false);
+        assert_eq!(will_bash_accept_buffer("echo hello\\\\"), true); // Even number of backslashes = no continuation
+
+        // Line continuation in function definition
+        assert_eq!(will_bash_accept_buffer("function test() { \\"), false);
+        assert_eq!(
+            will_bash_accept_buffer("function test() { \\\necho hi; }"),
+            true
+        );
+    }
+
     // TODO test ones that will be syntax errors but complete commands
 }

@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+
+
 use flash::lexer::{Lexer, Token};
 use std::collections::HashMap;
 
