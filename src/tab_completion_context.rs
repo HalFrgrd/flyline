@@ -45,11 +45,11 @@ impl IsSubRange for core::ops::Range<usize> {
 
 impl<'a> CompletionContext<'a> {
     fn classify_word_type(word: &str) -> Option<CompType> {
-        if word.starts_with('$') {
+        if false && word.starts_with('$') {
             Some(CompType::EnvVariable)
-        } else if word.starts_with('~') && !word.contains("/") {
+        } else if false && word.starts_with('~') && !word.contains("/") {
             Some(CompType::TildeExpansion)
-        } else if word.contains('*') || word.contains('?') || word.contains('[') {
+        } else if false && word.contains('*') || word.contains('?') || word.contains('[') {
             // TODO "*.md will match this. need some better logic here
             Some(CompType::GlobExpansion)
         } else {
@@ -173,12 +173,13 @@ pub fn get_completion_context<'a>(
 }
 
 fn find_cursor_node<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
+    if node.kind() == "simple_expansion" {
+        // Special case: if we're in a simple_expansion, we want to return that node
+        return *node;
+    }
+
     // Check children to find the deepest node containing the cursor
     for child in node.children(&mut node.walk()) {
-        // if !child.is_named() {
-        //     // This prevents matching on punctuation nodes like ; or & or ))
-        //     continue;
-        // }
         if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
             return find_cursor_node(&child, cursor_byte_pos);
         }
@@ -422,6 +423,30 @@ mod tests {
         assert_eq!(res.context, "echo $");
         assert_eq!(res.context_until_cursor, "echo $");
         assert_eq!(res.word_under_cursor, "$");
+    }
+
+    #[test]
+    fn test_dollar_sign_one_letter() {
+        let input = "echo $A";
+        let res = run(input, input.len());
+        assert_eq!(res.context, "echo $A");
+        assert_eq!(res.context_until_cursor, "echo $A");
+        assert_eq!(res.word_under_cursor, "$A");
+    }
+
+    #[test]
+    fn test_dollar_concatenation() {
+        let input = "echo $A$B";
+        let res = run(input, "echo $A".len());
+        assert_eq!(res.context, "echo $A$B");
+        assert_eq!(res.context_until_cursor, "echo $A");
+        assert_eq!(res.word_under_cursor, "$A");
+
+        let input = "echo $A$B";
+        let res = run(input, "echo $A$".len());
+        assert_eq!(res.context, "echo $A$B");
+        assert_eq!(res.context_until_cursor, "echo $A$");
+        assert_eq!(res.word_under_cursor, "$B");
     }
 
     #[test]
