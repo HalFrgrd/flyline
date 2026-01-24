@@ -616,6 +616,12 @@ impl TextBuffer {
         self.insert_str_no_snapshot(new_word);
         Ok(())
     }
+
+    pub fn replace_buffer(&mut self, new_buffer: &str) {
+        self.push_snapshot(false);
+        self.buf = new_buffer.to_string();
+        self.cursor_byte = new_buffer.len();
+    }
 }
 
 #[cfg(test)]

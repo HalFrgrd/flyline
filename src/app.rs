@@ -504,7 +504,7 @@ impl<'a> App<'a> {
                     .search_in_history(self.buffer.buffer(), HistorySearchDirection::Backward)
                 {
                     let new_command = entry.command.clone();
-                    self.buffer = TextBuffer::new(new_command.as_str());
+                    self.buffer.replace_buffer(new_command.as_str());
                 }
             }
             // Handle Down with history navigation when at last line
@@ -517,7 +517,7 @@ impl<'a> App<'a> {
                     .search_in_history(self.buffer.buffer(), HistorySearchDirection::Forward)
                 {
                     let new_command = entry.command.clone();
-                    self.buffer = TextBuffer::new(new_command.as_str());
+                    self.buffer.replace_buffer(new_command.as_str());
                 }
             }
             // Enter key - accept suggestions or submit command
@@ -694,7 +694,8 @@ impl<'a> App<'a> {
                     .len()
                     .saturating_add_signed(len_delta);
 
-                let full_command = alias.to_string() + &completion_context.context[command_word.len()..];
+                let full_command =
+                    alias.to_string() + &completion_context.context[command_word.len()..];
                 command_word = alias.split_whitespace().next().unwrap().to_string();
 
                 let poss_completions = bash_funcs::run_autocomplete_compspec(
