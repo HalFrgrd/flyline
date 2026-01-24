@@ -1,5 +1,3 @@
-use std::ops::Sub;
-
 use crate::text_buffer::SubString;
 use tree_sitter::{Node, Parser};
 use tree_sitter_bash;
@@ -36,6 +34,16 @@ trait ToInclusiveRange {
 impl ToInclusiveRange for std::ops::Range<usize> {
     fn to_inclusive(&self) -> core::ops::RangeInclusive<usize> {
         self.start..=self.end
+    }
+}
+
+trait IsSubRange {
+    fn is_sub_range(&self, other: &core::ops::Range<usize>) -> bool;
+}
+
+impl IsSubRange for core::ops::Range<usize> {
+    fn is_sub_range(&self, other: &core::ops::Range<usize>) -> bool {
+        self.start >= other.start && self.end <= other.end
     }
 }
 
@@ -118,6 +126,9 @@ pub fn get_completion_context<'a>(
 
     // Find the deepest node that contains the cursor
     let cursor_node = find_deepest_node_at_position(&root_node, cursor_byte_pos);
+    let word_under_cursor = cursor_node
+        .utf8_text(buffer.as_bytes())
+        .unwrap_or(buffer[0..0].as_ref());
 
     if cfg!(test) {
         dbg!(&cursor_byte_pos);
@@ -125,27 +136,18 @@ pub fn get_completion_context<'a>(
     }
 
     // Find the command context for this cursor position
-    let completion_context_node = find_command_bounds_from_node(&cursor_node);
-    let (command_start, command_end) = trim_command_node(&completion_context_node, cursor_byte_pos);
+    let comp_context_node = find_comp_context_from_cursor(&cursor_node);
+    let comp_context_range = trim_node(&comp_context_node, cursor_byte_pos);
+    assert!(comp_context_range.is_sub_range(&comp_context_node.byte_range()));
 
-    let command = &buffer[command_start..command_end];
-    let command_until_cursor = if cursor_byte_pos > command_start {
-        &buffer[command_start..cursor_byte_pos.min(command_end)]
-    } else {
-        ""
-    };
-
-    let word_under_cursor = cursor_node.utf8_text(buffer.as_bytes()).unwrap_or("");
+    let command = &buffer[comp_context_range.clone()];
+    let command_until_cursor =
+        &buffer[comp_context_range.start..cursor_byte_pos.min(comp_context_range.end)];
 
     CompletionContext::new(buffer, command_until_cursor, command, word_under_cursor)
 }
 
 fn find_deepest_node_at_position<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
-    // If cursor is not within this node, return the node itself
-    // if !node.byte_range().contains(&cursor_byte_pos) {
-    //     return *node;
-    // }
-
     // Check children to find the deepest node containing the cursor
     for child in node.children(&mut node.walk()) {
         if !child.is_named() {
@@ -161,7 +163,7 @@ fn find_deepest_node_at_position<'a>(node: &Node<'a>, cursor_byte_pos: usize) ->
     *node
 }
 
-fn find_command_bounds_from_node<'tree>(cursor_node: &Node<'tree>) -> Node<'tree> {
+fn find_comp_context_from_cursor<'tree>(cursor_node: &Node<'tree>) -> Node<'tree> {
     let mut current_node = *cursor_node;
 
     // Traverse up the tree to find the appropriate command context
@@ -207,9 +209,9 @@ fn find_command_bounds_from_node<'tree>(cursor_node: &Node<'tree>) -> Node<'tree
     }
 }
 
-fn trim_command_node(node: &Node, cursor_byte_pos: usize) -> (usize, usize) {
+fn trim_node(node: &Node, cursor_byte_pos: usize) -> core::ops::Range<usize> {
     if node.kind() != "command" {
-        return (node.start_byte(), node.end_byte());
+        return node.byte_range();
     }
 
     let mut start = node.start_byte();
@@ -219,7 +221,7 @@ fn trim_command_node(node: &Node, cursor_byte_pos: usize) -> (usize, usize) {
         if child.kind() == "variable_assignment" {
             if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
                 // cursor is inside the assignment, so return the assignment as the command
-                return (child.start_byte(), child.end_byte());
+                return child.byte_range();
             } else if child.end_byte() < cursor_byte_pos {
                 // skip leading assignments
                 start = child.end_byte();
@@ -255,7 +257,7 @@ fn trim_command_node(node: &Node, cursor_byte_pos: usize) -> (usize, usize) {
                         node.end_byte()
                     );
                 }
-                (child.start_byte(), node.end_byte())
+                child.start_byte()..node.end_byte()
             } else {
                 if cfg!(test) {
                     println!(
@@ -265,7 +267,7 @@ fn trim_command_node(node: &Node, cursor_byte_pos: usize) -> (usize, usize) {
                         node.end_byte()
                     );
                 }
-                (cursor_byte_pos, cursor_byte_pos)
+                cursor_byte_pos..cursor_byte_pos
             }
         }
         _ => {
@@ -273,7 +275,7 @@ fn trim_command_node(node: &Node, cursor_byte_pos: usize) -> (usize, usize) {
                 println!("No child found for byte {}", start);
             }
 
-            (start, start)
+            start..start
         }
     }
 }
