@@ -482,7 +482,7 @@ impl<'a> App<'a> {
     }
 
     fn on_keypress(&mut self, key: KeyEvent) {
-        log::debug!("Key pressed: {:?}", key);
+        // log::debug!("Key pressed: {:?}", key);
 
         match key {
             // Handle Right/End with history suggestion logic
@@ -907,7 +907,7 @@ impl<'a> App<'a> {
         }
         let result = bash_funcs::call_type(cmd);
         self.call_type_cache.insert(cmd.to_string(), result.clone());
-        log::debug!("call_type result for {}: {:?}", cmd, result);
+        // log::debug!("call_type result for {}: {:?}", cmd, result);
         result
     }
 

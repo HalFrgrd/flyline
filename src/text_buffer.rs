@@ -23,14 +23,14 @@ impl BufSnapshot {
 
 impl Debug for BufSnapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BSnap({:?}, {})", self.buf, self.cursor_byte)
+        write!(f, "Snap({:?})", self.buf)
     }
 }
 
 #[derive(Debug)]
-struct UndoStack {
-    stack: Vec<BufSnapshot>,
-    next_snap_idx: usize,
+struct Snapshots {
+    undos: Vec<BufSnapshot>,
+    redos: Vec<BufSnapshot>,
 }
 
 pub struct TextBuffer {
@@ -39,7 +39,7 @@ pub struct TextBuffer {
     // Need to ensure it lines up with grapheme boundaries.
     // The cursor is on the left of the grapheme at this index.
     cursor_byte: usize,
-    undo_stack: UndoStack,
+    undo_redo: Snapshots,
 }
 
 ///////////////////////////////////////////////////////// misc
@@ -48,7 +48,7 @@ impl TextBuffer {
         TextBuffer {
             buf: starting_str.to_string(),
             cursor_byte: starting_str.len(),
-            undo_stack: UndoStack::new(),
+            undo_redo: Snapshots::new(),
         }
     }
 
@@ -828,108 +828,96 @@ impl TextBuffer {
         let snapshot = self.create_snapshot();
         log::debug!("Pushing snapshot: snapshot={:?}", snapshot);
 
-        self.undo_stack.push(snapshot);
+        self.undo_redo.push(snapshot);
     }
 
     fn undo(&mut self) {
-        let possible_snapshot_for_redo = self.create_snapshot();
+        let current_state = self.create_snapshot();
 
-        self.undo_stack
-            .prev_snapshot(possible_snapshot_for_redo)
-            .map(|snapshot| {
-                log::debug!("Undoing to state: snapshot={:?}", snapshot);
-                self.buf = snapshot.buf;
-                self.cursor_byte = snapshot.cursor_byte;
-            });
-    }
+        log::debug!("stacks: {}", self.debug_undo_stack());
 
-    fn redo(&mut self) {
-        self.undo_stack.next_snapshot().map(|snapshot| {
-            log::debug!("Redoing to state: snapshot={:?}", snapshot);
+        self.undo_redo.prev_snapshot(current_state).map(|snapshot| {
+            // log::debug!("Undoing to state: snapshot={:?}", snapshot);
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
         });
+        log::debug!("stacks: {}", self.debug_undo_stack());
+    }
+
+    fn redo(&mut self) {
+        let current_state = self.create_snapshot();
+
+        log::debug!("stacks: {}", self.debug_undo_stack());
+
+        self.undo_redo.next_snapshot(current_state).map(|snapshot| {
+            // log::debug!("Redoing to state: snapshot={:?}", snapshot);
+            self.buf = snapshot.buf;
+            self.cursor_byte = snapshot.cursor_byte;
+        });
+        log::debug!("stacks: {}", self.debug_undo_stack());
     }
 
     fn debug_undo_stack(&self) -> String {
         format!(
-            "Undo stack: {:?}, stack_ptr: {}",
-            self.undo_stack.stack, self.undo_stack.next_snap_idx
+            "Undo stack: {:?}, redo stack: {:?}",
+            self.undo_redo.undos,
+            self.undo_redo.redos.iter().rev().collect::<Vec<_>>()
         )
     }
 }
 
-impl UndoStack {
+impl Snapshots {
     // Most of the time the edit buffer will be small so Im choosing to push and pop the entire edit buffer
     // as opposed to a more complex diffing approach.
     fn new() -> Self {
-        UndoStack {
-            stack: Vec::new(),
-            next_snap_idx: 0,
+        Snapshots {
+            undos: Vec::new(),
+            redos: Vec::new(),
         }
     }
 
     fn push(&mut self, snapshot: BufSnapshot) -> bool {
-        if Some(&snapshot) == self.stack.last() {
+        if Some(&snapshot) == self.undos.last() {
             log::debug!("Snapshot identical to last one, not pushing a new one");
             return false;
         }
 
-        // Discard any redo states
-        assert!(self.next_snap_idx <= self.stack.len());
-        self.stack.truncate(self.next_snap_idx);
-
-        // Add new snapshot
-        self.stack.push(snapshot);
-        self.next_snap_idx = self.stack.len();
-        log::debug!(
-            "Pushed new snapshot, stack is {:?}, next_snap_idx at {}",
-            self.stack,
-            self.next_snap_idx
-        );
+        self.undos.push(snapshot);
+        self.redos.clear(); // clear redo stack on new edit
         true
     }
 
-    fn next_snapshot(&mut self) -> Option<BufSnapshot> {
-        if self.next_snap_idx >= self.stack.len() {
-            log::debug!("At latest snapshot, cannot redo further");
+    fn next_snapshot(&mut self, current_state: BufSnapshot) -> Option<BufSnapshot> {
+        if self.redos.is_empty() {
+            log::debug!("No redos available");
             None
         } else {
-            let snapshot = self.stack[self.next_snap_idx].clone();
-            self.next_snap_idx += 1;
-            Some(snapshot)
+            self.undos.push(current_state);
+            let snapshot = self.redos.pop().unwrap();
+
+            if &snapshot == self.undos.last().unwrap() {
+                self.redos.pop()
+            } else {
+                log::debug!("Redoing to snapshot: {:?}", snapshot);
+                Some(snapshot)
+            }
         }
     }
 
-    fn at_latest_snapshot(&self) -> bool {
-        self.next_snap_idx >= self.stack.len()
-    }
-
-    fn prev_snapshot(&mut self, possible_snapshot_for_redo: BufSnapshot) -> Option<BufSnapshot> {
-        if self.next_snap_idx == 0 {
+    fn prev_snapshot(&mut self, current_state: BufSnapshot) -> Option<BufSnapshot> {
+        if self.undos.is_empty() {
             log::debug!("At oldest snapshot, cannot undo further");
             None
-        } else if self.at_latest_snapshot() {
-            log::debug!("At latest snapshot, saving current state for redo");
-            let pushed_new = self.push(possible_snapshot_for_redo);
-
-            let s = if pushed_new {
-                self.next_snap_idx -= 2;
-                self.stack[self.next_snap_idx].clone()
-            } else {
-                self.next_snap_idx -= 2;
-                self.stack[self.next_snap_idx].clone()
-            };
-            log::debug!("next_snap_idx is now at {}", self.next_snap_idx);
-
-            Some(s)
         } else {
-            self.next_snap_idx -= 1;
-            log::debug!(
-                "Stepping back to previous snapshot, next_snap_idx is now at {}",
-                self.next_snap_idx
-            );
-            Some(self.stack[self.next_snap_idx].clone())
+            self.redos.push(current_state);
+            let snapshot = self.undos.pop().unwrap();
+
+            if &snapshot == self.redos.last().unwrap() {
+                self.undos.pop()
+            } else {
+                log::debug!("Undoing to snapshot: {:?}", snapshot);
+                Some(snapshot)
+            }
         }
     }
 }
@@ -960,44 +948,44 @@ mod test_undo_redo {
     #[test]
     fn undo_stack() {
         setup_logging();
-        let mut s = UndoStack::new();
-        assert_eq!(s.stack.len(), 0);
-        assert_eq!(s.next_snap_idx, 0);
 
-        s.push(BufSnapshot::new("apple", 9));
-        assert_eq!(s.stack.len(), 1);
-        assert_eq!(s.next_snap_idx, 1);
+        let snap = |s: &str| BufSnapshot::new(s, 0);
 
-        s.push(BufSnapshot::new("banana", 9));
-        assert_eq!(s.stack.len(), 2);
-        assert_eq!(s.next_snap_idx, 2);
+        let mut s = Snapshots::new();
+        assert_eq!(s.undos, vec![]);
+        assert_eq!(s.redos, vec![]);
 
-        s.push(BufSnapshot::new("cow", 9));
-        assert_eq!(s.stack.len(), 3);
-        assert_eq!(s.next_snap_idx, 3);
+        s.push(snap("apple"));
+        assert_eq!(s.undos, vec![snap("apple")]);
+        assert_eq!(s.redos, vec![]);
 
-        let p = s.prev_snapshot(BufSnapshot::new("cow", 9));
-        assert_eq!(p.unwrap(), BufSnapshot::new("banana", 9));
+        s.push(snap("banana"));
+        assert_eq!(s.undos, vec![snap("apple"), snap("banana")]);
+        assert_eq!(s.redos, vec![]);
 
-        let p = s.prev_snapshot(BufSnapshot::new("banana", 9));
-        assert_eq!(p.unwrap(), BufSnapshot::new("apple", 9));
+        s.push(snap("cow"));
+        assert_eq!(s.undos, vec![snap("apple"), snap("banana"), snap("cow")]);
+        assert_eq!(s.redos, vec![]);
 
-        let p = s.prev_snapshot(BufSnapshot::new("apple", 9));
+        let p = s.prev_snapshot(snap("cow"));
+        assert_eq!(p.unwrap(), snap("banana"));
+
+        let p = s.prev_snapshot(snap("banana"));
+        assert_eq!(p.unwrap(), snap("apple"));
+
+        let p = s.prev_snapshot(snap("apple"));
         assert!(p.is_none());
 
-        let n = s.next_snapshot();
-        assert_eq!(n.unwrap(), BufSnapshot::new("apple", 9));
+        let n = s.next_snapshot(snap("apple"));
+        assert_eq!(n.unwrap(), snap("banana"));
 
-        let n = s.next_snapshot();
-        assert_eq!(n.unwrap(), BufSnapshot::new("banana", 9));
-
-        s.push(BufSnapshot::new("date", 9));
-        assert_eq!(s.stack.len(), 3);
-        assert_eq!(s.next_snap_idx, 3);
+        let n = s.next_snapshot(snap("banana"));
+        assert_eq!(n.unwrap(), snap("cow"));
     }
 
     #[test]
     fn undo_redo_basic() {
+        setup_logging();
         let mut tb = TextBuffer::new("Hello");
         tb.insert_str(" World");
         println!("{}", tb.debug_undo_stack());
@@ -1012,6 +1000,7 @@ mod test_undo_redo {
 
     #[test]
     fn undo_redo_multiple_steps() {
+        setup_logging();
         let mut tb = TextBuffer::new("Start");
         tb.insert_str(" One");
         tb.insert_str(" Two");
@@ -1033,6 +1022,7 @@ mod test_undo_redo {
 
     #[test]
     fn undo_and_start_new_edit() {
+        setup_logging();
         let mut tb = TextBuffer::new("Base");
         tb.insert_str(" Edit1");
         tb.insert_str(" Edit2");
