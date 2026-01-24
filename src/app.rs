@@ -694,21 +694,21 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
-                log::debug!("Cursor is on blank space, no tab completion performed");
-                let completions = self.tab_complete_current_path("");
-                self.active_tab_suggestions = ActiveSuggestions::try_new(
-                    completions
-                        .into_iter()
-                        .map(|mut sug| {
-                            sug.prefix = " ".to_string();
-                            sug
-                        })
-                        .collect(),
-                    word_under_cursor,
-                    &mut self.buffer,
-                );
-            }
+            // tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
+            //     log::debug!("Cursor is on blank space, no tab completion performed");
+            //     let completions = self.tab_complete_current_path("");
+            //     self.active_tab_suggestions = ActiveSuggestions::try_new(
+            //         completions
+            //             .into_iter()
+            //             .map(|mut sug| {
+            //                 sug.prefix = " ".to_string();
+            //                 sug
+            //             })
+            //             .collect(),
+            //         word_under_cursor,
+            //         &mut self.buffer,
+            //     );
+            // }
             tab_completion::CompType::EnvVariable(word_under_cursor) => {
                 log::debug!(
                     "Environment variable completion not yet implemented: {:?}",
