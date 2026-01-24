@@ -409,19 +409,31 @@ mod test_movement {
         assert_eq!(tb.cursor_byte, "Line 1\nLine 2\n".len());
     }
 }
-
-///////////////////////////////////////////////////////// editing primitves
+///////////////////////////////////////////////////////// editing primitives without snapshots
 impl TextBuffer {
-    pub fn insert_char(&mut self, c: char) {
-        self.push_snapshot();
+    fn insert_char_no_snapshot(&mut self, c: char) {
         self.buf.insert(self.cursor_byte, c);
         self.cursor_byte += c.len_utf8();
     }
 
-    pub fn insert_str(&mut self, s: &str) {
-        self.push_snapshot();
+    fn insert_str_no_snapshot(&mut self, s: &str) {
         self.buf.insert_str(self.cursor_byte, s);
         self.cursor_byte += s.len();
+    }
+
+}
+
+
+///////////////////////////////////////////////////////// editing primitives with snapshots
+impl TextBuffer {
+    pub fn insert_char(&mut self, c: char) {
+        self.push_snapshot();
+        self.insert_char_no_snapshot(c);
+    }
+
+    pub fn insert_str(&mut self, s: &str) {
+        self.push_snapshot();
+        self.insert_str_no_snapshot(s);
     }
 
     pub fn insert_newline(&mut self) {
@@ -595,9 +607,10 @@ impl TextBuffer {
         }
 
         // Delete the word and position cursor at the start
+        self.push_snapshot();
         self.buf.drain(sub_string.start..sub_string.end);
         self.cursor_byte = sub_string.start;
-        self.insert_str(new_word);
+        self.insert_str_no_snapshot(new_word);
         Ok(())
     }
 }
@@ -1038,6 +1051,26 @@ mod test_undo_redo {
         // Redo should not work now
         tb.redo();
         assert_eq!(tb.buffer(), "Base Edit1 NewEdit");
+    }
+
+    #[test]
+    fn undo_replace_word_under_cursor() {
+        setup_logging();
+        let mut tb = TextBuffer::new("The quick brown fox");
+        let word = {
+            let i = tb.buffer().find("quick").unwrap();
+            &tb.buffer()[i..i + "quick".len()]
+        };
+        let sub_string = SubString::new(&tb.buffer(), word).unwrap();
+
+        tb.replace_word_under_cursor("slow", &sub_string).unwrap();
+        assert_eq!(tb.buffer(), "The slow brown fox");
+
+        tb.undo();
+        assert_eq!(tb.buffer(), "The quick brown fox");
+
+        tb.redo();
+        assert_eq!(tb.buffer(), "The slow brown fox");
     }
 }
 
