@@ -5,8 +5,9 @@ use tree_sitter_bash;
 pub enum CompType {
     FirstWord, // the first word under the cursor. cursor might be in the middle of it
 
-    CommandComp {                      // "git commi asdf" with cursor just after com
-        command_word: String,         // "git"
+    CommandComp {
+        // "git commi asdf" with cursor just after com
+        command_word: String, // "git"
     },
     EnvVariable,    // the env variable under the cursor, with the leading $
     TildeExpansion, // the tilde under the cursor, e.g. "~us|erna"
@@ -62,7 +63,6 @@ impl<'a> CompletionContext<'a> {
         context: &'a str,
         word_under_cursor: &'a str,
     ) -> Self {
-
         let comp_type = if context.trim().is_empty() {
             CompType::FirstWord
         } else if !context_until_cursor.chars().any(|c| c.is_whitespace()) {
@@ -279,10 +279,7 @@ mod tests {
         assert_eq!(res.context, "git commi café");
 
         match res.comp_type {
-            CompType::CommandComp {
-                command_word,
-
-            } => {
+            CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "git");
                 assert_eq!(res.word_under_cursor, "commi");
             }
@@ -360,9 +357,7 @@ mod tests {
         );
 
         match res.comp_type {
-            CompType::CommandComp {
-                command_word,
-            } => {
+            CompType::CommandComp { command_word } => {
                 assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
                 assert_eq!(command_word, "echo");
                 assert_eq!(res.word_under_cursor, "résumé");

@@ -7,7 +7,7 @@ use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
-use crate::tab_completion;
+use crate::tab_completion_context;
 use crate::text_buffer::TextBuffer;
 use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -531,7 +531,7 @@ impl<'a> App<'a> {
                 ..
             } => {
                 if let Some(active_suggestions) = self.active_tab_suggestions.take() {
-                    active_suggestions.accept(&mut self.buffer);
+                    active_suggestions.accept_currently_selected(&mut self.buffer);
                 } else {
                     // If it's a single line complete command, exit
                     // If it's a multi-line complete command, cursor needs to be at end to exit
@@ -641,49 +641,49 @@ impl<'a> App<'a> {
     fn tab_complete(&mut self) -> Option<()> {
         let buffer: &str = self.buffer.buffer();
         let completion_context =
-            tab_completion::get_completion_context(buffer, self.buffer.cursor_byte_pos());
+            tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos());
 
         log::debug!("Completion context: {:?}", completion_context);
 
-
         let word_under_cursor = completion_context.word_under_cursor;
-        let wuc_substring = crate::text_buffer::SubString::new(buffer, completion_context.word_under_cursor).unwrap();
 
         match completion_context.comp_type {
-            tab_completion::CompType::FirstWord => {
+            tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
-                self.active_tab_suggestions = ActiveSuggestions::try_new(
-                    Suggestion::from_string_vec(completions, "".to_string(), " ".to_string()),
-                    wuc_substring,
-                    &mut self.buffer,
-                );
+                self.active_tab_suggestions = ActiveSuggestions::new(
+                    Suggestion::from_string_vec(completions, "", " "),
+                    word_under_cursor,
+                    &self.buffer,
+                )
+                .try_accept(&mut self.buffer);
             }
-            tab_completion::CompType::CommandComp {
-                command_word,
-            } => {
-                // this it the cursor position relative to the start of the completion context
+            tab_completion_context::CompType::CommandComp { command_word } => {
                 let full_command = completion_context.context;
+                // this it the cursor position relative to the start of the completion context
                 let cursor_byte_pos = completion_context.context_until_cursor.len();
+
+                let word_under_cursor_end = {
+                    let word_start_offset_in_context =
+                        word_under_cursor.as_ptr() as usize - full_command.as_ptr() as usize;
+                    word_start_offset_in_context + word_under_cursor.len()
+                };
 
                 let poss_completions = bash_funcs::run_autocomplete_compspec(
                     &full_command,
                     &command_word,
-                    &wuc_substring.s,
+                    &word_under_cursor,
                     cursor_byte_pos,
-                    wuc_substring.end,
+                    word_under_cursor_end,
                 );
                 match poss_completions {
                     Some(completions) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
-                        self.active_tab_suggestions = ActiveSuggestions::try_new(
-                            Suggestion::from_string_vec(
-                                completions,
-                                "".to_string(),
-                                " ".to_string(),
-                            ),
-                            wuc_substring,
-                            &mut self.buffer,
-                        );
+                        self.active_tab_suggestions = ActiveSuggestions::new(
+                            Suggestion::from_string_vec(completions, "", " "),
+                            word_under_cursor,
+                            &self.buffer,
+                        )
+                        .try_accept(&mut self.buffer);
                     }
                     None => {
                         log::debug!(
@@ -691,11 +691,9 @@ impl<'a> App<'a> {
                             full_command
                         );
                         let completions = self.tab_complete_current_path(word_under_cursor);
-                        self.active_tab_suggestions = ActiveSuggestions::try_new(
-                            completions,
-                            wuc_substring,
-                            &mut self.buffer,
-                        );
+                        self.active_tab_suggestions =
+                            ActiveSuggestions::new(completions, word_under_cursor, &self.buffer)
+                                .try_accept(&mut self.buffer);
                     }
                 }
             }
@@ -714,21 +712,22 @@ impl<'a> App<'a> {
             //         &mut self.buffer,
             //     );
             // }
-            tab_completion::CompType::EnvVariable => {
+            tab_completion_context::CompType::EnvVariable => {
                 log::debug!(
                     "Environment variable completion not yet implemented: {:?}",
-                    wuc_substring
+                    word_under_cursor
                 );
             }
-            tab_completion::CompType::TildeExpansion => {
-                log::debug!("Tilde expansion completion: {:?}", wuc_substring);
-                let completions = self.tab_complete_tilde_expansion(&wuc_substring.s);
+            tab_completion_context::CompType::TildeExpansion => {
+                log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
+                let completions = self.tab_complete_tilde_expansion(&word_under_cursor);
                 self.active_tab_suggestions =
-                    ActiveSuggestions::try_new(completions, wuc_substring, &mut self.buffer);
+                    ActiveSuggestions::new(completions, word_under_cursor, &self.buffer)
+                        .try_accept(&mut self.buffer);
             }
-            tab_completion::CompType::GlobExpansion => {
-                log::debug!("Glob expansion for: {:?}", wuc_substring);
-                let completions = self.tab_complete_glob_expansion(&wuc_substring.s);
+            tab_completion_context::CompType::GlobExpansion => {
+                log::debug!("Glob expansion for: {:?}", word_under_cursor);
+                let completions = self.tab_complete_glob_expansion(&word_under_cursor);
 
                 // Unlike other completions, if there are multiple glob completions,
                 // we join them with spaces and insert them all at once.
@@ -745,18 +744,15 @@ impl<'a> App<'a> {
                 if completions_as_string.is_empty() {
                     log::debug!(
                         "No glob expansion completions found for pattern: {}",
-                        wuc_substring.s
+                        word_under_cursor
                     );
                 } else {
-                    self.active_tab_suggestions = ActiveSuggestions::try_new(
-                        Suggestion::from_string_vec(
-                            vec![completions_as_string],
-                            "".to_string(),
-                            " ".to_string(),
-                        ),
-                        wuc_substring,
-                        &mut self.buffer,
-                    );
+                    self.active_tab_suggestions = ActiveSuggestions::new(
+                        Suggestion::from_string_vec(vec![completions_as_string], "", " "),
+                        word_under_cursor,
+                        &self.buffer,
+                    )
+                    .try_accept(&mut self.buffer);
                 }
             }
         }

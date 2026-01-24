@@ -18,8 +18,8 @@ impl Suggestion {
 
     pub fn from_string_vec(
         suggestions: Vec<String>,
-        prefix: String,
-        suffix: String,
+        prefix: &str,
+        suffix: &str,
     ) -> Vec<Suggestion> {
         suggestions
             .into_iter()
@@ -27,9 +27,9 @@ impl Suggestion {
                 let new_suffix = if suffix == " " && s.ends_with(' ') {
                     "".to_string()
                 } else {
-                    suffix.clone()
+                    suffix.to_string()
                 };
-                Suggestion::new(s, prefix.clone(), new_suffix)
+                Suggestion::new(s, prefix.to_string(), new_suffix)
             })
             .collect()
     }
@@ -53,34 +53,17 @@ pub struct ActiveSuggestions {
 }
 
 impl ActiveSuggestions {
-    pub fn try_new(
+    pub fn new<'underlying_buffer>(
         suggestions: Vec<Suggestion>,
-        word_under_cursor: SubString,
-        buffer: &mut TextBuffer,
-    ) -> Option<Self> {
-        let active_suggestions = ActiveSuggestions {
+        word_under_cursor: &'underlying_buffer str,
+        buffer: &'underlying_buffer TextBuffer,
+    ) -> Self {
+        let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).unwrap();
+
+        ActiveSuggestions {
             suggestions,
             selected_index: 0,
             word_under_cursor,
-        };
-
-        match active_suggestions.suggestions.as_slice() {
-            [] => {
-                log::debug!("No completions found");
-                None
-            }
-            [_] => {
-                active_suggestions.accept(buffer);
-                log::debug!("Only one completion found for first word: auto-accepted");
-                None
-            }
-            _ => {
-                log::debug!(
-                    "Multiple completions available: {:?}",
-                    active_suggestions.suggestions
-                );
-                Some(active_suggestions)
-            }
         }
     }
 
@@ -105,7 +88,25 @@ impl ActiveSuggestions {
             .map(|(idx, suggestion)| (suggestion.s.as_str(), idx == self.selected_index))
     }
 
-    pub fn accept(self, buffer: &mut TextBuffer) {
+    pub fn try_accept(self, buffer: &mut TextBuffer) -> Option<Self> {
+        match self.suggestions.as_slice() {
+            [] => {
+                log::debug!("No completions found");
+                None
+            }
+            [_] => {
+                self.accept_currently_selected(buffer);
+                log::debug!("Only one completion found for first word: auto-accepted");
+                None
+            }
+            _ => {
+                log::debug!("Multiple completions available: {:?}", self.suggestions);
+                Some(self)
+            }
+        }
+    }
+
+    pub fn accept_currently_selected(self, buffer: &mut TextBuffer) {
         let completion = &self.suggestions[self.selected_index];
 
         if let Err(e) =

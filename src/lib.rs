@@ -17,7 +17,7 @@ mod iter_first_last;
 mod lexer;
 mod prompt_manager;
 mod snake_animation;
-mod tab_completion;
+mod tab_completion_context;
 mod text_buffer;
 
 // Global state for our custom input stream
