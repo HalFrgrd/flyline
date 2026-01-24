@@ -300,7 +300,7 @@ pub fn run_autocomplete_compspec(
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
 ) -> Result<Vec<String>> {
     log::debug!(
-        "run_autocomplete_compspec called with full_command='{}'\ncommand_word='{}'\nword_under_cursor='{}'\ncursor_byte_pos={}\nword_under_cursor_byte_end={}",
+        "run_autocomplete_compspec called with\nfull_command='{}'\ncommand_word='{}'\nword_under_cursor='{}'\ncursor_byte_pos={}\nword_under_cursor_byte_end={}",
         full_command,
         command_word,
         word_under_cursor,

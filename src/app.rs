@@ -672,43 +672,30 @@ impl<'a> App<'a> {
                     poss_alias
                 );
 
-                let mut word_under_cursor_end = {
-                    let word_start_offset_in_context = word_under_cursor.as_ptr() as usize
-                        - completion_context.context.as_ptr() as usize;
-                    word_start_offset_in_context + word_under_cursor.len()
+                let alias = if let Some(a) = poss_alias
+                    && !a.is_empty()
+                {
+                    a
+                } else {
+                    command_word.clone()
                 };
 
-                let full_command: String;
+                let len_delta = alias.len() as isize - command_word.len() as isize;
+                let word_under_cursor_end = {
+                    let word_start_offset_in_context = word_under_cursor.as_ptr() as usize
+                        - completion_context.context.as_ptr() as usize;
+                    (word_start_offset_in_context + word_under_cursor.len())
+                        .saturating_add_signed(len_delta)
+                };
 
                 // this it the cursor position relative to the start of the completion context
-                let mut cursor_byte_pos = completion_context.context_until_cursor.len();
+                let cursor_byte_pos = completion_context
+                    .context_until_cursor
+                    .len()
+                    .saturating_add_signed(len_delta);
 
-                match poss_alias {
-                    Some(alias)
-                        if alias.len() > 0
-                            && completion_context.context.starts_with(&command_word)
-                            && completion_context.context_until_cursor.len()
-                                > command_word.len() =>
-                    {
-                        let len_delta = alias.len() as isize - command_word.len() as isize;
-                        // adjust based on signed delta
-                        word_under_cursor_end =
-                            word_under_cursor_end.saturating_add_signed(len_delta);
-                        cursor_byte_pos = cursor_byte_pos.saturating_add_signed(len_delta);
-
-                        // build the new full_command by replacing the leading command_word with the alias
-                        full_command =
-                            alias.to_string() + &completion_context.context[command_word.len()..];
-                        command_word = alias
-                            .split_whitespace()
-                            .next()
-                            .unwrap_or(&alias)
-                            .to_string();
-                    }
-                    _ => {
-                        full_command = completion_context.context.to_string();
-                    }
-                }
+                let full_command = alias.to_string() + &completion_context.context[command_word.len()..];
+                command_word = alias.split_whitespace().next().unwrap().to_string();
 
                 let poss_completions = bash_funcs::run_autocomplete_compspec(
                     &full_command,
