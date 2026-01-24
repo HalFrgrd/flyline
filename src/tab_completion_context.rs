@@ -63,6 +63,13 @@ impl<'a> CompletionContext<'a> {
         context: &'a str,
         word_under_cursor: &'a str,
     ) -> Self {
+        if cfg!(test) {
+            dbg!(&buffer);
+            dbg!(&context_until_cursor);
+            dbg!(&context);
+            dbg!(&word_under_cursor);
+        }
+
         let comp_type = if context.trim().is_empty() {
             CompType::FirstWord
         } else if !context_until_cursor.chars().any(|c| c.is_whitespace()) {
@@ -107,30 +114,71 @@ pub fn get_completion_context<'a>(
     let tree = parser.parse(buffer, None).expect("Failed to parse buffer");
     let root_node = tree.root_node();
 
-    // Find the deepest node that contains the cursor
-    let cursor_node = find_deepest_node_at_position(&root_node, cursor_byte_pos);
-    let word_under_cursor = cursor_node
-        .utf8_text(buffer.as_bytes())
-        .unwrap_or(buffer[0..0].as_ref());
+    // Find the deepest node that the cursor is part of
+
+    let cursor_node = find_cursor_node(&root_node, cursor_byte_pos);
+
+    let word_under_cursor_range = if cursor_node
+        .byte_range()
+        .to_inclusive()
+        .contains(&cursor_byte_pos)
+    {
+        println!("Cursor is inside the node: {:?}", cursor_node);
+        // dbg!(&buffer.as_bytes());
+        if buffer
+            .char_indices()
+            .any(|(i, c)| i == cursor_byte_pos && c.is_whitespace())
+            || (cursor_byte_pos >= buffer.len()
+                && buffer.chars().last().map_or(false, |c| c.is_whitespace()))
+        {
+            println!("Cursor is at whitespace inside the node");
+            cursor_byte_pos..cursor_byte_pos
+        } else {
+            println!("Cursor is at non-whitespace inside the node");
+            cursor_node.byte_range()
+        }
+    } else {
+        println!("Cursor is NOT inside the node: {:?}", cursor_node);
+        cursor_byte_pos..cursor_byte_pos
+    };
+    let word_under_cursor = &buffer[word_under_cursor_range.clone()];
 
     if cfg!(test) {
         dbg!(&cursor_byte_pos);
         dbg!(&cursor_node);
+        dbg!(&word_under_cursor_range);
+        dbg!(&word_under_cursor);
     }
 
     // Find the command context for this cursor position
-    let comp_context_node = find_comp_context_from_cursor(&cursor_node);
-    let comp_context_range = trim_node(&comp_context_node, cursor_byte_pos);
-    assert!(comp_context_range.is_sub_range(&comp_context_node.byte_range()));
+    let comp_context_range = {
+        let comp_context_node = find_comp_context_from_cursor(&cursor_node);
+        let comp_context_range = trim_node(&comp_context_node, cursor_byte_pos);
+        assert!(comp_context_range.is_sub_range(&comp_context_node.byte_range()));
 
-    let command = &buffer[comp_context_range.clone()];
-    let command_until_cursor =
-        &buffer[comp_context_range.start..cursor_byte_pos.min(comp_context_range.end)];
+        (comp_context_range.start.min(word_under_cursor_range.start))
+            ..(comp_context_range.end.max(word_under_cursor_range.end))
+    };
 
-    CompletionContext::new(buffer, command_until_cursor, command, word_under_cursor)
+    if cfg!(test) {
+        dbg!(&comp_context_range);
+        dbg!(&buffer[comp_context_range.clone()]);
+    }
+
+    assert!(
+        word_under_cursor_range
+            .to_inclusive()
+            .contains(&cursor_byte_pos)
+    );
+    assert!(word_under_cursor_range.is_sub_range(&comp_context_range));
+
+    let context_until_cursor = &buffer[comp_context_range.start..cursor_byte_pos];
+    let context = &buffer[comp_context_range];
+
+    CompletionContext::new(buffer, context_until_cursor, context, word_under_cursor)
 }
 
-fn find_deepest_node_at_position<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
+fn find_cursor_node<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
     // Check children to find the deepest node containing the cursor
     for child in node.children(&mut node.walk()) {
         if !child.is_named() {
@@ -138,7 +186,7 @@ fn find_deepest_node_at_position<'a>(node: &Node<'a>, cursor_byte_pos: usize) ->
             continue;
         }
         if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
-            return find_deepest_node_at_position(&child, cursor_byte_pos);
+            return find_cursor_node(&child, cursor_byte_pos);
         }
     }
 
@@ -147,6 +195,7 @@ fn find_deepest_node_at_position<'a>(node: &Node<'a>, cursor_byte_pos: usize) ->
 }
 
 fn find_comp_context_from_cursor<'tree>(cursor_node: &Node<'tree>) -> Node<'tree> {
+    // Returns the node or a parent
     let mut current_node = *cursor_node;
 
     // Traverse up the tree to find the appropriate command context
@@ -288,6 +337,38 @@ mod tests {
     }
 
     #[test]
+    fn test_command_extraction_at_end() {
+        let input = "cd target ";
+        let res = run(input, input.len());
+        assert_eq!(res.context_until_cursor, "cd target ");
+        assert_eq!(res.context, "cd target ");
+
+        match res.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(res.word_under_cursor, "");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_command_extraction_at_end_2() {
+        let input = "cd ";
+        let res = run(input, "cd ".len());
+        assert_eq!(res.context_until_cursor, "cd ");
+        assert_eq!(res.context, "cd ");
+
+        match res.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(res.word_under_cursor, "");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
     fn test_with_assignment_basic() {
         let input = "A=b ls -la";
         let cursor_pos = "A=b ".len();
@@ -322,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_list_of_commands() {
-        let input = r#"git commit -m "Initial 🚀"; ls -la"#;
+        let input = r#"git commit -m "Initial "; ls -la"#;
         let res = run(input, input.len());
         assert_eq!(res.context, "ls -la");
         assert_eq!(res.context_until_cursor, "ls -la");

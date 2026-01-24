@@ -299,6 +299,7 @@ pub fn run_autocomplete_compspec(
     unsafe {
         bash_symbols::rl_line_buffer = std::ffi::CString::new(full_command).unwrap().into_raw(); // git commi asdf
         bash_symbols::rl_point = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
+        bash_symbols::rl_readline_state |= 0x00004000; // RL_STATE_COMPLETING
 
         let found: std::ffi::c_int = 0;
         let foundp = &found as *const std::ffi::c_int as *mut std::ffi::c_int;
