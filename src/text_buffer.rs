@@ -472,26 +472,6 @@ impl TextBuffer {
     }
 }
 
-pub fn extract_word_at_byte<'a>(s: &'a str, byte_pos: usize) -> SubString {
-    // Find the start of the word (last whitespace before byte_pos, or 0)
-    let start = s
-        .char_indices()
-        .filter(|(_, c)| c.is_whitespace())
-        .filter(|(idx, _)| *idx < byte_pos)
-        .last()
-        .map_or(0, |(idx, c)| idx + c.len_utf8());
-
-    // Find the end of the word (next whitespace at or after byte_pos, or end of string)
-    let end = s
-        .char_indices()
-        .filter(|(_, c)| c.is_whitespace())
-        .filter(|(idx, _)| *idx >= byte_pos)
-        .next()
-        .map_or(s.len(), |(idx, _)| idx);
-
-    SubString::new(s, &s[start..end]).unwrap()
-}
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SubString {
     pub s: String,    // contents expected to be found between start and end
@@ -516,27 +496,6 @@ impl SubString {
             start,
             end,
         })
-    }
-}
-
-#[cfg(test)]
-mod word_extraction_tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_word_at_byte() {
-        let substring = extract_word_at_byte("café option", "café o".len());
-        assert_eq!(substring.s, "option");
-
-        let substring = extract_word_at_byte("café option", "café ".len());
-        assert_eq!(substring.s, "option");
-
-        let substring = extract_word_at_byte("café option", "café".len());
-        assert_eq!(substring.s, "café");
-
-        let substring =
-            extract_word_at_byte("grep 'pättërn' файл.txt 日本語", "grep 'pättërn' ".len());
-        assert_eq!(substring.s, "файл.txt");
     }
 }
 

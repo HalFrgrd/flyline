@@ -1,3 +1,5 @@
+use std::ops::Sub;
+
 use crate::text_buffer::SubString;
 use tree_sitter::{Node, Parser};
 use tree_sitter_bash;
@@ -51,7 +53,12 @@ impl<'a> CompletionContext<'a> {
         }
     }
 
-    pub fn new(buffer: &'a str, command_until_cursor: &'a str, command: &'a str) -> Self {
+    pub fn new(
+        buffer: &'a str,
+        command_until_cursor: &'a str,
+        command: &'a str,
+        word_under_cursor: &'a str,
+    ) -> Self {
         if cfg!(test) {
             dbg!(&command_until_cursor);
             dbg!(&command);
@@ -59,13 +66,6 @@ impl<'a> CompletionContext<'a> {
 
         let comp_type = if command.trim().is_empty() {
             CompType::FirstWord(SubString::new(buffer, command).unwrap())
-        } else if false && command_until_cursor.ends_with(char::is_whitespace) {
-            let cursor_white_space = match command_until_cursor.char_indices().next_back() {
-                Some((byte, _)) => &command_until_cursor[byte..],
-                None => "",
-            };
-
-            CompType::CursorOnBlank(SubString::new(buffer, cursor_white_space).unwrap())
         } else if !command_until_cursor.chars().any(|c| c.is_whitespace()) {
             let first_word =
                 SubString::new(buffer, command.split_whitespace().next().unwrap_or("")).unwrap();
@@ -76,8 +76,8 @@ impl<'a> CompletionContext<'a> {
             }
         } else {
             let cursor_byte_pos = command_until_cursor.len();
-            let word_under_cursor =
-                crate::text_buffer::extract_word_at_byte(command, cursor_byte_pos);
+
+            let word_under_cursor = SubString::new(buffer, word_under_cursor).unwrap();
 
             if let Some(comp_type) = Self::classify_word_type(&word_under_cursor) {
                 comp_type
@@ -118,7 +118,7 @@ pub fn get_completion_context<'a>(
 
     // Find the deepest node that contains the cursor
     let cursor_node = find_deepest_node_at_position(&root_node, cursor_byte_pos);
-    
+
     if cfg!(test) {
         dbg!(&cursor_byte_pos);
         dbg!(&cursor_node);
@@ -135,7 +135,9 @@ pub fn get_completion_context<'a>(
         ""
     };
 
-    CompletionContext::new(buffer, command_until_cursor, command)
+    let word_under_cursor = cursor_node.utf8_text(buffer.as_bytes()).unwrap_or("");
+
+    CompletionContext::new(buffer, command_until_cursor, command, word_under_cursor)
 }
 
 fn find_deepest_node_at_position<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
@@ -160,7 +162,6 @@ fn find_deepest_node_at_position<'a>(node: &Node<'a>, cursor_byte_pos: usize) ->
 }
 
 fn find_command_bounds_from_node<'tree>(cursor_node: &Node<'tree>) -> Node<'tree> {
-
     let mut current_node = *cursor_node;
 
     // Traverse up the tree to find the appropriate command context
@@ -185,7 +186,7 @@ fn find_command_bounds_from_node<'tree>(cursor_node: &Node<'tree>) -> Node<'tree
         };
 
         match parent.kind() {
-            "command"  => {
+            "command" => {
                 return parent;
             }
 
@@ -204,7 +205,6 @@ fn find_command_bounds_from_node<'tree>(cursor_node: &Node<'tree>) -> Node<'tree
             }
         }
     }
-
 }
 
 fn trim_command_node(node: &Node, cursor_byte_pos: usize) -> (usize, usize) {
@@ -276,7 +276,6 @@ fn trim_command_node(node: &Node, cursor_byte_pos: usize) -> (usize, usize) {
             (start, start)
         }
     }
-
 }
 
 #[cfg(test)]
@@ -318,6 +317,12 @@ mod tests {
         let res = run(input, cursor_pos);
         assert_eq!(res.command, "ls -la");
         assert_eq!(res.command_until_cursor, "");
+        match res.comp_type {
+            CompType::FirstWord(first_word) => {
+                assert_eq!(first_word.s, "ls");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
     }
 
     #[test]
@@ -671,7 +676,6 @@ mod tests {
         );
     }
 
-    
     #[test]
     #[ignore] // Need to think more on what the expected behavior is here
     fn test_double_bracket_condition() {
