@@ -573,12 +573,6 @@ impl TextBuffer {
 
         // Ensure indices are within buffer bounds
         if sub_string.start > self.buf.len() || sub_string.end > self.buf.len() {
-            log::warn!(
-                "Word bounds out of range: {}..{} (buf len {})",
-                sub_string.start,
-                sub_string.end,
-                self.buf.len()
-            );
             return Err(anyhow::anyhow!("Word bounds out of range"));
         }
 
@@ -586,21 +580,10 @@ impl TextBuffer {
         if !self.buf.is_char_boundary(sub_string.start)
             || !self.buf.is_char_boundary(sub_string.end)
         {
-            log::warn!(
-                "Word bounds not on char boundaries: {}..{}",
-                sub_string.start,
-                sub_string.end
-            );
             return Err(anyhow::anyhow!("Word bounds not on char boundaries"));
         }
 
         if self.buf[sub_string.start..sub_string.end] != *sub_string.s {
-            log::warn!(
-                "Expected word '{}' at position {}, but found '{}'",
-                sub_string.s,
-                sub_string.start,
-                &self.buf[sub_string.start..sub_string.end]
-            );
             return Err(anyhow::anyhow!(
                 "Expected word '{}' at position {}, but found '{}'",
                 sub_string.s,

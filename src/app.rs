@@ -1,4 +1,5 @@
 use crate::active_suggestions::{ActiveSuggestions, Suggestion};
+use crate::bash_env_manager::BashEnvManager;
 use crate::bash_funcs;
 use crate::command_acceptance;
 use crate::content_builder::Contents;
@@ -15,8 +16,6 @@ use futures::StreamExt;
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use std::vec;
 
@@ -154,17 +153,12 @@ struct App<'a> {
     home_path: String,
     /// Parsed bash history available at startup.
     history_manager: &'a mut HistoryManager,
-    call_type_cache: std::collections::HashMap<String, (bash_funcs::CommandType, String)>,
+    bash_env: BashEnvManager,
     snake_animation: SnakeAnimation,
     history_suggestion: Option<(HistoryEntry, String)>,
     command_word_cells: Vec<(u16, u16)>,
     should_show_command_info: bool,
     mouse_state: MouseState,
-    defined_aliases: Vec<String>,
-    defined_reserved_words: Vec<String>,
-    defined_shell_functions: Vec<String>,
-    defined_builtins: Vec<String>,
-    defined_executables: Vec<(PathBuf, String)>,
     active_tab_suggestions: Option<ActiveSuggestions>,
 }
 
@@ -187,13 +181,6 @@ impl<'a> App<'a> {
             .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
             .unwrap_or("/home/".to_string() + &user);
 
-        let path_var = bash_builtins::variables::find_as_string("PATH");
-        let executables = if let Some(path_str) = path_var.as_ref().and_then(|v| v.to_str().ok()) {
-            App::get_executables_from_path(path_str)
-        } else {
-            Vec::new()
-        };
-
         history.new_session();
         App {
             mode: AppRunningState::Running,
@@ -203,18 +190,12 @@ impl<'a> App<'a> {
             prompt_manager: PromptManager::new(ps1_prompt),
             home_path: home_path,
             history_manager: history,
-            call_type_cache: std::collections::HashMap::new(),
+            bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
             command_word_cells: Vec::new(),
             should_show_command_info: false,
             mouse_state: MouseState::new(),
-            // TODO: fetch these in background thread
-            defined_aliases: bash_funcs::get_all_aliases(),
-            defined_reserved_words: bash_funcs::get_all_reserved_words(),
-            defined_shell_functions: bash_funcs::get_all_shell_functions(),
-            defined_builtins: bash_funcs::get_all_shell_builtins(),
-            defined_executables: executables,
             active_tab_suggestions: None,
         }
     }
@@ -433,31 +414,6 @@ impl<'a> App<'a> {
         self.mode.clone()
     }
 
-    fn get_executables_from_path(path: &str) -> Vec<(PathBuf, String)> {
-        let mut executables = Vec::new();
-        for dir in path.split(':') {
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file()
-                        && path
-                            .metadata()
-                            .map(|m| m.permissions().mode() & 0o111 != 0)
-                            .unwrap_or(false)
-                    {
-                        if let Some(file_name) = path
-                            .file_name()
-                            .and_then(|n| n.to_str().map(|s| s.to_string()))
-                        {
-                            executables.push((path, file_name));
-                        }
-                    }
-                }
-            }
-        }
-        executables
-    }
-
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         match mouse.kind {
             // MouseEventKind::Moved => {
@@ -635,7 +591,7 @@ impl<'a> App<'a> {
             &line[0..space_pos]
         }
         .to_owned();
-        self.cache_command_type(&first_word);
+        self.bash_env.cache_command_type(&first_word);
     }
 
     fn tab_complete(&mut self) -> Option<()> {
@@ -798,18 +754,7 @@ impl<'a> App<'a> {
             return res;
         }
 
-        for poss_completion in self
-            .defined_aliases
-            .iter()
-            .chain(self.defined_reserved_words.iter())
-            .chain(self.defined_shell_functions.iter())
-            .chain(self.defined_builtins.iter())
-            .chain(self.defined_executables.iter().map(|(_, name)| name))
-        {
-            if poss_completion.starts_with(&command) {
-                res.push(poss_completion.to_string());
-            }
-        }
+        res = self.bash_env.get_first_word_completions(&command);
 
         // TODO: could prioritize based on frequency of use
         res.sort();
@@ -925,23 +870,6 @@ impl<'a> App<'a> {
         self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
     }
 
-    fn get_command_type(&self, cmd: &str) -> (bash_funcs::CommandType, String) {
-        self.call_type_cache
-            .get(cmd)
-            .unwrap_or(&(bash_funcs::CommandType::Unknown, String::new()))
-            .clone()
-    }
-
-    fn cache_command_type(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
-        if let Some(cached) = self.call_type_cache.get(cmd) {
-            return cached.clone();
-        }
-        let result = bash_funcs::call_type(cmd);
-        self.call_type_cache.insert(cmd.to_string(), result.clone());
-        // log::debug!("call_type result for {}: {:?}", cmd, result);
-        result
-    }
-
     fn create_content(self: &mut Self, width: u16) -> Contents {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
@@ -967,7 +895,7 @@ impl<'a> App<'a> {
                 let space_pos = line.find(' ').unwrap_or(line.len());
                 let (first_word, rest) = line.split_at(space_pos);
 
-                let (command_type, short_desc) = self.get_command_type(first_word);
+                let (command_type, short_desc) = self.bash_env.get_command_info(first_word);
                 if !short_desc.is_empty() {
                     command_description = Some(short_desc.to_owned());
                 }
