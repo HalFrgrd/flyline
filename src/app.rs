@@ -645,27 +645,32 @@ impl<'a> App<'a> {
 
         log::debug!("Completion context: {:?}", completion_context);
 
+
+        let word_under_cursor = completion_context.word_under_cursor;
+        let wuc_substring = crate::text_buffer::SubString::new(buffer, completion_context.word_under_cursor).unwrap();
+
         match completion_context.comp_type {
-            tab_completion::CompType::FirstWord(word_under_cursor) => {
-                let completions = self.tab_complete_first_word(&word_under_cursor.s);
+            tab_completion::CompType::FirstWord => {
+                let completions = self.tab_complete_first_word(word_under_cursor);
                 self.active_tab_suggestions = ActiveSuggestions::try_new(
                     Suggestion::from_string_vec(completions, "".to_string(), " ".to_string()),
-                    word_under_cursor,
+                    wuc_substring,
                     &mut self.buffer,
                 );
             }
             tab_completion::CompType::CommandComp {
-                full_command,
                 command_word,
-                word_under_cursor,
-                cursor_byte_pos,
             } => {
+                // this it the cursor position relative to the start of the completion context
+                let full_command = completion_context.context;
+                let cursor_byte_pos = completion_context.context_until_cursor.len();
+
                 let poss_completions = bash_funcs::run_autocomplete_compspec(
                     &full_command,
                     &command_word,
-                    &word_under_cursor.s,
+                    &wuc_substring.s,
                     cursor_byte_pos,
-                    word_under_cursor.end,
+                    wuc_substring.end,
                 );
                 match poss_completions {
                     Some(completions) => {
@@ -676,7 +681,7 @@ impl<'a> App<'a> {
                                 "".to_string(),
                                 " ".to_string(),
                             ),
-                            word_under_cursor,
+                            wuc_substring,
                             &mut self.buffer,
                         );
                     }
@@ -685,10 +690,10 @@ impl<'a> App<'a> {
                             "No bash autocomplete results for command: {}. Falling back to glob expansion.",
                             full_command
                         );
-                        let completions = self.tab_complete_current_path(&word_under_cursor.s);
+                        let completions = self.tab_complete_current_path(word_under_cursor);
                         self.active_tab_suggestions = ActiveSuggestions::try_new(
                             completions,
-                            word_under_cursor,
+                            wuc_substring,
                             &mut self.buffer,
                         );
                     }
@@ -709,21 +714,21 @@ impl<'a> App<'a> {
             //         &mut self.buffer,
             //     );
             // }
-            tab_completion::CompType::EnvVariable(word_under_cursor) => {
+            tab_completion::CompType::EnvVariable => {
                 log::debug!(
                     "Environment variable completion not yet implemented: {:?}",
-                    word_under_cursor
+                    wuc_substring
                 );
             }
-            tab_completion::CompType::TildeExpansion(word_under_cursor) => {
-                log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
-                let completions = self.tab_complete_tilde_expansion(&word_under_cursor.s);
+            tab_completion::CompType::TildeExpansion => {
+                log::debug!("Tilde expansion completion: {:?}", wuc_substring);
+                let completions = self.tab_complete_tilde_expansion(&wuc_substring.s);
                 self.active_tab_suggestions =
-                    ActiveSuggestions::try_new(completions, word_under_cursor, &mut self.buffer);
+                    ActiveSuggestions::try_new(completions, wuc_substring, &mut self.buffer);
             }
-            tab_completion::CompType::GlobExpansion(word_under_cursor) => {
-                log::debug!("Glob expansion for: {:?}", word_under_cursor);
-                let completions = self.tab_complete_glob_expansion(&word_under_cursor.s);
+            tab_completion::CompType::GlobExpansion => {
+                log::debug!("Glob expansion for: {:?}", wuc_substring);
+                let completions = self.tab_complete_glob_expansion(&wuc_substring.s);
 
                 // Unlike other completions, if there are multiple glob completions,
                 // we join them with spaces and insert them all at once.
@@ -740,7 +745,7 @@ impl<'a> App<'a> {
                 if completions_as_string.is_empty() {
                     log::debug!(
                         "No glob expansion completions found for pattern: {}",
-                        word_under_cursor.s
+                        wuc_substring.s
                     );
                 } else {
                     self.active_tab_suggestions = ActiveSuggestions::try_new(
@@ -749,7 +754,7 @@ impl<'a> App<'a> {
                             "".to_string(),
                             " ".to_string(),
                         ),
-                        word_under_cursor,
+                        wuc_substring,
                         &mut self.buffer,
                     );
                 }
