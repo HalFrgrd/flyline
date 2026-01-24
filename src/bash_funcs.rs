@@ -1,5 +1,7 @@
 use crate::bash_symbols;
 
+use anyhow::Result;
+
 use std::io::Read;
 use std::os::raw::c_int;
 use std::os::unix::io::FromRawFd;
@@ -280,14 +282,18 @@ pub fn run_autocomplete_compspec(
     word_under_cursor: &str,           // "commi"
     cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
-) -> Option<Vec<String>> {
+) -> Result<Vec<String>> {
     if !full_command.contains(command_word) {
         log::debug!(
             "Command word '{}' not found in full command '{}'",
             command_word,
             full_command
         );
-        return None;
+        return Err(anyhow::anyhow!(
+            "Command word '{}' not found in full command '{}'",
+            command_word,
+            full_command
+        ));
     }
 
     unsafe {
@@ -299,42 +305,44 @@ pub fn run_autocomplete_compspec(
 
         let command_word_cstr = std::ffi::CString::new(command_word).unwrap();
         let comp_spec = bash_symbols::progcomp_search(command_word_cstr.as_ptr());
-        if !comp_spec.is_null() {
-            bash_symbols::pcomp_curcs = comp_spec;
-            bash_symbols::rl_readline_state |= 0x00004000;
 
-            let compspec_comp = bash_symbols::gen_compspec_completions(
-                comp_spec,
-                command_word_cstr.as_ptr(),
-                std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
-                0,
-                word_under_cursor_byte_end as std::ffi::c_int,
-                foundp,
-            );
-            log::debug!("found value: {}", found);
-
-            if !compspec_comp.is_null() {
-                let mut res: Vec<String> = Vec::new();
-                // TODO: verify list len is correct. see the comment in bash_symbols.rs
-                log::debug!("compspec_comp result: {:?}", *compspec_comp);
-                for i in 0..((*compspec_comp).list_len) {
-                    let ptr = *(*compspec_comp).list.add(i as usize);
-                    if ptr.is_null() {
-                        continue;
-                    }
-                    let c_str = std::ffi::CStr::from_ptr(ptr);
-                    if let Ok(str_slice) = c_str.to_str() {
-                        res.push(str_slice.to_string());
-                    }
-                }
-                Some(res)
-            } else {
-                log::debug!("No completions returned from gen_compspec_completions");
-                None
-            }
-        } else {
-            log::debug!("No compspec found for command");
-            None
+        if comp_spec.is_null() {
+            return Err(anyhow::anyhow!(
+                "No completion specification found for command '{}'",
+                command_word
+            ));
         }
+
+        bash_symbols::pcomp_curcs = comp_spec;
+        bash_symbols::rl_readline_state |= 0x00004000;
+
+        let compspec_comp = bash_symbols::gen_compspec_completions(
+            comp_spec,
+            command_word_cstr.as_ptr(),
+            std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
+            0,
+            word_under_cursor_byte_end as std::ffi::c_int,
+            foundp,
+        );
+        log::debug!("found value: {}", found);
+
+        if compspec_comp.is_null() {
+            return Err(anyhow::anyhow!("gen_compspec_completions returned null"));
+        }
+
+        let mut res: Vec<String> = Vec::new();
+        // TODO: verify list len is correct. see the comment in bash_symbols.rs
+        log::debug!("compspec_comp result: {:?}", *compspec_comp);
+        for i in 0..((*compspec_comp).list_len) {
+            let ptr = *(*compspec_comp).list.add(i as usize);
+            if ptr.is_null() {
+                continue;
+            }
+            let c_str = std::ffi::CStr::from_ptr(ptr);
+            if let Ok(str_slice) = c_str.to_str() {
+                res.push(str_slice.to_string());
+            }
+        }
+        Ok(res)
     }
 }

@@ -11,7 +11,7 @@ use crate::tab_completion_context;
 use crate::text_buffer::TextBuffer;
 use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
-use futures::{FutureExt, StreamExt};
+use futures::{ StreamExt};
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
@@ -676,7 +676,7 @@ impl<'a> App<'a> {
                     word_under_cursor_end,
                 );
                 match poss_completions {
-                    Some(completions) => {
+                    Ok(completions) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
                         self.active_tab_suggestions = ActiveSuggestions::new(
                             Suggestion::from_string_vec(completions, "", " "),
@@ -685,10 +685,11 @@ impl<'a> App<'a> {
                         )
                         .try_accept(&mut self.buffer);
                     }
-                    None => {
+                    Err(e) => {
                         log::debug!(
-                            "No bash autocomplete results for command: {}. Falling back to glob expansion.",
-                            full_command
+                            "Bash autocompletion failed for command: {} with error: {}. Falling back to glob expansion.",
+                            full_command,
+                            e
                         );
                         let completions = self.tab_complete_current_path(word_under_cursor);
                         self.active_tab_suggestions =

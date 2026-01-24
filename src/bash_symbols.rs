@@ -100,6 +100,10 @@ unsafe extern "C" {
     pub fn progcomp_search(cmd: *const c_char) -> *mut CompSpec;
 
     // from pcomplete.c
+    /* The driver function for the programmable completion code.  Returns a list
+   of matches for WORD, which is an argument to command CMD.  START and END
+   bound the command currently being completed in pcomp_line (usually
+   rl_line_buffer). */
     // char ** programmable_completions (const char *cmd, const char *word, int start, int end, int *foundp)
     pub fn programmable_completions(
         cmd: *const c_char,
