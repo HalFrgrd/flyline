@@ -1,8 +1,37 @@
+use std::fmt::Debug;
+
 use crossterm::event::KeyEvent;
 use unicode_segmentation::UnicodeSegmentation;
 // use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use itertools::Itertools;
 use unicode_width::UnicodeWidthStr;
+
+#[derive(Clone, Eq, PartialEq)]
+struct BufSnapshot {
+    buf: String,
+    cursor_byte: usize,
+}
+
+impl BufSnapshot {
+    pub fn new(buf: &str, cursor_byte: usize) -> Self {
+        BufSnapshot {
+            buf: buf.to_string(),
+            cursor_byte,
+        }
+    }
+}
+
+impl Debug for BufSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BSnap({:?}, {})", self.buf, self.cursor_byte)
+    }
+}
+
+#[derive(Debug)]
+struct UndoStack {
+    stack: Vec<BufSnapshot>,
+    next_snap_idx: usize,
+}
 
 pub struct TextBuffer {
     buf: String,
@@ -10,6 +39,7 @@ pub struct TextBuffer {
     // Need to ensure it lines up with grapheme boundaries.
     // The cursor is on the left of the grapheme at this index.
     cursor_byte: usize,
+    undo_stack: UndoStack,
 }
 
 ///////////////////////////////////////////////////////// misc
@@ -18,6 +48,7 @@ impl TextBuffer {
         TextBuffer {
             buf: starting_str.to_string(),
             cursor_byte: starting_str.len(),
+            undo_stack: UndoStack::new(),
         }
     }
 
@@ -121,6 +152,24 @@ impl TextBuffer {
                 ..
             } => {
                 self.insert_char(c);
+            }
+            KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.redo();
+            }
+            KeyEvent {
+                code: KeyCode::Char('z'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.redo();
+                } else {
+                    self.undo();
+                }
             }
             _ => {}
         }
@@ -364,11 +413,13 @@ mod test_movement {
 ///////////////////////////////////////////////////////// editing primitves
 impl TextBuffer {
     pub fn insert_char(&mut self, c: char) {
+        self.push_snapshot();
         self.buf.insert(self.cursor_byte, c);
         self.cursor_byte += c.len_utf8();
     }
 
     pub fn insert_str(&mut self, s: &str) {
+        self.push_snapshot();
         self.buf.insert_str(self.cursor_byte, s);
         self.cursor_byte += s.len();
     }
@@ -762,6 +813,242 @@ impl TextBuffer {
 mod test_accessors {
     // Add accessor-specific tests here if needed
     // Currently most accessor methods are tested implicitly in other modules
+}
+
+///////////////////////////////////////////////////////// undo and redo
+impl TextBuffer {
+    fn create_snapshot(&self) -> BufSnapshot {
+        BufSnapshot {
+            buf: self.buf.clone(),
+            cursor_byte: self.cursor_byte,
+        }
+    }
+
+    fn push_snapshot(&mut self) {
+        let snapshot = self.create_snapshot();
+        log::debug!("Pushing snapshot: snapshot={:?}", snapshot);
+
+        self.undo_stack.push(snapshot);
+    }
+
+    fn undo(&mut self) {
+        let possible_snapshot_for_redo = self.create_snapshot();
+
+        self.undo_stack
+            .prev_snapshot(possible_snapshot_for_redo)
+            .map(|snapshot| {
+                log::debug!("Undoing to state: snapshot={:?}", snapshot);
+                self.buf = snapshot.buf;
+                self.cursor_byte = snapshot.cursor_byte;
+            });
+    }
+
+    fn redo(&mut self) {
+        self.undo_stack.next_snapshot().map(|snapshot| {
+            log::debug!("Redoing to state: snapshot={:?}", snapshot);
+            self.buf = snapshot.buf;
+            self.cursor_byte = snapshot.cursor_byte;
+        });
+    }
+
+    fn debug_undo_stack(&self) -> String {
+        format!(
+            "Undo stack: {:?}, stack_ptr: {}",
+            self.undo_stack.stack, self.undo_stack.next_snap_idx
+        )
+    }
+}
+
+impl UndoStack {
+    // Most of the time the edit buffer will be small so Im choosing to push and pop the entire edit buffer
+    // as opposed to a more complex diffing approach.
+    fn new() -> Self {
+        UndoStack {
+            stack: Vec::new(),
+            next_snap_idx: 0,
+        }
+    }
+
+    fn push(&mut self, snapshot: BufSnapshot) -> bool {
+        if Some(&snapshot) == self.stack.last() {
+            log::debug!("Snapshot identical to last one, not pushing a new one");
+            return false;
+        }
+
+        // Discard any redo states
+        assert!(self.next_snap_idx <= self.stack.len());
+        self.stack.truncate(self.next_snap_idx);
+
+        // Add new snapshot
+        self.stack.push(snapshot);
+        self.next_snap_idx = self.stack.len();
+        log::debug!(
+            "Pushed new snapshot, stack is {:?}, next_snap_idx at {}",
+            self.stack,
+            self.next_snap_idx
+        );
+        true
+    }
+
+    fn next_snapshot(&mut self) -> Option<BufSnapshot> {
+        if self.next_snap_idx >= self.stack.len() {
+            log::debug!("At latest snapshot, cannot redo further");
+            None
+        } else {
+            let snapshot = self.stack[self.next_snap_idx].clone();
+            self.next_snap_idx += 1;
+            Some(snapshot)
+        }
+    }
+
+    fn at_latest_snapshot(&self) -> bool {
+        self.next_snap_idx >= self.stack.len()
+    }
+
+    fn prev_snapshot(&mut self, possible_snapshot_for_redo: BufSnapshot) -> Option<BufSnapshot> {
+        if self.next_snap_idx == 0 {
+            log::debug!("At oldest snapshot, cannot undo further");
+            None
+        } else if self.at_latest_snapshot() {
+            log::debug!("At latest snapshot, saving current state for redo");
+            let pushed_new = self.push(possible_snapshot_for_redo);
+
+            let s = if pushed_new {
+                self.next_snap_idx -= 2;
+                self.stack[self.next_snap_idx].clone()
+            } else {
+                self.next_snap_idx -= 2;
+                self.stack[self.next_snap_idx].clone()
+            };
+            log::debug!("next_snap_idx is now at {}", self.next_snap_idx);
+
+            Some(s)
+        } else {
+            self.next_snap_idx -= 1;
+            log::debug!(
+                "Stepping back to previous snapshot, next_snap_idx is now at {}",
+                self.next_snap_idx
+            );
+            Some(self.stack[self.next_snap_idx].clone())
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_undo_redo {
+    use super::*;
+
+    use log::{LevelFilter, Log, Metadata, Record};
+
+    fn setup_logging() {
+        struct StdoutLogger;
+        impl Log for StdoutLogger {
+            fn enabled(&self, _metadata: &Metadata) -> bool {
+                true
+            }
+            fn log(&self, record: &Record) {
+                if self.enabled(record.metadata()) {
+                    println!("[{}] {}", record.level(), record.args());
+                }
+            }
+            fn flush(&self) {}
+        }
+        static LOGGER: StdoutLogger = StdoutLogger;
+        let _ = log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Debug));
+    }
+
+    #[test]
+    fn undo_stack() {
+        setup_logging();
+        let mut s = UndoStack::new();
+        assert_eq!(s.stack.len(), 0);
+        assert_eq!(s.next_snap_idx, 0);
+
+        s.push(BufSnapshot::new("apple", 9));
+        assert_eq!(s.stack.len(), 1);
+        assert_eq!(s.next_snap_idx, 1);
+
+        s.push(BufSnapshot::new("banana", 9));
+        assert_eq!(s.stack.len(), 2);
+        assert_eq!(s.next_snap_idx, 2);
+
+        s.push(BufSnapshot::new("cow", 9));
+        assert_eq!(s.stack.len(), 3);
+        assert_eq!(s.next_snap_idx, 3);
+
+        let p = s.prev_snapshot(BufSnapshot::new("cow", 9));
+        assert_eq!(p.unwrap(), BufSnapshot::new("banana", 9));
+
+        let p = s.prev_snapshot(BufSnapshot::new("banana", 9));
+        assert_eq!(p.unwrap(), BufSnapshot::new("apple", 9));
+
+        let p = s.prev_snapshot(BufSnapshot::new("apple", 9));
+        assert!(p.is_none());
+
+        let n = s.next_snapshot();
+        assert_eq!(n.unwrap(), BufSnapshot::new("apple", 9));
+
+        let n = s.next_snapshot();
+        assert_eq!(n.unwrap(), BufSnapshot::new("banana", 9));
+
+        s.push(BufSnapshot::new("date", 9));
+        assert_eq!(s.stack.len(), 3);
+        assert_eq!(s.next_snap_idx, 3);
+    }
+
+    #[test]
+    fn undo_redo_basic() {
+        let mut tb = TextBuffer::new("Hello");
+        tb.insert_str(" World");
+        println!("{}", tb.debug_undo_stack());
+        assert_eq!(tb.buffer(), "Hello World");
+        tb.undo();
+        println!("{}", tb.debug_undo_stack());
+        assert_eq!(tb.buffer(), "Hello");
+        tb.redo();
+        println!("{}", tb.debug_undo_stack());
+        assert_eq!(tb.buffer(), "Hello World");
+    }
+
+    #[test]
+    fn undo_redo_multiple_steps() {
+        let mut tb = TextBuffer::new("Start");
+        tb.insert_str(" One");
+        tb.insert_str(" Two");
+        tb.insert_str(" Three");
+        assert_eq!(tb.buffer(), "Start One Two Three");
+
+        tb.undo();
+        assert_eq!(tb.buffer(), "Start One Two");
+
+        tb.undo();
+        assert_eq!(tb.buffer(), "Start One");
+
+        tb.redo();
+        assert_eq!(tb.buffer(), "Start One Two");
+
+        tb.redo();
+        assert_eq!(tb.buffer(), "Start One Two Three");
+    }
+
+    #[test]
+    fn undo_and_start_new_edit() {
+        let mut tb = TextBuffer::new("Base");
+        tb.insert_str(" Edit1");
+        tb.insert_str(" Edit2");
+        assert_eq!(tb.buffer(), "Base Edit1 Edit2");
+
+        tb.undo();
+        assert_eq!(tb.buffer(), "Base Edit1");
+
+        // Start a new edit after undo
+        tb.insert_str(" NewEdit");
+        assert_eq!(tb.buffer(), "Base Edit1 NewEdit");
+
+        // Redo should not work now
+        tb.redo();
+        assert_eq!(tb.buffer(), "Base Edit1 NewEdit");
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
