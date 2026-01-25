@@ -13,7 +13,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     }
 
     // Handle line continuations
-    if buffer.trim_end().ends_with('\\') {
+    if buffer.trim_end().chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 {
         return false;
     }
 
