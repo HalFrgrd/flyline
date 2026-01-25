@@ -63,9 +63,9 @@ fn setup_logging() -> Result<()> {
             .set_target_level(LevelFilter::Off)
             .set_location_level(LevelFilter::Debug)
             .add_filter_ignore_str("flyline::text_buffer")
-            // .add_filter_ignore_str("flyline::tab_completion")
-            .add_filter_ignore_str("flyline::history")
-            // .add_filter_ignore_str("flyline::bash_funcs")
+            .add_filter_ignore_str("flyline::tab_completion")
+            // .add_filter_ignore_str("flyline::history")
+            .add_filter_ignore_str("flyline::bash_funcs")
             .build(),
         log_file,
     )?;
@@ -82,8 +82,8 @@ fn setup_logging() -> Result<()> {
 struct Flyline {
     content: Vec<u8>,
     position: usize,
-    history: history::HistoryManager,
-    cached_content_during_resize: String,
+    // history: history::HistoryManager,
+    // cached_content_during_resize: String,
 }
 
 impl Flyline {
@@ -91,8 +91,8 @@ impl Flyline {
         Self {
             content: vec![],
             position: 0,
-            history: history::HistoryManager::new(),
-            cached_content_during_resize: "".to_string(),
+            // history: history::HistoryManager::new(),
+            // cached_content_during_resize: "".to_string(),
         }
     }
 
@@ -111,15 +111,15 @@ impl Flyline {
 
             log::debug!("---------------------- Starting app ------------------------");
 
-            let starting_content = self.cached_content_during_resize.clone();
-            self.cached_content_during_resize = "".to_string();
-            self.content = match app::get_command(&mut self.history, starting_content) {
+            // let starting_content = self.cached_content_during_resize.clone();
+            // self.cached_content_during_resize = "".to_string();
+            self.content = match app::get_command() {
                 app::AppRunningState::ExitingWithCommand(cmd) => {
-                    let timestamp: Option<u64> = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .ok()
-                        .map(|d| d.as_secs());
-                    self.history.add_entry(timestamp, &cmd);
+                    // let timestamp: Option<u64> = std::time::SystemTime::now()
+                    //     .duration_since(std::time::UNIX_EPOCH)
+                    //     .ok()
+                    //     .map(|d| d.as_secs());
+                    // self.history.add_entry(timestamp, &cmd);
                     cmd.into_bytes()
                 }
                 app::AppRunningState::Running => vec![],

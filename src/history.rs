@@ -1,5 +1,7 @@
 use itertools::Itertools;
 
+use crate::{bash_funcs, bash_symbols};
+
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
     pub timestamp: Option<u64>,
@@ -23,7 +25,7 @@ pub enum HistorySearchDirection {
 impl HistoryManager {
     /// Read the user's bash history file into a Vec<String>.
     /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
-    fn parse_bash_history() -> Vec<HistoryEntry> {
+    fn parse_bash_history_from_file() -> Vec<HistoryEntry> {
         let start_time = std::time::Instant::now();
 
         let hist_path = std::env::var("HISTFILE").unwrap_or_else(|_| {
@@ -42,6 +44,61 @@ impl HistoryManager {
             res.len(),
             duration
         );
+        res
+    }
+
+    pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
+        let mut res = Vec::new();
+        unsafe {
+            let hist_array = bash_symbols::history_list();
+            if hist_array.is_null() {
+                log::warn!("History list is null");
+                return res;
+            }
+            
+            let mut index = 0;
+            loop {
+                let entry_ptr = *hist_array.offset(index);
+                if entry_ptr.is_null() {
+                    break;
+                }
+                
+                let hist_entry = &*entry_ptr;
+                
+                // Check if line pointer is valid before dereferencing
+                if !hist_entry.line.is_null() {
+                    let command_cstr = std::ffi::CStr::from_ptr(hist_entry.line);
+                    let command_str = command_cstr.to_string_lossy().into_owned();
+                    
+                    // Parse timestamp if available
+                    let timestamp = if !hist_entry.timestamp.is_null() {
+                        let timestamp_cstr = std::ffi::CStr::from_ptr(hist_entry.timestamp);
+                        if let Ok(timestamp_str) = timestamp_cstr.to_str() {
+                            timestamp_str.parse::<u64>().ok()
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    let entry = HistoryEntry {
+                        timestamp,
+                        index: index as usize,
+                        command: command_str,
+                    };
+                    res.push(entry);
+                }
+                
+                index += 1;
+                
+                // Safety check to prevent infinite loops
+                if index > 100000 {
+                    log::warn!("History parsing stopped at {} entries to prevent infinite loop", index);
+                    break;
+                }
+            }
+        }
         res
     }
 
@@ -68,7 +125,17 @@ impl HistoryManager {
     }
 
     pub fn new() -> HistoryManager {
-        let bash_entries = Self::parse_bash_history();
+
+        let bash_entries_from_memory = Self::parse_bash_history_from_memory();
+        log::debug!(
+            "Parsed bash history from memory ({} entries)",
+            bash_entries_from_memory.len()
+        );
+        for entry in bash_entries_from_memory.iter().take(5) {
+            log::debug!("  [{}] {}", entry.index, entry.command);
+        }
+
+        let bash_entries = Self::parse_bash_history_from_file();
         let zsh_entries = Self::parse_zsh_history();
 
         let entries: Vec<_> = bash_entries

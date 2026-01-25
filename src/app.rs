@@ -45,7 +45,7 @@ fn set_panic_hook() {
     }));
 }
 
-pub fn get_command(history: &mut HistoryManager, starting_content: String) -> AppRunningState {
+pub fn get_command() -> AppRunningState {
     // if let Err(e) = color_eyre::install() {
     //     log::error!("Failed to install color_eyre panic handler: {}", e);
     // }
@@ -71,7 +71,7 @@ pub fn get_command(history: &mut HistoryManager, starting_content: String) -> Ap
 
     let runtime = build_runtime();
 
-    let mut app = App::new(history, starting_content);
+    let mut app = App::new();
     let end_state = runtime.block_on(app.run(backend));
 
     restore();
@@ -144,7 +144,7 @@ impl AppRunningState {
     }
 }
 
-struct App<'a> {
+struct App {
     mode: AppRunningState,
     buffer: TextBuffer,
     animation_tick: u64,
@@ -152,7 +152,7 @@ struct App<'a> {
     prompt_manager: PromptManager,
     home_path: String,
     /// Parsed bash history available at startup.
-    history_manager: &'a mut HistoryManager,
+    history_manager: HistoryManager,
     bash_env: BashEnvManager,
     snake_animation: SnakeAnimation,
     history_suggestion: Option<(HistoryEntry, String)>,
@@ -162,8 +162,8 @@ struct App<'a> {
     active_tab_suggestions: Option<ActiveSuggestions>,
 }
 
-impl<'a> App<'a> {
-    fn new(history: &'a mut HistoryManager, starting_content: String) -> Self {
+impl App {
+    fn new()  -> Self {
         // TODO: fetch these in background
 
         let ps1_prompt = bash_builtins::variables::find_as_string("PS1")
@@ -184,15 +184,15 @@ impl<'a> App<'a> {
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
 
-        history.new_session();
+        // history.new_session();
         App {
             mode: AppRunningState::Running,
-            buffer: TextBuffer::new(&starting_content),
+            buffer: TextBuffer::new(""),
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(ps1_prompt, unfinished_from_prev_command),
             home_path: home_path,
-            history_manager: history,
+            history_manager: HistoryManager::new(),
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
