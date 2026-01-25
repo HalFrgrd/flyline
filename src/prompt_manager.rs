@@ -15,7 +15,7 @@ impl PromptManager {
                 .bg(ratatui::style::Color::Red)
                 .fg(ratatui::style::Color::Black);
 
-            return PromptManager {
+            PromptManager {
                 prompt: vec![
                     Line::from(vec![
                         Span::styled(
@@ -33,23 +33,23 @@ impl PromptManager {
                     ]),
                     Line::from("> "),
                 ],
-            };
-        }
-
-        // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
-        let ps1 = ps1.replace("\\[", "").replace("\\]", "");
-        const PS1_DEFAULT: &str = "bad ps1> ";
-
-        let ps1: Vec<Line<'static>> = match ps1.into_text().unwrap_or(Text::from(PS1_DEFAULT)).lines
-        {
-            lines if lines.is_empty() => {
-                log::warn!("Failed to parse PS1, defaulting to '>'");
-                vec![Line::from(PS1_DEFAULT)]
             }
-            lines => lines,
-        };
+        } else {
+            // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
+            let ps1 = ps1.replace("\\[", "").replace("\\]", "");
+            const PS1_DEFAULT: &str = "bad ps1> ";
 
-        PromptManager { prompt: ps1 }
+            let ps1: Vec<Line<'static>> = match ps1.into_text().unwrap_or(Text::from(PS1_DEFAULT)).lines
+            {
+                lines if lines.is_empty() => {
+                    log::warn!("Failed to parse PS1, defaulting to '>'");
+                    vec![Line::from(PS1_DEFAULT)]
+                }
+                lines => lines,
+            };
+            
+            PromptManager { prompt: ps1 }
+        }
     }
 
     pub fn get_ps1_lines(&self) -> Vec<Line<'static>> {

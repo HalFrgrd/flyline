@@ -88,6 +88,13 @@ unsafe extern "C" {
     #[link_name = "stream_list"]
     pub static mut stream_list: *mut StreamSaver;
 
+    // form y.tab.h
+    /* The token that currently denotes the end of parse. */
+    // int shell_eof_token;
+    #[link_name = "shell_eof_token"]
+    pub static mut shell_eof_token: c_int;
+
+
     // from shell.h
     pub static interactive_shell: c_int;
 
@@ -182,6 +189,22 @@ unsafe extern "C" {
     // int current_command_line_count;
     #[link_name = "current_command_line_count"]
     pub static mut current_command_line_count: c_int;
+
+
+    // from evalstring.c
+    /* Parse a command contained in STRING according to FLAGS and return the
+   number of characters consumed from the string.  If non-NULL, set *ENDP
+   to the position in the string where the parse ended.  Used to validate
+   command substitutions during parsing to obey Posix rules about finding
+   the end of the command and balancing parens. */
+   // int parse_string (char *string, const char *from_file, int flags, COMMAND **cmdp, char **endp)
+    pub fn parse_string(
+        string: *mut c_char,
+        from_file: *const c_char,
+        flags: c_int,
+        cmdp: *mut *mut libc::c_void, // COMMAND** - opaque pointer for our purposes
+        endp: *mut *mut c_char,
+    ) -> c_int;
 
 }
 
