@@ -1,69 +1,8 @@
-use ratatui::buffer;
 use tree_sitter::{Node, Parser};
 use tree_sitter_bash;
 
-use crate::bash_symbols;
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
-
-
-    // this seemed to have a side effect.
-    // my aliases stopped working after calling this function once.
-    // and I could not find a way to know if bash accepted the command or not.
-
-    // /* Flag values for parse_and_execute () and parse_string () */
-    // // Flag values for parse_and_execute () and parse_string ()
-    // const SEVAL_NONINT: i32     = 0x001; // Non interactive mode?
-    // const SEVAL_INTERACT: i32   = 0x002;
-    // const SEVAL_NOHIST: i32     = 0x004;
-    // const SEVAL_NOFREE: i32     = 0x008;
-    // const SEVAL_RESETLINE: i32  = 0x010;
-    // const SEVAL_PARSEONLY: i32  = 0x020;
-    // const SEVAL_NOLONGJMP: i32  = 0x040; // dont long jump to errors?
-    // const SEVAL_FUNCDEF: i32    = 0x080; // only allow function definitions
-    // const SEVAL_ONECMD: i32     = 0x100; // only allow a single command
-    // const SEVAL_NOHISTEXP: i32  = 0x200; // inhibit history expansion
-    // const SEVAL_NOOPTIMIZE: i32 = 0x400; // don't try to set optimization flags
-    // const SEVAL_NOTIFY: i32     = 0x800; // want job notifications
-
-    // unsafe {
-    //     let flags = SEVAL_NOHIST | SEVAL_NOFREE | SEVAL_PARSEONLY | 
-    //             SEVAL_NOHISTEXP | SEVAL_NONINT | SEVAL_NOLONGJMP;
-
-    //     let buf_string = std::ffi::CString::new(buffer).unwrap();
-    //     let buf = buf_string.as_ptr() as *mut std::ffi::c_char;
-    //     let file_name_string = std::ffi::CString::new("flyline").unwrap();
-    //     let file_name = file_name_string.as_ptr();
-    //     let mut cmdp: *mut libc::c_void = std::ptr::null_mut();
-    //     let mut endp_ptr: *mut std::ffi::c_char = std::ptr::null_mut();
-        
-    //     let ret = bash_symbols::parse_string(
-    //         buf,
-    //         file_name,
-    //         flags,
-    //         &mut cmdp as *mut *mut libc::c_void,
-    //         &mut endp_ptr as *mut *mut std::ffi::c_char,
-    //     );
-
-    //     let shell_eof_token = bash_symbols::shell_eof_token;
-
-    //     log::debug!(
-    //         "Bash parse_string returned {}, endp_ptr at offset {}, shell_eof_token={}",
-    //         ret,
-    //         endp_ptr.offset_from(buf),
-    //         shell_eof_token
-    //     );
-        
-    //     // Return true if bash parsed successfully (ret == 0 means success)
-    //     // if ret == 0 {
-    //     //     return true;
-    //     // }
-    // }
-
-    // return false;
-
-
-
     // returns true iff bash won't try to get more input to complete the command
     // e.g. unclosed quotes, unclosed parens/braces/brackets, etc.
     // its ok if there are syntax errors, as long as the command is "complete"
