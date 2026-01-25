@@ -180,6 +180,10 @@ fn find_cursor_node<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
 
     // Check children to find the deepest node containing the cursor
     for child in node.children(&mut node.walk()) {
+        // Consider:      0123456789
+        // Example:       git ad
+        // cursors at :       ███     (byte positions 4,5,6) are considered to act on `ad`
+        // `ad` byte range is [4,6) so convert to inclusive for contains check
         if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
             return find_cursor_node(&child, cursor_byte_pos);
         }
