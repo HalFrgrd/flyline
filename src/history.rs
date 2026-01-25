@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use crate::{bash_funcs, bash_symbols};
+use crate::bash_symbols;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -25,6 +25,7 @@ pub enum HistorySearchDirection {
 impl HistoryManager {
     /// Read the user's bash history file into a Vec<String>.
     /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
+    #[allow(dead_code)]
     fn parse_bash_history_from_file() -> Vec<HistoryEntry> {
         let start_time = std::time::Instant::now();
 
@@ -145,11 +146,12 @@ impl HistoryManager {
     }
 
     pub fn new() -> HistoryManager {
-        // let bash_entries = Self::parse_bash_history_from_file();
-
+        
         // Bash will load the history into memory, so we can read it from there
         // Bash parses it after bashrc is loaded.
         let bash_entries = Self::parse_bash_history_from_memory();
+        // Alternative is to do it ourselves
+        // let bash_entries = Self::parse_bash_history_from_file();
 
         // As a zsh user migrating to bash, I want to have my zsh history available too
         let zsh_entries = Self::parse_zsh_history();
@@ -172,12 +174,15 @@ impl HistoryManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_session(&mut self) {
         self.index = self.entries.len();
         self.last_buffered_command = None;
         self.last_search_prefix = None;
     }
 
+
+    #[allow(dead_code)]
     pub fn add_entry(&mut self, ts: Option<u64>, command: &str) {
         let entry = HistoryEntry {
             timestamp: ts,

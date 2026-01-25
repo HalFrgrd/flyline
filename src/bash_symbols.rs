@@ -189,7 +189,7 @@ unsafe extern "C" {
 }
 
 // typedef void *histdata_t;
-pub type histdata_t = *mut libc::c_void;
+pub type HistdataT = *mut libc::c_void;
 
 /* The structure used to store a history entry. */
 // typedef struct _hist_entry {
@@ -203,7 +203,7 @@ pub type histdata_t = *mut libc::c_void;
 pub struct HistoryEntry {
     pub line: *mut c_char,
     pub timestamp: *mut c_char,
-    pub data: histdata_t,
+    pub data: HistdataT,
 }
 
 // COMPSPEC structure from pcomplete.h
