@@ -39,15 +39,15 @@ impl PromptManager {
             let ps1 = ps1.replace("\\[", "").replace("\\]", "");
             const PS1_DEFAULT: &str = "bad ps1> ";
 
-            let ps1: Vec<Line<'static>> = match ps1.into_text().unwrap_or(Text::from(PS1_DEFAULT)).lines
-            {
-                lines if lines.is_empty() => {
-                    log::warn!("Failed to parse PS1, defaulting to '>'");
-                    vec![Line::from(PS1_DEFAULT)]
-                }
-                lines => lines,
-            };
-            
+            let ps1: Vec<Line<'static>> =
+                match ps1.into_text().unwrap_or(Text::from(PS1_DEFAULT)).lines {
+                    lines if lines.is_empty() => {
+                        log::warn!("Failed to parse PS1, defaulting to '>'");
+                        vec![Line::from(PS1_DEFAULT)]
+                    }
+                    lines => lines,
+                };
+
             PromptManager { prompt: ps1 }
         }
     }

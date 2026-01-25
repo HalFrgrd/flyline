@@ -82,8 +82,6 @@ fn setup_logging() -> Result<()> {
 struct Flyline {
     content: Vec<u8>,
     position: usize,
-    // history: history::HistoryManager,
-    // cached_content_during_resize: String,
 }
 
 impl Flyline {
@@ -91,8 +89,6 @@ impl Flyline {
         Self {
             content: vec![],
             position: 0,
-            // history: history::HistoryManager::new(),
-            // cached_content_during_resize: "".to_string(),
         }
     }
 
@@ -111,17 +107,8 @@ impl Flyline {
 
             log::debug!("---------------------- Starting app ------------------------");
 
-            // let starting_content = self.cached_content_during_resize.clone();
-            // self.cached_content_during_resize = "".to_string();
             self.content = match app::get_command() {
-                app::AppRunningState::ExitingWithCommand(cmd) => {
-                    // let timestamp: Option<u64> = std::time::SystemTime::now()
-                    //     .duration_since(std::time::UNIX_EPOCH)
-                    //     .ok()
-                    //     .map(|d| d.as_secs());
-                    // self.history.add_entry(timestamp, &cmd);
-                    cmd.into_bytes()
-                }
+                app::AppRunningState::ExitingWithCommand(cmd) => cmd.into_bytes(),
                 app::AppRunningState::Running => vec![],
                 app::AppRunningState::ExitingWithoutCommand => vec![],
             };

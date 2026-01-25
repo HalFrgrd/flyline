@@ -1,7 +1,6 @@
 use tree_sitter::{Node, Parser};
 use tree_sitter_bash;
 
-
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command
     // e.g. unclosed quotes, unclosed parens/braces/brackets, etc.
@@ -13,7 +12,15 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     }
 
     // Handle line continuations
-    if buffer.trim_end().chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 {
+    if buffer
+        .trim_end()
+        .chars()
+        .rev()
+        .take_while(|c| *c == '\\')
+        .count()
+        % 2
+        == 1
+    {
         return false;
     }
 

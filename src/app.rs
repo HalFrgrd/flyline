@@ -163,7 +163,7 @@ struct App {
 }
 
 impl App {
-    fn new()  -> Self {
+    fn new() -> Self {
         // TODO: fetch these in background
 
         let ps1_prompt = bash_builtins::variables::find_as_string("PS1")

@@ -88,7 +88,6 @@ unsafe extern "C" {
     #[link_name = "stream_list"]
     pub static mut stream_list: *mut StreamSaver;
 
-
     // from shell.h
     pub static interactive_shell: c_int;
 
@@ -184,17 +183,13 @@ unsafe extern "C" {
     #[link_name = "current_command_line_count"]
     pub static mut current_command_line_count: c_int;
 
-
     // extern HIST_ENTRY **history_list (void);
     pub fn history_list() -> *mut *mut HistoryEntry;
 
-    
 }
-
 
 // typedef void *histdata_t;
 pub type histdata_t = *mut libc::c_void;
-
 
 /* The structure used to store a history entry. */
 // typedef struct _hist_entry {

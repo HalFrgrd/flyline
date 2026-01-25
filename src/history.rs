@@ -55,21 +55,21 @@ impl HistoryManager {
                 log::warn!("History list is null");
                 return res;
             }
-            
+
             let mut index = 0;
             loop {
                 let entry_ptr = *hist_array.offset(index);
                 if entry_ptr.is_null() {
                     break;
                 }
-                
+
                 let hist_entry = &*entry_ptr;
-                
+
                 // Check if line pointer is valid before dereferencing
                 if !hist_entry.line.is_null() {
                     let command_cstr = std::ffi::CStr::from_ptr(hist_entry.line);
                     let command_str = command_cstr.to_string_lossy().into_owned();
-                    
+
                     // Parse timestamp if available
                     let timestamp = if !hist_entry.timestamp.is_null() {
                         let timestamp_cstr = std::ffi::CStr::from_ptr(hist_entry.timestamp);
@@ -81,7 +81,7 @@ impl HistoryManager {
                     } else {
                         None
                     };
-                    
+
                     let entry = HistoryEntry {
                         timestamp,
                         index: index as usize,
@@ -89,12 +89,15 @@ impl HistoryManager {
                     };
                     res.push(entry);
                 }
-                
+
                 index += 1;
-                
+
                 // Safety check to prevent infinite loops
                 if index > 100000 {
-                    log::warn!("History parsing stopped at {} entries to prevent infinite loop", index);
+                    log::warn!(
+                        "History parsing stopped at {} entries to prevent infinite loop",
+                        index
+                    );
                     break;
                 }
             }
@@ -112,7 +115,24 @@ impl HistoryManager {
 
         log::debug!("Reading zsh history from: {}", hist_path);
 
-        let content = std::fs::read_to_string(hist_path).unwrap_or_default();
+        let content = match std::fs::read(&hist_path) {
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(s) => s,
+                Err(e) => {
+                    // The file contains invalid UTF-8; fall back to a lossy conversion
+                    let bytes = e.into_bytes();
+                    log::warn!(
+                        "Zsh history at {} contains invalid UTF-8, using lossy conversion",
+                        hist_path
+                    );
+                    String::from_utf8_lossy(&bytes).into_owned()
+                }
+            },
+            Err(e) => {
+                log::error!("Failed to read zsh history from {}: {}", hist_path, e);
+                String::new()
+            }
+        };
         let res = HistoryManager::parse_zsh_history_str(&content);
 
         let duration = start_time.elapsed();
@@ -125,25 +145,23 @@ impl HistoryManager {
     }
 
     pub fn new() -> HistoryManager {
+        // let bash_entries = Self::parse_bash_history_from_file();
 
-        let bash_entries_from_memory = Self::parse_bash_history_from_memory();
-        log::debug!(
-            "Parsed bash history from memory ({} entries)",
-            bash_entries_from_memory.len()
-        );
-        for entry in bash_entries_from_memory.iter().take(5) {
-            log::debug!("  [{}] {}", entry.index, entry.command);
-        }
+        // Bash will load the history into memory, so we can read it from there
+        // Bash parses it after bashrc is loaded.
+        let bash_entries = Self::parse_bash_history_from_memory();
 
-        let bash_entries = Self::parse_bash_history_from_file();
+        // As a zsh user migrating to bash, I want to have my zsh history available too
         let zsh_entries = Self::parse_zsh_history();
 
-        let entries: Vec<_> = bash_entries
+        let mut entries: Vec<_> = zsh_entries
             .into_iter()
-            .merge_by(zsh_entries, |a, b| {
+            .merge_by(bash_entries, |a, b| {
                 a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
             })
             .collect();
+
+        entries.dedup_by(|a, b| a.command == b.command);
 
         let index = entries.len();
         HistoryManager {
