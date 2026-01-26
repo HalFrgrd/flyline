@@ -9,12 +9,13 @@ crate-type = ["cdylib"]
 [dependencies]
 clap = { version = "4.5.49", features = ["derive"] }
 daemonize = "0.5.0"
-ratatui = { path = "../ratatui/ratatui", features = ["default"] }
+ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3.31"
 simplelog = "0.12"
 log = "0.4"
-ansi-to-tui = { path = "../ansi-to-tui" }
+ansi-to-tui = { git = "https://github.com/bozenalabs/ansi-to-tui.git", rev = "9101076f8e23010515ff6fe1571bf87a2d0d4abc"}
+# ansi-to-tui = {path = "../ansi-to-tui" }
 libc = "0.2.177"
 bash-builtins = "0.4.1"
 timeago = "0.5.0"

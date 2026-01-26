@@ -1,0 +1,40 @@
+# Test with latest Bash (Ubuntu 22.04)
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install basic dependencies, bash, and Rust
+RUN apt-get update && apt-get install -y \
+    bash \
+    curl \
+    build-essential \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Rust to PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Set up working directory
+WORKDIR /flyline
+
+# Copy the entire project
+COPY . .
+
+# Build the project (this will create the shared library with compatible GLIBC)
+RUN cargo build
+
+# Copy the built library to the expected location
+RUN cp target/debug/libflyline.so /usr/local/lib/libflyline.so
+
+# Copy test_rc.sh as .bashrc
+RUN cp tests/docker_integration_tests/test_rc.sh /root/.bashrc
+
+# Make sure the built library is accessible
+ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+
+# Set bash as the shell and make it interactive
+SHELL ["/bin/bash", "-i", "-c"]
+
+# Default command to run the test
+CMD ["/bin/bash", "-i", "-c", "flyline -s && exit"]
