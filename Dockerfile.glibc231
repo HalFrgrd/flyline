@@ -1,0 +1,29 @@
+# build against older glibc helps with compatibility on older systems
+
+# Use Ubuntu 20.04 which has glibc 2.31
+FROM ubuntu:20.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy the project
+COPY . .
+
+# Build the project
+RUN cargo build --release
+
+# The built library will be in target/release/
