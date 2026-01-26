@@ -165,18 +165,6 @@ fn test_docker_available() {
 
 
 #[test]
-fn test_bash_latest_ubuntu2204() {
-    if let Err(e) = check_docker_available() {
-        eprintln!("Skipping Docker test - Docker not available: {}", e);
-        return;
-    }
-
-    if let Err(e) = run_integration_test("bash_latest") {
-        panic!("Latest Bash (Ubuntu 22.04) integration test failed: {}", e);
-    }
-}
-
-#[test]
 fn test_ubuntu_2204() {
     if let Err(e) = check_docker_available() {
         eprintln!("Skipping Docker test - Docker not available: {}", e);
