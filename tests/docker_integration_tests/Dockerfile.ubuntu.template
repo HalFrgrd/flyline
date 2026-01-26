@@ -1,7 +1,7 @@
 # Common Ubuntu test template
 # Can be used with different Ubuntu versions via build args
-# Usage: docker build --build-arg UBUNTU_VERSION=20.04 -f Dockerfile.ubuntu.template -t flyline-test-ubuntu2004 .
-ARG UBUNTU_VERSION=22.04
+# Usage: docker build --build-arg UBUNTU_VERSION=20.04 --build-arg FLYLINE_LIB_PATH=libflyline-glibc227.so -f Dockerfile.ubuntu.template -t flyline-test-ubuntu2004 .
+ARG UBUNTU_VERSION
 FROM ubuntu:${UBUNTU_VERSION}
 
 # Metadata
@@ -19,11 +19,12 @@ RUN apt-get update && apt-get install -y \
 # Set up working directory
 WORKDIR /flyline
 
-# Copy the pre-built shared library (built with glibc 2.31 compatibility)
-COPY libflyline-glibc231.so /usr/local/lib/libflyline.so
+# Copy the pre-built shared library
+ARG FLYLINE_LIB_PATH
+COPY ${FLYLINE_LIB_PATH} /usr/local/lib/libflyline.so
 
-# Copy test_rc.sh as .bashrc
-COPY tests/docker_integration_tests/test_rc.sh /root/.bashrc
+# Copy test_bashrc.sh as .bashrc
+COPY tests/docker_integration_tests/test_bashrc.sh /root/.bashrc
 
 # Make sure the built library is accessible
 ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
