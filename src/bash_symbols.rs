@@ -40,7 +40,7 @@ pub type ShCUngetFunc = extern "C" fn(c_int) -> c_int;
 #[repr(C)]
 #[allow(dead_code)]
 pub struct BashInput {
-    pub type_: StreamType,
+    pub stream_type: StreamType,
     pub name: *mut c_char,
     pub location: InputStreamLocation,
     pub getter: Option<ShCGetFunc>,
@@ -76,13 +76,6 @@ pub enum CDescFlag {
 // External bash_input symbol that bash provides
 #[allow(dead_code)]
 unsafe extern "C" {
-    pub fn init_yy_io(
-        get: extern "C" fn() -> c_int,
-        unget: extern "C" fn(c_int) -> c_int,
-        type_: StreamType,
-        name: *const c_char,
-        location: InputStreamLocation,
-    );
 
     // stream_list global from y.tab.c
     #[link_name = "stream_list"]
@@ -188,16 +181,10 @@ unsafe extern "C" {
 
 }
 
-// typedef void *histdata_t;
+// history.h
 pub type HistdataT = *mut libc::c_void;
 
-/* The structure used to store a history entry. */
-// typedef struct _hist_entry {
-// char *line;
-// char *timestamp;		/* char * rather than time_t for read/write */
-// histdata_t data;
-// } HIST_ENTRY;
-
+// history.h
 #[repr(C)]
 #[allow(dead_code)]
 pub struct HistoryEntry {
@@ -206,7 +193,7 @@ pub struct HistoryEntry {
     pub data: HistdataT,
 }
 
-// COMPSPEC structure from pcomplete.h
+// pcomplete.h
 #[repr(C)]
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -224,11 +211,7 @@ pub struct CompSpec {
     pub filterpat: *mut c_char,
 }
 
-// typedef struct alias {
-//   char *name;
-//   char *value;
-//   char flags;
-// } alias_t;
+// alias.h
 #[repr(C)]
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -238,19 +221,7 @@ pub struct Alias {
     pub flags: c_char,
 }
 
-// typedef struct variable {
-//   char *name;			/* Symbol that the user types. */
-//   char *value;			/* Value that is returned. */
-//   char *exportstr;		/* String for the environment. */
-//   sh_var_value_func_t *dynamic_value;	/* Function called to return a `dynamic'
-// 				   value for a variable, like $SECONDS
-// 				   or $RANDOM. */
-//   sh_var_assign_func_t *assign_func; /* Function called when this `special
-// 				   variable' is assigned a value in
-// 				   bind_variable. */
-//   int attributes;		/* export, readonly, array, invisible... */
-//   int context;			/* Which context this variable belongs to. */
-// } SHELL_VAR;
+// variables.h
 #[repr(C)]
 #[allow(dead_code)]
 pub struct ShellVar {
@@ -263,13 +234,7 @@ pub struct ShellVar {
     pub context: c_int, // Which context this variable belongs to.
 }
 
-// struct builtin {
-//   char *name;			/* The name that the user types. */
-//   sh_builtin_func_t *function;	/* The address of the invoked function. */
-//   int flags;			/* One of the #defines above. */
-//   char * const *long_doc;	/* NULL terminated array of strings. */
-//   const char *short_doc;	/* Short version of documentation. */
-//   char *handle;			/* for future use */
+// builtins.h
 // };
 #[repr(C)]
 #[allow(dead_code)]
@@ -282,11 +247,7 @@ pub struct BashBuiltinType {
     pub handle: *mut c_char,        // for future use
 }
 
-// typedef struct _list_of_strings {
-//   char **list;
-//   size_t list_size;
-//   size_t list_len;
-// } STRINGLIST;
+// externs.h
 #[repr(C)]
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -295,36 +256,3 @@ pub struct StringList {
     pub list_size: c_uint, // TODO verify this is the correct type
     pub list_len: c_uint,
 }
-
-// typedef struct compspec {
-//   int refcount;
-//   unsigned long actions;
-//   unsigned long options;
-//   char *globpat;
-//   char *words;
-//   char *prefix;
-//   char *suffix;
-//   char *funcname;
-//   char *command;
-//   char *lcommand;
-//   char *filterpat;
-// } COMPSPEC;
-
-// COMPSPEC *
-// progcomp_search (const char *cmd)
-// {
-//   register BUCKET_CONTENTS *item;
-//   COMPSPEC *cs;
-
-//   if (prog_completes == 0)
-//     return ((COMPSPEC *)NULL);
-
-//   item = hash_search (cmd, prog_completes, 0);
-
-//   if (item == NULL)
-//     return ((COMPSPEC *)NULL);
-
-//   cs = (COMPSPEC *)item->data;
-
-//   return (cs);
-// }

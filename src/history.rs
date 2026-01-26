@@ -146,7 +146,6 @@ impl HistoryManager {
     }
 
     pub fn new() -> HistoryManager {
-        
         // Bash will load the history into memory, so we can read it from there
         // Bash parses it after bashrc is loaded.
         let bash_entries = Self::parse_bash_history_from_memory();
@@ -180,7 +179,6 @@ impl HistoryManager {
         self.last_buffered_command = None;
         self.last_search_prefix = None;
     }
-
 
     #[allow(dead_code)]
     pub fn add_entry(&mut self, ts: Option<u64>, command: &str) {

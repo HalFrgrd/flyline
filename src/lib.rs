@@ -48,7 +48,7 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
     c
 }
 
-fn setup_logging() -> Result<()> {
+fn flyline_setup_logging() -> Result<()> {
     let home_dir = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let log_file_path = PathBuf::from(home_dir).join("flyline.logs");
 
@@ -142,87 +142,80 @@ struct FlylineSentinel;
 
 impl Default for FlylineSentinel {
     fn default() -> Self {
-        setup_logging().unwrap_or_else(|e| {
-            eprintln!("Failed to setup logging: {}", e);
+        let sentinel = FlylineSentinel {};
+        unsafe {
+            if bash_symbols::interactive_shell == 0 {
+                // Not an interactive shell, do nothing
+                return sentinel;
+            }
+        }
+
+        flyline_setup_logging().unwrap_or_else(|e| {
+            eprintln!("Flyline failed to setup logging: {}", e);
         });
 
-        // TODO: should I try another approach for any reason?
-        // like cehcking if hte current bash_input is readline, and replace the name and getters?
-
-        // TODO: should check interactive or interactive_shell?
-
-        // This is a hacky way to ensure that our custom input stream is used by bash.
-        // This code is run during `run_startup_files` so we cant modify bash_input directly.
-        // bash_input is being used to read the rc files at this point.
-        // set_bash_input() has yet to be called.
-        // stream_list contains only a sentinel input stream at this point.
-        // normally when it it popped off the list after rc files are read, readline stdin is added
-        // since with_input_from_stdin sees that the current bash_input is not good.
+        // This is how we ensure that our custom input stream is used by bash instead of readline.
+        // This code is run during `run_startup_files` so we can't modify bash_input directly.
+        // `bash_input` is being used to read the rc files at this point. set_bash_input() has yet to be called.
+        // `stream_list` contains only a sentinel input stream at this point.
+        // Normally when it is popped off the list after rc files are read, readline stdin is added since
+        // `with_input_from_stdin` sees that the current bash_input is of type st_stdin.
         // So we modify the sentinel node before that happens so that in set_bash_input,
         // with_input_from_stdin will see that the current bash_input is fit for purpose and not add readline stdin.
 
         unsafe {
-            let stream_list_head = &mut *bash_symbols::stream_list;
-            let stream_is_null = bash_symbols::stream_list.is_null();
-            // println!("stream_list is null: {}", stream_is_null);
-            if !stream_is_null && bash_symbols::interactive_shell != 0 {
+            let stream_list_head: &mut bash_symbols::StreamSaver = &mut *bash_symbols::stream_list;
+            if !bash_symbols::stream_list.is_null() {
                 let next_is_null = stream_list_head.next.is_null();
-                // println!("stream_list.next is null: {}", next_is_null);
                 if next_is_null {
                     // No streams in the list, we can set ours
                     // and then with_input_from_stdin won't add readline
                     // stream_on_stack (st_stdin) will be true.
                     // This basically takes over the sentinel node at the base of the stream_list
-                    println!("Setting flyline input stream at the head of the list");
+                    log::info!("Setting flyline input stream at the head of the list");
                     let name = std::ffi::CString::new("flyline_input").unwrap();
 
-                    stream_list_head.bash_input.type_ = bash_symbols::StreamType::StStdin;
+                    stream_list_head.bash_input.stream_type = bash_symbols::StreamType::StStdin;
                     stream_list_head.bash_input.name = name.as_ptr() as *mut i8;
                     stream_list_head.bash_input.getter = Some(flyline_get_char);
                     stream_list_head.bash_input.ungetter = Some(flyline_unget_char);
 
                     std::mem::forget(name);
+
+                    // Store the Arc globally so C callbacks can access it
+                    *FLYLINE_INSTANCE_PTR.lock().unwrap() =
+                        Some(Arc::new(Mutex::new(Flyline::new())));
                 } else {
                     log::error!(
                         "stream_list has more than one entry, cannot set flyline input stream"
                     );
                 }
             } else {
-                log::error!(
-                    "{:?} {:?} cannot set flyline input stream",
-                    stream_is_null,
-                    bash_symbols::interactive_shell
-                );
+                log::error!("stream_list is null, cannot set flyline input stream");
             }
         }
 
-        // Store the Arc globally so C callbacks can access it
-        *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Arc::new(Mutex::new(Flyline::new())));
-        FlylineSentinel {}
+        sentinel
     }
 }
 
 #[derive(BuiltinOptions)]
 enum Opt {
-    #[opt = 'r']
-    Read,
     #[opt = 's']
+    Status,
+    #[opt = 'k']
     SetKeyBinding(String),
-    // #[opt = 'h']
 }
 
 impl Builtin for FlylineSentinel {
     fn call(&mut self, args: &mut Args) -> Result<()> {
-        // let _state = __bash_builtin__state_flyline().lock().unwrap();
-
-        // No options: print the current value and increment it.
         if args.is_empty() {
             return Err(bash_builtins::Error::Usage);
         }
 
         for opt in args.options() {
             match opt? {
-                Opt::Read => {
+                Opt::Status => {
                     // Iterate through the stream_list linked list and print each entry
                     unsafe {
                         let mut current = bash_symbols::stream_list;
@@ -240,7 +233,7 @@ impl Builtin for FlylineSentinel {
                                     .into_owned()
                             };
 
-                            let stream_type = match stream.bash_input.type_ {
+                            let stream_type = match stream.bash_input.stream_type {
                                 bash_symbols::StreamType::StNone => "st_none",
                                 bash_symbols::StreamType::StStdin => "st_stdin",
                                 bash_symbols::StreamType::StStream => "st_stream",
@@ -257,12 +250,7 @@ impl Builtin for FlylineSentinel {
                     }
                 }
                 Opt::SetKeyBinding(binding) => {
-                    println!("Setting key binding for flyline: {}", binding);
-                    // if let Some(arc) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_ref() {
-                    //     if let Ok(mut flyline) = arc.lock() {
-                    //         flyline.new_setting(&binding);
-                    //     }
-                    // }
+                    println!("Not yet implemented: {}", binding);
                 }
             }
         }
