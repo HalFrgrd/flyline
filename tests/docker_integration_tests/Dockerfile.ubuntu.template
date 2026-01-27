@@ -1,8 +1,56 @@
-# Common Ubuntu test template
-# Can be used with different Ubuntu versions via build args
-# Usage: docker build --build-arg UBUNTU_VERSION=20.04 --build-arg FLYLINE_LIB_PATH=libflyline-glibc227.so -f Dockerfile.ubuntu.template -t flyline-test-ubuntu2004 .
-ARG UBUNTU_VERSION
-FROM ubuntu:${UBUNTU_VERSION}
+# Multi-stage Dockerfile for building Flyline and testing on Ubuntu
+# Stage 1: Builder - builds the Rust library with dependency caching
+# Stage 2: Ubuntu Testing - tests the library on specified Ubuntu versions
+#
+# Usage: 
+# Build for Ubuntu 20.04: docker build --target ubuntu_testing --build-arg UBUNTU_VERSION=20.04 -f tests/docker_integration_tests/Dockerfile.ubuntu.template -t flyline-test-ubuntu2004 .
+# Build for Ubuntu 22.04: docker build --target ubuntu_testing --build-arg UBUNTU_VERSION=22.04 -f tests/docker_integration_tests/Dockerfile.ubuntu.template -t flyline-test-ubuntu2204 .
+
+# Global ARG for Ubuntu version
+ARG UBUNTU_VERSION=20.04
+
+# Stage 1: Builder - Use Ubuntu 18.04 for glibc 2.27 compatibility
+FROM ubuntu:18.04 AS builder
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy dependency manifests first for better caching
+COPY Cargo.toml Cargo.lock ./
+
+# Create a dummy lib.rs to build dependencies
+RUN mkdir src && echo "// dummy" > src/lib.rs
+
+# Build dependencies only (this layer will be cached)
+RUN cargo build --release
+
+# Remove the dummy source
+RUN rm -rf src
+
+# Copy the real source code
+COPY src ./src
+
+# Build the actual library
+RUN cargo build --release
+
+# Stage 2: Ubuntu Testing - Test the built library on specified Ubuntu version
+# Re-declare ARG for this stage
+ARG UBUNTU_VERSION=20.04
+FROM ubuntu:${UBUNTU_VERSION} AS ubuntu_testing
 
 # Metadata
 LABEL description="Flyline test container for Ubuntu ${UBUNTU_VERSION}"
@@ -11,7 +59,7 @@ LABEL ubuntu.version="${UBUNTU_VERSION}"
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install basic dependencies and bash (no need for Rust/build tools)
+# Install basic dependencies and bash
 RUN apt-get update && apt-get install -y \
     bash \
     && rm -rf /var/lib/apt/lists/*
@@ -19,9 +67,8 @@ RUN apt-get update && apt-get install -y \
 # Set up working directory
 WORKDIR /flyline
 
-# Copy the pre-built shared library
-ARG FLYLINE_LIB_PATH
-COPY ${FLYLINE_LIB_PATH} /usr/local/lib/libflyline.so
+# Copy the built shared library from builder stage
+COPY --from=builder /workspace/target/release/libflyline.so /usr/local/lib/libflyline.so
 
 # Copy test_bashrc.sh as .bashrc
 COPY tests/docker_integration_tests/test_bashrc.sh /root/.bashrc
@@ -33,4 +80,4 @@ ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
 SHELL ["/bin/bash", "-i", "-c"]
 
 # Default command to run the test
-CMD ["/bin/bash", "-i", "-c", "flyline -s && exit"]
+CMD ["/bin/bash", "-i", "-c", "flyline -s && echo 'Flyline test completed successfully'"]
