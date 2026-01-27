@@ -75,7 +75,8 @@ impl HistoryManager {
                     let timestamp = if !hist_entry.timestamp.is_null() {
                         let timestamp_cstr = std::ffi::CStr::from_ptr(hist_entry.timestamp);
                         if let Ok(timestamp_str) = timestamp_cstr.to_str() {
-                            timestamp_str.parse::<u64>().ok()
+                            let ts_str = timestamp_str.trim_start_matches('#').trim();
+                            ts_str.parse::<u64>().ok()
                         } else {
                             None
                         }
@@ -149,6 +150,23 @@ impl HistoryManager {
         // Bash will load the history into memory, so we can read it from there
         // Bash parses it after bashrc is loaded.
         let bash_entries = Self::parse_bash_history_from_memory();
+        // Print last 5 bash entries for debugging
+        if bash_entries.is_empty() {
+            log::info!("No bash history entries found");
+        } else {
+            let total = bash_entries.len();
+            let start = if total > 5 { total - 5 } else { 0 };
+            for (i, entry) in bash_entries[start..].iter().enumerate() {
+                log::info!(
+                    "bash_entries[{}] => timestamp: {:?}, index: {}, command: {}",
+                    start + i,
+                    entry.timestamp,
+                    entry.index,
+                    entry.command
+                );
+            }
+        }
+
         // Alternative is to do it ourselves
         // let bash_entries = Self::parse_bash_history_from_file();
 
