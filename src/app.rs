@@ -136,11 +136,13 @@ pub enum AppRunningState {
     Running,
     ExitingWithCommand(String),
     ExitingWithoutCommand,
+    TabCompleting,
+    FuzzySearching,
 }
 
 impl AppRunningState {
     pub fn is_running(&self) -> bool {
-        *self == AppRunningState::Running
+        *self == AppRunningState::Running || *self == AppRunningState::FuzzySearching || *self == AppRunningState::TabCompleting
     }
 }
 
@@ -454,6 +456,11 @@ impl App {
                     self.buffer.move_to_end();
                 }
             }
+            KeyEvent {
+                code: KeyCode::Up, ..
+            } if self.mode == AppRunningState::FuzzySearching => {
+                self.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::Backward);
+            }
             // Handle Up with history navigation when at first line
             KeyEvent {
                 code: KeyCode::Up, ..
@@ -465,6 +472,11 @@ impl App {
                     let new_command = entry.command.clone();
                     self.buffer.replace_buffer(new_command.as_str());
                 }
+            }
+            KeyEvent {
+                code: KeyCode::Down, ..
+            } if self.mode == AppRunningState::FuzzySearching => {
+                self.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::Forward);
             }
             // Handle Down with history navigation when at last line
             KeyEvent {
@@ -544,6 +556,12 @@ impl App {
                     log::debug!("Tab completion result: {:?}", res);
                 }
             }
+            KeyEvent {
+                code: KeyCode::Esc, ..
+            } if self.mode == AppRunningState::FuzzySearching => {
+                self.mode = AppRunningState::Running;
+                // self.fuzzy_history_search_results.clear();
+            }
             // Escape - clear suggestions or toggle mouse
             KeyEvent {
                 code: KeyCode::Esc, ..
@@ -573,6 +591,19 @@ impl App {
                 self.buffer.move_to_start();
                 self.buffer.insert_str("#");
                 self.mode = AppRunningState::ExitingWithCommand(self.buffer.buffer().to_string());
+            }
+            KeyEvent {
+                code: KeyCode::Char('r'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                if self.mode == AppRunningState::FuzzySearching {
+                    self.mode = AppRunningState::Running;
+                    // self.fuzzy_history_search_results.clear();
+                } else {
+                    self.mode = AppRunningState::FuzzySearching;
+                    let _ = self.history_manager.get_fuzzy_search_results(self.buffer.buffer());
+                }
             }
             // Delegate basic text editing to TextBuffer
             _ => {
@@ -1032,6 +1063,34 @@ impl App {
                 if !is_last {
                     content.write_span(&Span::from(" "));
                 }
+            }
+        } else if self.mode == AppRunningState::FuzzySearching {
+            content.newline();
+
+            let (fuzzy_results, fuzzy_search_index) = self.history_manager.get_fuzzy_search_results(self.buffer.buffer());
+            for (_, is_last, (row_idx, entry_with_indices )) in
+                fuzzy_results.iter().enumerate().flag_first_last()
+            {
+
+                let mut spans = vec![];
+                let entry = &entry_with_indices.0;
+                let match_indices_set: std::collections::HashSet<usize> =
+                    entry_with_indices.1.iter().cloned().collect();
+                for (idx, ch) in entry.command.chars().enumerate() {
+                    let mut style = if match_indices_set.contains(&idx) {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    };
+                    if fuzzy_search_index == row_idx {
+                        style = style.bg(Color::Green);
+                    }
+                    spans.push(Span::styled(ch.to_string(), style));
+                }
+                let line = Line::from(spans);
+                content.write_line(&line, !is_last);
             }
         }
         content

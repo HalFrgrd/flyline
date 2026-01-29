@@ -28,6 +28,10 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
         ])
         .output()?;
 
+    // Print stdout for debugging
+    let stdout = String::from_utf8_lossy(&run_output.stdout);
+    println!("Docker run output: {}", stdout);
+
     if !run_output.status.success() {
         let stderr = String::from_utf8_lossy(&run_output.stderr);
         anyhow::bail!("Docker run failed: {}", stderr);

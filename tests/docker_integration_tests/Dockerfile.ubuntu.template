@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     pkg-config \
+    binutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
@@ -45,7 +46,7 @@ RUN rm -rf src
 COPY src ./src
 
 # Build the actual library
-RUN cargo build --release
+RUN cargo build --release && echo "Build completed" && ls -la target/release/ && nm -D target/release/libflyline.so | grep flyline
 
 # Stage 2: Ubuntu Testing - Test the built library on specified Ubuntu version
 # Re-declare ARG for this stage
@@ -62,6 +63,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install basic dependencies and bash
 RUN apt-get update && apt-get install -y \
     bash \
+    binutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up working directory
@@ -80,4 +82,8 @@ ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
 SHELL ["/bin/bash", "-i", "-c"]
 
 # Default command to run the test
-CMD ["/bin/bash", "-i", "-c", "flyline -s && echo 'Flyline test completed successfully'"]
+CMD ["/bin/bash", "-i", "-c", "ls -la /usr/local/lib/libflyline.so && echo 'File exists'; nm -D /usr/local/lib/libflyline.so | grep flyline && echo 'Symbols OK' || echo 'No flyline symbols'; enable -f /usr/local/lib/libflyline.so flyline && echo 'Enable OK' || echo 'Enable failed'; flyline -s && echo 'SUCCESS: Test completed'"]
+
+FROM ubuntu:20.04 AS extract_only
+LABEL description="Extract only stage"
+COPY --from=builder /workspace/target/release/libflyline.so /output/libflyline.so

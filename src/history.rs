@@ -1,5 +1,6 @@
 use itertools::Itertools;
-
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use crate::bash_symbols;
 
 #[derive(Debug, Clone)]
@@ -9,12 +10,17 @@ pub struct HistoryEntry {
     pub command: String,
 }
 
+type HistoryEntryWithMatchIndices = (HistoryEntry, Vec<usize>);
+
 #[derive(Debug)]
 pub struct HistoryManager {
     entries: Vec<HistoryEntry>,
     index: usize,
     last_search_prefix: Option<String>,
     last_buffered_command: Option<String>,
+    fuzzy_search_cache: Vec<HistoryEntryWithMatchIndices>,
+    fuzzy_search_cache_command: Option<String>,
+    fuzzy_search_index: usize,
 }
 
 pub enum HistorySearchDirection {
@@ -188,24 +194,10 @@ impl HistoryManager {
             index,
             last_search_prefix: None,
             last_buffered_command: None,
+            fuzzy_search_cache: Vec::new(),
+            fuzzy_search_cache_command: None,
+            fuzzy_search_index: 0,
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn new_session(&mut self) {
-        self.index = self.entries.len();
-        self.last_buffered_command = None;
-        self.last_search_prefix = None;
-    }
-
-    #[allow(dead_code)]
-    pub fn add_entry(&mut self, ts: Option<u64>, command: &str) {
-        let entry = HistoryEntry {
-            timestamp: ts,
-            index: self.entries.len(),
-            command: command.to_string(),
-        };
-        self.entries.push(entry);
     }
 
     fn parse_timestamp(line: &str) -> Option<u64> {
@@ -334,6 +326,55 @@ impl HistoryManager {
         }
 
         None
+    }
+
+    pub fn get_fuzzy_search_results(&mut self, current_cmd: &str) -> (&Vec<HistoryEntryWithMatchIndices>, usize) {
+        if Some(current_cmd.to_string()) != self.fuzzy_search_cache_command {
+            self.fuzzy_search_cache_command = Some(current_cmd.to_string());
+            self.fuzzy_search_cache = self.fuzzy_search_in_history(current_cmd, 10);
+            self.fuzzy_search_index = 0;
+        }
+        (&self.fuzzy_search_cache, self.fuzzy_search_index)
+    }
+
+    pub fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
+        if self.fuzzy_search_cache.is_empty() {
+            return;
+        }
+
+        match direction {
+            HistorySearchDirection::Backward => {
+                if self.fuzzy_search_index + 1 < self.fuzzy_search_cache.len() {
+                    self.fuzzy_search_index += 1;
+                }
+            }
+            HistorySearchDirection::Forward => {
+                if self.fuzzy_search_index > 0 {
+                    self.fuzzy_search_index -= 1;
+                }
+            }
+        }
+
+    }
+
+    fn fuzzy_search_in_history(
+        &self,
+        current_cmd: &str,
+        max_search_results: usize,
+    ) -> Vec<HistoryEntryWithMatchIndices> {
+
+        // TODO: could search in cache if current_cmd starts with cached command
+        let mut results = Vec::new();
+        let matcher = SkimMatcherV2::default();
+        for entry in &self.entries {
+            if let Some(indices) = matcher.fuzzy_indices(&entry.command, current_cmd).map(|(_, indices)| indices) {
+                results.push((entry.clone(), indices));
+                if results.len() >= max_search_results {
+                    break;
+                }
+            }
+        }
+        results
     }
 }
 

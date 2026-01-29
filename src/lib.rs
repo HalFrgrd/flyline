@@ -111,6 +111,7 @@ impl Flyline {
                 app::AppRunningState::ExitingWithCommand(cmd) => cmd.into_bytes(),
                 app::AppRunningState::Running => vec![],
                 app::AppRunningState::ExitingWithoutCommand => vec![],
+                _ => vec![],
             };
             log::debug!("---------------------- App finished ------------------------");
             self.content.push(b'\n');
