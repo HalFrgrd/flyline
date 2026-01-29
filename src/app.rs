@@ -18,6 +18,7 @@ use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::time::{Duration, Instant};
 use std::vec;
+use timeago;
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -142,7 +143,9 @@ pub enum AppRunningState {
 
 impl AppRunningState {
     pub fn is_running(&self) -> bool {
-        *self == AppRunningState::Running || *self == AppRunningState::FuzzySearching || *self == AppRunningState::TabCompleting
+        *self == AppRunningState::Running
+            || *self == AppRunningState::FuzzySearching
+            || *self == AppRunningState::TabCompleting
     }
 }
 
@@ -459,7 +462,8 @@ impl App {
             KeyEvent {
                 code: KeyCode::Up, ..
             } if self.mode == AppRunningState::FuzzySearching => {
-                self.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::Backward);
+                self.history_manager
+                    .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
             }
             // Handle Up with history navigation when at first line
             KeyEvent {
@@ -474,9 +478,11 @@ impl App {
                 }
             }
             KeyEvent {
-                code: KeyCode::Down, ..
+                code: KeyCode::Down,
+                ..
             } if self.mode == AppRunningState::FuzzySearching => {
-                self.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::Forward);
+                self.history_manager
+                    .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
             }
             // Handle Down with history navigation when at last line
             KeyEvent {
@@ -501,7 +507,13 @@ impl App {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if let Some(active_suggestions) = self.active_tab_suggestions.take() {
+                if self.mode == AppRunningState::FuzzySearching {
+                    if let Some(entry) = self.history_manager.accept_fuzzy_search_result() {
+                        let new_command = entry.command.clone();
+                        self.buffer.replace_buffer(new_command.as_str());
+                    }
+                    self.mode = AppRunningState::Running;
+                } else if let Some(active_suggestions) = self.active_tab_suggestions.take() {
                     active_suggestions.accept_currently_selected(&mut self.buffer);
                 } else {
                     // If it's a single line complete command, exit
@@ -602,7 +614,9 @@ impl App {
                     // self.fuzzy_history_search_results.clear();
                 } else {
                     self.mode = AppRunningState::FuzzySearching;
-                    let _ = self.history_manager.get_fuzzy_search_results(self.buffer.buffer());
+                    let _ = self
+                        .history_manager
+                        .get_fuzzy_search_results(self.buffer.buffer());
                 }
             }
             // Delegate basic text editing to TextBuffer
@@ -625,6 +639,7 @@ impl App {
             &line[0..space_pos]
         }
         .to_owned();
+        log::debug!("Caching command type for first word: {}", first_word);
         self.bash_env.cache_command_type(&first_word);
     }
 
@@ -904,6 +919,17 @@ impl App {
         self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
     }
 
+    fn ts_to_timeago_string(ts: u64) -> String {
+        let duration = std::time::Duration::from_secs(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .saturating_sub(ts),
+        );
+        timeago::Formatter::new().convert(duration)
+    }
+
     fn create_content(self: &mut Self, width: u16) -> Contents {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
@@ -1016,15 +1042,7 @@ impl App {
                     if is_last {
                         let mut extra_info_text = format!(" # idx={}", sug.index);
                         if let Some(ts) = sug.timestamp {
-                            use timeago;
-                            let duration = std::time::Duration::from_secs(
-                                std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs()
-                                    .saturating_sub(ts),
-                            );
-                            let time_ago_str = timeago::Formatter::new().convert(duration);
+                            let time_ago_str = Self::ts_to_timeago_string(ts);
                             extra_info_text.push_str(&format!(" t={}", time_ago_str));
                         }
 
@@ -1067,28 +1085,49 @@ impl App {
         } else if self.mode == AppRunningState::FuzzySearching {
             content.newline();
 
-            let (fuzzy_results, fuzzy_search_index) = self.history_manager.get_fuzzy_search_results(self.buffer.buffer());
-            for (_, is_last, (row_idx, entry_with_indices )) in
+            let match_style = Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD);
+            let normal_style = Style::default().fg(Color::Gray);
+
+            let (fuzzy_results, fuzzy_search_index) = self
+                .history_manager
+                .get_fuzzy_search_results(self.buffer.buffer());
+            for (_, is_last, (row_idx, entry_with_indices)) in
                 fuzzy_results.iter().enumerate().flag_first_last()
             {
-
-                let mut spans = vec![];
                 let entry = &entry_with_indices.0;
+                let mut spans = vec![];
+
+                let timeago_str = entry.timestamp.map(|ts| Self::ts_to_timeago_string(ts));
+
+                spans.push(Span::styled(
+                    format!("{}  ", entry.index + 1),
+                    Style::default()
+                        .fg(Color::Indexed(242))
+                        .add_modifier(Modifier::DIM),
+                ));
+
                 let match_indices_set: std::collections::HashSet<usize> =
                     entry_with_indices.1.iter().cloned().collect();
                 for (idx, ch) in entry.command.chars().enumerate() {
                     let mut style = if match_indices_set.contains(&idx) {
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
+                        match_style
                     } else {
-                        Style::default().fg(Color::Gray)
+                        normal_style
                     };
                     if fuzzy_search_index == row_idx {
-                        style = style.bg(Color::Green);
+                        style = style.bg(Color::Indexed(242));
                     }
                     spans.push(Span::styled(ch.to_string(), style));
                 }
+                if let Some(timeago) = timeago_str {
+                    spans.push(Span::styled(
+                        format!("  t={}", timeago),
+                        normal_style.add_modifier(Modifier::DIM),
+                    ));
+                }
+
                 let line = Line::from(spans);
                 content.write_line(&line, !is_last);
             }

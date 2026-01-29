@@ -6,11 +6,15 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
     let build_output = Command::new("docker")
         .args([
             "build",
-            "--target", "ubuntu_testing",
-            "--build-arg", &format!("UBUNTU_VERSION={}", ubuntu_version),
-            "-f", "tests/docker_integration_tests/Dockerfile.ubuntu.template",
-            "-t", &format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
-            "."
+            "--target",
+            "ubuntu_testing",
+            "--build-arg",
+            &format!("UBUNTU_VERSION={}", ubuntu_version),
+            "-f",
+            "tests/docker_integration_tests/Dockerfile.ubuntu.template",
+            "-t",
+            &format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
+            ".",
         ])
         .output()?;
 
@@ -24,7 +28,7 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
         .args([
             "run",
             "--rm",
-            &format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", ""))
+            &format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
         ])
         .output()?;
 
@@ -40,8 +44,6 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
     println!("Successfully tested Ubuntu {} with flyline", ubuntu_version);
     Ok(())
 }
-
-
 
 #[test]
 fn test_ubuntu_2204() {
@@ -63,4 +65,3 @@ fn test_ubuntu_1804() {
         panic!("Ubuntu 18.04 integration test failed: {}", e);
     }
 }
-

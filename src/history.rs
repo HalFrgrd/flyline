@@ -1,7 +1,7 @@
-use itertools::Itertools;
-use fuzzy_matcher::skim::SkimMatcherV2;
-use fuzzy_matcher::FuzzyMatcher;
 use crate::bash_symbols;
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -160,15 +160,10 @@ impl HistoryManager {
         if bash_entries.is_empty() {
             log::info!("No bash history entries found");
         } else {
-            let total = bash_entries.len();
-            let start = if total > 5 { total - 5 } else { 0 };
-            for (i, entry) in bash_entries[start..].iter().enumerate() {
+            for entry in bash_entries.iter().rev().take(5) {
                 log::info!(
-                    "bash_entries[{}] => timestamp: {:?}, index: {}, command: {}",
-                    start + i,
-                    entry.timestamp,
-                    entry.index,
-                    entry.command
+                    "bash_entries => {:?}",
+                    entry
                 );
             }
         }
@@ -177,16 +172,23 @@ impl HistoryManager {
         // let bash_entries = Self::parse_bash_history_from_file();
 
         // As a zsh user migrating to bash, I want to have my zsh history available too
-        let zsh_entries = Self::parse_zsh_history();
+        // let zsh_entries = Self::parse_zsh_history();
 
-        let mut entries: Vec<_> = zsh_entries
-            .into_iter()
-            .merge_by(bash_entries, |a, b| {
-                a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
-            })
-            .collect();
+        // let mut entries: Vec<_> = zsh_entries
+        //     .into_iter()
+        //     .merge_by(bash_entries, |a, b| {
+        //         a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
+        //     })
+        //     .collect();
+        let mut entries = bash_entries;
 
         entries.dedup_by(|a, b| a.command == b.command);
+
+        let mut i = 0;
+        for entry in &mut entries {
+            entry.index = i;
+            i += 1;
+        }
 
         let index = entries.len();
         HistoryManager {
@@ -328,13 +330,25 @@ impl HistoryManager {
         None
     }
 
-    pub fn get_fuzzy_search_results(&mut self, current_cmd: &str) -> (&Vec<HistoryEntryWithMatchIndices>, usize) {
+    pub fn get_fuzzy_search_results(
+        &mut self,
+        current_cmd: &str,
+    ) -> (&Vec<HistoryEntryWithMatchIndices>, usize) {
         if Some(current_cmd.to_string()) != self.fuzzy_search_cache_command {
             self.fuzzy_search_cache_command = Some(current_cmd.to_string());
             self.fuzzy_search_cache = self.fuzzy_search_in_history(current_cmd, 10);
-            self.fuzzy_search_index = 0;
+            self.fuzzy_search_index = self.fuzzy_search_index.min(self.fuzzy_search_cache.len().saturating_sub(1));
         }
         (&self.fuzzy_search_cache, self.fuzzy_search_index)
+    }
+
+    pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
+        if self.fuzzy_search_cache.is_empty() {
+            return None;
+        }
+        self.fuzzy_search_cache
+            .get(self.fuzzy_search_index)
+            .map(|(entry, _)| entry)
     }
 
     pub fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
@@ -354,7 +368,6 @@ impl HistoryManager {
                 }
             }
         }
-
     }
 
     fn fuzzy_search_in_history(
@@ -362,16 +375,27 @@ impl HistoryManager {
         current_cmd: &str,
         max_search_results: usize,
     ) -> Vec<HistoryEntryWithMatchIndices> {
-
         // TODO: could search in cache if current_cmd starts with cached command
         let mut results = Vec::new();
         let matcher = SkimMatcherV2::default();
-        for entry in &self.entries {
-            if let Some(indices) = matcher.fuzzy_indices(&entry.command, current_cmd).map(|(_, indices)| indices) {
+        for entry in self.entries.iter().rev() {
+            if let Some(indices) = matcher
+                .fuzzy_indices(&entry.command, current_cmd)
+                .map(|(_, indices)| indices)
+            {
+                log::debug!(
+                    "Fuzzy match found: '{:?}' matches",
+                    entry
+                );
                 results.push((entry.clone(), indices));
                 if results.len() >= max_search_results {
                     break;
                 }
+            } else {
+                log::debug!(
+                    "No fuzzy match: '{:?}' does not match'",
+                    entry
+                );
             }
         }
         results
