@@ -1,3 +1,5 @@
+use std::vec;
+
 use crate::bash_symbols;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -20,7 +22,9 @@ pub struct HistoryManager {
     last_buffered_command: Option<String>,
     fuzzy_search_cache: Vec<HistoryEntryWithMatchIndices>,
     fuzzy_search_cache_command: Option<String>,
-    fuzzy_search_index: usize,
+    fuzzy_search_global_index: usize,
+    fuzzy_search_cache_index: usize,
+    fuzzy_search_cache_visible_offset: usize,
 }
 
 pub enum HistorySearchDirection {
@@ -161,10 +165,7 @@ impl HistoryManager {
             log::info!("No bash history entries found");
         } else {
             for entry in bash_entries.iter().rev().take(5) {
-                log::info!(
-                    "bash_entries => {:?}",
-                    entry
-                );
+                log::info!("bash_entries => {:?}", entry);
             }
         }
 
@@ -198,7 +199,9 @@ impl HistoryManager {
             last_buffered_command: None,
             fuzzy_search_cache: Vec::new(),
             fuzzy_search_cache_command: None,
-            fuzzy_search_index: 0,
+            fuzzy_search_global_index: 0,
+            fuzzy_search_cache_index: 0,
+            fuzzy_search_cache_visible_offset: 0,
         }
     }
 
@@ -333,13 +336,57 @@ impl HistoryManager {
     pub fn get_fuzzy_search_results(
         &mut self,
         current_cmd: &str,
-    ) -> (&Vec<HistoryEntryWithMatchIndices>, usize) {
+    ) -> (&[HistoryEntryWithMatchIndices], usize) {
+        let mut desired_visual_row = None;
+
         if Some(current_cmd.to_string()) != self.fuzzy_search_cache_command {
             self.fuzzy_search_cache_command = Some(current_cmd.to_string());
-            self.fuzzy_search_cache = self.fuzzy_search_in_history(current_cmd, 10);
-            self.fuzzy_search_index = self.fuzzy_search_index.min(self.fuzzy_search_cache.len().saturating_sub(1));
+            self.fuzzy_search_cache = vec![];
+            self.fuzzy_search_global_index = 0;
+            desired_visual_row = Some(
+                self.fuzzy_search_cache_index
+                    .saturating_sub(self.fuzzy_search_cache_visible_offset),
+            );
+            self.fuzzy_search_cache_index = 0;
+            self.fuzzy_search_cache_visible_offset = 0;
         }
-        (&self.fuzzy_search_cache, self.fuzzy_search_index)
+
+        // Try and grow the cache if needed
+        self.grow_fuzzy_search_cache(current_cmd);
+
+        if let Some(desired_row) = desired_visual_row {
+            self.fuzzy_search_cache_index = self.fuzzy_search_cache_visible_offset + desired_row;
+        }
+
+        self.fuzzy_search_cache_index = self
+            .fuzzy_search_cache_index
+            .min(self.fuzzy_search_cache.len().saturating_sub(1));
+
+        let visible_cache_size = 10;
+
+        if self.fuzzy_search_cache_visible_offset + visible_cache_size
+            <= self.fuzzy_search_cache_index + 2
+        {
+            self.fuzzy_search_cache_visible_offset =
+                (self.fuzzy_search_cache_index + 2).saturating_sub(visible_cache_size - 1);
+        } else if self.fuzzy_search_cache_index < self.fuzzy_search_cache_visible_offset + 2 {
+            self.fuzzy_search_cache_visible_offset =
+                self.fuzzy_search_cache_index.saturating_sub(2);
+        }
+
+        assert!(self.fuzzy_search_cache_index >= self.fuzzy_search_cache_visible_offset);
+        let visible_index = self
+            .fuzzy_search_cache_index
+            .saturating_sub(self.fuzzy_search_cache_visible_offset);
+
+        return (
+            &self.fuzzy_search_cache[self.fuzzy_search_cache_visible_offset
+                ..(self.fuzzy_search_cache_visible_offset + visible_cache_size)
+                    .min(self.fuzzy_search_cache.len())],
+            visible_index,
+        );
+
+        // (&self.fuzzy_search_cache, self.fuzzy_search_cache_index)
     }
 
     pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
@@ -347,7 +394,7 @@ impl HistoryManager {
             return None;
         }
         self.fuzzy_search_cache
-            .get(self.fuzzy_search_index)
+            .get(self.fuzzy_search_cache_index)
             .map(|(entry, _)| entry)
     }
 
@@ -358,47 +405,44 @@ impl HistoryManager {
 
         match direction {
             HistorySearchDirection::Backward => {
-                if self.fuzzy_search_index + 1 < self.fuzzy_search_cache.len() {
-                    self.fuzzy_search_index += 1;
+                if self.fuzzy_search_cache_index + 1 < self.fuzzy_search_cache.len() {
+                    self.fuzzy_search_cache_index += 1;
                 }
             }
             HistorySearchDirection::Forward => {
-                if self.fuzzy_search_index > 0 {
-                    self.fuzzy_search_index -= 1;
+                if self.fuzzy_search_cache_index > 0 {
+                    self.fuzzy_search_cache_index -= 1;
                 }
             }
         }
     }
 
-    fn fuzzy_search_in_history(
-        &self,
-        current_cmd: &str,
-        max_search_results: usize,
-    ) -> Vec<HistoryEntryWithMatchIndices> {
-        // TODO: could search in cache if current_cmd starts with cached command
-        let mut results = Vec::new();
+    fn grow_fuzzy_search_cache(&mut self, current_cmd: &str) {
         let matcher = SkimMatcherV2::default();
-        for entry in self.entries.iter().rev() {
+
+        // only search the next few entries so we don't block the UI for too long
+        // Could launch a tokio task but that adds complexity
+        let max_entries_to_search = 200;
+
+        for entry in self
+            .entries
+            .iter()
+            .rev()
+            .skip(self.fuzzy_search_global_index)
+            .take(max_entries_to_search)
+        {
             if let Some(indices) = matcher
                 .fuzzy_indices(&entry.command, current_cmd)
                 .map(|(_, indices)| indices)
             {
-                log::debug!(
-                    "Fuzzy match found: '{:?}' matches",
-                    entry
-                );
-                results.push((entry.clone(), indices));
-                if results.len() >= max_search_results {
-                    break;
-                }
-            } else {
-                log::debug!(
-                    "No fuzzy match: '{:?}' does not match'",
-                    entry
-                );
+                self.fuzzy_search_cache.push((entry.clone(), indices));
             }
+            self.fuzzy_search_global_index += 1;
+            log::debug!(
+                "Fuzzy search global index: {}",
+                self.fuzzy_search_global_index
+            );
         }
-        results
     }
 }
 
