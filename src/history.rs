@@ -3,7 +3,6 @@ use std::vec;
 use crate::bash_symbols;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -12,19 +11,13 @@ pub struct HistoryEntry {
     pub command: String,
 }
 
-type HistoryEntryWithMatchIndices = (HistoryEntry, Vec<usize>);
-
 #[derive(Debug)]
 pub struct HistoryManager {
     entries: Vec<HistoryEntry>,
     index: usize,
     last_search_prefix: Option<String>,
     last_buffered_command: Option<String>,
-    fuzzy_search_cache: Vec<HistoryEntryWithMatchIndices>,
-    fuzzy_search_cache_command: Option<String>,
-    fuzzy_search_global_index: usize,
-    fuzzy_search_cache_index: usize,
-    fuzzy_search_cache_visible_offset: usize,
+    fuzzy_search: FuzzyHistorySearch,
 }
 
 pub enum HistorySearchDirection {
@@ -192,16 +185,13 @@ impl HistoryManager {
         }
 
         let index = entries.len();
+        // SAFETY: We transmute the lifetime to 'static because entries lives as long as HistoryManager
         HistoryManager {
             entries,
             index,
             last_search_prefix: None,
             last_buffered_command: None,
-            fuzzy_search_cache: Vec::new(),
-            fuzzy_search_cache_command: None,
-            fuzzy_search_global_index: 0,
-            fuzzy_search_cache_index: 0,
-            fuzzy_search_cache_visible_offset: 0,
+            fuzzy_search: FuzzyHistorySearch::new(),
         }
     }
 
@@ -337,111 +327,130 @@ impl HistoryManager {
         &mut self,
         current_cmd: &str,
     ) -> (&[HistoryEntryWithMatchIndices], usize) {
-        let mut desired_visual_row = None;
-
-        if Some(current_cmd.to_string()) != self.fuzzy_search_cache_command {
-            self.fuzzy_search_cache_command = Some(current_cmd.to_string());
-            self.fuzzy_search_cache = vec![];
-            self.fuzzy_search_global_index = 0;
-            desired_visual_row = Some(
-                self.fuzzy_search_cache_index
-                    .saturating_sub(self.fuzzy_search_cache_visible_offset),
-            );
-            self.fuzzy_search_cache_index = 0;
-            self.fuzzy_search_cache_visible_offset = 0;
-        }
-
-        // Try and grow the cache if needed
-        self.grow_fuzzy_search_cache(current_cmd);
-
-        if let Some(desired_row) = desired_visual_row {
-            self.fuzzy_search_cache_index = self.fuzzy_search_cache_visible_offset + desired_row;
-        }
-
-        self.fuzzy_search_cache_index = self
-            .fuzzy_search_cache_index
-            .min(self.fuzzy_search_cache.len().saturating_sub(1));
-
-        let visible_cache_size = 10;
-
-        if self.fuzzy_search_cache_visible_offset + visible_cache_size
-            <= self.fuzzy_search_cache_index + 2
-        {
-            self.fuzzy_search_cache_visible_offset =
-                (self.fuzzy_search_cache_index + 2).saturating_sub(visible_cache_size - 1);
-        } else if self.fuzzy_search_cache_index < self.fuzzy_search_cache_visible_offset + 2 {
-            self.fuzzy_search_cache_visible_offset =
-                self.fuzzy_search_cache_index.saturating_sub(2);
-        }
-
-        assert!(self.fuzzy_search_cache_index >= self.fuzzy_search_cache_visible_offset);
-        let visible_index = self
-            .fuzzy_search_cache_index
-            .saturating_sub(self.fuzzy_search_cache_visible_offset);
-
-        return (
-            &self.fuzzy_search_cache[self.fuzzy_search_cache_visible_offset
-                ..(self.fuzzy_search_cache_visible_offset + visible_cache_size)
-                    .min(self.fuzzy_search_cache.len())],
-            visible_index,
-        );
-
-        // (&self.fuzzy_search_cache, self.fuzzy_search_cache_index)
+        self.fuzzy_search
+            .get_fuzzy_search_results(&self.entries, current_cmd)
     }
 
     pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
-        if self.fuzzy_search_cache.is_empty() {
-            return None;
-        }
-        self.fuzzy_search_cache
-            .get(self.fuzzy_search_cache_index)
-            .map(|(entry, _)| entry)
+        self.fuzzy_search.accept_fuzzy_search_result()
     }
 
     pub fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
-        if self.fuzzy_search_cache.is_empty() {
-            return;
+        self.fuzzy_search.fuzzy_search_onkeypress(direction);
+    }
+
+    // fuzzy search cache logic moved to FuzzyHistorySearch
+}
+
+type HistoryEntryWithMatchIndices = (HistoryEntry, Vec<usize>);
+
+#[derive(Debug)]
+struct FuzzyHistorySearch {
+    cache: Vec<HistoryEntryWithMatchIndices>,
+    cache_command: Option<String>,
+    global_index: usize,
+    cache_index: usize,
+    cache_visible_offset: usize,
+}
+
+impl FuzzyHistorySearch {
+    fn new() -> Self {
+        FuzzyHistorySearch {
+            cache: Vec::new(),
+            cache_command: None,
+            global_index: 0,
+            cache_index: 0,
+            cache_visible_offset: 0,
+        }
+    }
+
+    fn get_fuzzy_search_results(
+        &mut self,
+        entries: &[HistoryEntry],
+        current_cmd: &str,
+    ) -> (&[HistoryEntryWithMatchIndices], usize) {
+        // when the command changes, reset the cache
+        // but keep the current visual row if possible
+        let mut desired_visual_row = None;
+
+        if Some(current_cmd.to_string()) != self.cache_command {
+            self.cache_command = Some(current_cmd.to_string());
+            self.cache = vec![];
+            self.global_index = 0;
+            desired_visual_row = Some(self.cache_index.saturating_sub(self.cache_visible_offset));
+            self.cache_index = 0;
+            self.cache_visible_offset = 0;
         }
 
+        self.grow_fuzzy_search_cache(entries, current_cmd);
+
+        if let Some(desired_row) = desired_visual_row {
+            self.cache_index = self.cache_visible_offset + desired_row;
+        }
+
+        self.cache_index = self.cache_index.min(self.cache.len().saturating_sub(1));
+
+        let visible_cache_size = 10;
+
+        if self.cache_visible_offset + visible_cache_size <= self.cache_index + 2 {
+            self.cache_visible_offset =
+                (self.cache_index + 2).saturating_sub(visible_cache_size - 1);
+        } else if self.cache_index < self.cache_visible_offset + 2 {
+            self.cache_visible_offset = self.cache_index.saturating_sub(2);
+        }
+
+        assert!(self.cache_index >= self.cache_visible_offset);
+        let visible_index = self.cache_index.saturating_sub(self.cache_visible_offset);
+
+        (
+            &self.cache[self.cache_visible_offset
+                ..(self.cache_visible_offset + visible_cache_size).min(self.cache.len())],
+            visible_index,
+        )
+    }
+
+    fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
+        if self.cache.is_empty() {
+            return None;
+        }
+        self.cache.get(self.cache_index).map(|(entry, _)| entry)
+    }
+
+    fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
+        if self.cache.is_empty() {
+            return;
+        }
         match direction {
             HistorySearchDirection::Backward => {
-                if self.fuzzy_search_cache_index + 1 < self.fuzzy_search_cache.len() {
-                    self.fuzzy_search_cache_index += 1;
+                if self.cache_index + 1 < self.cache.len() {
+                    self.cache_index += 1;
                 }
             }
             HistorySearchDirection::Forward => {
-                if self.fuzzy_search_cache_index > 0 {
-                    self.fuzzy_search_cache_index -= 1;
+                if self.cache_index > 0 {
+                    self.cache_index -= 1;
                 }
             }
         }
     }
 
-    fn grow_fuzzy_search_cache(&mut self, current_cmd: &str) {
+    fn grow_fuzzy_search_cache(&mut self, entries: &[HistoryEntry], current_cmd: &str) {
         let matcher = SkimMatcherV2::default();
-
-        // only search the next few entries so we don't block the UI for too long
-        // Could launch a tokio task but that adds complexity
         let max_entries_to_search = 200;
-
-        for entry in self
-            .entries
+        for entry in entries
             .iter()
             .rev()
-            .skip(self.fuzzy_search_global_index)
+            .skip(self.global_index)
             .take(max_entries_to_search)
         {
             if let Some(indices) = matcher
                 .fuzzy_indices(&entry.command, current_cmd)
                 .map(|(_, indices)| indices)
             {
-                self.fuzzy_search_cache.push((entry.clone(), indices));
+                self.cache.push((entry.clone(), indices));
             }
-            self.fuzzy_search_global_index += 1;
-            log::debug!(
-                "Fuzzy search global index: {}",
-                self.fuzzy_search_global_index
-            );
+            self.global_index += 1;
+            log::debug!("Fuzzy search global index: {}", self.global_index);
         }
     }
 }
