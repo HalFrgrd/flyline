@@ -344,8 +344,8 @@ impl HistoryManager {
 
 type HistoryEntryWithMatchIndices = (HistoryEntry, Vec<usize>);
 
-#[derive(Debug)]
 struct FuzzyHistorySearch {
+    matcher: SkimMatcherV2,
     cache: Vec<HistoryEntryWithMatchIndices>,
     cache_command: Option<String>,
     global_index: usize,
@@ -353,9 +353,22 @@ struct FuzzyHistorySearch {
     cache_visible_offset: usize,
 }
 
+impl std::fmt::Debug for FuzzyHistorySearch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FuzzyHistorySearch")
+            .field("cache_command", &self.cache_command)
+            .field("global_index", &self.global_index)
+            .field("cache_index", &self.cache_index)
+            .field("cache_visible_offset", &self.cache_visible_offset)
+            .field("cache_len", &self.cache.len())
+            .finish()
+    }
+}
+
 impl FuzzyHistorySearch {
     fn new() -> Self {
         FuzzyHistorySearch {
+            matcher: SkimMatcherV2::default(),
             cache: Vec::new(),
             cache_command: None,
             global_index: 0,
@@ -435,7 +448,6 @@ impl FuzzyHistorySearch {
     }
 
     fn grow_fuzzy_search_cache(&mut self, entries: &[HistoryEntry], current_cmd: &str) {
-        let matcher = SkimMatcherV2::default();
         let max_entries_to_search = 200;
         for entry in entries
             .iter()
@@ -443,7 +455,8 @@ impl FuzzyHistorySearch {
             .skip(self.global_index)
             .take(max_entries_to_search)
         {
-            if let Some(indices) = matcher
+            if let Some(indices) = self
+                .matcher
                 .fuzzy_indices(&entry.command, current_cmd)
                 .map(|(_, indices)| indices)
             {
