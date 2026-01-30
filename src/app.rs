@@ -1102,7 +1102,7 @@ impl App {
                     let style = if is_selected {
                         Style::default()
                             .fg(Color::Black)
-                            .bg(Color::Yellow)
+                            .bg(Color::White)
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(Color::Gray)
