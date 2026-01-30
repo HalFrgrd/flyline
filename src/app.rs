@@ -1085,36 +1085,54 @@ impl App {
         } else if self.mode == AppRunningState::FuzzySearching {
             content.newline();
 
-            let match_style = Style::default()
+            let match_char_style = Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD);
-            let normal_style = Style::default().fg(Color::Gray);
+            let normal_char_style = Style::default().fg(Color::Gray);
 
-            let (fuzzy_results, fuzzy_search_index) = self
+            let hints_style = Style::default()
+                .fg(Color::Indexed(242));
+
+            let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                 .history_manager
                 .get_fuzzy_search_results(self.buffer.buffer());
-            for (_, is_last, (row_idx, entry_with_indices)) in
-                fuzzy_results.iter().enumerate().flag_first_last()
+            for (row_idx, entry_with_indices) in
+                fuzzy_results.iter().enumerate()
             {
                 let entry = &entry_with_indices.0;
                 let mut spans = vec![];
 
                 let timeago_str = entry.timestamp.map(|ts| Self::ts_to_timeago_string(ts));
 
+
+
                 spans.push(Span::styled(
-                    format!("{}  ", entry.index + 1),
-                    Style::default()
-                        .fg(Color::Indexed(242))
+                    format!("{} ", entry.index + 1),
+                    hints_style
                         .add_modifier(Modifier::DIM),
                 ));
+
+                if fuzzy_search_index == row_idx {
+                    spans.push(Span::styled(
+                        "▐",
+                        match_char_style
+                    ));
+                } else {
+                    spans.push(Span::styled(
+                        " ",
+                        hints_style
+                            .add_modifier(Modifier::DIM),
+                    ));
+                }
+
 
                 let match_indices_set: std::collections::HashSet<usize> =
                     entry_with_indices.1.iter().cloned().collect();
                 for (idx, ch) in entry.command.chars().enumerate() {
                     let mut style = if match_indices_set.contains(&idx) {
-                        match_style
+                        match_char_style
                     } else {
-                        normal_style
+                        normal_char_style
                     };
                     if fuzzy_search_index == row_idx {
                         style = style.bg(Color::Indexed(242));
@@ -1124,13 +1142,23 @@ impl App {
                 if let Some(timeago) = timeago_str {
                     spans.push(Span::styled(
                         format!("  t={}", timeago),
-                        normal_style.add_modifier(Modifier::DIM),
+                        normal_char_style.add_modifier(Modifier::DIM),
                     ));
                 }
 
                 let line = Line::from(spans);
-                content.write_line(&line, !is_last);
+                content.write_line(&line, true);
             }
+            content.write_span(&Span::styled(
+                format!(
+                    "# Fuzzy search: {}/{}",
+                    num_results,
+                    num_searched
+                ),
+                Style::default()
+                    .fg(Color::Indexed(242))
+                    .add_modifier(Modifier::DIM),
+            ));
         }
         content
     }

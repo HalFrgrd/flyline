@@ -3,6 +3,7 @@ use std::vec;
 use crate::bash_symbols;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -166,15 +167,15 @@ impl HistoryManager {
         // let bash_entries = Self::parse_bash_history_from_file();
 
         // As a zsh user migrating to bash, I want to have my zsh history available too
-        // let zsh_entries = Self::parse_zsh_history();
+        let zsh_entries = Self::parse_zsh_history();
 
-        // let mut entries: Vec<_> = zsh_entries
-        //     .into_iter()
-        //     .merge_by(bash_entries, |a, b| {
-        //         a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
-        //     })
-        //     .collect();
-        let mut entries = bash_entries;
+        let mut entries: Vec<_> = zsh_entries
+            .into_iter()
+            .merge_by(bash_entries, |a, b| {
+                a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
+            })
+            .collect();
+        // let mut entries = bash_entries;
 
         entries.dedup_by(|a, b| a.command == b.command);
 
@@ -326,7 +327,7 @@ impl HistoryManager {
     pub fn get_fuzzy_search_results(
         &mut self,
         current_cmd: &str,
-    ) -> (&[HistoryEntryWithMatchIndices], usize) {
+    ) -> (&[HistoryEntryWithMatchIndices], usize, usize, usize) {
         self.fuzzy_search
             .get_fuzzy_search_results(&self.entries, current_cmd)
     }
@@ -381,7 +382,7 @@ impl FuzzyHistorySearch {
         &mut self,
         entries: &[HistoryEntry],
         current_cmd: &str,
-    ) -> (&[HistoryEntryWithMatchIndices], usize) {
+    ) -> (&[HistoryEntryWithMatchIndices], usize, usize, usize) {
         // when the command changes, reset the cache
         // but keep the current visual row if possible
         let mut desired_visual_row = None;
@@ -418,7 +419,7 @@ impl FuzzyHistorySearch {
         (
             &self.cache[self.cache_visible_offset
                 ..(self.cache_visible_offset + visible_cache_size).min(self.cache.len())],
-            visible_index,
+            visible_index, self.cache.len(), self.global_index
         )
     }
 
@@ -463,7 +464,7 @@ impl FuzzyHistorySearch {
                 self.cache.push((entry.clone(), indices));
             }
             self.global_index += 1;
-            log::debug!("Fuzzy search global index: {}", self.global_index);
+            // log::debug!("Fuzzy search global index: {}", self.global_index);
         }
     }
 }
