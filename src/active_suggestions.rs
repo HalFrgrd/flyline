@@ -46,6 +46,7 @@ impl Ord for Suggestion {
     }
 }
 
+#[derive(Debug)]
 pub struct ActiveSuggestions {
     pub suggestions: Vec<Suggestion>,
     selected_index: usize,
@@ -88,7 +89,7 @@ impl ActiveSuggestions {
             .map(|(idx, suggestion)| (suggestion.s.as_str(), idx == self.selected_index))
     }
 
-    pub fn try_accept(self, buffer: &mut TextBuffer) -> Option<Self> {
+    pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
         match self.suggestions.as_slice() {
             [] => {
                 log::debug!("No completions found");
@@ -106,7 +107,7 @@ impl ActiveSuggestions {
         }
     }
 
-    pub fn accept_currently_selected(self, buffer: &mut TextBuffer) {
+    pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
         let completion = &self.suggestions[self.selected_index];
 
         if let Err(e) =

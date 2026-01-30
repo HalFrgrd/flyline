@@ -419,7 +419,9 @@ impl FuzzyHistorySearch {
         (
             &self.cache[self.cache_visible_offset
                 ..(self.cache_visible_offset + visible_cache_size).min(self.cache.len())],
-            visible_index, self.cache.len(), self.global_index
+            visible_index,
+            self.cache.len(),
+            self.global_index,
         )
     }
 

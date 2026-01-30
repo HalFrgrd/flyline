@@ -108,10 +108,8 @@ impl Flyline {
             log::debug!("---------------------- Starting app ------------------------");
 
             self.content = match app::get_command() {
-                app::AppRunningState::ExitingWithCommand(cmd) => cmd.into_bytes(),
-                app::AppRunningState::Running => vec![],
-                app::AppRunningState::ExitingWithoutCommand => vec![],
-                _ => vec![],
+                app::ExitState::WithCommand(cmd) => cmd.into_bytes(),
+                app::ExitState::WithoutCommand => vec![],
             };
             log::debug!("---------------------- App finished ------------------------");
             self.content.push(b'\n');

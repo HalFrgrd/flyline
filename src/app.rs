@@ -46,7 +46,25 @@ fn set_panic_hook() {
     }));
 }
 
-pub fn get_command() -> AppRunningState {
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum ExitState {
+    WithCommand(String),
+    WithoutCommand,
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
+enum AppRunningState {
+    Running,
+    Exiting(ExitState),
+}
+
+impl AppRunningState {
+    pub fn is_running(&self) -> bool {
+        *self == AppRunningState::Running
+    }
+}
+
+pub fn get_command() -> ExitState {
     // if let Err(e) = color_eyre::install() {
     //     log::error!("Failed to install color_eyre panic handler: {}", e);
     // }
@@ -72,8 +90,7 @@ pub fn get_command() -> AppRunningState {
 
     let runtime = build_runtime();
 
-    let mut app = App::new();
-    let end_state = runtime.block_on(app.run(backend));
+    let end_state = runtime.block_on(App::new().run(backend));
 
     restore();
 
@@ -132,21 +149,11 @@ impl MouseState {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum AppRunningState {
-    Running,
-    ExitingWithCommand(String),
-    ExitingWithoutCommand,
-    TabCompleting,
-    FuzzySearching,
-}
-
-impl AppRunningState {
-    pub fn is_running(&self) -> bool {
-        *self == AppRunningState::Running
-            || *self == AppRunningState::FuzzySearching
-            || *self == AppRunningState::TabCompleting
-    }
+#[derive(Debug)]
+enum ContentMode {
+    Normal,
+    FuzzyHistorySearch,
+    TabCompletion(ActiveSuggestions),
 }
 
 struct App {
@@ -164,7 +171,7 @@ struct App {
     command_word_cells: Vec<(u16, u16)>,
     should_show_command_info: bool,
     mouse_state: MouseState,
-    active_tab_suggestions: Option<ActiveSuggestions>,
+    content_mode: ContentMode,
 }
 
 impl App {
@@ -204,14 +211,14 @@ impl App {
             command_word_cells: Vec::new(),
             should_show_command_info: false,
             mouse_state: MouseState::new(),
-            active_tab_suggestions: None,
+            content_mode: ContentMode::Normal,
         }
     }
 
     pub async fn run(
-        &mut self,
+        mut self,
         backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
-    ) -> AppRunningState {
+    ) -> ExitState {
         // Clear any pending events before creating terminal
         // This helps prevent cursor position query timeouts
         log::debug!("Clearing any pending events before terminal creation");
@@ -419,7 +426,15 @@ impl App {
             };
         }
 
-        self.mode.clone()
+        match self.mode {
+            AppRunningState::Exiting(exit_state) => exit_state,
+            _ => {
+                log::error!(
+                    "Exited run loop without valid exit state, defaulting to ExitingWithoutCommand"
+                );
+                ExitState::WithoutCommand
+            }
+        }
     }
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
@@ -461,7 +476,7 @@ impl App {
             }
             KeyEvent {
                 code: KeyCode::Up, ..
-            } if self.mode == AppRunningState::FuzzySearching => {
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.history_manager
                     .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
             }
@@ -480,7 +495,7 @@ impl App {
             KeyEvent {
                 code: KeyCode::Down,
                 ..
-            } if self.mode == AppRunningState::FuzzySearching => {
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.history_manager
                     .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
             }
@@ -507,25 +522,31 @@ impl App {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.mode == AppRunningState::FuzzySearching {
-                    if let Some(entry) = self.history_manager.accept_fuzzy_search_result() {
-                        let new_command = entry.command.clone();
-                        self.buffer.replace_buffer(new_command.as_str());
+                match &mut self.content_mode {
+                    ContentMode::FuzzyHistorySearch => {
+                        if let Some(entry) = self.history_manager.accept_fuzzy_search_result() {
+                            let new_command = entry.command.clone();
+                            self.buffer.replace_buffer(new_command.as_str());
+                        }
+                        self.content_mode = ContentMode::Normal;
                     }
-                    self.mode = AppRunningState::Running;
-                } else if let Some(active_suggestions) = self.active_tab_suggestions.take() {
-                    active_suggestions.accept_currently_selected(&mut self.buffer);
-                } else {
-                    // If it's a single line complete command, exit
-                    // If it's a multi-line complete command, cursor needs to be at end to exit
-                    if ((self.buffer.lines_with_cursor().iter().count() == 1)
-                        || self.buffer.is_cursor_at_trimmed_end())
-                        && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
-                    {
-                        self.mode =
-                            AppRunningState::ExitingWithCommand(self.buffer.buffer().to_string());
-                    } else {
-                        self.buffer.insert_newline();
+                    ContentMode::TabCompletion(active_suggestions) => {
+                        active_suggestions.accept_currently_selected(&mut self.buffer);
+                        self.content_mode = ContentMode::Normal;
+                    }
+                    ContentMode::Normal => {
+                        // If it's a single line complete command, exit
+                        // If it's a multi-line complete command, cursor needs to be at end to exit
+                        if ((self.buffer.lines_with_cursor().iter().count() == 1)
+                            || self.buffer.is_cursor_at_trimmed_end())
+                            && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
+                        {
+                            self.mode = AppRunningState::Exiting(ExitState::WithCommand(
+                                self.buffer.buffer().to_string(),
+                            ));
+                        } else {
+                            self.buffer.insert_newline();
+                        }
                     }
                 }
             }
@@ -539,7 +560,7 @@ impl App {
                 code: KeyCode::BackTab,
                 ..
             } => {
-                if let Some(active_suggestions) = &mut self.active_tab_suggestions {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     active_suggestions.on_tab(true);
                 }
             }
@@ -548,7 +569,7 @@ impl App {
                 code: KeyCode::Tab, ..
             } => {
                 // if the word under the cursor has changed, reset active suggestions
-                if let Some(active_suggestions) = &mut self.active_tab_suggestions {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     if !self
                         .buffer
                         .substring_matches(&active_suggestions.word_under_cursor)
@@ -557,33 +578,28 @@ impl App {
                             .cursor_in_substring(&active_suggestions.word_under_cursor)
                     {
                         log::debug!("Word under cursor changed, clearing active suggestions");
-                        self.active_tab_suggestions = None;
+                        self.content_mode = ContentMode::Normal;
                     }
                 }
 
-                if let Some(active_suggestions) = &mut self.active_tab_suggestions {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     active_suggestions.on_tab(false);
                 } else {
-                    let res = self.tab_complete();
-                    log::debug!("Tab completion result: {:?}", res);
+                    self.start_tab_complete();
                 }
             }
-            KeyEvent {
-                code: KeyCode::Esc, ..
-            } if self.mode == AppRunningState::FuzzySearching => {
-                self.mode = AppRunningState::Running;
-                // self.fuzzy_history_search_results.clear();
-            }
+
             // Escape - clear suggestions or toggle mouse
             KeyEvent {
                 code: KeyCode::Esc, ..
-            } => {
-                if self.active_tab_suggestions.is_some() {
-                    self.active_tab_suggestions = None;
-                } else {
+            } => match self.content_mode {
+                ContentMode::TabCompletion(_) | ContentMode::FuzzyHistorySearch => {
+                    self.content_mode = ContentMode::Normal;
+                }
+                ContentMode::Normal => {
                     self.mouse_state.toggle();
                 }
-            }
+            },
             // Ctrl+C - cancel with comment
             KeyEvent {
                 code: KeyCode::Char('c'),
@@ -592,7 +608,7 @@ impl App {
             } => {
                 self.buffer.move_to_end();
                 self.buffer.insert_str(" #[Ctrl+C pressed] ");
-                self.mode = AppRunningState::ExitingWithoutCommand;
+                self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
             }
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             KeyEvent {
@@ -602,21 +618,26 @@ impl App {
             } => {
                 self.buffer.move_to_start();
                 self.buffer.insert_str("#");
-                self.mode = AppRunningState::ExitingWithCommand(self.buffer.buffer().to_string());
+                self.mode = AppRunningState::Exiting(ExitState::WithCommand(
+                    self.buffer.buffer().to_string(),
+                ));
             }
             KeyEvent {
                 code: KeyCode::Char('r'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.mode == AppRunningState::FuzzySearching {
-                    self.mode = AppRunningState::Running;
-                    // self.fuzzy_history_search_results.clear();
-                } else {
-                    self.mode = AppRunningState::FuzzySearching;
-                    let _ = self
-                        .history_manager
-                        .get_fuzzy_search_results(self.buffer.buffer());
+                match self.content_mode {
+                    ContentMode::FuzzyHistorySearch => {
+                        self.content_mode = ContentMode::Normal;
+                        // self.fuzzy_history_search_results.clear();
+                    }
+                    ContentMode::Normal | ContentMode::TabCompletion(_) => {
+                        self.content_mode = ContentMode::FuzzyHistorySearch;
+                        let _ = self
+                            .history_manager
+                            .get_fuzzy_search_results(self.buffer.buffer());
+                    }
                 }
             }
             // Delegate basic text editing to TextBuffer
@@ -643,7 +664,18 @@ impl App {
         self.bash_env.cache_command_type(&first_word);
     }
 
-    fn tab_complete(&mut self) -> Option<()> {
+    fn try_accept_tab_completion(&mut self, active_suggestions: ActiveSuggestions) {
+        match active_suggestions.try_accept(&mut self.buffer) {
+            None => {
+                self.content_mode = ContentMode::Normal;
+            }
+            Some(suggestions) => {
+                self.content_mode = ContentMode::TabCompletion(suggestions);
+            }
+        }
+    }
+
+    fn start_tab_complete(&mut self) {
         let buffer: &str = self.buffer.buffer();
         let completion_context =
             tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos());
@@ -655,12 +687,11 @@ impl App {
         match completion_context.comp_type {
             tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
-                self.active_tab_suggestions = ActiveSuggestions::new(
+                self.try_accept_tab_completion(ActiveSuggestions::new(
                     Suggestion::from_string_vec(completions, "", " "),
                     word_under_cursor,
                     &self.buffer,
-                )
-                .try_accept(&mut self.buffer);
+                ));
             }
             tab_completion_context::CompType::CommandComp { mut command_word } => {
                 // This isnt just for commands like `git`, `cargo`
@@ -713,12 +744,11 @@ impl App {
                 match poss_completions {
                     Ok(completions) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
-                        self.active_tab_suggestions = ActiveSuggestions::new(
+                        self.try_accept_tab_completion(ActiveSuggestions::new(
                             Suggestion::from_string_vec(completions, "", " "),
                             word_under_cursor,
                             &self.buffer,
-                        )
-                        .try_accept(&mut self.buffer);
+                        ));
                     }
                     Err(e) => {
                         log::debug!(
@@ -727,9 +757,11 @@ impl App {
                             e
                         );
                         let completions = self.tab_complete_current_path(word_under_cursor);
-                        self.active_tab_suggestions =
-                            ActiveSuggestions::new(completions, word_under_cursor, &self.buffer)
-                                .try_accept(&mut self.buffer);
+                        self.try_accept_tab_completion(ActiveSuggestions::new(
+                            completions,
+                            word_under_cursor,
+                            &self.buffer,
+                        ));
                     }
                 }
             }
@@ -757,9 +789,11 @@ impl App {
             tab_completion_context::CompType::TildeExpansion => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = self.tab_complete_tilde_expansion(&word_under_cursor);
-                self.active_tab_suggestions =
-                    ActiveSuggestions::new(completions, word_under_cursor, &self.buffer)
-                        .try_accept(&mut self.buffer);
+                self.try_accept_tab_completion(ActiveSuggestions::new(
+                    completions,
+                    word_under_cursor,
+                    &self.buffer,
+                ));
             }
             tab_completion_context::CompType::GlobExpansion => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
@@ -783,17 +817,14 @@ impl App {
                         word_under_cursor
                     );
                 } else {
-                    self.active_tab_suggestions = ActiveSuggestions::new(
+                    self.try_accept_tab_completion(ActiveSuggestions::new(
                         Suggestion::from_string_vec(vec![completions_as_string], "", " "),
                         word_under_cursor,
                         &self.buffer,
-                    )
-                    .try_accept(&mut self.buffer);
+                    ));
                 }
             }
         }
-
-        Some(())
     }
 
     fn tab_complete_first_word(&self, command: &str) -> Vec<String> {
@@ -1062,103 +1093,88 @@ impl App {
             ));
         }
 
-        if self.mode.is_running()
-            && let Some(tab_suggestions) = &self.active_tab_suggestions
-        {
-            content.newline();
-            for (_, is_last, (suggestion, is_selected)) in tab_suggestions.iter().flag_first_last()
-            {
-                let style = if is_selected {
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::Gray)
-                };
+        match &self.content_mode {
+            ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
+                content.newline();
+                for (_, is_last, (suggestion, is_selected)) in
+                    active_suggestions.iter().flag_first_last()
+                {
+                    let style = if is_selected {
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    };
 
-                content.write_span(&Span::styled(suggestion, style));
-                if !is_last {
-                    content.write_span(&Span::from(" "));
+                    content.write_span(&Span::styled(suggestion, style));
+                    if !is_last {
+                        content.write_span(&Span::from(" "));
+                    }
                 }
             }
-        } else if self.mode == AppRunningState::FuzzySearching {
-            content.newline();
+            ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
+                content.newline();
 
-            let match_char_style = Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD);
-            let normal_char_style = Style::default().fg(Color::Gray);
+                let match_char_style = Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD);
+                let normal_char_style = Style::default().fg(Color::Gray);
 
-            let hints_style = Style::default()
-                .fg(Color::Indexed(242));
+                let hints_style = Style::default().fg(Color::Indexed(242));
 
-            let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
-                .history_manager
-                .get_fuzzy_search_results(self.buffer.buffer());
-            for (row_idx, entry_with_indices) in
-                fuzzy_results.iter().enumerate()
-            {
-                let entry = &entry_with_indices.0;
-                let mut spans = vec![];
+                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
+                    .history_manager
+                    .get_fuzzy_search_results(self.buffer.buffer());
+                for (row_idx, entry_with_indices) in fuzzy_results.iter().enumerate() {
+                    let entry = &entry_with_indices.0;
+                    let mut spans = vec![];
 
-                let timeago_str = entry.timestamp.map(|ts| Self::ts_to_timeago_string(ts));
+                    let timeago_str = entry.timestamp.map(|ts| Self::ts_to_timeago_string(ts));
 
+                    spans.push(Span::styled(
+                        format!("{} ", entry.index + 1),
+                        hints_style.add_modifier(Modifier::DIM),
+                    ));
 
+                    if fuzzy_search_index == row_idx {
+                        spans.push(Span::styled("▐", match_char_style));
+                    } else {
+                        spans.push(Span::styled(" ", hints_style.add_modifier(Modifier::DIM)));
+                    }
 
-                spans.push(Span::styled(
-                    format!("{} ", entry.index + 1),
-                    hints_style
+                    let match_indices_set: std::collections::HashSet<usize> =
+                        entry_with_indices.1.iter().cloned().collect();
+                    for (idx, ch) in entry.command.chars().enumerate() {
+                        let mut style = if match_indices_set.contains(&idx) {
+                            match_char_style
+                        } else {
+                            normal_char_style
+                        };
+                        if fuzzy_search_index == row_idx {
+                            style = style.bg(Color::Indexed(242));
+                        }
+                        spans.push(Span::styled(ch.to_string(), style));
+                    }
+                    if let Some(timeago) = timeago_str {
+                        spans.push(Span::styled(
+                            format!("  t={}", timeago),
+                            normal_char_style.add_modifier(Modifier::DIM),
+                        ));
+                    }
+
+                    let line = Line::from(spans);
+                    content.write_line(&line, true);
+                }
+                content.write_span(&Span::styled(
+                    format!("# Fuzzy search: {}/{}", num_results, num_searched),
+                    Style::default()
+                        .fg(Color::Indexed(242))
                         .add_modifier(Modifier::DIM),
                 ));
-
-                if fuzzy_search_index == row_idx {
-                    spans.push(Span::styled(
-                        "▐",
-                        match_char_style
-                    ));
-                } else {
-                    spans.push(Span::styled(
-                        " ",
-                        hints_style
-                            .add_modifier(Modifier::DIM),
-                    ));
-                }
-
-
-                let match_indices_set: std::collections::HashSet<usize> =
-                    entry_with_indices.1.iter().cloned().collect();
-                for (idx, ch) in entry.command.chars().enumerate() {
-                    let mut style = if match_indices_set.contains(&idx) {
-                        match_char_style
-                    } else {
-                        normal_char_style
-                    };
-                    if fuzzy_search_index == row_idx {
-                        style = style.bg(Color::Indexed(242));
-                    }
-                    spans.push(Span::styled(ch.to_string(), style));
-                }
-                if let Some(timeago) = timeago_str {
-                    spans.push(Span::styled(
-                        format!("  t={}", timeago),
-                        normal_char_style.add_modifier(Modifier::DIM),
-                    ));
-                }
-
-                let line = Line::from(spans);
-                content.write_line(&line, true);
             }
-            content.write_span(&Span::styled(
-                format!(
-                    "# Fuzzy search: {}/{}",
-                    num_results,
-                    num_searched
-                ),
-                Style::default()
-                    .fg(Color::Indexed(242))
-                    .add_modifier(Modifier::DIM),
-            ));
+            _ => {}
         }
         content
     }
