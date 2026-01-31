@@ -79,38 +79,29 @@ impl ActiveSuggestions {
         }
     }
 
-    pub fn sanitize_selected_index(&mut self) {
-        if self.selected_index >= self.suggestions.len() {
-            self.selected_index = 0;
-        }
+    pub fn sanitize_selected_index(&mut self, new_index: i32) {
+        self.selected_index = new_index.rem_euclid(self.suggestions.len() as i32) as usize;
     }
 
+    // TODO arrow keys when not all suggestions are visible
     pub fn on_right_arrow(&mut self) {
-        self.selected_index += self.last_grid_size.0;
-        self.sanitize_selected_index();
+        let new_idx: i32 = self.selected_index as i32 + self.last_grid_size.0 as i32;
+        self.sanitize_selected_index(new_idx);
     }
 
     pub fn on_left_arrow(&mut self) {
-        if self.selected_index < self.last_grid_size.0 {
-            self.selected_index = 0;
-        } else {
-            self.selected_index -= self.last_grid_size.0;
-        }
-        self.sanitize_selected_index();
+        let new_idx: i32 = self.selected_index as i32 - self.last_grid_size.0 as i32;
+        self.sanitize_selected_index(new_idx);
     }
 
     pub fn on_down_arrow(&mut self) {
-        self.selected_index += 1;
-        self.sanitize_selected_index();
+        let new_idx: i32 = self.selected_index as i32 + 1;
+        self.sanitize_selected_index(new_idx);
     }
 
     pub fn on_up_arrow(&mut self) {
-        if self.selected_index == 0 {
-            self.selected_index = self.suggestions.len() - 1;
-        } else {
-            self.selected_index -= 1;
-        }
-        self.sanitize_selected_index();
+        let new_idx: i32 = self.selected_index as i32 - 1;
+        self.sanitize_selected_index(new_idx);
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, bool)> {

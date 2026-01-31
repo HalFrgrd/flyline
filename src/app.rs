@@ -1121,10 +1121,9 @@ impl App {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
                 let max_num_rows = 10;
-                let max_num_cols = 50;
                 let mut rows = vec![vec![]; max_num_rows];
 
-                for (col, col_width) in active_suggestions.into_grid(max_num_rows, max_num_cols) {
+                for (col, col_width) in active_suggestions.into_grid(max_num_rows, width as usize) {
                     for (row_idx, (suggestion, is_selected)) in col.iter().enumerate() {
                         let style = if *is_selected {
                             Pallete::selection_style()
