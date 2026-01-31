@@ -19,6 +19,7 @@ use std::boxed::Box;
 use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
+use crate::pallete::Pallete;
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -1011,8 +1012,8 @@ impl App {
                 };
 
                 let first_word_style: Style = match command_type {
-                    bash_funcs::CommandType::Unknown => Style::default().fg(Color::Red),
-                    _ => Style::default().fg(Color::Green),
+                    bash_funcs::CommandType::Unknown => Pallete::unrecognised_word(),
+                    _ => Pallete::recognised_word(),
                 };
                 line_offset = content.cursor_position().0;
                 content.write_span(&Span::styled(first_word, first_word_style));
@@ -1021,9 +1022,7 @@ impl App {
                 content.newline();
                 let ps2 = Span::styled(
                     format!("{}∙", line_idx + 1),
-                    Style::default()
-                        .fg(Color::Indexed(242))
-                        .add_modifier(Modifier::DIM),
+                    Pallete::secondary_text(),
                 );
                 content.write_span(&ps2);
                 line_offset = content.cursor_position().0;
@@ -1057,7 +1056,6 @@ impl App {
         if let Some((sug, suf)) = &self.history_suggestion
             && self.mode.is_running()
         {
-            let suggestion_style: Style = Style::default().fg(Color::DarkGray);
 
             suf.lines()
                 .collect::<Vec<_>>()
@@ -1068,7 +1066,7 @@ impl App {
                         content.newline();
                     }
 
-                    content.write_span(&Span::from(line.to_owned()).style(suggestion_style));
+                    content.write_span(&Span::from(line.to_owned()).style(Pallete::secondary_text()));
 
                     if is_last {
                         let mut extra_info_text = format!(" # idx={}", sug.index);
@@ -1077,7 +1075,7 @@ impl App {
                             extra_info_text.push_str(&format!(" t={}", time_ago_str));
                         }
 
-                        content.write_span(&Span::from(extra_info_text).style(suggestion_style));
+                        content.write_span(&Span::from(extra_info_text).style(Pallete::secondary_text()));
                     }
                 });
         }
@@ -1100,12 +1098,9 @@ impl App {
                     active_suggestions.iter().flag_first_last()
                 {
                     let style = if is_selected {
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::White)
-                            .add_modifier(Modifier::BOLD)
+                        Pallete::selection_style()
                     } else {
-                        Style::default().fg(Color::Gray)
+                        Pallete::normal_text()
                     };
 
                     content.write_span(&Span::styled(suggestion, style));
@@ -1117,12 +1112,6 @@ impl App {
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
                 content.newline();
 
-                let match_char_style = Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD);
-                let normal_char_style = Style::default().fg(Color::Gray);
-
-                let hints_style = Style::default().fg(Color::Indexed(242));
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
@@ -1135,32 +1124,32 @@ impl App {
 
                     spans.push(Span::styled(
                         format!("{} ", entry.index + 1),
-                        hints_style.add_modifier(Modifier::DIM),
+                        Pallete::secondary_text(),
                     ));
 
                     if fuzzy_search_index == row_idx {
-                        spans.push(Span::styled("▐", match_char_style));
+                        spans.push(Span::styled("▐", Pallete::matched_character()));
                     } else {
-                        spans.push(Span::styled(" ", hints_style.add_modifier(Modifier::DIM)));
+                        spans.push(Span::styled(" ", Pallete::secondary_text()));
                     }
 
                     let match_indices_set: std::collections::HashSet<usize> =
                         entry_with_indices.1.iter().cloned().collect();
                     for (idx, ch) in entry.command.chars().enumerate() {
                         let mut style = if match_indices_set.contains(&idx) {
-                            match_char_style
+                            Pallete::matched_character()
                         } else {
-                            normal_char_style
+                            Pallete::normal_text()
                         };
                         if fuzzy_search_index == row_idx {
-                            style = style.bg(Color::Indexed(242));
+                            style = style.add_modifier(Modifier::REVERSED);
                         }
                         spans.push(Span::styled(ch.to_string(), style));
                     }
                     if let Some(timeago) = timeago_str {
                         spans.push(Span::styled(
                             format!("  t={}", timeago),
-                            normal_char_style.add_modifier(Modifier::DIM),
+                            Pallete::secondary_text(),
                         ));
                     }
 
@@ -1169,9 +1158,7 @@ impl App {
                 }
                 content.write_span(&Span::styled(
                     format!("# Fuzzy search: {}/{}", num_results, num_searched),
-                    Style::default()
-                        .fg(Color::Indexed(242))
-                        .add_modifier(Modifier::DIM),
+                    Pallete::secondary_text(),
                 ));
             }
             _ => {}

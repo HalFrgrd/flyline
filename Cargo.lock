@@ -44,7 +44,7 @@ dependencies = [
 [[package]]
 name = "ansi-to-tui"
 version = "7.0.0"
-source = "git+https://github.com/bozenalabs/ansi-to-tui.git?rev=9101076f8e23010515ff6fe1571bf87a2d0d4abc#9101076f8e23010515ff6fe1571bf87a2d0d4abc"
+source = "git+https://github.com/HalFrgrd/ansi-to-tui.git?rev=9101076f8e23010515ff6fe1571bf87a2d0d4abc#9101076f8e23010515ff6fe1571bf87a2d0d4abc"
 dependencies = [
  "nom",
  "ratatui",
