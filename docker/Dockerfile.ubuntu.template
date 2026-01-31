@@ -24,10 +24,10 @@ COPY --from=flyline-built-library /libflyline.so .
 # Write helpful comments to root's bashrc instead of copying a file
 RUN touch /root/.bashrc && \
     printf '%s\n' \
-    '# alias ll="ls -alF"' \
-    '# export HISTTIMEFORMAT="%F %T  "' \
-    '# enable -f /app/libflyline.so flyline' \
+    'alias ll="ls -alF"' \
+    'export HISTTIMEFORMAT="%F %T  "' \
+    'enable -f /app/libflyline.so flyline' \
     >> /root/.bashrc
 
 # Default command to run the test
-# CMD ["/bin/bash", "-i", "-c", "flyline -s && flyline -v && echo 'SUCCESS: Test completed'"]
+CMD ["/bin/bash", "-i", "-c", "flyline -s && flyline -v && echo 'SUCCESS: Test completed'"]

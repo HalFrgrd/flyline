@@ -4,7 +4,6 @@ set -Eeuo pipefail
 echo "cwd: $(pwd)"
 
 mkdir docker/build
-
 docker buildx build \
     --file "docker/Dockerfile.builder" \
     --target flyline_built_library \

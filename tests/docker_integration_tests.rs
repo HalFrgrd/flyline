@@ -67,9 +67,9 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
             "run".to_string(),
             "--rm".to_string(),
             format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
-            "bash".to_string(),
-            "-lc".to_string(),
-            "flyline -s && flyline -v && echo 'SUCCESS: Test completed'".to_string(),
+            // "bash".to_string(),
+            // "-lc".to_string(),
+            // "flyline -s && flyline -v && echo 'SUCCESS: Test completed'".to_string(),
         ]
     )?;
 
