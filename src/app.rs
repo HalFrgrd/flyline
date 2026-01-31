@@ -665,8 +665,8 @@ impl App {
         self.bash_env.cache_command_type(&first_word);
     }
 
-    fn try_accept_tab_completion(&mut self, active_suggestions: ActiveSuggestions) {
-        match active_suggestions.try_accept(&mut self.buffer) {
+    fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
+        match opt_suggestion.and_then(|s| s.try_accept(&mut self.buffer)) {
             None => {
                 self.content_mode = ContentMode::Normal;
             }
@@ -688,7 +688,7 @@ impl App {
         match completion_context.comp_type {
             tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
-                self.try_accept_tab_completion(ActiveSuggestions::new(
+                self.try_accept_tab_completion(ActiveSuggestions::try_new(
                     Suggestion::from_string_vec(completions, "", " "),
                     word_under_cursor,
                     &self.buffer,
@@ -745,7 +745,7 @@ impl App {
                 match poss_completions {
                     Ok(completions) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
-                        self.try_accept_tab_completion(ActiveSuggestions::new(
+                        self.try_accept_tab_completion(ActiveSuggestions::try_new(
                             Suggestion::from_string_vec(completions, "", " "),
                             word_under_cursor,
                             &self.buffer,
@@ -758,7 +758,7 @@ impl App {
                             e
                         );
                         let completions = self.tab_complete_current_path(word_under_cursor);
-                        self.try_accept_tab_completion(ActiveSuggestions::new(
+                        self.try_accept_tab_completion(ActiveSuggestions::try_new(
                             completions,
                             word_under_cursor,
                             &self.buffer,
@@ -790,7 +790,7 @@ impl App {
             tab_completion_context::CompType::TildeExpansion => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = self.tab_complete_tilde_expansion(&word_under_cursor);
-                self.try_accept_tab_completion(ActiveSuggestions::new(
+                self.try_accept_tab_completion(ActiveSuggestions::try_new(
                     completions,
                     word_under_cursor,
                     &self.buffer,
@@ -818,7 +818,7 @@ impl App {
                         word_under_cursor
                     );
                 } else {
-                    self.try_accept_tab_completion(ActiveSuggestions::new(
+                    self.try_accept_tab_completion(ActiveSuggestions::try_new(
                         Suggestion::from_string_vec(vec![completions_as_string], "", " "),
                         word_under_cursor,
                         &self.buffer,

@@ -24,7 +24,7 @@ impl Suggestion {
         suggestions
             .into_iter()
             .map(|s| {
-                let new_suffix = if suffix == " " && s.ends_with(' ') {
+                let new_suffix = if suffix == " " && s.ends_with(suffix) {
                     "".to_string()
                 } else {
                     suffix.to_string()
@@ -54,18 +54,18 @@ pub struct ActiveSuggestions {
 }
 
 impl ActiveSuggestions {
-    pub fn new<'underlying_buffer>(
+    pub fn try_new<'underlying_buffer>(
         suggestions: Vec<Suggestion>,
         word_under_cursor: &'underlying_buffer str,
         buffer: &'underlying_buffer TextBuffer,
-    ) -> Self {
-        let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).unwrap();
+    ) -> Option<Self> {
+        let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).ok()?;
 
-        ActiveSuggestions {
+        Some(ActiveSuggestions {
             suggestions,
             selected_index: 0,
             word_under_cursor,
-        }
+        })
     }
 
     pub fn on_tab(&mut self, shift_tab: bool) {
@@ -108,12 +108,18 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
-        let completion = &self.suggestions[self.selected_index];
-
-        if let Err(e) =
-            buffer.replace_word_under_cursor(&completion.formatted(), &self.word_under_cursor)
-        {
-            log::error!("Error during tab completion: {}", e);
+        if let Some(completion) = self.suggestions.get(self.selected_index) {
+            if let Err(e) =
+                buffer.replace_word_under_cursor(&completion.formatted(), &self.word_under_cursor)
+            {
+                log::error!("Error during tab completion: {}", e);
+            }
+        } else {
+            log::error!(
+                "Tried to accept suggestion at index {}, but only {} suggestions are available",
+                self.selected_index,
+                self.suggestions.len()
+            );
         }
     }
 }
