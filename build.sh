@@ -11,7 +11,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker build -t flyline-builder -f Dockerfile .
+docker build --target builder --tag flyline-builder --file Dockerfile .
 docker create --name "$container_name" flyline-builder
 docker cp "$container_name":/app/target/release/libflyline.so ./libflyline.so
 # Container is removed by the trap on EXIT
