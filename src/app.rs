@@ -1,4 +1,4 @@
-use crate::active_suggestions::{self, ActiveSuggestions, Suggestion};
+use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::bash_env_manager::BashEnvManager;
 use crate::bash_funcs;
 use crate::command_acceptance;
@@ -1106,6 +1106,12 @@ impl App {
                     }
                 });
         }
+
+        log::debug!(
+            "Should show command info: {}, command description: {:?}",
+            self.should_show_command_info,
+            command_description
+        );
 
         // if self.should_show_command_info
         //     && self.mode.is_running()

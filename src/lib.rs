@@ -204,6 +204,8 @@ enum Opt {
     Status,
     #[opt = 'k']
     SetKeyBinding(String),
+    #[opt = 'v']
+    Version,
 }
 
 impl Builtin for FlylineSentinel {
@@ -250,6 +252,9 @@ impl Builtin for FlylineSentinel {
                 }
                 Opt::SetKeyBinding(binding) => {
                     println!("Not yet implemented: {}", binding);
+                }
+                Opt::Version => {
+                    println!("flyline version {}", env!("CARGO_PKG_VERSION"));
                 }
             }
         }

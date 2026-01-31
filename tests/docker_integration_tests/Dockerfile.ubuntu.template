@@ -28,5 +28,5 @@ COPY tests/docker_integration_tests/test_bashrc.sh /root/.bashrc
 ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
 
 # Default command to run the test
-CMD ["/bin/bash", "-i", "-c", "flyline -s && echo 'SUCCESS: Test completed'"]
+CMD ["/bin/bash", "-i", "-c", "flyline -s && flyline -v && echo 'SUCCESS: Test completed'"]
 
