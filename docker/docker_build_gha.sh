@@ -3,11 +3,18 @@ set -Eeuo pipefail
 
 echo "cwd: $(pwd)"
 
-mkdir docker/build
 docker buildx build \
     --file "docker/Dockerfile.builder" \
-    --target flyline_built_library \
+    --target flyline-builder \
+    --tag flyline-builder:latest \
     --cache-from type=gha,scope=builtlib \
     --cache-to type=gha,mode=max,scope=builtlib \
-    --output type=local,dest="docker/build" \
+    "."
+
+docker buildx build \
+    --file "docker/Dockerfile.builder" \
+    --target flyline-extracted-library \
+    --tag flyline-extracted-library:latest \
+    --cache-from type=gha,scope=builtlib \
+    --cache-to type=gha,mode=max,scope=builtlib \
     "."

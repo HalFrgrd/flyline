@@ -1,7 +1,7 @@
 ARG UBUNTU_VERSION
 
 # Stage 1: Builder - Build the Flyline shared library
-FROM flyline-built-library
+FROM flyline-extracted-library
 
 # Stage 2: Ubuntu Testing - Test the built library on specified Ubuntu version
 FROM ubuntu:${UBUNTU_VERSION} AS ubuntu_testing
@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy the built shared library from builder stage
-COPY --from=flyline-built-library /libflyline.so .
+COPY --from=flyline-extracted-library /libflyline.so .
 
 # Write helpful comments to root's bashrc instead of copying a file
 RUN touch /root/.bashrc && \

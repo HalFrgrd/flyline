@@ -44,5 +44,5 @@ RUN cargo build --release
 
 # Stage 4: Build image with output. This won't have anything in the file system apart from the built library
 # this makes it convenient to copy the built library without creating a container
-FROM scratch AS flyline-built-library
+FROM scratch AS flyline-extracted-library
 COPY --from=flyline-builder /app/target/release/libflyline.so /libflyline.so
