@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  build-ubuntu-1604:
+    name: Build on Ubuntu 16.04
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run build.sh (Dockerized 16.04 build + unit tests)
+        run: ./build.sh
+
+  docker-integration-tests:
+    name: Docker Integration Tests
+    runs-on: ubuntu-latest
+    needs: build-ubuntu-1604
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run all integration tests (stream logs)
+        run: |
+          cargo test --test docker_integration_tests -- --nocapture
