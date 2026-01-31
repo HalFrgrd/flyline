@@ -15,11 +15,11 @@ mod cursor_animation;
 mod history;
 mod iter_first_last;
 mod lexer;
+mod pallete;
 mod prompt_manager;
 mod snake_animation;
 mod tab_completion_context;
 mod text_buffer;
-mod pallete;
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Flyline>>>> = Mutex::new(None);

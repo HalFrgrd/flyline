@@ -6,6 +6,7 @@ use crate::content_builder::Contents;
 use crate::cursor_animation::CursorAnimation;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
+use crate::pallete::Pallete;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
@@ -19,7 +20,6 @@ use std::boxed::Box;
 use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
-use crate::pallete::Pallete;
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -1017,13 +1017,10 @@ impl App {
                 };
                 line_offset = content.cursor_position().0;
                 content.write_span(&Span::styled(first_word, first_word_style));
-                content.write_span(&Span::styled(rest.to_string(), Style::default()));
+                content.write_span(&Span::styled(rest.to_string(), Pallete::normal_text()));
             } else {
                 content.newline();
-                let ps2 = Span::styled(
-                    format!("{}∙", line_idx + 1),
-                    Pallete::secondary_text(),
-                );
+                let ps2 = Span::styled(format!("{}∙", line_idx + 1), Pallete::secondary_text());
                 content.write_span(&ps2);
                 line_offset = content.cursor_position().0;
                 content.write_line(&Line::from(line.to_owned()), false);
@@ -1042,11 +1039,7 @@ impl App {
 
                 let cursor_style = {
                     let cursor_intensity = self.cursor_animation.get_intensity();
-                    Style::new().bg(Color::Rgb(
-                        cursor_intensity,
-                        cursor_intensity,
-                        cursor_intensity,
-                    ))
+                    Pallete::cursor_style(cursor_intensity)
                 };
 
                 content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
@@ -1056,7 +1049,6 @@ impl App {
         if let Some((sug, suf)) = &self.history_suggestion
             && self.mode.is_running()
         {
-
             suf.lines()
                 .collect::<Vec<_>>()
                 .iter()
@@ -1066,7 +1058,8 @@ impl App {
                         content.newline();
                     }
 
-                    content.write_span(&Span::from(line.to_owned()).style(Pallete::secondary_text()));
+                    content
+                        .write_span(&Span::from(line.to_owned()).style(Pallete::secondary_text()));
 
                     if is_last {
                         let mut extra_info_text = format!(" # idx={}", sug.index);
@@ -1075,7 +1068,9 @@ impl App {
                             extra_info_text.push_str(&format!(" t={}", time_ago_str));
                         }
 
-                        content.write_span(&Span::from(extra_info_text).style(Pallete::secondary_text()));
+                        content.write_span(
+                            &Span::from(extra_info_text).style(Pallete::secondary_text()),
+                        );
                     }
                 });
         }
@@ -1111,7 +1106,6 @@ impl App {
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
                 content.newline();
-
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager

@@ -1,4 +1,3 @@
-
 use ratatui::style::{Color, Modifier, Style};
 
 pub struct Pallete;
@@ -21,7 +20,10 @@ impl Pallete {
     }
     pub fn matched_character() -> Style {
         Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD)
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD)
+    }
+    pub fn cursor_style(intensity: u8) -> Style {
+        Style::new().bg(Color::Rgb(intensity, intensity, intensity))
     }
 }
