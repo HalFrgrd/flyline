@@ -6,7 +6,7 @@ use crate::content_builder::Contents;
 use crate::cursor_animation::CursorAnimation;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
-use crate::pallete::Pallete;
+use crate::palette::Pallete;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;

@@ -8,14 +8,27 @@ on:
 
 jobs:
   build-ubuntu-1604:
-    name: Build on Ubuntu 16.04
+    name: Build and test on Ubuntu 16.04
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run build.sh (Dockerized 16.04 build + unit tests)
-        run: ./build.sh
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run Dockerized 16.04 build
+        run:  docker buildx build \
+          --file Dockerfile \
+          --target builder \
+          --tag flyline-builder \
+          --cache-from type=gha,scope=builder \
+          --cache-to type=gha,mode=max,scope=builder \
+          --load \
+          .
+      - name: Run library tests inside Docker container
+        run: docker run --rm flyline-builder bash -lc "cargo test --release --lib"
+
 
   docker-integration-tests:
     name: Docker Integration Tests
