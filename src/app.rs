@@ -177,10 +177,6 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        // TODO: fetch these in background
-
-
-
         let user = bash_builtins::variables::find_as_string("USER")
             .as_ref()
             .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
@@ -194,7 +190,6 @@ impl App {
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
 
-        // history.new_session();
         App {
             mode: AppRunningState::Running,
             buffer: TextBuffer::new(""),

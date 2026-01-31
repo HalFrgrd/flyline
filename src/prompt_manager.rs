@@ -1,12 +1,11 @@
+use crate::bash_symbols;
 use ansi_to_tui::IntoText;
 use ratatui::text::{Line, Span, Text};
-use crate::bash_symbols;
 
 pub struct PromptManager {
     // TODO think of lifetimes
     prompt: Vec<Line<'static>>,
 }
-
 
 fn get_current_readline_prompt() -> Option<String> {
     unsafe {
@@ -29,8 +28,6 @@ fn get_current_readline_prompt() -> Option<String> {
 
 impl PromptManager {
     pub fn new(unfinished_from_prev_command: bool) -> Self {
-
-
         // let ps1 = bash_builtins::variables::find_as_string("PS1")
         //     .as_ref()
         //     .and_then(|v| v.to_str().ok().map(|s| s.to_string()))

@@ -2,8 +2,6 @@ use anyhow::Result;
 use std::env;
 use std::process::{Command, Stdio};
 
-
-
 fn run_command(cmd: &str, args: Vec<String>) -> Result<()> {
     let stream = env::var("RUST_TEST_NOCAPTURE").is_ok();
     let mut command = Command::new(cmd);
@@ -32,8 +30,6 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
     // Ensure the builder image reflects current source
 
     run_command("docker/docker_build.sh", vec![])?;
-    
-
 
     // Build the Docker image first using docker command
     run_command(
@@ -49,7 +45,7 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
             "--tag".to_string(),
             format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
             ".".to_string(),
-        ]
+        ],
     )?;
 
     // Test the built image by running it
@@ -62,7 +58,7 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
             // "bash".to_string(),
             // "-lc".to_string(),
             // "flyline -s && flyline -v && echo 'SUCCESS: Test completed'".to_string(),
-        ]
+        ],
     )?;
 
     println!("Successfully tested Ubuntu {} with flyline", ubuntu_version);

@@ -167,7 +167,6 @@ pub fn get_all_aliases() -> Vec<String> {
         }
     }
 
-    // log::debug!("Found aliases: {:?}", aliases);
     aliases
 }
 
@@ -180,33 +179,6 @@ pub fn get_all_reserved_words() -> Vec<String> {
     .map(|s| s.to_string())
     .collect();
 }
-
-// pub fn get_shell_functions() -> Vec<String> {
-//     let mut functions = Vec::new();
-
-//     unsafe {
-//         let func_ptr = bash_symbols::all_shell_functions();
-//         if func_ptr.is_null() {
-//             return functions;
-//         }
-
-//         let mut offset = 0;
-//         loop {
-//             let ptr = *func_ptr.add(offset);
-//             if ptr.is_null() {
-//                 break;
-//             }
-//             let c_str = std::ffi::CStr::from_ptr(ptr);
-//             if let Ok(str_slice) = c_str.to_str() {
-//                 functions.push(str_slice.to_string());
-//             }
-//             offset += 1;
-//         }
-//     }
-
-//     log::debug!("Found shell functions: {:?}", functions);
-//     functions
-// }
 
 #[allow(dead_code)]
 pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {

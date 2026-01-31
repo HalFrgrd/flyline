@@ -94,10 +94,6 @@ unsafe extern "C" {
     pub fn describe_command(command: *const c_char, dflags: c_int) -> c_int;
 
     // from pcomplete.c
-    // COMPSPEC *progcomp_search (const char *cmd)
-    pub fn progcomp_search(cmd: *const c_char) -> *mut CompSpec;
-
-    // from pcomplete.c
     /* The driver function for the programmable completion code.  Returns a list
     of matches for WORD, which is an argument to command CMD.  START and END
     bound the command currently being completed in pcomp_line (usually
@@ -121,13 +117,10 @@ unsafe extern "C" {
     // extern int rl_point;
     #[link_name = "rl_point"]
     pub static mut rl_point: c_int;
+
     // extern int rl_end;
     #[link_name = "rl_end"]
     pub static mut rl_end: c_int;
-
-    // int rl_line_buffer_len
-    #[link_name = "rl_line_buffer_len"]
-    pub static mut rl_line_buffer_len: c_int;
 
     // alias.h
     // alias_t **all_aliases (void);
@@ -147,27 +140,6 @@ unsafe extern "C" {
     #[link_name = "num_shell_builtins"]
     pub static mut num_shell_builtins: c_int;
 
-    // STRINGLIST * gen_compspec_completions (COMPSPEC *cs, const char *cmd, const char *word,int start, int end, int *foundp)
-    pub fn gen_compspec_completions(
-        cs: *mut CompSpec,
-        cmd: *const c_char,
-        word: *const c_char,
-        start: c_int,
-        end: c_int,
-        foundp: *mut c_int,
-    ) -> *mut StringList;
-
-    // COMPSPEC *pcomp_curcs;
-    pub static mut pcomp_curcs: *mut CompSpec;
-
-    // char *pcomp_line;
-    #[link_name = "pcomp_line"]
-    pub static mut pcomp_line: *mut c_char;
-
-    // int pcomp_ind;
-    #[link_name = "pcomp_ind"]
-    pub static mut pcomp_ind: c_int;
-
     //extern unsigned long rl_readline_state;
     #[link_name = "rl_readline_state"]
     pub static mut rl_readline_state: libc::c_ulong;
@@ -183,7 +155,6 @@ unsafe extern "C" {
     // char *current_readline_prompt
     #[link_name = "current_readline_prompt"]
     pub static mut current_readline_prompt: *mut c_char;
-
 }
 
 // history.h
