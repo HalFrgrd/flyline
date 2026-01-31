@@ -567,11 +567,13 @@ impl TextBuffer {
         new_word: &str,
         sub_string: &SubString,
     ) -> anyhow::Result<()> {
-        match self.buf.get(sub_string.start..sub_string.end) {
+        let end = sub_string.start + sub_string.s.len();
+
+        match self.buf.get(sub_string.start..end) {
             Some(s) if s == sub_string.s => {
                 // Delete the word and position cursor at the start
                 self.push_snapshot(false);
-                self.buf.drain(sub_string.start..sub_string.end);
+                self.buf.drain(sub_string.start..end);
                 self.cursor_byte = sub_string.start;
                 self.insert_str_no_snapshot(new_word);
                 Ok(())
@@ -614,11 +616,9 @@ mod test_editing_advanced {
 
     fn create_substring(buffer: &str, word: &str) -> SubString {
         let start = buffer.find(word).unwrap();
-        let end = start + word.len();
         SubString {
             s: word.to_string(),
             start,
-            end,
         }
     }
 
@@ -683,7 +683,6 @@ mod test_editing_advanced {
             &SubString {
                 s: "nonexistent".to_string(),
                 start: 100,
-                end: 110,
             },
         )
         .unwrap();
@@ -700,7 +699,6 @@ mod test_editing_advanced {
             &SubString {
                 s: "wrong_word".to_string(),
                 start: 0,
-                end: 10,
             },
         )
         .unwrap();
@@ -713,22 +711,14 @@ impl TextBuffer {
         &self.buf
     }
     pub fn substring_matches(&self, sub_string: &SubString) -> bool {
-        if sub_string.start > sub_string.end {
-            return false;
+        match self.buf.get(sub_string.start..sub_string.end()) {
+            Some(s) => s == sub_string.s,
+            None => false,
         }
-        if sub_string.end > self.buf.len() {
-            return false;
-        }
-        if !self.buf.is_char_boundary(sub_string.start)
-            || !self.buf.is_char_boundary(sub_string.end)
-        {
-            return false;
-        }
-        self.buf[sub_string.start..sub_string.end] == *sub_string.s
     }
 
     pub fn cursor_in_substring(&self, sub_string: &SubString) -> bool {
-        self.cursor_byte >= sub_string.start && self.cursor_byte <= sub_string.end
+        self.cursor_byte >= sub_string.start && self.cursor_byte <= sub_string.end()
     }
 
     pub fn is_cursor_at_end(&self) -> bool {
@@ -1106,7 +1096,6 @@ mod test_undo_redo {
 pub struct SubString {
     pub s: String,    // contents expected to be found between start and end
     pub start: usize, // byte index in the original buffer
-    pub end: usize,   // byte index in the original buffer
 }
 
 impl SubString {
@@ -1119,12 +1108,14 @@ impl SubString {
         }
 
         let start = substring_ptr - buf_ptr;
-        let end = start + substring.len();
 
         Ok(Self {
             s: substring.to_string(),
             start,
-            end,
         })
+    }
+
+    pub fn end(&self) -> usize {
+        self.start + self.s.len()
     }
 }
