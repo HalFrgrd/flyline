@@ -3,12 +3,17 @@ use std::env;
 use std::process::{Command, Stdio};
 
 fn is_gha() -> bool {
-    env::var("GITHUB_ACTIONS").map(|v| v == "true").unwrap_or(false)
+    env::var("GITHUB_ACTIONS")
+        .map(|v| v == "true")
+        .unwrap_or(false)
 }
 
 fn has_buildx() -> bool {
     Command::new("docker")
-        .args(["buildx", "version"]).status().map(|s| s.success()).unwrap_or(false)
+        .args(["buildx", "version"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 fn run_command(cmd: &str, args: Vec<String>) -> Result<()> {
@@ -16,7 +21,10 @@ fn run_command(cmd: &str, args: Vec<String>) -> Result<()> {
     let mut command = Command::new(cmd);
     command.args(&args);
     if stream {
-        let status = command.stdout(Stdio::inherit()).stderr(Stdio::inherit()).status()?;
+        let status = command
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?;
         if !status.success() {
             anyhow::bail!("Command failed");
         }

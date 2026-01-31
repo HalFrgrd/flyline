@@ -33,7 +33,6 @@ impl PromptManager {
                     ]),
                     Line::from("> "),
                 ],
-                
             }
         } else {
             // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)

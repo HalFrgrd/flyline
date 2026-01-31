@@ -1107,22 +1107,17 @@ impl App {
                 });
         }
 
-        log::debug!(
-            "Should show command info: {}, command description: {:?}",
-            self.should_show_command_info,
-            command_description
-        );
-
-        // if self.should_show_command_info
-        //     && self.mode.is_running()
-        //     && let Some(desc) = command_description
-        // {
-        //     content.newline();
-        //     content.write_span(&Span::styled(
-        //         format!("# {}", desc),
-        //         Style::default().fg(Color::Blue).italic(),
-        //     ));
-        // }
+        if self.should_show_command_info
+            && self.mode.is_running()
+            && let Some(desc) = command_description
+        {
+            log::debug!("command description: {:?}", desc);
+            // content.newline();
+            // content.write_span(&Span::styled(
+            //     format!("# {}", desc),
+            //     Style::default().fg(Color::Blue).italic(),
+            // ));
+        }
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
