@@ -567,37 +567,27 @@ impl TextBuffer {
         new_word: &str,
         sub_string: &SubString,
     ) -> anyhow::Result<()> {
-        if sub_string.start > sub_string.end {
-            return Err(anyhow::anyhow!("Invalid word boundaries"));
-        }
-
-        // Ensure indices are within buffer bounds
-        if sub_string.start > self.buf.len() || sub_string.end > self.buf.len() {
-            return Err(anyhow::anyhow!("Word bounds out of range"));
-        }
-
-        // Ensure indices lie on valid UTF-8 char boundaries
-        if !self.buf.is_char_boundary(sub_string.start)
-            || !self.buf.is_char_boundary(sub_string.end)
-        {
-            return Err(anyhow::anyhow!("Word bounds not on char boundaries"));
-        }
-
-        if self.buf[sub_string.start..sub_string.end] != *sub_string.s {
-            return Err(anyhow::anyhow!(
+        match self.buf.get(sub_string.start..sub_string.end) {
+            Some(s) if s == sub_string.s => {
+                // Delete the word and position cursor at the start
+                self.push_snapshot(false);
+                self.buf.drain(sub_string.start..sub_string.end);
+                self.cursor_byte = sub_string.start;
+                self.insert_str_no_snapshot(new_word);
+                Ok(())
+            }
+            Some(s) => Err(anyhow::anyhow!(
                 "Expected word '{}' at position {}, but found '{}'",
                 sub_string.s,
                 sub_string.start,
-                &self.buf[sub_string.start..sub_string.end]
-            ));
+                s
+            )),
+            _ => Err(anyhow::anyhow!(
+                "Expected word '{}' at position {}, but the range was out of bounds",
+                sub_string.s,
+                sub_string.start,
+            )),
         }
-
-        // Delete the word and position cursor at the start
-        self.push_snapshot(false);
-        self.buf.drain(sub_string.start..sub_string.end);
-        self.cursor_byte = sub_string.start;
-        self.insert_str_no_snapshot(new_word);
-        Ok(())
     }
 
     pub fn replace_buffer(&mut self, new_buffer: &str) {
@@ -680,6 +670,40 @@ mod test_editing_advanced {
             .unwrap();
         assert_eq!(tb.buffer(), "find simple résumé café 📄");
         assert_eq!(tb.cursor_byte, "find simple".len());
+    }
+
+    #[test]
+    #[should_panic(expected = "range was out of bounds")]
+    fn replace_word_under_cursor_out_of_bounds() {
+        // Cursor at the end of a word with heavy accents
+        let mut tb = TextBuffer::new("find naïve résumé café 📄");
+        tb.move_to_start();
+        tb.replace_word_under_cursor(
+            "test",
+            &SubString {
+                s: "nonexistent".to_string(),
+                start: 100,
+                end: 110,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected word 'wrong_word' at position 0, but found 'hello worl'")]
+    fn replace_word_under_cursor_wrong_word() {
+        // Cursor at the end of a word with heavy accents
+        let mut tb = TextBuffer::new("hello world");
+        tb.move_to_start();
+        tb.replace_word_under_cursor(
+            "test",
+            &SubString {
+                s: "wrong_word".to_string(),
+                start: 0,
+                end: 10,
+            },
+        )
+        .unwrap();
     }
 }
 
