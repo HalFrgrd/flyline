@@ -179,6 +179,11 @@ unsafe extern "C" {
     // extern HIST_ENTRY **history_list (void);
     pub fn history_list() -> *mut *mut HistoryEntry;
 
+    // y.tab.c
+    // char *current_readline_prompt
+    #[link_name = "current_readline_prompt"]
+    pub static mut current_readline_prompt: *mut c_char;
+
 }
 
 // history.h

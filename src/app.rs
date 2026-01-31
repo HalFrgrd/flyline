@@ -179,10 +179,7 @@ impl App {
     fn new() -> Self {
         // TODO: fetch these in background
 
-        let ps1_prompt = bash_builtins::variables::find_as_string("PS1")
-            .as_ref()
-            .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
-            .unwrap_or("default> ".into());
+
 
         let user = bash_builtins::variables::find_as_string("USER")
             .as_ref()
@@ -203,7 +200,7 @@ impl App {
             buffer: TextBuffer::new(""),
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
-            prompt_manager: PromptManager::new(ps1_prompt, unfinished_from_prev_command),
+            prompt_manager: PromptManager::new(unfinished_from_prev_command),
             home_path: home_path,
             history_manager: HistoryManager::new(),
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?

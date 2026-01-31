@@ -1,13 +1,43 @@
 use ansi_to_tui::IntoText;
 use ratatui::text::{Line, Span, Text};
+use crate::bash_symbols;
 
 pub struct PromptManager {
     // TODO think of lifetimes
     prompt: Vec<Line<'static>>,
 }
 
+
+fn get_current_readline_prompt() -> Option<String> {
+    unsafe {
+        let bash_prompt_cstr = bash_symbols::current_readline_prompt;
+        if !bash_prompt_cstr.is_null() {
+            let c_str = std::ffi::CStr::from_ptr(bash_prompt_cstr);
+            if let Ok(prompt_str) = c_str.to_str() {
+                log::debug!("Fetched current_readline_prompt: {}", prompt_str);
+                Some(prompt_str.to_string())
+            } else {
+                log::debug!("current_readline_prompt is not valid UTF-8");
+                None
+            }
+        } else {
+            log::debug!("current_readline_prompt is null");
+            None
+        }
+    }
+}
+
 impl PromptManager {
-    pub fn new(ps1: String, unfinished_from_prev_command: bool) -> Self {
+    pub fn new(unfinished_from_prev_command: bool) -> Self {
+
+
+        // let ps1 = bash_builtins::variables::find_as_string("PS1")
+        //     .as_ref()
+        //     .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+        //     .unwrap_or("default> ".into());
+
+        let ps1 = get_current_readline_prompt().unwrap_or_else(|| "default> ".into());
+
         if unfinished_from_prev_command {
             // If the previous command was unfinished, use a simple prompt to avoid confusion
 
