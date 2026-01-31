@@ -163,8 +163,8 @@ impl Default for FlylineSentinel {
         // with_input_from_stdin will see that the current bash_input is fit for purpose and not add readline stdin.
 
         unsafe {
-            let stream_list_head: &mut bash_symbols::StreamSaver = &mut *bash_symbols::stream_list;
             if !bash_symbols::stream_list.is_null() {
+                let stream_list_head: &mut bash_symbols::StreamSaver = &mut *bash_symbols::stream_list;
                 let next_is_null = stream_list_head.next.is_null();
                 if next_is_null {
                     // No streams in the list, we can set ours
