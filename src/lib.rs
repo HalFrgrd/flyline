@@ -21,8 +21,6 @@ mod snake_animation;
 mod tab_completion_context;
 mod text_buffer;
 
-
-
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Flyline>>>> = Mutex::new(None);
 

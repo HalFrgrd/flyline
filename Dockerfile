@@ -29,13 +29,15 @@ RUN cargo install cargo-chef --locked
 
 # Stage 2: Planner
 FROM chef AS planner
-COPY --exclude=.git/ --exclude=target/ . . 
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 RUN cargo chef prepare --recipe-path recipe.json
 
 
 # Stage 3: Final Build
-FROM chef AS builder
+FROM chef AS flyline-builder-image
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
-COPY --exclude=.git/ --exclude=target/ . . 
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 RUN cargo build --release

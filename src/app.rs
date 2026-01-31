@@ -359,8 +359,6 @@ impl App {
                 }
             }
 
-            
-
             if !self.mode.is_running() {
                 break;
             }
@@ -428,9 +426,6 @@ impl App {
                     }
                 }
             };
-
-
-
         }
 
         match self.mode {
