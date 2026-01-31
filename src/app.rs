@@ -420,11 +420,13 @@ impl App {
                         },
                         CrosstermEvent::Paste(pasted) => {
                             self.buffer.insert_str(&pasted);
+                            self.on_possible_buffer_change();
                             true
                         },
                     }
                 }
             };
+            
         }
 
         match self.mode {

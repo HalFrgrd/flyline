@@ -7,7 +7,7 @@
 # Build for Ubuntu 22.04: docker build --target ubuntu_testing --build-arg UBUNTU_VERSION=22.04 -f tests/docker_integration_tests/Dockerfile.ubuntu.template -t flyline-test-ubuntu2204 .
 
 # Global ARG for Ubuntu version
-ARG UBUNTU_VERSION=20.04
+ARG UBUNTU_VERSION
 
 # Stage 1: Builder - Use Ubuntu 18.04 for glibc 2.27 compatibility
 FROM ubuntu:18.04 AS builder
@@ -82,7 +82,7 @@ ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
 SHELL ["/bin/bash", "-i", "-c"]
 
 # Default command to run the test
-CMD ["/bin/bash", "-i", "-c", "ls -la /usr/local/lib/libflyline.so && echo 'File exists'; nm -D /usr/local/lib/libflyline.so | grep flyline && echo 'Symbols OK' || echo 'No flyline symbols'; enable -f /usr/local/lib/libflyline.so flyline && echo 'Enable OK' || echo 'Enable failed'; flyline -s && echo 'SUCCESS: Test completed'"]
+CMD ["/bin/bash", "-i", "-c", "enable -f /usr/local/lib/libflyline.so flyline && echo 'Enable OK'; flyline -s && echo 'SUCCESS: Test completed'"]
 
 FROM ubuntu:20.04 AS extract_only
 LABEL description="Extract only stage"
