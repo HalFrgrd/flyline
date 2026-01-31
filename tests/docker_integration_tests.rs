@@ -2,11 +2,6 @@ use anyhow::Result;
 use std::env;
 use std::process::{Command, Stdio};
 
-fn is_gha() -> bool {
-    env::var("GITHUB_ACTIONS")
-        .map(|v| v == "true")
-        .unwrap_or(false)
-}
 
 
 fn run_command(cmd: &str, args: Vec<String>) -> Result<()> {
@@ -35,12 +30,9 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
     println!("Testing Ubuntu version: {}", ubuntu_version);
 
     // Ensure the builder image reflects current source
-    // This builds with the cache
-    if is_gha() {
-        run_command("docker/docker_build_gha.sh", vec![])?;
-    } else {
-        run_command("docker/docker_build.sh", vec![])?;
-    }
+
+    run_command("docker/docker_build.sh", vec![])?;
+    
 
 
     // Build the Docker image first using docker command
