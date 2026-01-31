@@ -18,14 +18,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Run Dockerized 16.04 build
-        uses: docker/build-push-action@v5
-        with:
-          file: docker/Dockerfile.builder
-          target: flyline-builder
-          tags: flyline-builder:latest
-          cache-from: type=gha,scope=builtlib
-          cache-to: type=gha,mode=max,scope=builtlib
-          load: true  # makes image available locally for next step
+        run : ./docker/docker_build_gha.sh
 
       - name: Run library tests inside Docker container
         run: docker run --rm flyline-builder bash -lc "cargo test --release --lib"

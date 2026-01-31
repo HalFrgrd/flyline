@@ -9,6 +9,7 @@ docker buildx build \
     --tag flyline-builder:latest \
     --cache-from type=gha,scope=builtlib \
     --cache-to type=gha,mode=max,scope=builtlib \
+    --load \
     "."
 
 docker buildx build \
@@ -17,4 +18,5 @@ docker buildx build \
     --tag flyline-extracted-library:latest \
     --cache-from type=gha,scope=builtlib \
     --cache-to type=gha,mode=max,scope=builtlib \
+    --load \
     "."
