@@ -70,7 +70,6 @@ impl ActiveSuggestions {
 
     pub fn on_tab(&mut self, shift_tab: bool) {
         // Logic to handle tab key when active suggestions are present
-        log::info!("Active suggestions: {:?}", self.suggestions);
         if shift_tab {
             let un_wrapped_index = self.selected_index as i64 - 1;
             let wrapped_index = un_wrapped_index.rem_euclid(self.suggestions.len() as i64);
@@ -87,6 +86,36 @@ impl ActiveSuggestions {
             .iter()
             .enumerate()
             .map(|(idx, suggestion)| (suggestion.s.as_str(), idx == self.selected_index))
+    }
+
+    pub fn into_grid(&self, rows: usize, cols: usize) -> Vec<(Vec<(&str, bool)>, usize)> {
+        // Show as many suggestions as will fit in the given rows and columns
+        // Each column should be the same width, based on the longest suggestion
+        let mut grid = vec![];
+        let mut current_col = vec![];
+        let mut col_width = 1;
+        let mut total_columns = 0;
+
+        for (i, (s, is_selected)) in self.iter().enumerate() {
+            current_col.push((s, is_selected));
+            col_width = col_width.max(s.len() + 2); // +2 for padding // TODO truncate very long suggestions
+            if (i + 1) % rows == 0 {
+                if total_columns + col_width > cols {
+                    break;
+                }
+                grid.push((current_col, col_width));
+                total_columns += col_width;
+                current_col = vec![];
+                col_width = 1;
+            }
+        }
+        // TODO say there are more if it doesnt fit
+
+        if !current_col.is_empty() && total_columns + col_width <= cols {
+            grid.push((current_col, col_width));
+        }
+
+        grid
     }
 
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {

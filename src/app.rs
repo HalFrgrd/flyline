@@ -1075,33 +1075,50 @@ impl App {
                 });
         }
 
-        if self.should_show_command_info
-            && self.mode.is_running()
-            && let Some(desc) = command_description
-        {
-            content.newline();
-            content.write_span(&Span::styled(
-                format!("# {}", desc),
-                Style::default().fg(Color::Blue).italic(),
-            ));
-        }
+        // if self.should_show_command_info
+        //     && self.mode.is_running()
+        //     && let Some(desc) = command_description
+        // {
+        //     content.newline();
+        //     content.write_span(&Span::styled(
+        //         format!("# {}", desc),
+        //         Style::default().fg(Color::Blue).italic(),
+        //     ));
+        // }
 
         match &self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
-                for (_, is_last, (suggestion, is_selected)) in
-                    active_suggestions.iter().flag_first_last()
-                {
-                    let style = if is_selected {
-                        Pallete::selection_style()
-                    } else {
-                        Pallete::normal_text()
-                    };
+                let max_num_rows = 10;
+                let max_num_cols = 50;
+                let mut rows = vec![vec![]; max_num_rows];
 
-                    content.write_span(&Span::styled(suggestion, style));
-                    if !is_last {
-                        content.write_span(&Span::from(" "));
+                for (col, col_width) in active_suggestions.into_grid(max_num_rows, max_num_cols) {
+                    for (row_idx, (suggestion, is_selected)) in col.iter().enumerate() {
+                        let style = if *is_selected {
+                            Pallete::selection_style()
+                        } else {
+                            Pallete::normal_text()
+                        };
+
+                        let word = if suggestion.len() > col_width {
+                            let mut truncated = suggestion[..col_width - 1].to_string();
+                            truncated.push('…');
+                            truncated
+                        } else {
+                            suggestion.to_string() + &" ".repeat(col_width - suggestion.len())
+                        };
+
+                        rows[row_idx].push((word, style));
                     }
+                }
+
+                for row in rows.into_iter().filter(|r| !r.is_empty()) {
+                    let mut line = vec![];
+                    for (word, style) in row {
+                        line.push(Span::styled(word, style));
+                    }
+                    content.write_line(&Line::from(line), true);
                 }
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {

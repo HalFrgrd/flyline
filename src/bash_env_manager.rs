@@ -33,22 +33,22 @@ impl BashEnvManager {
     }
 
     /// Cache and return the command type for a given command
-    pub fn cache_command_type(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
-        if let Some(cached) = self.call_type_cache.get(cmd) {
-            return cached.clone();
+    pub fn cache_command_type(&mut self, cmd: &str) {
+        if let Some(_) = self.call_type_cache.get(cmd) {
+            return;
         }
         let result = bash_funcs::call_type(cmd);
-        self.call_type_cache.insert(cmd.to_string(), result.clone());
+        self.call_type_cache.insert(cmd.to_string(), result);
         // log::debug!("call_type result for {}: {:?}", cmd, result);
-        result
     }
 
     /// Get cached command type without updating cache
-    pub fn get_command_info(&self, cmd: &str) -> (bash_funcs::CommandType, String) {
-        self.call_type_cache
-            .get(cmd)
-            .unwrap_or(&(bash_funcs::CommandType::Unknown, String::new()))
-            .clone()
+    pub fn get_command_info(&self, cmd: &str) -> (bash_funcs::CommandType, &str) {
+        if let Some((cmd_type, cmd_str)) = self.call_type_cache.get(cmd) {
+            (cmd_type.clone(), cmd_str.as_str())
+        } else {
+            (bash_funcs::CommandType::Unknown, "")
+        }
     }
 
     /// Get all potential first word completions (aliases, reserved words, functions, builtins, executables)
