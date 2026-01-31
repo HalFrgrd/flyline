@@ -5,7 +5,7 @@ use std::process::Stdio;
 fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
     // Ensure the builder image reflects current source
     let builder_build = Command::new("docker")
-        .args(["build", "-t", "flyline-builder", "-f", "Dockerfile", "."])
+        .args(["build", "--tag", "flyline_built_library", "--file", "Dockerfile", "--target", "flyline_built_library", "."])
         .output()?;
 
     if !builder_build.status.success() {

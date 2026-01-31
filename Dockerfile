@@ -35,9 +35,13 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 
 # Stage 3: Final Build
-FROM chef AS flyline-builder-image
+FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN cargo build --release
+
+# Stage 4: only output. This won't have anything in the file system apart from the built library
+FROM scratch AS flyline_built_library
+COPY --from=builder /app/target/release/libflyline.so /libflyline.so
