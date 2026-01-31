@@ -1,4 +1,4 @@
-use crate::active_suggestions::{ActiveSuggestions, Suggestion};
+use crate::active_suggestions::{self, ActiveSuggestions, Suggestion};
 use crate::bash_env_manager::BashEnvManager;
 use crate::bash_funcs;
 use crate::command_acceptance;
@@ -465,6 +465,22 @@ impl App {
         // log::debug!("Key pressed: {:?}", key);
 
         match key {
+            KeyEvent {
+                code: KeyCode::Left,
+                ..
+            } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                    active_suggestions.on_left_arrow();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                ..
+            } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                    active_suggestions.on_right_arrow();
+                }
+            }
             // Handle Right/End with history suggestion logic
             KeyEvent {
                 code: KeyCode::Right | KeyCode::End,
@@ -473,6 +489,13 @@ impl App {
                 if let Some((_, suf)) = &self.history_suggestion {
                     self.buffer.insert_str(suf);
                     self.buffer.move_to_end();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Up, ..
+            } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                    active_suggestions.on_up_arrow();
                 }
             }
             KeyEvent {
@@ -491,6 +514,14 @@ impl App {
                 {
                     let new_command = entry.command.clone();
                     self.buffer.replace_buffer(new_command.as_str());
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                    active_suggestions.on_down_arrow();
                 }
             }
             KeyEvent {
@@ -1086,7 +1117,7 @@ impl App {
         //     ));
         // }
 
-        match &self.content_mode {
+        match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
                 let max_num_rows = 10;
@@ -1113,6 +1144,9 @@ impl App {
                     }
                 }
 
+                let num_rows_used = rows.iter().filter(|r| !r.is_empty()).count();
+                let num_logical_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+
                 for row in rows.into_iter().filter(|r| !r.is_empty()) {
                     let mut line = vec![];
                     for (word, style) in row {
@@ -1120,6 +1154,7 @@ impl App {
                     }
                     content.write_line(&Line::from(line), true);
                 }
+                active_suggestions.update_grid_size(num_rows_used, num_logical_cols);
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
                 content.newline();

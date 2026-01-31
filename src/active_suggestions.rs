@@ -51,6 +51,7 @@ pub struct ActiveSuggestions {
     pub suggestions: Vec<Suggestion>,
     selected_index: usize,
     pub word_under_cursor: SubString,
+    last_grid_size: (usize, usize),
 }
 
 impl ActiveSuggestions {
@@ -65,18 +66,51 @@ impl ActiveSuggestions {
             suggestions,
             selected_index: 0,
             word_under_cursor,
+            last_grid_size: (0, 0),
         })
     }
 
     pub fn on_tab(&mut self, shift_tab: bool) {
         // Logic to handle tab key when active suggestions are present
         if shift_tab {
-            let un_wrapped_index = self.selected_index as i64 - 1;
-            let wrapped_index = un_wrapped_index.rem_euclid(self.suggestions.len() as i64);
-            self.selected_index = wrapped_index as usize;
+            self.on_up_arrow();
         } else {
-            self.selected_index = (self.selected_index + 1) % self.suggestions.len();
+            self.on_down_arrow();
         }
+    }
+
+    pub fn sanitize_selected_index(&mut self) {
+        if self.selected_index >= self.suggestions.len() {
+            self.selected_index = 0;
+        }
+    }
+
+    pub fn on_right_arrow(&mut self) {
+        self.selected_index += self.last_grid_size.0;
+        self.sanitize_selected_index();
+    }
+
+    pub fn on_left_arrow(&mut self) {
+        if self.selected_index < self.last_grid_size.0 {
+            self.selected_index = 0;
+        } else {
+            self.selected_index -= self.last_grid_size.0;
+        }
+        self.sanitize_selected_index();
+    }
+
+    pub fn on_down_arrow(&mut self) {
+        self.selected_index += 1;
+        self.sanitize_selected_index();
+    }
+
+    pub fn on_up_arrow(&mut self) {
+        if self.selected_index == 0 {
+            self.selected_index = self.suggestions.len() - 1;
+        } else {
+            self.selected_index -= 1;
+        }
+        self.sanitize_selected_index();
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, bool)> {
@@ -114,8 +148,11 @@ impl ActiveSuggestions {
         if !current_col.is_empty() && total_columns + col_width <= cols {
             grid.push((current_col, col_width));
         }
-
         grid
+    }
+
+    pub fn update_grid_size(&mut self, rows: usize, cols: usize) {
+        self.last_grid_size = (rows, cols);
     }
 
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
