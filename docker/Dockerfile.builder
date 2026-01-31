@@ -5,6 +5,7 @@
 # so that we don't have to recompile all dependencies on every code change.
 
 # Stage 1: Builder - Use Ubuntu 16.04 for glibc 2.23 compatibility
+# targetting this older glibc version ensures compatibility with a wide range of host systems
 FROM ubuntu:16.04 AS chef
 
 # Prevent interactive prompts during package installation
@@ -21,11 +22,9 @@ RUN apt-get update && apt-get install -y \
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Set working directory
 WORKDIR /app
-
 RUN cargo install cargo-chef --locked
+
 
 # Stage 2: Planner
 FROM chef AS planner
@@ -34,14 +33,16 @@ COPY src ./src
 RUN cargo chef prepare --recipe-path recipe.json
 
 
-# Stage 3: Final Build
-FROM chef AS builder
+# Stage 3: Run final Build
+FROM chef AS flyline-builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN cargo build --release
 
-# Stage 4: only output. This won't have anything in the file system apart from the built library
-FROM scratch AS flyline_built_library
-COPY --from=builder /app/target/release/libflyline.so /libflyline.so
+
+# Stage 4: Build image with output. This won't have anything in the file system apart from the built library
+# this makes it convenient to copy the built library without creating a container
+FROM scratch AS flyline-built-library
+COPY --from=flyline-builder /app/target/release/libflyline.so /libflyline.so

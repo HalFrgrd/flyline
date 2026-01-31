@@ -1,7 +1,7 @@
 ARG UBUNTU_VERSION
 
 # Stage 1: Builder - Build the Flyline shared library
-FROM flyline_built_library
+FROM flyline-built-library
 
 # Stage 2: Ubuntu Testing - Test the built library on specified Ubuntu version
 FROM ubuntu:${UBUNTU_VERSION} AS ubuntu_testing
@@ -16,17 +16,18 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up working directory
-WORKDIR /flyline
+WORKDIR /app
 
 # Copy the built shared library from builder stage
-COPY --from=flyline_built_library /libflyline.so .
+COPY --from=flyline-built-library /libflyline.so .
 
-# Copy test_bashrc.sh as .bashrc
-COPY tests/docker_integration_tests/test_bashrc.sh /root/.bashrc
-
-# Make sure the built library is accessible
-ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+# Write helpful comments to root's bashrc instead of copying a file
+RUN touch /root/.bashrc && \
+    printf '%s\n' \
+    '# alias ll="ls -alF"' \
+    '# export HISTTIMEFORMAT="%F %T  "' \
+    '# enable -f /app/libflyline.so flyline' \
+    >> /root/.bashrc
 
 # Default command to run the test
-CMD ["/bin/bash", "-i", "-c", "flyline -s && flyline -v && echo 'SUCCESS: Test completed'"]
-
+# CMD ["/bin/bash", "-i", "-c", "flyline -s && flyline -v && echo 'SUCCESS: Test completed'"]

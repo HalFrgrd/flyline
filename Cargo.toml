@@ -36,7 +36,3 @@ features = ["event-stream"]
 version = "1.47.1"
 features = ["rt-multi-thread", "io-util", "sync", "full", "net", "signal", "rt", "process", "time", "io-std", "parking_lot", "macros"]
 default-features = false
-
-[dev-dependencies]
-tempfile = "3.24.0"
-
