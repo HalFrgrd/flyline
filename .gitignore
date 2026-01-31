@@ -1,2 +1,3 @@
-/target
+target/
 *.so
+docker_build/
