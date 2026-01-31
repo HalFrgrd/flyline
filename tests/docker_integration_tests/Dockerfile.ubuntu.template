@@ -1,8 +1,9 @@
+ARG UBUNTU_VERSION
+
 # Stage 1: Builder - Build the Flyline shared library
-FROM flyline-builder-image AS builder
+FROM flyline-builder AS builder
 
 # Stage 2: Ubuntu Testing - Test the built library on specified Ubuntu version
-ARG UBUNTU_VERSION
 FROM ubuntu:${UBUNTU_VERSION} AS ubuntu_testing
 
 # Prevent interactive prompts during package installation

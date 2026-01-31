@@ -1,9 +1,20 @@
 use anyhow::Result;
 use std::process::Command;
+use std::process::Stdio;
 
 fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
+    // Ensure the builder image reflects current source
+    let builder_build = Command::new("docker")
+        .args(["build", "-t", "flyline-builder", "-f", "Dockerfile", "."])
+        .output()?;
+
+    if !builder_build.status.success() {
+        let stderr = String::from_utf8_lossy(&builder_build.stderr);
+        anyhow::bail!("Builder image build failed: {}", stderr);
+    }
+
     // Build the Docker image first using docker command
-    let build_output = Command::new("docker")
+    let build_status = Command::new("docker")
         .args([
             "build",
             "--target",
@@ -16,33 +27,38 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
             &format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
             ".",
         ])
-        .output()?;
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
 
-    if !build_output.status.success() {
-        let stderr = String::from_utf8_lossy(&build_output.stderr);
-        anyhow::bail!("Docker build failed: {}", stderr);
+    if !build_status.success() {
+        anyhow::bail!("Docker build failed");
     }
 
     // Test the built image by running it
-    let run_output = Command::new("docker")
+    let run_status = Command::new("docker")
         .args([
             "run",
             "--rm",
             &format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
         ])
-        .output()?;
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
 
-    // Print stdout for debugging
-    let stdout = String::from_utf8_lossy(&run_output.stdout);
-    println!("Docker run output: {}", stdout);
-
-    if !run_output.status.success() {
-        let stderr = String::from_utf8_lossy(&run_output.stderr);
-        anyhow::bail!("Docker run failed: {}", stderr);
+    if !run_status.success() {
+        anyhow::bail!("Docker run failed");
     }
 
     println!("Successfully tested Ubuntu {} with flyline", ubuntu_version);
     Ok(())
+}
+
+#[test]
+fn test_ubuntu_2404() {
+    if let Err(e) = run_ubuntu_version_test("24.04") {
+        panic!("Ubuntu 24.04 integration test failed: {}", e);
+    }
 }
 
 #[test]
