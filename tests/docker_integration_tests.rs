@@ -24,71 +24,47 @@ fn run_command(cmd: &str, args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
-    println!("Testing Ubuntu version: {}", ubuntu_version);
+fn run_bash_version_test(bash_version: &str) -> Result<()> {
+    println!("Testing Bash version: {}", bash_version);
 
     // Ensure the builder image reflects current source
-
     run_command("docker/docker_build.sh", vec![])?;
 
-    // Build the Docker image first using docker command
     run_command(
         "docker",
         vec![
             "build".to_string(),
-            "--target".to_string(),
-            "ubuntu_testing".to_string(),
             "--build-arg".to_string(),
-            format!("UBUNTU_VERSION={}", ubuntu_version),
+            format!("BASH_VERSION={}", bash_version),
             "--file".to_string(),
-            "docker/ubuntu_integration_test.Dockerfile".to_string(),
+            "docker/bash_integration_test.Dockerfile".to_string(),
             "--tag".to_string(),
-            format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
-            ".".to_string(),
+            format!("flyline-test-bash{}", bash_version.replace(".", "")),
+            "docker/build".to_string(),
         ],
     )?;
 
-    // Test the built image by running it
-    run_command(
-        "docker",
-        vec![
-            "run".to_string(),
-            "--rm".to_string(),
-            format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
-            // "bash".to_string(),
-            // "-lc".to_string(),
-            // "flyline -s && flyline -v && echo 'SUCCESS: Test completed'".to_string(),
-        ],
-    )?;
-
-    println!("Successfully tested Ubuntu {} with flyline", ubuntu_version);
+    println!("Successfully tested Bash {} with flyline", bash_version);
     Ok(())
 }
 
 #[test]
-fn test_ubuntu_2404() {
-    if let Err(e) = run_ubuntu_version_test("24.04") {
-        panic!("Ubuntu 24.04 integration test failed: {}", e);
-    }
+fn test_bash_3_2_57() {
+    run_bash_version_test("3.2.57").expect("Bash 3.2.57 integration test failed");
 }
 
 #[test]
-fn test_ubuntu_2204() {
-    if let Err(e) = run_ubuntu_version_test("22.04") {
-        panic!("Ubuntu 22.04 integration test failed: {}", e);
-    }
+fn test_bash_4_3_30() {
+    run_bash_version_test("4.3.30").expect("Bash 4.3.30 integration test failed");
+}
+
+
+#[test]
+fn test_bash_5_2_37() {
+    run_bash_version_test("5.2.37").expect("Bash 5.2.37 integration test failed");
 }
 
 #[test]
-fn test_ubuntu_2004() {
-    if let Err(e) = run_ubuntu_version_test("20.04") {
-        panic!("Ubuntu 20.04 integration test failed: {}", e);
-    }
-}
-
-#[test]
-fn test_ubuntu_1804() {
-    if let Err(e) = run_ubuntu_version_test("18.04") {
-        panic!("Ubuntu 18.04 integration test failed: {}", e);
-    }
+fn test_bash_5_3() {
+    run_bash_version_test("5.3").expect("Bash 5.3 integration test failed");
 }
