@@ -1,6 +1,6 @@
 # Dockerfile for Charmbracelet VHS using official image as base
 # Run with:
-# docker build -f docker/Dockerfile.vhs --target vhs-extracted-gif -o . .
+# docker build -f docker/vhs.Dockerfile --target vhs-extracted-gif -o . .
 
 # Optional stage reference to the built library image available locally
 FROM flyline-extracted-library AS flyline-extracted-library

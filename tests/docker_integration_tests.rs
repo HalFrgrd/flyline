@@ -29,7 +29,7 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
 
     // Ensure the builder image reflects current source
 
-    run_command("docker/docker_build.sh", vec![])?;
+    // run_command("docker/docker_build.sh", vec![])?;
 
     // Build the Docker image first using docker command
     run_command(
@@ -41,7 +41,7 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
             "--build-arg".to_string(),
             format!("UBUNTU_VERSION={}", ubuntu_version),
             "--file".to_string(),
-            "docker/Dockerfile.ubuntu.template".to_string(),
+            "docker/ubuntu_integration_test.Dockerfile".to_string(),
             "--tag".to_string(),
             format!("flyline-test-ubuntu{}", ubuntu_version.replace(".", "")),
             ".".to_string(),

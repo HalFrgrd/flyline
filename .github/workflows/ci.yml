@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Dockerized 16.04 build
-        run : ./docker/docker_build.sh
+        run : ./docker/docker_build_gha.sh
 
       - name: Run library tests inside Docker container
-        run: docker run --rm flyline-builder bash -lc "cargo test --release --lib"
+        run: docker run --rm flyline-builder:latest bash -lc "cargo test --release --lib"
