@@ -21,7 +21,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          file: docker/release_builder.Dockerfile
+          target: flyline-builder
           tags: "flyline-builder:latest"
           cache-from: type=gha
           cache-to: type=gha,mode=max
