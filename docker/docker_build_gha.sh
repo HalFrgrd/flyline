@@ -6,6 +6,7 @@ docker buildx build \
     --file docker/release_builder.Dockerfile \
     --target flyline-builder \
     --tag flyline-builder:latest \
+    --load \
     --cache-to=type=gha,mode=max \
     --cache-from=type=gha,mode=max \
     .
