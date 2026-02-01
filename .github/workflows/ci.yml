@@ -9,7 +9,7 @@ on:
 jobs:
   build-ubuntu-1604:
     name: Build and test on Ubuntu 16.04
-    runs-on: ubuntu-latest
+    runs-on: debian-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,13 +46,13 @@ jobs:
           name: built-flyline-library
           path: ${{ runner.temp }}/flyline-build/libflyline.so
 
-  integration-test-ubuntu:
-    name: Integration test on Ubuntu ${{ matrix.ubuntu_version }} using built library
+  bash-integration-tests:
+    name: Test bashn${{ matrix.bash_version }} using built library
     needs: build-ubuntu-1604
-    runs-on: ubuntu-latest
+    runs-on: debian-latest
     strategy:
       matrix:
-        ubuntu_version: ["22.04", "24.04"]
+        bash_version: ["4.4", "5.0", "5.1", "5.2"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,8 +70,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ runner.temp }}/flyline-build
-          # load: true # Storing the image in docker is slow, so try and rely on caching
-          file: docker/ubuntu_integration_test.Dockerfile
-          build-args: UBUNTU_VERSION=${{ matrix.ubuntu_version }}
+          file: docker/bash_integration_test.Dockerfile
+          build-args: BASH_VERSION=${{ matrix.bash_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
