@@ -26,7 +26,7 @@ jobs:
           target: flyline-extracted-library
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: type=local,dest=${{ runner.temp }}
+          outputs: type=local,dest=${{ runner.temp }}/flyline-build
 
       - name: Run tests
         # running the tests by building an image is a cache friendly way to do it
@@ -44,7 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: built-flyline-library
-          path: ${{ runner.temp }}/libflyline.so
+          path: ${{ runner.temp }}/flyline-build/libflyline.so
 
   integration-test-ubuntu2204:
     name: Integration test on Ubuntu 22.04 using built library
@@ -54,13 +54,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Download built library artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: built-flyline-library
+          path: ${{ runner.temp }}/flyline-build
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Run integration tests
         uses: docker/build-push-action@v6
         with:
-          context: ${{ runner.temp }}
+          context: ${{ runner.temp }}/flyline-build
           # load: true # Storing the image in docker is slow, so try and rely on caching
           file: docker/ubuntu_integration_test.Dockerfile
           target: ubuntu_testing
