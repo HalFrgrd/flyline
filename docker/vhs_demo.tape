@@ -43,8 +43,9 @@ Show
 
 Type "echo long command here abcdefghijklmnopqrstuvwwxyz"
 Sleep 1000ms
-Home
-
+Left 50
+Sleep 1000ms
+Right 50
 Enter
 
 # Pause for dramatic effect...
