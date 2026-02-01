@@ -17,16 +17,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and store locally
+      - name: Build
         uses: docker/build-push-action@v6
         with:
           context: .
-          load: true
+          # load: true # Storing the image in docker is slow, so try and rely on caching
           file: docker/release_builder.Dockerfile
           target: flyline-builder
-          tags: "flyline-builder:latest"
+          # tags: "flyline-builder:latest"
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Run library tests inside Docker container
-        run: docker run --rm flyline-builder:latest bash -lc "cargo test --release --lib"
+      - name: Run tests
+        # running the tests by building an image is a cache friendly way to do it
+        # if we build a container, the previous step would need to have exported the image to docker
+        # which is slow
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/release_builder.Dockerfile
+          target: flyline-tests
+          cache-from: type=gha
+          # cache-to: type=gha,mode=max

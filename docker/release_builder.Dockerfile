@@ -41,8 +41,12 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN cargo build --release
 
+# Stage 4: Run library tests inside the builder container
+FROM flyline-builder AS flyline-tests
+RUN cargo test --release --lib
 
-# Stage 4: Build image with output. This won't have anything in the file system apart from the built library
+
+# Stage 5: Build image with output. This won't have anything in the file system apart from the built library
 # this makes it convenient to copy the built library without creating a container
 FROM scratch AS flyline-extracted-library
 COPY --from=flyline-builder /app/target/release/libflyline.so /libflyline.so
