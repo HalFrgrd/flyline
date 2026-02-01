@@ -29,7 +29,7 @@ fn run_ubuntu_version_test(ubuntu_version: &str) -> Result<()> {
 
     // Ensure the builder image reflects current source
 
-    // run_command("docker/docker_build.sh", vec![])?;
+    run_command("docker/docker_build.sh", vec![])?;
 
     // Build the Docker image first using docker command
     run_command(
