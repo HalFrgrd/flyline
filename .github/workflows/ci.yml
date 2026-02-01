@@ -51,6 +51,7 @@ jobs:
     needs: build-ubuntu-1604
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         bash_version: ["4.4.30", "5.1.16"]
     steps:
