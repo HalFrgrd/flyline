@@ -46,10 +46,13 @@ jobs:
           name: built-flyline-library
           path: ${{ runner.temp }}/flyline-build/libflyline.so
 
-  integration-test-ubuntu2204:
-    name: Integration test on Ubuntu 22.04 using built library
+  integration-test-ubuntu:
+    name: Integration test on Ubuntu ${{ matrix.ubuntu_version }} using built library
     needs: build-ubuntu-1604
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ubuntu_version: ["22.04", "24.04"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,7 +72,6 @@ jobs:
           context: ${{ runner.temp }}/flyline-build
           # load: true # Storing the image in docker is slow, so try and rely on caching
           file: docker/ubuntu_integration_test.Dockerfile
-          target: ubuntu_testing
-          build-args: UBUNTU_VERSION=22.04
+          build-args: UBUNTU_VERSION=${{ matrix.ubuntu_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
