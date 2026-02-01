@@ -34,6 +34,21 @@ struct SnapshotManager {
     last_snapshot_time: std::time::Instant,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum WordDelim {
+    WhiteSpace,
+    LessStrict,
+}
+
+impl WordDelim {
+    fn is_word_boundary(&self, c: char) -> bool {
+        match self {
+            WordDelim::WhiteSpace => c.is_whitespace(),
+            WordDelim::LessStrict => c.is_whitespace() || c.is_ascii_punctuation(),
+        }
+    }
+}
+
 pub struct TextBuffer {
     buf: String,
     // Byte index of the cursor position in the buffer
@@ -67,6 +82,13 @@ impl TextBuffer {
             }
             KeyEvent {
                 code: KeyCode::Backspace,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.delete_one_word_left(WordDelim::LessStrict);
+            }
+            KeyEvent {
+                code: KeyCode::Backspace,
                 modifiers: KeyModifiers::CONTROL,
                 ..
             }
@@ -81,7 +103,14 @@ impl TextBuffer {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.delete_one_word_left();
+                self.delete_one_word_left(WordDelim::WhiteSpace);
+            }
+            KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.delete_one_word_right(WordDelim::LessStrict);
             }
             KeyEvent {
                 code: KeyCode::Delete,
@@ -93,7 +122,7 @@ impl TextBuffer {
                 modifiers: KeyModifiers::ALT,
                 ..
             } => {
-                self.delete_one_word_right();
+                self.delete_one_word_right(WordDelim::WhiteSpace);
             }
             KeyEvent {
                 code: KeyCode::Delete,
@@ -106,7 +135,7 @@ impl TextBuffer {
                 ..
             } => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.move_one_word_left();
+                    self.move_one_word_left(WordDelim::WhiteSpace);
                 } else {
                     self.move_left();
                 }
@@ -116,7 +145,7 @@ impl TextBuffer {
                 ..
             } => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.move_one_word_right();
+                    self.move_one_word_right(WordDelim::WhiteSpace);
                 } else {
                     self.move_right();
                 }
@@ -213,16 +242,16 @@ impl TextBuffer {
             .map_or(self.buf.len(), |(i, _)| i)
     }
 
-    pub fn move_one_word_left(&mut self) {
+    pub fn move_one_word_left(&mut self, delim: WordDelim) {
         self.cursor_byte = self
             .buf
             .char_indices()
             .rev()
             .skip_while(|(i, _)| *i >= self.cursor_byte)
-            .skip_while(|(_, c)| c.is_whitespace())
+            .skip_while(|(_, c)| delim.is_word_boundary(*c))
             .tuple_windows()
             .find_map(|((i, c), (_, next_c))| {
-                if !c.is_whitespace() && next_c.is_whitespace() {
+                if !delim.is_word_boundary(c) && delim.is_word_boundary(next_c) {
                     Some(i)
                 } else {
                     None
@@ -231,18 +260,15 @@ impl TextBuffer {
             .unwrap_or(0);
     }
 
-    fn right_word_move_pos(&self) -> usize {
-        self.buf
+    
+    pub fn move_one_word_right(&mut self, delim: WordDelim) {
+        self.cursor_byte = self.buf
             .char_indices()
             .skip_while(|(i, _)| *i < self.cursor_byte)
-            .skip_while(|(_, c)| !c.is_whitespace())
-            .skip_while(|(_, c)| c.is_whitespace())
+            .skip_while(|(_, c)| delim.is_word_boundary(*c))
+            .skip_while(|(_, c)| !delim.is_word_boundary(*c))
             .next()
             .map_or(self.buf.len(), |(i, _)| i)
-    }
-
-    pub fn move_one_word_right(&mut self) {
-        self.cursor_byte = self.right_word_move_pos();
     }
 
     pub fn move_to_start(&mut self) {
@@ -352,13 +378,14 @@ mod test_movement {
 
     #[test]
     fn move_one_word_left() {
-        let mut tb = TextBuffer::new("abc def   ");
-        assert_eq!(tb.cursor_byte, "abc def   ".len());
-        tb.move_one_word_left();
-        assert_eq!(tb.cursor_byte, "abc ".len());
+        let mut tb = TextBuffer::new("abc    def   asdfasdf");
+        tb.move_end_of_line();
         tb.move_left();
-        assert_eq!(tb.cursor_byte, "abc".len());
-        tb.move_one_word_left();
+        tb.move_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.cursor_byte, "abc    def   ".len());
+        tb.move_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.cursor_byte, "abc    ".len());
+        tb.move_one_word_left(WordDelim::WhiteSpace);
         assert_eq!(tb.cursor_byte, "".len());
     }
 
@@ -366,11 +393,9 @@ mod test_movement {
     fn move_one_word_right() {
         let mut tb = TextBuffer::new("  abc def");
         tb.move_to_start();
-        tb.move_one_word_right();
-        assert_eq!(tb.cursor_byte, "  ".len());
-        tb.move_one_word_right();
-        assert_eq!(tb.cursor_byte, "  abc ".len());
-        tb.move_one_word_right();
+        tb.move_one_word_right(WordDelim::WhiteSpace);
+        assert_eq!(tb.cursor_byte, "  abc".len());
+        tb.move_one_word_right(WordDelim::WhiteSpace);
         assert_eq!(tb.cursor_byte, "  abc def".len());
     }
 
@@ -547,19 +572,67 @@ impl TextBuffer {
         self.buf.drain(self.cursor_byte..cursor_pos_right);
     }
 
-    pub fn delete_one_word_left(&mut self) {
+    pub fn delete_one_word_left(&mut self, delim: WordDelim) {
         self.push_snapshot(true);
         let old_cursor_col = self.cursor_byte;
-        self.move_one_word_left();
+        if delim == WordDelim::WhiteSpace {
+            self.cursor_byte = self
+            .buf
+            .char_indices()
+            .rev()
+            .skip_while(|(i, _)| *i >= self.cursor_byte)
+            .skip_while(|(_, c)| delim.is_word_boundary(*c))
+            .tuple_windows()
+            .find_map(|((i, c), (_, next_c))| {
+                if !delim.is_word_boundary(c) && delim.is_word_boundary(next_c) {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+        } else {
+            self.cursor_byte = match self
+                .buf
+                .char_indices()
+                .rev()
+                .skip_while(|(i, _)| *i > self.cursor_byte)
+                .next() {
+                    Some((_, c)) => {
+                        let classify_char = if c.is_ascii_punctuation() {
+                            |c: char| c.is_ascii_punctuation()
+                        } else if c.is_whitespace() {
+                            |c: char | c.is_whitespace()
+                        } else {
+                            |c: char| !c.is_whitespace() && !c.is_ascii_punctuation()
+                        };
+                        self.buf
+                            .char_indices()
+                            .rev()
+                            .skip_while(|(i, _)| *i >= self.cursor_byte) // >= so that we skip one
+                            .tuple_windows()
+                            .find_map(|((i, c), (_, next_c))| {
+                                if classify_char(c) && !classify_char(next_c) {
+                                    Some(i)
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(0)
+                    }
+                    None => 0,
+                };
+        }
+        
         assert!(self.cursor_byte <= old_cursor_col);
         self.buf.drain(self.cursor_byte..old_cursor_col);
     }
 
-    pub fn delete_one_word_right(&mut self) {
-        self.push_snapshot(true);
-        let cursor_pos_right = self.right_word_move_pos();
-        assert!(self.cursor_byte <= cursor_pos_right);
-        self.buf.drain(self.cursor_byte..cursor_pos_right);
+    pub fn delete_one_word_right(&mut self, delim: WordDelim) {
+        // self.push_snapshot(true);
+        // let cursor_pos_right = self.right_word_move_pos(delim);
+        // assert!(self.cursor_byte <= cursor_pos_right);
+        // self.buf.drain(self.cursor_byte..cursor_pos_right);
     }
 
     pub fn replace_word_under_cursor(
@@ -702,6 +775,56 @@ mod test_editing_advanced {
             },
         )
         .unwrap();
+    }
+
+
+    #[test]
+    fn delete_one_word_left() {
+        let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
+        tb.move_end_of_line();
+        tb.delete_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "cargo test abc::def::ghi   ");
+        tb.delete_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "cargo test ");
+        tb.delete_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "cargo ");
+    }
+
+
+    #[test]
+    fn delete_one_word_left_less_strict() {
+        let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
+        tb.move_end_of_line();
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc::def::ghi   /etc/");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc::def::ghi   /etc");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc::def::ghi   /");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc::def::ghi   ");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc::def::ghi");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc::def::");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc::def");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc::");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "cargo test abc");
+    }
+
+    #[test]
+    fn delete_one_word_right() {
+        let mut tb = TextBuffer::new("Hello,   world!");
+        tb.move_to_start();
+        tb.delete_one_word_right(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "   world!");
+        tb.delete_one_word_right(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "world!");
+        tb.delete_one_word_right(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "world!");
     }
 }
 

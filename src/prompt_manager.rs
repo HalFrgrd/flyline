@@ -13,7 +13,7 @@ fn get_current_readline_prompt() -> Option<String> {
         if !bash_prompt_cstr.is_null() {
             let c_str = std::ffi::CStr::from_ptr(bash_prompt_cstr);
             if let Ok(prompt_str) = c_str.to_str() {
-                log::debug!("Fetched current_readline_prompt: {}", prompt_str);
+                // log::debug!("Fetc44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444 hed current_readline_prompt: {}", prompt_str);
                 Some(prompt_str.to_string())
             } else {
                 log::debug!("current_readline_prompt is not valid UTF-8");
