@@ -49,19 +49,19 @@ fn run_bash_version_test(bash_version: &str) -> Result<()> {
 }
 
 #[test]
-fn test_bash_3_2_57() {
-    run_bash_version_test("3.2.57").expect("Bash 3.2.57 integration test failed");
+fn test_bash_3_2() {
+    run_bash_version_test("3.2").expect("Bash 3.2 integration test failed");
 }
 
 #[test]
-fn test_bash_4_3_30() {
-    run_bash_version_test("4.3.30").expect("Bash 4.3.30 integration test failed");
+fn test_bash_4_3() {
+    run_bash_version_test("4.3").expect("Bash 4.3 integration test failed");
 }
 
 
 #[test]
-fn test_bash_5_2_37() {
-    run_bash_version_test("5.2.37").expect("Bash 5.2.37 integration test failed");
+fn test_bash_5_2() {
+    run_bash_version_test("5.2").expect("Bash 5.2 integration test failed");
 }
 
 #[test]

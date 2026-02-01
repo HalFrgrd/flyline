@@ -9,7 +9,7 @@ on:
 jobs:
   build-ubuntu-1604:
     name: Build and test on Ubuntu 16.04
-    runs-on: debian-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
   bash-integration-tests:
     name: Test bashn${{ matrix.bash_version }} using built library
     needs: build-ubuntu-1604
-    runs-on: debian-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         bash_version: ["4.4", "5.0", "5.1", "5.2"]
