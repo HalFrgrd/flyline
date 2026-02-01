@@ -260,9 +260,9 @@ impl TextBuffer {
             .unwrap_or(0);
     }
 
-    
     pub fn move_one_word_right(&mut self, delim: WordDelim) {
-        self.cursor_byte = self.buf
+        self.cursor_byte = self
+            .buf
             .char_indices()
             .skip_while(|(i, _)| *i < self.cursor_byte)
             .skip_while(|(_, c)| delim.is_word_boundary(*c))
@@ -577,62 +577,97 @@ impl TextBuffer {
         let old_cursor_col = self.cursor_byte;
         if delim == WordDelim::WhiteSpace {
             self.cursor_byte = self
-            .buf
-            .char_indices()
-            .rev()
-            .skip_while(|(i, _)| *i >= self.cursor_byte)
-            .skip_while(|(_, c)| delim.is_word_boundary(*c))
-            .tuple_windows()
-            .find_map(|((i, c), (_, next_c))| {
-                if !delim.is_word_boundary(c) && delim.is_word_boundary(next_c) {
-                    Some(i)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
+                .buf
+                .char_indices()
+                .rev()
+                .skip_while(|(i, _)| *i >= self.cursor_byte)
+                .skip_while(|(_, c)| delim.is_word_boundary(*c))
+                .tuple_windows()
+                .find_map(|((i, c), (_, next_c))| {
+                    if !delim.is_word_boundary(c) && delim.is_word_boundary(next_c) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0);
         } else {
             self.cursor_byte = match self
                 .buf
                 .char_indices()
                 .rev()
                 .skip_while(|(i, _)| *i > self.cursor_byte)
-                .next() {
-                    Some((_, c)) => {
-                        let classify_char = if c.is_ascii_punctuation() {
-                            |c: char| c.is_ascii_punctuation()
-                        } else if c.is_whitespace() {
-                            |c: char | c.is_whitespace()
-                        } else {
-                            |c: char| !c.is_whitespace() && !c.is_ascii_punctuation()
-                        };
-                        self.buf
-                            .char_indices()
-                            .rev()
-                            .skip_while(|(i, _)| *i >= self.cursor_byte) // >= so that we skip one
-                            .tuple_windows()
-                            .find_map(|((i, c), (_, next_c))| {
-                                if classify_char(c) && !classify_char(next_c) {
-                                    Some(i)
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or(0)
-                    }
-                    None => 0,
-                };
+                .next()
+            {
+                Some((_, c)) => {
+                    let classify_char = if c.is_ascii_punctuation() {
+                        |c: char| c.is_ascii_punctuation()
+                    } else if c.is_whitespace() {
+                        |c: char| c.is_whitespace()
+                    } else {
+                        |c: char| !c.is_whitespace() && !c.is_ascii_punctuation()
+                    };
+                    self.buf
+                        .char_indices()
+                        .rev()
+                        .skip_while(|(i, _)| *i >= self.cursor_byte) // >= so that we skip one
+                        .tuple_windows()
+                        .find_map(|((i, c), (_, next_c))| {
+                            if classify_char(c) && !classify_char(next_c) {
+                                Some(i)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(0)
+                }
+                None => 0,
+            };
         }
-        
+
         assert!(self.cursor_byte <= old_cursor_col);
         self.buf.drain(self.cursor_byte..old_cursor_col);
     }
 
     pub fn delete_one_word_right(&mut self, delim: WordDelim) {
-        // self.push_snapshot(true);
-        // let cursor_pos_right = self.right_word_move_pos(delim);
-        // assert!(self.cursor_byte <= cursor_pos_right);
-        // self.buf.drain(self.cursor_byte..cursor_pos_right);
+        self.push_snapshot(true);
+        let end = self.buf.len();
+        let end_cursor = if delim == WordDelim::WhiteSpace {
+            self.buf
+                .char_indices()
+                .skip_while(|(i, _)| *i <= self.cursor_byte)
+                .skip_while(|(_, c)| delim.is_word_boundary(*c))
+                .skip_while(|(_, c)| !delim.is_word_boundary(*c))
+                .next()
+                .map_or(end, |(i, _)| i)
+        } else {
+            match self
+                .buf
+                .char_indices()
+                .skip_while(|(i, _)| *i < self.cursor_byte)
+                .next()
+            {
+                Some((_, c)) => {
+                    let classify_char = if c.is_ascii_punctuation() {
+                        |c: char| c.is_ascii_punctuation()
+                    } else if c.is_whitespace() {
+                        |c: char| c.is_whitespace()
+                    } else {
+                        |c: char| !c.is_whitespace() && !c.is_ascii_punctuation()
+                    };
+                    self.buf
+                        .char_indices()
+                        .skip_while(|(i, _)| *i <= self.cursor_byte) // >= so that we skip one
+                        .skip_while(|(_, c)| classify_char(*c))
+                        .next()
+                        .map_or(end, |(i, _)| i)
+                }
+                None => end,
+            }
+        };
+
+        assert!(end_cursor >= self.cursor_byte);
+        self.buf.drain(self.cursor_byte..end_cursor);
     }
 
     pub fn replace_word_under_cursor(
@@ -777,7 +812,6 @@ mod test_editing_advanced {
         .unwrap();
     }
 
-
     #[test]
     fn delete_one_word_left() {
         let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
@@ -789,7 +823,6 @@ mod test_editing_advanced {
         tb.delete_one_word_left(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), "cargo ");
     }
-
 
     #[test]
     fn delete_one_word_left_less_strict() {
@@ -817,14 +850,50 @@ mod test_editing_advanced {
 
     #[test]
     fn delete_one_word_right() {
-        let mut tb = TextBuffer::new("Hello,   world!");
-        tb.move_to_start();
+        let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
+        tb.move_start_of_line();
         tb.delete_one_word_right(WordDelim::WhiteSpace);
-        assert_eq!(tb.buffer(), "   world!");
+        assert_eq!(tb.buffer(), " test abc::def::ghi   /etc/asd");
         tb.delete_one_word_right(WordDelim::WhiteSpace);
-        assert_eq!(tb.buffer(), "world!");
+        assert_eq!(tb.buffer(), " abc::def::ghi   /etc/asd");
         tb.delete_one_word_right(WordDelim::WhiteSpace);
-        assert_eq!(tb.buffer(), "world!");
+        assert_eq!(tb.buffer(), "   /etc/asd");
+        tb.delete_one_word_right(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "");
+    }
+
+    #[test]
+    fn delete_one_word_right_less_strict() {
+        let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
+        tb.move_start_of_line();
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), " test abc::def::ghi   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "test abc::def::ghi   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), " abc::def::ghi   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "abc::def::ghi   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "::def::ghi   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "def::ghi   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "::ghi   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "ghi   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "   /etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "/etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "etc/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "/asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "");
     }
 }
 
