@@ -555,6 +555,16 @@ mod test_editing_primitives {
 
 ///////////////////////////////////////////////////////// editing advanced
 impl TextBuffer {
+    fn less_strict_class(c: char) -> u8 {
+        if c.is_whitespace() {
+            0
+        } else if c.is_ascii_punctuation() {
+            1
+        } else {
+            2
+        }
+    }
+
     pub fn delete_backwards(&mut self) {
         // delete one grapheme to the left
         self.push_snapshot(true);
@@ -575,12 +585,13 @@ impl TextBuffer {
     pub fn delete_one_word_left(&mut self, delim: WordDelim) {
         self.push_snapshot(true);
         let old_cursor_col = self.cursor_byte;
+        let mut iter = self
+            .buf
+            .char_indices()
+            .rev()
+            .skip_while(|(i, _)| *i >= self.cursor_byte);
         if delim == WordDelim::WhiteSpace {
-            self.cursor_byte = self
-                .buf
-                .char_indices()
-                .rev()
-                .skip_while(|(i, _)| *i >= self.cursor_byte)
+            self.cursor_byte = iter
                 .skip_while(|(_, c)| delim.is_word_boundary(*c))
                 .tuple_windows()
                 .find_map(|((i, c), (_, next_c))| {
@@ -592,34 +603,23 @@ impl TextBuffer {
                 })
                 .unwrap_or(0);
         } else {
-            self.cursor_byte = match self
-                .buf
-                .char_indices()
-                .rev()
-                .skip_while(|(i, _)| *i > self.cursor_byte)
-                .next()
-            {
-                Some((_, c)) => {
-                    let classify_char = if c.is_ascii_punctuation() {
-                        |c: char| c.is_ascii_punctuation()
-                    } else if c.is_whitespace() {
-                        |c: char| c.is_whitespace()
-                    } else {
-                        |c: char| !c.is_whitespace() && !c.is_ascii_punctuation()
-                    };
-                    self.buf
-                        .char_indices()
-                        .rev()
-                        .skip_while(|(i, _)| *i >= self.cursor_byte) // >= so that we skip one
-                        .tuple_windows()
-                        .find_map(|((i, c), (_, next_c))| {
-                            if classify_char(c) && !classify_char(next_c) {
-                                Some(i)
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or(0)
+            self.cursor_byte = match iter.next() {
+                Some((first_i, first_c)) => {
+                    let class = Self::less_strict_class(first_c);
+                    iter.scan((first_i, first_c), |prev, (i, c)| {
+                        let (prev_i, prev_c) = *prev;
+                        let boundary = if Self::less_strict_class(prev_c) == class
+                            && Self::less_strict_class(c) != class
+                        {
+                            Some(prev_i)
+                        } else {
+                            None
+                        };
+                        *prev = (i, c);
+                        Some(boundary)
+                    })
+                    .find_map(|x| x)
+                    .unwrap_or(0)
                 }
                 None => 0,
             };
@@ -641,26 +641,21 @@ impl TextBuffer {
                 .next()
                 .map_or(end, |(i, _)| i)
         } else {
-            match self
+            let mut iter = self
                 .buf
                 .char_indices()
-                .skip_while(|(i, _)| *i < self.cursor_byte)
-                .next()
-            {
-                Some((_, c)) => {
-                    let classify_char = if c.is_ascii_punctuation() {
-                        |c: char| c.is_ascii_punctuation()
-                    } else if c.is_whitespace() {
-                        |c: char| c.is_whitespace()
-                    } else {
-                        |c: char| !c.is_whitespace() && !c.is_ascii_punctuation()
-                    };
-                    self.buf
-                        .char_indices()
-                        .skip_while(|(i, _)| *i <= self.cursor_byte) // >= so that we skip one
-                        .skip_while(|(_, c)| classify_char(*c))
-                        .next()
-                        .map_or(end, |(i, _)| i)
+                .skip_while(|(i, _)| *i < self.cursor_byte);
+            match iter.next() {
+                Some((_, first_c)) => {
+                    let class = Self::less_strict_class(first_c);
+                    iter.find_map(|(i, c)| {
+                        if Self::less_strict_class(c) != class {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(end)
                 }
                 None => end,
             }
