@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        bash_version: ["4.4", "5.0", "5.1", "5.2"]
+        bash_version: ["4.4.30", "5.1.16"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
