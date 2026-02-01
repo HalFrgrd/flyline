@@ -48,13 +48,23 @@ fn run_bash_version_test(bash_version: &str) -> Result<()> {
     Ok(())
 }
 
-
-#[test]
-fn test_bash_4_4_30() {
-    run_bash_version_test("4.4.30").expect("Bash 4.4.30 integration test failed");
+macro_rules! bash_integration_test {
+    ($name:ident, $version:expr) => {
+        #[test]
+        fn $name() {
+            run_bash_version_test($version)
+                .expect(concat!("Bash ", $version, " integration test failed"));
+        }
+    };
 }
 
-#[test]
-fn test_bash_5_1_16() {
-    run_bash_version_test("5.1.16").expect("Bash 5.1.16 integration test failed");
-}
+// This one fails because of the lack of builtin_help in Bash 4.3
+// #[test]
+// bash_integration_test!(test_bash_4_3_30, "4.3.30");
+
+bash_integration_test!(test_bash_4_4_rc1, "4.4-rc1");
+bash_integration_test!(test_bash_4_4_18, "4.4.18");
+bash_integration_test!(test_bash_5_0, "5.0");
+bash_integration_test!(test_bash_5_1_16, "5.1.16");
+bash_integration_test!(test_bash_5_2, "5.2");
+bash_integration_test!(test_bash_5_3, "5.3");
