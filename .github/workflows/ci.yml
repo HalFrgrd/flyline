@@ -41,7 +41,7 @@ jobs:
           # cache-to: type=gha,mode=max
       
       - name: Save built library artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: built-flyline-library
           path: ${{ runner.temp }}/libflyline.so
