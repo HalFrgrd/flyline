@@ -39,3 +39,25 @@ jobs:
           target: flyline-tests
           cache-from: type=gha
           # cache-to: type=gha,mode=max
+
+  integration-test-ubuntu2204:
+    name: Integration test on Ubuntu 22.04 using built library
+    needs: build-ubuntu-1604
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # load: true # Storing the image in docker is slow, so try and rely on caching
+          file: docker/ubuntu_integration_test.Dockerfile
+          target: ubuntu_testing
+          build-args: UBUNTU_VERSION=22.04
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
