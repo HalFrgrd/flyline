@@ -73,5 +73,5 @@ jobs:
           context: ${{ runner.temp }}/flyline-build
           file: docker/bash_integration_test.Dockerfile
           build-args: BASH_VERSION=${{ matrix.bash_version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
