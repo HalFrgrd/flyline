@@ -1,8 +1,9 @@
 use bash_builtins;
 use libc::{c_char, c_int};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{ Mutex};
 use anyhow::Result;
+use clap::{Arg, Command as ClapCommand};
 
 mod active_suggestions;
 mod app;
@@ -21,41 +22,33 @@ mod tab_completion_context;
 mod text_buffer;
 
 // Global state for our custom input stream
-static FLYLINE_INSTANCE_PTR: Mutex<Option<Arc<Mutex<Flyline>>>> = Mutex::new(None); // TODO: do I need Mutex optoin arc mutex??
+static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None); // TODO: do I need Mutex optoin arc mutex??
 
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
-    if let Some(arc) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_ref() {
-        if let Ok(mut stream) = arc.lock() {
-            return stream.get();
-        }
+    if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_mut() {
+        return boxed.get();
     }
+    eprintln!("flyline_get_char: FLYLINE_INSTANCE_PTR is None");
     bash_symbols::EOF
 }
 
 // C-compatible ungetter function that bash will call
 extern "C" fn flyline_unget_char(c: c_int) -> c_int {
-    // log::debug!(
-    //     "Calling flyline_unget with char: {} (asci={})",
-    //     c,
-    //     c as u8 as char
-    // );
-    if let Some(arc) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_ref() {
-        if let Ok(mut stream) = arc.lock() {
-            return stream.unget(c);
-        }
+    if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_mut() {
+        return boxed.unget(c);
     }
+    eprintln!("flyline_unget_char: FLYLINE_INSTANCE_PTR is None");
     c
 }
 
 extern "C" fn flyline_call_command(
     words: *const bash_symbols::WordList,
 ) -> c_int {
-    if let Some(arc) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_ref() {
-        if let Ok(mut stream) = arc.lock() {
-            return stream.call(words);
-        }
+    if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_mut() {
+        return boxed.call(words);
     }
+    eprintln!("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
     0
 }
 
@@ -107,6 +100,7 @@ impl Flyline {
     }
 
     fn call(&mut self, words: *const bash_symbols::WordList) -> c_int {
+        // TODO: proper error codes (EX_BADSYNTAX, etc)
         let mut args = vec![];
         unsafe {
             let mut current = words;
@@ -115,70 +109,49 @@ impl Flyline {
                 if !word_desc.word.is_null() {
                     let c_str = std::ffi::CStr::from_ptr(word_desc.word);
                     if let Ok(str_slice) = c_str.to_str() {
-                        args.push(str_slice.to_string());
+                        args.push(str_slice);
                     }
                 }
                 current = (*current).next;
             }
         }
 
+        // Parse arguments using clap
+        let app = ClapCommand::new("flyline")
+            .arg(Arg::new("version")
+                .long("version")
+                .action(clap::ArgAction::SetTrue)
+                .help("Show version information"))
+            .arg(Arg::new("disable-animations")
+                .long("disable-animations")
+                .action(clap::ArgAction::SetTrue)
+                .help("Disable animations"));
+
+        let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
+        match app.try_get_matches_from(args_with_prog) {
+            Ok(matches) => {
+                log::debug!("Parsed flyline arguments: {:?}", matches);
+
+                if matches.get_flag("version") {
+                    println!("flyline version {}", env!("CARGO_PKG_VERSION"));
+                    return 0;
+                }
+                
+                if matches.get_flag("disable-animations") {
+                    log::info!("Animations disabled");
+                    // TODO: Set animation flag or pass to app
+                }
+            }
+            Err(e) => {
+                eprintln!("Error parsing arguments: {}", e);
+                return 1;
+            }
+        }
+
+
         log::debug!("flyline called with args: {:?}", args);
         0
 
-        // if args.is_empty() {
-        //     return Err(bash_builtins::Error::Usage);
-        // }
-
-        // for opt in args.options() {
-        //     match opt? {
-        //         Opt::Status => {
-        //             // Iterate through the stream_list linked list and print each entry
-        //             unsafe {
-        //                 let mut current = bash_symbols::stream_list;
-        //                 let mut index = 0;
-
-        //                 println!("=== Stream List ===");
-        //                 while !current.is_null() {
-        //                     let stream = &*current;
-
-        //                     let name = if stream.bash_input.name.is_null() {
-        //                         "null".to_string()
-        //                     } else {
-        //                         std::ffi::CStr::from_ptr(stream.bash_input.name)
-        //                             .to_string_lossy()
-        //                             .into_owned()
-        //                     };
-
-        //                     let stream_type = match stream.bash_input.stream_type {
-        //                         bash_symbols::StreamType::StNone => "st_none",
-        //                         bash_symbols::StreamType::StStdin => "st_stdin",
-        //                         bash_symbols::StreamType::StStream => "st_stream",
-        //                         bash_symbols::StreamType::StString => "st_string",
-        //                         bash_symbols::StreamType::StBStream => "st_bstream",
-        //                     };
-
-        //                     println!("[{}] name: '{}', type: {}", index, name, stream_type);
-
-        //                     current = stream.next;
-        //                     index += 1;
-        //                 }
-        //                 println!("===================");
-        //             }
-        //         }
-        //         Opt::SetKeyBinding(binding) => {
-        //             println!("Not yet implemented: {}", binding);
-        //         }
-        //         Opt::Version => {
-        //             println!("flyline version {}", env!("CARGO_PKG_VERSION"));
-        //         }
-        //     }
-        // }
-
-        // // It is an error if we receive free arguments.
-        // args.finished()?;
-
-        // Ok(())
-        // return 0;
     }
 
     fn get(&mut self) -> c_int {
@@ -234,7 +207,7 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
     long_doc: (&[
-                "flyline: advanced command line interface for bash\0".as_ptr() as *const c_char,
+                "longer docs here\0".as_ptr() as *const c_char,
                 "more help here\0".as_ptr() as *const c_char,
                 ::std::ptr::null()
             ]).as_ptr(),
@@ -265,7 +238,7 @@ pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
     unsafe {
         if bash_symbols::interactive_shell == 0 {
             // Not an interactive shell, do nothing
-            return 0;
+            return 1;
         }
     }
 
@@ -302,7 +275,7 @@ pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
                 std::mem::forget(name);
 
                 // Store the Arc globally so C callbacks can access it
-                *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Arc::new(Mutex::new(Flyline::new())));
+                *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Box::new(Flyline::new()));
             } else {
                 log::error!("stream_list has more than one entry, cannot set flyline input stream");
             }
@@ -328,8 +301,7 @@ pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
                     std::mem::forget(name);
 
                     // Store the Arc globally so C callbacks can access it
-                    *FLYLINE_INSTANCE_PTR.lock().unwrap() =
-                        Some(Arc::new(Mutex::new(Flyline::new())));
+                    *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Box::new(Flyline::new()));
                 } else {
                     log::warn!(
                         "bash_input.name is '{}', not overriding anyway",
@@ -345,8 +317,48 @@ pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
     1
 }
 
-/// Called when the builtin is unloaded
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
-    println!("flyline builtin deinitialized");
+
+    *FLYLINE_INSTANCE_PTR.lock().unwrap() = None;
+
+    unsafe {
+        let mut current = bash_symbols::stream_list;
+        let mut index = 0;
+
+        while !current.is_null() {
+            let stream = &*current;
+
+            let name = if stream.bash_input.name.is_null() {
+                "null".to_string()
+            } else {
+                std::ffi::CStr::from_ptr(stream.bash_input.name)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+
+            let stream_type = match stream.bash_input.stream_type {
+                bash_symbols::StreamType::StNone => "st_none",
+                bash_symbols::StreamType::StStdin => "st_stdin",
+                bash_symbols::StreamType::StStream => "st_stream",
+                bash_symbols::StreamType::StString => "st_string",
+                bash_symbols::StreamType::StBStream => "st_bstream",
+            };
+
+            println!("[{}] name: '{}', type: {}", index, name, stream_type);
+
+            if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin {
+                println!("There is a suitable stdin stream called '{}', popping flyline stream", name);
+                bash_symbols::pop_stream();
+                return ;
+            }
+
+            current = stream.next;
+            index += 1;
+        }
+        println!("No suitable stdin stream found popping anyway to let bash figure it out");
+        bash_symbols::pop_stream();
+    }
+
+    
 }

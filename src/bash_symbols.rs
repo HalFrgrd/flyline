@@ -50,6 +50,7 @@ pub struct BashBuiltin {
 }
 
 // Bash input stream types from bash's input.h
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 #[allow(dead_code)]
 pub enum StreamType {
@@ -133,6 +134,10 @@ unsafe extern "C" {
     // input.h
     // void push_stream (int reset_lineno)
     pub fn push_stream(reset_lineno: c_int);
+
+    // input.h
+    // void pop_stream (void)
+    pub fn pop_stream();
 
     // from shell.h
     pub static interactive_shell: c_int;
