@@ -16,7 +16,6 @@ simplelog = "0.12"
 log = "0.4"
 ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9101076f8e23010515ff6fe1571bf87a2d0d4abc"}
 libc = "0.2.177"
-bash-builtins = "0.4.1"
 timeago = "0.5.0"
 unicode-width = "0.2.0"
 anyhow = "1.0.100"

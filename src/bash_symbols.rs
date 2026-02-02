@@ -1,8 +1,51 @@
-use std::os::raw::{c_char, c_int};
-
-use libc::c_uint;
+use libc::{c_char, c_int, c_uint};
 
 pub const EOF: c_int = -1;
+
+pub const BUILTIN_ENABLED: c_int = 0x01;
+/* A structure which represents a word. */
+// typedef struct word_desc {
+//   char *word;		/* Zero terminated string. */
+//   int flags;		/* Flags associated with this word. */
+// } WORD_DESC;
+#[repr(C)]
+#[allow(dead_code)]
+pub struct WordDesc {
+    pub word: *mut c_char, // Zero terminated string.
+    pub flags: c_int,      // Flags associated with this word.
+}
+
+/* A linked list of words. */
+// typedef struct word_list {
+//   struct word_list *next;
+//   WORD_DESC *word;
+// } WORD_LIST;
+#[repr(C)]
+#[allow(dead_code)]
+pub struct WordList {
+    pub next: *mut WordList,
+    pub word: *mut WordDesc,
+}
+
+/* The thing that we build the array of builtins out of. */
+// struct builtin {
+//   char *name;			/* The name that the user types. */
+//   sh_builtin_func_t *function;	/* The address of the invoked function. */
+//   int flags;			/* One of the #defines above. */
+//   char * const *long_doc;	/* NULL terminated array of strings. */
+//   const char *short_doc;	/* Short version of documentation. */
+//   char *handle;			/* for future use */
+// };
+#[repr(C)]
+#[allow(dead_code)]
+pub struct BashBuiltin {
+    pub name: *mut c_char, // The name that the user types.
+    pub function: Option<extern "C" fn(c_int, *mut *mut c_char, *mut c_char) -> c_int>, // The address of the invoked function.
+    pub flags: c_int,               // One of the #defines above.
+    pub long_doc: *mut *mut c_char, // NULL terminated array of strings.
+    pub short_doc: *mut c_char,     // Short version of documentation.
+    pub handle: *mut c_char,        // for future use
+}
 
 // Bash input stream types from bash's input.h
 #[repr(C)]
