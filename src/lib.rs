@@ -191,7 +191,38 @@ impl Default for FlylineSentinel {
                     );
                 }
             } else {
-                log::error!("stream_list is null, cannot set flyline input stream");
+                log::warn!("stream_list is null, seeing if we can set flyline input stream");
+
+                if !bash_symbols::bash_input.name.is_null() {
+                    log::info!("Setting flyline input stream via bash_input");
+
+                    let current_input =
+                        std::ffi::CStr::from_ptr(bash_symbols::bash_input.name).to_string_lossy();
+
+                    if current_input.starts_with("readline") {
+                        log::info!("bash_input.name is readline, safe to override");
+                        let name = std::ffi::CString::new("flyline_input").unwrap();
+
+                        bash_symbols::push_stream(0);
+                        bash_symbols::bash_input.stream_type = bash_symbols::StreamType::StStdin;
+                        bash_symbols::bash_input.name = name.as_ptr() as *mut i8;
+                        bash_symbols::bash_input.getter = Some(flyline_get_char);
+                        bash_symbols::bash_input.ungetter = Some(flyline_unget_char);
+
+                        std::mem::forget(name);
+
+                        // Store the Arc globally so C callbacks can access it
+                        *FLYLINE_INSTANCE_PTR.lock().unwrap() =
+                            Some(Arc::new(Mutex::new(Flyline::new())));
+                    } else {
+                        log::warn!(
+                            "bash_input.name is '{}', not overriding anyway",
+                            current_input
+                        );
+                    }
+                } else {
+                    log::error!("bash_input.name is null, cannot set flyline input stream");
+                }
             }
         }
 

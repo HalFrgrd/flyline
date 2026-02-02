@@ -73,13 +73,21 @@ pub enum CDescFlag {
     StdPath = 0x100,   // CDESC_STDPATH - command -p
 }
 
-// External bash_input symbol that bash provides
 #[allow(dead_code)]
 unsafe extern "C" {
 
     // stream_list global from y.tab.c
     #[link_name = "stream_list"]
     pub static mut stream_list: *mut StreamSaver;
+
+    // input.h
+    // extern BASH_INPUT bash_input;
+    #[link_name = "bash_input"]
+    pub static mut bash_input: BashInput;
+
+    // input.h
+    // void push_stream (int reset_lineno)
+    pub fn push_stream(reset_lineno: c_int);
 
     // from shell.h
     pub static interactive_shell: c_int;
