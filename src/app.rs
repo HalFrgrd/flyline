@@ -877,26 +877,7 @@ impl App {
     }
 
     fn tab_complete_current_path(&self, pattern: &str) -> Vec<Suggestion> {
-        let glob_results = self.tab_complete_glob_expansion(&(pattern.to_string() + "*"));
-        let prefix_to_remove = pattern
-            .rsplit_once('/')
-            .map(|(p, _)| format!("{}/", p))
-            .unwrap_or_default();
-        log::debug!(
-            "Removing prefix '{}' from glob results for pattern '{}'",
-            prefix_to_remove,
-            pattern
-        );
-        glob_results
-            .into_iter()
-            .map(|mut sug| {
-                if let Some(rest) = sug.s.strip_prefix(&prefix_to_remove) {
-                    sug.prefix = prefix_to_remove.clone();
-                    sug.s = rest.to_string();
-                }
-                sug
-            })
-            .collect()
+        self.tab_complete_glob_expansion(&(pattern.to_string() + "*"))
     }
 
     fn expand_path_pattern(&self, pattern: &str) -> (String, Vec<(String, String)>) {
