@@ -359,6 +359,13 @@ pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
         println!("No suitable stdin stream found popping anyway to let bash figure it out");
         bash_symbols::pop_stream();
     }
-
-    
 }
+
+// TODO try and get this working
+// #[unsafe(no_mangle)]
+// pub extern "C" fn main(_argc: c_int, _argv: *const *const c_char) -> c_int {
+//     println!(
+//         "flyline main called. this should be called only when flyline.so is run as a standalone program."
+//     );
+//     0
+// }
