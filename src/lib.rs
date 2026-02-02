@@ -1,7 +1,8 @@
-use bash_builtins::{Args, Builtin, BuiltinOptions, Result, builtin_metadata};
-use libc::{c_char, c_int, c_uint};
+use bash_builtins;
+use libc::{c_char, c_int};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use anyhow::Result;
 
 mod active_suggestions;
 mod app;
@@ -47,10 +48,12 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
     c
 }
 
-extern "C" fn flyline_call_command(list: *mut bash_symbols::WordList) -> c_int {
+extern "C" fn flyline_call_command(
+    words: *const bash_symbols::WordList,
+) -> c_int {
     if let Some(arc) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_ref() {
         if let Ok(mut stream) = arc.lock() {
-            return stream.call(list);
+            return stream.call(words);
         }
     }
     0
@@ -103,15 +106,17 @@ impl Flyline {
         }
     }
 
-    fn call(&mut self, list: *mut bash_symbols::WordList) -> c_int {
+    fn call(&mut self, words: *const bash_symbols::WordList) -> c_int {
         let mut args = vec![];
         unsafe {
-            let mut current = list;
+            let mut current = words;
             while !current.is_null() {
-                let word = &*(*current).word;
-                let c_str = std::ffi::CStr::from_ptr(word.word);
-                if let Ok(str_slice) = c_str.to_str() {
-                    args.push(str_slice.to_string());
+                let word_desc = &*(*current).word;
+                if !word_desc.word.is_null() {
+                    let c_str = std::ffi::CStr::from_ptr(word_desc.word);
+                    if let Ok(str_slice) = c_str.to_str() {
+                        args.push(str_slice.to_string());
+                    }
                 }
                 current = (*current).next;
             }
@@ -221,28 +226,41 @@ impl Flyline {
     }
 }
 
-static NAME: &[u8] = b"flyline\0";
-
-/* Documentation strings */
-static SHORT_DOC: &[u8] = b"hello [arg]\0";
-
-static LONG_DOC: &[&[u8]] = &[b"hello: print a greeting from Rust\0", b"\0"];
 
 /* Exported builtin struct */
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBuiltin {
-    name: NAME.as_ptr(),
+    name: "flyline\0".as_ptr() as *const c_char,
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
-    long_doc: LONG_DOC.as_ptr() as *const *const c_char,
-    short_doc: SHORT_DOC.as_ptr() as *const c_char,
-    handle: std::ptr::null_mut(),
+    long_doc: (&[
+                "flyline: advanced command line interface for bash\0".as_ptr() as *const c_char,
+                "more help here\0".as_ptr() as *const c_char,
+                ::std::ptr::null()
+            ]).as_ptr(),
+    short_doc: b"flyline: advanced command line interface for bash\0".as_ptr() as *const c_char,
+    handle: std::ptr::null(),
 };
 
-/// Called when the builtin is loaded
-#[no_mangle]
-pub extern "C" fn flyline_init(_struct: *mut bash_symbols::BashBuiltin) -> c_int {
-    println!("flyline builtin initialized");
+/* Called when builtin is enabled and loaded from the shared object.  If this
+   function returns 0, the load fails. */
+#[unsafe(no_mangle)]
+pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
+    println!("in flyline_builtin_load");
+
+    if !arg.is_null() {
+        unsafe {
+            let c_str = std::ffi::CStr::from_ptr(arg);
+            if let Ok(str_slice) = c_str.to_str() {
+                println!("flyline_builtin_load called with arg: '{}'", str_slice);
+            } else {
+                println!("flyline_builtin_load called with invalid UTF-8 arg");
+            }
+        }
+    } else {
+        println!("flyline_builtin_load called with null arg");
+    }
+
     // TODO: panic catch
     unsafe {
         if bash_symbols::interactive_shell == 0 {
@@ -324,12 +342,11 @@ pub extern "C" fn flyline_init(_struct: *mut bash_symbols::BashBuiltin) -> c_int
         }
     }
 
-    0
+    1
 }
 
 /// Called when the builtin is unloaded
-#[no_mangle]
-pub extern "C" fn flyline_deinit(_struct: *mut bash_symbols::BashBuiltin) -> c_int {
+#[unsafe(no_mangle)]
+pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
     println!("flyline builtin deinitialized");
-    0
 }

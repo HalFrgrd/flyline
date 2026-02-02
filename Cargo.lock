@@ -146,6 +146,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bash-builtins"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a89464cf878c1506980b7d84444fac103d30e631d3ce86e4486d50f72430aeb5"
+dependencies = [
+ "bash_builtins_macro",
+ "libc",
+]
+
+[[package]]
+name = "bash_builtins_macro"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52657a5e014b9ecf09c39754247045f525677ffab018a0e5130aa8450f3a227a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -588,6 +609,7 @@ version = "0.1.1"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
+ "bash-builtins",
  "chrono",
  "clap",
  "color-eyre",

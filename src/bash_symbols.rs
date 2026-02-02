@@ -11,7 +11,7 @@ pub const BUILTIN_ENABLED: c_int = 0x01;
 #[repr(C)]
 #[allow(dead_code)]
 pub struct WordDesc {
-    pub word: *mut c_char, // Zero terminated string.
+    pub word: *const c_char, // Zero terminated string.
     pub flags: c_int,      // Flags associated with this word.
 }
 
@@ -23,9 +23,11 @@ pub struct WordDesc {
 #[repr(C)]
 #[allow(dead_code)]
 pub struct WordList {
-    pub next: *mut WordList,
-    pub word: *mut WordDesc,
+    pub next: *const WordList,
+    pub word: *const WordDesc,
 }
+
+pub type BashBuiltinCallFunc = extern "C" fn(*const WordList) -> c_int;
 
 /* The thing that we build the array of builtins out of. */
 // struct builtin {
@@ -39,12 +41,12 @@ pub struct WordList {
 #[repr(C)]
 #[allow(dead_code)]
 pub struct BashBuiltin {
-    pub name: *mut c_char, // The name that the user types.
-    pub function: Option<extern "C" fn(c_int, *mut *mut c_char, *mut c_char) -> c_int>, // The address of the invoked function.
+    pub name: *const c_char, // The name that the user types.
+    pub function: Option<BashBuiltinCallFunc>, // The address of the invoked function.
     pub flags: c_int,               // One of the #defines above.
-    pub long_doc: *mut *mut c_char, // NULL terminated array of strings.
-    pub short_doc: *mut c_char,     // Short version of documentation.
-    pub handle: *mut c_char,        // for future use
+    pub long_doc: *const *const c_char, // NULL terminated array of strings.
+    pub short_doc: *const c_char,     // Short version of documentation.
+    pub handle: *const c_char,        // for future use
 }
 
 // Bash input stream types from bash's input.h
