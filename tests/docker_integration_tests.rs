@@ -52,8 +52,11 @@ macro_rules! bash_integration_test {
     ($name:ident, $version:expr) => {
         #[test]
         fn $name() {
-            run_bash_version_test($version)
-                .expect(concat!("Bash ", $version, " integration test failed"));
+            run_bash_version_test($version).expect(concat!(
+                "Bash ",
+                $version,
+                " integration test failed"
+            ));
         }
     };
 }

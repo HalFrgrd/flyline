@@ -14,9 +14,11 @@ use crate::text_buffer::TextBuffer;
 use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use futures::StreamExt;
+use glob::glob;
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
@@ -712,8 +714,9 @@ impl App {
         match completion_context.comp_type {
             tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
+                log::debug!("First word completions: {:?}", completions);
                 self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                    Suggestion::from_string_vec(completions, "", " "),
+                    completions,
                     word_under_cursor,
                     &self.buffer,
                 ));
@@ -852,14 +855,17 @@ impl App {
         }
     }
 
-    fn tab_complete_first_word(&self, command: &str) -> Vec<String> {
-        let mut res = Vec::new();
-
+    fn tab_complete_first_word(&self, command: &str) -> Vec<Suggestion> {
         if command.is_empty() {
-            return res;
+            return vec![];
         }
 
-        res = self.bash_env.get_first_word_completions(&command);
+        if command.starts_with('.') || command.starts_with('/') {
+            // Path to executable
+            return self.tab_complete_glob_expansion(&(command.to_string() + "*"));
+        }
+
+        let mut res = self.bash_env.get_first_word_completions(&command);
 
         // TODO: could prioritize based on frequency of use
         res.sort();
@@ -867,7 +873,7 @@ impl App {
 
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
-        res
+        Suggestion::from_string_vec(res, "", " ")
     }
 
     fn tab_complete_current_path(&self, pattern: &str) -> Vec<Suggestion> {
@@ -893,38 +899,47 @@ impl App {
             .collect()
     }
 
-    fn expand_path_pattern(&self, pattern: &str) -> String {
+    fn expand_path_pattern(&self, pattern: &str) -> (String, Vec<(String, String)>) {
         // TODO expand other variables?
-        pattern.replace("~/", &(self.home_path.to_string() + "/"))
-    }
-
-    fn tab_complete_glob_expansion(&self, pattern: &str) -> Vec<Suggestion> {
-        use glob::glob;
-        use std::path::Path;
-
-        log::debug!("Performing glob expansion for pattern: {}", pattern);
-
-        let pattern = &self.expand_path_pattern(pattern);
+        let mut prefixes_swaps = vec![];
+        let mut pattern = pattern.to_string();
+        if pattern.starts_with("~/") {
+            prefixes_swaps.push((self.home_path.to_string() + "/", "~/".to_string()));
+            pattern = pattern.replace(&prefixes_swaps[0].1, &prefixes_swaps[0].0);
+        }
 
         // Get the current working directory for relative paths
         let cwd = match std::env::current_dir() {
             Ok(dir) => dir,
-            Err(_) => return vec![],
+            Err(_) => Path::new("/").to_path_buf(),
         };
 
         // Resolve the pattern relative to cwd if it's not absolute
-        let full_pattern = if Path::new(pattern).is_absolute() {
+        pattern = if Path::new(&pattern).is_absolute() {
             pattern.to_string()
         } else {
-            cwd.join(pattern).to_string_lossy().to_string()
+            prefixes_swaps.push((cwd.to_string_lossy().to_string() + "/", "".to_string()));
+            cwd.join(&pattern).to_string_lossy().to_string()
         };
+
+        (pattern, prefixes_swaps)
+    }
+
+    fn tab_complete_glob_expansion(&self, pattern: &str) -> Vec<Suggestion> {
+        log::debug!("Performing glob expansion for pattern: {}", pattern);
+        let (resolved_pattern, prefixes_swaps) = self.expand_path_pattern(pattern);
+        log::debug!(
+            "resolved_pattern: {} {:?}",
+            resolved_pattern,
+            prefixes_swaps
+        );
 
         // Use glob to find matching paths
         let mut results = Vec::new();
 
         const MAX_GLOB_RESULTS: usize = 1_000;
 
-        if let Ok(paths) = glob(&full_pattern) {
+        if let Ok(paths) = glob(&resolved_pattern) {
             for (idx, path_result) in paths.enumerate() {
                 if idx >= MAX_GLOB_RESULTS {
                     log::debug!(
@@ -935,27 +950,35 @@ impl App {
                 }
                 if let Ok(path) = path_result {
                     // Convert the path to a string relative to cwd (or absolute if pattern was absolute)
-                    let path_str = if Path::new(pattern).is_absolute() {
-                        path.to_string_lossy().to_string()
-                    } else {
-                        // Strip the cwd prefix to get relative path
-                        path.strip_prefix(&cwd)
-                            .unwrap_or(&path)
-                            .to_string_lossy()
-                            .to_string()
+                    let unexpanded = {
+                        let mut p = path.to_string_lossy().to_string();
+
+                        for (prefix_to_remove, prefix_to_replace) in &prefixes_swaps {
+                            if p.starts_with(prefix_to_remove) {
+                                p = p.replacen(prefix_to_remove, prefix_to_replace, 1);
+                            } else {
+                                log::warn!(
+                                    "Expected path '{}' to start with prefix '{}', but it did not.",
+                                    p,
+                                    prefix_to_remove
+                                );
+                                break;
+                            }
+                        }
+                        p
                     };
 
                     // Add trailing slash for directories
                     if path.is_dir() {
                         // no trailing space for directories
                         results.push(Suggestion::new(
-                            format!("{}/", path_str),
+                            format!("{}/", unexpanded),
                             "".to_string(),
                             "".to_string(),
                         ));
                     } else {
                         // trailing space for files
-                        results.push(Suggestion::new(path_str, "".to_string(), " ".to_string()));
+                        results.push(Suggestion::new(unexpanded, "".to_string(), " ".to_string()));
                     }
                 }
             }

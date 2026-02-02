@@ -565,8 +565,6 @@ impl TextBuffer {
         }
     }
 
-    
-
     pub fn delete_backwards(&mut self) {
         // delete one grapheme to the left
         self.push_snapshot(true);
