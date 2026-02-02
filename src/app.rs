@@ -889,19 +889,16 @@ impl App {
             pattern = pattern.replace(&prefixes_swaps[0].1, &prefixes_swaps[0].0);
         }
 
-        // Get the current working directory for relative paths
-        let cwd = match std::env::current_dir() {
-            Ok(dir) => dir,
-            Err(_) => Path::new("/").to_path_buf(),
-        };
-
         // Resolve the pattern relative to cwd if it's not absolute
-        pattern = if Path::new(&pattern).is_absolute() {
-            pattern.to_string()
-        } else {
-            prefixes_swaps.push((cwd.to_string_lossy().to_string() + "/", "".to_string()));
-            cwd.join(&pattern).to_string_lossy().to_string()
-        };
+        if !Path::new(&pattern).is_absolute() {
+            // Get the current working directory for relative paths
+            if let Ok(cwd) = std::env::current_dir() {
+                if let Some(cwd_str) = cwd.to_str() {
+                    prefixes_swaps.push((format!("{}/", cwd_str), "".to_string()));
+                    pattern = format!("{}/{}", cwd_str, pattern);
+                }
+            }
+        }
 
         (pattern, prefixes_swaps)
     }
