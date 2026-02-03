@@ -367,8 +367,8 @@ impl App {
                     match evt {
                         CrosstermEvent::Key(key) => {
                             match key.kind {
-                                crossterm::event::KeyEventKind::Press => {
-                                    log::debug!("Key press: {:?}", key);
+                                crossterm::event::KeyEventKind::Press | crossterm::event::KeyEventKind::Repeat => {
+                                    log::debug!("Key event: {:?}", key);
                                     needs_screen_cleared = self.on_keypress(key);
                                     true
                                 }
@@ -376,7 +376,6 @@ impl App {
                                     self.on_keyrelease(key);
                                     false
                                 }
-                                _ => {false}
                             }
                         }
                         CrosstermEvent::Mouse(mouse) => {
