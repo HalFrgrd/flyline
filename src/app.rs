@@ -2,7 +2,7 @@ use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::bash_env_manager::BashEnvManager;
 use crate::bash_funcs;
 use crate::command_acceptance;
-use crate::content_builder::Contents;
+use crate::content_builder::{Contents, Tag};
 use crate::cursor_animation::CursorAnimation;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
@@ -1022,7 +1022,7 @@ impl App {
         let mut content = Contents::new(width);
 
         for (_, is_last, line) in self.prompt_manager.get_ps1_lines().iter().flag_first_last() {
-            content.write_line(&line, !is_last);
+            content.write_line(&line, !is_last, Tag::Ps1Prompt);
         }
 
         let mut command_description: Option<String> = None;
@@ -1068,14 +1068,20 @@ impl App {
                     _ => Pallete::recognised_word(),
                 };
                 line_offset = content.cursor_position().0;
-                content.write_span(&Span::styled(first_word, first_word_style));
-                content.write_span(&Span::styled(rest.to_string(), Pallete::normal_text()));
+                content.write_span(
+                    &Span::styled(first_word, first_word_style),
+                    Tag::CommandFirstWord,
+                );
+                content.write_span(
+                    &Span::styled(rest.to_string(), Pallete::normal_text()),
+                    Tag::CommandOther,
+                );
             } else {
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Pallete::secondary_text());
-                content.write_span(&ps2);
+                content.write_span(&ps2, Tag::Ps2Prompt);
                 line_offset = content.cursor_position().0;
-                content.write_line(&Line::from(line.to_owned()), false);
+                content.write_line(&Line::from(line.to_owned()), false, Tag::CommandOther);
             }
             // Draw cursor on this line
             if self.mode.is_running()
@@ -1110,8 +1116,10 @@ impl App {
                         content.newline();
                     }
 
-                    content
-                        .write_span(&Span::from(line.to_owned()).style(Pallete::secondary_text()));
+                    content.write_span(
+                        &Span::from(line.to_owned()).style(Pallete::secondary_text()),
+                        Tag::HistorySuggestion,
+                    );
 
                     if is_last {
                         let mut extra_info_text = " #".to_string();
@@ -1124,6 +1132,7 @@ impl App {
 
                         content.write_span(
                             &Span::from(extra_info_text).style(Pallete::secondary_text()),
+                            Tag::HistorySuggestion,
                         );
                     }
                 });
@@ -1163,7 +1172,7 @@ impl App {
                     for (word, style) in row {
                         line.push(Span::styled(word, style));
                     }
-                    content.write_line(&Line::from(line), true);
+                    content.write_line(&Line::from(line), true, Tag::TabSuggestion);
                 }
                 active_suggestions.update_grid_size(num_rows_used, num_logical_cols);
             }
@@ -1210,12 +1219,15 @@ impl App {
                     }
 
                     let line = Line::from(spans);
-                    content.write_line(&line, true);
+                    content.write_line(&line, true, Tag::FuzzySearch);
                 }
-                content.write_span(&Span::styled(
-                    format!("# Fuzzy search: {}/{}", num_results, num_searched),
-                    Pallete::secondary_text(),
-                ));
+                content.write_span(
+                    &Span::styled(
+                        format!("# Fuzzy search: {}/{}", num_results, num_searched),
+                        Pallete::secondary_text(),
+                    ),
+                    Tag::FuzzySearch,
+                );
             }
             _ => {}
         }
@@ -1232,10 +1244,11 @@ impl App {
         for row_idx in 0..frame_area.height {
             match content.buf.get((start_content_row + row_idx) as usize) {
                 Some(row) => {
-                    for (x, cell) in row.iter().enumerate() {
+                    for (x, tagged_cell) in row.iter().enumerate() {
                         if x < frame_area.width as usize {
                             frame.buffer_mut().content
-                                [row_idx as usize * frame_area.width as usize + x] = cell.clone();
+                                [row_idx as usize * frame_area.width as usize + x] =
+                                tagged_cell.cell.clone();
                         }
                     }
                 }

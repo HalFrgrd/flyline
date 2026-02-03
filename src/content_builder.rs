@@ -1,10 +1,44 @@
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, StyledGrapheme};
 use unicode_width::UnicodeWidthStr;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tag {
+    Normal,
+    Ps1Prompt,
+    Ps2Prompt,
+    CommandFirstWord,
+    CommandOther,
+    TabSuggestion,
+    HistorySuggestion,
+    FuzzySearch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaggedCell {
+    pub cell: Cell,
+    pub tag: Tag,
+}
+
+impl Default for TaggedCell {
+    fn default() -> Self {
+        TaggedCell {
+            cell: Cell::default(),
+            tag: Tag::Normal,
+        }
+    }
+}
+
+impl TaggedCell {
+    pub fn update(&mut self, graph: &StyledGrapheme, tag: Tag) {
+        self.cell.set_symbol(&graph.symbol).set_style(graph.style);
+        self.tag = tag;
+    }
+}
+
 pub struct Contents {
-    pub buf: Vec<Vec<Cell>>, // each inner Vec is a row of Cells of width `width`
+    pub buf: Vec<Vec<TaggedCell>>, // each inner Vec is a row of Cells of width `width`
     pub width: u16,
     cursor_vis_col: u16,
     cursor_vis_row: u16,              // visual cursor position with line wrapping
@@ -34,7 +68,7 @@ impl Contents {
     }
 
     pub fn increase_buf_single_row(&mut self) {
-        let blank_row = vec![Cell::default(); self.width as usize];
+        let blank_row = vec![TaggedCell::default(); self.width as usize];
         self.buf.push(blank_row);
     }
 
@@ -44,7 +78,7 @@ impl Contents {
 
     /// Write a single span at the current cursor position
     /// Will automatically wrap to the next line if necessary
-    pub fn write_span(&mut self, span: &Span) {
+    pub fn write_span(&mut self, span: &Span, tag: Tag) {
         let graphemes = span.styled_graphemes(span.style);
         for graph in graphemes {
             let graph_w = graph.symbol.width() as u16;
@@ -69,12 +103,13 @@ impl Contents {
                 self.increase_buf_single_row();
             }
             self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize]
-                .set_symbol(&graph.symbol)
-                .set_style(graph.style);
+                .update(&graph, tag);
             self.cursor_vis_col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
             while self.cursor_vis_col < next_graph_x {
-                self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize].reset();
+                self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize]
+                    .cell
+                    .reset();
                 self.cursor_vis_col += 1;
             }
         }
@@ -82,9 +117,9 @@ impl Contents {
 
     /// Write a line at the current cursor position
     /// If insert_new_line is true, moves to the next line after writing
-    pub fn write_line(&mut self, line: &Line, insert_new_line: bool) {
+    pub fn write_line(&mut self, line: &Line, insert_new_line: bool, tag: Tag) {
         for span in &line.spans {
-            self.write_span(span);
+            self.write_span(span, tag);
         }
         if insert_new_line {
             self.newline();
@@ -106,8 +141,8 @@ impl Contents {
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
                 if let Some(row) = self.buf.get_mut(y as usize) {
-                    if let Some(cell) = row.get_mut(x as usize) {
-                        cell.set_style(style);
+                    if let Some(tagged_cell) = row.get_mut(x as usize) {
+                        tagged_cell.cell.set_style(style);
                     }
                 }
             }
