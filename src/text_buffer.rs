@@ -100,7 +100,7 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Char('w'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
                 ..
             } => {
                 self.delete_one_word_left(WordDelim::WhiteSpace);
@@ -119,7 +119,7 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::ALT,
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 self.delete_one_word_right(WordDelim::WhiteSpace);
@@ -131,35 +131,51 @@ impl TextBuffer {
                 self.delete_forwards();
             }
             KeyEvent {
-                code: KeyCode::Left,
-                ..
-            } => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.move_one_word_left(WordDelim::WhiteSpace);
-                } else {
-                    self.move_left();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                ..
-            } => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.move_one_word_right(WordDelim::WhiteSpace);
-                } else {
-                    self.move_right();
-                }
-            }
-            KeyEvent {
                 code: KeyCode::Home,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::META,
                 ..
             } => {
                 self.move_start_of_line();
             }
             KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+                ..
+            } => {
+                self.move_one_word_left(WordDelim::WhiteSpace);
+            }
+            KeyEvent {
+                code: KeyCode::Left,
+                ..
+            } => {
+                self.move_left();
+            }
+            KeyEvent {
                 code: KeyCode::End, ..
+            }
+            | KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::META,
+                ..
             } => {
                 self.move_end_of_line();
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+                ..
+            } => {
+                self.move_one_word_right(WordDelim::WhiteSpace);
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                ..
+            } => {
+                self.move_right();
             }
             KeyEvent {
                 code: KeyCode::Up, ..
@@ -185,14 +201,14 @@ impl TextBuffer {
             }
             KeyEvent {
                 code: KeyCode::Char('y'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
                 self.redo();
             }
             KeyEvent {
                 code: KeyCode::Char('z'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {

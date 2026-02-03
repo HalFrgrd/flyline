@@ -625,7 +625,7 @@ impl App {
             // Ctrl+C - cancel with comment
             KeyEvent {
                 code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
                 self.buffer.move_to_end();
@@ -635,7 +635,7 @@ impl App {
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             KeyEvent {
                 code: KeyCode::Char('7'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
                 self.buffer.move_to_start();
@@ -646,7 +646,7 @@ impl App {
             }
             KeyEvent {
                 code: KeyCode::Char('r'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
                 match self.content_mode {
