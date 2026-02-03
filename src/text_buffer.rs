@@ -119,7 +119,7 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::ALT,
                 ..
             } => {
                 self.delete_one_word_right(WordDelim::WhiteSpace);
@@ -137,6 +137,11 @@ impl TextBuffer {
             | KeyEvent {
                 code: KeyCode::Left,
                 modifiers: KeyModifiers::META,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 self.move_start_of_line();
@@ -160,6 +165,11 @@ impl TextBuffer {
             | KeyEvent {
                 code: KeyCode::Right,
                 modifiers: KeyModifiers::META,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('e'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 self.move_end_of_line();

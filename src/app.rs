@@ -377,6 +377,7 @@ impl App {
 
                     match evt {
                         CrosstermEvent::Key(key) => {
+                            log::debug!("Key event: {:?}", key);
                             if key.kind == crossterm::event::KeyEventKind::Press {
                                 self.on_keypress(key);
                                 true
@@ -452,8 +453,6 @@ impl App {
     }
 
     fn on_keypress(&mut self, key: KeyEvent) {
-        log::debug!("Key pressed: {:?}", key);
-
         match key {
             KeyEvent {
                 code: KeyCode::Left,
@@ -516,6 +515,11 @@ impl App {
             }
             KeyEvent {
                 code: KeyCode::Down,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('s'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.history_manager
@@ -682,7 +686,7 @@ impl App {
             &line[0..space_pos]
         }
         .to_owned();
-        log::debug!("Caching command type for first word: {}", first_word);
+        // log::debug!("Caching command type for first word: {}", first_word);
         self.bash_env.cache_command_type(&first_word);
     }
 

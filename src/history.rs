@@ -405,7 +405,7 @@ impl FuzzyHistorySearch {
 
         self.cache_index = self.cache_index.min(self.cache.len().saturating_sub(1));
 
-        let visible_cache_size = 10;
+        let visible_cache_size = 18;
 
         if self.cache_visible_offset + visible_cache_size <= self.cache_index + 2 {
             self.cache_visible_offset =
