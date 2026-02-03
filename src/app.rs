@@ -452,7 +452,7 @@ impl App {
     }
 
     fn on_keypress(&mut self, key: KeyEvent) {
-        // log::debug!("Key pressed: {:?}", key);
+        log::debug!("Key pressed: {:?}", key);
 
         match key {
             KeyEvent {

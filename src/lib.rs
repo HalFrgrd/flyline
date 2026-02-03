@@ -187,16 +187,16 @@ impl Flyline {
 /* Exported builtin struct */
 #[unsafe(no_mangle)]
 pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBuiltin {
-    name: "flyline\0".as_ptr() as *const c_char,
+    name: c"flyline".as_ptr() as *const c_char,
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
     long_doc: (&[
-        "longer docs here\0".as_ptr() as *const c_char,
-        "more help here\0".as_ptr() as *const c_char,
+        c"longer docs here".as_ptr() as *const c_char,
+        c"more help here".as_ptr() as *const c_char,
         ::std::ptr::null(),
     ])
         .as_ptr(),
-    short_doc: b"flyline: advanced command line interface for bash\0".as_ptr() as *const c_char,
+    short_doc: c"flyline: advanced command line interface for bash".as_ptr() as *const c_char,
     handle: std::ptr::null(),
 };
 
@@ -226,16 +226,27 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // with_input_from_stdin will see that the current bash_input is fit for purpose and not add readline stdin.
 
     let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
-        let name = std::ffi::CString::new("flyline_input").unwrap();
+        // Allocate the name string on the heap using libc
+        // Bash expects name to be heap allocated so it can free it later
+        let name_bytes = b"flyline_input\0";
+        let name_ptr = unsafe {
+            let ptr = libc::malloc(name_bytes.len()) as *mut libc::c_char;
+            if !ptr.is_null() {
+                std::ptr::copy_nonoverlapping(
+                    name_bytes.as_ptr(),
+                    ptr as *mut u8,
+                    name_bytes.len(),
+                );
+            }
+            ptr
+        };
 
         unsafe {
             (*bash_input).stream_type = bash_symbols::StreamType::StStdin;
-            (*bash_input).name = name.as_ptr() as *mut i8;
+            (*bash_input).name = name_ptr;
             (*bash_input).getter = Some(flyline_get_char);
             (*bash_input).ungetter = Some(flyline_unget_char);
         }
-
-        std::mem::forget(name);
 
         // Store the Arc globally so C callbacks can access it
         *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Box::new(Flyline::new()));
