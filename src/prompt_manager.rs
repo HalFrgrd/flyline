@@ -1,10 +1,13 @@
 use crate::bash_symbols;
 use ansi_to_tui::IntoText;
 use ratatui::text::{Line, Span, Text};
+use unicode_width::UnicodeWidthStr;
 
 pub struct PromptManager {
-    // TODO think of lifetimes
     prompt: Vec<Line<'static>>,
+    rprompt: Vec<Line<'static>>,
+    fill_char: char,
+    last_time_str: String,
 }
 
 fn get_current_readline_prompt() -> Option<String> {
@@ -27,8 +30,6 @@ fn get_current_readline_prompt() -> Option<String> {
 
 impl PromptManager {
     pub fn new(unfinished_from_prev_command: bool) -> Self {
-        let ps1 = get_current_readline_prompt().unwrap_or_else(|| "default> ".into());
-
         if unfinished_from_prev_command {
             // If the previous command was unfinished, use a simple prompt to avoid confusion
 
@@ -54,8 +55,13 @@ impl PromptManager {
                     ]),
                     Line::from("> "),
                 ],
+                rprompt: vec![],
+                fill_char: '-',
+                last_time_str: "".into(),
             }
         } else {
+            let ps1 = get_current_readline_prompt().unwrap_or_else(|| "default> ".into());
+
             // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
             let ps1 = ps1.replace("\\[", "").replace("\\]", "");
             const PS1_DEFAULT: &str = "bad ps1> ";
@@ -69,16 +75,35 @@ impl PromptManager {
                     lines => lines,
                 };
 
-            PromptManager { prompt: ps1 }
+            PromptManager {
+                prompt: ps1,
+                rprompt: vec![Line::from("FLYLINE_TIME")],
+                fill_char: '-',
+                last_time_str: "".into(),
+            }
         }
     }
 
-    pub fn get_ps1_lines(&self) -> Vec<Line<'static>> {
+    fn format_prompt_line(&self, line: Line<'static>) -> Line<'static> {
         const FLYLINE_TIME_STR: &str = "FLYLINE_TIME";
+        let spans: Vec<Span> = line
+            .spans
+            .into_iter()
+            .map(|span| {
+                Span::styled(
+                    span.content.replace(FLYLINE_TIME_STR, &self.last_time_str),
+                    span.style,
+                )
+            })
+            .collect();
+        Line::from(spans)
+    }
+
+    pub fn get_ps1_lines(&mut self) -> (Vec<Line<'static>>, Vec<Line<'static>>, char) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap();
-        let time_str = format!(
+        self.last_time_str = format!(
             "{:02}:{:02}:{:02}.{:03}",
             (now.as_secs() / 3600) % 24, // hours
             (now.as_secs() / 60) % 60,   // minutes
@@ -86,22 +111,20 @@ impl PromptManager {
             now.subsec_millis()          // milliseconds
         );
 
-        self.prompt
+        let formatted_prompt: Vec<Line<'static>> = self
+            .prompt
             .clone()
             .into_iter()
-            .map(|line| {
-                let spans: Vec<Span> = line
-                    .spans
-                    .into_iter()
-                    .map(|span| {
-                        Span::styled(
-                            span.content.replace(FLYLINE_TIME_STR, &time_str),
-                            span.style,
-                        )
-                    })
-                    .collect();
-                Line::from(spans)
-            })
-            .collect()
+            .map(|line| self.format_prompt_line(line))
+            .collect();
+
+        let formatted_rprompt: Vec<Line<'static>> = self
+            .rprompt
+            .clone()
+            .into_iter()
+            .map(|line| self.format_prompt_line(line))
+            .collect();
+
+        (formatted_prompt, formatted_rprompt, self.fill_char)
     }
 }

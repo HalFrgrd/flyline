@@ -15,6 +15,7 @@ use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent};
 use futures::StreamExt;
 use glob::glob;
+use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
@@ -22,6 +23,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
+use unicode_width::UnicodeWidthChar;
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -1044,8 +1046,46 @@ impl App {
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
 
-        for (_, is_last, line) in self.prompt_manager.get_ps1_lines().iter().flag_first_last() {
-            content.write_line(&line, !is_last, Tag::Ps1Prompt);
+        let (lprompt, rprompt, fill_char) = self.prompt_manager.get_ps1_lines();
+        for (_, is_last, either_or_both) in
+            lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
+        {
+            match either_or_both {
+                EitherOrBoth::Left(l_line) => {
+                    content.write_line(l_line, false, Tag::Ps1Prompt);
+                }
+                EitherOrBoth::Right(r_line) => {
+                    content.write_line(r_line, false, Tag::Ps1Prompt);
+                }
+                EitherOrBoth::Both(l_line, r_line) => {
+                    let start = content.cursor_position();
+                    content.write_line(l_line, false, Tag::Ps1Prompt);
+                    let end = content.cursor_position();
+
+                    let mut available_space = 0;
+                    if start.1 == end.1 {
+                        let space_left = width.saturating_sub(end.0) as usize;
+                        let r_line_width = r_line.width();
+                        available_space = space_left.saturating_sub(r_line_width);
+                    }
+
+                    let fill_str = if fill_char.width_cjk() == Some(1) {
+                        fill_char.to_string()
+                    } else {
+                        // For wide characters, we need to use half-width fill characters
+                        // to avoid messing up the alignment
+                        " ".to_string()
+                    };
+
+                    content
+                        .write_span(&Span::raw(fill_str.repeat(available_space)), Tag::Ps1Prompt);
+
+                    content.write_line(r_line, false, Tag::Ps1Prompt);
+                }
+            }
+            if !is_last {
+                content.newline();
+            }
         }
 
         let mut command_description: Option<String> = None;
@@ -1267,7 +1307,7 @@ impl App {
                             }
                         }
                         _ => {
-                             content.newline();
+                            content.newline();
 
                             content.write_span(
                                 &Span::styled(
