@@ -192,4 +192,30 @@ impl Contents {
             (total_rows.saturating_sub(height), total_rows)
         }
     }
+
+    pub fn get_tagged_cell(
+        &self,
+        term_em_x: u16,
+        term_em_y: u16,
+        term_em_offset: i16,
+    ) -> Option<&TaggedCell> {
+        log::debug!(
+            "Getting tagged cell at terminal em coords ({}, {}), offset {}",
+            term_em_x,
+            term_em_y,
+            term_em_offset
+        );
+        if term_em_offset > term_em_y as i16 {
+            log::debug!(
+                "Offset {} is greater than term_em_y {}, returning None",
+                term_em_offset,
+                term_em_y
+            );
+            return None;
+        }
+
+        self.buf
+            .get(term_em_y.saturating_sub_signed(term_em_offset) as usize)
+            .and_then(|row| row.get(term_em_x as usize))
+    }
 }

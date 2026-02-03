@@ -163,6 +163,7 @@ struct App {
     history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
     content_mode: ContentMode,
+    last_contents: Option<(Contents, i16)>,
 }
 
 impl App {
@@ -188,6 +189,7 @@ impl App {
             history_suggestion: None,
             mouse_state: MouseState::new(),
             content_mode: ContentMode::Normal,
+            last_contents: None,
         }
     }
 
@@ -423,8 +425,24 @@ impl App {
     }
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
+        log::debug!("Mouse event: {:?}", mouse);
+
         match mouse.kind {
-            crossterm::event::MouseEventKind::Moved => {}
+            crossterm::event::MouseEventKind::Down(_) => {
+                log::debug!("Mouse down event at ({}, {})", mouse.column, mouse.row);
+                if let Some((contents, offset)) = &self.last_contents {
+                    if let Some(tagged_cell) =
+                        contents.get_tagged_cell(mouse.column, mouse.row, *offset)
+                    {
+                        log::debug!(
+                            "Mouse moved over cell at ({}, {}): {:?}",
+                            mouse.column,
+                            mouse.row,
+                            tagged_cell
+                        );
+                    }
+                }
+            }
             e => {
                 log::debug!("Mouse event: {:?}", e);
             }
@@ -1255,5 +1273,7 @@ impl App {
                 None => break,
             };
         }
+
+        self.last_contents = Some((content, (frame_area.y as i16) - start_content_row as i16));
     }
 }
