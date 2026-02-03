@@ -69,6 +69,8 @@ impl TextBuffer {
     }
 
     /// Handle basic text editing keypresses
+    /// Useful reference:
+    /// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
     pub fn on_keypress(&mut self, key: KeyEvent) {
         use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -79,6 +81,25 @@ impl TextBuffer {
                 ..
             } => {
                 self.delete_backwards();
+            }
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                self.delete_until_start_of_line();
+            }
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::SUPER,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('u'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.delete_until_start_of_line();
             }
             KeyEvent {
                 code: KeyCode::Backspace,
@@ -126,6 +147,25 @@ impl TextBuffer {
             }
             KeyEvent {
                 code: KeyCode::Delete,
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                self.delete_until_end_of_line();
+            }
+            KeyEvent {
+                code: KeyCode::Delete,
+                modifiers: KeyModifiers::SUPER,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.delete_until_end_of_line();
+            }
+            KeyEvent {
+                code: KeyCode::Delete,
                 ..
             } => {
                 self.delete_forwards();
@@ -136,7 +176,7 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Left,
-                modifiers: KeyModifiers::META,
+                modifiers: KeyModifiers::SUPER,
                 ..
             }
             | KeyEvent {
@@ -149,6 +189,11 @@ impl TextBuffer {
             KeyEvent {
                 code: KeyCode::Left,
                 modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('b'), // Emacs-style. ghostty sends this for Alt+Left by default
+                modifiers: KeyModifiers::ALT,
                 ..
             } => {
                 self.move_one_word_left(WordDelim::WhiteSpace);
@@ -164,7 +209,7 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Right,
-                modifiers: KeyModifiers::META,
+                modifiers: KeyModifiers::SUPER,
                 ..
             }
             | KeyEvent {
@@ -177,6 +222,11 @@ impl TextBuffer {
             KeyEvent {
                 code: KeyCode::Right,
                 modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('f'), // Emacs-style. ghostty sends this for Alt+Right by default
+                modifiers: KeyModifiers::ALT,
                 ..
             } => {
                 self.move_one_word_right(WordDelim::WhiteSpace);
@@ -211,14 +261,14 @@ impl TextBuffer {
             }
             KeyEvent {
                 code: KeyCode::Char('y'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
                 ..
             } => {
                 self.redo();
             }
             KeyEvent {
                 code: KeyCode::Char('z'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
                 ..
             } => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -726,10 +776,26 @@ impl TextBuffer {
         self.buf = new_buffer.to_string();
         self.cursor_byte = new_buffer.len();
     }
+
+    pub fn delete_until_start_of_line(&mut self) {
+        self.push_snapshot(true);
+        let old_cursor = self.cursor_byte;
+        self.move_start_of_line();
+        self.buf.drain(self.cursor_byte..old_cursor);
+    }
+
+    pub fn delete_until_end_of_line(&mut self) {
+        self.push_snapshot(true);
+        let old_cursor = self.cursor_byte;
+        self.move_end_of_line();
+        self.buf.drain(old_cursor..self.cursor_byte);
+        self.cursor_byte = old_cursor;
+    }
 }
 
 #[cfg(test)]
 mod test_editing_advanced {
+
     use super::*;
 
     #[test]
@@ -915,6 +981,30 @@ mod test_editing_advanced {
         assert_eq!(tb.buffer(), "asd");
         tb.delete_one_word_right(WordDelim::LessStrict);
         assert_eq!(tb.buffer(), "");
+    }
+
+    #[test]
+    fn delete_until_end_of_line_multiline() {
+        let mut tb = TextBuffer::new("hello\nworld\nfoo");
+        tb.cursor_byte = 2; // Cursor after 'he|llo\nworld\nfoo'
+        tb.delete_until_end_of_line();
+        assert_eq!(tb.buffer(), "he\nworld\nfoo");
+        // Move to next line and test again
+        tb.cursor_byte = 3; // At start of 'world'
+        tb.delete_until_end_of_line();
+        assert_eq!(tb.buffer(), "he\n\nfoo");
+    }
+
+    #[test]
+    fn delete_until_start_of_line_multiline() {
+        let mut tb = TextBuffer::new("abc\ndef\nghi");
+        tb.cursor_byte = 5;
+        tb.delete_until_start_of_line();
+        assert_eq!(tb.buffer(), "abc\nf\nghi");
+        // Move to next line and test again
+        tb.move_to_end();
+        tb.delete_until_start_of_line();
+        assert_eq!(tb.buffer(), "abc\nf\n");
     }
 }
 

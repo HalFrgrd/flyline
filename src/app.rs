@@ -452,6 +452,16 @@ impl App {
         false
     }
 
+    /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
+    /// MacOs command keyboard shortcuts are not sent to terminal apps by default.
+    /// They are often captured by the terminal emulator itself for various commands
+    /// Try `ghostty +list-keybinds --default` on ghostty. Most
+    ///
+    /// META: this is similar to Alt. How are they different?
+    /// SUPER: Windows key or Mac Command key
+    /// HYPER: Often as as result of pressing Ctrl + Shift + Alt + Windows/Command key. rarely used.
+    ///
+    /// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
     fn on_keypress(&mut self, key: KeyEvent) {
         match key {
             KeyEvent {
