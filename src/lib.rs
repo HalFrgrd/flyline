@@ -1,9 +1,9 @@
+use anyhow::Result;
 use bash_builtins;
+use clap::{Arg, Command as ClapCommand};
 use libc::{c_char, c_int};
 use std::path::PathBuf;
-use std::sync::{ Mutex};
-use anyhow::Result;
-use clap::{Arg, Command as ClapCommand};
+use std::sync::Mutex;
 
 mod active_suggestions;
 mod app;
@@ -22,7 +22,7 @@ mod tab_completion_context;
 mod text_buffer;
 
 // Global state for our custom input stream
-static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None); // TODO: do I need Mutex optoin arc mutex??
+static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
@@ -42,9 +42,7 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
     c
 }
 
-extern "C" fn flyline_call_command(
-    words: *const bash_symbols::WordList,
-) -> c_int {
+extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
     if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_mut() {
         return boxed.call(words);
     }
@@ -100,7 +98,6 @@ impl Flyline {
     }
 
     fn call(&mut self, words: *const bash_symbols::WordList) -> c_int {
-        // TODO: proper error codes (EX_BADSYNTAX, etc)
         let mut args = vec![];
         unsafe {
             let mut current = words;
@@ -110,22 +107,29 @@ impl Flyline {
                     let c_str = std::ffi::CStr::from_ptr(word_desc.word);
                     if let Ok(str_slice) = c_str.to_str() {
                         args.push(str_slice);
+                        // TODO what do the flags mean?
+                        println!("arg: {} flags: {}", str_slice, word_desc.flags);
                     }
                 }
                 current = (*current).next;
             }
         }
+        log::debug!("flyline called with args: {:?}", args);
 
         // Parse arguments using clap
         let app = ClapCommand::new("flyline")
-            .arg(Arg::new("version")
-                .long("version")
-                .action(clap::ArgAction::SetTrue)
-                .help("Show version information"))
-            .arg(Arg::new("disable-animations")
-                .long("disable-animations")
-                .action(clap::ArgAction::SetTrue)
-                .help("Disable animations"));
+            .arg(
+                Arg::new("version")
+                    .long("version")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Show version information"),
+            )
+            .arg(
+                Arg::new("disable-animations")
+                    .long("disable-animations")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Disable animations"),
+            );
 
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
         match app.try_get_matches_from(args_with_prog) {
@@ -134,39 +138,24 @@ impl Flyline {
 
                 if matches.get_flag("version") {
                     println!("flyline version {}", env!("CARGO_PKG_VERSION"));
-                    return 0;
                 }
-                
+
                 if matches.get_flag("disable-animations") {
                     log::info!("Animations disabled");
                     // TODO: Set animation flag or pass to app
                 }
+                bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
             }
             Err(e) => {
                 eprintln!("Error parsing arguments: {}", e);
-                return 1;
+                return bash_symbols::BuiltinExitCode::Usage as c_int;
             }
         }
-
-
-        log::debug!("flyline called with args: {:?}", args);
-        0
-
     }
 
     fn get(&mut self) -> c_int {
         // log::debug!("Getting byte from flyline input stream");
         if self.content.is_empty() || self.position >= self.content.len() {
-            log::debug!("Input stream is empty or at end, fetching new command");
-            // log::debug!(
-            //     "self.content.len() = {}, self.position = {}",
-            //     self.content.len(),
-            //     self.position
-            // );
-            // for b in &self.content {
-            //     log::debug!("Existing content byte: {} (asci={})", b, *b as char);
-            // }
-
             log::debug!("---------------------- Starting app ------------------------");
 
             self.content = match app::get_command() {
@@ -199,7 +188,6 @@ impl Flyline {
     }
 }
 
-
 /* Exported builtin struct */
 #[unsafe(no_mangle)]
 pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBuiltin {
@@ -207,32 +195,18 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
     long_doc: (&[
-                "longer docs here\0".as_ptr() as *const c_char,
-                "more help here\0".as_ptr() as *const c_char,
-                ::std::ptr::null()
-            ]).as_ptr(),
+        "longer docs here\0".as_ptr() as *const c_char,
+        "more help here\0".as_ptr() as *const c_char,
+        ::std::ptr::null(),
+    ])
+        .as_ptr(),
     short_doc: b"flyline: advanced command line interface for bash\0".as_ptr() as *const c_char,
     handle: std::ptr::null(),
 };
 
-/* Called when builtin is enabled and loaded from the shared object.  If this
-   function returns 0, the load fails. */
 #[unsafe(no_mangle)]
-pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
-    println!("in flyline_builtin_load");
-
-    if !arg.is_null() {
-        unsafe {
-            let c_str = std::ffi::CStr::from_ptr(arg);
-            if let Ok(str_slice) = c_str.to_str() {
-                println!("flyline_builtin_load called with arg: '{}'", str_slice);
-            } else {
-                println!("flyline_builtin_load called with invalid UTF-8 arg");
-            }
-        }
-    } else {
-        println!("flyline_builtin_load called with null arg");
-    }
+pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
+    // Returning 0 means the load fails
 
     // TODO: panic catch
     unsafe {
@@ -255,6 +229,22 @@ pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
     // So we modify the sentinel node before that happens so that in set_bash_input,
     // with_input_from_stdin will see that the current bash_input is fit for purpose and not add readline stdin.
 
+    let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
+        let name = std::ffi::CString::new("flyline_input").unwrap();
+
+        unsafe {
+            (*bash_input).stream_type = bash_symbols::StreamType::StStdin;
+            (*bash_input).name = name.as_ptr() as *mut i8;
+            (*bash_input).getter = Some(flyline_get_char);
+            (*bash_input).ungetter = Some(flyline_unget_char);
+        }
+
+        std::mem::forget(name);
+
+        // Store the Arc globally so C callbacks can access it
+        *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Box::new(Flyline::new()));
+    };
+
     unsafe {
         if !bash_symbols::stream_list.is_null() {
             let stream_list_head: &mut bash_symbols::StreamSaver = &mut *bash_symbols::stream_list;
@@ -265,47 +255,28 @@ pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
                 // stream_on_stack (st_stdin) will be true.
                 // This basically takes over the sentinel node at the base of the stream_list
                 log::info!("Setting flyline input stream at the head of the list");
-                let name = std::ffi::CString::new("flyline_input").unwrap();
-
-                stream_list_head.bash_input.stream_type = bash_symbols::StreamType::StStdin;
-                stream_list_head.bash_input.name = name.as_ptr() as *mut i8;
-                stream_list_head.bash_input.getter = Some(flyline_get_char);
-                stream_list_head.bash_input.ungetter = Some(flyline_unget_char);
-
-                std::mem::forget(name);
-
-                // Store the Arc globally so C callbacks can access it
-                *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Box::new(Flyline::new()));
+                setup_bash_input(&mut stream_list_head.bash_input);
             } else {
                 log::error!("stream_list has more than one entry, cannot set flyline input stream");
             }
         } else {
+            // This is so that we can load it on the repl after startup
             log::warn!("stream_list is null, seeing if we can set flyline input stream");
 
             if !bash_symbols::bash_input.name.is_null() {
                 log::info!("Setting flyline input stream via bash_input");
 
-                let current_input =
+                let current_input_name =
                     std::ffi::CStr::from_ptr(bash_symbols::bash_input.name).to_string_lossy();
 
-                if current_input.starts_with("readline") {
+                if current_input_name.starts_with("readline") {
                     log::info!("bash_input.name is readline, safe to override");
-                    let name = std::ffi::CString::new("flyline_input").unwrap();
-
                     bash_symbols::push_stream(0);
-                    bash_symbols::bash_input.stream_type = bash_symbols::StreamType::StStdin;
-                    bash_symbols::bash_input.name = name.as_ptr() as *mut i8;
-                    bash_symbols::bash_input.getter = Some(flyline_get_char);
-                    bash_symbols::bash_input.ungetter = Some(flyline_unget_char);
-
-                    std::mem::forget(name);
-
-                    // Store the Arc globally so C callbacks can access it
-                    *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Box::new(Flyline::new()));
+                    setup_bash_input(&raw mut bash_symbols::bash_input);
                 } else {
                     log::warn!(
                         "bash_input.name is '{}', not overriding anyway",
-                        current_input
+                        current_input_name
                     );
                 }
             } else {
@@ -319,45 +290,26 @@ pub extern "C" fn flyline_builtin_load(arg: *const c_char) -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
-
     *FLYLINE_INSTANCE_PTR.lock().unwrap() = None;
 
     unsafe {
-        let mut current = bash_symbols::stream_list;
-        let mut index = 0;
+        if bash_symbols::stream_list.is_null() {
+            println!("stream_list is null, trying to setup readline");
 
-        while !current.is_null() {
-            let stream = &*current;
-
-            let name = if stream.bash_input.name.is_null() {
-                "null".to_string()
-            } else {
-                std::ffi::CStr::from_ptr(stream.bash_input.name)
-                    .to_string_lossy()
-                    .into_owned()
-            };
-
-            let stream_type = match stream.bash_input.stream_type {
-                bash_symbols::StreamType::StNone => "st_none",
-                bash_symbols::StreamType::StStdin => "st_stdin",
-                bash_symbols::StreamType::StStream => "st_stream",
-                bash_symbols::StreamType::StString => "st_string",
-                bash_symbols::StreamType::StBStream => "st_bstream",
-            };
-
-            println!("[{}] name: '{}', type: {}", index, name, stream_type);
-
-            if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin {
-                println!("There is a suitable stdin stream called '{}', popping flyline stream", name);
-                bash_symbols::pop_stream();
-                return ;
-            }
-
-            current = stream.next;
-            index += 1;
+            // we don't have access to yy_readline_(un)get so we can't set it directly
+            // but we can call with_input_from_stdin which will set it up properly
+            bash_symbols::bash_input.stream_type = bash_symbols::StreamType::StNone;
+            bash_symbols::with_input_from_stdin();
+        } else {
+            let head: &mut bash_symbols::StreamSaver = &mut *bash_symbols::stream_list;
+            let current_input_name =
+                std::ffi::CStr::from_ptr(head.bash_input.name).to_string_lossy();
+            println!(
+                "Found stream_list entry with name: {} and type: {:?}",
+                current_input_name, head.bash_input.stream_type
+            );
+            bash_symbols::pop_stream();
         }
-        println!("No suitable stdin stream found popping anyway to let bash figure it out");
-        bash_symbols::pop_stream();
     }
 }
 

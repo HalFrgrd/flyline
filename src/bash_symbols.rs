@@ -12,7 +12,7 @@ pub const BUILTIN_ENABLED: c_int = 0x01;
 #[allow(dead_code)]
 pub struct WordDesc {
     pub word: *const c_char, // Zero terminated string.
-    pub flags: c_int,      // Flags associated with this word.
+    pub flags: c_int,        // Flags associated with this word.
 }
 
 /* A linked list of words. */
@@ -41,12 +41,26 @@ pub type BashBuiltinCallFunc = extern "C" fn(*const WordList) -> c_int;
 #[repr(C)]
 #[allow(dead_code)]
 pub struct BashBuiltin {
-    pub name: *const c_char, // The name that the user types.
+    pub name: *const c_char,                   // The name that the user types.
     pub function: Option<BashBuiltinCallFunc>, // The address of the invoked function.
-    pub flags: c_int,               // One of the #defines above.
-    pub long_doc: *const *const c_char, // NULL terminated array of strings.
-    pub short_doc: *const c_char,     // Short version of documentation.
-    pub handle: *const c_char,        // for future use
+    pub flags: c_int,                          // One of the #defines above.
+    pub long_doc: *const *const c_char,        // NULL terminated array of strings.
+    pub short_doc: *const c_char,              // Short version of documentation.
+    pub handle: *const c_char,                 // for future use
+}
+
+// shell.h
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinExitCode {
+    ExecutionSuccess = 0,
+    BadSyntax = 257,    // shell syntax error
+    Usage = 258,        // syntax error in usage
+    RedirFail = 259,    // redirection failed
+    BadAssign = 260,    // variable assignment error
+    ExpFail = 261,      // word expansion failed
+    DiskFallback = 262, // fall back to disk command from builtin
+    UtilError = 263,    // Posix special builtin utility error
 }
 
 // Bash input stream types from bash's input.h
@@ -78,9 +92,9 @@ pub struct BufferedStream {
 
 // sh_cget_func_t and sh_cunget_func_t are function pointer types
 #[allow(dead_code)]
-pub type ShCGetFunc = extern "C" fn() -> c_int;
+pub type ShCGetFunc = unsafe extern "C" fn() -> c_int;
 #[allow(dead_code)]
-pub type ShCUngetFunc = extern "C" fn(c_int) -> c_int;
+pub type ShCUngetFunc = unsafe extern "C" fn(c_int) -> c_int;
 
 // BASH_INPUT structure from bash's input.h
 #[repr(C)]
@@ -141,6 +155,10 @@ unsafe extern "C" {
 
     // from shell.h
     pub static interactive_shell: c_int;
+
+    // y.tab.c
+    // void with_input_from_stdin (void)
+    pub fn with_input_from_stdin();
 
     // alias.h
     /* Return the value of the alias for NAME, or NULL if there is none. */
