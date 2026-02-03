@@ -13,6 +13,7 @@ pub enum Tag {
     TabSuggestion,
     HistorySuggestion,
     FuzzySearch,
+    Tooltip,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,18 +200,18 @@ impl Contents {
         term_em_y: u16,
         term_em_offset: i16,
     ) -> Option<&TaggedCell> {
-        log::debug!(
-            "Getting tagged cell at terminal em coords ({}, {}), offset {}",
-            term_em_x,
-            term_em_y,
-            term_em_offset
-        );
+        // log::debug!(
+        //     "Getting tagged cell at terminal em coords ({}, {}), offset {}",
+        //     term_em_x,
+        //     term_em_y,
+        //     term_em_offset
+        // );
         if term_em_offset > term_em_y as i16 {
-            log::debug!(
-                "Offset {} is greater than term_em_y {}, returning None",
-                term_em_offset,
-                term_em_y
-            );
+            // log::debug!(
+            //     "Offset {} is greater than term_em_y {}, returning None",
+            //     term_em_offset,
+            //     term_em_y
+            // );
             return None;
         }
 

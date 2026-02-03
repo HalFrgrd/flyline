@@ -164,6 +164,7 @@ struct App {
     mouse_state: MouseState,
     content_mode: ContentMode,
     last_contents: Option<(Contents, i16)>,
+    last_mouse_over_cell: Option<Tag>,
 }
 
 impl App {
@@ -190,6 +191,7 @@ impl App {
             mouse_state: MouseState::new(),
             content_mode: ContentMode::Normal,
             last_contents: None,
+            last_mouse_over_cell: None,
         }
     }
 
@@ -425,22 +427,25 @@ impl App {
     }
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
-        log::debug!("Mouse event: {:?}", mouse);
-
         match mouse.kind {
-            crossterm::event::MouseEventKind::Down(_) => {
-                log::debug!("Mouse down event at ({}, {})", mouse.column, mouse.row);
+            crossterm::event::MouseEventKind::Moved => {
+                // log::debug!("Mouse Moved to ({}, {})", mouse.column, mouse.row);
                 if let Some((contents, offset)) = &self.last_contents {
                     if let Some(tagged_cell) =
                         contents.get_tagged_cell(mouse.column, mouse.row, *offset)
                     {
-                        log::debug!(
-                            "Mouse moved over cell at ({}, {}): {:?}",
-                            mouse.column,
-                            mouse.row,
-                            tagged_cell
-                        );
+                        // log::debug!(
+                        //     "Mouse moved over cell at ({}, {}): {:?}",
+                        //     mouse.column,
+                        //     mouse.row,
+                        //     tagged_cell
+                        // );
+                        self.last_mouse_over_cell = Some(tagged_cell.tag.clone());
+                    } else {
+                        self.last_mouse_over_cell = None;
                     }
+                } else {
+                    self.last_mouse_over_cell = None;
                 }
             }
             e => {
@@ -1059,7 +1064,7 @@ impl App {
 
                 let (command_type, short_desc) = self.bash_env.get_command_info(first_word);
                 if !short_desc.is_empty() {
-                    command_description = Some(short_desc.to_owned());
+                    command_description = Some(format!("{:?}: {}", command_type, short_desc));
                 }
 
                 let first_word = if first_word.starts_with("python") && self.mode.is_running() {
@@ -1246,6 +1251,34 @@ impl App {
                     ),
                     Tag::FuzzySearch,
                 );
+            }
+            ContentMode::Normal if self.mode.is_running() => {
+                if let Some(tag) = &self.last_mouse_over_cell {
+                    match tag {
+                        Tag::CommandFirstWord
+                            if matches!(self.content_mode, ContentMode::Normal) =>
+                        {
+                            if let Some(desc) = &command_description {
+                                content.newline();
+                                content.write_span(
+                                    &Span::styled(format!("# {}", desc), Pallete::secondary_text()),
+                                    Tag::Tooltip,
+                                );
+                            }
+                        }
+                        _ => {
+                             content.newline();
+
+                            content.write_span(
+                                &Span::styled(
+                                    format!("# Mouse over: {:?}", tag),
+                                    Pallete::secondary_text(),
+                                ),
+                                Tag::Tooltip,
+                            );
+                        }
+                    }
+                }
             }
             _ => {}
         }
