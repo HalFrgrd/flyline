@@ -113,6 +113,7 @@ impl MouseState {
     fn enable(&mut self) {
         match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
             Ok(_) => {
+                log::debug!("Enabled mouse capture");
                 self.enabled = true;
             }
             Err(e) => {
@@ -123,6 +124,7 @@ impl MouseState {
     fn disable(&mut self) {
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
+                log::debug!("Disabled mouse capture");
                 self.enabled = false;
             }
             Err(e) => {
@@ -674,7 +676,10 @@ impl App {
                 modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
-                self.mouse_state.disable();
+                // Idea is that when Alt/Meta is held down, mouse is toggled
+                // But not all terminals send key release events for Alt/Meta
+                // So we toggle on both press and release
+                self.mouse_state.toggle();
             }
             // Delegate basic text editing to TextBuffer
             _ => {
@@ -693,7 +698,7 @@ impl App {
                 modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
-                self.mouse_state.enable();
+                self.mouse_state.toggle();
             }
             _ => {}
         }
