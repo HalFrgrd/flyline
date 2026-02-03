@@ -251,7 +251,7 @@ impl App {
         const RESIZE_COOLDOWN_MS: u128 = 200;
 
         let mut redraw = true;
-
+        let mut needs_screen_cleared = false;
         let mut last_terminal_area = terminal.size().unwrap();
         let mut last_terminal_area_on_render = terminal.size().unwrap();
 
@@ -279,7 +279,12 @@ impl App {
                     content.increase_buf_single_row();
                 }
 
-                let desired_height = content.height().min(last_terminal_area.height);
+                let desired_height = if needs_screen_cleared {
+                    last_terminal_area.height
+                } else {
+                    content.height().min(last_terminal_area.height)
+                };
+                needs_screen_cleared = false;
                 terminal
                     .set_viewport_height(desired_height)
                     .unwrap_or_else(|e| {
@@ -379,7 +384,7 @@ impl App {
                         CrosstermEvent::Key(key) => {
                             log::debug!("Key event: {:?}", key);
                             if key.kind == crossterm::event::KeyEventKind::Press {
-                                self.on_keypress(key);
+                                needs_screen_cleared = self.on_keypress(key);
                                 true
                             } else {
                                 false
@@ -462,7 +467,7 @@ impl App {
     /// HYPER: Often as as result of pressing Ctrl + Shift + Alt + Windows/Command key. rarely used.
     ///
     /// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
-    fn on_keypress(&mut self, key: KeyEvent) {
+    fn on_keypress(&mut self, key: KeyEvent) -> bool {
         match key {
             KeyEvent {
                 code: KeyCode::Left,
@@ -676,6 +681,15 @@ impl App {
                     }
                 }
             }
+            KeyEvent {
+                code: KeyCode::Char('l'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                // Clear screen
+
+                return true;
+            }
             // Delegate basic text editing to TextBuffer
             _ => {
                 self.buffer.on_keypress(key);
@@ -683,6 +697,7 @@ impl App {
         }
 
         self.on_possible_buffer_change();
+        return false;
     }
 
     fn on_possible_buffer_change(&mut self) {

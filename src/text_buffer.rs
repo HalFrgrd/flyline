@@ -181,7 +181,7 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Char('a'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
                 ..
             } => {
                 self.move_start_of_line();
@@ -214,7 +214,7 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Char('e'),
-                modifiers: KeyModifiers::CONTROL,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
                 ..
             } => {
                 self.move_end_of_line();
