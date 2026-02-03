@@ -12,7 +12,7 @@ use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::TextBuffer;
 use crossterm::event::Event as CrosstermEvent;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent};
 use futures::StreamExt;
 use glob::glob;
 use ratatui::prelude::*;
@@ -81,7 +81,7 @@ pub fn get_command() -> ExitState {
         std::io::stdout(),
         crossterm::event::EnableBracketedPaste,
         crossterm::event::EnableFocusChange,
-        // crossterm::event::EnableMouseCapture,
+        crossterm::event::EnableMouseCapture,
         crossterm::event::PushKeyboardEnhancementFlags(
             crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
                 | crossterm::event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
@@ -107,40 +107,28 @@ struct MouseState {
 
 impl MouseState {
     fn new() -> Self {
-        MouseState { enabled: false }
+        MouseState { enabled: true }
     }
 
     fn enable(&mut self) {
-        use std::io::Write;
-
-        let mut f = std::io::stdout();
-
-        let _ = f.write_all(
-            concat!(
-                // Normal tracking: Send mouse X & Y on button press and release
-                "\x1b[?1000h",
-                // Button-event tracking: Report button motion events (dragging)
-                "\x1b[?1002h",
-                // Any-event tracking: Report all motion events
-                // "\x1b[?1003h",
-                // RXVT mouse mode: Allows mouse coordinates of >223
-                "\x1b[?1015h",
-                // SGR mouse mode: Allows mouse coordinates of >223, preferred over RXVT mode
-                "\x1b[?1006h",
-            )
-            .as_bytes(),
-        );
-
-        let _ = f.flush();
-        self.enabled = true;
+        match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
+            Ok(_) => {
+                self.enabled = true;
+            }
+            Err(e) => {
+                log::error!("Failed to enable mouse capture: {}", e);
+            }
+        }
     }
     fn disable(&mut self) {
-        crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture)
-            .unwrap_or_else(|e| {
+        match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
+            Ok(_) => {
+                self.enabled = false;
+            }
+            Err(e) => {
                 log::error!("Failed to disable mouse capture: {}", e);
-            });
-
-        self.enabled = false;
+            }
+        }
     }
 
     fn toggle(&mut self) {
@@ -171,8 +159,6 @@ struct App {
     bash_env: BashEnvManager,
     snake_animation: SnakeAnimation,
     history_suggestion: Option<(HistoryEntry, String)>,
-    command_word_cells: Vec<(u16, u16)>,
-    should_show_command_info: bool,
     mouse_state: MouseState,
     content_mode: ContentMode,
 }
@@ -198,8 +184,6 @@ impl App {
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
-            command_word_cells: Vec::new(),
-            should_show_command_info: false,
             mouse_state: MouseState::new(),
             content_mode: ContentMode::Normal,
         }
@@ -382,18 +366,21 @@ impl App {
 
                     match evt {
                         CrosstermEvent::Key(key) => {
-                            log::debug!("Key event: {:?}", key);
-                            if key.kind == crossterm::event::KeyEventKind::Press {
-                                needs_screen_cleared = self.on_keypress(key);
-                                true
-                            } else {
-                                false
+                            match key.kind {
+                                crossterm::event::KeyEventKind::Press => {
+                                    log::debug!("Key press: {:?}", key);
+                                    needs_screen_cleared = self.on_keypress(key);
+                                    true
+                                }
+                                crossterm::event::KeyEventKind::Release => {
+                                    self.on_keyrelease(key);
+                                    false
+                                }
+                                _ => {false}
                             }
                         }
                         CrosstermEvent::Mouse(mouse) => {
-
                             self.on_mouse(mouse)
-
                         }
                         CrosstermEvent::Resize(new_cols, new_rows) => {
                             log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
@@ -406,11 +393,11 @@ impl App {
                             true
                         }
                         CrosstermEvent::FocusLost => {
-                            log::debug!("Terminal focus lost");
+                            // log::debug!("Terminal focus lost");
                             false
                         },
                         CrosstermEvent::FocusGained => {
-                            log::debug!("Terminal focus gained");
+                            // log::debug!("Terminal focus gained");
                             false
                         },
                         CrosstermEvent::Paste(pasted) => {
@@ -436,20 +423,7 @@ impl App {
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         match mouse.kind {
-            // MouseEventKind::Moved => {
-            //     if !self.mouse_state.update_on_move() {
-            //         // log::debug!("Mouse move ignored due to rapid movement");
-            //         return false;
-            //     }
-            //     self.should_show_command_info = false;
-            //     for (cell_row, cell_col) in &self.command_word_cells {
-            //         if *cell_row == mouse.row && *cell_col == mouse.column {
-            //             log::debug!("Hovering on first word at ({}, {})", cell_row, cell_col);
-            //             // Additional logic can be added here if needed
-            //             self.should_show_command_info = true;
-            //         }
-            //     }
-            // }
+            crossterm::event::MouseEventKind::Moved => {}
             e => {
                 log::debug!("Mouse event: {:?}", e);
             }
@@ -694,8 +668,14 @@ impl App {
                 ..
             } => {
                 // Clear screen
-
                 return true;
+            }
+            KeyEvent {
+                code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
+                modifiers: KeyModifiers::ALT | KeyModifiers::META,
+                ..
+            } => {
+                self.mouse_state.disable();
             }
             // Delegate basic text editing to TextBuffer
             _ => {
@@ -705,6 +685,19 @@ impl App {
 
         self.on_possible_buffer_change();
         return false;
+    }
+
+    fn on_keyrelease(&mut self, key: KeyEvent) {
+        match key {
+            KeyEvent {
+                code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
+                modifiers: KeyModifiers::ALT | KeyModifiers::META,
+                ..
+            } => {
+                self.mouse_state.enable();
+            }
+            _ => {}
+        }
     }
 
     fn on_possible_buffer_change(&mut self) {
@@ -1028,8 +1021,6 @@ impl App {
             content.write_line(&line, !is_last);
         }
 
-        self.command_word_cells = vec![];
-
         let mut command_description: Option<String> = None;
 
         for (is_first, _, (line_idx, (line, cursor_col))) in self
@@ -1132,18 +1123,6 @@ impl App {
                         );
                     }
                 });
-        }
-
-        if self.should_show_command_info
-            && self.mode.is_running()
-            && let Some(desc) = command_description
-        {
-            log::debug!("command description: {:?}", desc);
-            // content.newline();
-            // content.write_span(&Span::styled(
-            //     format!("# {}", desc),
-            //     Style::default().fg(Color::Blue).italic(),
-            // ));
         }
 
         match &mut self.content_mode {
