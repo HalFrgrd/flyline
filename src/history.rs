@@ -370,7 +370,7 @@ impl std::fmt::Debug for FuzzyHistorySearch {
 impl FuzzyHistorySearch {
     fn new() -> Self {
         FuzzyHistorySearch {
-            matcher: SkimMatcherV2::default(),
+            matcher: SkimMatcherV2::default().smart_case(),
             cache: Vec::new(),
             cache_command: None,
             global_index: 0,

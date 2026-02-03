@@ -1000,11 +1000,11 @@ mod test_editing_advanced {
         let mut tb = TextBuffer::new("abc\ndef\nghi");
         tb.cursor_byte = 5;
         tb.delete_until_start_of_line();
-        assert_eq!(tb.buffer(), "abc\nf\nghi");
+        assert_eq!(tb.buffer(), "abc\nef\nghi");
         // Move to next line and test again
         tb.move_to_end();
         tb.delete_until_start_of_line();
-        assert_eq!(tb.buffer(), "abc\nf\n");
+        assert_eq!(tb.buffer(), "abc\nef\n");
     }
 }
 
