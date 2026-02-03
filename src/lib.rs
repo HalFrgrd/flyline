@@ -50,8 +50,7 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
 }
 
 fn flyline_setup_logging() -> Result<()> {
-    let home_dir = bash_funcs::get_env_variable("HOME")
-        .unwrap_or("/tmp/".to_string());
+    let home_dir = bash_funcs::get_env_variable("HOME").unwrap_or("/tmp/".to_string());
     let log_file_path = PathBuf::from(home_dir).join("flyline.logs");
 
     // Initialize simplelog to write to file with file and line number information

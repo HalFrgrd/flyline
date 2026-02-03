@@ -327,7 +327,6 @@ pub fn run_autocomplete_compspec(
     }
 }
 
-
 pub fn get_env_variable(var_name: &str) -> Option<String> {
     unsafe {
         let var_cstr = std::ffi::CString::new(var_name).unwrap();

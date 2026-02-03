@@ -1,3 +1,4 @@
+use std::time::Instant;
 use std::vec;
 
 use crate::bash_symbols;
@@ -451,7 +452,11 @@ impl FuzzyHistorySearch {
     }
 
     fn grow_fuzzy_search_cache(&mut self, entries: &[HistoryEntry], current_cmd: &str) {
-        let max_entries_to_search = 200;
+        let start = Instant::now();
+        let start_index = self.global_index;
+
+        // Takes <1ms per 500 entries
+        let max_entries_to_search = 500;
         for entry in entries
             .iter()
             .rev()
@@ -467,6 +472,10 @@ impl FuzzyHistorySearch {
             }
             self.global_index += 1;
             // log::debug!("Fuzzy search global index: {}", self.global_index);
+        }
+        if start_index != self.global_index {
+            let duration = start.elapsed();
+            log::debug!("Fuzzy cache increase took: {:?}", duration);
         }
     }
 }

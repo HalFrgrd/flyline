@@ -179,11 +179,10 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let user = bash_funcs::get_env_variable("USER")
-            .unwrap_or("user".into());
+        let user = bash_funcs::get_env_variable("USER").unwrap_or("user".into());
 
-        let home_path = bash_funcs::get_env_variable("HOME")
-            .unwrap_or("/home/".to_string() + &user);
+        let home_path =
+            bash_funcs::get_env_variable("HOME").unwrap_or("/home/".to_string() + &user);
 
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
@@ -972,7 +971,7 @@ impl App {
         self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
     }
 
-    fn ts_to_timeago_string(ts: u64) -> String {
+    fn ts_to_timeago_string_5chars(ts: u64) -> String {
         let duration = std::time::Duration::from_secs(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -980,7 +979,8 @@ impl App {
                 .as_secs()
                 .saturating_sub(ts),
         );
-        timeago::Formatter::new().convert(duration)
+        let s = timeago::format_5chars(duration);
+        format!("{:>5}", s.trim_start_matches('0'))
     }
 
     fn create_content(self: &mut Self, width: u16) -> Contents {
@@ -1083,11 +1083,13 @@ impl App {
                         .write_span(&Span::from(line.to_owned()).style(Pallete::secondary_text()));
 
                     if is_last {
-                        let mut extra_info_text = format!(" # idx={}", sug.index);
+                        let mut extra_info_text = " #".to_string();
                         if let Some(ts) = sug.timestamp {
-                            let time_ago_str = Self::ts_to_timeago_string(ts);
-                            extra_info_text.push_str(&format!(" t={}", time_ago_str));
+                            let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
+                            extra_info_text
+                                .push_str(&format!(" {} ago", time_ago_str.trim_start()));
                         }
+                        extra_info_text.push_str(&format!(" idx={}", sug.index));
 
                         content.write_span(
                             &Span::from(extra_info_text).style(Pallete::secondary_text()),
@@ -1156,12 +1158,17 @@ impl App {
                     let entry = &entry_with_indices.0;
                     let mut spans = vec![];
 
-                    let timeago_str = entry.timestamp.map(|ts| Self::ts_to_timeago_string(ts));
-
                     spans.push(Span::styled(
                         format!("{} ", entry.index + 1),
                         Pallete::secondary_text(),
                     ));
+
+                    let timeago_str = entry
+                        .timestamp
+                        .map(|ts| Self::ts_to_timeago_string_5chars(ts));
+                    if let Some(timeago) = timeago_str {
+                        spans.push(Span::styled(timeago, Pallete::secondary_text()));
+                    }
 
                     if fuzzy_search_index == row_idx {
                         spans.push(Span::styled("▐", Pallete::matched_character()));
@@ -1181,12 +1188,6 @@ impl App {
                             style = style.add_modifier(Modifier::REVERSED);
                         }
                         spans.push(Span::styled(ch.to_string(), style));
-                    }
-                    if let Some(timeago) = timeago_str {
-                        spans.push(Span::styled(
-                            format!("  t={}", timeago),
-                            Pallete::secondary_text(),
-                        ));
                     }
 
                     let line = Line::from(spans);
