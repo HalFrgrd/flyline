@@ -28,4 +28,4 @@ RUN /opt/bash-${BASH_VERSION}/bin/bash --version
 
 COPY libflyline.so /
 
-RUN /opt/bash-${BASH_VERSION}/bin/bash -i -c "flyline -s && flyline -v && echo 'SUCCESS: Test completed'"
+RUN /opt/bash-${BASH_VERSION}/bin/bash -i -c "flyline --version && echo 'SUCCESS: Test completed'"
