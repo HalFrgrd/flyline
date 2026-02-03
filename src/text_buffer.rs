@@ -103,7 +103,7 @@ impl TextBuffer {
             }
             KeyEvent {
                 code: KeyCode::Backspace,
-                modifiers: KeyModifiers::ALT,
+                modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
                 self.delete_one_word_left(WordDelim::LessStrict);
@@ -121,14 +121,14 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Char('w'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
                 self.delete_one_word_left(WordDelim::WhiteSpace);
             }
             KeyEvent {
                 code: KeyCode::Delete,
-                modifiers: KeyModifiers::ALT,
+                modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
                 self.delete_one_word_right(WordDelim::LessStrict);
@@ -140,7 +140,7 @@ impl TextBuffer {
             }
             | KeyEvent {
                 code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::ALT,
+                modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
                 self.delete_one_word_right(WordDelim::WhiteSpace);
@@ -188,12 +188,12 @@ impl TextBuffer {
             }
             KeyEvent {
                 code: KeyCode::Left,
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META,
                 ..
             }
             | KeyEvent {
                 code: KeyCode::Char('b'), // Emacs-style. ghostty sends this for Alt+Left by default
-                modifiers: KeyModifiers::ALT,
+                modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
                 self.move_one_word_left(WordDelim::WhiteSpace);
@@ -221,12 +221,12 @@ impl TextBuffer {
             }
             KeyEvent {
                 code: KeyCode::Right,
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META,
                 ..
             }
             | KeyEvent {
                 code: KeyCode::Char('f'), // Emacs-style. ghostty sends this for Alt+Right by default
-                modifiers: KeyModifiers::ALT,
+                modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
                 self.move_one_word_right(WordDelim::WhiteSpace);

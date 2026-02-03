@@ -467,6 +467,13 @@ impl App {
     /// HYPER: Often as as result of pressing Ctrl + Shift + Alt + Windows/Command key. rarely used.
     ///
     /// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
+    ///
+    /// Meta vs Alt:
+    /// On iterm2, there is a seetitng in Porfiles->Keys->Left option key.
+    /// Choices are Normal or  (Set high bit (not recommended) or Esc+).
+    /// Set high bit gives you a warning: "You have chosen to have an option key as Meta. This is
+    /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
+    /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
     fn on_keypress(&mut self, key: KeyEvent) -> bool {
         match key {
             KeyEvent {
