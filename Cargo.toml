@@ -7,7 +7,6 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-bash-builtins = "0.4.1"
 clap = { version = "4.5.49", features = ["derive"] }
 daemonize = "0.5.0"
 ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default"] }

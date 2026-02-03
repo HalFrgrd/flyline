@@ -179,14 +179,10 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let user = bash_builtins::variables::find_as_string("USER")
-            .as_ref()
-            .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+        let user = bash_funcs::get_env_variable("USER")
             .unwrap_or("user".into());
 
-        let home_path = bash_builtins::variables::find_as_string("HOME")
-            .as_ref()
-            .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+        let home_path = bash_funcs::get_env_variable("HOME")
             .unwrap_or("/home/".to_string() + &user);
 
         let unfinished_from_prev_command =

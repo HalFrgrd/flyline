@@ -231,6 +231,10 @@ unsafe extern "C" {
     // char *current_readline_prompt
     #[link_name = "current_readline_prompt"]
     pub static mut current_readline_prompt: *mut c_char;
+
+    // getenv.c
+    // char* getenv(const char* name);
+    pub fn getenv(name: *const c_char) -> *mut c_char;
 }
 
 // history.h

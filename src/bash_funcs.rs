@@ -326,3 +326,19 @@ pub fn run_autocomplete_compspec(
         Ok(res)
     }
 }
+
+
+pub fn get_env_variable(var_name: &str) -> Option<String> {
+    unsafe {
+        let var_cstr = std::ffi::CString::new(var_name).unwrap();
+        let value_ptr = bash_symbols::getenv(var_cstr.as_ptr());
+        if value_ptr.is_null() {
+            return None;
+        }
+        let c_str = std::ffi::CStr::from_ptr(value_ptr);
+        if let Ok(str_slice) = c_str.to_str() {
+            return Some(str_slice.to_string());
+        }
+    }
+    None
+}

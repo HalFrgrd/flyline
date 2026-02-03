@@ -1,5 +1,4 @@
 use anyhow::Result;
-use bash_builtins;
 use clap::{Arg, Command as ClapCommand};
 use libc::{c_char, c_int};
 use std::path::PathBuf;
@@ -51,9 +50,7 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
 }
 
 fn flyline_setup_logging() -> Result<()> {
-    let home_dir = bash_builtins::variables::find_as_string("HOME")
-        .as_ref()
-        .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+    let home_dir = bash_funcs::get_env_variable("HOME")
         .unwrap_or("/tmp/".to_string());
     let log_file_path = PathBuf::from(home_dir).join("flyline.logs");
 

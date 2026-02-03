@@ -15,9 +15,8 @@ pub struct BashEnvManager {
 
 impl BashEnvManager {
     pub fn new() -> Self {
-        let path_var = bash_builtins::variables::find_as_string("PATH");
-        let executables = if let Some(path_str) = path_var.as_ref().and_then(|v| v.to_str().ok()) {
-            Self::get_executables_from_path(path_str)
+        let executables = if let Some(path_str) = bash_funcs::get_env_variable("PATH") {
+            Self::get_executables_from_path(&path_str)
         } else {
             Vec::new()
         };
