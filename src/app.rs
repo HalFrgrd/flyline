@@ -168,6 +168,7 @@ struct App {
     last_contents: Option<(Contents, i16)>,
     last_mouse_over_cell: Option<Tag>,
     command_description: Option<String>,
+    cached_command_type: bash_funcs::CommandType,
 }
 
 impl App {
@@ -196,6 +197,7 @@ impl App {
             last_contents: None,
             last_mouse_over_cell: None,
             command_description: None,
+            cached_command_type: bash_funcs::CommandType::Unknown,
         }
     }
 
@@ -745,10 +747,11 @@ impl App {
         // log::debug!("Caching command type for first word: {}", first_word);
         self.bash_env.cache_command_type(&first_word);
         
-        // Cache command description
+        // Cache command description and command type
         let (command_type, short_desc) = self.bash_env.get_command_info(&first_word);
+        self.cached_command_type = command_type;
         self.command_description = if !short_desc.is_empty() {
-            Some(format!("{:?}: {}", command_type, short_desc))
+            Some(format!("{:?}: {}", self.cached_command_type, short_desc))
         } else {
             None
         };
@@ -1110,8 +1113,6 @@ impl App {
                 let space_pos = line.find(' ').unwrap_or(line.len());
                 let (first_word, rest) = line.split_at(space_pos);
 
-                let (command_type, _) = self.bash_env.get_command_info(first_word);
-
                 let first_word = if first_word.starts_with("python") && self.mode.is_running() {
                     self.snake_animation.update_anim();
                     let snake_chars: Vec<char> = self.snake_animation.to_string().chars().collect();
@@ -1131,7 +1132,7 @@ impl App {
                     first_word.to_string()
                 };
 
-                let first_word_style: Style = match command_type {
+                let first_word_style: Style = match self.cached_command_type {
                     bash_funcs::CommandType::Unknown => Pallete::unrecognised_word(),
                     _ => Pallete::recognised_word(),
                 };
