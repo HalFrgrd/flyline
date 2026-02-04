@@ -742,6 +742,22 @@ impl App {
         .to_owned();
         // log::debug!("Caching command type for first word: {}", first_word);
         self.bash_env.cache_command_type(&first_word);
+
+        // Apply fuzzy filtering to active tab completion suggestions
+        if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+            let buffer: &str = self.buffer.buffer();
+            let completion_context = tab_completion_context::get_completion_context(
+                buffer,
+                self.buffer.cursor_byte_pos(),
+            );
+            let word_under_cursor = completion_context.word_under_cursor;
+            
+            // Apply fuzzy filter and exit tab completion mode if no matches remain
+            if !active_suggestions.apply_fuzzy_filter(word_under_cursor) {
+                log::debug!("No fuzzy matches found, exiting tab completion mode");
+                self.content_mode = ContentMode::Normal;
+            }
+        }
     }
 
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {

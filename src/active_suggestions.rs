@@ -1,4 +1,6 @@
 use crate::text_buffer::{SubString, TextBuffer};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
@@ -144,6 +146,40 @@ impl ActiveSuggestions {
 
     pub fn update_grid_size(&mut self, rows: usize, cols: usize) {
         self.last_grid_size = (rows, cols);
+    }
+
+    /// Apply fuzzy search filtering to the suggestions based on the given pattern.
+    /// Returns true if any suggestions remain after filtering, false otherwise.
+    pub fn apply_fuzzy_filter(&mut self, pattern: &str) -> bool {
+        if pattern.is_empty() {
+            // No filtering needed for empty pattern
+            return !self.suggestions.is_empty();
+        }
+
+        let matcher = SkimMatcherV2::default();
+        
+        // Filter and sort suggestions by fuzzy match score
+        let mut filtered: Vec<(Suggestion, i64)> = self
+            .suggestions
+            .iter()
+            .filter_map(|suggestion| {
+                matcher
+                    .fuzzy_match(&suggestion.s, pattern)
+                    .map(|score| (suggestion.clone(), score))
+            })
+            .collect();
+
+        // Sort by score (descending - higher scores are better matches)
+        filtered.sort_by(|a, b| b.1.cmp(&a.1));
+
+        self.suggestions = filtered.into_iter().map(|(suggestion, _)| suggestion).collect();
+        
+        // Reset selected index if needed
+        if self.selected_index >= self.suggestions.len() && !self.suggestions.is_empty() {
+            self.selected_index = 0;
+        }
+
+        !self.suggestions.is_empty()
     }
 
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
