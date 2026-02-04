@@ -48,12 +48,23 @@ impl Ord for Suggestion {
     }
 }
 
-#[derive(Debug)]
 pub struct ActiveSuggestions {
     pub suggestions: Vec<Suggestion>,
     selected_index: usize,
     pub word_under_cursor: SubString,
     last_grid_size: (usize, usize),
+    fuzzy_matcher: SkimMatcherV2,
+}
+
+impl std::fmt::Debug for ActiveSuggestions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ActiveSuggestions")
+            .field("suggestions", &self.suggestions)
+            .field("selected_index", &self.selected_index)
+            .field("word_under_cursor", &self.word_under_cursor)
+            .field("last_grid_size", &self.last_grid_size)
+            .finish()
+    }
 }
 
 impl ActiveSuggestions {
@@ -69,6 +80,7 @@ impl ActiveSuggestions {
             selected_index: 0,
             word_under_cursor,
             last_grid_size: (0, 0),
+            fuzzy_matcher: SkimMatcherV2::default(),
         })
     }
 
@@ -156,23 +168,28 @@ impl ActiveSuggestions {
             return !self.suggestions.is_empty();
         }
 
-        let matcher = SkimMatcherV2::default();
-        
-        // Filter and sort suggestions by fuzzy match score
-        let mut filtered: Vec<(Suggestion, i64)> = self
+        // Score and filter suggestions using the stored matcher
+        let mut scored: Vec<(usize, i64)> = self
             .suggestions
             .iter()
-            .filter_map(|suggestion| {
-                matcher
+            .enumerate()
+            .filter_map(|(idx, suggestion)| {
+                self.fuzzy_matcher
                     .fuzzy_match(&suggestion.s, pattern)
-                    .map(|score| (suggestion.clone(), score))
+                    .map(|score| (idx, score))
             })
             .collect();
 
         // Sort by score (descending - higher scores are better matches)
-        filtered.sort_by(|a, b| b.1.cmp(&a.1));
+        scored.sort_by(|a, b| b.1.cmp(&a.1));
 
-        self.suggestions = filtered.into_iter().map(|(suggestion, _)| suggestion).collect();
+        // Extract matching suggestions in score order
+        // This drains and rebuilds the vec, avoiding clone but requires one allocation
+        let all_suggestions = std::mem::take(&mut self.suggestions);
+        self.suggestions = scored
+            .into_iter()
+            .filter_map(|(idx, _)| all_suggestions.get(idx).cloned())
+            .collect();
         
         // Reset selected index if needed
         if self.selected_index >= self.suggestions.len() && !self.suggestions.is_empty() {
