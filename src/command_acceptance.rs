@@ -26,6 +26,9 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
 
     // Quick text-based checks for common incomplete patterns
     if has_obvious_incomplete_patterns(buffer) {
+        if cfg!(test) {
+            println!("Buffer rejected by quick pattern checks");
+        }
         return false;
     }
 
@@ -65,6 +68,9 @@ fn has_obvious_incomplete_patterns(buffer: &str) -> bool {
 
     // Count unescaped double quotes
     if count_unescaped_quotes(&buffer_without_comments) % 2 == 1 {
+        if cfg!(test) {
+            println!("Buffer rejected due to unescaped double quotes");
+        }
         return true;
     }
 
@@ -88,7 +94,11 @@ fn has_obvious_incomplete_patterns(buffer: &str) -> bool {
     }
 
     // Check for incomplete control structures
+    // TOOD this is wrong.
     if has_incomplete_control_structure(buffer) {
+        if cfg!(test) {
+            println!("Buffer rejected due to incomplete control structures");
+        }
         return true;
     }
 
@@ -247,6 +257,13 @@ fn has_incomplete_heredoc(buffer: &str) -> bool {
 
 fn has_missing_nodes(node: &Node) -> bool {
     if node.is_missing() {
+        if cfg!(test) {
+            println!(
+                "Missing node: {:?} at position {:?}",
+                node.kind(),
+                node.start_position()
+            );
+        }
         return true;
     }
 
@@ -481,6 +498,15 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("function test() { \\"), false);
         assert_eq!(
             will_bash_accept_buffer("function test() { \\\necho hi; }"),
+            true
+        );
+    }
+
+    #[ignore]
+    #[test]
+    fn test_asdf() {
+        assert_eq!(
+            will_bash_accept_buffer("gcm \"no history suggestion if empty\""),
             true
         );
     }

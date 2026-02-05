@@ -14,6 +14,7 @@ mod content_builder;
 mod cursor_animation;
 mod history;
 mod iter_first_last;
+mod mouse_state;
 mod palette;
 mod prompt_manager;
 mod snake_animation;
@@ -65,7 +66,7 @@ fn flyline_setup_logging() -> Result<()> {
             .set_location_level(LevelFilter::Debug)
             .add_filter_ignore_str("flyline::text_buffer")
             .add_filter_ignore_str("flyline::tab_completion")
-            // .add_filter_ignore_str("flyline::history")
+            .add_filter_ignore_str("flyline::history")
             .add_filter_ignore_str("flyline::bash_funcs")
             .build(),
         log_file,
