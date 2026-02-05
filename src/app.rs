@@ -11,7 +11,7 @@ use crate::palette::Pallete;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
-use crate::text_buffer::TextBuffer;
+use crate::text_buffer::{SubString, TextBuffer};
 use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent};
 use futures::StreamExt;
@@ -584,6 +584,7 @@ impl App {
                 code: KeyCode::Tab, ..
             } => {
                 // if the word under the cursor has changed, reset active suggestions
+                // TODO
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     if !self
                         .buffer
@@ -713,20 +714,23 @@ impl App {
         // log::debug!("Caching command type for first word: {}", first_word);
 
         // Apply fuzzy filtering to active tab completion suggestions
+        // TODO detect when to reset suggestions instead of just filtering, because if the word under the cursor changes too much, there might be no matches left and we should reset instead of showing no suggestions.
+        // Try with pressing home to jump the cursor to antoher word
         if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
             let buffer: &str = self.buffer.buffer();
             let completion_context = tab_completion_context::get_completion_context(
                 buffer,
                 self.buffer.cursor_byte_pos(),
             );
-            let word_under_cursor = completion_context.word_under_cursor;
-
-            // Apply fuzzy filter and exit tab completion mode if no matches remain
-            active_suggestions.apply_fuzzy_filter(word_under_cursor);
-            // if !active_suggestions.apply_fuzzy_filter(word_under_cursor) {
-            //     log::debug!("No fuzzy matches found, exiting tab completion mode");
-            //     self.content_mode = ContentMode::Normal;
-            // }
+            let word_under_cursor_str = completion_context.word_under_cursor;
+            if let Some(word_under_cursor) = SubString::new(buffer, word_under_cursor_str).ok() {
+                // Apply fuzzy filter and exit tab completion mode if no matches remain
+                active_suggestions.apply_fuzzy_filter(word_under_cursor);
+                // if !active_suggestions.apply_fuzzy_filter(word_under_cursor) {
+                //     log::debug!("No fuzzy matches found, exiting tab completion mode");
+                //     self.content_mode = ContentMode::Normal;
+                // }
+            }
         }
 
         // Cache command description and command type
