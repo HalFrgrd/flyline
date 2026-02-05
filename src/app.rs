@@ -732,9 +732,12 @@ impl App {
     }
 
     fn on_possible_buffer_change(&mut self) {
-        self.history_suggestion = self
-            .history_manager
-            .get_command_suggestion_suffix(self.buffer.buffer());
+        self.history_suggestion = if self.buffer.buffer().is_empty() {
+            None
+        } else {
+            self.history_manager
+                .get_command_suggestion_suffix(self.buffer.buffer())
+        };
 
         let first_word = {
             let line = self.buffer.buffer();
