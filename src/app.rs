@@ -127,6 +127,8 @@ struct App {
     content_mode: ContentMode,
     last_contents: Option<(Contents, i16)>,
     last_mouse_over_cell: Option<Tag>,
+    command_description: Option<String>,
+    cached_command_type: bash_funcs::CommandType,
 }
 
 impl App {
@@ -154,6 +156,8 @@ impl App {
             content_mode: ContentMode::Normal,
             last_contents: None,
             last_mouse_over_cell: None,
+            command_description: None,
+            cached_command_type: bash_funcs::CommandType::Unknown,
         }
     }
 
@@ -708,6 +712,15 @@ impl App {
         .to_owned();
         // log::debug!("Caching command type for first word: {}", first_word);
         self.bash_env.cache_command_type(&first_word);
+        
+        // Cache command description and command type
+        let (command_type, short_desc) = self.bash_env.get_command_info(&first_word);
+        self.cached_command_type = command_type;
+        self.command_description = if !short_desc.is_empty() {
+            Some(format!("{:?}: {}", self.cached_command_type, short_desc))
+        } else {
+            None
+        };
     }
 
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
@@ -1052,8 +1065,6 @@ impl App {
             }
         }
 
-        let mut command_description: Option<String> = None;
-
         for (is_first, _, (line_idx, (line, cursor_col))) in self
             .buffer
             .lines_with_cursor()
@@ -1065,11 +1076,6 @@ impl App {
             if is_first {
                 let space_pos = line.find(' ').unwrap_or(line.len());
                 let (first_word, rest) = line.split_at(space_pos);
-
-                let (command_type, short_desc) = self.bash_env.get_command_info(first_word);
-                if !short_desc.is_empty() {
-                    command_description = Some(format!("{:?}: {}", command_type, short_desc));
-                }
 
                 let first_word = if first_word.starts_with("python") && self.mode.is_running() {
                     self.snake_animation.update_anim();
@@ -1090,7 +1096,7 @@ impl App {
                     first_word.to_string()
                 };
 
-                let first_word_style: Style = match command_type {
+                let first_word_style: Style = match self.cached_command_type {
                     bash_funcs::CommandType::Unknown => Pallete::unrecognised_word(),
                     _ => Pallete::recognised_word(),
                 };
@@ -1260,7 +1266,7 @@ impl App {
                         Tag::CommandFirstWord
                             if matches!(self.content_mode, ContentMode::Normal) =>
                         {
-                            if let Some(desc) = &command_description {
+                            if let Some(desc) = &self.command_description {
                                 content.newline();
                                 content.write_span(
                                     &Span::styled(format!("# {}", desc), Pallete::secondary_text()),
