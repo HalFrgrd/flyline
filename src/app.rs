@@ -6,6 +6,7 @@ use crate::content_builder::{Contents, Tag};
 use crate::cursor_animation::CursorAnimation;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
+use crate::mouse_state::MouseState;
 use crate::palette::Pallete;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
@@ -103,47 +104,6 @@ pub fn get_command() -> ExitState {
     end_state
 }
 
-struct MouseState {
-    enabled: bool,
-}
-
-impl MouseState {
-    fn new() -> Self {
-        MouseState { enabled: true }
-    }
-
-    fn enable(&mut self) {
-        match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
-            Ok(_) => {
-                log::debug!("Enabled mouse capture");
-                self.enabled = true;
-            }
-            Err(e) => {
-                log::error!("Failed to enable mouse capture: {}", e);
-            }
-        }
-    }
-    fn disable(&mut self) {
-        match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
-            Ok(_) => {
-                log::debug!("Disabled mouse capture");
-                self.enabled = false;
-            }
-            Err(e) => {
-                log::error!("Failed to disable mouse capture: {}", e);
-            }
-        }
-    }
-
-    fn toggle(&mut self) {
-        if self.enabled {
-            self.disable();
-        } else {
-            self.enable();
-        }
-    }
-}
-
 #[derive(Debug)]
 enum ContentMode {
     Normal,
@@ -167,6 +127,8 @@ struct App {
     content_mode: ContentMode,
     last_contents: Option<(Contents, i16)>,
     last_mouse_over_cell: Option<Tag>,
+    command_description: Option<String>,
+    cached_command_type: bash_funcs::CommandType,
 }
 
 impl App {
@@ -194,6 +156,8 @@ impl App {
             content_mode: ContentMode::Normal,
             last_contents: None,
             last_mouse_over_cell: None,
+            command_description: None,
+            cached_command_type: bash_funcs::CommandType::Unknown,
         }
     }
 
@@ -401,10 +365,12 @@ impl App {
                         }
                         CrosstermEvent::FocusLost => {
                             // log::debug!("Terminal focus lost");
+                            self.cursor_animation.term_has_focus = false;
                             false
                         },
                         CrosstermEvent::FocusGained => {
                             // log::debug!("Terminal focus gained");
+                            self.cursor_animation.term_has_focus = true;
                             false
                         },
                         CrosstermEvent::Paste(pasted) => {
@@ -428,6 +394,13 @@ impl App {
         }
     }
 
+    fn toggle_mouse_state(&mut self) {
+        self.mouse_state.toggle();
+        if !self.mouse_state.enabled() {
+            self.last_mouse_over_cell = None;
+        }
+    }
+
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         match mouse.kind {
             crossterm::event::MouseEventKind::Moved => {
@@ -436,12 +409,6 @@ impl App {
                     if let Some(tagged_cell) =
                         contents.get_tagged_cell(mouse.column, mouse.row, *offset)
                     {
-                        // log::debug!(
-                        //     "Mouse moved over cell at ({}, {}): {:?}",
-                        //     mouse.column,
-                        //     mouse.row,
-                        //     tagged_cell
-                        // );
                         self.last_mouse_over_cell = Some(tagged_cell.tag.clone());
                     } else {
                         self.last_mouse_over_cell = None;
@@ -645,7 +612,7 @@ impl App {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
-                    self.mouse_state.toggle();
+                    self.toggle_mouse_state();
                 }
             },
             // Ctrl+C - cancel with comment
@@ -704,7 +671,7 @@ impl App {
                 // Idea is that when Alt/Meta is held down, mouse is toggled
                 // But not all terminals send key release events for Alt/Meta
                 // So we toggle on both press and release
-                self.mouse_state.toggle();
+                self.toggle_mouse_state();
             }
             // Delegate basic text editing to TextBuffer
             _ => {
@@ -723,16 +690,19 @@ impl App {
                 modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
-                self.mouse_state.toggle();
+                self.toggle_mouse_state();
             }
             _ => {}
         }
     }
 
     fn on_possible_buffer_change(&mut self) {
-        self.history_suggestion = self
-            .history_manager
-            .get_command_suggestion_suffix(self.buffer.buffer());
+        self.history_suggestion = if self.buffer.buffer().is_empty() {
+            None
+        } else {
+            self.history_manager
+                .get_command_suggestion_suffix(self.buffer.buffer())
+        };
 
         let first_word = {
             let line = self.buffer.buffer();
@@ -741,7 +711,7 @@ impl App {
         }
         .to_owned();
         // log::debug!("Caching command type for first word: {}", first_word);
-        self.bash_env.cache_command_type(&first_word);
+
 
         // Apply fuzzy filtering to active tab completion suggestions
         if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
@@ -758,6 +728,16 @@ impl App {
                 self.content_mode = ContentMode::Normal;
             }
         }
+      
+        // Cache command description and command type
+        self.bash_env.cache_command_type(&first_word);
+        let (command_type, short_desc) = self.bash_env.get_command_info(&first_word);
+        self.cached_command_type = command_type;
+        self.command_description = if !short_desc.is_empty() {
+            Some(format!("{:?}: {}", self.cached_command_type, short_desc))
+        } else {
+            None
+        };
     }
 
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
@@ -1085,11 +1065,9 @@ impl App {
                         available_space = space_left.saturating_sub(r_line_width);
                     }
 
-                    let fill_str = if fill_char.width_cjk() == Some(1) {
+                    let fill_str = if fill_char.width() == Some(1) {
                         fill_char.to_string()
                     } else {
-                        // For wide characters, we need to use half-width fill characters
-                        // to avoid messing up the alignment
                         " ".to_string()
                     };
 
@@ -1104,8 +1082,6 @@ impl App {
             }
         }
 
-        let mut command_description: Option<String> = None;
-
         for (is_first, _, (line_idx, (line, cursor_col))) in self
             .buffer
             .lines_with_cursor()
@@ -1117,11 +1093,6 @@ impl App {
             if is_first {
                 let space_pos = line.find(' ').unwrap_or(line.len());
                 let (first_word, rest) = line.split_at(space_pos);
-
-                let (command_type, short_desc) = self.bash_env.get_command_info(first_word);
-                if !short_desc.is_empty() {
-                    command_description = Some(format!("{:?}: {}", command_type, short_desc));
-                }
 
                 let first_word = if first_word.starts_with("python") && self.mode.is_running() {
                     self.snake_animation.update_anim();
@@ -1142,7 +1113,7 @@ impl App {
                     first_word.to_string()
                 };
 
-                let first_word_style: Style = match command_type {
+                let first_word_style: Style = match self.cached_command_type {
                     bash_funcs::CommandType::Unknown => Pallete::unrecognised_word(),
                     _ => Pallete::recognised_word(),
                 };
@@ -1201,13 +1172,11 @@ impl App {
                     );
 
                     if is_last {
-                        let mut extra_info_text = " #".to_string();
+                        let mut extra_info_text = format!("# idx={}", sug.index);
                         if let Some(ts) = sug.timestamp {
                             let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
-                            extra_info_text
-                                .push_str(&format!(" {} ago", time_ago_str.trim_start()));
+                            extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
-                        extra_info_text.push_str(&format!(" idx={}", sug.index));
 
                         content.write_span(
                             &Span::from(extra_info_text).style(Pallete::secondary_text()),
@@ -1314,7 +1283,7 @@ impl App {
                         Tag::CommandFirstWord
                             if matches!(self.content_mode, ContentMode::Normal) =>
                         {
-                            if let Some(desc) = &command_description {
+                            if let Some(desc) = &self.command_description {
                                 content.newline();
                                 content.write_span(
                                     &Span::styled(format!("# {}", desc), Pallete::secondary_text()),

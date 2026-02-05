@@ -32,6 +32,7 @@ pub struct CursorAnimation {
     target_pos: Coord,
     prev_pos: Coord,
     time_of_change: Instant,
+    pub term_has_focus: bool,
 }
 
 impl CursorAnimation {
@@ -41,6 +42,7 @@ impl CursorAnimation {
             target_pos: Coord::new(0, 0),
             prev_pos: Coord::new(0, 0),
             time_of_change: now,
+            term_has_focus: true,
         }
     }
 
@@ -75,10 +77,14 @@ impl CursorAnimation {
     }
 
     pub fn get_intensity(&self) -> u8 {
-        // using time_of_change means the intensity is full right after movement
-        let elapsed = self.time_of_change.elapsed().as_secs_f32();
-        let intensity_f32 = (elapsed * 4.0).sin() * 0.4 + 0.6;
-        let intensity = (intensity_f32 * 255.0) as u8;
-        intensity
+        if self.term_has_focus {
+            // using time_of_change means the intensity is full right after movement
+            let elapsed = self.time_of_change.elapsed().as_secs_f32();
+            let intensity_f32 = (elapsed * 4.0).sin() * 0.4 + 0.6;
+            let intensity = (intensity_f32 * 255.0) as u8;
+            intensity
+        } else {
+            80
+        }
     }
 }
