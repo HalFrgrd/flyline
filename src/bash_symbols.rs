@@ -51,6 +51,7 @@ pub struct BashBuiltin {
 
 // shell.h
 #[repr(i32)]
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinExitCode {
     ExecutionSuccess = 0,

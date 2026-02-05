@@ -1013,16 +1013,6 @@ impl TextBuffer {
     pub fn buffer(&self) -> &str {
         &self.buf
     }
-    pub fn substring_matches(&self, sub_string: &SubString) -> bool {
-        match self.buf.get(sub_string.start..sub_string.end()) {
-            Some(s) => s == sub_string.s,
-            None => false,
-        }
-    }
-
-    pub fn cursor_in_substring(&self, sub_string: &SubString) -> bool {
-        self.cursor_byte >= sub_string.start && self.cursor_byte <= sub_string.end()
-    }
 
     pub fn is_cursor_at_end(&self) -> bool {
         self.cursor_byte == self.buf.len()

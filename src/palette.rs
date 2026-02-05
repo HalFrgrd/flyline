@@ -15,6 +15,11 @@ impl Pallete {
     pub fn selection_style() -> Style {
         Style::default().add_modifier(Modifier::REVERSED)
     }
+    pub fn selected_matching_char() -> Style {
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    }
     pub fn normal_text() -> Style {
         Style::default()
     }

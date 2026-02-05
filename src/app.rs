@@ -1180,22 +1180,40 @@ impl App {
                 let mut rows = vec![vec![]; max_num_rows];
 
                 for (col, col_width) in active_suggestions.into_grid(max_num_rows, width as usize) {
-                    for (row_idx, (suggestion, is_selected)) in col.iter().enumerate() {
-                        let style = if *is_selected {
-                            Pallete::selection_style()
-                        } else {
-                            Pallete::normal_text()
+                    for (row_idx, (suggestion, matching_indices, is_selected)) in
+                        col.iter().enumerate()
+                    {
+                        let formatted_suggestion: Vec<Span> = {
+                            let mut spans = vec![];
+                            let mut length = 0;
+                            for (idx, ch) in suggestion.chars().enumerate() {
+                                let char_style = if *is_selected {
+                                    if matching_indices.contains(&idx) {
+                                        Pallete::selected_matching_char()
+                                    } else {
+                                        Pallete::selection_style()
+                                    }
+                                } else {
+                                    if matching_indices.contains(&idx) {
+                                        Pallete::matched_character()
+                                    } else {
+                                        Pallete::normal_text()
+                                    }
+                                };
+                                spans.push(Span::styled(ch.to_string(), char_style));
+                                length += ch.width().unwrap_or(0);
+                                if length >= col_width {
+                                    break;
+                                }
+                            }
+                            if length < col_width {
+                                spans.push(Span::raw(" ".repeat(col_width - length)));
+                            }
+
+                            spans
                         };
 
-                        let word = if suggestion.len() > col_width {
-                            let mut truncated = suggestion[..col_width - 1].to_string();
-                            truncated.push('…');
-                            truncated
-                        } else {
-                            suggestion.to_string() + &" ".repeat(col_width - suggestion.len())
-                        };
-
-                        rows[row_idx].push((word, style));
+                        rows[row_idx].push(formatted_suggestion);
                     }
                 }
 
@@ -1204,10 +1222,16 @@ impl App {
 
                 for row in rows.into_iter().filter(|r| !r.is_empty()) {
                     let mut line = vec![];
-                    for (word, style) in row {
-                        line.push(Span::styled(word, style));
+                    for styled_spans in row {
+                        line.extend(styled_spans);
                     }
                     content.write_line(&Line::from(line), true, Tag::TabSuggestion);
+                }
+                if num_rows_used == 0 {
+                    content.write_span(
+                        &Span::styled("No suggestions", Pallete::secondary_text()),
+                        Tag::TabSuggestion,
+                    );
                 }
                 active_suggestions.update_grid_size(num_rows_used, num_logical_cols);
             }
