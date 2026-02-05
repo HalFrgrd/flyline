@@ -1413,7 +1413,7 @@ impl SubString {
     }
 
     pub fn overlaps_with(&self, other: &SubString) -> bool {
-        (self.start..self.end()).contains(&other.start)
-            || (other.start..other.end()).contains(&self.start)
+        (self.start..=self.end()).contains(&other.start)
+            || (other.start..=other.end()).contains(&self.start)
     }
 }

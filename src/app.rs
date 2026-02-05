@@ -702,8 +702,18 @@ impl App {
             let word_under_cursor_str = completion_context.word_under_cursor;
             if let Some(word_under_cursor) = SubString::new(buffer, word_under_cursor_str).ok() {
                 if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
+                    log::debug!(
+                        "Word under cursor changed slightly ({} -> {}), applying fuzzy filter to tab completion suggestions",
+                        active_suggestions.word_under_cursor.s,
+                        word_under_cursor.s
+                    );
                     active_suggestions.apply_fuzzy_filter(word_under_cursor);
                 } else {
+                    log::debug!(
+                        "Word under cursor changed significantly ({:?} -> {:?}), discarding tab completion suggestions",
+                        active_suggestions.word_under_cursor,
+                        word_under_cursor
+                    );
                     // If the word under cursor has changed significantly, discard suggestions
                     self.content_mode = ContentMode::Normal;
                 }
