@@ -1,10 +1,12 @@
+use crossterm::cursor;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, StyledGrapheme};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
+    Blank,
     Normal,
     Ps1Prompt,
     Ps2Prompt,
@@ -26,7 +28,7 @@ impl Default for TaggedCell {
     fn default() -> Self {
         TaggedCell {
             cell: Cell::default(),
-            tag: Tag::Normal,
+            tag: Tag::Blank,
         }
     }
 }
@@ -79,10 +81,39 @@ impl Contents {
 
     /// Write a single span at the current cursor position
     /// Will automatically wrap to the next line if necessary
-    pub fn write_span(&mut self, span: &Span, tag: Tag) {
+    fn write_span_internal(&mut self, span: &Span, tag: Tag, overwrite: bool) {
         let graphemes = span.styled_graphemes(span.style);
         for graph in graphemes {
             let graph_w = graph.symbol.width() as u16;
+
+            if !overwrite {
+                loop {
+                    if self.cursor_vis_row >= self.buf.len() as u16 {
+                        self.increase_buf_single_row();
+                    } else if self.cursor_vis_col as usize + graph_w as usize > self.width as usize
+                    {
+                        // log::debug!("Wrapping line for grapheme '{}'", graph.symbol);
+                        self.cursor_vis_row += 1;
+                        self.cursor_vis_col = 0;
+                    } else if self.buf[self.cursor_vis_row as usize][(self.cursor_vis_col as usize)
+                        ..(self.cursor_vis_col as usize + graph_w as usize)]
+                        .iter()
+                        .any(|cell| cell.tag != Tag::Blank)
+                    {
+                        self.cursor_vis_col += 1;
+                        // if self.cursor_vis_col >= self.width {
+                        //     self.cursor_vis_row += 1;
+                        //     self.cursor_vis_col = 0;
+                        //     for _ in self.buf.len()..=self.cursor_vis_row as usize {
+                        //         self.increase_buf_single_row();
+                        //     }
+                        // }
+                    } else {
+                        break;
+                    }
+                }
+            }
+
             if graph_w + self.cursor_vis_col > self.width {
                 self.cursor_vis_row += 1;
                 self.cursor_vis_col = 0;
@@ -116,6 +147,14 @@ impl Contents {
         }
     }
 
+    pub fn write_span_dont_overwrite(&mut self, span: &Span, tag: Tag) {
+        self.write_span_internal(span, tag, false);
+    }
+
+    pub fn write_span(&mut self, span: &Span, tag: Tag) {
+        self.write_span_internal(span, tag, true);
+    }
+
     /// Write a line at the current cursor position
     /// If insert_new_line is true, moves to the next line after writing
     pub fn write_line(&mut self, line: &Line, insert_new_line: bool, tag: Tag) {
@@ -124,6 +163,45 @@ impl Contents {
         }
         if insert_new_line {
             self.newline();
+        }
+    }
+
+    pub fn write_line_lrjustified(
+        &mut self,
+        l_line: &Line,
+        fill_char: char,
+        r_line: &Line,
+        tag: Tag,
+        fill_char_tag: Tag,
+        leave_cursor_after_l_line: bool,
+    ) {
+        let r_width = r_line.width() as u16;
+        let starting_row = self.cursor_vis_row;
+        self.write_line(l_line, false, tag);
+
+        let cursor_after_l_line = self.cursor_vis_col;
+
+        if self.cursor_vis_row == starting_row {
+            let fill_char = if fill_char.width() == Some(1) {
+                fill_char
+            } else {
+                log::warn!(
+                    "Fill character '{}' is not width 1, defaulting to space",
+                    fill_char
+                );
+                ' '
+            };
+
+            // Only fill if we are still on the same line after writing the left line
+            for _ in self.cursor_vis_col..self.width.saturating_sub(r_width) {
+                self.write_span(&Span::from(fill_char.to_string()), fill_char_tag);
+            }
+        }
+        self.write_line(r_line, false, tag);
+
+        if leave_cursor_after_l_line {
+            self.cursor_vis_row = starting_row;
+            self.cursor_vis_col = cursor_after_l_line;
         }
     }
 

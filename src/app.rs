@@ -1044,30 +1044,29 @@ impl App {
                     content.write_line(l_line, false, Tag::Ps1Prompt);
                 }
                 EitherOrBoth::Right(r_line) => {
-                    content.write_line(r_line, false, Tag::Ps1Prompt);
+
+                    // content.write_line_lrjustified(&Line::from(vec![]), ' ', r_line, Tag::Ps1Prompt, Tag::);
                 }
                 EitherOrBoth::Both(l_line, r_line) => {
-                    let start = content.cursor_position();
-                    content.write_line(l_line, false, Tag::Ps1Prompt);
-                    let end = content.cursor_position();
-
-                    let mut available_space = 0;
-                    if start.1 == end.1 {
-                        let space_left = width.saturating_sub(end.0) as usize;
-                        let r_line_width = r_line.width();
-                        available_space = space_left.saturating_sub(r_line_width);
-                    }
-
-                    let fill_str = if fill_char.width() == Some(1) {
-                        fill_char.to_string()
+                    if is_last {
+                        content.write_line_lrjustified(
+                            l_line,
+                            ' ',
+                            r_line,
+                            Tag::Ps1Prompt,
+                            Tag::Blank,
+                            true,
+                        );
                     } else {
-                        " ".to_string()
-                    };
-
-                    content
-                        .write_span(&Span::raw(fill_str.repeat(available_space)), Tag::Ps1Prompt);
-
-                    content.write_line(r_line, false, Tag::Ps1Prompt);
+                        content.write_line_lrjustified(
+                            l_line,
+                            fill_char,
+                            r_line,
+                            Tag::Ps1Prompt,
+                            Tag::Ps1Prompt,
+                            false,
+                        );
+                    }
                 }
             }
             if !is_last {
@@ -1111,11 +1110,11 @@ impl App {
                     _ => Pallete::recognised_word(),
                 };
                 line_offset = content.cursor_position().0;
-                content.write_span(
+                content.write_span_dont_overwrite(
                     &Span::styled(first_word, first_word_style),
                     Tag::CommandFirstWord,
                 );
-                content.write_span(
+                content.write_span_dont_overwrite(
                     &Span::styled(rest.to_string(), Pallete::normal_text()),
                     Tag::CommandOther,
                 );
@@ -1159,19 +1158,19 @@ impl App {
                         content.newline();
                     }
 
-                    content.write_span(
+                    content.write_span_dont_overwrite(
                         &Span::from(line.to_owned()).style(Pallete::secondary_text()),
                         Tag::HistorySuggestion,
                     );
 
                     if is_last {
-                        let mut extra_info_text = format!("# idx={}", sug.index);
+                        let mut extra_info_text = format!(" #idx={}", sug.index);
                         if let Some(ts) = sug.timestamp {
                             let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
-                        content.write_span(
+                        content.write_span_dont_overwrite(
                             &Span::from(extra_info_text).style(Pallete::secondary_text()),
                             Tag::HistorySuggestion,
                         );
