@@ -224,7 +224,6 @@ pub fn get_all_shell_functions() -> Vec<String> {
 
     unsafe {
         let func_ptr = bash_symbols::all_shell_functions();
-        log::debug!("all_shell_functions pointer: {:?}", func_ptr);
         if func_ptr.is_null() {
             return functions;
         }
@@ -246,7 +245,7 @@ pub fn get_all_shell_functions() -> Vec<String> {
         }
     }
 
-    log::debug!("Found shell functions: {:?}", functions);
+    // log::debug!("Found shell functions: {:?}", functions);
     functions
 }
 
