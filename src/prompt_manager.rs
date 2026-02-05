@@ -99,16 +99,12 @@ impl PromptManager {
     }
 
     pub fn get_ps1_lines(&mut self) -> (Vec<Line<'static>>, Vec<Line<'static>>, char) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap();
-        self.last_time_str = format!(
-            "{:02}:{:02}:{:02}.{:03}",
-            (now.as_secs() / 3600) % 24, // hours
-            (now.as_secs() / 60) % 60,   // minutes
-            now.as_secs() % 60,          // seconds
-            now.subsec_millis()          // milliseconds
-        );
+        // Format the current time using the system locale
+        use chrono::Local;
+        let now = Local::now();
+        // Use the system locale for formatting
+        // This will use the default time format for the locale
+        self.last_time_str = now.format("%X").to_string();
 
         let formatted_prompt: Vec<Line<'static>> = self
             .prompt
