@@ -1149,13 +1149,11 @@ impl App {
                     );
 
                     if is_last {
-                        let mut extra_info_text = " #".to_string();
+                        let mut extra_info_text = format!("# idx={}", sug.index);
                         if let Some(ts) = sug.timestamp {
                             let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
-                            extra_info_text
-                                .push_str(&format!(" {} ago", time_ago_str.trim_start()));
+                            extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
-                        extra_info_text.push_str(&format!(" idx={}", sug.index));
 
                         content.write_span(
                             &Span::from(extra_info_text).style(Pallete::secondary_text()),
