@@ -1,5 +1,4 @@
 use crate::text_buffer::{SubString, TextBuffer};
-use clap::parser::Indices;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 
