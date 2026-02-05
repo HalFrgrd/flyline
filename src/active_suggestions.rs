@@ -1,6 +1,6 @@
 use crate::text_buffer::{SubString, TextBuffer};
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
@@ -49,8 +49,9 @@ impl Ord for Suggestion {
 }
 
 pub struct ActiveSuggestions {
-    pub suggestions: Vec<Suggestion>,
-    selected_index: usize,
+    suggestions: Vec<Suggestion>,
+    fuzzy_filtered_suggestions: Vec<Suggestion>,
+    selected_fuzzy_index: usize,
     pub word_under_cursor: SubString,
     last_grid_size: (usize, usize),
     fuzzy_matcher: SkimMatcherV2,
@@ -60,7 +61,11 @@ impl std::fmt::Debug for ActiveSuggestions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ActiveSuggestions")
             .field("suggestions", &self.suggestions)
-            .field("selected_index", &self.selected_index)
+            .field(
+                "fuzzy_filtered_suggestions",
+                &self.fuzzy_filtered_suggestions,
+            )
+            .field("selected_fuzzy_index", &self.selected_fuzzy_index)
             .field("word_under_cursor", &self.word_under_cursor)
             .field("last_grid_size", &self.last_grid_size)
             .finish()
@@ -75,9 +80,12 @@ impl ActiveSuggestions {
     ) -> Option<Self> {
         let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).ok()?;
 
+        let fuzzy_filtered_suggestions = suggestions.clone();
+
         Some(ActiveSuggestions {
             suggestions,
-            selected_index: 0,
+            fuzzy_filtered_suggestions,
+            selected_fuzzy_index: 0,
             word_under_cursor,
             last_grid_size: (0, 0),
             fuzzy_matcher: SkimMatcherV2::default(),
@@ -94,37 +102,38 @@ impl ActiveSuggestions {
     }
 
     pub fn sanitize_selected_index(&mut self, new_index: i32) {
-        self.selected_index = new_index.rem_euclid(self.suggestions.len() as i32) as usize;
+        self.selected_fuzzy_index =
+            new_index.rem_euclid(self.fuzzy_filtered_suggestions.len() as i32) as usize;
     }
 
     // TODO arrow keys when not all suggestions are visible
     pub fn on_right_arrow(&mut self) {
-        let new_idx: i32 = self.selected_index as i32 + self.last_grid_size.0 as i32;
+        let new_idx: i32 = self.selected_fuzzy_index as i32 + self.last_grid_size.0 as i32;
         self.sanitize_selected_index(new_idx);
     }
 
     pub fn on_left_arrow(&mut self) {
-        let new_idx: i32 = self.selected_index as i32 - self.last_grid_size.0 as i32;
+        let new_idx: i32 = self.selected_fuzzy_index as i32 - self.last_grid_size.0 as i32;
         self.sanitize_selected_index(new_idx);
     }
 
     pub fn on_down_arrow(&mut self) {
-        let new_idx: i32 = self.selected_index as i32 + 1;
+        let new_idx: i32 = self.selected_fuzzy_index as i32 + 1;
         self.sanitize_selected_index(new_idx);
     }
 
     pub fn on_up_arrow(&mut self) {
-        let new_idx: i32 = self.selected_index as i32 - 1;
+        let new_idx: i32 = self.selected_fuzzy_index as i32 - 1;
         self.sanitize_selected_index(new_idx);
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, bool)> {
         // prefix and suffix aren't shown in the suggestion list
         // but are applied when the suggestion is accepted
-        self.suggestions
+        self.fuzzy_filtered_suggestions
             .iter()
             .enumerate()
-            .map(|(idx, suggestion)| (suggestion.s.as_str(), idx == self.selected_index))
+            .map(|(idx, suggestion)| (suggestion.s.as_str(), idx == self.selected_fuzzy_index))
     }
 
     pub fn into_grid(&self, rows: usize, cols: usize) -> Vec<(Vec<(&str, bool)>, usize)> {
@@ -161,13 +170,7 @@ impl ActiveSuggestions {
     }
 
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
-    /// Returns true if any suggestions remain after filtering, false otherwise.
-    pub fn apply_fuzzy_filter(&mut self, pattern: &str) -> bool {
-        if pattern.is_empty() {
-            // No filtering needed for empty pattern
-            return !self.suggestions.is_empty();
-        }
-
+    pub fn apply_fuzzy_filter(&mut self, pattern: &str) {
         // Score and filter suggestions using the stored matcher
         let mut scored: Vec<(usize, i64)> = self
             .suggestions
@@ -185,22 +188,21 @@ impl ActiveSuggestions {
 
         // Extract matching suggestions in score order
         // This drains and rebuilds the vec, avoiding clone but requires one allocation
-        let all_suggestions = std::mem::take(&mut self.suggestions);
-        self.suggestions = scored
+        self.fuzzy_filtered_suggestions = scored
             .into_iter()
-            .filter_map(|(idx, _)| all_suggestions.get(idx).cloned())
+            .filter_map(|(idx, _)| self.suggestions.get(idx).cloned())
             .collect();
-        
-        // Reset selected index if needed
-        if self.selected_index >= self.suggestions.len() && !self.suggestions.is_empty() {
-            self.selected_index = 0;
-        }
 
-        !self.suggestions.is_empty()
+        // Reset selected index if needed
+        if self.selected_fuzzy_index >= self.fuzzy_filtered_suggestions.len()
+            && !self.fuzzy_filtered_suggestions.is_empty()
+        {
+            self.selected_fuzzy_index = 0;
+        }
     }
 
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
-        match self.suggestions.as_slice() {
+        match self.fuzzy_filtered_suggestions.as_slice() {
             [] => {
                 log::debug!("No completions found");
                 None
@@ -211,14 +213,20 @@ impl ActiveSuggestions {
                 None
             }
             _ => {
-                log::debug!("Multiple completions available: {:?}", self.suggestions);
+                log::debug!(
+                    "Multiple completions available: {:?}",
+                    self.fuzzy_filtered_suggestions
+                );
                 Some(self)
             }
         }
     }
 
     pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
-        if let Some(completion) = self.suggestions.get(self.selected_index) {
+        if let Some(completion) = self
+            .fuzzy_filtered_suggestions
+            .get(self.selected_fuzzy_index)
+        {
             if let Err(e) =
                 buffer.replace_word_under_cursor(&completion.formatted(), &self.word_under_cursor)
             {
@@ -227,8 +235,8 @@ impl ActiveSuggestions {
         } else {
             log::error!(
                 "Tried to accept suggestion at index {}, but only {} suggestions are available",
-                self.selected_index,
-                self.suggestions.len()
+                self.selected_fuzzy_index,
+                self.fuzzy_filtered_suggestions.len()
             );
         }
     }
@@ -241,7 +249,7 @@ mod tests {
     #[test]
     fn test_fuzzy_filter_empty_pattern() {
         let buffer = TextBuffer::new("git");
-        
+
         let suggestions = vec![
             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
@@ -250,7 +258,7 @@ mod tests {
 
         let word = buffer.buffer();
         let mut active = ActiveSuggestions::try_new(suggestions.clone(), word, &buffer).unwrap();
-        
+
         // Empty pattern should keep all suggestions
         assert!(active.apply_fuzzy_filter(""));
         assert_eq!(active.suggestions.len(), 3);
@@ -259,7 +267,7 @@ mod tests {
     #[test]
     fn test_fuzzy_filter_exact_match() {
         let buffer = TextBuffer::new("git co");
-        
+
         let suggestions = vec![
             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
@@ -270,11 +278,11 @@ mod tests {
         // Extract "co" from buffer
         let word = &buffer.buffer()[4..6];
         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-        
+
         // "co" should match commit, checkout, clone, config
         assert!(active.apply_fuzzy_filter("co"));
         assert!(active.suggestions.len() >= 3);
-        
+
         // All matched suggestions should contain relevant characters
         for suggestion in &active.suggestions {
             assert!(suggestion.s.contains('c') && suggestion.s.contains('o'));
@@ -284,7 +292,7 @@ mod tests {
     #[test]
     fn test_fuzzy_filter_partial_match() {
         let buffer = TextBuffer::new("git chk");
-        
+
         let suggestions = vec![
             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
@@ -294,11 +302,11 @@ mod tests {
         // Extract "chk" from buffer
         let word = &buffer.buffer()[4..7];
         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-        
+
         // "chk" should fuzzy match "checkout" (c-h-eckout)
         assert!(active.apply_fuzzy_filter("chk"));
         assert!(active.suggestions.len() >= 1);
-        
+
         // checkout should be in the results
         assert!(active.suggestions.iter().any(|s| s.s == "checkout"));
     }
@@ -306,7 +314,7 @@ mod tests {
     #[test]
     fn test_fuzzy_filter_no_matches() {
         let buffer = TextBuffer::new("git xyz");
-        
+
         let suggestions = vec![
             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
@@ -316,7 +324,7 @@ mod tests {
         // Extract "xyz" from buffer
         let word = &buffer.buffer()[4..7];
         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-        
+
         // "xyz" should not match any git commands
         assert!(!active.apply_fuzzy_filter("xyz"));
         assert_eq!(active.suggestions.len(), 0);
@@ -325,7 +333,7 @@ mod tests {
     #[test]
     fn test_fuzzy_filter_resets_selected_index() {
         let buffer = TextBuffer::new("git c");
-        
+
         let suggestions = vec![
             Suggestion::new("add".to_string(), "".to_string(), "".to_string()),
             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
@@ -336,13 +344,13 @@ mod tests {
         // Extract "c" from buffer
         let word = &buffer.buffer()[4..5];
         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-        
+
         // Move selection to last item
         active.selected_index = 3;
-        
+
         // Filter to only "commit", "checkout", "clone" (3 items)
         assert!(active.apply_fuzzy_filter("c"));
-        
+
         // Selected index should be reset to 0 since old index 3 might be out of bounds
         assert!(active.selected_index < active.suggestions.len());
     }
@@ -350,7 +358,7 @@ mod tests {
     #[test]
     fn test_fuzzy_filter_prioritizes_better_matches() {
         let buffer = TextBuffer::new("git ch");
-        
+
         let suggestions = vec![
             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
             Suggestion::new("cherry-pick".to_string(), "".to_string(), "".to_string()),
@@ -361,10 +369,10 @@ mod tests {
         // Extract "ch" from buffer
         let word = &buffer.buffer()[4..6];
         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-        
+
         // "ch" should match cherry-pick and checkout better than others
         assert!(active.apply_fuzzy_filter("ch"));
-        
+
         // The top matches should start with "ch"
         assert!(active.suggestions[0].s.starts_with("ch"));
     }
