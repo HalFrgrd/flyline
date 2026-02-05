@@ -1,4 +1,5 @@
 use crate::text_buffer::{SubString, TextBuffer};
+use clap::parser::Indices;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 
@@ -50,7 +51,7 @@ impl Ord for Suggestion {
 
 pub struct ActiveSuggestions {
     all_suggestions: Vec<Suggestion>,
-    filtered_suggestions: Vec<Suggestion>,
+    filtered_suggestions: Vec<(Suggestion, Vec<usize>)>, // Vec of matching char indices for fuzzy search highlighting
     selected_filtered_index: usize,
     pub word_under_cursor: SubString,
     last_grid_size: (usize, usize),
@@ -77,7 +78,7 @@ impl ActiveSuggestions {
     ) -> Option<Self> {
         let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).ok()?;
 
-        let filtered_suggestions = suggestions.clone();
+        let filtered_suggestions = suggestions.iter().map(|s| (s.clone(), vec![])).collect();
 
         Some(ActiveSuggestions {
             all_suggestions: suggestions,
@@ -124,16 +125,26 @@ impl ActiveSuggestions {
         self.sanitize_selected_index(new_idx);
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, bool)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, &Vec<usize>, bool)> {
         // prefix and suffix aren't shown in the suggestion list
         // but are applied when the suggestion is accepted
         self.filtered_suggestions
             .iter()
             .enumerate()
-            .map(|(idx, suggestion)| (suggestion.s.as_str(), idx == self.selected_filtered_index))
+            .map(|(idx, (suggestion, indices))| {
+                (
+                    suggestion.s.as_str(),
+                    indices,
+                    idx == self.selected_filtered_index,
+                )
+            })
     }
 
-    pub fn into_grid(&self, rows: usize, cols: usize) -> Vec<(Vec<(&str, bool)>, usize)> {
+    pub fn into_grid(
+        &self,
+        rows: usize,
+        cols: usize,
+    ) -> Vec<(Vec<(&str, &Vec<usize>, bool)>, usize)> {
         // Show as many suggestions as will fit in the given rows and columns
         // Each column should be the same width, based on the longest suggestion
         let mut grid = vec![];
@@ -141,8 +152,8 @@ impl ActiveSuggestions {
         let mut col_width = 1;
         let mut total_columns = 0;
 
-        for (i, (s, is_selected)) in self.iter().enumerate() {
-            current_col.push((s, is_selected));
+        for (i, (s, matching_indices, is_selected)) in self.iter().enumerate() {
+            current_col.push((s, matching_indices, is_selected));
             col_width = col_width.max(s.len() + 2); // +2 for padding // TODO truncate very long suggestions
             if (i + 1) % rows == 0 {
                 if total_columns + col_width > cols {
@@ -172,14 +183,14 @@ impl ActiveSuggestions {
         self.word_under_cursor = new_word_under_cursor.clone();
 
         // Score and filter suggestions using the stored matcher
-        let mut scored: Vec<(usize, i64)> = self
+        let mut scored: Vec<(usize, i64, Vec<usize>)> = self
             .all_suggestions
             .iter()
             .enumerate()
             .filter_map(|(idx, suggestion)| {
                 self.fuzzy_matcher
-                    .fuzzy_match(&suggestion.s, &new_word_under_cursor.s)
-                    .map(|score| (idx, score))
+                    .fuzzy_indices(&suggestion.s, &new_word_under_cursor.s)
+                    .map(|(score, indices)| (idx, score, indices))
             })
             .collect();
 
@@ -190,7 +201,12 @@ impl ActiveSuggestions {
         // This drains and rebuilds the vec, avoiding clone but requires one allocation
         self.filtered_suggestions = scored
             .into_iter()
-            .filter_map(|(idx, _)| self.all_suggestions.get(idx).cloned())
+            .filter_map(|(idx, _, indices)| {
+                self.all_suggestions
+                    .get(idx)
+                    .cloned()
+                    .map(|s| (s, indices.clone()))
+            })
             .collect();
 
         // Reset selected index if needed
@@ -223,7 +239,7 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
-        if let Some(completion) = self.filtered_suggestions.get(self.selected_filtered_index) {
+        if let Some((completion, _)) = self.filtered_suggestions.get(self.selected_filtered_index) {
             if let Err(e) =
                 buffer.replace_word_under_cursor(&completion.formatted(), &self.word_under_cursor)
             {
