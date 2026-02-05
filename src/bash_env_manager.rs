@@ -33,12 +33,13 @@ impl BashEnvManager {
 
     /// Cache and return the command type for a given command
     pub fn cache_command_type(&mut self, cmd: &str) {
+        log::debug!("Caching command type for: {}", cmd);
         if let Some(_) = self.call_type_cache.get(cmd) {
             return;
         }
         let result = bash_funcs::call_type(cmd);
+        log::debug!("call_type result for {}: {:?}", cmd, result);
         self.call_type_cache.insert(cmd.to_string(), result);
-        // log::debug!("call_type result for {}: {:?}", cmd, result);
     }
 
     /// Get cached command type without updating cache

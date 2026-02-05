@@ -45,7 +45,7 @@ where
         read_file.read_to_string(&mut output).unwrap();
     };
 
-    (result, output.trim().to_string())
+    (result, output.to_string())
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -94,7 +94,7 @@ pub fn call_type(cmd: &str) -> (CommandType, String) {
     let (_, command_type_output) = with_redirected_stdout(|| unsafe {
         bash_symbols::describe_command(cmd_c_str.as_ptr(), bash_symbols::CDescFlag::Type as c_int)
     });
-    let command_type = CommandType::from_str(&command_type_output);
+    let command_type = CommandType::from_str(&command_type_output.trim());
 
     let (_, short_desc) = match command_type {
         CommandType::Alias => {
@@ -113,9 +113,9 @@ pub fn call_type(cmd: &str) -> (CommandType, String) {
             } else {
                 output
             };
-            (result, extracted)
+            (result, format!("alias: {}", extracted))
         }
-        CommandType::Builtin => {
+        CommandType::Builtin | CommandType::Keyword => {
             let (result, output) = with_redirected_stdout(|| unsafe {
                 bash_symbols::describe_command(
                     cmd_c_str.as_ptr(),
@@ -123,17 +123,27 @@ pub fn call_type(cmd: &str) -> (CommandType, String) {
                 )
             });
 
-            (result, output)
-        }
-        CommandType::File => with_redirected_stdout(|| unsafe {
-            bash_symbols::describe_command(
-                cmd_c_str.as_ptr(),
-                bash_symbols::CDescFlag::PathOnly as c_int,
+            (
+                result,
+                format!("{}: {}", command_type_output.trim(), output.trim()),
             )
-        }),
-        _ => {
+        }
+        CommandType::File => {
+            let (result, output) = with_redirected_stdout(|| unsafe {
+                bash_symbols::describe_command(
+                    cmd_c_str.as_ptr(),
+                    bash_symbols::CDescFlag::PathOnly as c_int,
+                )
+            });
+
+            (result, format!("file: {}", output.trim()))
+        }
+        CommandType::Function => {
+            (0, "function".to_string()) // For functions, we currently don't extract a short description
+        }
+        CommandType::Unknown => {
             // If unknown, no short description
-            (0, String::new())
+            (0, "unknown".to_string())
         }
     };
 
@@ -214,6 +224,7 @@ pub fn get_all_shell_functions() -> Vec<String> {
 
     unsafe {
         let func_ptr = bash_symbols::all_shell_functions();
+        log::debug!("all_shell_functions pointer: {:?}", func_ptr);
         if func_ptr.is_null() {
             return functions;
         }
@@ -235,7 +246,7 @@ pub fn get_all_shell_functions() -> Vec<String> {
         }
     }
 
-    // log::debug!("Found shell functions: {:?}", functions);
+    log::debug!("Found shell functions: {:?}", functions);
     functions
 }
 
