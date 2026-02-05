@@ -445,6 +445,7 @@ impl App {
         match key {
             KeyEvent {
                 code: KeyCode::Left,
+                modifiers: KeyModifiers::NONE,
                 ..
             } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
@@ -453,6 +454,7 @@ impl App {
             }
             KeyEvent {
                 code: KeyCode::Right,
+                modifiers: KeyModifiers::NONE,
                 ..
             } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
@@ -583,21 +585,6 @@ impl App {
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
-                // if the word under the cursor has changed, reset active suggestions
-                // TODO
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                    if !self
-                        .buffer
-                        .substring_matches(&active_suggestions.word_under_cursor)
-                        || !self
-                            .buffer
-                            .cursor_in_substring(&active_suggestions.word_under_cursor)
-                    {
-                        log::debug!("Word under cursor changed, clearing active suggestions");
-                        self.content_mode = ContentMode::Normal;
-                    }
-                }
-
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     active_suggestions.on_tab(false);
                 } else {
@@ -705,17 +692,7 @@ impl App {
                 .get_command_suggestion_suffix(self.buffer.buffer())
         };
 
-        let first_word = {
-            let line = self.buffer.buffer();
-            let space_pos = line.find(' ').unwrap_or(line.len());
-            &line[0..space_pos]
-        }
-        .to_owned();
-        // log::debug!("Caching command type for first word: {}", first_word);
-
         // Apply fuzzy filtering to active tab completion suggestions
-        // TODO detect when to reset suggestions instead of just filtering, because if the word under the cursor changes too much, there might be no matches left and we should reset instead of showing no suggestions.
-        // Try with pressing home to jump the cursor to antoher word
         if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
             let buffer: &str = self.buffer.buffer();
             let completion_context = tab_completion_context::get_completion_context(
@@ -724,16 +701,22 @@ impl App {
             );
             let word_under_cursor_str = completion_context.word_under_cursor;
             if let Some(word_under_cursor) = SubString::new(buffer, word_under_cursor_str).ok() {
-                // Apply fuzzy filter and exit tab completion mode if no matches remain
-                active_suggestions.apply_fuzzy_filter(word_under_cursor);
-                // if !active_suggestions.apply_fuzzy_filter(word_under_cursor) {
-                //     log::debug!("No fuzzy matches found, exiting tab completion mode");
-                //     self.content_mode = ContentMode::Normal;
-                // }
+                if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
+                    active_suggestions.apply_fuzzy_filter(word_under_cursor);
+                } else {
+                    // If the word under cursor has changed significantly, discard suggestions
+                    self.content_mode = ContentMode::Normal;
+                }
             }
         }
 
         // Cache command description and command type
+        let first_word = {
+            let line = self.buffer.buffer();
+            let space_pos = line.find(' ').unwrap_or(line.len());
+            &line[0..space_pos]
+        }
+        .to_owned();
         self.bash_env.cache_command_type(&first_word);
         let (command_type, short_desc) = self.bash_env.get_command_info(&first_word);
         self.cached_command_type = command_type;

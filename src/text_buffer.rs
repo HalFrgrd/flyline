@@ -1421,4 +1421,9 @@ impl SubString {
     pub fn end(&self) -> usize {
         self.start + self.s.len()
     }
+
+    pub fn overlaps_with(&self, other: &SubString) -> bool {
+        (self.start..self.end()).contains(&other.start)
+            || (other.start..other.end()).contains(&self.start)
+    }
 }
