@@ -258,7 +258,11 @@ fn has_incomplete_heredoc(buffer: &str) -> bool {
 fn has_missing_nodes(node: &Node) -> bool {
     if node.is_missing() {
         if cfg!(test) {
-            println!("Missing node: {:?} at position {:?}", node.kind(), node.start_position());
+            println!(
+                "Missing node: {:?} at position {:?}",
+                node.kind(),
+                node.start_position()
+            );
         }
         return true;
     }
@@ -501,8 +505,10 @@ mod tests {
     #[ignore]
     #[test]
     fn test_asdf() {
-        assert_eq!(will_bash_accept_buffer("gcm \"no history suggestion if empty\""), true);
-
+        assert_eq!(
+            will_bash_accept_buffer("gcm \"no history suggestion if empty\""),
+            true
+        );
     }
 
     // TODO test ones that will be syntax errors but complete commands

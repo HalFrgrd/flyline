@@ -14,6 +14,7 @@ mod content_builder;
 mod cursor_animation;
 mod history;
 mod iter_first_last;
+mod mouse_state;
 mod palette;
 mod prompt_manager;
 mod snake_animation;

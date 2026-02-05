@@ -6,6 +6,7 @@ use crate::content_builder::{Contents, Tag};
 use crate::cursor_animation::CursorAnimation;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
+use crate::mouse_state::MouseState;
 use crate::palette::Pallete;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
@@ -101,47 +102,6 @@ pub fn get_command() -> ExitState {
 
     log::debug!("Final state: {:?}", end_state);
     end_state
-}
-
-struct MouseState {
-    enabled: bool,
-}
-
-impl MouseState {
-    fn new() -> Self {
-        MouseState { enabled: true }
-    }
-
-    fn enable(&mut self) {
-        match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
-            Ok(_) => {
-                log::debug!("Enabled mouse capture");
-                self.enabled = true;
-            }
-            Err(e) => {
-                log::error!("Failed to enable mouse capture: {}", e);
-            }
-        }
-    }
-    fn disable(&mut self) {
-        match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
-            Ok(_) => {
-                log::debug!("Disabled mouse capture");
-                self.enabled = false;
-            }
-            Err(e) => {
-                log::error!("Failed to disable mouse capture: {}", e);
-            }
-        }
-    }
-
-    fn toggle(&mut self) {
-        if self.enabled {
-            self.disable();
-        } else {
-            self.enable();
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -430,6 +390,13 @@ impl App {
         }
     }
 
+    fn toggle_mouse_state(&mut self) {
+        self.mouse_state.toggle();
+        if !self.mouse_state.enabled() {
+            self.last_mouse_over_cell = None;
+        }
+    }
+
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         match mouse.kind {
             crossterm::event::MouseEventKind::Moved => {
@@ -438,12 +405,6 @@ impl App {
                     if let Some(tagged_cell) =
                         contents.get_tagged_cell(mouse.column, mouse.row, *offset)
                     {
-                        // log::debug!(
-                        //     "Mouse moved over cell at ({}, {}): {:?}",
-                        //     mouse.column,
-                        //     mouse.row,
-                        //     tagged_cell
-                        // );
                         self.last_mouse_over_cell = Some(tagged_cell.tag.clone());
                     } else {
                         self.last_mouse_over_cell = None;
@@ -647,7 +608,7 @@ impl App {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
-                    self.mouse_state.toggle();
+                    self.toggle_mouse_state();
                 }
             },
             // Ctrl+C - cancel with comment
@@ -706,7 +667,7 @@ impl App {
                 // Idea is that when Alt/Meta is held down, mouse is toggled
                 // But not all terminals send key release events for Alt/Meta
                 // So we toggle on both press and release
-                self.mouse_state.toggle();
+                self.toggle_mouse_state();
             }
             // Delegate basic text editing to TextBuffer
             _ => {
@@ -725,7 +686,7 @@ impl App {
                 modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
-                self.mouse_state.toggle();
+                self.toggle_mouse_state();
             }
             _ => {}
         }
