@@ -401,10 +401,12 @@ impl App {
                         }
                         CrosstermEvent::FocusLost => {
                             // log::debug!("Terminal focus lost");
+                            self.cursor_animation.term_has_focus = false;
                             false
                         },
                         CrosstermEvent::FocusGained => {
                             // log::debug!("Terminal focus gained");
+                            self.cursor_animation.term_has_focus = true;
                             false
                         },
                         CrosstermEvent::Paste(pasted) => {
@@ -1069,11 +1071,9 @@ impl App {
                         available_space = space_left.saturating_sub(r_line_width);
                     }
 
-                    let fill_str = if fill_char.width_cjk() == Some(1) {
+                    let fill_str = if fill_char.width() == Some(1) {
                         fill_char.to_string()
                     } else {
-                        // For wide characters, we need to use half-width fill characters
-                        // to avoid messing up the alignment
                         " ".to_string()
                     };
 
