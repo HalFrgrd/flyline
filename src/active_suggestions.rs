@@ -164,7 +164,6 @@ impl ActiveSuggestions {
                 col_width = 1;
             }
         }
-        // TODO say there are more if it doesnt fit
 
         if !current_col.is_empty() && total_columns + col_width <= cols {
             grid.push((current_col, col_width));
@@ -177,7 +176,6 @@ impl ActiveSuggestions {
     }
 
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
-    /// TODO: save the matching chars for ui highlighting
     pub fn apply_fuzzy_filter(&mut self, new_word_under_cursor: SubString) {
         self.word_under_cursor = new_word_under_cursor.clone();
 

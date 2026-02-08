@@ -1034,40 +1034,17 @@ impl App {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
+        let empty_line = Line::from(vec![]);
 
         let (lprompt, rprompt, fill_char) = self.prompt_manager.get_ps1_lines();
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
-            match either_or_both {
-                EitherOrBoth::Left(l_line) => {
-                    content.write_line(l_line, false, Tag::Ps1Prompt);
-                }
-                EitherOrBoth::Right(r_line) => {
-
-                    // content.write_line_lrjustified(&Line::from(vec![]), ' ', r_line, Tag::Ps1Prompt, Tag::);
-                }
-                EitherOrBoth::Both(l_line, r_line) => {
-                    if is_last {
-                        content.write_line_lrjustified(
-                            l_line,
-                            ' ',
-                            r_line,
-                            Tag::Ps1Prompt,
-                            Tag::Blank,
-                            true,
-                        );
-                    } else {
-                        content.write_line_lrjustified(
-                            l_line,
-                            fill_char,
-                            r_line,
-                            Tag::Ps1Prompt,
-                            Tag::Ps1Prompt,
-                            false,
-                        );
-                    }
-                }
+            let (l_line, r_line) = either_or_both.or(&empty_line, &empty_line);
+            if is_last {
+                content.write_line_lrjustified(l_line, ' ', r_line, Tag::Ps1Prompt, true);
+            } else {
+                content.write_line_lrjustified(l_line, fill_char, r_line, Tag::Ps1Prompt, false);
             }
             if !is_last {
                 content.newline();
@@ -1126,6 +1103,10 @@ impl App {
                 content.write_line(&Line::from(line.to_owned()), false, Tag::CommandOther);
             }
             // Draw cursor on this line
+            // TODO: write each span is it is unless the cursor is on it.
+            // Then get the cursor position.
+            // then we will have the visual position.
+            // then calculate the animated cursor position and style.
             if self.mode.is_running()
                 && let Some(cursor_col_in_line) = cursor_col
             {
