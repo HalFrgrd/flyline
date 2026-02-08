@@ -1,4 +1,3 @@
-use crossterm::cursor;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, StyledGrapheme};
@@ -121,6 +120,7 @@ impl Contents {
 
             let next_graph_x = self.cursor_vis_col + graph_w;
             if next_graph_x > self.width {
+                // cold_path();
                 // If the grapheme is still too wide after wrapping, skip it
                 // We probably start at cursor_pos_x=0 here, so very unlikely to happen
                 log::warn!(
@@ -172,7 +172,6 @@ impl Contents {
         fill_char: char,
         r_line: &Line,
         tag: Tag,
-        fill_char_tag: Tag,
         leave_cursor_after_l_line: bool,
     ) {
         let r_width = r_line.width() as u16;
@@ -182,7 +181,7 @@ impl Contents {
         let cursor_after_l_line = self.cursor_vis_col;
 
         if self.cursor_vis_row == starting_row {
-            let fill_char = if fill_char.width() == Some(1) {
+            let fill_char_override = if fill_char.width() == Some(1) {
                 fill_char
             } else {
                 log::warn!(
@@ -192,12 +191,19 @@ impl Contents {
                 ' '
             };
 
-            // Only fill if we are still on the same line after writing the left line
-            for _ in self.cursor_vis_col..self.width.saturating_sub(r_width) {
-                self.write_span(&Span::from(fill_char.to_string()), fill_char_tag);
+            if fill_char == ' ' {
+                // If filling with spaces, we can just move the cursor to the right position without writing fill chars
+                self.cursor_vis_col = self.width.saturating_sub(r_width);
+            } else {
+                // Only fill if we are still on the same line after writing the left line
+                for _ in self.cursor_vis_col..self.width.saturating_sub(r_width) {
+                    self.write_span(&Span::from(fill_char_override.to_string()), tag);
+                }
             }
         }
-        self.write_line(r_line, false, tag);
+        if r_width > 0 {
+            self.write_line(r_line, false, tag);
+        }
 
         if leave_cursor_after_l_line {
             self.cursor_vis_row = starting_row;
