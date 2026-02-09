@@ -99,6 +99,10 @@ impl ActiveSuggestions {
     }
 
     pub fn sanitize_selected_index(&mut self, new_index: i32) {
+        if self.filtered_suggestions.is_empty() {
+            self.selected_filtered_index = 0;
+            return;
+        }
         self.selected_filtered_index =
             new_index.rem_euclid(self.filtered_suggestions.len() as i32) as usize;
     }
