@@ -16,7 +16,7 @@ use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent};
 use futures::StreamExt;
 use glob::glob;
-use itertools::{EitherOrBoth, Itertools};
+use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
