@@ -12,6 +12,7 @@ pub enum Tag {
     CommandFirstWord,
     CommandOther,
     TabSuggestion,
+    Suggestion(u32),
     HistorySuggestion,
     FuzzySearch,
     Tooltip,
