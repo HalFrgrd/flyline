@@ -236,6 +236,10 @@ unsafe extern "C" {
     // getenv.c
     // char* getenv(const char* name);
     pub fn getenv(name: *const c_char) -> *mut c_char;
+
+    // y.tab.c
+    // char * decode_prompt_string (char *string, int is_prompt)
+    pub fn decode_prompt_string(string: *const c_char, is_prompt: c_int) -> *mut c_char;
 }
 
 // history.h

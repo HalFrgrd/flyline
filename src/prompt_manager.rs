@@ -75,11 +75,35 @@ impl PromptManager {
                     lines => lines,
                 };
 
-            let rps1_env = bash_funcs::get_env_variable("RPS1");
-            let rps1 = rps1_env
+            let rps1: Vec<Line<'static>> = bash_funcs::get_env_variable("RPS1")
+                .and_then(|rps1| {
+                    // Strip literal "\\[" and "\\]" markers (they wrap non-printing sequences)
+                    let rps1 = rps1.replace("\\[", "").replace("\\]", "");
+                    let c_prompt = std::ffi::CString::new(rps1).ok()?;
+
+                    unsafe {
+                        let decoded_prompt_cstr =
+                            bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
+                        if decoded_prompt_cstr.is_null() {
+                            return None;
+                        }
+
+                        let decoded = std::ffi::CStr::from_ptr(decoded_prompt_cstr)
+                            .to_str()
+                            .ok()?
+                            .to_string();
+
+                        // `decode_prompt_string` returns an allocated buffer.
+                        libc::free(decoded_prompt_cstr as *mut libc::c_void);
+
+                        Some(decoded)
+                    }
+                })
                 .and_then(|s| s.into_text().ok())
                 .unwrap_or_else(|| Text::from(""))
                 .lines;
+
+            log::debug!("Parsed RPS1: {:?}", rps1);
 
             let ps1_fill = bash_funcs::get_env_variable("PS1_FILL")
                 .and_then(|s| s.chars().next())
