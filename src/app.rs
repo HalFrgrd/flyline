@@ -1209,7 +1209,12 @@ impl App {
                                 }
                             }
                             if length < col_width {
-                                spans.push(Span::raw(" ".repeat(col_width - length)));
+                                let style = if *is_selected {
+                                    Pallete::selection_style()
+                                } else {
+                                    Pallete::normal_text()
+                                };
+                                spans.push(Span::styled(" ".repeat(col_width - length), style));
                             }
 
                             spans
