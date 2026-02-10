@@ -1,7 +1,5 @@
-use anyhow::Result;
 use clap::{Arg, Command as ClapCommand};
 use libc::{c_char, c_int};
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 mod active_suggestions;
@@ -14,6 +12,7 @@ mod content_builder;
 mod cursor_animation;
 mod history;
 mod iter_first_last;
+mod logging;
 mod mouse_state;
 mod palette;
 mod prompt_manager;
@@ -50,36 +49,6 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
     0
 }
 
-fn flyline_setup_logging() -> Result<()> {
-    let home_dir = bash_funcs::get_env_variable("HOME").unwrap_or("/tmp/".to_string());
-    let log_file_path = PathBuf::from(home_dir).join("flyline.logs");
-
-    // Initialize simplelog to write to file with file and line number information
-    use simplelog::*;
-    let log_file = std::fs::File::create(&log_file_path)?;
-
-    WriteLogger::init(
-        LevelFilter::Debug,
-        ConfigBuilder::new()
-            .set_time_format_rfc3339()
-            .set_target_level(LevelFilter::Off)
-            .set_location_level(LevelFilter::Debug)
-            .add_filter_ignore_str("flyline::text_buffer")
-            .add_filter_ignore_str("flyline::tab_completion")
-            // .add_filter_ignore_str("flyline::history")
-            // .add_filter_ignore_str("flyline::bash_funcs")
-            .build(),
-        log_file,
-    )?;
-
-    log::info!(
-        "Flyline logging initialized, output will be logged to: {}",
-        log_file_path.display()
-    );
-
-    Ok(())
-}
-
 #[derive(Debug)]
 struct Flyline {
     content: Vec<u8>,
@@ -105,7 +74,7 @@ impl Flyline {
                     if let Ok(str_slice) = c_str.to_str() {
                         args.push(str_slice);
                         // TODO what do the flags mean?
-                        println!("arg: {} flags: {}", str_slice, word_desc.flags);
+                        // println!("arg: {} flags: {}", str_slice, word_desc.flags);
                     }
                 }
                 current = (*current).next;
@@ -126,6 +95,19 @@ impl Flyline {
                     .long("disable-animations")
                     .action(clap::ArgAction::SetTrue)
                     .help("Disable animations"),
+            )
+            .arg(
+                Arg::new("dump-logs")
+                    .long("dump-logs")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Dump in-memory logs to file"),
+            )
+            .arg(
+                Arg::new("stream-logs")
+                    .long("stream-logs")
+                    .value_name("PATH")
+                    .num_args(1)
+                    .help("Dump current logs to PATH and append new logs"),
             );
 
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
@@ -140,6 +122,20 @@ impl Flyline {
                 if matches.get_flag("disable-animations") {
                     log::info!("Animations disabled");
                     // TODO: Set animation flag or pass to app
+                }
+
+                if matches.get_flag("dump-logs") {
+                    match logging::dump_logs() {
+                        Ok(path) => println!("Flyline logs dumped to {}", path.display()),
+                        Err(e) => eprintln!("Failed to dump logs: {}", e),
+                    }
+                }
+
+                if let Some(path) = matches.get_one::<String>("stream-logs") {
+                    match logging::stream_logs(path.into()) {
+                        Ok(path) => println!("Flyline logs streaming to {}", path.display()),
+                        Err(e) => eprintln!("Failed to stream logs: {}", e),
+                    }
                 }
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
             }
@@ -213,7 +209,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
         }
     }
 
-    flyline_setup_logging().unwrap_or_else(|e| {
+    logging::init().unwrap_or_else(|e| {
         eprintln!("Flyline failed to setup logging: {}", e);
     });
 
