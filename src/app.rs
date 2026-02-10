@@ -1236,6 +1236,11 @@ impl App {
                         Pallete::secondary_text(),
                     ));
 
+                    spans.push(Span::styled(
+                        format!("{} ", entry_with_indices.2),
+                        Pallete::secondary_text(),
+                    ));
+
                     let timeago_str = entry
                         .timestamp
                         .map(|ts| Self::ts_to_timeago_string_5chars(ts));
