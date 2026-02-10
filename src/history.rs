@@ -344,7 +344,7 @@ impl HistoryManager {
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 
-type HistoryEntryWithMatchIndices = (HistoryEntry, Vec<usize>);
+type HistoryEntryWithMatchIndices = (HistoryEntry, Vec<usize>, i64);
 
 struct FuzzyHistorySearch {
     matcher: SkimMatcherV2,
@@ -430,7 +430,7 @@ impl FuzzyHistorySearch {
         if self.cache.is_empty() {
             return None;
         }
-        self.cache.get(self.cache_index).map(|(entry, _)| entry)
+        self.cache.get(self.cache_index).map(|(entry, _, _)| entry)
     }
 
     fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
@@ -455,6 +455,13 @@ impl FuzzyHistorySearch {
         let start = Instant::now();
         let start_index = self.global_index;
 
+        let score_threshold = match current_cmd.len() {
+            0..1 => 0,
+            1..3 => 10,
+            3..5 => 20,
+            _ => 45,
+        };
+
         // Takes <1ms per 500 entries
         let max_entries_to_search = 500;
         for entry in entries
@@ -463,12 +470,11 @@ impl FuzzyHistorySearch {
             .skip(self.global_index)
             .take(max_entries_to_search)
         {
-            if let Some(indices) = self
-                .matcher
-                .fuzzy_indices(&entry.command, current_cmd)
-                .map(|(_, indices)| indices)
+            if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
             {
-                self.cache.push((entry.clone(), indices));
+                if score >= score_threshold {
+                    self.cache.push((entry.clone(), indices, score));
+                }
             }
             self.global_index += 1;
             // log::debug!("Fuzzy search global index: {}", self.global_index);
