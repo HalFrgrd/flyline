@@ -402,24 +402,40 @@ impl App {
     }
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
-        match mouse.kind {
-            crossterm::event::MouseEventKind::Moved => {
-                // log::debug!("Mouse Moved to ({}, {})", mouse.column, mouse.row);
-                if let Some((contents, offset)) = &self.last_contents {
-                    if let Some(tagged_cell) =
-                        contents.get_tagged_cell(mouse.column, mouse.row, *offset)
-                    {
-                        self.last_mouse_over_cell = Some(tagged_cell.tag.clone());
-                    } else {
-                        self.last_mouse_over_cell = None;
+        log::debug!("Mouse event: {:?}", mouse);
+
+        if let Some((contents, offset)) = &self.last_contents {
+            if let Some(tagged_cell) = contents.get_tagged_cell(mouse.column, mouse.row, *offset) {
+                self.last_mouse_over_cell = Some(tagged_cell.tag.clone());
+                match self.last_mouse_over_cell {
+                    Some(Tag::Suggestion(idx)) => {
+                        if let ContentMode::TabCompletion(active_suggestions) =
+                            &mut self.content_mode
+                        {
+                            active_suggestions.set_selected_by_idx(idx);
+                        }
                     }
-                } else {
-                    self.last_mouse_over_cell = None;
+                    _ => {}
                 }
+            } else {
+                self.last_mouse_over_cell = None;
             }
-            e => {
-                log::debug!("Mouse event: {:?}", e);
-            }
+        } else {
+            self.last_mouse_over_cell = None;
+        }
+
+        match mouse.kind {
+            crossterm::event::MouseEventKind::Up(_) => match self.last_mouse_over_cell {
+                Some(Tag::Suggestion(idx)) => {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                        active_suggestions.set_selected_by_idx(idx);
+                        active_suggestions.accept_currently_selected(&mut self.buffer);
+                        self.content_mode = ContentMode::Normal;
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
         };
         false
     }
@@ -1163,10 +1179,10 @@ impl App {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
                 let max_num_rows = 10;
-                let mut rows = vec![vec![]; max_num_rows];
+                let mut rows: Vec<Vec<(Vec<Span>, u32)>> = vec![vec![]; max_num_rows];
 
                 for (col, col_width) in active_suggestions.into_grid(max_num_rows, width as usize) {
-                    for (row_idx, (suggestion, matching_indices, is_selected)) in
+                    for (row_idx, (suggestion_idx, suggestion, matching_indices, is_selected)) in
                         col.iter().enumerate()
                     {
                         let formatted_suggestion: Vec<Span> = {
@@ -1199,7 +1215,8 @@ impl App {
                             spans
                         };
 
-                        rows[row_idx].push(formatted_suggestion);
+                        let suggestion_idx = u32::try_from(*suggestion_idx).unwrap_or(u32::MAX);
+                        rows[row_idx].push((formatted_suggestion, suggestion_idx));
                     }
                 }
 
@@ -1207,11 +1224,12 @@ impl App {
                 let num_logical_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
 
                 for row in rows.into_iter().filter(|r| !r.is_empty()) {
-                    let mut line = vec![];
-                    for styled_spans in row {
-                        line.extend(styled_spans);
+                    for (styled_spans, suggestion_idx) in row {
+                        for span in styled_spans {
+                            content.write_span(&span, Tag::Suggestion(suggestion_idx));
+                        }
                     }
-                    content.write_line(&Line::from(line), true, Tag::TabSuggestion);
+                    content.newline();
                 }
                 if num_rows_used == 0 {
                     content.write_span(
@@ -1279,36 +1297,35 @@ impl App {
                     Tag::FuzzySearch,
                 );
             }
-            ContentMode::Normal if self.mode.is_running() => {
-                if let Some(tag) = &self.last_mouse_over_cell {
-                    match tag {
-                        Tag::CommandFirstWord
-                            if matches!(self.content_mode, ContentMode::Normal) =>
-                        {
-                            content.newline();
-                            content.write_span(
-                                &Span::styled(
-                                    format!("# {}", self.command_description),
-                                    Pallete::secondary_text(),
-                                ),
-                                Tag::Tooltip,
-                            );
-                        }
-                        _ => {
-                            content.newline();
+            ContentMode::Normal if self.mode.is_running() => {}
+            _ => {}
+        }
+        if self.mode.is_running() {
+            if let Some(tag) = &self.last_mouse_over_cell {
+                match tag {
+                    Tag::CommandFirstWord if matches!(self.content_mode, ContentMode::Normal) => {
+                        content.newline();
+                        content.write_span(
+                            &Span::styled(
+                                format!("# {}", self.command_description),
+                                Pallete::secondary_text(),
+                            ),
+                            Tag::Tooltip,
+                        );
+                    }
+                    _ => {
+                        content.newline();
 
-                            content.write_span(
-                                &Span::styled(
-                                    format!("# Mouse over: {:?}", tag),
-                                    Pallete::secondary_text(),
-                                ),
-                                Tag::Tooltip,
-                            );
-                        }
+                        content.write_span(
+                            &Span::styled(
+                                format!("# Mouse over: {:?}", tag),
+                                Pallete::secondary_text(),
+                            ),
+                            Tag::Tooltip,
+                        );
                     }
                 }
             }
-            _ => {}
         }
         content
     }

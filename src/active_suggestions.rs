@@ -128,7 +128,11 @@ impl ActiveSuggestions {
         self.sanitize_selected_index(new_idx);
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&str, &Vec<usize>, bool)> {
+    pub fn set_selected_by_idx(&mut self, idx: u32) {
+        self.sanitize_selected_index(idx as i32);
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (usize, &str, &Vec<usize>, bool)> {
         // prefix and suffix aren't shown in the suggestion list
         // but are applied when the suggestion is accepted
         self.filtered_suggestions
@@ -136,6 +140,7 @@ impl ActiveSuggestions {
             .enumerate()
             .map(|(idx, (suggestion, indices))| {
                 (
+                    idx,
                     suggestion.s.as_str(),
                     indices,
                     idx == self.selected_filtered_index,
@@ -147,7 +152,7 @@ impl ActiveSuggestions {
         &self,
         rows: usize,
         cols: usize,
-    ) -> Vec<(Vec<(&str, &Vec<usize>, bool)>, usize)> {
+    ) -> Vec<(Vec<(usize, &str, &Vec<usize>, bool)>, usize)> {
         // Show as many suggestions as will fit in the given rows and columns
         // Each column should be the same width, based on the longest suggestion
         let mut grid = vec![];
@@ -155,10 +160,10 @@ impl ActiveSuggestions {
         let mut col_width = 1;
         let mut total_columns = 0;
 
-        for (i, (s, matching_indices, is_selected)) in self.iter().enumerate() {
-            current_col.push((s, matching_indices, is_selected));
+        for (suggestion_idx, s, matching_indices, is_selected) in self.iter() {
+            current_col.push((suggestion_idx, s, matching_indices, is_selected));
             col_width = col_width.max(s.len() + 2); // +2 for padding // TODO truncate very long suggestions
-            if (i + 1) % rows == 0 {
+            if (suggestion_idx + 1) % rows == 0 {
                 if total_columns + col_width > cols {
                     break;
                 }
