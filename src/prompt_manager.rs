@@ -75,7 +75,11 @@ impl PromptManager {
                     lines => lines,
                 };
 
+            // Examples:
+            // export RPS1='\[\033[01;32m\]$(date)\[\033[0m\]'
+            // export RPROMPT='\[\033[01;32m\]FLYLINE_TIME\[\033[0m\]'
             let rps1: Vec<Line<'static>> = bash_funcs::get_env_variable("RPS1")
+                .or_else(|| bash_funcs::get_env_variable("RPROMPT"))
                 .and_then(|rps1| {
                     // Strip literal "\\[" and "\\]" markers (they wrap non-printing sequences)
                     let rps1 = rps1.replace("\\[", "").replace("\\]", "");
