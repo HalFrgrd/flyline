@@ -122,12 +122,21 @@ pub fn get_completion_context<'a>(
         .to_inclusive()
         .contains(&cursor_byte_pos)
     {
-        if buffer
+        let cursor_at_end_of_node = cursor_byte_pos == cursor_node.byte_range().end;
+        let cursor_on_whitespace = buffer
             .char_indices()
             .any(|(i, c)| i == cursor_byte_pos && c.is_whitespace())
             || (cursor_byte_pos >= buffer.len()
-                && buffer.chars().last().map_or(false, |c| c.is_whitespace()))
-        {
+                && buffer.chars().last().map_or(false, |c| c.is_whitespace()));
+
+        // If cursor is on whitespace but at the end of a word node, we still consider it part of that word
+        // This fixes the case: "cd fo| bar" where cursor is right after "fo"
+        let is_word_like_node = matches!(
+            cursor_node.kind(),
+            "word" | "concatenation" | "string" | "simple_expansion"
+        );
+
+        if cursor_on_whitespace && !(cursor_at_end_of_node && is_word_like_node) {
             cursor_byte_pos..cursor_byte_pos
         } else {
             cursor_node.byte_range()
