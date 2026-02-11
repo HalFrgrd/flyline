@@ -122,12 +122,21 @@ pub fn get_completion_context<'a>(
         .to_inclusive()
         .contains(&cursor_byte_pos)
     {
-        if buffer
+        let cursor_at_end_of_node = cursor_byte_pos == cursor_node.byte_range().end;
+        let cursor_on_whitespace = buffer
             .char_indices()
             .any(|(i, c)| i == cursor_byte_pos && c.is_whitespace())
             || (cursor_byte_pos >= buffer.len()
-                && buffer.chars().last().map_or(false, |c| c.is_whitespace()))
-        {
+                && buffer.chars().last().map_or(false, |c| c.is_whitespace()));
+
+        // If cursor is on whitespace but at the end of a word node, we still consider it part of that word
+        // This fixes the case: "cd fo| bar" where cursor is right after "fo"
+        let is_word_like_node = matches!(
+            cursor_node.kind(),
+            "word" | "concatenation" | "string" | "simple_expansion"
+        );
+
+        if cursor_on_whitespace && !(cursor_at_end_of_node && is_word_like_node) {
             cursor_byte_pos..cursor_byte_pos
         } else {
             cursor_node.byte_range()
@@ -1066,6 +1075,40 @@ mod tests {
                 assert_eq!(ctx.context, "cat ไฟล์ --öption วันนี้ 🌟");
                 assert_eq!(command_word, "cat");
                 assert_eq!(ctx.word_under_cursor, "ไฟล์");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_word_under_cursor_with_word_after() {
+        // This is the bug: when cursor is at END of word AND there's a word after,
+        // word_under_cursor should be the current word, not ""
+        // Example: "cd fo[cursor] bar" - word_under_cursor should be "fo", not ""
+        let input = "cd fo bar";
+        let cursor_pos = "cd fo".len(); // cursor right after "fo" (at end of word)
+        let ctx = get_completion_context(input, cursor_pos);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "fo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_word_under_cursor_in_middle_with_word_after() {
+        // Cursor in the middle of "foo" when "bar" follows
+        let input = "cd foo bar";
+        let cursor_pos = "cd f".len(); // cursor after "f" in "foo" (in middle of word)
+        let ctx = get_completion_context(input, cursor_pos);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "foo");
             }
             _ => panic!("Expected CommandComp"),
         }
