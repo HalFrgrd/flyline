@@ -1082,11 +1082,11 @@ mod tests {
 
     #[test]
     fn test_word_under_cursor_with_word_after() {
-        // This is the bug: when cursor is in middle of word AND there's a word after,
+        // This is the bug: when cursor is at END of word AND there's a word after,
         // word_under_cursor should be the current word, not ""
-        // Example: "cd fo[cursor]o bar" - word_under_cursor should be "foo", not ""
+        // Example: "cd fo[cursor] bar" - word_under_cursor should be "fo", not ""
         let input = "cd fo bar";
-        let cursor_pos = "cd fo".len(); // cursor right after "fo"
+        let cursor_pos = "cd fo".len(); // cursor right after "fo" (at end of word)
         let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
@@ -1102,7 +1102,7 @@ mod tests {
     fn test_word_under_cursor_in_middle_with_word_after() {
         // Cursor in the middle of "foo" when "bar" follows
         let input = "cd foo bar";
-        let cursor_pos = "cd f".len(); // cursor after "f" in "foo"
+        let cursor_pos = "cd f".len(); // cursor after "f" in "foo" (in middle of word)
         let ctx = get_completion_context(input, cursor_pos);
 
         match ctx.comp_type {
