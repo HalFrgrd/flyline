@@ -1070,4 +1070,38 @@ mod tests {
             _ => panic!("Expected CommandComp"),
         }
     }
+
+    #[test]
+    fn test_word_under_cursor_with_word_after() {
+        // This is the bug: when cursor is in middle of word AND there's a word after,
+        // word_under_cursor should be the current word, not ""
+        // Example: "cd fo[cursor]o bar" - word_under_cursor should be "foo", not ""
+        let input = "cd fo bar";
+        let cursor_pos = "cd fo".len(); // cursor right after "fo"
+        let ctx = get_completion_context(input, cursor_pos);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "fo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_word_under_cursor_in_middle_with_word_after() {
+        // Cursor in the middle of "foo" when "bar" follows
+        let input = "cd foo bar";
+        let cursor_pos = "cd f".len(); // cursor after "f" in "foo"
+        let ctx = get_completion_context(input, cursor_pos);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "foo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 }
