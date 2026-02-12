@@ -43,6 +43,10 @@ pub struct FormattedBufferSpan<'a> {
     pub highlight_name: Option<String>,
 }
 
+// TODO: second layer of formatting for animations
+// it should go over the formmatted spans and modify them
+// e.g. cursor animation, python animation
+
 pub fn format_buffer<'a>(buffer: &'a TextBuffer) -> Vec<FormattedBufferSpan<'a>> {
     let mut formatted_spans = vec![];
 

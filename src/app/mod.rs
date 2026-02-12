@@ -906,50 +906,13 @@ impl App {
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
-                let max_num_rows = 10;
+                let max_num_rows = 10; // TODO
                 let mut rows: Vec<Vec<(Vec<Span>, usize)>> = vec![vec![]; max_num_rows];
 
                 for (col, col_width) in active_suggestions.into_grid(max_num_rows, width as usize) {
-                    for (row_idx, (suggestion_idx, suggestion, matching_indices, is_selected)) in
-                        col.iter().enumerate()
-                    {
-                        // TODO tidy this up
-                        let formatted_suggestion: Vec<Span> = {
-                            let mut spans = vec![];
-                            let mut length = 0;
-                            for (idx, ch) in suggestion.chars().enumerate() {
-                                let char_style = if *is_selected {
-                                    if matching_indices.contains(&idx) {
-                                        Palette::selected_matching_char()
-                                    } else {
-                                        Palette::selection_style()
-                                    }
-                                } else {
-                                    if matching_indices.contains(&idx) {
-                                        Palette::matched_character()
-                                    } else {
-                                        Palette::normal_text()
-                                    }
-                                };
-                                spans.push(Span::styled(ch.to_string(), char_style));
-                                length += ch.width().unwrap_or(0);
-                                if length >= col_width {
-                                    break;
-                                }
-                            }
-                            if length < col_width {
-                                let style = if *is_selected {
-                                    Palette::selection_style()
-                                } else {
-                                    Palette::normal_text()
-                                };
-                                spans.push(Span::styled(" ".repeat(col_width - length), style));
-                            }
-
-                            spans
-                        };
-
-                        rows[row_idx].push((formatted_suggestion, *suggestion_idx));
+                    for (row_idx, (formatted, is_selected)) in col.iter().enumerate() {
+                        let formatted_suggestion = formatted.render(col_width, *is_selected);
+                        rows[row_idx].push((formatted_suggestion, formatted.suggestion_idx));
                     }
                 }
 
