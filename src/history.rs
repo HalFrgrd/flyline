@@ -372,6 +372,11 @@ impl std::fmt::Debug for FuzzyHistorySearch {
 }
 
 impl FuzzyHistorySearch {
+    // Check time budget every N entries to balance responsiveness and performance
+    const TIME_CHECK_INTERVAL: usize = 50;
+    // Time budget for processing history entries in milliseconds
+    const TIME_BUDGET_MS: u64 = 5;
+
     fn new() -> Self {
         FuzzyHistorySearch {
             matcher: SkimMatcherV2::default().smart_case(),
@@ -460,6 +465,7 @@ impl FuzzyHistorySearch {
     fn grow_fuzzy_search_cache(&mut self, entries: &[HistoryEntry], current_cmd: &str) {
         let start = Instant::now();
         let start_index = self.global_index;
+        let time_budget = std::time::Duration::from_millis(Self::TIME_BUDGET_MS);
 
         let score_threshold = match current_cmd.len() {
             0..1 => 0,
@@ -468,16 +474,20 @@ impl FuzzyHistorySearch {
             _ => 30,
         };
 
-        // Takes <1ms per 500 entries
-        let max_entries_to_search = 500;
         let mut new_entries = vec![];
 
-        for entry in entries
+        // Process as many entries as possible within the 5ms time budget
+        for (idx, entry) in entries
             .iter()
             .rev()
             .skip(self.global_index)
-            .take(max_entries_to_search)
+            .enumerate()
         {
+            // Check if we've exceeded the time budget every TIME_CHECK_INTERVAL entries
+            if idx % Self::TIME_CHECK_INTERVAL == 0 && start.elapsed() >= time_budget {
+                break;
+            }
+
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
             {
                 if score >= score_threshold {
