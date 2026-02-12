@@ -1,9 +1,9 @@
+use crate::active_suggestions::{ActiveSuggestions, Suggestion};
+use crate::app::App;
+use crate::bash_funcs;
+use crate::tab_completion_context;
 use glob::glob;
 use std::path::Path;
-use crate::tab_completion_context;
-use crate::app::App;
-use crate::active_suggestions::{ActiveSuggestions, Suggestion};
-use crate::bash_funcs;
 
 impl App {
     pub fn start_tab_complete(&mut self) {
@@ -279,5 +279,4 @@ impl App {
 
         self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
     }
-
 }

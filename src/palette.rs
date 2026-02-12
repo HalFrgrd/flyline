@@ -1,8 +1,8 @@
 use ratatui::style::{Color, Modifier, Style};
 
-pub struct Pallete;
+pub struct Palette;
 
-impl Pallete {
+impl Palette {
     pub fn recognised_word() -> Style {
         Style::default().fg(Color::Green)
     }
