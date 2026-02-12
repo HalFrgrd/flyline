@@ -1,12 +1,71 @@
+use crate::palette::Palette;
 use crate::text_buffer::{SubString, TextBuffer};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
     pub s: String,
     pub prefix: String,
     pub suffix: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuggestionFormatted {
+    pub suggestion_idx: usize,
+    pub display_len: usize,
+    pub spans: Vec<Span<'static>>,
+    pub spans_selected: Vec<Span<'static>>,
+}
+
+impl SuggestionFormatted {
+    pub fn new(
+        suggestion: &Suggestion,
+        suggestion_idx: usize,
+        matching_indices: Vec<usize>,
+    ) -> Self {
+        let mut spans = Vec::new();
+        let mut spans_selected = Vec::new();
+
+        for (idx, ch) in suggestion.s.chars().enumerate() {
+            let is_match = matching_indices.contains(&idx);
+            let char_style = if is_match {
+                Palette::matched_character()
+            } else {
+                Palette::normal_text()
+            };
+            let selected_style = if is_match {
+                Palette::selected_matching_char()
+            } else {
+                Palette::selection_style()
+            };
+
+            spans.push(Span::styled(ch.to_string(), char_style));
+            spans_selected.push(Span::styled(ch.to_string(), selected_style));
+        }
+
+        SuggestionFormatted {
+            suggestion_idx,
+            display_len: suggestion.s.len() + 2,
+            spans,
+            spans_selected,
+        }
+    }
+
+    pub fn render(&self, col_width: usize, is_selected: bool) -> Vec<Span<'static>> {
+        let mut spans = if is_selected {
+            self.spans_selected.clone()
+        } else {
+            self.spans.clone()
+        };
+
+        if self.display_len < col_width {
+            spans.push(Span::raw(" ".repeat(col_width - self.display_len)));
+        }
+
+        spans
+    }
 }
 
 impl Suggestion {
@@ -50,7 +109,7 @@ impl Ord for Suggestion {
 
 pub struct ActiveSuggestions {
     all_suggestions: Vec<Suggestion>,
-    filtered_suggestions: Vec<(Suggestion, Vec<usize>)>, // Vec of matching char indices for fuzzy search highlighting
+    filtered_suggestions: Vec<SuggestionFormatted>,
     selected_filtered_index: usize,
     pub word_under_cursor: SubString,
     last_grid_size: (usize, usize),
@@ -77,7 +136,11 @@ impl ActiveSuggestions {
     ) -> Option<Self> {
         let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).ok()?;
 
-        let filtered_suggestions = suggestions.iter().map(|s| (s.clone(), vec![])).collect();
+        let filtered_suggestions = suggestions
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| SuggestionFormatted::new(s, idx, vec![]))
+            .collect();
 
         Some(ActiveSuggestions {
             all_suggestions: suggestions,
@@ -132,17 +195,16 @@ impl ActiveSuggestions {
         self.sanitize_selected_index(idx as i32);
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (usize, &str, &Vec<usize>, bool)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (usize, &SuggestionFormatted, bool)> {
         // prefix and suffix aren't shown in the suggestion list
         // but are applied when the suggestion is accepted
         self.filtered_suggestions
             .iter()
             .enumerate()
-            .map(|(idx, (suggestion, indices))| {
+            .map(|(idx, formatted_suggestion)| {
                 (
                     idx,
-                    suggestion.s.as_str(),
-                    indices,
+                    formatted_suggestion,
                     idx == self.selected_filtered_index,
                 )
             })
@@ -152,7 +214,7 @@ impl ActiveSuggestions {
         &self,
         rows: usize,
         cols: usize,
-    ) -> Vec<(Vec<(usize, &str, &Vec<usize>, bool)>, usize)> {
+    ) -> Vec<(Vec<(&SuggestionFormatted, bool)>, usize)> {
         // Show as many suggestions as will fit in the given rows and columns
         // Each column should be the same width, based on the longest suggestion
         let mut grid = vec![];
@@ -160,10 +222,10 @@ impl ActiveSuggestions {
         let mut col_width = 1;
         let mut total_columns = 0;
 
-        for (suggestion_idx, s, matching_indices, is_selected) in self.iter() {
-            current_col.push((suggestion_idx, s, matching_indices, is_selected));
-            col_width = col_width.max(s.len() + 2); // +2 for padding // TODO truncate very long suggestions
-            if (suggestion_idx + 1) % rows == 0 {
+        for (filtered_idx, formatted, is_selected) in self.iter() {
+            current_col.push((formatted, is_selected));
+            col_width = col_width.max(formatted.display_len); // +2 for padding // TODO truncate very long suggestions
+            if (filtered_idx + 1) % rows == 0 {
                 if total_columns + col_width > cols {
                     break;
                 }
@@ -189,30 +251,25 @@ impl ActiveSuggestions {
         self.word_under_cursor = new_word_under_cursor.clone();
 
         // Score and filter suggestions using the stored matcher
-        let mut scored: Vec<(usize, i64, Vec<usize>)> = self
+        let mut scored: Vec<(i64, SuggestionFormatted)> = self
             .all_suggestions
             .iter()
             .enumerate()
             .filter_map(|(idx, suggestion)| {
                 self.fuzzy_matcher
                     .fuzzy_indices(&suggestion.s, &new_word_under_cursor.s)
-                    .map(|(score, indices)| (idx, score, indices))
+                    .map(|(score, indices)| {
+                        (score, SuggestionFormatted::new(suggestion, idx, indices))
+                    })
             })
             .collect();
 
         // Sort by score (descending - higher scores are better matches)
-        scored.sort_by(|a, b| b.1.cmp(&a.1));
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
 
-        // Extract matching suggestions in score order
-        // This drains and rebuilds the vec, avoiding clone but requires one allocation
         self.filtered_suggestions = scored
             .into_iter()
-            .filter_map(|(idx, _, indices)| {
-                self.all_suggestions
-                    .get(idx)
-                    .cloned()
-                    .map(|s| (s, indices.clone()))
-            })
+            .map(|(_score, formatted)| formatted)
             .collect();
 
         // Reset selected index if needed
@@ -245,18 +302,37 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
-        if let Some((completion, _)) = self.filtered_suggestions.get(self.selected_filtered_index) {
-            if let Err(e) =
-                buffer.replace_word_under_cursor(&completion.formatted(), &self.word_under_cursor)
-            {
-                log::error!("Error during tab completion: {}", e);
+        let formatted_completion = match self.filtered_suggestions.get(self.selected_filtered_index)
+        {
+            Some(s) => s,
+            None => {
+                log::warn!(
+                    "No suggestion at selected index {}",
+                    self.selected_filtered_index
+                );
+                return;
             }
-        } else {
-            log::error!(
-                "Tried to accept suggestion at index {}, but only {} suggestions are available",
-                self.selected_filtered_index,
-                self.filtered_suggestions.len()
-            );
+        };
+
+        let suggestion = match self
+            .all_suggestions
+            .get(formatted_completion.suggestion_idx)
+        {
+            Some(s) => s,
+            None => {
+                log::warn!(
+                    "Suggestion index {} out of bounds (len={})",
+                    formatted_completion.suggestion_idx,
+                    self.all_suggestions.len()
+                );
+                return;
+            }
+        };
+
+        if let Err(e) =
+            buffer.replace_word_under_cursor(&suggestion.formatted(), &self.word_under_cursor)
+        {
+            log::error!("Failed to apply suggestion: {}", e);
         }
     }
 }

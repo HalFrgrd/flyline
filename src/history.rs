@@ -477,12 +477,7 @@ impl FuzzyHistorySearch {
         let mut new_entries = vec![];
 
         // Process as many entries as possible within the 5ms time budget
-        for (idx, entry) in entries
-            .iter()
-            .rev()
-            .skip(self.global_index)
-            .enumerate()
-        {
+        for (idx, entry) in entries.iter().rev().skip(self.global_index).enumerate() {
             // Check if we've exceeded the time budget every TIME_CHECK_INTERVAL entries
             if idx % Self::TIME_CHECK_INTERVAL == 0 && start.elapsed() >= time_budget {
                 break;
