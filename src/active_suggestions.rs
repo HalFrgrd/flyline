@@ -128,7 +128,7 @@ impl ActiveSuggestions {
         self.sanitize_selected_index(new_idx);
     }
 
-    pub fn set_selected_by_idx(&mut self, idx: u32) {
+    pub fn set_selected_by_idx(&mut self, idx: usize) {
         self.sanitize_selected_index(idx as i32);
     }
 

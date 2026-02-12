@@ -1105,18 +1105,18 @@ impl App {
                 line_offset = content.cursor_position().0;
                 content.write_span_dont_overwrite(
                     &Span::styled(first_word, first_word_style),
-                    Tag::CommandFirstWord,
+                    Tag::Command(0),
                 );
                 content.write_span_dont_overwrite(
                     &Span::styled(rest.to_string(), Pallete::normal_text()),
-                    Tag::CommandOther,
+                    Tag::Command(0),
                 );
             } else {
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Pallete::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
                 line_offset = content.cursor_position().0;
-                content.write_line(&Line::from(line.to_owned()), false, Tag::CommandOther);
+                content.write_line(&Line::from(line.to_owned()), false, Tag::Command(0));
             }
             // Draw cursor on this line
             // TODO: write each span is it is unless the cursor is on it.
@@ -1179,7 +1179,7 @@ impl App {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
                 let max_num_rows = 10;
-                let mut rows: Vec<Vec<(Vec<Span>, u32)>> = vec![vec![]; max_num_rows];
+                let mut rows: Vec<Vec<(Vec<Span>, usize)>> = vec![vec![]; max_num_rows];
 
                 for (col, col_width) in active_suggestions.into_grid(max_num_rows, width as usize) {
                     for (row_idx, (suggestion_idx, suggestion, matching_indices, is_selected)) in
@@ -1221,8 +1221,7 @@ impl App {
                             spans
                         };
 
-                        let suggestion_idx = u32::try_from(*suggestion_idx).unwrap_or(u32::MAX);
-                        rows[row_idx].push((formatted_suggestion, suggestion_idx));
+                        rows[row_idx].push((formatted_suggestion, *suggestion_idx));
                     }
                 }
 
@@ -1309,7 +1308,7 @@ impl App {
         if self.mode.is_running() {
             if let Some(tag) = &self.last_mouse_over_cell {
                 match tag {
-                    Tag::CommandFirstWord if matches!(self.content_mode, ContentMode::Normal) => {
+                    Tag::Command(0) if matches!(self.content_mode, ContentMode::Normal) => {
                         content.newline();
                         content.write_span(
                             &Span::styled(
