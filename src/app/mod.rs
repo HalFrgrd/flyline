@@ -2,6 +2,7 @@ mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
+use crate::app::buffer_format::{FormattedBufferSpan, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::bash_funcs;
 use crate::command_acceptance;
@@ -115,6 +116,7 @@ enum ContentMode {
 struct App {
     mode: AppRunningState,
     buffer: TextBuffer,
+    formatted_buffer_cache: Vec<FormattedBufferSpan>,
     animation_tick: u64,
     cursor_animation: CursorAnimation,
     prompt_manager: PromptManager,
@@ -142,9 +144,12 @@ impl App {
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
 
+        let buffer = TextBuffer::new("");
+        let formatted_buffer_cache = format_buffer(&buffer);
         App {
             mode: AppRunningState::Running,
-            buffer: TextBuffer::new(""),
+            buffer,
+            formatted_buffer_cache,
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(unfinished_from_prev_command),
@@ -748,6 +753,8 @@ impl App {
         let (command_type, short_desc) = self.bash_env.get_command_info(&first_word);
         self.cached_command_type = command_type;
         self.command_description = short_desc.to_string();
+
+        self.formatted_buffer_cache = format_buffer(&self.buffer);
     }
 
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {

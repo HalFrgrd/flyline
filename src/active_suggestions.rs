@@ -74,7 +74,12 @@ impl Suggestion {
     }
 
     pub fn formatted(&self) -> String {
-        format!("{}{}{}", self.prefix, self.s.replace(' ', "\\ "), self.suffix)
+        format!(
+            "{}{}{}",
+            self.prefix,
+            self.s.replace(' ', "\\ "),
+            self.suffix
+        )
     }
 
     pub fn from_string_vec(
