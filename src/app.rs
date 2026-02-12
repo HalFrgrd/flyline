@@ -1252,7 +1252,7 @@ impl App {
                     .history_manager
                     .get_fuzzy_search_results(self.buffer.buffer());
                 for (row_idx, entry_with_indices) in fuzzy_results.iter().enumerate() {
-                    let entry = &entry_with_indices.0;
+                    let entry = &entry_with_indices.entry;
                     let mut spans = vec![];
 
                     spans.push(Span::styled(
@@ -1261,7 +1261,7 @@ impl App {
                     ));
 
                     spans.push(Span::styled(
-                        format!("{} ", entry_with_indices.2),
+                        format!("{} ", entry_with_indices.score),
                         Pallete::secondary_text(),
                     ));
 
@@ -1279,7 +1279,7 @@ impl App {
                     }
 
                     let match_indices_set: std::collections::HashSet<usize> =
-                        entry_with_indices.1.iter().cloned().collect();
+                        entry_with_indices.match_indices.iter().cloned().collect();
                     for (idx, ch) in entry.command.chars().enumerate() {
                         let mut style = if match_indices_set.contains(&idx) {
                             Pallete::matched_character()

@@ -325,7 +325,7 @@ impl HistoryManager {
         None
     }
 
-    pub fn get_fuzzy_search_results(
+    pub(crate) fn get_fuzzy_search_results(
         &mut self,
         current_cmd: &str,
     ) -> (&[HistoryEntryWithMatchIndices], usize, usize, usize) {
@@ -344,7 +344,11 @@ impl HistoryManager {
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 
-type HistoryEntryWithMatchIndices = (HistoryEntry, Vec<usize>, i64);
+pub(crate) struct HistoryEntryWithMatchIndices {
+    pub entry: HistoryEntry,
+    pub match_indices: Vec<usize>,
+    pub score: i64,
+}
 
 struct FuzzyHistorySearch {
     matcher: SkimMatcherV2,
@@ -430,7 +434,9 @@ impl FuzzyHistorySearch {
         if self.cache.is_empty() {
             return None;
         }
-        self.cache.get(self.cache_index).map(|(entry, _, _)| entry)
+        self.cache
+            .get(self.cache_index)
+            .map(|entry_with_match_indices| &entry_with_match_indices.entry)
     }
 
     fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
@@ -459,11 +465,13 @@ impl FuzzyHistorySearch {
             0..1 => 0,
             1..3 => 10,
             3..5 => 20,
-            _ => 45,
+            _ => 30,
         };
 
         // Takes <1ms per 500 entries
         let max_entries_to_search = 500;
+        let mut new_entries = vec![];
+
         for entry in entries
             .iter()
             .rev()
@@ -473,12 +481,26 @@ impl FuzzyHistorySearch {
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
             {
                 if score >= score_threshold {
-                    self.cache.push((entry.clone(), indices, score));
+                    let new_entry = HistoryEntryWithMatchIndices {
+                        entry: entry.clone(),
+                        match_indices: indices,
+                        score,
+                    };
+                    new_entries.push(new_entry);
                 }
             }
             self.global_index += 1;
             // log::debug!("Fuzzy search global index: {}", self.global_index);
         }
+
+        new_entries.sort_by_key(|e| std::cmp::Reverse(e.score));
+
+        let new_cache = std::mem::take(&mut self.cache)
+            .into_iter()
+            .merge_by(new_entries.into_iter(), |a, b| a.score >= b.score)
+            .collect();
+        self.cache = new_cache;
+
         if start_index != self.global_index {
             let duration = start.elapsed();
             log::debug!("Fuzzy cache increase took: {:?}", duration);
