@@ -490,7 +490,6 @@ impl FuzzyHistorySearch {
                 }
             }
             self.global_index += 1;
-            // log::debug!("Fuzzy search global index: {}", self.global_index);
         }
 
         new_entries.sort_by_key(|e| std::cmp::Reverse(e.score));

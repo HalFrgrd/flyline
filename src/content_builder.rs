@@ -9,10 +9,9 @@ pub enum Tag {
     Normal,
     Ps1Prompt,
     Ps2Prompt,
-    CommandFirstWord,
-    CommandOther,
+    Command(usize),
     TabSuggestion,
-    Suggestion(u32),
+    Suggestion(usize),
     HistorySuggestion,
     FuzzySearch,
     Tooltip,
@@ -81,7 +80,7 @@ impl Contents {
 
     /// Write a single span at the current cursor position
     /// Will automatically wrap to the next line if necessary
-    fn write_span_internal(&mut self, span: &Span, tag: Tag, overwrite: bool) {
+    fn write_span_internal(&mut self, span: &Span, mut tag: Tag, overwrite: bool) {
         let graphemes = span.styled_graphemes(span.style);
         for graph in graphemes {
             let graph_w = graph.symbol.width() as u16;
@@ -143,7 +142,12 @@ impl Contents {
                 self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize]
                     .cell
                     .reset();
+                self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize].tag = tag;
                 self.cursor_vis_col += 1;
+            }
+            if let Tag::Command(byte_start) = tag {
+                // log::debug!("Writing command grapheme '{}' with byte_start {}", graph.symbol, byte_start);
+                tag = Tag::Command(byte_start + graph.symbol.len());
             }
         }
     }
