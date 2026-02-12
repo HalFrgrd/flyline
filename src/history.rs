@@ -460,6 +460,7 @@ impl FuzzyHistorySearch {
     fn grow_fuzzy_search_cache(&mut self, entries: &[HistoryEntry], current_cmd: &str) {
         let start = Instant::now();
         let start_index = self.global_index;
+        let time_budget = std::time::Duration::from_millis(5);
 
         let score_threshold = match current_cmd.len() {
             0..1 => 0,
@@ -468,16 +469,19 @@ impl FuzzyHistorySearch {
             _ => 30,
         };
 
-        // Takes <1ms per 500 entries
-        let max_entries_to_search = 500;
         let mut new_entries = vec![];
 
+        // Process as many entries as possible within the 5ms time budget
         for entry in entries
             .iter()
             .rev()
             .skip(self.global_index)
-            .take(max_entries_to_search)
         {
+            // Check if we've exceeded the time budget
+            if start.elapsed() >= time_budget {
+                break;
+            }
+
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
             {
                 if score >= score_threshold {
