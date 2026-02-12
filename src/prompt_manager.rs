@@ -143,7 +143,9 @@ impl PromptManager {
         let now = Local::now();
         // Use the system locale for formatting
         // This will use the default time format for the locale
-        self.last_time_str = now.format("%X").to_string();
+        self.last_time_str = now.format("%X%.3f").to_string();
+        self.last_time_str =
+            self.last_time_str[..self.last_time_str.len().saturating_sub(2)].to_string();
 
         let formatted_prompt: Vec<Line<'static>> = self
             .prompt

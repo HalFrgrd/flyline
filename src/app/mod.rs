@@ -26,7 +26,6 @@ use std::boxed::Box;
 use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
-use unicode_width::UnicodeWidthChar;
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -404,7 +403,7 @@ impl App {
     }
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
-        log::debug!("Mouse event: {:?}", mouse);
+        log::trace!("Mouse event: {:?}", mouse);
 
         if let Some((contents, offset)) = &self.last_contents {
             if let Some(tagged_cell) = contents.get_tagged_cell(mouse.column, mouse.row, *offset) {

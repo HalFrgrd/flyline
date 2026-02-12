@@ -159,11 +159,12 @@ impl HistoryManager {
         let bash_entries = Self::parse_bash_history_from_memory();
         // Print last 5 bash entries for debugging
         if bash_entries.is_empty() {
-            log::info!("No bash history entries found");
+            log::warn!("No bash history entries found");
         } else {
-            for entry in bash_entries.iter().rev().take(5) {
-                log::info!("bash_entries => {:?}", entry);
-            }
+            log::info!("Loaded {} bash history entries", bash_entries.len());
+            // for entry in bash_entries.iter().rev().take(5) {
+            //     log::info!("bash_entries => {:?}", entry);
+            // }
         }
 
         // Alternative is to do it ourselves
