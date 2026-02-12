@@ -1,6 +1,8 @@
 use crate::text_buffer::{SubString, TextBuffer};
+use crate::palette::Palette;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::text::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
@@ -48,9 +50,16 @@ impl Ord for Suggestion {
     }
 }
 
+/// Cached formatting for a suggestion with two variants: selected and unselected
+#[derive(Debug, Clone)]
+pub struct CachedSuggestionSpans {
+    pub unselected_spans: Vec<Span<'static>>,
+    pub selected_spans: Vec<Span<'static>>,
+}
+
 pub struct ActiveSuggestions {
     all_suggestions: Vec<Suggestion>,
-    filtered_suggestions: Vec<(Suggestion, Vec<usize>)>, // Vec of matching char indices for fuzzy search highlighting
+    filtered_suggestions: Vec<(Suggestion, Vec<usize>, CachedSuggestionSpans)>, // Suggestion, matching indices, and cached spans
     selected_filtered_index: usize,
     pub word_under_cursor: SubString,
     last_grid_size: (usize, usize),
@@ -61,7 +70,7 @@ impl std::fmt::Debug for ActiveSuggestions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ActiveSuggestions")
             .field("all_suggestions", &self.all_suggestions)
-            .field("filtered_suggestions", &self.filtered_suggestions)
+            .field("filtered_suggestions_count", &self.filtered_suggestions.len())
             .field("selected_filtered_index", &self.selected_filtered_index)
             .field("word_under_cursor", &self.word_under_cursor)
             .field("last_grid_size", &self.last_grid_size)
@@ -70,6 +79,39 @@ impl std::fmt::Debug for ActiveSuggestions {
 }
 
 impl ActiveSuggestions {
+    /// Build cached spans for a suggestion with matching indices highlighted
+    fn build_cached_spans(suggestion: &str, matching_indices: &[usize]) -> CachedSuggestionSpans {
+        let matching_indices_set: std::collections::HashSet<usize> = 
+            matching_indices.iter().cloned().collect();
+        
+        let mut unselected_spans = Vec::new();
+        let mut selected_spans = Vec::new();
+        
+        for (idx, ch) in suggestion.chars().enumerate() {
+            let is_matching = matching_indices_set.contains(&idx);
+            
+            let unselected_style = if is_matching {
+                Palette::matched_character()
+            } else {
+                Palette::normal_text()
+            };
+            
+            let selected_style = if is_matching {
+                Palette::selected_matching_char()
+            } else {
+                Palette::selection_style()
+            };
+            
+            unselected_spans.push(Span::styled(ch.to_string(), unselected_style));
+            selected_spans.push(Span::styled(ch.to_string(), selected_style));
+        }
+        
+        CachedSuggestionSpans {
+            unselected_spans,
+            selected_spans,
+        }
+    }
+
     pub fn try_new<'underlying_buffer>(
         suggestions: Vec<Suggestion>,
         word_under_cursor: &'underlying_buffer str,
@@ -77,7 +119,10 @@ impl ActiveSuggestions {
     ) -> Option<Self> {
         let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).ok()?;
 
-        let filtered_suggestions = suggestions.iter().map(|s| (s.clone(), vec![])).collect();
+        let filtered_suggestions = suggestions.iter().map(|s| {
+            let cached_spans = Self::build_cached_spans(&s.s, &[]);
+            (s.clone(), vec![], cached_spans)
+        }).collect();
 
         Some(ActiveSuggestions {
             all_suggestions: suggestions,
@@ -132,17 +177,17 @@ impl ActiveSuggestions {
         self.sanitize_selected_index(idx as i32);
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (usize, &str, &Vec<usize>, bool)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (usize, &str, &CachedSuggestionSpans, bool)> + '_ {
         // prefix and suffix aren't shown in the suggestion list
         // but are applied when the suggestion is accepted
         self.filtered_suggestions
             .iter()
             .enumerate()
-            .map(|(idx, (suggestion, indices))| {
+            .map(|(idx, (suggestion, _indices, cached_spans))| {
                 (
                     idx,
                     suggestion.s.as_str(),
-                    indices,
+                    cached_spans,
                     idx == self.selected_filtered_index,
                 )
             })
@@ -152,7 +197,7 @@ impl ActiveSuggestions {
         &self,
         rows: usize,
         cols: usize,
-    ) -> Vec<(Vec<(usize, &str, &Vec<usize>, bool)>, usize)> {
+    ) -> Vec<(Vec<(usize, &str, &CachedSuggestionSpans, bool)>, usize)> {
         // Show as many suggestions as will fit in the given rows and columns
         // Each column should be the same width, based on the longest suggestion
         let mut grid = vec![];
@@ -160,8 +205,8 @@ impl ActiveSuggestions {
         let mut col_width = 1;
         let mut total_columns = 0;
 
-        for (suggestion_idx, s, matching_indices, is_selected) in self.iter() {
-            current_col.push((suggestion_idx, s, matching_indices, is_selected));
+        for (suggestion_idx, s, cached_spans, is_selected) in self.iter() {
+            current_col.push((suggestion_idx, s, cached_spans, is_selected));
             col_width = col_width.max(s.len() + 2); // +2 for padding // TODO truncate very long suggestions
             if (suggestion_idx + 1) % rows == 0 {
                 if total_columns + col_width > cols {
@@ -203,15 +248,17 @@ impl ActiveSuggestions {
         // Sort by score (descending - higher scores are better matches)
         scored.sort_by(|a, b| b.1.cmp(&a.1));
 
-        // Extract matching suggestions in score order
-        // This drains and rebuilds the vec, avoiding clone but requires one allocation
+        // Extract matching suggestions in score order and build cached spans
         self.filtered_suggestions = scored
             .into_iter()
             .filter_map(|(idx, _, indices)| {
                 self.all_suggestions
                     .get(idx)
                     .cloned()
-                    .map(|s| (s, indices.clone()))
+                    .map(|s| {
+                        let cached_spans = Self::build_cached_spans(&s.s, &indices);
+                        (s, indices, cached_spans)
+                    })
             })
             .collect();
 
@@ -245,7 +292,7 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
-        if let Some((completion, _)) = self.filtered_suggestions.get(self.selected_filtered_index) {
+        if let Some((completion, _, _)) = self.filtered_suggestions.get(self.selected_filtered_index) {
             if let Err(e) =
                 buffer.replace_word_under_cursor(&completion.formatted(), &self.word_under_cursor)
             {

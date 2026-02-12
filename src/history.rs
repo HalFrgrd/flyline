@@ -2,9 +2,11 @@ use std::time::Instant;
 use std::vec;
 
 use crate::bash_symbols;
+use crate::palette::Palette;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
+use ratatui::text::Span;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -348,6 +350,36 @@ pub(crate) struct HistoryEntryWithMatchIndices {
     pub entry: HistoryEntry,
     pub match_indices: Vec<usize>,
     pub score: i64,
+    pub cached_spans: Vec<Span<'static>>, // Cached formatted spans for the command
+}
+
+impl HistoryEntryWithMatchIndices {
+    /// Build cached spans for a history entry command with matching indices highlighted
+    fn build_cached_spans(command: &str, match_indices: &[usize]) -> Vec<Span<'static>> {
+        let match_indices_set: std::collections::HashSet<usize> = 
+            match_indices.iter().cloned().collect();
+        
+        let mut spans = Vec::new();
+        for (idx, ch) in command.chars().enumerate() {
+            let style = if match_indices_set.contains(&idx) {
+                Palette::matched_character()
+            } else {
+                Palette::normal_text()
+            };
+            spans.push(Span::styled(ch.to_string(), style));
+        }
+        spans
+    }
+    
+    fn new(entry: HistoryEntry, match_indices: Vec<usize>, score: i64) -> Self {
+        let cached_spans = Self::build_cached_spans(&entry.command, &match_indices);
+        HistoryEntryWithMatchIndices {
+            entry,
+            match_indices,
+            score,
+            cached_spans,
+        }
+    }
 }
 
 struct FuzzyHistorySearch {
@@ -481,11 +513,11 @@ impl FuzzyHistorySearch {
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
             {
                 if score >= score_threshold {
-                    let new_entry = HistoryEntryWithMatchIndices {
-                        entry: entry.clone(),
-                        match_indices: indices,
+                    let new_entry = HistoryEntryWithMatchIndices::new(
+                        entry.clone(),
+                        indices,
                         score,
-                    };
+                    );
                     new_entries.push(new_entry);
                 }
             }

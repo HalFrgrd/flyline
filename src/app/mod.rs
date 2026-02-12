@@ -910,33 +910,32 @@ impl App {
                 let mut rows: Vec<Vec<(Vec<Span>, usize)>> = vec![vec![]; max_num_rows];
 
                 for (col, col_width) in active_suggestions.into_grid(max_num_rows, width as usize) {
-                    for (row_idx, (suggestion_idx, suggestion, matching_indices, is_selected)) in
+                    for (row_idx, (suggestion_idx, _suggestion, cached_spans, is_selected)) in
                         col.iter().enumerate()
                     {
-                        // TODO tidy this up
+                        // Use cached spans instead of building them each time
                         let formatted_suggestion: Vec<Span> = {
                             let mut spans = vec![];
                             let mut length = 0;
-                            for (idx, ch) in suggestion.chars().enumerate() {
-                                let char_style = if *is_selected {
-                                    if matching_indices.contains(&idx) {
-                                        Palette::selected_matching_char()
-                                    } else {
-                                        Palette::selection_style()
-                                    }
-                                } else {
-                                    if matching_indices.contains(&idx) {
-                                        Palette::matched_character()
-                                    } else {
-                                        Palette::normal_text()
-                                    }
-                                };
-                                spans.push(Span::styled(ch.to_string(), char_style));
-                                length += ch.width().unwrap_or(0);
-                                if length >= col_width {
+                            
+                            // Get the appropriate cached spans based on selection state
+                            let base_spans = if *is_selected {
+                                &cached_spans.selected_spans
+                            } else {
+                                &cached_spans.unselected_spans
+                            };
+                            
+                            // Clone and add spans until we reach col_width
+                            for span in base_spans {
+                                let ch_width = span.content.chars().next().map(|c| c.width().unwrap_or(0)).unwrap_or(0);
+                                if length + ch_width > col_width {
                                     break;
                                 }
+                                spans.push(span.clone());
+                                length += ch_width;
                             }
+                            
+                            // Add padding if needed
                             if length < col_width {
                                 let style = if *is_selected {
                                     Palette::selection_style()
@@ -1005,18 +1004,13 @@ impl App {
                         spans.push(Span::styled(" ", Palette::secondary_text()));
                     }
 
-                    let match_indices_set: std::collections::HashSet<usize> =
-                        entry_with_indices.match_indices.iter().cloned().collect();
-                    for (idx, ch) in entry.command.chars().enumerate() {
-                        let mut style = if match_indices_set.contains(&idx) {
-                            Palette::matched_character()
-                        } else {
-                            Palette::normal_text()
-                        };
+                    // Use cached spans instead of building them each time
+                    for span in &entry_with_indices.cached_spans {
+                        let mut style = span.style;
                         if fuzzy_search_index == row_idx {
                             style = style.add_modifier(Modifier::REVERSED);
                         }
-                        spans.push(Span::styled(ch.to_string(), style));
+                        spans.push(Span::styled(span.content.clone(), style));
                     }
 
                     let line = Line::from(spans);
