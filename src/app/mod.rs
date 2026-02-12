@@ -1,3 +1,4 @@
+mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
@@ -9,7 +10,7 @@ use crate::cursor_animation::CursorAnimation;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
-use crate::palette::Pallete;
+use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
@@ -26,7 +27,6 @@ use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
 use unicode_width::UnicodeWidthChar;
-
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -762,7 +762,6 @@ impl App {
         }
     }
 
-
     fn ts_to_timeago_string_5chars(ts: u64) -> String {
         let duration = std::time::Duration::from_secs(
             std::time::SystemTime::now()
@@ -828,8 +827,8 @@ impl App {
                 };
 
                 let first_word_style: Style = match self.cached_command_type {
-                    bash_funcs::CommandType::Unknown => Pallete::unrecognised_word(),
-                    _ => Pallete::recognised_word(),
+                    bash_funcs::CommandType::Unknown => Palette::unrecognised_word(),
+                    _ => Palette::recognised_word(),
                 };
                 line_offset = content.cursor_position().0;
                 content.write_span_dont_overwrite(
@@ -837,12 +836,12 @@ impl App {
                     Tag::Command(0),
                 );
                 content.write_span_dont_overwrite(
-                    &Span::styled(rest.to_string(), Pallete::normal_text()),
+                    &Span::styled(rest.to_string(), Palette::normal_text()),
                     Tag::Command(0),
                 );
             } else {
                 content.newline();
-                let ps2 = Span::styled(format!("{}∙", line_idx + 1), Pallete::secondary_text());
+                let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
                 line_offset = content.cursor_position().0;
                 content.write_line(&Line::from(line.to_owned()), false, Tag::Command(0));
@@ -865,7 +864,7 @@ impl App {
 
                 let cursor_style = {
                     let cursor_intensity = self.cursor_animation.get_intensity();
-                    Pallete::cursor_style(cursor_intensity)
+                    Palette::cursor_style(cursor_intensity)
                 };
 
                 content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
@@ -885,7 +884,7 @@ impl App {
                     }
 
                     content.write_span_dont_overwrite(
-                        &Span::from(line.to_owned()).style(Pallete::secondary_text()),
+                        &Span::from(line.to_owned()).style(Palette::secondary_text()),
                         Tag::HistorySuggestion,
                     );
 
@@ -897,7 +896,7 @@ impl App {
                         }
 
                         content.write_span_dont_overwrite(
-                            &Span::from(extra_info_text).style(Pallete::secondary_text()),
+                            &Span::from(extra_info_text).style(Palette::secondary_text()),
                             Tag::HistorySuggestion,
                         );
                     }
@@ -921,15 +920,15 @@ impl App {
                             for (idx, ch) in suggestion.chars().enumerate() {
                                 let char_style = if *is_selected {
                                     if matching_indices.contains(&idx) {
-                                        Pallete::selected_matching_char()
+                                        Palette::selected_matching_char()
                                     } else {
-                                        Pallete::selection_style()
+                                        Palette::selection_style()
                                     }
                                 } else {
                                     if matching_indices.contains(&idx) {
-                                        Pallete::matched_character()
+                                        Palette::matched_character()
                                     } else {
-                                        Pallete::normal_text()
+                                        Palette::normal_text()
                                     }
                                 };
                                 spans.push(Span::styled(ch.to_string(), char_style));
@@ -940,9 +939,9 @@ impl App {
                             }
                             if length < col_width {
                                 let style = if *is_selected {
-                                    Pallete::selection_style()
+                                    Palette::selection_style()
                                 } else {
-                                    Pallete::normal_text()
+                                    Palette::normal_text()
                                 };
                                 spans.push(Span::styled(" ".repeat(col_width - length), style));
                             }
@@ -967,7 +966,7 @@ impl App {
                 }
                 if num_rows_used == 0 {
                     content.write_span(
-                        &Span::styled("No suggestions", Pallete::secondary_text()),
+                        &Span::styled("No suggestions", Palette::secondary_text()),
                         Tag::TabSuggestion,
                     );
                 }
@@ -985,34 +984,34 @@ impl App {
 
                     spans.push(Span::styled(
                         format!("{} ", entry.index + 1),
-                        Pallete::secondary_text(),
+                        Palette::secondary_text(),
                     ));
 
                     spans.push(Span::styled(
                         format!("{} ", entry_with_indices.score),
-                        Pallete::secondary_text(),
+                        Palette::secondary_text(),
                     ));
 
                     let timeago_str = entry
                         .timestamp
                         .map(|ts| Self::ts_to_timeago_string_5chars(ts));
                     if let Some(timeago) = timeago_str {
-                        spans.push(Span::styled(timeago, Pallete::secondary_text()));
+                        spans.push(Span::styled(timeago, Palette::secondary_text()));
                     }
 
                     if fuzzy_search_index == row_idx {
-                        spans.push(Span::styled("▐", Pallete::matched_character()));
+                        spans.push(Span::styled("▐", Palette::matched_character()));
                     } else {
-                        spans.push(Span::styled(" ", Pallete::secondary_text()));
+                        spans.push(Span::styled(" ", Palette::secondary_text()));
                     }
 
                     let match_indices_set: std::collections::HashSet<usize> =
                         entry_with_indices.match_indices.iter().cloned().collect();
                     for (idx, ch) in entry.command.chars().enumerate() {
                         let mut style = if match_indices_set.contains(&idx) {
-                            Pallete::matched_character()
+                            Palette::matched_character()
                         } else {
-                            Pallete::normal_text()
+                            Palette::normal_text()
                         };
                         if fuzzy_search_index == row_idx {
                             style = style.add_modifier(Modifier::REVERSED);
@@ -1026,7 +1025,7 @@ impl App {
                 content.write_span(
                     &Span::styled(
                         format!("# Fuzzy search: {}/{}", num_results, num_searched),
-                        Pallete::secondary_text(),
+                        Palette::secondary_text(),
                     ),
                     Tag::FuzzySearch,
                 );
@@ -1042,7 +1041,7 @@ impl App {
                         content.write_span(
                             &Span::styled(
                                 format!("# {}", self.command_description),
-                                Pallete::secondary_text(),
+                                Palette::secondary_text(),
                             ),
                             Tag::Tooltip,
                         );
@@ -1053,7 +1052,7 @@ impl App {
                         content.write_span(
                             &Span::styled(
                                 format!("# Mouse over: {:?}", tag),
-                                Pallete::secondary_text(),
+                                Palette::secondary_text(),
                             ),
                             Tag::Tooltip,
                         );
