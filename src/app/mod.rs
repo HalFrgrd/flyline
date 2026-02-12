@@ -926,6 +926,7 @@ impl App {
                             };
                             
                             // Clone and add spans until we reach col_width
+                            // Note: Each span contains exactly one character (as built by build_cached_spans)
                             for span in base_spans {
                                 let ch_width = span.content.chars().next().map(|c| c.width().unwrap_or(0)).unwrap_or(0);
                                 if length + ch_width > col_width {

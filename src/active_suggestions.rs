@@ -68,6 +68,8 @@ pub struct ActiveSuggestions {
 
 impl std::fmt::Debug for ActiveSuggestions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Only show count to avoid printing large cached span vectors
+        // The cached spans are generated from the suggestions, so showing suggestions is sufficient
         f.debug_struct("ActiveSuggestions")
             .field("all_suggestions", &self.all_suggestions)
             .field("filtered_suggestions_count", &self.filtered_suggestions.len())
