@@ -719,14 +719,14 @@ impl App {
             if let Some(word_under_cursor) = SubString::new(buffer, word_under_cursor_str).ok() {
                 if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
                     log::debug!(
-                        "Word under cursor changed slightly ({} -> {}), applying fuzzy filter to tab completion suggestions",
+                        "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
                         active_suggestions.word_under_cursor.s,
                         word_under_cursor.s
                     );
                     active_suggestions.apply_fuzzy_filter(word_under_cursor);
                 } else {
                     log::debug!(
-                        "Word under cursor changed significantly ({:?} -> {:?}), discarding tab completion suggestions",
+                        "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
                         active_suggestions.word_under_cursor,
                         word_under_cursor
                     );
@@ -1185,6 +1185,7 @@ impl App {
                     for (row_idx, (suggestion_idx, suggestion, matching_indices, is_selected)) in
                         col.iter().enumerate()
                     {
+                        // TODO tidy this up
                         let formatted_suggestion: Vec<Span> = {
                             let mut spans = vec![];
                             let mut length = 0;

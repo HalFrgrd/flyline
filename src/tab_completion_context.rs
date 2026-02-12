@@ -115,14 +115,14 @@ pub fn get_completion_context<'a>(
     let root_node = tree.root_node();
 
     // Find the deepest node that the cursor is part of
-    let cursor_node = find_cursor_node(&root_node, cursor_byte_pos);
+    let node_closest_to_cursor = find_cursor_node(&root_node, cursor_byte_pos);
 
-    let word_under_cursor_range = if cursor_node
+    let word_under_cursor_range = if node_closest_to_cursor
         .byte_range()
         .to_inclusive()
         .contains(&cursor_byte_pos)
     {
-        let cursor_at_end_of_node = cursor_byte_pos == cursor_node.byte_range().end;
+        let cursor_at_end_of_node = cursor_byte_pos == node_closest_to_cursor.byte_range().end;
         let cursor_on_whitespace = buffer
             .char_indices()
             .any(|(i, c)| i == cursor_byte_pos && c.is_whitespace())
@@ -132,14 +132,14 @@ pub fn get_completion_context<'a>(
         // If cursor is on whitespace but at the end of a word node, we still consider it part of that word
         // This fixes the case: "cd fo| bar" where cursor is right after "fo"
         let is_word_like_node = matches!(
-            cursor_node.kind(),
+            node_closest_to_cursor.kind(),
             "word" | "concatenation" | "string" | "simple_expansion"
         );
 
         if cursor_on_whitespace && !(cursor_at_end_of_node && is_word_like_node) {
             cursor_byte_pos..cursor_byte_pos
         } else {
-            cursor_node.byte_range()
+            node_closest_to_cursor.byte_range()
         }
     } else {
         cursor_byte_pos..cursor_byte_pos
@@ -148,14 +148,14 @@ pub fn get_completion_context<'a>(
 
     if cfg!(test) {
         dbg!(&cursor_byte_pos);
-        dbg!(&cursor_node);
+        dbg!(&node_closest_to_cursor);
         dbg!(&word_under_cursor_range);
         dbg!(&word_under_cursor);
     }
 
     // Find the command context for this cursor position
     let comp_context_range = {
-        let comp_context_node = find_comp_context_from_cursor(&cursor_node);
+        let comp_context_node = find_comp_context_from_cursor(&node_closest_to_cursor);
         let comp_context_range = trim_node(&comp_context_node, cursor_byte_pos);
         assert!(comp_context_range.is_sub_range(&comp_context_node.byte_range()));
 

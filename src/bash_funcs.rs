@@ -330,7 +330,14 @@ pub fn run_autocomplete_compspec(
             let c_str = std::ffi::CStr::from_ptr(ptr);
             if let Ok(str_slice) = c_str.to_str() {
                 log::debug!("programmable_completions result[{}]: {}", i, str_slice);
-                res.push(str_slice.to_string());
+
+                // TODO figure why bash is giving us sudplicates  in   the first  place
+                let already_exists = res.iter().any(|s| s == str_slice);
+                if already_exists {
+                    log::debug!("Skipping duplicate completion: {}", str_slice);
+                } else {
+                    res.push(str_slice.to_string());
+                }
             }
         }
         Ok(res)
