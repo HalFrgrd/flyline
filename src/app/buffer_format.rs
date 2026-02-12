@@ -1,3 +1,6 @@
+use std::vec;
+
+use crossterm::event;
 use tree_sitter_highlight::HighlightConfiguration;
 use tree_sitter_highlight::HighlightEvent;
 use tree_sitter_highlight::Highlighter;
@@ -36,10 +39,10 @@ const HIGHLIGHT_NAMES: &[&str] = &[
 ];
 
 #[derive(Debug)]
-pub struct FormattedBufferSpan<'a> {
+pub struct FormattedBufferSpan {
     pub start_byte: usize,
     pub end_byte: usize,
-    pub span: Span<'a>,
+    pub span: Span<'static>,
     pub highlight_name: Option<String>,
 }
 
@@ -47,9 +50,7 @@ pub struct FormattedBufferSpan<'a> {
 // it should go over the formmatted spans and modify them
 // e.g. cursor animation, python animation
 
-pub fn format_buffer<'a>(buffer: &'a TextBuffer) -> Vec<FormattedBufferSpan<'a>> {
-    let mut formatted_spans = vec![];
-
+pub fn format_buffer(buffer: &TextBuffer) -> Vec<FormattedBufferSpan> {
     let mut highlighter = Highlighter::new();
 
     let bash_language = tree_sitter_bash::LANGUAGE.into();
@@ -71,38 +72,63 @@ pub fn format_buffer<'a>(buffer: &'a TextBuffer) -> Vec<FormattedBufferSpan<'a>>
         .highlight(&bash_config, source.as_bytes(), None, |_| None)
         .unwrap();
 
-    highlights.fold(None, |current_style, event| {
-        match event.unwrap() {
-            HighlightEvent::Source { start, end } => {
-                // eprintln!("source: {start}-{end}: {:?}", &source[start..end]);
-                let source = &source[start..end];
-
-                let style = match &current_style {
+    let mut last_style: Option<&str> = None;
+    let spans: Vec<FormattedBufferSpan> = highlights
+        .into_iter()
+        .filter_map(|event| match event {
+            Ok(HighlightEvent::HighlightStart(s)) => {
+                let highlight_name = HIGHLIGHT_NAMES.get(s.0).unwrap_or(&"unknown");
+                last_style = Some(*highlight_name);
+                None
+            }
+            Ok(HighlightEvent::HighlightEnd) => {
+                last_style = None;
+                None
+            }
+            Ok(HighlightEvent::Source { start, end }) => {
+                let style = match last_style {
                     Some("command") => Palette::recognised_word(),
                     _ => Palette::normal_text(),
                 };
 
-                formatted_spans.push(FormattedBufferSpan {
-                    start_byte: start,
-                    end_byte: end,
-                    span: Span::styled(source, style),
-                    highlight_name: current_style.map(|s| s.to_string()),
-                });
-                current_style
-            }
-            HighlightEvent::HighlightStart(s) => {
-                let highlight_name = HIGHLIGHT_NAMES.get(s.0).unwrap_or(&"unknown");
-                // eprintln!("highlight style started: {highlight_name}");
-                Some(*highlight_name)
-            }
-            HighlightEvent::HighlightEnd => {
-                // eprintln!("highlight style ended");
-                None
-            }
-        }
-    });
+                let mut lines = vec![];
+                let mut span_start = start;
+                for (char_idx, c) in source[start..end].char_indices() {
+                    let global_char_idx = start + char_idx;
+                    if c == '\n' {
+                        if span_start < global_char_idx {
+                            lines.push((span_start, global_char_idx, style));
+                        }
+                        lines.push((global_char_idx, global_char_idx + 1, style));
+                        span_start = global_char_idx + 1;
+                    }
+                }
+                if span_start < end {
+                    lines.push((span_start, end, style));
+                }
 
-    formatted_spans
+                Some(lines)
+            }
+            Err(_) => None,
+        })
+        .flatten()
+        .inspect(|x| {
+            if cfg!(test) {
+                let text = &source[x.0..x.1];
+                let text_to_print = if text == "\n" { "\\n" } else { text };
+
+                println!("{:?} {}", x, &text_to_print);
+            }
+        })
+        .map(|(start, end, style)| FormattedBufferSpan {
+            start_byte: start,
+            end_byte: end,
+            span: Span::styled(source[start..end].to_string(), style),
+            highlight_name: None,
+        })
+        .collect();
+
+    spans
 }
 
 #[cfg(test)]
@@ -112,7 +138,7 @@ mod tests {
     #[test]
     #[ignore]
     fn bash_highlight_example() {
-        let buf = TextBuffer::new("for       f in *.rs; do\necho \"$f\";\ndone");
+        let buf = TextBuffer::new("for       f in *.rs; do\necho '$f';\n\n;done");
 
         let formatted_buffer = format_buffer(&buf);
         for span in formatted_buffer {
