@@ -1143,29 +1143,24 @@ impl TextBuffer {
     fn undo(&mut self) {
         let current_state = self.create_snapshot();
 
-        log::debug!("stacks: {}", self.debug_undo_stack());
-
         self.undo_redo.prev_snapshot(current_state).map(|snapshot| {
             // log::debug!("Undoing to state: snapshot={:?}", snapshot);
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
         });
-        log::debug!("stacks: {}", self.debug_undo_stack());
     }
 
     fn redo(&mut self) {
         let current_state = self.create_snapshot();
-
-        log::debug!("stacks: {}", self.debug_undo_stack());
 
         self.undo_redo.next_snapshot(current_state).map(|snapshot| {
             // log::debug!("Redoing to state: snapshot={:?}", snapshot);
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
         });
-        log::debug!("stacks: {}", self.debug_undo_stack());
     }
 
+    #[allow(dead_code)]
     fn debug_undo_stack(&self) -> String {
         format!(
             "Undo stack: {:?}, redo stack: {:?}",
@@ -1222,7 +1217,7 @@ impl SnapshotManager {
             if &snapshot == self.undos.last().unwrap() {
                 self.redos.pop()
             } else {
-                log::debug!("Redoing to snapshot: {:?}", snapshot);
+                // log::debug!("Redoing to snapshot: {:?}", snapshot);
                 Some(snapshot)
             }
         }
@@ -1239,7 +1234,7 @@ impl SnapshotManager {
             if &snapshot == self.redos.last().unwrap() {
                 self.undos.pop()
             } else {
-                log::debug!("Undoing to snapshot: {:?}", snapshot);
+                // log::debug!("Undoing to snapshot: {:?}", snapshot);
                 Some(snapshot)
             }
         }
