@@ -2,9 +2,11 @@ use std::time::Instant;
 use std::vec;
 
 use crate::bash_symbols;
+use crate::palette::Palette;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
+use ratatui::text::Span;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -328,7 +330,7 @@ impl HistoryManager {
     pub(crate) fn get_fuzzy_search_results(
         &mut self,
         current_cmd: &str,
-    ) -> (&[HistoryEntryWithMatchIndices], usize, usize, usize) {
+    ) -> (&[HistoryEntryFormatted], usize, usize, usize) {
         self.fuzzy_search
             .get_fuzzy_search_results(&self.entries, current_cmd)
     }
@@ -344,15 +346,47 @@ impl HistoryManager {
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 
-pub(crate) struct HistoryEntryWithMatchIndices {
+pub(crate) struct HistoryEntryFormatted {
     pub entry: HistoryEntry,
-    pub match_indices: Vec<usize>,
     pub score: i64,
+    pub command_spans: Vec<Span<'static>>,
+    pub command_spans_selected: Vec<Span<'static>>,
+}
+
+impl HistoryEntryFormatted {
+    fn new(entry: HistoryEntry, score: i64, match_indices: Vec<usize>) -> Self {
+        let mut command_spans = Vec::new();
+        let mut command_spans_selected = Vec::new();
+
+        for (idx, ch) in entry.command.chars().enumerate() {
+            let is_match = match_indices.contains(&idx);
+            let normal_style = if is_match {
+                Palette::matched_character()
+            } else {
+                Palette::normal_text()
+            };
+            let selected_style = if is_match {
+                Palette::selected_matching_char()
+            } else {
+                Palette::selection_style()
+            };
+
+            command_spans.push(Span::styled(ch.to_string(), normal_style));
+            command_spans_selected.push(Span::styled(ch.to_string(), selected_style));
+        }
+
+        HistoryEntryFormatted {
+            entry,
+            score,
+            command_spans,
+            command_spans_selected,
+        }
+    }
 }
 
 struct FuzzyHistorySearch {
     matcher: SkimMatcherV2,
-    cache: Vec<HistoryEntryWithMatchIndices>,
+    cache: Vec<HistoryEntryFormatted>,
     cache_command: Option<String>,
     global_index: usize,
     cache_index: usize,
@@ -392,7 +426,7 @@ impl FuzzyHistorySearch {
         &mut self,
         entries: &[HistoryEntry],
         current_cmd: &str,
-    ) -> (&[HistoryEntryWithMatchIndices], usize, usize, usize) {
+    ) -> (&[HistoryEntryFormatted], usize, usize, usize) {
         // when the command changes, reset the cache
         // but keep the current visual row if possible
         let mut desired_visual_row = None;
@@ -441,7 +475,7 @@ impl FuzzyHistorySearch {
         }
         self.cache
             .get(self.cache_index)
-            .map(|entry_with_match_indices| &entry_with_match_indices.entry)
+            .map(|formatted| &formatted.entry)
     }
 
     fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
@@ -486,11 +520,7 @@ impl FuzzyHistorySearch {
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
             {
                 if score >= score_threshold {
-                    let new_entry = HistoryEntryWithMatchIndices {
-                        entry: entry.clone(),
-                        match_indices: indices,
-                        score,
-                    };
+                    let new_entry = HistoryEntryFormatted::new(entry.clone(), score, indices);
                     new_entries.push(new_entry);
                 }
             }

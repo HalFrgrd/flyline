@@ -941,8 +941,8 @@ impl App {
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
                     .get_fuzzy_search_results(self.buffer.buffer());
-                for (row_idx, entry_with_indices) in fuzzy_results.iter().enumerate() {
-                    let entry = &entry_with_indices.entry;
+                for (row_idx, formatted_entry) in fuzzy_results.iter().enumerate() {
+                    let entry = &formatted_entry.entry;
                     let mut spans = vec![];
 
                     spans.push(Span::styled(
@@ -951,7 +951,7 @@ impl App {
                     ));
 
                     spans.push(Span::styled(
-                        format!("{} ", entry_with_indices.score),
+                        format!("{} ", formatted_entry.score),
                         Palette::secondary_text(),
                     ));
 
@@ -962,24 +962,17 @@ impl App {
                         spans.push(Span::styled(timeago, Palette::secondary_text()));
                     }
 
-                    if fuzzy_search_index == row_idx {
+                    let is_selected = fuzzy_search_index == row_idx;
+                    if is_selected {
                         spans.push(Span::styled("▐", Palette::matched_character()));
                     } else {
                         spans.push(Span::styled(" ", Palette::secondary_text()));
                     }
 
-                    let match_indices_set: std::collections::HashSet<usize> =
-                        entry_with_indices.match_indices.iter().cloned().collect();
-                    for (idx, ch) in entry.command.chars().enumerate() {
-                        let mut style = if match_indices_set.contains(&idx) {
-                            Palette::matched_character()
-                        } else {
-                            Palette::normal_text()
-                        };
-                        if fuzzy_search_index == row_idx {
-                            style = style.add_modifier(Modifier::REVERSED);
-                        }
-                        spans.push(Span::styled(ch.to_string(), style));
+                    if is_selected {
+                        spans.extend(formatted_entry.command_spans_selected.clone());
+                    } else {
+                        spans.extend(formatted_entry.command_spans.clone());
                     }
 
                     let line = Line::from(spans);
