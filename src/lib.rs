@@ -108,6 +108,13 @@ impl Flyline {
                     .value_name("PATH")
                     .num_args(1)
                     .help("Dump current logs to PATH and append new logs"),
+            )
+            .arg(
+                Arg::new("log-level")
+                    .long("log-level")
+                    .value_name("LEVEL")
+                    .num_args(1)
+                    .help("Set the logging level (error, warn, info, debug, trace)"),
             );
 
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
@@ -135,6 +142,17 @@ impl Flyline {
                     match logging::stream_logs(path.into()) {
                         Ok(path) => println!("Flyline logs streaming to {}", path.display()),
                         Err(e) => eprintln!("Failed to stream logs: {}", e),
+                    }
+                }
+
+                if let Some(level) = matches.get_one::<String>("log-level") {
+                    match level.as_str() {
+                        "error" => log::set_max_level(log::LevelFilter::Error),
+                        "warn" => log::set_max_level(log::LevelFilter::Warn),
+                        "info" => log::set_max_level(log::LevelFilter::Info),
+                        "debug" => log::set_max_level(log::LevelFilter::Debug),
+                        "trace" => log::set_max_level(log::LevelFilter::Trace),
+                        _ => eprintln!("Invalid log level: {}", level),
                     }
                 }
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
