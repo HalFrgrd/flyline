@@ -412,6 +412,12 @@ impl TextBuffer {
         }
         self.cursor_byte = self.buf.len();
     }
+
+    pub fn try_move_cursor_to_byte_pos(&mut self, byte_pos: usize) {
+        if self.buf.is_char_boundary(byte_pos) {
+            self.cursor_byte = byte_pos;
+        }
+    }
 }
 
 #[cfg(test)]

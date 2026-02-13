@@ -431,6 +431,8 @@ impl App {
             self.last_mouse_over_cell = None;
         }
 
+        let mut update_buffer = false;
+
         match mouse.kind {
             crossterm::event::MouseEventKind::Up(_) => match self.last_mouse_over_cell {
                 Some(Tag::Suggestion(idx)) => {
@@ -438,13 +440,25 @@ impl App {
                         active_suggestions.set_selected_by_idx(idx);
                         active_suggestions.accept_currently_selected(&mut self.buffer);
                         self.content_mode = ContentMode::Normal;
+                        update_buffer = true;
                     }
+                }
+                Some(Tag::Command(byte_pos)) => {
+                    log::debug!("Mouse clicked on command at byte position {}", byte_pos);
+                    self.buffer.try_move_cursor_to_byte_pos(byte_pos);
+                    update_buffer = true;
                 }
                 _ => {}
             },
             _ => {}
         };
-        false
+
+        if update_buffer {
+            self.on_possible_buffer_change();
+            true
+        } else {
+            false
+        }
     }
 
     /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal

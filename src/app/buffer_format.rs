@@ -111,6 +111,15 @@ pub struct FormattedBufferPart {
 // it should go over the formmatted spans and modify them
 // e.g. cursor animation, python animation
 
+fn name_to_style(name: Option<&'static str>) -> Style {
+    match name {
+        Some("command") => Palette::recognised_word(),
+        Some("function") => Palette::recognised_word(),
+        Some("string") => Palette::unrecognised_word(),
+        _ => Palette::normal_text(),
+    }
+}
+
 pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
     let mut highlighter = Highlighter::new();
 
@@ -138,8 +147,7 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
         .into_iter()
         .filter_map(|event| match event {
             Ok(HighlightEvent::HighlightStart(s)) => {
-                let highlight_name = HIGHLIGHT_NAMES.get(s.0).unwrap_or(&"unknown");
-                last_style = Some(*highlight_name);
+                last_style = HIGHLIGHT_NAMES.get(s.0).map(|s| *s);
                 None
             }
             Ok(HighlightEvent::HighlightEnd) => {
@@ -147,10 +155,6 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
                 None
             }
             Ok(HighlightEvent::Source { start, end }) => {
-                let style = match last_style {
-                    Some("command") => Palette::recognised_word(),
-                    _ => Palette::normal_text(),
-                };
                 // Sometimes a new line will be in the middle of a span, so we need to split it into multiple spans
                 let mut lines = vec![];
                 let mut span_start = start;
@@ -158,14 +162,14 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
                     let global_char_idx = start + char_idx;
                     if c == '\n' {
                         if span_start < global_char_idx {
-                            lines.push((span_start, global_char_idx, style));
+                            lines.push((span_start, global_char_idx, last_style));
                         }
-                        lines.push((global_char_idx, global_char_idx + 1, style));
+                        lines.push((global_char_idx, global_char_idx + 1, last_style));
                         span_start = global_char_idx + 1;
                     }
                 }
                 if span_start < end {
-                    lines.push((span_start, end, style));
+                    lines.push((span_start, end, last_style));
                 }
 
                 Some(lines)
@@ -181,10 +185,13 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
                 println!("{:?} {}", x, &text_to_print);
             }
         })
-        .map(|(start, end, style)| FormattedBufferPart {
+        .map(|(start, end, highlight_name)| FormattedBufferPart {
             start_byte: start,
-            span: Span::styled(source[start..end].to_string(), style),
-            highlight_name: None,
+            span: Span::styled(
+                source[start..end].to_string(),
+                name_to_style(highlight_name),
+            ),
+            highlight_name: highlight_name.map(|name| name.to_string()),
             cursor_info: None,
         })
         .collect();
