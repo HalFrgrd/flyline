@@ -24,6 +24,7 @@ use crossterm::event::{
 use futures::StreamExt;
 use itertools::Itertools;
 use ratatui::prelude::*;
+use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 
@@ -828,42 +829,43 @@ impl App {
 
         let mut line_idx = 0;
         for part in self.formatted_buffer_cache.split_at_cursor() {
+            let mut should_print = true;
+            if self.mode.is_running()
+                && let Some(not_artificial) = part.cursor_info
+            {
+                let first_graph = part
+                    .span
+                    .styled_graphemes(part.span.style)
+                    .next()
+                    .unwrap_or(StyledGrapheme::new(" ", part.span.style));
+
+                content.move_to_next_insertion_point(&first_graph, false);
+
+                let (vis_col, vis_row) = content.cursor_position();
+                self.cursor_animation.update_position(vis_row, vis_col);
+
+                should_print = not_artificial;
+            }
+
             if part.span.content == "\n" {
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
-                continue;
+            } else if should_print {
+                content.write_span_dont_overwrite(&part.span, Tag::Command(part.start_byte));
             }
+
             if self.mode.is_running()
-                && let Some(should_print) = part.cursor_info
+                && let Some(_) = part.cursor_info
             {
-                let graphemes = part
-                    .span
-                    .styled_graphemes(part.span.style)
-                    .collect::<Vec<_>>();
-                assert!(
-                    graphemes.len() == 1,
-                    "Cursor span should be exactly one grapheme cluster, got '{}'",
-                    part.span.content
-                );
-
-                content.move_to_next_insertion_point(&graphemes[0], false);
-
-                let (vis_col, vis_row) = content.cursor_position();
-                self.cursor_animation.update_position(vis_row, vis_col);
                 let (animated_vis_row, animated_vis_col) = self.cursor_animation.get_position();
                 let cursor_style = {
                     let cursor_intensity = self.cursor_animation.get_intensity();
                     Palette::cursor_style(cursor_intensity)
                 };
 
-                if should_print {
-                    content.write_span_dont_overwrite(&part.span, Tag::Command(part.start_byte));
-                }
                 content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
-            } else {
-                content.write_span_dont_overwrite(&part.span, Tag::Command(part.start_byte));
             }
         }
 
