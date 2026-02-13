@@ -939,7 +939,7 @@ impl App {
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
                     .get_fuzzy_search_results(self.buffer.buffer());
-                for (row_idx, formatted_entry) in fuzzy_results.iter().enumerate() {
+                for (row_idx, formatted_entry) in fuzzy_results.iter_mut().enumerate() {
                     let entry = &formatted_entry.entry;
                     let mut spans = vec![];
 
@@ -966,15 +966,29 @@ impl App {
                     } else {
                         spans.push(Span::styled(" ", Palette::secondary_text()));
                     }
-
-                    if is_selected {
-                        spans.extend(formatted_entry.command_spans_selected.clone());
-                    } else {
-                        spans.extend(formatted_entry.command_spans.clone());
-                    }
-
+                    
                     let line = Line::from(spans);
-                    content.write_line(&line, true, Tag::FuzzySearch);
+                    content.write_line(&line, false, Tag::FuzzySearch);
+
+                    let formatted_text = if is_selected {
+                        if formatted_entry.command_spans_selected.is_none() {
+                            // Lazily generate the formatted command with highlights for the selected entry
+                            formatted_entry.gen_formatted_command();
+                        }
+                        formatted_entry.command_spans_selected.as_ref().unwrap()
+                    } else {
+                        if formatted_entry.command_spans.is_none() {
+                            // Lazily generate the formatted command with highlights for the selected entry
+                            formatted_entry.gen_formatted_command();
+                        }
+                        formatted_entry.command_spans.as_ref().unwrap()
+                    };
+
+                    for span in formatted_text {
+                        content.write_span(span, Tag::FuzzySearch);
+                    }
+                    content.newline();
+
                 }
                 content.write_span(
                     &Span::styled(
