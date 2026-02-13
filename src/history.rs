@@ -475,7 +475,7 @@ impl FuzzyHistorySearch {
         assert!(self.cache_index >= self.cache_visible_offset);
         let visible_index = self.cache_index.saturating_sub(self.cache_visible_offset);
 
-        let cache_len  = self.cache.len();
+        let cache_len = self.cache.len();
 
         let end = (self.cache_visible_offset + visible_cache_size).min(cache_len);
 

@@ -828,10 +828,10 @@ impl App {
         }
 
         let mut line_idx = 0;
+        let mut cursor_anim_pos = None;
         for part in self.formatted_buffer_cache.split_at_cursor() {
-            let mut should_print = true;
             if self.mode.is_running()
-                && let Some(not_artificial) = part.cursor_info
+                && let Some(_) = part.cursor_info
             {
                 let first_graph = part
                     .span
@@ -843,8 +843,7 @@ impl App {
 
                 let (vis_col, vis_row) = content.cursor_position();
                 self.cursor_animation.update_position(vis_row, vis_col);
-
-                should_print = not_artificial;
+                cursor_anim_pos = Some(self.cursor_animation.get_position());
             }
 
             if part.span.content == "\n" {
@@ -852,21 +851,17 @@ impl App {
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
-            } else if should_print {
+            } else if part.cursor_info.unwrap_or(true) {
                 content.write_span_dont_overwrite(&part.span, Tag::Command(part.start_byte));
             }
+        }
+        if let Some((animated_vis_row, animated_vis_col)) = cursor_anim_pos {
+            let cursor_style = {
+                let cursor_intensity = self.cursor_animation.get_intensity();
+                Palette::cursor_style(cursor_intensity)
+            };
 
-            if self.mode.is_running()
-                && let Some(_) = part.cursor_info
-            {
-                let (animated_vis_row, animated_vis_col) = self.cursor_animation.get_position();
-                let cursor_style = {
-                    let cursor_intensity = self.cursor_animation.get_intensity();
-                    Palette::cursor_style(cursor_intensity)
-                };
-
-                content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
-            }
+            content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
         }
 
         if let Some((sug, suf)) = &self.history_suggestion
@@ -966,7 +961,7 @@ impl App {
                     } else {
                         spans.push(Span::styled(" ", Palette::secondary_text()));
                     }
-                    
+
                     let line = Line::from(spans);
                     content.write_line(&line, false, Tag::FuzzySearch);
 
@@ -988,7 +983,6 @@ impl App {
                         content.write_span(span, Tag::FuzzySearch);
                     }
                     content.newline();
-
                 }
                 content.write_span(
                     &Span::styled(
