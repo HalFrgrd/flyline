@@ -2,7 +2,7 @@ mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
-use crate::app::buffer_format::{FormattedBuffer, FormattedBufferPart, format_buffer};
+use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::bash_funcs;
 use crate::command_acceptance;
