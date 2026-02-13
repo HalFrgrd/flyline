@@ -18,7 +18,9 @@ use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use core::arch;
 use crossterm::event::Event as CrosstermEvent;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent, MouseEventKind,
+};
 use futures::StreamExt;
 use itertools::Itertools;
 use ratatui::prelude::*;
@@ -433,9 +435,9 @@ impl App {
 
         let mut update_buffer = false;
 
-        match mouse.kind {
-            crossterm::event::MouseEventKind::Up(_) => match self.last_mouse_over_cell {
-                Some(Tag::Suggestion(idx)) => {
+        match self.last_mouse_over_cell {
+            Some(Tag::Suggestion(idx)) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                         active_suggestions.set_selected_by_idx(idx);
                         active_suggestions.accept_currently_selected(&mut self.buffer);
@@ -443,15 +445,19 @@ impl App {
                         update_buffer = true;
                     }
                 }
-                Some(Tag::Command(byte_pos)) => {
+            }
+            Some(Tag::Command(byte_pos)) => {
+                if matches!(
+                    mouse.kind,
+                    MouseEventKind::Up(_) | MouseEventKind::Down(_) | MouseEventKind::Drag(_)
+                ) {
                     log::debug!("Mouse clicked on command at byte position {}", byte_pos);
                     self.buffer.try_move_cursor_to_byte_pos(byte_pos);
                     update_buffer = true;
                 }
-                _ => {}
-            },
+            }
             _ => {}
-        };
+        }
 
         if update_buffer {
             self.on_possible_buffer_change();
@@ -770,10 +776,10 @@ impl App {
         self.command_description = short_desc.to_string();
 
         self.formatted_buffer_cache = format_buffer(&self.buffer);
-        log::debug!(
-            "Buffer changed, formatted buffer spans:\n{:#?}",
-            self.formatted_buffer_cache
-        );
+        // log::debug!(
+        //     "Buffer changed, formatted buffer spans:\n{:#?}",
+        //     self.formatted_buffer_cache
+        // );
     }
 
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
