@@ -331,9 +331,9 @@ impl HistoryManager {
     pub(crate) fn get_fuzzy_search_results(
         &mut self,
         current_cmd: &str,
-    ) -> (&[HistoryEntryFormatted], usize, usize, usize) {
+    ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
         self.fuzzy_search
-            .get_fuzzy_search_results(&self.entries, current_cmd)
+            .get_fuzzy_search_results(&mut self.entries, current_cmd)
     }
 
     pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
@@ -350,38 +350,52 @@ impl HistoryManager {
 pub(crate) struct HistoryEntryFormatted {
     pub entry: HistoryEntry,
     pub score: i64,
-    pub command_spans: Vec<Span<'static>>,
-    pub command_spans_selected: Vec<Span<'static>>,
+    pub match_indices: Vec<usize>,
+    pub command_spans: Option<Vec<Span<'static>>>,
+    pub command_spans_selected: Option<Vec<Span<'static>>>,
 }
 
 impl HistoryEntryFormatted {
     fn new(entry: HistoryEntry, score: i64, match_indices: Vec<usize>) -> Self {
-        let mut command_spans = Vec::new();
-        let mut command_spans_selected = Vec::new();
-
-        for (idx, ch) in entry.command.chars().enumerate() {
-            let is_match = match_indices.contains(&idx);
-            let normal_style = if is_match {
-                Palette::matched_character()
-            } else {
-                Palette::normal_text()
-            };
-            let selected_style = if is_match {
-                Palette::selected_matching_char()
-            } else {
-                Palette::selection_style()
-            };
-
-            command_spans.push(Span::styled(ch.to_string(), normal_style));
-            command_spans_selected.push(Span::styled(ch.to_string(), selected_style));
-        }
-
         HistoryEntryFormatted {
             entry,
             score,
-            command_spans,
-            command_spans_selected,
+            match_indices,
+            command_spans: None,
+            command_spans_selected: None,
         }
+    }
+
+    pub fn gen_formatted_command(&mut self) {
+        if self.command_spans.is_some() && self.command_spans_selected.is_some() {
+            return;
+        }
+
+        let mut command_spans = Vec::new();
+        let mut command_spans_selected = Vec::new();
+
+        for (is_matching, chunk) in &self
+            .entry
+            .command
+            .char_indices()
+            .chunk_by(|(idx, _)| self.match_indices.contains(idx))
+        {
+            let chunk_str = chunk.map(|(_, c)| c).collect::<String>();
+            if is_matching {
+                command_spans.push(Span::styled(
+                    chunk_str.clone(),
+                    Palette::matched_character(),
+                ));
+                command_spans_selected
+                    .push(Span::styled(chunk_str, Palette::selected_matching_char()));
+            } else {
+                command_spans.push(Span::styled(chunk_str.clone(), Palette::normal_text()));
+                command_spans_selected.push(Span::styled(chunk_str, Palette::selection_style()));
+            }
+        }
+
+        self.command_spans = Some(command_spans);
+        self.command_spans_selected = Some(command_spans_selected);
     }
 }
 
@@ -410,7 +424,7 @@ impl FuzzyHistorySearch {
     // Check time budget every N entries to balance responsiveness and performance
     const TIME_CHECK_INTERVAL: usize = 50;
     // Time budget for processing history entries in milliseconds
-    const TIME_BUDGET_MS: u64 = 5;
+    const TIME_BUDGET_MS: u64 = 15;
 
     fn new() -> Self {
         FuzzyHistorySearch {
@@ -427,7 +441,7 @@ impl FuzzyHistorySearch {
         &mut self,
         entries: &[HistoryEntry],
         current_cmd: &str,
-    ) -> (&[HistoryEntryFormatted], usize, usize, usize) {
+    ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
         // when the command changes, reset the cache
         // but keep the current visual row if possible
         let mut desired_visual_row = None;
@@ -461,11 +475,21 @@ impl FuzzyHistorySearch {
         assert!(self.cache_index >= self.cache_visible_offset);
         let visible_index = self.cache_index.saturating_sub(self.cache_visible_offset);
 
+        let cache_len  = self.cache.len();
+
+        let end = (self.cache_visible_offset + visible_cache_size).min(cache_len);
+
+        {
+            let entries_to_show = &mut self.cache[self.cache_visible_offset..end];
+            entries_to_show
+                .iter_mut()
+                .for_each(|e| e.gen_formatted_command());
+        }
+
         (
-            &self.cache[self.cache_visible_offset
-                ..(self.cache_visible_offset + visible_cache_size).min(self.cache.len())],
+            &mut self.cache[self.cache_visible_offset..end],
             visible_index,
-            self.cache.len(),
+            cache_len,
             self.global_index,
         )
     }
@@ -511,7 +535,7 @@ impl FuzzyHistorySearch {
 
         let mut new_entries = vec![];
 
-        // Process as many entries as possible within the 5ms time budget
+        // Process as many entries as possible within the time budget
         for (idx, entry) in entries.iter().rev().skip(self.global_index).enumerate() {
             // Check if we've exceeded the time budget every TIME_CHECK_INTERVAL entries
             if idx % Self::TIME_CHECK_INTERVAL == 0 && start.elapsed() >= time_budget {
