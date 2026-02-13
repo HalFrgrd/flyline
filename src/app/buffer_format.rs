@@ -39,18 +39,25 @@ const HIGHLIGHT_NAMES: &[&str] = &[
 ];
 
 #[derive(Debug)]
+pub struct FormattedBuffer {
+    pub spans: Vec<FormattedBufferSpan>,
+    pub cursor_byte_pos: usize,
+}
+
+#[derive(Debug)]
 pub struct FormattedBufferSpan {
     pub start_byte: usize,
     pub end_byte: usize,
     pub span: Span<'static>,
     pub highlight_name: Option<String>,
+    pub artifically_inserted_for_char: bool,
 }
 
 // TODO: second layer of formatting for animations
 // it should go over the formmatted spans and modify them
 // e.g. cursor animation, python animation
 
-pub fn format_buffer(buffer: &TextBuffer) -> Vec<FormattedBufferSpan> {
+pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
     let mut highlighter = Highlighter::new();
 
     let bash_language = tree_sitter_bash::LANGUAGE.into();
@@ -73,7 +80,7 @@ pub fn format_buffer(buffer: &TextBuffer) -> Vec<FormattedBufferSpan> {
         .unwrap();
 
     let mut last_style: Option<&str> = None;
-    let spans: Vec<FormattedBufferSpan> = highlights
+    let mut spans: Vec<FormattedBufferSpan> = highlights
         .into_iter()
         .filter_map(|event| match event {
             Ok(HighlightEvent::HighlightStart(s)) => {
@@ -90,7 +97,7 @@ pub fn format_buffer(buffer: &TextBuffer) -> Vec<FormattedBufferSpan> {
                     Some("command") => Palette::recognised_word(),
                     _ => Palette::normal_text(),
                 };
-
+                // Sometimes a new line will be in the middle of a span, so we need to split it into multiple spans
                 let mut lines = vec![];
                 let mut span_start = start;
                 for (char_idx, c) in source[start..end].char_indices() {
@@ -125,10 +132,25 @@ pub fn format_buffer(buffer: &TextBuffer) -> Vec<FormattedBufferSpan> {
             end_byte: end,
             span: Span::styled(source[start..end].to_string(), style),
             highlight_name: None,
+            artifically_inserted_for_char: false,
         })
         .collect();
 
-    spans
+    let cursor_pos = buffer.cursor_byte_pos();
+    if spans.last().map(|s| s.end_byte) <= Some(cursor_pos) {
+        spans.push(FormattedBufferSpan {
+            start_byte: spans.last().map(|s| s.end_byte).unwrap_or(0),
+            end_byte: cursor_pos + 1,
+            span: Span::styled(" ", Palette::normal_text()),
+            highlight_name: None,
+            artifically_inserted_for_char: true,
+        });
+    }
+
+    FormattedBuffer {
+        spans,
+        cursor_byte_pos: cursor_pos,
+    }
 }
 
 #[cfg(test)]
@@ -138,10 +160,10 @@ mod tests {
     #[test]
     #[ignore]
     fn bash_highlight_example() {
-        let buf = TextBuffer::new("for       f in *.rs; do\necho '$f';\n\n;done");
+        let buf = TextBuffer::new("       for       f in *.rs; do\necho '$f';\n\n;done");
 
         let formatted_buffer = format_buffer(&buf);
-        for span in formatted_buffer {
+        for span in formatted_buffer.spans {
             eprintln!("{:?}", span);
         }
 
