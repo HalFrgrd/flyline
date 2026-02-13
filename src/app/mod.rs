@@ -2,7 +2,7 @@ mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
-use crate::app::buffer_format::{FormattedBuffer, FormattedBufferSpan, format_buffer};
+use crate::app::buffer_format::{FormattedBuffer, FormattedBufferPart, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::bash_funcs;
 use crate::command_acceptance;
@@ -16,6 +16,7 @@ use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
+use core::arch;
 use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent};
 use futures::StreamExt;
@@ -806,8 +807,8 @@ impl App {
         }
 
         let mut line_idx = 0;
-        for (_, is_last, span) in self.formatted_buffer_cache.spans.iter().flag_first_last() {
-            if span.span.content == "\n" {
+        for part in self.formatted_buffer_cache.split_at_cursor() {
+            if part.span.content == "\n" {
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
@@ -815,50 +816,34 @@ impl App {
                 continue;
             }
             if self.mode.is_running()
-                && (span.start_byte..span.end_byte)
-                    .contains(&self.formatted_buffer_cache.cursor_byte_pos)
+                && let Some(should_print) = part.cursor_info
             {
-                let s = &span.span.content;
-                for (is_cursor_char, chunk) in &s.char_indices().chunk_by(|(idx, c)| {
-                    (*idx + span.start_byte) == self.formatted_buffer_cache.cursor_byte_pos
-                }) {
-                    let chunk_str = chunk.map(|(_, c)| c).collect::<String>();
-                    let asdf = Span::styled(chunk_str, span.span.style);
+                let graphemes = part
+                    .span
+                    .styled_graphemes(part.span.style)
+                    .collect::<Vec<_>>();
+                assert!(
+                    graphemes.len() == 1,
+                    "Cursor span should be exactly one grapheme cluster, got '{}'",
+                    part.span.content
+                );
 
-                    if !is_cursor_char {
-                        content.write_span_dont_overwrite(&asdf, Tag::Command(span.start_byte));
-                    } else {
-                        let graphemes = asdf.styled_graphemes(asdf.style).collect::<Vec<_>>();
-                        assert!(
-                            graphemes.len() == 1,
-                            "Cursor span should be exactly one grapheme cluster, got '{}'",
-                            asdf.content
-                        );
+                content.move_to_next_insertion_point(&graphemes[0], false);
 
-                        content.move_to_next_insertion_point(&graphemes[0], false);
+                let (vis_col, vis_row) = content.cursor_position();
+                self.cursor_animation.update_position(vis_row, vis_col);
+                let (animated_vis_row, animated_vis_col) = self.cursor_animation.get_position();
+                let cursor_style = {
+                    let cursor_intensity = self.cursor_animation.get_intensity();
+                    Palette::cursor_style(cursor_intensity)
+                };
 
-                        let (vis_col, vis_row) = content.cursor_position();
-                        self.cursor_animation.update_position(vis_row, vis_col);
-                        let (animated_vis_row, animated_vis_col) =
-                            self.cursor_animation.get_position();
-                        let cursor_style = {
-                            let cursor_intensity = self.cursor_animation.get_intensity();
-                            Palette::cursor_style(cursor_intensity)
-                        };
-
-                        if !span.artifically_inserted_for_char {
-                            content.write_span_dont_overwrite(&asdf, Tag::Command(span.start_byte));
-                        }
-                        content.set_edit_cursor_style(
-                            animated_vis_row,
-                            animated_vis_col,
-                            cursor_style,
-                        );
-                    }
-                    // log::debug!("Chunk: '{}', is_cursor_char: {}", chunk_str, is_cursor_char);
+                if should_print {
+                    content.write_span_dont_overwrite(&part.span, Tag::Command(part.start_byte));
                 }
+                content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
             } else {
-                content.write_span_dont_overwrite(&span.span, Tag::Command(span.start_byte));
+                content.write_span_dont_overwrite(&part.span, Tag::Command(part.start_byte));
             }
         }
 

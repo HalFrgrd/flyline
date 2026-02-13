@@ -67,11 +67,6 @@ impl Contents {
         (self.cursor_vis_col, self.cursor_vis_row)
     }
 
-    pub fn set_cursor_position(&mut self, col: u16, row: u16) {
-        self.cursor_vis_col = col;
-        self.cursor_vis_row = row;
-    }
-
     pub fn increase_buf_single_row(&mut self) {
         let blank_row = vec![TaggedCell::default(); self.width as usize];
         self.buf.push(blank_row);
