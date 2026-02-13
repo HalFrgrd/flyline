@@ -52,61 +52,41 @@ impl FormattedBuffer {
         self.parts
             .iter()
             .flat_map(move |part| {
-                if part.end_byte <= cursor_pos || part.start_byte >= cursor_pos {
-                    // Span is entirely before or after the cursor, so just return it as is
-                    vec![part.clone()]
-                } else {
-                    let mut parts = vec![];
+                let mut parts = vec![];
 
-                    let mut current_byte = part.start_byte;
-                    for (idx, graph) in part.span.content.grapheme_indices(true) {
-                        let global_byte_idx = part.start_byte + idx;
-                        match global_byte_idx.cmp(&cursor_pos) {
-                            std::cmp::Ordering::Less => {}
-                            std::cmp::Ordering::Equal => {
-                                if current_byte < global_byte_idx {
-                                    parts.push(FormattedBufferPart {
-                                        start_byte: current_byte,
-                                        end_byte: global_byte_idx,
-                                        span: Span::styled(graph.to_string(), part.span.style),
-                                        highlight_name: part.highlight_name.clone(),
-                                        cursor_info: None,
-                                    });
-                                }
+                for (contains_cursor, chunk) in &part
+                    .span
+                    .content
+                    .grapheme_indices(true)
+                    .chunk_by(|(idx, _g)| part.start_byte + idx == cursor_pos)
+                {
+                    let chunk = chunk.collect_vec();
 
-                                parts.push(FormattedBufferPart {
-                                    start_byte: global_byte_idx,
-                                    end_byte: global_byte_idx + graph.len(), // TODO  get rid of end_byte
-                                    span: Span::styled(graph.to_string(), part.span.style),
-                                    highlight_name: part.highlight_name.clone(),
-                                    cursor_info: Some(true),
-                                });
-                                current_byte = global_byte_idx + graph.len();
-                            }
-                            std::cmp::Ordering::Greater => {
-                                if global_byte_idx < part.end_byte {
-                                    parts.push(FormattedBufferPart {
-                                        start_byte: current_byte,
-                                        end_byte: global_byte_idx,
-                                        span: Span::styled(graph.to_string(), part.span.style),
-                                        highlight_name: part.highlight_name.clone(),
-                                        cursor_info: None,
-                                    });
-                                }
-                                break;
-                            }
-                        }
-                    }
+                    let contents = chunk.iter().map(|(_, g)| *g).collect::<String>();
+                    let chunk_byte_start =
+                        part.start_byte + chunk.first().map(|(idx, _)| *idx).unwrap_or(0);
 
-                    parts
+                    parts.push(FormattedBufferPart {
+                        start_byte: chunk_byte_start,
+                        span: Span::styled(contents, part.span.style),
+                        highlight_name: part.highlight_name.clone(),
+                        cursor_info: if contains_cursor { Some(true) } else { None },
+                    });
                 }
+
+                parts
             })
             .chain(
                 // If the cursor is at the end of the buffer, we need to add an extra part for it
-                if cursor_pos == self.parts.last().map(|p| p.end_byte).unwrap_or(0) {
+                if cursor_pos
+                    >= self
+                        .parts
+                        .last()
+                        .map(|p| p.start_byte + p.span.content.len())
+                        .unwrap_or(0)
+                {
                     vec![FormattedBufferPart {
                         start_byte: cursor_pos,
-                        end_byte: cursor_pos + 1,
                         span: Span::from(" ".to_string()),
                         highlight_name: None,
                         cursor_info: Some(false),
@@ -122,7 +102,6 @@ impl FormattedBuffer {
 #[derive(Debug, Clone)]
 pub struct FormattedBufferPart {
     pub start_byte: usize,
-    pub end_byte: usize,
     pub span: Span<'static>,
     pub highlight_name: Option<String>,
     pub cursor_info: Option<bool>, // None means no cursor, Some(true) means cursor is on an actual grapheme, Some(false) means cursor is on an artificial position (e.g. end of line)
@@ -155,7 +134,7 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
         .unwrap();
 
     let mut last_style: Option<&str> = None;
-    let mut spans: Vec<FormattedBufferPart> = highlights
+    let spans: Vec<FormattedBufferPart> = highlights
         .into_iter()
         .filter_map(|event| match event {
             Ok(HighlightEvent::HighlightStart(s)) => {
@@ -204,7 +183,6 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
         })
         .map(|(start, end, style)| FormattedBufferPart {
             start_byte: start,
-            end_byte: end,
             span: Span::styled(source[start..end].to_string(), style),
             highlight_name: None,
             cursor_info: None,
