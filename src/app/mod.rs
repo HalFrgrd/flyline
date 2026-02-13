@@ -2,7 +2,7 @@ mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
-use crate::app::buffer_format::{FormattedBufferSpan, format_buffer};
+use crate::app::buffer_format::{FormattedBuffer, FormattedBufferSpan, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::bash_funcs;
 use crate::command_acceptance;
@@ -116,7 +116,7 @@ enum ContentMode {
 struct App {
     mode: AppRunningState,
     buffer: TextBuffer,
-    formatted_buffer_cache: Vec<FormattedBufferSpan>,
+    formatted_buffer_cache: FormattedBuffer,
     animation_tick: u64,
     cursor_animation: CursorAnimation,
     prompt_manager: PromptManager,
@@ -755,6 +755,10 @@ impl App {
         self.command_description = short_desc.to_string();
 
         self.formatted_buffer_cache = format_buffer(&self.buffer);
+        log::debug!(
+            "Buffer changed, formatted buffer spans:\n{:#?}",
+            self.formatted_buffer_cache
+        );
     }
 
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
@@ -801,79 +805,60 @@ impl App {
             }
         }
 
-        for (is_first, _, (line_idx, (line, cursor_col))) in self
-            .buffer
-            .lines_with_cursor()
-            .iter()
-            .enumerate()
-            .flag_first_last()
-        {
-            let line_offset: u16;
-            if is_first {
-                let space_pos = line.find(' ').unwrap_or(line.len());
-                let (first_word, rest) = line.split_at(space_pos);
-
-                let first_word = if first_word.starts_with("python") && self.mode.is_running() {
-                    self.snake_animation.update_anim();
-                    let snake_chars: Vec<char> = self.snake_animation.to_string().chars().collect();
-
-                    first_word
-                        .chars()
-                        .enumerate()
-                        .map(|(i, original_char)| {
-                            snake_chars
-                                .get(i)
-                                .filter(|&&snake_char| snake_char != '⠀')
-                                .unwrap_or(&original_char)
-                                .to_owned()
-                        })
-                        .collect()
-                } else {
-                    first_word.to_string()
-                };
-
-                let first_word_style: Style = match self.cached_command_type {
-                    bash_funcs::CommandType::Unknown => Palette::unrecognised_word(),
-                    _ => Palette::recognised_word(),
-                };
-                line_offset = content.cursor_position().0;
-                content.write_span_dont_overwrite(
-                    &Span::styled(first_word, first_word_style),
-                    Tag::Command(0),
-                );
-                content.write_span_dont_overwrite(
-                    &Span::styled(rest.to_string(), Palette::normal_text()),
-                    Tag::Command(0),
-                );
-            } else {
+        let mut line_idx = 0;
+        for (_, is_last, span) in self.formatted_buffer_cache.spans.iter().flag_first_last() {
+            if span.span.content == "\n" {
+                line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
-                line_offset = content.cursor_position().0;
-                content.write_line(&Line::from(line.to_owned()), false, Tag::Command(0));
+                continue;
             }
-            // Draw cursor on this line
-            // TODO: write each span is it is unless the cursor is on it.
-            // Then get the cursor position.
-            // then we will have the visual position.
-            // then calculate the animated cursor position and style.
             if self.mode.is_running()
-                && let Some(cursor_col_in_line) = cursor_col
+                && (span.start_byte..span.end_byte)
+                    .contains(&self.formatted_buffer_cache.cursor_byte_pos)
             {
-                let cursor_logical_col = cursor_col_in_line + line_offset;
-                let cursor_logical_row = content.cursor_logical_row();
+                let s = &span.span.content;
+                for (is_cursor_char, chunk) in &s.char_indices().chunk_by(|(idx, c)| {
+                    (*idx + span.start_byte) == self.formatted_buffer_cache.cursor_byte_pos
+                }) {
+                    let chunk_str = chunk.map(|(_, c)| c).collect::<String>();
+                    let asdf = Span::styled(chunk_str, span.span.style);
 
-                let (vis_row, vis_col) =
-                    content.cursor_logical_to_visual(cursor_logical_row, cursor_logical_col);
-                self.cursor_animation.update_position(vis_row, vis_col);
-                let (animated_vis_row, animated_vis_col) = self.cursor_animation.get_position();
+                    if !is_cursor_char {
+                        content.write_span_dont_overwrite(&asdf, Tag::Command(span.start_byte));
+                    } else {
+                        let graphemes = asdf.styled_graphemes(asdf.style).collect::<Vec<_>>();
+                        assert!(
+                            graphemes.len() == 1,
+                            "Cursor span should be exactly one grapheme cluster, got '{}'",
+                            asdf.content
+                        );
 
-                let cursor_style = {
-                    let cursor_intensity = self.cursor_animation.get_intensity();
-                    Palette::cursor_style(cursor_intensity)
-                };
+                        content.move_to_next_insertion_point(&graphemes[0], false);
 
-                content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
+                        let (vis_col, vis_row) = content.cursor_position();
+                        self.cursor_animation.update_position(vis_row, vis_col);
+                        let (animated_vis_row, animated_vis_col) =
+                            self.cursor_animation.get_position();
+                        let cursor_style = {
+                            let cursor_intensity = self.cursor_animation.get_intensity();
+                            Palette::cursor_style(cursor_intensity)
+                        };
+
+                        if !span.artifically_inserted_for_char {
+                            content.write_span_dont_overwrite(&asdf, Tag::Command(span.start_byte));
+                        }
+                        content.set_edit_cursor_style(
+                            animated_vis_row,
+                            animated_vis_col,
+                            cursor_style,
+                        );
+                    }
+                    // log::debug!("Chunk: '{}', is_cursor_char: {}", chunk_str, is_cursor_char);
+                }
+            } else {
+                content.write_span_dont_overwrite(&span.span, Tag::Command(span.start_byte));
             }
         }
 

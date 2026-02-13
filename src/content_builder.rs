@@ -43,8 +43,7 @@ pub struct Contents {
     pub buf: Vec<Vec<TaggedCell>>, // each inner Vec is a row of Cells of width `width`
     pub width: u16,
     cursor_vis_col: u16,
-    cursor_vis_row: u16,              // visual cursor position with line wrapping
-    logical_row_to_vis_row: Vec<u16>, // mapping from logical row to visual row
+    cursor_vis_row: u16, // visual cursor position with line wrapping
     pub edit_cursor_pos: Option<(u16, u16)>,
 }
 
@@ -59,7 +58,6 @@ impl Contents {
             width,
             cursor_vis_col: 0,
             cursor_vis_row: 0,
-            logical_row_to_vis_row: vec![0],
             edit_cursor_pos: None,
         }
     }
@@ -67,6 +65,11 @@ impl Contents {
     /// Get the current cursor position (x, y)
     pub fn cursor_position(&self) -> (u16, u16) {
         (self.cursor_vis_col, self.cursor_vis_row)
+    }
+
+    pub fn set_cursor_position(&mut self, col: u16, row: u16) {
+        self.cursor_vis_col = col;
+        self.cursor_vis_row = row;
     }
 
     pub fn increase_buf_single_row(&mut self) {
@@ -78,6 +81,30 @@ impl Contents {
         self.buf.len() as u16
     }
 
+    pub fn move_to_next_insertion_point(&mut self, graph: &StyledGrapheme, overwrite: bool) {
+        let graph_w = graph.symbol.width() as u16;
+        loop {
+            if self.cursor_vis_row >= self.buf.len() as u16 {
+                self.increase_buf_single_row();
+            } else if self.cursor_vis_col as usize + graph_w as usize > self.width as usize {
+                // log::debug!("Wrapping line for grapheme of width {}", graph_w);
+                self.cursor_vis_row += 1;
+                self.cursor_vis_col = 0;
+            } else if !overwrite
+                && self.buf[self.cursor_vis_row as usize][(self.cursor_vis_col as usize)
+                    ..(self.cursor_vis_col as usize + graph_w as usize)]
+                    .iter()
+                    .all(|cell| cell.tag == Tag::Blank)
+            {
+                break;
+            } else if overwrite {
+                break;
+            } else {
+                self.cursor_vis_col += 1;
+            }
+        }
+    }
+
     /// Write a single span at the current cursor position
     /// Will automatically wrap to the next line if necessary
     fn write_span_internal(&mut self, span: &Span, mut tag: Tag, overwrite: bool) {
@@ -85,38 +112,7 @@ impl Contents {
         for graph in graphemes {
             let graph_w = graph.symbol.width() as u16;
 
-            if !overwrite {
-                loop {
-                    if self.cursor_vis_row >= self.buf.len() as u16 {
-                        self.increase_buf_single_row();
-                    } else if self.cursor_vis_col as usize + graph_w as usize > self.width as usize
-                    {
-                        // log::debug!("Wrapping line for grapheme '{}'", graph.symbol);
-                        self.cursor_vis_row += 1;
-                        self.cursor_vis_col = 0;
-                    } else if self.buf[self.cursor_vis_row as usize][(self.cursor_vis_col as usize)
-                        ..(self.cursor_vis_col as usize + graph_w as usize)]
-                        .iter()
-                        .any(|cell| cell.tag != Tag::Blank)
-                    {
-                        self.cursor_vis_col += 1;
-                        // if self.cursor_vis_col >= self.width {
-                        //     self.cursor_vis_row += 1;
-                        //     self.cursor_vis_col = 0;
-                        //     for _ in self.buf.len()..=self.cursor_vis_row as usize {
-                        //         self.increase_buf_single_row();
-                        //     }
-                        // }
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            if graph_w + self.cursor_vis_col > self.width {
-                self.cursor_vis_row += 1;
-                self.cursor_vis_col = 0;
-            }
+            self.move_to_next_insertion_point(&graph, overwrite);
 
             let next_graph_x = self.cursor_vis_col + graph_w;
             if next_graph_x > self.width {
@@ -131,9 +127,6 @@ impl Contents {
                 continue;
             }
 
-            for _ in self.buf.len()..=self.cursor_vis_row as usize {
-                self.increase_buf_single_row();
-            }
             self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize]
                 .update(&graph, tag);
             self.cursor_vis_col += 1;
@@ -146,7 +139,6 @@ impl Contents {
                 self.cursor_vis_col += 1;
             }
             if let Tag::Command(byte_start) = tag {
-                // log::debug!("Writing command grapheme '{}' with byte_start {}", graph.symbol, byte_start);
                 tag = Tag::Command(byte_start + graph.symbol.len());
             }
         }
@@ -219,7 +211,6 @@ impl Contents {
     /// Move to the next line (carriage return + line feed)
     pub fn newline(&mut self) {
         self.cursor_vis_row += 1;
-        self.logical_row_to_vis_row.push(self.cursor_vis_row);
         self.cursor_vis_col = 0;
     }
 
@@ -237,25 +228,6 @@ impl Contents {
                 }
             }
         }
-    }
-
-    pub fn cursor_logical_row(&self) -> u16 {
-        self.logical_row_to_vis_row.len().saturating_sub(1) as u16
-    }
-
-    pub fn cursor_logical_to_visual(&self, logical_row: u16, logical_col: u16) -> (u16, u16) {
-        // takes coordinates in the formatted edit buffer
-        // and returns the coordinates in the visual buffer with line wrapping.
-        // These correspond to the coordinates on the terminal screen up to row translation by layout manager
-        let wrapped_row_offset_from_this_line = logical_col / self.width;
-        let mut wrapped_cursor_row = self
-            .logical_row_to_vis_row
-            .get(logical_row as usize)
-            .cloned()
-            .unwrap_or(0);
-        wrapped_cursor_row += wrapped_row_offset_from_this_line as u16;
-        let wrapped_cursor_col = logical_col % self.width;
-        (wrapped_cursor_row, wrapped_cursor_col)
     }
 
     pub fn set_edit_cursor_style(
