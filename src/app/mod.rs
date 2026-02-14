@@ -426,7 +426,9 @@ impl App {
                     }
                     Some(Tag::Command(byte_pos)) => {
                         log::debug!("Mouse over command at byte position {}", byte_pos);
-                        if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos) {
+                        if let Some(part) =
+                            self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
+                        {
                             if let Some(tooltip) = part.tooltip.as_ref() {
                                 self.tooltip = Some(tooltip.clone());
                             }
@@ -771,8 +773,11 @@ impl App {
             }
         }
 
-        let tooltip_fn = |s: &str|  {
-            let res  =if s.starts_with("cd") {
+        let tooltip_fn = |s: &str| {
+
+            
+
+            let res = if s.starts_with("cd") {
                 Some("Change directory".to_string())
             } else if s.starts_with("ls") {
                 Some("List directory contents".to_string())
@@ -781,11 +786,16 @@ impl App {
             } else {
                 None
             };
-                log::debug!("Tooltip function called for '{}', returning {:?}", s, res);
-                res
+            log::debug!("Tooltip function called for '{}', returning {:?}", s, res);
+            res
         };
 
-        self.formatted_buffer_cache = format_buffer(&self.buffer, tooltip_fn);
+        let recognised_command_fn =  |s: &str| ->  bool {
+            let (command_type, description) = self.bash_env.get_command_info(s);
+            command_type != bash_funcs::CommandType::Unknown
+        };
+
+        self.formatted_buffer_cache = format_buffer(&self.buffer, Some(Box::new(tooltip_fn)), Some(Box::new(recognised_command_fn)));
         // log::debug!(
         //     "Buffer changed, formatted buffer spans:\n{:#?}",
         //     self.formatted_buffer_cache
@@ -1025,7 +1035,6 @@ impl App {
             _ => {}
         }
         if self.mode.is_running() {
-
             if let Some(tooltip) = &self.tooltip {
                 content.newline();
                 content.write_span(
@@ -1059,7 +1068,6 @@ impl App {
             //         }
             //     }
             // }
-
         }
         content
     }

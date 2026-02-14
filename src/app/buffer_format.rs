@@ -147,7 +147,43 @@ pub struct FormattedBufferPart {
     pub tooltip: Option<String>,
 }
 
+fn name_to_style(name: Option<&'static str>, recognised_command: Option<bool>) -> Style {
+    match name {
+        Some("command") if recognised_command.unwrap_or(false) => Palette::recognised_word(),
+        Some("function") if recognised_command.unwrap_or(false) => Palette::recognised_word(),
+        Some("command") => Palette::unrecognised_word(),
+        Some("function") => Palette::unrecognised_word(),
+        Some("string") => Palette::unrecognised_word(),
+        _ => Palette::normal_text(),
+    }
+}
+
+type TooltipFn<'a> = Box<dyn FnMut(&str) -> Option<String> + 'a>;
+type RecognisedCommandFn<'a> = Box<dyn FnMut(&str) -> bool + 'a>;
+
 impl FormattedBufferPart {
+    pub fn new(
+        start_byte: usize,
+        content: &str,
+        highlight_name: Option<&'static str>,
+        tooltip_fn: &mut Option<TooltipFn<'_>>,
+        recognised_command_fn: &mut Option<RecognisedCommandFn<'_>>,
+    ) -> Self {
+        let tooltip = tooltip_fn.as_mut().and_then(|f| f(content));
+        let recognised_command = recognised_command_fn.as_mut().map(|f| f(content));
+
+        let style = name_to_style(highlight_name, recognised_command);
+        let span = Span::styled(content.to_string(), style);
+
+        Self {
+            start_byte,
+            span,
+            alternative_span: None,
+            highlight_name: highlight_name.map(|s| s.to_string()),
+            cursor_info: None,
+            tooltip,
+        }
+    }
 
     pub fn normal_span(&self) -> &Span<'static> {
         &self.span
@@ -245,20 +281,11 @@ impl FormattedBufferPart {
     }
 }
 
-// TODO: second layer of formatting for animations
-// it should go over the formmatted spans and modify them
-// e.g. cursor animation, python animation
-
-fn name_to_style(name: Option<&'static str>) -> Style {
-    match name {
-        Some("command") => Palette::recognised_word(),
-        Some("function") => Palette::recognised_word(),
-        Some("string") => Palette::unrecognised_word(),
-        _ => Palette::normal_text(),
-    }
-}
-
-pub fn format_buffer(buffer: &TextBuffer, mut tooltip_fn: impl FnMut(&str) -> Option<String>) -> FormattedBuffer {
+pub fn format_buffer<'a>(
+    buffer: &TextBuffer,
+    mut tooltip_fn: Option<TooltipFn<'a>>,
+    mut recognised_command_fn: Option<RecognisedCommandFn<'a>>,
+) -> FormattedBuffer {
     let mut highlighter = Highlighter::new();
 
     let bash_language = tree_sitter_bash::LANGUAGE.into();
@@ -323,16 +350,14 @@ pub fn format_buffer(buffer: &TextBuffer, mut tooltip_fn: impl FnMut(&str) -> Op
                 println!("{:?} {}", x, &text_to_print);
             }
         })
-        .map(|(start, end, highlight_name)| FormattedBufferPart {
-            start_byte: start,
-            span: Span::styled(
-                source[start..end].to_string(),
-                name_to_style(highlight_name),
-            ),
-            alternative_span: None,
-            highlight_name: highlight_name.map(|name| name.to_string()),
-            cursor_info: None,
-            tooltip: tooltip_fn(&source[start..end])    ,
+        .map(|(start, end, highlight_name)| {
+            FormattedBufferPart::new(
+                start,
+                &source[start..end],
+                highlight_name,
+                &mut tooltip_fn,
+                &mut recognised_command_fn,
+            )
         })
         .collect();
 
@@ -355,7 +380,7 @@ mod tests {
     // #[ignore]
     // fn bash_highlight_example() {
     //     let buf = TextBuffer::new("       for       f in *.rs; do\necho '$f';\n\n;done");
-    
+
     //     let tooltip_fn = |_|  None;
 
     //     let formatted_buffer = format_buffer(&buf, tooltip_fn);
