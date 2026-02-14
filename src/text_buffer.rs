@@ -9,6 +9,9 @@ use unicode_width::UnicodeWidthStr;
 #[derive(Clone, Eq, PartialEq)]
 struct Snapshot {
     buf: String,
+    // Cursor byte represents the next insertion position
+    // It should always be on a grapheme boundary, but I don't enforce that here. I just need to make sure to update it correctly whenever I change the buffer.
+    // It might be greater than the length of the buffer if the cursor is at the end, but it should never be greater than that.
     cursor_byte: usize,
 }
 

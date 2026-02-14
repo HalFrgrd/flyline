@@ -5,6 +5,28 @@ use crate::tab_completion_context;
 use glob::glob;
 use std::path::Path;
 
+/// bash programmable completions:
+///
+/// - bashline.c: initialize_readline:
+///    - rl_attempted_completion_function = attempt_shell_completion;
+///
+/// - complete.c: rl_complete_internal:
+///     - sets our_func to rl_completion_entry_function or backup rl_filename_completion_function
+///     - gen_completion_matches:
+///         - sets rl_completion_found_quote
+///         - sets rl_completion_quote_character
+///         - calls rl_attempted_completion_function (which is attempt_shell_completion)
+///             - bashline.c: attempt_shell_completion:
+///                 - this figures out if we are completing the first word, an env var, tilde expansion, or if we should call the programmable completion function for the command.
+///                 - If it detects we want first word completion, it tries to find a special compspec: `iw_compspec = progcomp_search (INITIALWORD)`
+///                     it calls: `programmable_completions (INITIALWORD = "_InitialWorD_", text, s, e, &foundcs)`. I assume `text` is the first word.
+///                 - The core call is to `programmable_completions`
+///         - If that doesnt return any completions, it falls back to `our_func`
+///     - if rl_completion_found_quote, it think it tries to undo the quote escaping
+///     - when inserting the match, I think it tries to do quoting /  escaping based on what the  word_under_cursor looks like and what rl_completion_quote_character is set to.
+///        e.g. if you have a folder called `qwe asd` and you type `cd qw` and tab complete, it will insert `cd qwe\ asd/`
+///        but if you type `cd "qw` and tab complete, it will insert `cd "qwe asd"/`
+
 impl App {
     pub fn start_tab_complete(&mut self) {
         let buffer: &str = self.buffer.buffer();
