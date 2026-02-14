@@ -24,6 +24,21 @@ impl SnakeAnimation {
         snake
     }
 
+    pub fn apply_to_string(&self, s: &str) -> String {
+        let snake_chars: Vec<char> = self.to_string().chars().collect();
+
+        s.chars()
+            .enumerate()
+            .map(|(i, original_char)| {
+                snake_chars
+                    .get(i)
+                    .filter(|&&snake_char| snake_char != '⠀')
+                    .unwrap_or(&original_char)
+                    .to_owned()
+            })
+            .collect()
+    }
+
     fn next_head_pos(&self) -> Coord {
         const MAX_X: usize = 12;
         match self.body.last() {
@@ -115,7 +130,7 @@ impl SnakeAnimation {
         grid
     }
 
-    pub fn to_string(&self) -> String {
+    fn to_string(&self) -> String {
         let mut res = String::new();
         let grid = self.body_as_grid();
         for poss_col_pair in grid.chunks(2) {
