@@ -773,29 +773,20 @@ impl App {
             }
         }
 
-        let tooltip_fn = |s: &str| {
+        let wordinfo_fn =
+            |s: &str, highlight_style: Option<&'static str>| -> Option<buffer_format::WordInfo> {
+                if let Some("function") = highlight_style {
+                    let (command_type, description) = self.bash_env.get_command_info(s);
+                    return Some(buffer_format::WordInfo {
+                        tooltip: Some(description.to_string()),
+                        is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+                    });
+                }
 
-            
-
-            let res = if s.starts_with("cd") {
-                Some("Change directory".to_string())
-            } else if s.starts_with("ls") {
-                Some("List directory contents".to_string())
-            } else if s.starts_with("git") {
-                Some("Git version control".to_string())
-            } else {
                 None
             };
-            log::debug!("Tooltip function called for '{}', returning {:?}", s, res);
-            res
-        };
 
-        let recognised_command_fn =  |s: &str| ->  bool {
-            let (command_type, description) = self.bash_env.get_command_info(s);
-            command_type != bash_funcs::CommandType::Unknown
-        };
-
-        self.formatted_buffer_cache = format_buffer(&self.buffer, Some(Box::new(tooltip_fn)), Some(Box::new(recognised_command_fn)));
+        self.formatted_buffer_cache = format_buffer(&self.buffer, Some(Box::new(wordinfo_fn)));
         // log::debug!(
         //     "Buffer changed, formatted buffer spans:\n{:#?}",
         //     self.formatted_buffer_cache

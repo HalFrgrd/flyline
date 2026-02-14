@@ -158,19 +158,26 @@ fn name_to_style(name: Option<&'static str>, recognised_command: Option<bool>) -
     }
 }
 
-type TooltipFn<'a> = Box<dyn FnMut(&str) -> Option<String> + 'a>;
-type RecognisedCommandFn<'a> = Box<dyn FnMut(&str) -> bool + 'a>;
+#[derive(Debug)]
+pub struct WordInfo {
+    pub tooltip: Option<String>,
+    pub is_recognised_command: bool,
+}
+
+pub type WordInfoFn<'a> = Box<dyn FnMut(&str, Option<&'static str>) -> Option<WordInfo> + 'a>;
 
 impl FormattedBufferPart {
     pub fn new(
         start_byte: usize,
         content: &str,
         highlight_name: Option<&'static str>,
-        tooltip_fn: &mut Option<TooltipFn<'_>>,
-        recognised_command_fn: &mut Option<RecognisedCommandFn<'_>>,
+        wordinfo_fn: &mut Option<WordInfoFn<'_>>,
     ) -> Self {
-        let tooltip = tooltip_fn.as_mut().and_then(|f| f(content));
-        let recognised_command = recognised_command_fn.as_mut().map(|f| f(content));
+        let word_info = wordinfo_fn
+            .as_mut()
+            .and_then(|f| f(content, highlight_name));
+        let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
+        let recognised_command = word_info.as_ref().map(|info| info.is_recognised_command);
 
         let style = name_to_style(highlight_name, recognised_command);
         let span = Span::styled(content.to_string(), style);
@@ -283,8 +290,7 @@ impl FormattedBufferPart {
 
 pub fn format_buffer<'a>(
     buffer: &TextBuffer,
-    mut tooltip_fn: Option<TooltipFn<'a>>,
-    mut recognised_command_fn: Option<RecognisedCommandFn<'a>>,
+    mut wordinfo_fn: Option<WordInfoFn<'a>>,
 ) -> FormattedBuffer {
     let mut highlighter = Highlighter::new();
 
@@ -351,13 +357,7 @@ pub fn format_buffer<'a>(
             }
         })
         .map(|(start, end, highlight_name)| {
-            FormattedBufferPart::new(
-                start,
-                &source[start..end],
-                highlight_name,
-                &mut tooltip_fn,
-                &mut recognised_command_fn,
-            )
+            FormattedBufferPart::new(start, &source[start..end], highlight_name, &mut wordinfo_fn)
         })
         .collect();
 
