@@ -532,12 +532,16 @@ impl FuzzyHistorySearch {
             self.global_index += 1;
         }
 
+        // Sort explicitly by score. Then insert stable order of history entries
         new_entries.sort_by_key(|e| std::cmp::Reverse(e.score));
 
-        let new_cache = std::mem::take(&mut self.cache)
+        let mut new_cache = std::mem::take(&mut self.cache)
             .into_iter()
             .merge_by(new_entries.into_iter(), |a, b| a.score >= b.score)
-            .collect();
+            .collect::<Vec<_>>();
+        
+        // Remove duplicates, keeping the lowest indexed one (first occurrence)
+        new_cache.dedup_by(|a, b| a.entry.command == b.entry.command);
         self.cache = new_cache;
 
         if start_index != self.global_index {
