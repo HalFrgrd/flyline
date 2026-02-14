@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::vec;
 
 use tree_sitter_highlight::HighlightConfiguration;
@@ -46,7 +47,7 @@ pub struct FormattedBuffer {
 }
 
 impl FormattedBuffer {
-    pub fn split_at_cursor(&self) -> Vec<FormattedBufferPart> {
+    pub fn split_at_cursor_from(&self) -> Vec<FormattedBufferPart> {
         let cursor_pos = self.cursor_byte_pos;
 
         self.parts
@@ -65,10 +66,26 @@ impl FormattedBuffer {
                     let contents = chunk.iter().map(|(_, g)| *g).collect::<String>();
                     let chunk_byte_start =
                         part.start_byte + chunk.first().map(|(idx, _)| *idx).unwrap_or(0);
+                    
+                    let alternative_span = part.alternative_span.as_ref().map(|alt_span| {
+                        let graphemes_used = part.span.content.grapheme_indices(true).enumerate().filter(
+                            |(i, (byte_idx, _))| chunk.iter().any(|(idx, _)| idx == byte_idx)
+                        ).collect::<Vec<_>>();
+
+                        let alt_contents = alt_span.content.graphemes(true).enumerate().filter(
+                            |(i, _)| graphemes_used.iter().any(|(j, _)| i == j)
+
+                        ).collect::<Vec<_>>();
+
+                        let alt_contents = alt_contents.into_iter().map(|(_, g)| g).collect::<String>();
+
+                        Span::styled(alt_contents, alt_span.style)
+                    });
 
                     parts.push(FormattedBufferPart {
                         start_byte: chunk_byte_start,
                         span: Span::styled(contents, part.span.style),
+                        alternative_span,
                         highlight_name: part.highlight_name.clone(),
                         cursor_info: if contains_cursor { Some(true) } else { None },
                     });
@@ -88,6 +105,7 @@ impl FormattedBuffer {
                     vec![FormattedBufferPart {
                         start_byte: cursor_pos,
                         span: Span::from(" ".to_string()),
+                        alternative_span: None,
                         highlight_name: None,
                         cursor_info: Some(false),
                     }]
@@ -102,9 +120,25 @@ impl FormattedBuffer {
 #[derive(Debug, Clone)]
 pub struct FormattedBufferPart {
     pub start_byte: usize,
-    pub span: Span<'static>,
+    span: Span<'static>,
+    alternative_span: Option<Span<'static>>, // meant for animations. Should have the same grapheme boundaries as span, but can have different content and style. If present, it will be used instead of span for display, but span will still be used for cursor positioning and other logic
     pub highlight_name: Option<String>,
     pub cursor_info: Option<bool>, // None means no cursor, Some(true) means cursor is on an actual grapheme, Some(false) means cursor is on an artificial position (e.g. end of line)
+}
+
+impl FormattedBufferPart {
+    pub fn normal_span(&self) -> &Span<'static> {
+        &self.span
+    }
+
+    pub fn span_to_use(&self) -> &Span<'static> {
+        self.alternative_span.as_ref().unwrap_or(&self.span)
+    }
+
+    pub fn set_alternative_span(&mut self, span: Option<Span<'static>>) {
+        // TODO check  it  has  the  same  grapheme  boundaries  as  self.span
+        self.alternative_span = span;
+    }
 }
 
 // TODO: second layer of formatting for animations
@@ -191,6 +225,7 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
                 source[start..end].to_string(),
                 name_to_style(highlight_name),
             ),
+            alternative_span: None,
             highlight_name: highlight_name.map(|name| name.to_string()),
             cursor_info: None,
         })
@@ -207,6 +242,7 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
     #[test]
     #[ignore]
@@ -219,5 +255,17 @@ mod tests {
         }
 
         assert!(false);
+    }
+
+    #[test]
+    #[ignore]
+    fn grapheme_widths() {
+        let text= "pyt⢸";
+        println!("Text: {:?}", text);
+        println!("Text width: {}", text.width());
+        for g in text.graphemes(true) {
+            println!("'{}  ({:?})' width: {}", g,   g.as_bytes()  ,g.width());
+        }
+
     }
 }

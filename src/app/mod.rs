@@ -26,6 +26,7 @@ use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
+use std::borrow::Cow;
 use std::boxed::Box;
 
 use std::time::{Duration, Instant};
@@ -829,15 +830,33 @@ impl App {
 
         let mut line_idx = 0;
         let mut cursor_anim_pos = None;
-        for part in self.formatted_buffer_cache.split_at_cursor() {
+        self.formatted_buffer_cache
+            .parts
+            .iter_mut()
+            .for_each(|part| {
+                if self.mode.is_running() && part.normal_span().content.starts_with("python") {
+                    self.snake_animation.update_anim();
+                    let snake_str = self
+                        .snake_animation
+                        .apply_to_string(&part.normal_span().content);
+                    part.set_alternative_span(Some(Span::styled(
+                        snake_str,
+                        part.normal_span().style,
+                    )));
+                } else {
+                    part.set_alternative_span(None);
+                }
+            });
+
+        for part in self.formatted_buffer_cache.split_at_cursor_from() {
             if self.mode.is_running()
                 && let Some(_) = part.cursor_info
             {
                 let first_graph = part
-                    .span
-                    .styled_graphemes(part.span.style)
+                    .span_to_use()
+                    .styled_graphemes(Style::default())
                     .next()
-                    .unwrap_or(StyledGrapheme::new(" ", part.span.style));
+                    .unwrap_or(StyledGrapheme::new(" ", Style::default()));
 
                 content.move_to_next_insertion_point(&first_graph, false);
 
@@ -846,13 +865,14 @@ impl App {
                 cursor_anim_pos = Some(self.cursor_animation.get_position());
             }
 
-            if part.span.content == "\n" {
+            if part.span_to_use().content == "\n" {
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
             } else if part.cursor_info.unwrap_or(true) {
-                content.write_span_dont_overwrite(&part.span, Tag::Command(part.start_byte));
+                content
+                    .write_span_dont_overwrite(&part.span_to_use(), Tag::Command(part.start_byte));
             }
         }
         if let Some((animated_vis_row, animated_vis_col)) = cursor_anim_pos {
