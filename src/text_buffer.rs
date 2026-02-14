@@ -1141,7 +1141,6 @@ impl TextBuffer {
 
     fn push_snapshot(&mut self, merge_with_recent: bool) {
         let snapshot = self.create_snapshot();
-        log::debug!("Pushing snapshot: snapshot={:?}", snapshot);
 
         self.undo_redo.add_snapshot(snapshot, merge_with_recent);
     }
@@ -1150,7 +1149,6 @@ impl TextBuffer {
         let current_state = self.create_snapshot();
 
         self.undo_redo.prev_snapshot(current_state).map(|snapshot| {
-            // log::debug!("Undoing to state: snapshot={:?}", snapshot);
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
         });
@@ -1160,7 +1158,6 @@ impl TextBuffer {
         let current_state = self.create_snapshot();
 
         self.undo_redo.next_snapshot(current_state).map(|snapshot| {
-            // log::debug!("Redoing to state: snapshot={:?}", snapshot);
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
         });
@@ -1189,7 +1186,6 @@ impl SnapshotManager {
 
     fn add_snapshot(&mut self, snapshot: Snapshot, merge_with_recent: bool) -> bool {
         if Some(&snapshot) == self.undos.last() {
-            log::debug!("Snapshot identical to last one, not pushing a new one");
             return false;
         }
 
@@ -1201,10 +1197,9 @@ impl SnapshotManager {
             && duration_since_last < std::time::Duration::from_millis(1000)
             && self.undos.len() > 0
         {
-            log::debug!("Reusing recent snapshot: age {:?} ", duration_since_last);
+            // log::debug!("Reusing recent snapshot: age {:?} ", duration_since_last);
         } else {
             self.last_snapshot_time = now;
-            log::debug!("Pushing new snapshot onto undo stack: {:?}", snapshot);
             self.undos.push(snapshot);
         }
 

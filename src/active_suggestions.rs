@@ -25,25 +25,8 @@ impl SuggestionFormatted {
         suggestion_idx: usize,
         matching_indices: Vec<usize>,
     ) -> Self {
-        let mut spans = Vec::new();
-        let mut spans_selected = Vec::new();
-
-        for (idx, ch) in suggestion.s.chars().enumerate() {
-            let is_match = matching_indices.contains(&idx);
-            let char_style = if is_match {
-                Palette::matched_character()
-            } else {
-                Palette::normal_text()
-            };
-            let selected_style = if is_match {
-                Palette::selected_matching_char()
-            } else {
-                Palette::selection_style()
-            };
-
-            spans.push(Span::styled(ch.to_string(), char_style));
-            spans_selected.push(Span::styled(ch.to_string(), selected_style));
-        }
+        let (spans, spans_selected) =
+            Palette::highlight_maching_indices(&suggestion.s, &matching_indices);
 
         SuggestionFormatted {
             suggestion_idx,
