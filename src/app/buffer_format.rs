@@ -5,10 +5,11 @@ use tree_sitter_highlight::HighlightConfiguration;
 use tree_sitter_highlight::HighlightEvent;
 use tree_sitter_highlight::Highlighter;
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use crate::palette::Palette;
 use crate::text_buffer::TextBuffer;
-use itertools::Itertools;
+use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
 
 const HIGHLIGHT_NAMES: &[&str] = &[
@@ -55,39 +56,84 @@ impl FormattedBuffer {
             .flat_map(move |part| {
                 let mut parts = vec![];
 
-                for (contains_cursor, chunk) in &part
-                    .span
-                    .content
-                    .grapheme_indices(true)
-                    .chunk_by(|(idx, _g)| part.start_byte + idx == cursor_pos)
-                {
-                    let chunk = chunk.collect_vec();
+                let part_start = part.start_byte;
+                let part_end = part.start_byte + part.span.content.len();
 
-                    let contents = chunk.iter().map(|(_, g)| *g).collect::<String>();
-                    let chunk_byte_start =
-                        part.start_byte + chunk.first().map(|(idx, _)| *idx).unwrap_or(0);
-                    
-                    let alternative_span = part.alternative_span.as_ref().map(|alt_span| {
-                        let graphemes_used = part.span.content.grapheme_indices(true).enumerate().filter(
-                            |(i, (byte_idx, _))| chunk.iter().any(|(idx, _)| idx == byte_idx)
-                        ).collect::<Vec<_>>();
+                let split = if cursor_pos >= part_start && cursor_pos < part_end {
+                    part.span
+                        .content
+                        .grapheme_indices(true)
+                        .enumerate()
+                        .find_map(|(grapheme_idx, (byte_idx, _))| {
+                            if part_start + byte_idx == cursor_pos {
+                                Some((byte_idx, grapheme_idx))
+                            } else {
+                                None
+                            }
+                        })
+                } else {
+                    None
+                };
 
-                        let alt_contents = alt_span.content.graphemes(true).enumerate().filter(
-                            |(i, _)| graphemes_used.iter().any(|(j, _)| i == j)
+                let build_alt = |alt_span: &Span<'static>, split_idx: usize| {
+                    let mut left = String::new();
+                    let mut right = String::new();
+                    for (idx, g) in alt_span.content.graphemes(true).enumerate() {
+                        if idx < split_idx {
+                            left.push_str(g);
+                        } else {
+                            right.push_str(g);
+                        }
+                    }
+                    (
+                        if left.is_empty() {
+                            None
+                        } else {
+                            Some(Span::styled(left, alt_span.style))
+                        },
+                        if right.is_empty() {
+                            None
+                        } else {
+                            Some(Span::styled(right, alt_span.style))
+                        },
+                    )
+                };
 
-                        ).collect::<Vec<_>>();
+                if let Some((split_byte, split_grapheme_idx)) = split {
+                    let left_text = &part.span.content[..split_byte];
+                    let right_text = &part.span.content[split_byte..];
 
-                        let alt_contents = alt_contents.into_iter().map(|(_, g)| g).collect::<String>();
+                    let (alt_left, alt_right) = match part.alternative_span.as_ref() {
+                        Some(alt_span) => build_alt(alt_span, split_grapheme_idx),
+                        None => (None, None),
+                    };
 
-                        Span::styled(alt_contents, alt_span.style)
-                    });
+                    if !left_text.is_empty() {
+                        parts.push(FormattedBufferPart {
+                            start_byte: part_start,
+                            span: Span::styled(left_text.to_string(), part.span.style),
+                            alternative_span: alt_left,
+                            highlight_name: part.highlight_name.clone(),
+                            cursor_info: None,
+                        });
+                    }
 
+                    if !right_text.is_empty() {
+                        parts.push(FormattedBufferPart {
+                            start_byte: part_start + split_byte,
+                            span: Span::styled(right_text.to_string(), part.span.style),
+                            alternative_span: alt_right,
+                            highlight_name: part.highlight_name.clone(),
+                            cursor_info: Some(true),
+                        });
+                    }
+                } else {
                     parts.push(FormattedBufferPart {
-                        start_byte: chunk_byte_start,
-                        span: Span::styled(contents, part.span.style),
-                        alternative_span,
+                        start_byte: part.start_byte,
+                        span: part.span.clone(),
+                        alternative_span: part.alternative_span.clone(),
                         highlight_name: part.highlight_name.clone(),
-                        cursor_info: if contains_cursor { Some(true) } else { None },
+                        cursor_info: None,
                     });
                 }
 
@@ -121,9 +167,16 @@ impl FormattedBuffer {
 pub struct FormattedBufferPart {
     pub start_byte: usize,
     span: Span<'static>,
-    alternative_span: Option<Span<'static>>, // meant for animations. Should have the same grapheme boundaries as span, but can have different content and style. If present, it will be used instead of span for display, but span will still be used for cursor positioning and other logic
+    /// Meant for animations. Should have the same grapheme widths as span,
+    /// but can have different content and style. If present, it will be used
+    /// instead of span for display, but span will still be used for cursor
+    /// positioning and other logic.
+    alternative_span: Option<Span<'static>>,
     pub highlight_name: Option<String>,
-    pub cursor_info: Option<bool>, // None means no cursor, Some(true) means cursor is on an actual grapheme, Some(false) means cursor is on an artificial position (e.g. end of line)
+    /// None means no cursor,
+    /// Some(true) means cursor is on an actual grapheme, (and we should draw the contents with the cursor style)
+    /// Some(false) means cursor is on an artificial position (e.g. end of line)
+    pub cursor_info: Option<bool>,
 }
 
 impl FormattedBufferPart {
@@ -135,9 +188,25 @@ impl FormattedBufferPart {
         self.alternative_span.as_ref().unwrap_or(&self.span)
     }
 
-    pub fn set_alternative_span(&mut self, span: Option<Span<'static>>) {
-        // TODO check  it  has  the  same  grapheme  boundaries  as  self.span
-        self.alternative_span = span;
+    pub fn clear_alternative_span(&mut self) {
+        self.alternative_span = None;
+    }
+
+    pub fn set_alternative_span(&mut self, new_alt: Span<'static>) -> Result<(), String> {
+        new_alt.content.graphemes(true).zip_longest(self.span.content.graphemes(true))
+            .try_for_each(|g| match g {
+                EitherOrBoth::Both(new_g, old_g) => {
+                    if new_g.width() != old_g.width() {
+                        Err(format!("New alternative span has different grapheme widths than the original span. Original grapheme: '{}' (width: {}), new grapheme: '{}' (width: {})", old_g, old_g.width(), new_g, new_g.width()))
+                    } else {
+                        Ok(())
+                    }
+                },
+                _ => Err("New alternative span has different number of graphemes than the original span".to_string()),
+            })?;
+
+        self.alternative_span = Some(new_alt);
+        Ok(())
     }
 }
 
@@ -260,12 +329,47 @@ mod tests {
     #[test]
     #[ignore]
     fn grapheme_widths() {
-        let text= "pyt⢸";
+        let text = "pyt⢸";
         println!("Text: {:?}", text);
         println!("Text width: {}", text.width());
         for g in text.graphemes(true) {
-            println!("'{}  ({:?})' width: {}", g,   g.as_bytes()  ,g.width());
+            println!("'{}  ({:?})' width: {}", g, g.as_bytes(), g.width());
         }
+    }
+    fn make_part(s: &str) -> FormattedBufferPart {
+        FormattedBufferPart {
+            start_byte: 0,
+            span: Span::from(s.to_string()),
+            alternative_span: None,
+            highlight_name: None,
+            cursor_info: None,
+        }
+    }
 
+    #[test]
+    fn set_alternative_span_accepts_same_grapheme_widths() {
+        let mut part = make_part("ab");
+        let alt = Span::from("cd".to_string());
+
+        assert!(part.set_alternative_span(alt).is_ok());
+        assert_eq!(part.span_to_use().content, "cd");
+    }
+
+    #[test]
+    fn set_alternative_span_rejects_different_grapheme_count() {
+        let mut part = make_part("ab");
+        let alt = Span::from("abc".to_string());
+
+        assert!(part.set_alternative_span(alt).is_err());
+        assert_eq!(part.span_to_use().content, "ab");
+    }
+
+    #[test]
+    fn set_alternative_span_rejects_different_grapheme_widths() {
+        let mut part = make_part("ab");
+        let alt = Span::from("a🙂".to_string());
+
+        assert!(part.set_alternative_span(alt).is_err());
+        assert_eq!(part.span_to_use().content, "ab");
     }
 }

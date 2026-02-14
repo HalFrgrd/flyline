@@ -839,12 +839,13 @@ impl App {
                     let snake_str = self
                         .snake_animation
                         .apply_to_string(&part.normal_span().content);
-                    part.set_alternative_span(Some(Span::styled(
-                        snake_str,
-                        part.normal_span().style,
-                    )));
+                    if let Err(e) =
+                        part.set_alternative_span(Span::styled(snake_str, part.normal_span().style))
+                    {
+                        log::warn!("Failed to set alternative span for snake animation: {}", e);
+                    }
                 } else {
-                    part.set_alternative_span(None);
+                    part.clear_alternative_span();
                 }
             });
 

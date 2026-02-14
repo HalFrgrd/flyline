@@ -407,7 +407,7 @@ impl TextBuffer {
                 cur_row += 1;
                 cur_col = 0;
             } else {
-                cur_col += grapheme.width_cjk();
+                cur_col += grapheme.width();
             }
         }
         self.cursor_byte = self.buf.len();
@@ -1077,7 +1077,7 @@ impl TextBuffer {
                 row += 1;
                 col = 0;
             } else {
-                col += grapheme.width_cjk(); // TOOD is cjk correct here?
+                col += grapheme.width();
             }
         }
         (row, col)
