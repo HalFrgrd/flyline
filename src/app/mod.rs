@@ -349,7 +349,6 @@ impl App {
                         CrosstermEvent::Key(key) => {
                             match key.kind {
                                 crossterm::event::KeyEventKind::Press | crossterm::event::KeyEventKind::Repeat => {
-                                    log::debug!("Key event: {:?}", key);
                                     needs_screen_cleared = self.on_keypress(key);
                                     true
                                 }
@@ -495,6 +494,8 @@ impl App {
     /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
     /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
     fn on_keypress(&mut self, key: KeyEvent) -> bool {
+        log::trace!("Key event: {:?}", key);
+
         match key {
             KeyEvent {
                 code: KeyCode::Left,
@@ -787,10 +788,6 @@ impl App {
             };
 
         self.formatted_buffer_cache = format_buffer(&self.buffer, Some(Box::new(wordinfo_fn)));
-        // log::debug!(
-        //     "Buffer changed, formatted buffer spans:\n{:#?}",
-        //     self.formatted_buffer_cache
-        // );
     }
 
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {

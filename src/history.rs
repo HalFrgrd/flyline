@@ -371,28 +371,8 @@ impl HistoryEntryFormatted {
             return;
         }
 
-        let mut command_spans = Vec::new();
-        let mut command_spans_selected = Vec::new();
-
-        for (is_matching, chunk) in &self
-            .entry
-            .command
-            .char_indices()
-            .chunk_by(|(idx, _)| self.match_indices.contains(idx))
-        {
-            let chunk_str = chunk.map(|(_, c)| c).collect::<String>();
-            if is_matching {
-                command_spans.push(Span::styled(
-                    chunk_str.clone(),
-                    Palette::matched_character(),
-                ));
-                command_spans_selected
-                    .push(Span::styled(chunk_str, Palette::selected_matching_char()));
-            } else {
-                command_spans.push(Span::styled(chunk_str.clone(), Palette::normal_text()));
-                command_spans_selected.push(Span::styled(chunk_str, Palette::selection_style()));
-            }
-        }
+        let (command_spans, command_spans_selected) =
+            Palette::highlight_maching_indices(&self.entry.command, &self.match_indices);
 
         self.command_spans = Some(command_spans);
         self.command_spans_selected = Some(command_spans_selected);
