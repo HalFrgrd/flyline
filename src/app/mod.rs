@@ -135,8 +135,7 @@ struct App {
     content_mode: ContentMode,
     last_contents: Option<(Contents, i16)>,
     last_mouse_over_cell: Option<Tag>,
-    command_description: String,
-    cached_command_type: bash_funcs::CommandType,
+    tooltip: Option<String>,
 }
 
 impl App {
@@ -150,7 +149,7 @@ impl App {
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
 
         let buffer = TextBuffer::new("");
-        let formatted_buffer_cache = format_buffer(&buffer);
+        let formatted_buffer_cache = FormattedBuffer::default();
         App {
             mode: AppRunningState::Running,
             buffer,
@@ -167,8 +166,7 @@ impl App {
             content_mode: ContentMode::Normal,
             last_contents: None,
             last_mouse_over_cell: None,
-            command_description: "".to_string(),
-            cached_command_type: bash_funcs::CommandType::Unknown,
+            tooltip: None,
         }
     }
 
@@ -424,6 +422,14 @@ impl App {
                             &mut self.content_mode
                         {
                             active_suggestions.set_selected_by_idx(idx);
+                        }
+                    }
+                    Some(Tag::Command(byte_pos)) => {
+                        log::debug!("Mouse over command at byte position {}", byte_pos);
+                        if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos) {
+                            if let Some(tooltip) = part.tooltip.as_ref() {
+                                self.tooltip = Some(tooltip.clone());
+                            }
                         }
                     }
                     _ => {}
@@ -765,19 +771,21 @@ impl App {
             }
         }
 
-        // Cache command description and command type
-        let first_word = {
-            let line = self.buffer.buffer();
-            let space_pos = line.find(' ').unwrap_or(line.len());
-            &line[0..space_pos]
-        }
-        .to_owned();
-        self.bash_env.cache_command_type(&first_word);
-        let (command_type, short_desc) = self.bash_env.get_command_info(&first_word);
-        self.cached_command_type = command_type;
-        self.command_description = short_desc.to_string();
+        let tooltip_fn = |s: &str|  {
+            let res  =if s.starts_with("cd") {
+                Some("Change directory".to_string())
+            } else if s.starts_with("ls") {
+                Some("List directory contents".to_string())
+            } else if s.starts_with("git") {
+                Some("Git version control".to_string())
+            } else {
+                None
+            };
+                log::debug!("Tooltip function called for '{}', returning {:?}", s, res);
+                res
+        };
 
-        self.formatted_buffer_cache = format_buffer(&self.buffer);
+        self.formatted_buffer_cache = format_buffer(&self.buffer, tooltip_fn);
         // log::debug!(
         //     "Buffer changed, formatted buffer spans:\n{:#?}",
         //     self.formatted_buffer_cache
@@ -1017,31 +1025,41 @@ impl App {
             _ => {}
         }
         if self.mode.is_running() {
-            if let Some(tag) = &self.last_mouse_over_cell {
-                match tag {
-                    Tag::Command(0) if matches!(self.content_mode, ContentMode::Normal) => {
-                        content.newline();
-                        content.write_span(
-                            &Span::styled(
-                                format!("# {}", self.command_description),
-                                Palette::secondary_text(),
-                            ),
-                            Tag::Tooltip,
-                        );
-                    }
-                    _ => {
-                        content.newline();
 
-                        content.write_span(
-                            &Span::styled(
-                                format!("# Mouse over: {:?}", tag),
-                                Palette::secondary_text(),
-                            ),
-                            Tag::Tooltip,
-                        );
-                    }
-                }
+            if let Some(tooltip) = &self.tooltip {
+                content.newline();
+                content.write_span(
+                    &Span::styled(tooltip, Palette::secondary_text()),
+                    Tag::Tooltip,
+                );
             }
+
+            // if let Some(tag) = &self.last_mouse_over_cell {
+            //     match tag {
+            //         Tag::Command(0) if matches!(self.content_mode, ContentMode::Normal) => {
+            //             content.newline();
+            //             content.write_span(
+            //                 &Span::styled(
+            //                     format!("# {}", self.command_description),
+            //                     Palette::secondary_text(),
+            //                 ),
+            //                 Tag::Tooltip,
+            //             );
+            //         }
+            //         _ => {
+            //             content.newline();
+
+            //             content.write_span(
+            //                 &Span::styled(
+            //                     format!("# Mouse over: {:?}", tag),
+            //                     Palette::secondary_text(),
+            //                 ),
+            //                 Tag::Tooltip,
+            //             );
+            //         }
+            //     }
+            // }
+
         }
         content
     }
