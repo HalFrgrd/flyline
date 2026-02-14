@@ -45,20 +45,22 @@ const HIGHLIGHT_NAMES: &[&str] = &[
 pub struct FormattedBuffer {
     pub parts: Vec<FormattedBufferPart>,
     pub cursor_byte_pos: usize,
+    byte_length: usize,
 }
 
 impl FormattedBuffer {
-    pub fn split_at_cursor_from(&self) -> Vec<FormattedBufferPart> {
+    pub fn split_at_cursor_from<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = Cow<'a, FormattedBufferPart>> {
         let cursor_pos = self.cursor_byte_pos;
 
         self.parts
             .iter()
             .flat_map(move |part| {
-                let mut parts = vec![];
-
                 let part_start = part.start_byte;
                 let part_end = part.start_byte + part.span.content.len();
 
+                let mut parts = vec![];
                 let split = if cursor_pos >= part_start && cursor_pos < part_end {
                     part.span
                         .content
@@ -75,91 +77,56 @@ impl FormattedBuffer {
                     None
                 };
 
-                let build_alt = |alt_span: &Span<'static>, split_idx: usize| {
-                    let mut left = String::new();
-                    let mut right = String::new();
-                    for (idx, g) in alt_span.content.graphemes(true).enumerate() {
-                        if idx < split_idx {
-                            left.push_str(g);
-                        } else {
-                            right.push_str(g);
-                        }
-                    }
-                    (
-                        if left.is_empty() {
-                            None
-                        } else {
-                            Some(Span::styled(left, alt_span.style))
-                        },
-                        if right.is_empty() {
-                            None
-                        } else {
-                            Some(Span::styled(right, alt_span.style))
-                        },
-                    )
-                };
-
                 if let Some((split_byte, split_grapheme_idx)) = split {
-                    let left_text = &part.span.content[..split_byte];
-                    let right_text = &part.span.content[split_byte..];
+                    let (left, right) = part.split_at_cursor(split_byte, split_grapheme_idx);
 
-                    let (alt_left, alt_right) = match part.alternative_span.as_ref() {
-                        Some(alt_span) => build_alt(alt_span, split_grapheme_idx),
-                        None => (None, None),
-                    };
-
-                    if !left_text.is_empty() {
-                        parts.push(FormattedBufferPart {
-                            start_byte: part_start,
-                            span: Span::styled(left_text.to_string(), part.span.style),
-                            alternative_span: alt_left,
-                            highlight_name: part.highlight_name.clone(),
-                            cursor_info: None,
-                        });
+                    if let Some(left) = left {
+                        parts.push(Cow::Owned(left));
                     }
 
-                    if !right_text.is_empty() {
-                        parts.push(FormattedBufferPart {
-                            start_byte: part_start + split_byte,
-                            span: Span::styled(right_text.to_string(), part.span.style),
-                            alternative_span: alt_right,
-                            highlight_name: part.highlight_name.clone(),
-                            cursor_info: Some(true),
-                        });
+                    if let Some(right) = right {
+                        parts.push(Cow::Owned(right));
                     }
                 } else {
-                    parts.push(FormattedBufferPart {
-                        start_byte: part.start_byte,
-                        span: part.span.clone(),
-                        alternative_span: part.alternative_span.clone(),
-                        highlight_name: part.highlight_name.clone(),
-                        cursor_info: None,
-                    });
+                    parts.push(Cow::Borrowed(part));
                 }
 
                 parts
             })
             .chain(
                 // If the cursor is at the end of the buffer, we need to add an extra part for it
-                if cursor_pos
-                    >= self
-                        .parts
-                        .last()
-                        .map(|p| p.start_byte + p.span.content.len())
-                        .unwrap_or(0)
-                {
-                    vec![FormattedBufferPart {
+                if cursor_pos >= self.byte_length {
+                    Some(Cow::Owned(FormattedBufferPart {
                         start_byte: cursor_pos,
                         span: Span::from(" ".to_string()),
                         alternative_span: None,
                         highlight_name: None,
                         cursor_info: Some(false),
-                    }]
+                        tooltip: None,
+                    }))
                 } else {
-                    vec![]
-                },
+                    None
+                }
+                .into_iter(),
             )
-            .collect()
+    }
+
+    pub fn get_part_from_byte_pos(&self, byte_pos: usize) -> Option<&FormattedBufferPart> {
+        self.parts.iter().find(|part| {
+            let part_start = part.start_byte;
+            let part_end = part.start_byte + part.span.content.len();
+            byte_pos >= part_start && byte_pos < part_end
+        })
+    }
+}
+
+impl Default for FormattedBuffer {
+    fn default() -> Self {
+        FormattedBuffer {
+            parts: vec![],
+            cursor_byte_pos: 0,
+            byte_length: 0,
+        }
     }
 }
 
@@ -177,9 +144,11 @@ pub struct FormattedBufferPart {
     /// Some(true) means cursor is on an actual grapheme, (and we should draw the contents with the cursor style)
     /// Some(false) means cursor is on an artificial position (e.g. end of line)
     pub cursor_info: Option<bool>,
+    pub tooltip: Option<String>,
 }
 
 impl FormattedBufferPart {
+
     pub fn normal_span(&self) -> &Span<'static> {
         &self.span
     }
@@ -208,6 +177,72 @@ impl FormattedBufferPart {
         self.alternative_span = Some(new_alt);
         Ok(())
     }
+
+    pub fn split_at_cursor(
+        &self,
+        split_byte: usize,
+        split_grapheme_idx: usize,
+    ) -> (Option<Self>, Option<Self>) {
+        let build_alt = |alt_span: &Span<'static>, split_idx: usize| {
+            let mut left = String::new();
+            let mut right = String::new();
+            for (idx, g) in alt_span.content.graphemes(true).enumerate() {
+                if idx < split_idx {
+                    left.push_str(g);
+                } else {
+                    right.push_str(g);
+                }
+            }
+            (
+                if left.is_empty() {
+                    None
+                } else {
+                    Some(Span::styled(left, alt_span.style))
+                },
+                if right.is_empty() {
+                    None
+                } else {
+                    Some(Span::styled(right, alt_span.style))
+                },
+            )
+        };
+
+        let left_text = &self.span.content[..split_byte];
+        let right_text = &self.span.content[split_byte..];
+
+        let (alt_left, alt_right) = match self.alternative_span.as_ref() {
+            Some(alt_span) => build_alt(alt_span, split_grapheme_idx),
+            None => (None, None),
+        };
+
+        let left = if !left_text.is_empty() {
+            Some(Self {
+                start_byte: self.start_byte,
+                span: Span::styled(left_text.to_string(), self.span.style),
+                alternative_span: alt_left,
+                highlight_name: self.highlight_name.clone(),
+                cursor_info: None,
+                tooltip: self.tooltip.clone(),
+            })
+        } else {
+            None
+        };
+
+        let right = if !right_text.is_empty() {
+            Some(Self {
+                start_byte: self.start_byte + split_byte,
+                span: Span::styled(right_text.to_string(), self.span.style),
+                alternative_span: alt_right,
+                highlight_name: self.highlight_name.clone(),
+                cursor_info: Some(true),
+                tooltip: self.tooltip.clone(),
+            })
+        } else {
+            None
+        };
+
+        (left, right)
+    }
 }
 
 // TODO: second layer of formatting for animations
@@ -223,7 +258,7 @@ fn name_to_style(name: Option<&'static str>) -> Style {
     }
 }
 
-pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
+pub fn format_buffer(buffer: &TextBuffer, mut tooltip_fn: impl FnMut(&str) -> Option<String>) -> FormattedBuffer {
     let mut highlighter = Highlighter::new();
 
     let bash_language = tree_sitter_bash::LANGUAGE.into();
@@ -297,34 +332,39 @@ pub fn format_buffer(buffer: &TextBuffer) -> FormattedBuffer {
             alternative_span: None,
             highlight_name: highlight_name.map(|name| name.to_string()),
             cursor_info: None,
+            tooltip: tooltip_fn(&source[start..end])    ,
         })
         .collect();
 
     let cursor_pos = buffer.cursor_byte_pos();
+    let byte_length = source.len();
 
     FormattedBuffer {
         parts: spans,
         cursor_byte_pos: cursor_pos,
+        byte_length,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    use unicode_width::UnicodeWidthStr;
 
-    #[test]
-    #[ignore]
-    fn bash_highlight_example() {
-        let buf = TextBuffer::new("       for       f in *.rs; do\necho '$f';\n\n;done");
+    // #[test]
+    // #[ignore]
+    // fn bash_highlight_example() {
+    //     let buf = TextBuffer::new("       for       f in *.rs; do\necho '$f';\n\n;done");
+    
+    //     let tooltip_fn = |_|  None;
 
-        let formatted_buffer = format_buffer(&buf);
-        for span in formatted_buffer.parts {
-            eprintln!("{:?}", span);
-        }
+    //     let formatted_buffer = format_buffer(&buf, tooltip_fn);
+    //     for span in formatted_buffer.parts {
+    //         eprintln!("{:?}", span);
+    //     }
 
-        assert!(false);
-    }
+    //     assert!(false);
+    // }
 
     #[test]
     #[ignore]
@@ -343,6 +383,7 @@ mod tests {
             alternative_span: None,
             highlight_name: None,
             cursor_info: None,
+            tooltip: None,
         }
     }
 

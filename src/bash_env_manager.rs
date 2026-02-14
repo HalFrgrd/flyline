@@ -31,23 +31,13 @@ impl BashEnvManager {
         }
     }
 
-    /// Cache and return the command type for a given command
-    pub fn cache_command_type(&mut self, cmd: &str) {
-        // log::debug!("Caching command type for: {}", cmd);
-        if let Some(_) = self.call_type_cache.get(cmd) {
-            return;
-        }
-        let result = bash_funcs::call_type(cmd);
-        // log::debug!("call_type result for {}: {:?}", cmd, result);
-        self.call_type_cache.insert(cmd.to_string(), result);
-    }
-
-    /// Get cached command type without updating cache
-    pub fn get_command_info(&self, cmd: &str) -> (bash_funcs::CommandType, &str) {
-        if let Some((cmd_type, cmd_str)) = self.call_type_cache.get(cmd) {
-            (cmd_type.clone(), cmd_str.as_str())
+    pub fn get_command_info(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
+        if let Some(res) = self.call_type_cache.get(cmd) {
+            res.clone()
         } else {
-            (bash_funcs::CommandType::Unknown, "")
+            let result = bash_funcs::call_type(cmd);
+            self.call_type_cache.insert(cmd.to_string(), result.clone());
+            result
         }
     }
 
