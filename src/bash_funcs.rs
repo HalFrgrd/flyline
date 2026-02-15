@@ -604,10 +604,7 @@ mod tests {
             find_quote_type(r#"'qwe asdf"#),
             Some(QuoteType::SingleQuote)
         );
-        assert_eq!(
-            find_quote_type(r#"qwe\ asdf"#),
-            Some(QuoteType::Backslash)
-        );
+        assert_eq!(find_quote_type(r#"qwe\ asdf"#), Some(QuoteType::Backslash));
         assert_eq!(find_quote_type(r#"qwe asdf"#), None);
         assert_eq!(find_quote_type(r#"qwe\\asdf"#), None);
     }

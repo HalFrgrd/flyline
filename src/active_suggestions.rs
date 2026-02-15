@@ -64,16 +64,15 @@ impl Suggestion {
     }
 
     pub fn formatted(&self) -> String {
-
-        let quoted  =  quote_function_rust(&self.s, self.quote_type.unwrap_or_default());
-        log::debug!("Formatted suggestion: original={}\nquoted={}\nquote_type={:?}", self.s, quoted, self.quote_type);
-
-        format!(
-            "{}{}{}",
-            self.prefix,
+        let quoted = quote_function_rust(&self.s, self.quote_type.unwrap_or_default());
+        log::debug!(
+            "Formatted suggestion: original={}\nquoted={}\nquote_type={:?}",
+            self.s,
             quoted,
-            self.suffix
-        )
+            self.quote_type
+        );
+
+        format!("{}{}{}", self.prefix, quoted, self.suffix)
     }
 
     pub fn from_string_vec(
