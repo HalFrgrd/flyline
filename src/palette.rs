@@ -1,6 +1,6 @@
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Span};
 use itertools::Itertools;
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Span;
 
 pub struct Palette;
 
@@ -32,7 +32,10 @@ impl Palette {
         Style::new().bg(Color::Rgb(intensity, intensity, intensity))
     }
 
-    pub fn highlight_maching_indices(s: &str, matching_indices: &[usize]) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
+    pub fn highlight_maching_indices(
+        s: &str,
+        matching_indices: &[usize],
+    ) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
         let mut normal_spans = Vec::new();
         let mut selected_spans = Vec::new();
 
@@ -46,8 +49,7 @@ impl Palette {
                     chunk_str.clone(),
                     Palette::matched_character(),
                 ));
-                selected_spans
-                    .push(Span::styled(chunk_str, Palette::selected_matching_char()));
+                selected_spans.push(Span::styled(chunk_str, Palette::selected_matching_char()));
             } else {
                 normal_spans.push(Span::styled(chunk_str.clone(), Palette::normal_text()));
                 selected_spans.push(Span::styled(chunk_str, Palette::selection_style()));

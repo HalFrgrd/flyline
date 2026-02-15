@@ -199,6 +199,38 @@ unsafe extern "C" {
     #[link_name = "rl_end"]
     pub static mut rl_end: c_int;
 
+    /* Set to a non-zero value if readline found quoting anywhere in the word to
+    be completed; set before any application completion function is called. */
+    // extern int rl_completion_found_quote;
+    #[link_name = "rl_completion_found_quote"]
+    pub static mut rl_completion_found_quote: c_int;
+
+    /* Set to any quote character readline thinks it finds before any application
+    completion function is called. */
+    // extern int rl_completion_quote_character;
+    #[link_name = "rl_completion_quote_character"]
+    pub static mut rl_completion_quote_character: c_int;
+
+    // int char_is_quoted (char *string, int eindex)
+    pub fn char_is_quoted(string: *const c_char, eindex: c_int) -> c_int;
+
+    // typedef int rl_linebuf_func_t (char *, int);
+    // rl_linebuf_func_t *rl_char_is_quoted_p
+    pub static mut rl_char_is_quoted_p: Option<unsafe extern "C" fn(*const c_char, c_int) -> c_int>;
+
+    // typedef char *rl_dequote_func_t (char *, int);
+    // rl_dequote_func_t *rl_filename_dequoting_function
+    pub static mut rl_filename_dequoting_function:
+        Option<extern "C" fn(*const c_char, c_int) -> *mut c_char>;
+
+    // typedef char *rl_quote_func_t (char *, int, char *);
+    // rl_quote_func_t *rl_filename_quoting_function
+    pub static mut rl_filename_quoting_function:
+        Option<extern "C" fn(*const c_char, c_int, *const c_char) -> *mut c_char>;
+
+    // void initialize_readline (void)
+    // pub fn initialize_readline();
+
     // alias.h
     // alias_t **all_aliases (void);
     pub fn all_aliases() -> *mut *mut Alias;

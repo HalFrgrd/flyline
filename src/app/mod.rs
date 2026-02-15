@@ -16,7 +16,6 @@ use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
-use core::arch;
 use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{
     KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent, MouseEventKind,
@@ -26,7 +25,6 @@ use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
-use std::borrow::Cow;
 use std::boxed::Box;
 
 use std::time::{Duration, Instant};
@@ -788,6 +786,7 @@ impl App {
             };
 
         self.formatted_buffer_cache = format_buffer(&self.buffer, Some(Box::new(wordinfo_fn)));
+        // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
     }
 
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
