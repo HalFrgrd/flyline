@@ -539,7 +539,7 @@ impl FuzzyHistorySearch {
             .into_iter()
             .merge_by(new_entries.into_iter(), |a, b| a.score >= b.score)
             .collect::<Vec<_>>();
-        
+
         // Remove duplicates, keeping the lowest indexed one (first occurrence)
         new_cache.dedup_by(|a, b| a.entry.command == b.entry.command);
         self.cache = new_cache;

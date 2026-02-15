@@ -1416,3 +1416,49 @@ impl SubString {
             || (other.start..=other.end()).contains(&self.start)
     }
 }
+
+// static char *
+// make_quoted_replacement (char *match, int mtype, char *qc)
+// {
+//   int should_quote, do_replace;
+//   char *replacement;
+
+//   /* If we are doing completion on quoted substrings, and any matches
+//      contain any of the completer_word_break_characters, then auto-
+//      matically prepend the substring with a quote character (just pick
+//      the first one from the list of such) if it does not already begin
+//      with a quote string.  FIXME: Need to remove any such automatically
+//      inserted quote character when it no longer is necessary, such as
+//      if we change the string we are completing on and the new set of
+//      matches don't require a quoted substring. */
+//   replacement = match;
+
+//   should_quote = match && rl_completer_quote_characters && QUOTING_DESIRED();
+
+//   if (should_quote)
+//     should_quote = should_quote && (!qc || !*qc ||
+// 		     (rl_completer_quote_characters && strchr (rl_completer_quote_characters, *qc)));
+
+//   if (should_quote)
+//     {
+//       /* If there is a single match, see if we need to quote it.
+//          This also checks whether the common prefix of several
+// 	 matches needs to be quoted. */
+//       should_quote = rl_filename_quote_characters
+// 			? (_rl_strpbrk (match, rl_filename_quote_characters) != 0)
+// 			: 0;
+//       /* If we saw a quote in the original word, but readline thinks the
+// 	 match doesn't need to be quoted, and the application has a filename
+// 	 quoting function, give the application a chance to quote it if
+// 	 needed so we don't second-guess the user. */
+//       should_quote |= *qc == 0 && rl_completion_found_quote && mtype != NO_MATCH && rl_filename_quoting_function;
+
+//       do_replace = should_quote ? mtype : NO_MATCH;
+//       /* Quote the replacement, since we found an embedded
+// 	 word break character in a potential match. */
+//       if (do_replace != NO_MATCH && rl_filename_quoting_function)
+// 	replacement = (*rl_filename_quoting_function) (match, do_replace, qc);
+//     }
+
+//   return (replacement);
+// }

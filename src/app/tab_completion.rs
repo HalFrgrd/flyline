@@ -26,6 +26,21 @@ use std::path::Path;
 ///     - when inserting the match, I think it tries to do quoting /  escaping based on what the  word_under_cursor looks like and what rl_completion_quote_character is set to.
 ///        e.g. if you have a folder called `qwe asd` and you type `cd qw` and tab complete, it will insert `cd qwe\ asd/`
 ///        but if you type `cd "qw` and tab complete, it will insert `cd "qwe asd"/`
+///
+
+// Something I have noticed is that `compgen` behaviour depends  on  `rl_completion_found_quote` and  some other  readline global variables.
+// For instance, I think `compgen -d` eventually calls `pcomp_filename_completion_function` which has some escaping logic:
+//   iscompgen = this_shell_builtin == compgen_builtin;
+//   iscompleting = RL_ISSTATE (RL_STATE_COMPLETING);
+//   if (iscompgen && iscompleting == 0 && rl_completion_found_quote == 0
+//   && rl_filename_dequoting_function) { ... }
+
+// TODO: instead of trying to do my own first word completion, I could  try to leverage bash's solution.
+// TODO: figure out escapements / quoting.
+// TODO probably need to set
+//   rl_filename_quoting_function = bash_quote_filename;
+//   rl_filename_dequoting_function = bash_dequote_filename;
+//   rl_char_is_quoted_p = char_is_quoted; // TODO  probably not necessary?
 
 impl App {
     pub fn start_tab_complete(&mut self) {
@@ -96,10 +111,10 @@ impl App {
                     word_under_cursor_end,
                 );
                 match poss_completions {
-                    Ok(completions) => {
+                    Ok((completions, quote_type)) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
                         self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                            Suggestion::from_string_vec(completions, "", " "),
+                            Suggestion::from_string_vec(completions, "", " ", quote_type),
                             word_under_cursor,
                             &self.buffer,
                         ));
@@ -172,7 +187,12 @@ impl App {
                     );
                 } else {
                     self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                        Suggestion::from_string_vec(vec![completions_as_string], "", " "),
+                        Suggestion::from_string_vec(
+                            vec![completions_as_string],
+                            "",
+                            " ",
+                            bash_funcs::QuoteType::Backslash,
+                        ),
                         word_under_cursor,
                         &self.buffer,
                     ));
@@ -199,7 +219,7 @@ impl App {
 
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
-        Suggestion::from_string_vec(res, "", " ")
+        Suggestion::from_string_vec(res, "", " ", bash_funcs::QuoteType::None)
     }
 
     fn tab_complete_current_path(&self, pattern: &str) -> Vec<Suggestion> {
@@ -279,10 +299,16 @@ impl App {
                             format!("{}/", unexpanded),
                             "".to_string(),
                             "".to_string(),
+                            bash_funcs::QuoteType::Backslash,
                         ));
                     } else {
                         // trailing space for files
-                        results.push(Suggestion::new(unexpanded, "".to_string(), " ".to_string()));
+                        results.push(Suggestion::new(
+                            unexpanded,
+                            "".to_string(),
+                            " ".to_string(),
+                            bash_funcs::QuoteType::Backslash,
+                        ));
                     }
                 }
             }

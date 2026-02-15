@@ -32,6 +32,7 @@ const HIGHLIGHT_NAMES: &[&str] = &[
     "punctuation.delimiter",
     "punctuation.special",
     "string",
+    "string_content",
     "string.special",
     "tag",
     "type",
@@ -149,11 +150,11 @@ pub struct FormattedBufferPart {
 
 fn name_to_style(name: Option<&'static str>, recognised_command: Option<bool>) -> Style {
     match name {
-        Some("command") if recognised_command.unwrap_or(false) => Palette::recognised_word(),
-        Some("function") if recognised_command.unwrap_or(false) => Palette::recognised_word(),
-        Some("command") => Palette::unrecognised_word(),
-        Some("function") => Palette::unrecognised_word(),
-        Some("string") => Palette::unrecognised_word(),
+        Some("command") | Some("function") if recognised_command.unwrap_or(false) => {
+            Palette::recognised_word()
+        }
+        Some("command") | Some("function") => Palette::unrecognised_word(),
+        Some("string") | Some("string_content") => Palette::unrecognised_word(),
         _ => Palette::normal_text(),
     }
 }
@@ -319,6 +320,7 @@ pub fn format_buffer<'a>(
         .filter_map(|event| match event {
             Ok(HighlightEvent::HighlightStart(s)) => {
                 last_style = HIGHLIGHT_NAMES.get(s.0).map(|s| *s);
+                log::debug!("Highlight start: {:?}, style: {:?}", s, last_style);
                 None
             }
             Ok(HighlightEvent::HighlightEnd) => {
