@@ -2,7 +2,7 @@ use crate::bash_symbols;
 
 use anyhow::Result;
 
-use libc::{c_char, c_int, c_uint};
+use libc::{c_char, c_int};
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
 
@@ -280,7 +280,7 @@ pub fn run_autocomplete_compspec(
     word_under_cursor: &str,           // "commi"
     cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
-) -> Result<(Vec<String>, QuoteType)> {
+) -> Result<(Vec<String>, Option<QuoteType>)> {
     log::debug!(
         "run_autocomplete_compspec called with\nfull_command='{}'\ncommand_word='{}'\nword_under_cursor='{}'\ncursor_byte_pos={}\nword_under_cursor_byte_end={}",
         full_command,
@@ -309,12 +309,9 @@ pub fn run_autocomplete_compspec(
         bash_symbols::rl_readline_state |= 0x00004000; // RL_STATE_COMPLETING
 
         let quote_type = find_quote_type(word_under_cursor);
-        bash_symbols::rl_completion_quote_character = quote_type.into_byte() as std::ffi::c_int;
-        if quote_type == QuoteType::None {
-            bash_symbols::rl_completion_found_quote = 0;
-        } else {
-            bash_symbols::rl_completion_found_quote = 1;
-        }
+        bash_symbols::rl_completion_quote_character =
+            quote_type.map(|q| q.into_byte()).unwrap_or(0) as std::ffi::c_int;
+        bash_symbols::rl_completion_found_quote = if quote_type.is_some() { 1 } else { 0 };
         bash_symbols::rl_char_is_quoted_p = Some(bash_symbols::char_is_quoted); // TODO
         bash_symbols::rl_filename_quoting_function = Some(quoting_function_c);
         bash_symbols::rl_filename_dequoting_function = Some(dequoting_function_c);
@@ -374,10 +371,15 @@ pub fn get_env_variable(var_name: &str) -> Option<String> {
 // QuoteType can be  in the middle  of a word (i.e.  backslash)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum QuoteType {
-    None,
     SingleQuote,
     DoubleQuote,
     Backslash,
+}
+
+impl Default for QuoteType {
+    fn default() -> Self {
+        QuoteType::Backslash
+    }
 }
 
 // Delim can only appear the start (or end?) of a word
@@ -385,16 +387,15 @@ pub enum QuoteType {
 pub enum Delim {
     SingleQuote,
     DoubleQuote,
-    None,
 }
 
 impl QuoteType {
-    pub fn from_char(c: char) -> QuoteType {
+    pub fn from_char(c: char) -> Option<QuoteType> {
         match c {
-            '\'' => QuoteType::SingleQuote,
-            '"' => QuoteType::DoubleQuote,
-            '\\' => QuoteType::Backslash,
-            _ => QuoteType::None,
+            '\'' => Some(QuoteType::SingleQuote),
+            '"' => Some(QuoteType::DoubleQuote),
+            '\\' => Some(QuoteType::Backslash),
+            _ => None,
         }
     }
 
@@ -403,7 +404,6 @@ impl QuoteType {
             QuoteType::SingleQuote => '\'' as u8,
             QuoteType::DoubleQuote => '"' as u8,
             QuoteType::Backslash => '\\' as u8,
-            QuoteType::None => '\0' as u8,
         }
     }
 }
@@ -423,14 +423,17 @@ extern "C" fn quoting_function_c(
 ) -> *mut c_char {
     let s_str = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().into_owned() };
     let quote_char_str = unsafe { std::ffi::CStr::from_ptr(quote_char).to_string_lossy() };
-    let quote_type = QuoteType::from_char(quote_char_str.chars().next().unwrap_or('\0'));
+    let quote_type = quote_char_str
+        .chars()
+        .next()
+        .and_then(QuoteType::from_char)
+        .unwrap_or_default();
     let quoted = quote_function_rust(&s_str, quote_type);
     std::ffi::CString::new(quoted).unwrap().into_raw()
 }
 
 pub fn quote_function_rust(s: &str, quote_type: QuoteType) -> String {
     match quote_type {
-        QuoteType::None => s.to_string(),
         QuoteType::SingleQuote => format!("'{}'", s.replace('\'', "'\\''")),
         QuoteType::DoubleQuote => format!("\"{}\"", s.replace('"', "\\\"")),
         QuoteType::Backslash => s
@@ -504,11 +507,11 @@ fn dequoting_function_rust(s: &str) -> String {
 // It sets fp to  a bitfield  but no one ever reads that bitfield so we can ignore it for now
 // char _rl_find_completion_word (int *fp, int *dp)
 
-fn find_quote_type(s: &str) -> QuoteType {
+fn find_quote_type(s: &str) -> Option<QuoteType> {
     if s.starts_with("\"") {
-        return QuoteType::DoubleQuote;
+        return Some(QuoteType::DoubleQuote);
     } else if s.starts_with('\'') {
-        return QuoteType::SingleQuote;
+        return Some(QuoteType::SingleQuote);
     } else {
         // Check for odd number of consecutive backslashes
         let mut backslash_count = 0;
@@ -530,20 +533,19 @@ fn find_quote_type(s: &str) -> QuoteType {
         }
 
         if max_consecutive_backslashes > 0 && max_consecutive_backslashes % 2 == 1 {
-            return QuoteType::Backslash;
+            return Some(QuoteType::Backslash);
         }
     }
-    return QuoteType::None;
+    None
 }
 
-fn find_delim_type(s: &str) -> Delim {
+fn find_delim_type(s: &str) -> Option<Delim> {
     if s.starts_with("\"") {
-        return Delim::DoubleQuote;
+        return Some(Delim::DoubleQuote);
     } else if s.starts_with('\'') {
-        return Delim::SingleQuote;
-    } else {
-        return Delim::None;
+        return Some(Delim::SingleQuote);
     }
+    None
 }
 
 #[cfg(test)]
@@ -564,7 +566,6 @@ mod tests {
             quote_function_rust(r#"qwe asd"#, QuoteType::SingleQuote),
             r#"'qwe asd'"#
         );
-        assert_eq!(quote_function_rust(r#"abc"#, QuoteType::None), r#"abc"#);
     }
 
     #[test]
@@ -595,17 +596,26 @@ mod tests {
 
     #[test]
     fn test_find_quotes() {
-        assert_eq!(find_quote_type(r#"cd "qwe asdf"#), QuoteType::DoubleQuote);
-        assert_eq!(find_quote_type(r#"cd 'qwe asdf"#), QuoteType::SingleQuote);
-        assert_eq!(find_quote_type(r#"cd qwe\ asdf"#), QuoteType::Backslash);
-        assert_eq!(find_quote_type(r#"cd qwe asdf"#), QuoteType::None);
-        assert_eq!(find_quote_type(r#"cd qwe\\asdf"#), QuoteType::None);
+        assert_eq!(
+            find_quote_type(r#""qwe asdf"#),
+            Some(QuoteType::DoubleQuote)
+        );
+        assert_eq!(
+            find_quote_type(r#"'qwe asdf"#),
+            Some(QuoteType::SingleQuote)
+        );
+        assert_eq!(
+            find_quote_type(r#"qwe\ asdf"#),
+            Some(QuoteType::Backslash)
+        );
+        assert_eq!(find_quote_type(r#"qwe asdf"#), None);
+        assert_eq!(find_quote_type(r#"qwe\\asdf"#), None);
     }
 
     #[test]
     fn test_find_delims() {
-        assert_eq!(find_delim_type(r#"cd "qwe asdf"#), Delim::DoubleQuote);
-        assert_eq!(find_delim_type(r#"cd 'qwe asdf"#), Delim::SingleQuote);
-        assert_eq!(find_delim_type(r#"cd qwe asdf"#), Delim::None);
+        assert_eq!(find_delim_type(r#""qwe asdf"#), Some(Delim::DoubleQuote));
+        assert_eq!(find_delim_type(r#"'qwe asdf"#), Some(Delim::SingleQuote));
+        assert_eq!(find_delim_type(r#"qwe asdf"#), None);
     }
 }

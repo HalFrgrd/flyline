@@ -10,7 +10,7 @@ pub struct Suggestion {
     pub s: String,
     pub prefix: String,
     pub suffix: String,
-    pub quote_type: QuoteType,
+    pub quote_type: Option<QuoteType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,7 +54,7 @@ impl SuggestionFormatted {
 }
 
 impl Suggestion {
-    pub fn new(s: String, prefix: String, suffix: String, quote_type: QuoteType) -> Self {
+    pub fn new(s: String, prefix: String, suffix: String, quote_type: Option<QuoteType>) -> Self {
         Suggestion {
             s,
             prefix,
@@ -64,10 +64,14 @@ impl Suggestion {
     }
 
     pub fn formatted(&self) -> String {
+
+        let quoted  =  quote_function_rust(&self.s, self.quote_type.unwrap_or_default());
+        log::debug!("Formatted suggestion: original={}\nquoted={}\nquote_type={:?}", self.s, quoted, self.quote_type);
+
         format!(
             "{}{}{}",
             self.prefix,
-            quote_function_rust(&self.s, self.quote_type),
+            quoted,
             self.suffix
         )
     }
@@ -76,7 +80,7 @@ impl Suggestion {
         suggestions: Vec<String>,
         prefix: &str,
         suffix: &str,
-        quote_type: QuoteType,
+        quote_type: Option<QuoteType>,
     ) -> Vec<Suggestion> {
         suggestions
             .into_iter()

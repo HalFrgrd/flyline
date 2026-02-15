@@ -187,12 +187,7 @@ impl App {
                     );
                 } else {
                     self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                        Suggestion::from_string_vec(
-                            vec![completions_as_string],
-                            "",
-                            " ",
-                            bash_funcs::QuoteType::Backslash,
-                        ),
+                        Suggestion::from_string_vec(vec![completions_as_string], "", " ", None),
                         word_under_cursor,
                         &self.buffer,
                     ));
@@ -219,7 +214,7 @@ impl App {
 
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
-        Suggestion::from_string_vec(res, "", " ", bash_funcs::QuoteType::None)
+        Suggestion::from_string_vec(res, "", " ", None)
     }
 
     fn tab_complete_current_path(&self, pattern: &str) -> Vec<Suggestion> {
@@ -299,7 +294,7 @@ impl App {
                             format!("{}/", unexpanded),
                             "".to_string(),
                             "".to_string(),
-                            bash_funcs::QuoteType::Backslash,
+                            None,
                         ));
                     } else {
                         // trailing space for files
@@ -307,7 +302,7 @@ impl App {
                             unexpanded,
                             "".to_string(),
                             " ".to_string(),
-                            bash_funcs::QuoteType::Backslash,
+                            None,
                         ));
                     }
                 }
