@@ -1,3 +1,5 @@
+use std::env::current_exe;
+
 use tree_sitter::{Node, Parser};
 use tree_sitter_bash;
 
@@ -182,6 +184,12 @@ pub fn get_completion_context<'a>(
 }
 
 fn find_cursor_node<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
+    
+    // println!("Visiting node: kind={}, byte_range={}-{}",
+    //     node.kind(),
+    //     node.start_byte(),
+    //     node.end_byte(),
+    // );
     if node.kind() == "simple_expansion" {
         // Special case: if we're in a simple_expansion, we want to return that node
         return *node;
@@ -194,6 +202,11 @@ fn find_cursor_node<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
         // cursors at :       ███     (byte positions 4,5,6) are considered to act on `ad`
         // `ad` byte range is [4,6) so convert to inclusive for contains check
         if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
+            if node.is_error() && child.kind() == "string_content" {
+                // Special case: if we're in an unterminated string, we want to return child with the starting double quote
+                // See example: test_word_with_double_quote_1
+                return *node;
+            }
             return find_cursor_node(&child, cursor_byte_pos);
         }
     }
@@ -239,7 +252,7 @@ fn find_comp_context_from_cursor<'tree>(cursor_node: &Node<'tree>) -> Node<'tree
             | "arithmetic_expansion"
             | "expansion"
             | "process_substitution"
-                if current_node.is_named() =>
+                if current_node.is_named() && !current_node.is_error() =>
             {
                 return current_node;
             }
@@ -249,7 +262,7 @@ fn find_comp_context_from_cursor<'tree>(cursor_node: &Node<'tree>) -> Node<'tree
             | "arithmetic_expansion"
             | "expansion"
             | "process_substitution"
-                if !current_node.is_named() =>
+                if !current_node.is_named() && !current_node.is_error()  =>
             {
                 return parent;
             }
@@ -1113,4 +1126,65 @@ mod tests {
             _ => panic!("Expected CommandComp"),
         }
     }
+
+    #[test]
+    fn test_word_with_double_quote_1() {
+        let input = r#"cd "foo"#;
+        let cursor_pos = input.len();
+        let ctx = get_completion_context(input, cursor_pos);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "\"foo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_word_with_double_quote_2() {
+        let input = r#"cd "foo   asdf"#;
+        let cursor_pos = input.len();
+        let ctx = get_completion_context(input, cursor_pos);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "\"foo   asdf");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_word_with_single_quote_1() {
+        let input = r#"cd 'foo"#;
+        let cursor_pos = input.len();
+        let ctx = get_completion_context(input, cursor_pos);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "'foo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_word_with_single_quote_2() {
+        let input = r#"cd 'foo   asdf"#;
+        let cursor_pos = input.len();
+        let ctx = get_completion_context(input, cursor_pos);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "'foo   asdf");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+    
 }
