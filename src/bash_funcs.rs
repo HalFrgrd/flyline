@@ -434,19 +434,39 @@ extern "C" fn quoting_function_c(
 pub fn quote_function_rust(s: &str, quote_type: QuoteType) -> String {
     match quote_type {
         QuoteType::SingleQuote => format!("'{}'", s.replace('\'', "'\\''")),
-        QuoteType::DoubleQuote => format!("\"{}\"", s.replace('"', "\\\"")),
-        QuoteType::Backslash => s
+        QuoteType::DoubleQuote => {
+            let escaped: String = s
+                .chars()
+                .map(|c| {
+                    if DOUBLE_QUOTE_SPECIAL_CHARS.contains(&c) {
+                        format!("\\{}", c)
+                    } else {
+                        c.to_string()
+                    }
+                })
+                .collect();
+
+            format!("\"{}\"", escaped)
+        },
+        QuoteType::Backslash => {
+            s
             .chars()
             .map(|c| {
-                if c.is_whitespace() || ['\\', '"', '\''].contains(&c) {
+                if c.is_whitespace() || BACKSLASH_SPECIAL_CHARS.contains(&c) {
                     format!("\\{}", c)
                 } else {
                     c.to_string()
                 }
             })
-            .collect(),
+            .collect()},
     }
 }
+
+const DOUBLE_QUOTE_SPECIAL_CHARS: &[char] = &['$', '`', '"', '\\', '!', '\n'];
+const BACKSLASH_SPECIAL_CHARS: &[char] = &[
+    ' ', '\t', '\n', '\\', '"', '\'', '!', '$', '&', '(', ')', '*', ';', '<', '>', '?', '[', ']',
+    '^', '`', '{', '|', '}',
+];
 
 /* Filename quoting for completion. */
 /* A function to strip unquoted quote characters (single quotes, double
@@ -580,6 +600,25 @@ mod tests {
     }
 
     #[test]
+    fn test_quote_function_backslash_special_chars() {
+        for &c in BACKSLASH_SPECIAL_CHARS {
+            let input = format!("a{}b", c);
+            let expected = format!("a\\{}b", c);
+            assert_eq!(quote_function_rust(&input, QuoteType::Backslash), expected);
+        }
+    }
+
+    #[test]
+    fn test_quote_function_double_quote_special_chars() {
+        for &c in DOUBLE_QUOTE_SPECIAL_CHARS {
+            let input = format!("a{}b", c);
+            let expected_inner = format!("a\\{}b", c);
+            let expected = format!("\"{}\"", expected_inner);
+            assert_eq!(quote_function_rust(&input, QuoteType::DoubleQuote), expected);
+        }
+    }
+
+    #[test]
     fn test_dequoting_function() {
         assert_eq!(dequoting_function_rust(r#"qwe\ asd"#), r#"qwe asd"#);
         assert_eq!(dequoting_function_rust(r#""qwe asd""#), r#"qwe asd"#);
@@ -591,6 +630,7 @@ mod tests {
     fn test_dequoting_function_harder() {
         assert_eq!(dequoting_function_rust(r#"qwe\"asdf"#), r#"qwe"asdf"#);
         assert_eq!(dequoting_function_rust(r#""qwe\"asdf""#), r#"qwe"asdf"#);
+        assert_eq!(dequoting_function_rust(r#""""#), r#""#);
     }
 
     #[test]
