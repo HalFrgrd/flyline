@@ -1,3 +1,4 @@
+use core::slice;
 use flash::lexer::{Lexer as FlashLexer, Token as FlashToken, TokenKind as FlashTokenKind};
 use std::collections::HashMap;
 
@@ -159,19 +160,77 @@ impl Token {
         }
     }
 
+    // meant to mimic the behavior of flash's deslash logic
+    fn deslash_str(s: &str) -> String {
+        let mut deslashed = String::new();
+        let mut chars = s.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                // If we see a backslash, we want to skip it and take the next character as a literal
+                if let Some(&next_char) = chars.peek() {
+                    deslashed.push(next_char);
+                    chars.next(); // consume the next character
+                } else {
+                    // If the backslash is the last character, we treat it as a literal backslash
+                    deslashed.push(c);
+
+                }
+            } else {
+                deslashed.push(c);
+            }
+        }
+
+        deslashed
+    }
+
     pub fn new_from_flash(
         flash_token: FlashToken,
         line_col_to_byte: &HashMap<(usize, usize), usize>,
+        source: &str,
     ) -> Self {
-        let kind = TokenKind::from(flash_token.clone());
+        let mut kind = TokenKind::from(flash_token.clone());
         let byte_pos = *line_col_to_byte
             .get(&(flash_token.position.line, flash_token.position.column))
             .unwrap_or(&0);
-        let byte_len = flash_token.value.len();
-        Token::new(kind, byte_pos, byte_len)
+
+        let mut true_byte_len = flash_token.value.len();
+        if let TokenKind::Word(ref mut s) = kind  {
+
+            // flash annoyingly doesn't include backslashes when they are escaping a character
+            // but we want to include them in our tokens, so we need to adjust the byte_len to include any backslashes that are escaping characters in the token
+            loop {
+                // TODO:  make safer
+                println!("Checking for backslashes in token: {:?}, byte_pos={}, true_byte_len={}", flash_token.value, byte_pos, true_byte_len);
+                if let Some(slice) = source.get(byte_pos..byte_pos + true_byte_len) {
+
+                    let deslashed = Token::deslash_str(slice);
+                    if deslashed == *s {
+                        break;
+                    }
+                    true_byte_len += 1;
+                } else {
+                    break;
+                }
+            }
+            true_byte_len = true_byte_len.min(source.len() - byte_pos);
+
+            *s = source[byte_pos..byte_pos + true_byte_len].to_string();
+        }
+
+        Token::new(kind, byte_pos, true_byte_len)
     }
 
     pub fn new_whitespace(s: &str, byte_pos: usize) -> Self {
+        if cfg!(test) {
+            if s.chars().any(|c| !c.is_whitespace() || c == '\n') {
+                panic!(
+                    "Whitespace token contains non-whitespace characters: {:?}",
+                    s
+                );
+            }
+        }
+
         Token {
             kind: TokenKind::WhiteSpace(s.to_string()),
             byte_pos,
@@ -207,7 +266,7 @@ impl Lexer {
                 break;
             }
             println!("Got flash token: {:?}", flash_token);
-            let token = Token::new_from_flash(flash_token, &line_col_to_char);
+            let token = Token::new_from_flash(flash_token, &line_col_to_char, input);
 
             if let Some(prev_token) = tokens.last() {
                 // prevent infinite loops on malformed input
@@ -313,7 +372,7 @@ mod tests {
     #[test]
     fn test_lexer_on_backslash_1() {
         let tokens = Lexer::new(r#"echo "asd\"#).tokens;
-        // println!("{:#?}", tokens);
+        println!("{:#?}", tokens);
         assert_eq!(tokens[2], Token::new(TokenKind::Quote, 5, 1));
         assert_eq!(tokens[3], Token::new(TokenKind::Word("asd\\".into()), 6, 4));
     }
@@ -321,7 +380,7 @@ mod tests {
     #[test]
     fn test_lexer_on_backslash_2() {
         let tokens = Lexer::new(r#"echo "asd\ "#).tokens;
-        // println!("{:#?}", tokens);
+        println!("{:#?}", tokens);
         assert_eq!(tokens[2], Token::new(TokenKind::Quote, 5, 1));
         assert_eq!(
             tokens[3],
@@ -332,7 +391,7 @@ mod tests {
     #[test]
     fn test_lexer_on_backslash_3() {
         let tokens = Lexer::new(r#"echo \""#).tokens;
-        // println!("{:#?}", tokens);
+        println!("{:#?}", tokens);
         assert_eq!(tokens[2], Token::new(TokenKind::Word("\\\"".into()), 5, 2));
     }
 
@@ -360,4 +419,16 @@ mod tests {
         );
         assert_eq!(tokens[2], Token::new(TokenKind::Word("foo\\".into()), 5, 4));
     }
+
+    #[test]
+    fn test_lexer_on_backslash_6() {
+        let tokens = Lexer::new(r#"echo \"foo"#).tokens;
+        println!("{:#?}", tokens);
+        assert_eq!(
+            tokens[2],
+            Token::new(TokenKind::Word(r#"\"foo"#.into()), 5, 5)
+        );
+    }
+
+    // TODO: try comments. ensure # isnt skipped
 }
