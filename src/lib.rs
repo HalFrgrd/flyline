@@ -20,6 +20,8 @@ mod prompt_manager;
 mod snake_animation;
 mod tab_completion_context;
 mod text_buffer;
+mod rush_sh_test;
+mod conch_parser_test;
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
