@@ -1,4 +1,3 @@
-use core::slice;
 use flash::lexer::{Lexer as FlashLexer, Token as FlashToken, TokenKind as FlashTokenKind};
 use std::collections::HashMap;
 
@@ -8,6 +7,7 @@ fn line_and_column_to_byte_pos(input: &str) -> HashMap<(usize, usize), usize> {
     let mut line_col_map = HashMap::new();
 
     for (byte_index, c) in input.char_indices() {
+        dbg!(byte_index, c, current_line, current_column);
         line_col_map.insert((current_line, current_column), byte_index);
 
         if c == '\n' {
@@ -192,7 +192,7 @@ impl Token {
         let mut kind = TokenKind::from(flash_token.clone());
         let byte_pos = *line_col_to_byte
             .get(&(flash_token.position.line, flash_token.position.column))
-            .unwrap_or(&0);
+            .unwrap();
 
         let mut true_byte_len = flash_token.value.len();
         if let TokenKind::Word(ref mut s) = kind  {
@@ -201,7 +201,6 @@ impl Token {
             // but we want to include them in our tokens, so we need to adjust the byte_len to include any backslashes that are escaping characters in the token
             loop {
                 // TODO:  make safer
-                println!("Checking for backslashes in token: {:?}, byte_pos={}, true_byte_len={}", flash_token.value, byte_pos, true_byte_len);
                 if let Some(slice) = source.get(byte_pos..byte_pos + true_byte_len) {
 
                     let deslashed = Token::deslash_str(slice);
@@ -265,8 +264,12 @@ impl Lexer {
             if flash_token.kind == flash::lexer::TokenKind::EOF {
                 break;
             }
-            println!("Got flash token: {:?}", flash_token);
+            println!("Got flash token: {:?} at line {}, column {} with value {:?}",
+                flash_token.kind, flash_token.position.line, flash_token.position.column, flash_token.value);
             let token = Token::new_from_flash(flash_token, &line_col_to_char, input);
+            if cfg!(test) {
+                println!("Got token: {:?} (byte pos: {}, byte len: {})", token.kind, token.byte_pos, token.byte_len);
+            }
 
             if let Some(prev_token) = tokens.last() {
                 // prevent infinite loops on malformed input
@@ -296,6 +299,8 @@ impl Lexer {
 
         // Append any final whitespace at the end of the input as a WhiteSpace token
         let last_token_end = tokens.last().map_or(0, |t| t.end_byte_pos());
+        dbg!(&tokens);
+        dbg!(last_token_end);
         if last_token_end < input.len() {
             let whitespace = &input[last_token_end..];
             tokens.push(Token::new_whitespace(whitespace, last_token_end));
@@ -428,6 +433,21 @@ mod tests {
             tokens[2],
             Token::new(TokenKind::Word(r#"\"foo"#.into()), 5, 5)
         );
+    }
+
+    #[test]
+    fn test_line_continuation() {
+        let input = "ls \\\n-la";
+        let tokens = Lexer::new(input).tokens;
+        println!("{:#?}", tokens);
+        assert_eq!(tokens[0], Token::new(TokenKind::Word("ls".into()), 0, 2));
+        assert_eq!(
+            tokens[1],
+            Token::new(TokenKind::WhiteSpace(" ".into()), 2, 1)
+        );
+        assert_eq!(tokens[2], Token::new(TokenKind::, 3, 2));
+        assert_eq!(tokens[5], Token::new(TokenKind::Word("-la".into()), 10, 3));
+        assert_eq!(tokens[6], Token::new(TokenKind::RParen, 13, 1));
     }
 
     // TODO: try comments. ensure # isnt skipped
