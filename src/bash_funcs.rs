@@ -447,9 +447,8 @@ pub fn quote_function_rust(s: &str, quote_type: QuoteType) -> String {
                 .collect();
 
             format!("\"{}\"", escaped)
-        },
-        QuoteType::Backslash => {
-            s
+        }
+        QuoteType::Backslash => s
             .chars()
             .map(|c| {
                 if c.is_whitespace() || BACKSLASH_SPECIAL_CHARS.contains(&c) {
@@ -458,7 +457,7 @@ pub fn quote_function_rust(s: &str, quote_type: QuoteType) -> String {
                     c.to_string()
                 }
             })
-            .collect()},
+            .collect(),
     }
 }
 
@@ -614,7 +613,10 @@ mod tests {
             let input = format!("a{}b", c);
             let expected_inner = format!("a\\{}b", c);
             let expected = format!("\"{}\"", expected_inner);
-            assert_eq!(quote_function_rust(&input, QuoteType::DoubleQuote), expected);
+            assert_eq!(
+                quote_function_rust(&input, QuoteType::DoubleQuote),
+                expected
+            );
         }
     }
 

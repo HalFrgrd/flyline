@@ -12,6 +12,7 @@ mod content_builder;
 mod cursor_animation;
 mod history;
 mod iter_first_last;
+mod lexer;
 mod logging;
 mod mouse_state;
 mod palette;

@@ -1,5 +1,3 @@
-use std::env::current_exe;
-
 use tree_sitter::{Node, Parser};
 use tree_sitter_bash;
 
