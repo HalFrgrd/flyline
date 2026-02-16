@@ -1,12 +1,29 @@
-use crate::lexer::{Lexer, Token, TokenKind};
+use flash::lexer::{Lexer, Token, TokenKind};
+
+
+    fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
+        let mut lexer = Lexer::new(input);
+        let mut tokens = Vec::new();
+
+        loop {
+            let token = lexer.next_token();
+            let is_eof = matches!(token.kind, TokenKind::EOF);
+            if is_eof {
+                break;
+            }
+            tokens.push(token);
+        }
+
+        tokens
+    }
+
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command
     // e.g. unclosed quotes, unclosed parens/braces/brackets, etc.
     // its ok if there are syntax errors, as long as the command is "complete"
 
-    let lexer = Lexer::new(buffer);
-    let tokens: &Vec<Token> = lexer.tokens();
+    let tokens: Vec<Token> = collect_tokens_include_whitespace(buffer);
 
     let mut nestings: Vec<TokenKind> = Vec::new();
 
@@ -35,7 +52,9 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             (TokenKind::RParen, TokenKind::CmdSubst) => true,
             (TokenKind::RParen, TokenKind::ProcessSubstIn) => true,
             (TokenKind::RParen, TokenKind::ProcessSubstOut) => true,
+            (TokenKind::RParen, TokenKind::ExtGlob(_)) => true,
             (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
+            (TokenKind::RBrace, TokenKind::LBrace) => true,
             (TokenKind::RParen, TokenKind::ArithSubst) // it needs two ))
                 if next_token.map_or(false, |t| t.kind == TokenKind::RParen) =>
             {
@@ -54,13 +73,21 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
         }
         };
 
-    if tokens.iter().rev().next().map_or(false, |token| {
-        matches!(token.kind, TokenKind::Pipe | TokenKind::And | TokenKind::Or)
-    }) {
-        // last_token_needs_more_input
-        log::debug!("Last token needs more input");
-        return false;
-    }
+    if let Some(last_token) = tokens.iter().rev().skip_while(|t| matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Comment)).next() {
+
+        match &last_token.kind {
+            TokenKind::Pipe | TokenKind::And | TokenKind::Or => {
+                return false;
+            }
+            TokenKind::Word(s) if s.trim().chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 => {
+                return false;
+            }
+            _ => {}
+        }
+    }    
+
+
+
 
     let mut toks = tokens.iter().peekable();
     loop {
@@ -68,8 +95,10 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             Some(t) => t,
             None => break,
         };
-        // log::debug!("Current token:");
-        // log::debug!("{:?}", &token.kind);
+
+        if cfg!(test) {
+            dbg!("Token: {:?}", token);
+        }
 
         match token.kind {
             TokenKind::LParen
@@ -125,10 +154,13 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
         }
     }
 
-    // dbg!("Final nestings:");
-    // dbg!(&nestings);
+    if cfg!(test) {
+    dbg!("Final nestings:");
+    dbg!(&nestings);
+    }
 
     nestings.is_empty()
+
 }
 
 #[cfg(test)]
@@ -333,7 +365,6 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[test]
     fn test_asdf() {
         assert_eq!(

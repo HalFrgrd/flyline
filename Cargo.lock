@@ -634,8 +634,6 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 [[package]]
 name = "flash"
 version = "0.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6940d5ea3c55ddefb3d5c9588ec784655aa7245538dd3676424cd8e36af27f24"
 dependencies = [
  "atty",
  "libc",
