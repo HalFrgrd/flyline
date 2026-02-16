@@ -1,22 +1,21 @@
 use flash::lexer::{Lexer, Token, TokenKind};
+use std::collections::VecDeque;
 
+fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
+    let mut lexer = Lexer::new(input);
+    let mut tokens = Vec::new();
 
-    fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
-        let mut lexer = Lexer::new(input);
-        let mut tokens = Vec::new();
-
-        loop {
-            let token = lexer.next_token();
-            let is_eof = matches!(token.kind, TokenKind::EOF);
-            if is_eof {
-                break;
-            }
-            tokens.push(token);
+    loop {
+        let token = lexer.next_token();
+        let is_eof = matches!(token.kind, TokenKind::EOF);
+        if is_eof {
+            break;
         }
-
-        tokens
+        tokens.push(token);
     }
 
+    tokens
+}
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command
@@ -26,6 +25,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     let tokens: Vec<Token> = collect_tokens_include_whitespace(buffer);
 
     let mut nestings: Vec<TokenKind> = Vec::new();
+    let mut heredocs: VecDeque<String> = VecDeque::new();
 
     let nested_opening_satisfied = |token: &Token, current_nesting: Option<&TokenKind>| -> bool {
         match token.kind {
@@ -69,27 +69,28 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             (TokenKind::Done, TokenKind::While) => true,
             (TokenKind::Done, TokenKind::Until) => true,
             (TokenKind::Fi, TokenKind::If) => true,
-            (TokenKind::Word(s), TokenKind::HereDoc(delim)) if s == delim => true,
-            (TokenKind::Word(s), TokenKind::HereDocDash(delim)) if s == delim => true,
             _ => false,
         }
         };
 
-    if let Some(last_token) = tokens.iter().rev().skip_while(|t| matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Comment)).next() {
-
+    if let Some(last_token) = tokens
+        .iter()
+        .rev()
+        .skip_while(|t| matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Comment))
+        .next()
+    {
         match &last_token.kind {
             TokenKind::Pipe | TokenKind::And | TokenKind::Or => {
                 return false;
             }
-            TokenKind::Word(s) if s.trim().chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 => {
+            TokenKind::Word(s)
+                if s.trim().chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 =>
+            {
                 return false;
             }
             _ => {}
         }
-    }    
-
-
-
+    }
 
     let mut toks = tokens.iter().peekable();
     loop {
@@ -102,7 +103,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             dbg!("Token: {:?}", token);
         }
 
-        match token.kind {
+        match &token.kind {
             TokenKind::LParen
             | TokenKind::LBrace
             | TokenKind::DoubleLBracket
@@ -121,14 +122,15 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             | TokenKind::For
             | TokenKind::While
             | TokenKind::Until
-            | TokenKind::HereDoc(_)
-            | TokenKind::HereDocDash(_)
                 if nested_opening_satisfied(&token, nestings.last()) =>
             {
                 // dbg!("Pushing nesting:");
                 // dbg!(&token.kind);
                 // dbg!(&nestings);
                 nestings.push(token.kind.clone());
+            }
+            TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
+                heredocs.push_back(delim.to_string());
             }
             TokenKind::RParen
             | TokenKind::RBrace
@@ -139,7 +141,6 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             | TokenKind::Esac
             | TokenKind::Done
             | TokenKind::Fi
-            | TokenKind::Word(_)
                 if nested_closing_satisfied(&token, nestings.last(), toks.peek()) =>
             {
                 // dbg!("Popping nesting:");
@@ -156,15 +157,20 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
             }
             _ => {}
         }
+
+        if let TokenKind::Word(word) = &token.kind {
+            if heredocs.front().is_some_and(|delim| delim == word) {
+                heredocs.pop_front();
+            }
+        }
     }
 
     if cfg!(test) {
-    dbg!("Final nestings:");
-    dbg!(&nestings);
+        dbg!("Final nestings:");
+        dbg!(&nestings);
     }
 
-    nestings.is_empty()
-
+    nestings.is_empty() && heredocs.is_empty()
 }
 
 #[cfg(test)]
