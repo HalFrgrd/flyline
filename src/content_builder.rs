@@ -6,7 +6,6 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
     Blank,
-    Normal,
     Ps1Prompt,
     Ps2Prompt,
     Command(usize),
