@@ -106,6 +106,37 @@ impl From<FlashToken> for TokenKind {
             FlashTokenKind::SingleQuote => TokenKind::SingleQuote,
             FlashTokenKind::Backtick => TokenKind::Backtick,
             FlashTokenKind::Comment => TokenKind::Comment,
+            FlashTokenKind::CmdSubst => TokenKind::CmdSubst,
+            FlashTokenKind::ArithSubst => TokenKind::ArithSubst,
+            FlashTokenKind::ArithCommand => TokenKind::ArithCommand,
+            FlashTokenKind::ParamExpansion => TokenKind::ParamExpansion,
+            FlashTokenKind::ParamExpansionOp(op) => TokenKind::ParamExpansionOp(op),
+            FlashTokenKind::ProcessSubstIn => TokenKind::ProcessSubstIn,
+            FlashTokenKind::ProcessSubstOut => TokenKind::ProcessSubstOut,
+            FlashTokenKind::HereDoc => TokenKind::HereDoc,
+            FlashTokenKind::HereDocDash => TokenKind::HereDocDash,
+            FlashTokenKind::HereDocContent(content) => TokenKind::HereDocContent(content),
+            FlashTokenKind::HereString => TokenKind::HereString,
+            FlashTokenKind::ExtGlob(c) => TokenKind::ExtGlob(c),
+            FlashTokenKind::If => TokenKind::If,
+            FlashTokenKind::Then => TokenKind::Then,
+            FlashTokenKind::Elif => TokenKind::Elif,
+            FlashTokenKind::Else => TokenKind::Else,
+            FlashTokenKind::Fi => TokenKind::Fi,
+            FlashTokenKind::Case => TokenKind::Case,
+            FlashTokenKind::Esac => TokenKind::Esac,
+            FlashTokenKind::Function => TokenKind::Function,
+            FlashTokenKind::For => TokenKind::For,
+            FlashTokenKind::While => TokenKind::While,
+            FlashTokenKind::Until => TokenKind::Until,
+            FlashTokenKind::Do => TokenKind::Do,
+            FlashTokenKind::Done => TokenKind::Done,
+            FlashTokenKind::In => TokenKind::In,
+            FlashTokenKind::Break => TokenKind::Break,
+            FlashTokenKind::Continue => TokenKind::Continue,
+            FlashTokenKind::Return => TokenKind::Return,
+            FlashTokenKind::DoubleLBracket => TokenKind::DoubleLBracket,
+            FlashTokenKind::DoubleRBracket => TokenKind::DoubleRBracket,
             // For simplicity, we treat all of these as Word tokens for now
             _ => TokenKind::Word(flash_token.value.clone()),
         }
@@ -114,22 +145,37 @@ impl From<FlashToken> for TokenKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
-    kind: TokenKind,
+    pub kind: TokenKind,
     byte_pos: usize, // byte position in the input string
     byte_len: usize, // length of the token in bytes
 }
 
 impl Token {
-    pub fn new(flash_token: FlashToken, line_col_to_byte: &HashMap<(usize, usize), usize>) -> Self {
+    pub fn new(kind: TokenKind, byte_pos: usize, byte_len: usize) -> Self {
+        Token {
+            kind,
+            byte_pos,
+            byte_len,
+        }
+    }
+
+    pub fn new_from_flash(
+        flash_token: FlashToken,
+        line_col_to_byte: &HashMap<(usize, usize), usize>,
+    ) -> Self {
         let kind = TokenKind::from(flash_token.clone());
         let byte_pos = *line_col_to_byte
             .get(&(flash_token.position.line, flash_token.position.column))
             .unwrap_or(&0);
         let byte_len = flash_token.value.len();
+        Token::new(kind, byte_pos, byte_len)
+    }
+
+    pub fn new_whitespace(s: &str, byte_pos: usize) -> Self {
         Token {
-            kind,
+            kind: TokenKind::WhiteSpace(s.to_string()),
             byte_pos,
-            byte_len,
+            byte_len: s.len(),
         }
     }
 
@@ -143,7 +189,7 @@ impl Token {
 }
 
 #[derive(Debug)]
-struct Lexer {
+pub struct Lexer {
     tokens: Vec<Token>,
 }
 
@@ -160,7 +206,8 @@ impl Lexer {
             if flash_token.kind == flash::lexer::TokenKind::EOF {
                 break;
             }
-            let token = Token::new(flash_token, &line_col_to_char);
+            println!("Got flash token: {:?}", flash_token);
+            let token = Token::new_from_flash(flash_token, &line_col_to_char);
 
             if let Some(prev_token) = tokens.last() {
                 // prevent infinite loops on malformed input
@@ -174,11 +221,7 @@ impl Lexer {
                 let token_start = token.start_byte_pos();
                 if token_start > prev_token_end {
                     let whitespace = &input[prev_token_end..token_start];
-                    tokens.push(Token {
-                        kind: TokenKind::WhiteSpace(whitespace.to_string()),
-                        byte_pos: prev_token_end,
-                        byte_len: whitespace.len(),
-                    });
+                    tokens.push(Token::new_whitespace(whitespace, prev_token_end));
                 }
             }
 
@@ -196,14 +239,14 @@ impl Lexer {
         let last_token_end = tokens.last().map_or(0, |t| t.end_byte_pos());
         if last_token_end < input.len() {
             let whitespace = &input[last_token_end..];
-            tokens.push(Token {
-                kind: TokenKind::WhiteSpace(whitespace.to_string()),
-                byte_pos: last_token_end,
-                byte_len: whitespace.len(),
-            });
+            tokens.push(Token::new_whitespace(whitespace, last_token_end));
         }
 
         Lexer { tokens }
+    }
+
+    pub fn tokens(&self) -> &Vec<Token> {
+        &self.tokens
     }
 }
 
@@ -219,57 +262,27 @@ mod tests {
     #[test]
     fn test_lexer_with_newlines() {
         let input = "echo foo\nbar\tbaz";
+        let tokens = Lexer::new(input).tokens;
+        assert_eq!(tokens[0], Token::new(TokenKind::Word("echo".into()), 0, 4));
         assert_eq!(
-            Lexer::new(input).tokens,
-            vec![
-                Token {
-                    kind: TokenKind::Word("echo".into()),
-                    byte_pos: 0,
-                    byte_len: 4
-                },
-                Token {
-                    kind: TokenKind::WhiteSpace(" ".into()),
-                    byte_pos: 4,
-                    byte_len: 1
-                },
-                Token {
-                    kind: TokenKind::Word("foo".into()),
-                    byte_pos: 5,
-                    byte_len: 3
-                },
-                Token {
-                    kind: TokenKind::Newline,
-                    byte_pos: 8,
-                    byte_len: 1
-                },
-                Token {
-                    kind: TokenKind::Word("bar".into()),
-                    byte_pos: 9,
-                    byte_len: 3
-                },
-                Token {
-                    kind: TokenKind::WhiteSpace("\t".into()),
-                    byte_pos: 12,
-                    byte_len: 1
-                },
-                Token {
-                    kind: TokenKind::Word("baz".into()),
-                    byte_pos: 13,
-                    byte_len: 3
-                },
-            ]
+            tokens[1],
+            Token::new(TokenKind::WhiteSpace(" ".into()), 4, 1)
         );
+        assert_eq!(tokens[2], Token::new(TokenKind::Word("foo".into()), 5, 3));
+        assert_eq!(tokens[3], Token::new(TokenKind::Newline, 8, 1));
+        assert_eq!(tokens[4], Token::new(TokenKind::Word("bar".into()), 9, 3));
+        assert_eq!(
+            tokens[5],
+            Token::new(TokenKind::WhiteSpace("\t".into()), 12, 1)
+        );
+        assert_eq!(tokens[6], Token::new(TokenKind::Word("baz".into()), 13, 3));
     }
 
     #[test]
     fn test_lexer_on_just_whitespace() {
         assert_eq!(
             Lexer::new("   \t  ").tokens,
-            vec![Token {
-                kind: TokenKind::WhiteSpace("   \t  ".into()),
-                byte_pos: 0,
-                byte_len: 6
-            },]
+            vec![Token::new(TokenKind::WhiteSpace("   \t  ".into()), 0, 6)]
         );
     }
 
@@ -278,29 +291,73 @@ mod tests {
         assert_eq!(
             Lexer::new("echo   \t  ").tokens,
             vec![
-                Token {
-                    kind: TokenKind::Word("echo".into()),
-                    byte_pos: 0,
-                    byte_len: 4
-                },
-                Token {
-                    kind: TokenKind::WhiteSpace("   \t  ".into()),
-                    byte_pos: 4,
-                    byte_len: 6
-                },
+                Token::new(TokenKind::Word("echo".into()), 0, 4),
+                Token::new(TokenKind::WhiteSpace("   \t  ".into()), 4, 6),
             ]
         );
     }
 
     #[test]
     fn test_preservers_whitespace_type() {
-        let input = "echo \t \t    foo";
+        let input = "echo \t \t    foo\n";
 
-        let token = Lexer::new(input).tokens[1].clone(); // The whitespace token
-        if let TokenKind::WhiteSpace(s) = &token.kind {
-            assert_eq!(s, " \t \t    ");
-        } else {
-            panic!("Expected a WhiteSpace token");
-        }
+        let tokens = Lexer::new(input).tokens;
+        println!("{:#?}", tokens);
+        assert_eq!(
+            tokens[1],
+            Token::new(TokenKind::WhiteSpace(" \t \t    ".into()), 4, 8)
+        );
+        assert_eq!(tokens[3], Token::new(TokenKind::Newline, 15, 1));
+    }
+
+    #[test]
+    fn test_lexer_on_backslash_1() {
+        let tokens = Lexer::new(r#"echo "asd\"#).tokens;
+        // println!("{:#?}", tokens);
+        assert_eq!(tokens[2], Token::new(TokenKind::Quote, 5, 1));
+        assert_eq!(tokens[3], Token::new(TokenKind::Word("asd\\".into()), 6, 4));
+    }
+
+    #[test]
+    fn test_lexer_on_backslash_2() {
+        let tokens = Lexer::new(r#"echo "asd\ "#).tokens;
+        // println!("{:#?}", tokens);
+        assert_eq!(tokens[2], Token::new(TokenKind::Quote, 5, 1));
+        assert_eq!(
+            tokens[3],
+            Token::new(TokenKind::Word("asd\\ ".into()), 6, 5)
+        );
+    }
+
+    #[test]
+    fn test_lexer_on_backslash_3() {
+        let tokens = Lexer::new(r#"echo \""#).tokens;
+        // println!("{:#?}", tokens);
+        assert_eq!(tokens[2], Token::new(TokenKind::Word("\\\"".into()), 5, 2));
+    }
+
+    #[test]
+    fn test_lexer_on_backslash_4() {
+        let tokens = Lexer::new(r#"echo asd\ foo"#).tokens;
+        println!("{:#?}", tokens);
+        assert_eq!(
+            tokens[1],
+            Token::new(TokenKind::WhiteSpace(" ".into()), 4, 1)
+        );
+        assert_eq!(
+            tokens[2],
+            Token::new(TokenKind::Word("asd\\ foo".into()), 5, 8)
+        );
+    }
+
+    #[test]
+    fn test_lexer_on_backslash_5() {
+        let tokens = Lexer::new(r#"echo foo\"#).tokens;
+        println!("{:#?}", tokens);
+        assert_eq!(
+            tokens[1],
+            Token::new(TokenKind::WhiteSpace(" ".into()), 4, 1)
+        );
+        assert_eq!(tokens[2], Token::new(TokenKind::Word("foo\\".into()), 5, 4));
     }
 }
