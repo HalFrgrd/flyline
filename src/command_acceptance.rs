@@ -1,303 +1,134 @@
-use tree_sitter::{Node, Parser};
-use tree_sitter_bash;
+use crate::lexer::{Lexer, Token, TokenKind};
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command
     // e.g. unclosed quotes, unclosed parens/braces/brackets, etc.
     // its ok if there are syntax errors, as long as the command is "complete"
 
-    // Handle empty input
-    if buffer.trim().is_empty() {
-        return true;
-    }
+    let lexer = Lexer::new(buffer);
+    let tokens: &Vec<Token> = lexer.tokens();
 
-    // Handle line continuations
-    if buffer
-        .trim_end()
-        .chars()
-        .rev()
-        .take_while(|c| *c == '\\')
-        .count()
-        % 2
-        == 1
-    {
-        return false;
-    }
+    let mut nestings: Vec<TokenKind> = Vec::new();
 
-    // Quick text-based checks for common incomplete patterns
-    if has_obvious_incomplete_patterns(buffer) {
-        if cfg!(test) {
-            println!("Buffer rejected by quick pattern checks");
-        }
-        return false;
-    }
-
-    let mut parser = Parser::new();
-    let language = tree_sitter_bash::LANGUAGE.into();
-    parser.set_language(&language).unwrap();
-
-    let tree = parser.parse(buffer, None).unwrap();
-    let root = tree.root_node();
-
-    // Use tree-sitter's missing node detection
-    !has_missing_nodes(&root)
-}
-
-fn has_obvious_incomplete_patterns(buffer: &str) -> bool {
-    let trimmed = buffer.trim_end();
-
-    // Check for trailing operators
-    if trimmed.ends_with('|') && !trimmed.ends_with("||") {
-        return true;
-    }
-    if trimmed.ends_with("||") || trimmed.ends_with("&&") {
-        return true;
-    }
-
-    // Remove comments before checking quotes (comments can contain unmatched quotes)
-    let buffer_without_comments = remove_comments(buffer);
-
-    // Simple quote counting (not perfect but catches most cases)
-    let single_quotes = buffer_without_comments
-        .chars()
-        .filter(|&c| c == '\'')
-        .count();
-    if single_quotes % 2 == 1 {
-        return true;
-    }
-
-    // Count unescaped double quotes
-    if count_unescaped_quotes(&buffer_without_comments) % 2 == 1 {
-        if cfg!(test) {
-            println!("Buffer rejected due to unescaped double quotes");
-        }
-        return true;
-    }
-
-    // Check for common unclosed structures
-    let open_parens = buffer.chars().filter(|&c| c == '(').count();
-    let close_parens = buffer.chars().filter(|&c| c == ')').count();
-    if open_parens > close_parens {
-        return true;
-    }
-
-    let open_braces = buffer.chars().filter(|&c| c == '{').count();
-    let close_braces = buffer.chars().filter(|&c| c == '}').count();
-    if open_braces > close_braces {
-        return true;
-    }
-
-    let open_brackets = buffer.chars().filter(|&c| c == '[').count();
-    let close_brackets = buffer.chars().filter(|&c| c == ']').count();
-    if open_brackets > close_brackets {
-        return true;
-    }
-
-    // Check for incomplete control structures
-    // TOOD this is wrong.
-    if has_incomplete_control_structure(buffer) {
-        if cfg!(test) {
-            println!("Buffer rejected due to incomplete control structures");
-        }
-        return true;
-    }
-
-    // Check for incomplete heredocs
-    if has_incomplete_heredoc(buffer) {
-        return true;
-    }
-
-    false
-}
-
-fn remove_comments(buffer: &str) -> String {
-    // Simple approach: remove everything after # that's not inside quotes
-    let lines: Vec<&str> = buffer.lines().collect();
-    let mut result_lines = Vec::new();
-
-    for line in lines {
-        let mut result_line = String::new();
-        let mut in_single_quote = false;
-        let mut in_double_quote = false;
-        let mut escaped = false;
-
-        for ch in line.chars() {
-            if escaped {
-                result_line.push(ch);
-                escaped = false;
-                continue;
-            }
-
-            if ch == '\\' {
-                result_line.push(ch);
-                escaped = true;
-                continue;
-            }
-
-            if !in_single_quote && !in_double_quote && ch == '#' {
-                // Start of comment - ignore rest of line
-                break;
-            }
-
-            if ch == '\'' && !in_double_quote {
-                in_single_quote = !in_single_quote;
-            } else if ch == '"' && !in_single_quote {
-                in_double_quote = !in_double_quote;
-            }
-
-            result_line.push(ch);
-        }
-
-        result_lines.push(result_line);
-    }
-
-    result_lines.join("\n")
-}
-
-fn has_incomplete_control_structure(buffer: &str) -> bool {
-    let trimmed = buffer.trim();
-
-    // Count control structure keywords
-    let if_count = count_word_occurrences(trimmed, "if");
-    let fi_count = count_word_occurrences(trimmed, "fi");
-    if if_count > fi_count {
-        return true;
-    }
-
-    let do_count = count_word_occurrences(trimmed, "do");
-    let done_count = count_word_occurrences(trimmed, "done");
-    if do_count > done_count {
-        return true;
-    }
-
-    let case_count = count_word_occurrences(trimmed, "case");
-    let esac_count = count_word_occurrences(trimmed, "esac");
-    if case_count > esac_count {
-        return true;
-    }
-
-    false
-}
-
-fn count_word_occurrences(text: &str, word: &str) -> usize {
-    // Simple word boundary detection
-    let mut count = 0;
-    let mut chars = text.char_indices().peekable();
-
-    while let Some((i, _)) = chars.next() {
-        if text[i..].starts_with(word) {
-            // Check if this is a word boundary
-            let is_start_boundary = i == 0
-                || !text
-                    .chars()
-                    .nth(i.saturating_sub(1))
-                    .unwrap_or(' ')
-                    .is_alphanumeric();
-            let end_pos = i + word.len();
-            let is_end_boundary = end_pos >= text.len()
-                || !text.chars().nth(end_pos).unwrap_or(' ').is_alphanumeric();
-
-            if is_start_boundary && is_end_boundary {
-                count += 1;
-                // Skip ahead to avoid overlapping matches
-                for _ in 0..word.len() {
-                    chars.next();
-                }
-            }
-        }
-    }
-    count
-}
-
-fn has_incomplete_heredoc(buffer: &str) -> bool {
-    // Look for all heredoc patterns and check if they're properly terminated
-    let mut pos = 0;
-
-    while let Some(heredoc_start) = buffer[pos..].find("<<") {
-        let absolute_start = pos + heredoc_start;
-        let after_heredoc = &buffer[absolute_start + 2..];
-
-        if let Some(first_newline) = after_heredoc.find('\n') {
-            let delimiter_line = after_heredoc[..first_newline].trim();
-            if !delimiter_line.is_empty() {
-                // Extract just the first delimiter from the line (handle multiple heredocs)
-                let delimiter = if let Some(space_or_redirect) =
-                    delimiter_line.find(|c: char| c.is_whitespace() || c == '<')
-                {
-                    delimiter_line[..space_or_redirect]
-                        .trim_start_matches('-')
-                        .trim()
+    let nested_opening_satisfied = |token: &Token, current_nesting: Option<&TokenKind>| -> bool {
+        match token.kind {
+            TokenKind::Backtick | TokenKind::Quote | TokenKind::SingleQuote => {
+                if Some(&token.kind) == current_nesting {
+                    // backtick or quote is acting as closer
+                    return false;
                 } else {
-                    delimiter_line.trim_start_matches('-').trim()
-                };
-
-                if !delimiter.is_empty() {
-                    // Look for the terminator after the first newline
-                    let content_start = absolute_start + 2 + first_newline + 1;
-                    let remaining_content = &buffer[content_start..];
-
-                    if !remaining_content.contains(&format!("\n{}", delimiter))
-                        && !remaining_content.starts_with(delimiter)
-                        && !remaining_content.starts_with(&format!("{}\n", delimiter))
-                    {
-                        return true;
-                    }
+                    return true;
                 }
             }
-        } else {
-            // No newline after heredoc operator
-            return true;
+            _ => true,
         }
+    };
 
-        pos = absolute_start + 2;
+    let nested_closing_satisfied =
+        |token: &Token, current_nesting: Option<&TokenKind>, next_token: Option<&&Token>| {
+            let current_nesting = match current_nesting {
+                Some(v) => v,
+                None => return false,
+            };
+            match (&token.kind, current_nesting) {
+            (TokenKind::RParen, TokenKind::LParen) => true,
+            (TokenKind::RParen, TokenKind::CmdSubst) => true,
+            (TokenKind::RParen, TokenKind::ProcessSubstIn) => true,
+            (TokenKind::RParen, TokenKind::ProcessSubstOut) => true,
+            (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
+            (TokenKind::RParen, TokenKind::ArithSubst) // it needs two ))
+                if next_token.map_or(false, |t| t.kind == TokenKind::RParen) =>
+            {
+                true
+            }
+            (TokenKind::Backtick, TokenKind::Backtick) => true,
+            (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
+            (TokenKind::Quote, TokenKind::Quote) => true,
+            (TokenKind::SingleQuote, TokenKind::SingleQuote) => true,
+            (TokenKind::Esac, TokenKind::Case) => true,
+            (TokenKind::Done, TokenKind::For) => true,
+            (TokenKind::Done, TokenKind::While) => true,
+            (TokenKind::Done, TokenKind::Until) => true,
+            (TokenKind::Fi, TokenKind::If) => true,
+            _ => false,
+        }
+        };
+
+    if tokens.iter().rev().next().map_or(false, |token| {
+        matches!(token.kind, TokenKind::Pipe | TokenKind::And | TokenKind::Or)
+    }) {
+        // last_token_needs_more_input
+        log::debug!("Last token needs more input");
+        return false;
     }
 
-    false
-}
+    let mut toks = tokens.iter().peekable();
+    loop {
+        let token = match toks.next() {
+            Some(t) => t,
+            None => break,
+        };
+        // log::debug!("Current token:");
+        // log::debug!("{:?}", &token.kind);
 
-fn has_missing_nodes(node: &Node) -> bool {
-    if node.is_missing() {
-        if cfg!(test) {
-            println!(
-                "Missing node: {:?} at position {:?}",
-                node.kind(),
-                node.start_position()
-            );
+        match token.kind {
+            TokenKind::LParen
+            | TokenKind::LBrace
+            | TokenKind::DoubleLBracket
+            | TokenKind::Quote
+            | TokenKind::SingleQuote
+            | TokenKind::Backtick
+            | TokenKind::CmdSubst
+            | TokenKind::ArithSubst
+            | TokenKind::ArithCommand
+            | TokenKind::ParamExpansion
+            | TokenKind::ProcessSubstIn
+            | TokenKind::ProcessSubstOut
+            | TokenKind::ExtGlob(_)
+            | TokenKind::If
+            | TokenKind::Case
+            | TokenKind::For
+            | TokenKind::While
+            | TokenKind::Until
+            | TokenKind::HereDoc
+                if nested_opening_satisfied(&token, nestings.last()) =>
+            {
+                // dbg!("Pushing nesting:");
+                // dbg!(&token.kind);
+                // dbg!(&nestings);
+                nestings.push(token.kind.clone());
+            }
+            TokenKind::RParen
+            | TokenKind::RBrace
+            | TokenKind::Backtick
+            | TokenKind::DoubleRBracket
+            | TokenKind::Quote
+            | TokenKind::SingleQuote
+            | TokenKind::Esac
+            | TokenKind::Done
+            | TokenKind::Fi
+                if nested_closing_satisfied(&token, nestings.last(), toks.peek()) =>
+            {
+                // dbg!("Popping nesting:");
+                // dbg!(&token.kind);
+                // dbg!(&nestings);
+                let kind = nestings.pop().unwrap();
+                if kind == TokenKind::ArithSubst {
+                    assert!(
+                        toks.peek().unwrap().kind == TokenKind::RParen,
+                        "expected two RParen tokens"
+                    );
+                    toks.next(); // consume the extra RParen
+                }
+            }
+            _ => {}
         }
-        return true;
     }
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if has_missing_nodes(&child) {
-            return true;
-        }
-    }
+    // dbg!("Final nestings:");
+    // dbg!(&nestings);
 
-    false
-}
-
-fn count_unescaped_quotes(s: &str) -> usize {
-    let mut count = 0;
-    let mut escaped = false;
-
-    for ch in s.chars() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-
-        if ch == '\\' {
-            escaped = true;
-            continue;
-        }
-
-        if ch == '"' {
-            count += 1;
-        }
-    }
-
-    count
+    nestings.is_empty()
 }
 
 #[cfg(test)]
