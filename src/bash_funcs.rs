@@ -312,7 +312,6 @@ pub fn run_autocomplete_compspec(
         bash_symbols::rl_completion_quote_character =
             quote_type.map(|q| q.into_byte()).unwrap_or(0) as std::ffi::c_int;
         bash_symbols::rl_completion_found_quote = if quote_type.is_some() { 1 } else { 0 };
-        bash_symbols::rl_char_is_quoted_p = Some(bash_symbols::char_is_quoted); // TODO
         bash_symbols::rl_filename_quoting_function = Some(quoting_function_c);
         bash_symbols::rl_filename_dequoting_function = Some(dequoting_function_c);
 

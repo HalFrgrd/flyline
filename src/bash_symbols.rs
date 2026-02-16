@@ -211,13 +211,6 @@ unsafe extern "C" {
     #[link_name = "rl_completion_quote_character"]
     pub static mut rl_completion_quote_character: c_int;
 
-    // int char_is_quoted (char *string, int eindex)
-    pub fn char_is_quoted(string: *const c_char, eindex: c_int) -> c_int;
-
-    // typedef int rl_linebuf_func_t (char *, int);
-    // rl_linebuf_func_t *rl_char_is_quoted_p
-    pub static mut rl_char_is_quoted_p: Option<unsafe extern "C" fn(*const c_char, c_int) -> c_int>;
-
     // typedef char *rl_dequote_func_t (char *, int);
     // rl_dequote_func_t *rl_filename_dequoting_function
     pub static mut rl_filename_dequoting_function:
@@ -227,9 +220,6 @@ unsafe extern "C" {
     // rl_quote_func_t *rl_filename_quoting_function
     pub static mut rl_filename_quoting_function:
         Option<extern "C" fn(*const c_char, c_int, *const c_char) -> *mut c_char>;
-
-    // void initialize_readline (void)
-    // pub fn initialize_readline();
 
     // alias.h
     // alias_t **all_aliases (void);
