@@ -206,6 +206,16 @@ mod tests {
     }
 
     #[test]
+    fn test_interleaved_heredocs_fifo() {
+        // Delimiters must close in the order they appear (FIFO), not nested.
+        let interleaved = "cat <<A <<-B\nline1\nB\nline2\nA\n";
+        assert_eq!(will_bash_accept_buffer(interleaved), false);
+
+        let ordered = "cat <<A <<-B\nline1\nA\nline2\nB\n";
+        assert_eq!(will_bash_accept_buffer(ordered), true);
+    }
+
+    #[test]
     fn test_if_then_fi() {
         assert_eq!(will_bash_accept_buffer("if true; then echo hi"), false);
         assert_eq!(will_bash_accept_buffer("if true; then echo hi; fi"), true);
