@@ -1,5 +1,6 @@
-use crate::lexing::collect_tokens_include_whitespace;
 use flash::lexer::{Token, TokenKind};
+
+use crate::dparser::{DParser, ToInclusiveRange};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
@@ -21,16 +22,6 @@ pub struct CompletionContext<'a> {
     pub context_until_cursor: &'a str,
     pub word_under_cursor: &'a str,
     pub comp_type: CompType,
-}
-
-trait ToInclusiveRange {
-    fn to_inclusive(&self) -> core::ops::RangeInclusive<usize>;
-}
-
-impl ToInclusiveRange for std::ops::Range<usize> {
-    fn to_inclusive(&self) -> core::ops::RangeInclusive<usize> {
-        self.start..=self.end
-    }
 }
 
 trait IsSubRange {
@@ -102,68 +93,15 @@ pub fn get_completion_context<'a>(
     buffer: &'a str,
     cursor_byte_pos: usize,
 ) -> CompletionContext<'a> {
-    let tok_vec = collect_tokens_include_whitespace(buffer);
+    let mut parser = DParser::from(buffer);
 
-    // Single reverse iterator: first find cursor_node, then continue to find separator
-    let mut rev_iter = tok_vec.iter().enumerate().rev();
+    parser.walk(Some(cursor_byte_pos));
 
-    // Phase 1: find the cursor token — the first (from the right) whose byte range
-    // inclusively contains cursor_byte_pos, skipping whitespace when the next
-    // token also contains it.
-    let cursor_token_idx = rev_iter
-        .find(|(idx, token)| {
-            if !token.byte_range().to_inclusive().contains(&cursor_byte_pos) {
-                return false;
-            }
-            if matches!(token.kind, TokenKind::Whitespace(_)) {
-                if let Some(next_token) = tok_vec.get(idx + 1) {
-                    if next_token
-                        .byte_range()
-                        .to_inclusive()
-                        .contains(&cursor_byte_pos)
-                    {
-                        return false;
-                    }
-                }
-            }
-            true
-        })
-        .map(|(idx, _)| idx)
-        .expect("Should find a token containing cursor");
-
-    let cursor_node = &tok_vec[cursor_token_idx];
-
-    println!("Cursor node: {:?}", cursor_node);
-
-    // TODO: when walking, we need to keep track of if we have entered a subexpression.
-    // If we enter one, we need to keep parsing until it closes.
-
-    let is_token_separator = |token: &Token, going_left: bool| match token.kind {
-        TokenKind::Pipe
-        | TokenKind::Semicolon
-        | TokenKind::DoubleSemicolon
-        | TokenKind::And
-        | TokenKind::Background
-        | TokenKind::Or => true,
-
-        _ => false,
-    };
-
-    // Phase 2: continue the same reversed iterator to find a command separator
-    let context_start_idx = rev_iter
-        .find(|(_, token)| is_token_separator(token, true))
-        .map(|(idx, _)| idx)
-        .unwrap_or(0);
-
-    let context_end_idx = tok_vec
+    let context_tokens = parser.get_current_command_tokens();
+    let cursor_node = context_tokens
         .iter()
-        .skip(cursor_token_idx)
-        .enumerate()
-        .find(|(_, token)| is_token_separator(token, false))
-        .map(|(idx, _)| idx)
-        .unwrap_or(tok_vec.len());
-
-    let context_tokens = &tok_vec[context_start_idx..context_end_idx];
+        .find(|t| t.byte_range().to_inclusive().contains(&cursor_byte_pos))
+        .unwrap();
 
     let mut word_under_cursor_range = cursor_node.byte_range();
     assert!(
