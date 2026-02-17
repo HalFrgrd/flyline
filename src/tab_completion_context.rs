@@ -1,5 +1,5 @@
-use tree_sitter::{Node, Parser};
-use tree_sitter_bash;
+use crate::lexing::collect_tokens_include_whitespace;
+use flash::lexer::{Token, TokenKind};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
@@ -98,244 +98,90 @@ impl<'a> CompletionContext<'a> {
     }
 }
 
-// Very useful
-// https://tree-sitter.github.io/tree-sitter/7-playground.html
-
 pub fn get_completion_context<'a>(
     buffer: &'a str,
     cursor_byte_pos: usize,
 ) -> CompletionContext<'a> {
-    let mut parser = Parser::new();
-    let language = tree_sitter_bash::LANGUAGE.into();
-    parser
-        .set_language(&language)
-        .expect("Error loading bash grammar");
+    let tok_vec = collect_tokens_include_whitespace(buffer);
 
-    let tree = parser.parse(buffer, None).expect("Failed to parse buffer");
-    let root_node = tree.root_node();
+    // Single reverse iterator: first find cursor_node, then continue to find separator
+    let mut rev_iter = tok_vec.iter().enumerate().rev();
 
-    // Find the deepest node that the cursor is part of
-    let node_closest_to_cursor = find_cursor_node(&root_node, cursor_byte_pos);
+    // Phase 1: find the cursor token — the first (from the right) whose byte range
+    // inclusively contains cursor_byte_pos, skipping whitespace when the next
+    // token also contains it.
+    let cursor_token_idx = rev_iter
+        .find(|(idx, token)| {
+            if !token.byte_range().contains(&cursor_byte_pos) {
+                return false;
+            }
+            if matches!(token.kind, TokenKind::Whitespace(_)) {
+                if let Some(next_token) = tok_vec.get(idx + 1) {
+                    if next_token.byte_range().contains(&cursor_byte_pos) {
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .map(|(idx, _)| idx)
+        .expect("Should find a token containing cursor");
 
-    let word_under_cursor_range = if node_closest_to_cursor
-        .byte_range()
-        .to_inclusive()
-        .contains(&cursor_byte_pos)
-    {
-        let cursor_at_end_of_node = cursor_byte_pos == node_closest_to_cursor.byte_range().end;
-        let cursor_on_whitespace = buffer
-            .char_indices()
-            .any(|(i, c)| i == cursor_byte_pos && c.is_whitespace())
-            || (cursor_byte_pos >= buffer.len()
-                && buffer.chars().last().map_or(false, |c| c.is_whitespace()));
+    let cursor_node = &tok_vec[cursor_token_idx];
 
-        // If cursor is on whitespace but at the end of a word node, we still consider it part of that word
-        // This fixes the case: "cd fo| bar" where cursor is right after "fo"
-        let is_word_like_node = node_closest_to_cursor.is_error()
-            || matches!(
-                node_closest_to_cursor.kind(),
-                "word" | "concatenation" | "string" | "simple_expansion"
-            );
+    println!("Cursor node: {:?}", cursor_node);
 
-        if cursor_on_whitespace && !(cursor_at_end_of_node && is_word_like_node) {
-            cursor_byte_pos..cursor_byte_pos
-        } else {
-            node_closest_to_cursor.byte_range()
-        }
-    } else {
-        cursor_byte_pos..cursor_byte_pos
-    };
-    let word_under_cursor = &buffer[word_under_cursor_range.clone()];
+    // Phase 2: continue the same reversed iterator to find a command separator
+    let context_start_idx = rev_iter
+        .find(|(_, token)| {
+            matches!(
+                token.kind,
+                TokenKind::Pipe
+                    | TokenKind::Semicolon
+                    | TokenKind::DoubleSemicolon
+                    | TokenKind::And
+                    | TokenKind::Background
+                    | TokenKind::Or
+            )
+        })
+        .map(|(idx, _)| idx)
+        .unwrap_or(0);
 
-    if cfg!(test) {
-        dbg!(&cursor_byte_pos);
-        dbg!(&node_closest_to_cursor);
-        dbg!(&word_under_cursor_range);
-        dbg!(&word_under_cursor);
-    }
+    let context_end_idx = tok_vec
+        .iter()
+        .skip(cursor_token_idx)
+        .enumerate()
+        .find(|(_, token)| {
+            matches!(
+                token.kind,
+                TokenKind::Pipe
+                    | TokenKind::Semicolon
+                    | TokenKind::DoubleSemicolon
+                    | TokenKind::And
+                    | TokenKind::Background
+                    | TokenKind::Or
+            )
+        })
+        .map(|(idx, _)| idx)
+        .unwrap_or(tok_vec.len());
 
-    // Find the command context for this cursor position
-    let comp_context_range = {
-        let comp_context_node = find_comp_context_from_cursor(&node_closest_to_cursor);
-        let comp_context_range = trim_node(&comp_context_node, cursor_byte_pos);
-        assert!(comp_context_range.is_sub_range(&comp_context_node.byte_range()));
+    let context_tokens = &tok_vec[context_start_idx..context_end_idx];
 
-        (comp_context_range.start.min(word_under_cursor_range.start))
-            ..(comp_context_range.end.max(word_under_cursor_range.end))
-    };
-
-    if cfg!(test) {
-        dbg!(&comp_context_range);
-        dbg!(&buffer[comp_context_range.clone()]);
-    }
-
+    let word_under_cursor_range = cursor_node.byte_range();
     assert!(
         word_under_cursor_range
             .to_inclusive()
             .contains(&cursor_byte_pos)
     );
-    assert!(word_under_cursor_range.is_sub_range(&comp_context_range));
+    let comp_context_range = context_tokens.first().unwrap().byte_range().start
+        ..context_tokens.last().unwrap().byte_range().end;
 
     let context_until_cursor = &buffer[comp_context_range.start..cursor_byte_pos];
     let context = &buffer[comp_context_range];
 
+    let word_under_cursor = &buffer[word_under_cursor_range];
+
     CompletionContext::new(buffer, context_until_cursor, context, word_under_cursor)
-}
-
-fn find_cursor_node<'a>(node: &Node<'a>, cursor_byte_pos: usize) -> Node<'a> {
-    if node.kind() == "simple_expansion" {
-        // Special case: if we're in a simple_expansion, we want to return that node
-        return *node;
-    }
-
-    // Check children to find the deepest node containing the cursor
-    for child in node.children(&mut node.walk()) {
-        // Consider:      0123456789
-        // Example:       git ad
-        // cursors at :       ███     (byte positions 4,5,6) are considered to act on `ad`
-        // `ad` byte range is [4,6) so convert to inclusive for contains check
-        if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
-            if node.is_error() && child.kind() == "string_content" {
-                // Special case: if we're in an unterminated string, we want to return child with the starting double quote
-                // See example: test_word_with_double_quote_1
-                return *node;
-            }
-            return find_cursor_node(&child, cursor_byte_pos);
-        }
-    }
-
-    // No child contains the cursor, so this is the deepest node
-    *node
-}
-
-fn find_comp_context_from_cursor<'tree>(cursor_node: &Node<'tree>) -> Node<'tree> {
-    // Returns the node or a parent
-    let mut current_node = *cursor_node;
-
-    // Traverse up the tree to find the appropriate command context
-    loop {
-        if cfg!(test) {
-            dbg!(&current_node);
-            dbg!(&current_node.parent());
-        }
-
-        match current_node.kind() {
-            "test_command" => {
-                return current_node;
-            }
-            _ => {}
-        }
-
-        let parent = match current_node.parent() {
-            Some(p) => p,
-            None => {
-                return current_node;
-            }
-        };
-
-        match parent.kind() {
-            "command" => {
-                return parent;
-            }
-
-            "program"
-            | "pipeline"
-            | "command_substitution"
-            | "test_command"
-            | "arithmetic_expansion"
-            | "expansion"
-            | "process_substitution"
-                if current_node.is_named() && !current_node.is_error() =>
-            {
-                return current_node;
-            }
-
-            "command_substitution"
-            | "test_command"
-            | "arithmetic_expansion"
-            | "expansion"
-            | "process_substitution"
-                if !current_node.is_named() && !current_node.is_error() =>
-            {
-                return parent;
-            }
-
-            _ => {
-                current_node = parent;
-            }
-        }
-    }
-}
-
-fn trim_node(node: &Node, cursor_byte_pos: usize) -> core::ops::Range<usize> {
-    if node.kind() != "command" {
-        return node.byte_range();
-    }
-
-    let mut start = node.start_byte();
-
-    // Determine the start of the "real" command by skipping leading variable assignments.
-    for child in node.children(&mut node.walk()) {
-        if child.kind() == "variable_assignment" {
-            if child.byte_range().to_inclusive().contains(&cursor_byte_pos) {
-                // cursor is inside the assignment, so return the assignment as the command
-                return child.byte_range();
-            } else if child.end_byte() < cursor_byte_pos {
-                // skip leading assignments
-                start = child.end_byte();
-                if cfg!(test) {
-                    println!("Skipping leading assignment, new start: {}", start);
-                }
-            }
-        } else {
-            break;
-        }
-    }
-
-    if cfg!(test) {
-        dbg!(&node);
-        dbg!(&start);
-        println!("first child for byte {}", start);
-        dbg!(node.first_child_for_byte(start));
-    }
-
-    match node.first_child_for_byte(start) {
-        Some(child) => {
-            if cfg!(test) {
-                println!("Found first child for byte {}", start);
-                dbg!(&child);
-            }
-
-            if (child.start_byte()..=node.end_byte()).contains(&cursor_byte_pos) {
-                if cfg!(test) {
-                    println!(
-                        "Cursor byte pos {} is within command bounds {}-{}",
-                        cursor_byte_pos,
-                        child.start_byte(),
-                        node.end_byte()
-                    );
-                }
-                child.start_byte()..node.end_byte()
-            } else {
-                if cfg!(test) {
-                    println!(
-                        "Cursor byte pos {} is NOT within command bounds {}-{}, returning cursor pos as both start and end",
-                        cursor_byte_pos,
-                        child.start_byte(),
-                        node.end_byte()
-                    );
-                }
-                cursor_byte_pos..cursor_byte_pos
-            }
-        }
-        _ => {
-            if cfg!(test) {
-                println!("No child found for byte {}", start);
-            }
-
-            start..start
-        }
-    }
 }
 
 #[cfg(test)]

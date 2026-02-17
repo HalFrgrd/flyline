@@ -1,21 +1,6 @@
-use flash::lexer::{Lexer, Token, TokenKind};
+use crate::lexing::collect_tokens_include_whitespace;
+use flash::lexer::{Token, TokenKind};
 use std::collections::VecDeque;
-
-fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
-    let mut lexer = Lexer::new(input);
-    let mut tokens = Vec::new();
-
-    loop {
-        let token = lexer.next_token();
-        let is_eof = matches!(token.kind, TokenKind::EOF);
-        if is_eof {
-            break;
-        }
-        tokens.push(token);
-    }
-
-    tokens
-}
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command
@@ -25,6 +10,7 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     let tokens: Vec<Token> = collect_tokens_include_whitespace(buffer);
 
     let mut nestings: Vec<TokenKind> = Vec::new();
+    // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
     let mut heredocs: VecDeque<String> = VecDeque::new();
 
     let nested_opening_satisfied = |token: &Token, current_nesting: Option<&TokenKind>| -> bool {
