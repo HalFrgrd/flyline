@@ -26,8 +26,6 @@ tree-sitter-bash = "0.25.1"
 tree-sitter-highlight = "0.26.5"
 fuzzy-matcher = "0.3.7"
 flash = {path = "../flash"}
-rush-sh = "0.8.0"
-conch-parser = "0.1.1"
 
 [dependencies.crossterm]
 version = "0.29.0"
