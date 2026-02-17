@@ -1,6 +1,5 @@
-use crate::lexing::collect_tokens_include_whitespace;
+use crate::dparser::{DParser, collect_tokens_include_whitespace};
 use flash::lexer::{Token, TokenKind};
-use std::collections::VecDeque;
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command
@@ -8,56 +7,6 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // its ok if there are syntax errors, as long as the command is "complete"
 
     let tokens: Vec<Token> = collect_tokens_include_whitespace(buffer);
-
-    let mut nestings: Vec<TokenKind> = Vec::new();
-    // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
-    let mut heredocs: VecDeque<String> = VecDeque::new();
-
-    let nested_opening_satisfied = |token: &Token, current_nesting: Option<&TokenKind>| -> bool {
-        match token.kind {
-            TokenKind::Backtick | TokenKind::Quote | TokenKind::SingleQuote => {
-                if Some(&token.kind) == current_nesting {
-                    // backtick or quote is acting as closer
-                    return false;
-                } else {
-                    return true;
-                }
-            }
-            _ => true,
-        }
-    };
-
-    let nested_closing_satisfied =
-        |token: &Token, current_nesting: Option<&TokenKind>, next_token: Option<&&Token>| {
-            let current_nesting = match current_nesting {
-                Some(v) => v,
-                None => return false,
-            };
-            match (&token.kind, current_nesting) {
-            (TokenKind::RParen, TokenKind::LParen) => true,
-            (TokenKind::RParen, TokenKind::CmdSubst) => true,
-            (TokenKind::RParen, TokenKind::ProcessSubstIn) => true,
-            (TokenKind::RParen, TokenKind::ProcessSubstOut) => true,
-            (TokenKind::RParen, TokenKind::ExtGlob(_)) => true,
-            (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
-            (TokenKind::RBrace, TokenKind::LBrace) => true,
-            (TokenKind::RParen, TokenKind::ArithSubst) // it needs two ))
-                if next_token.map_or(false, |t| t.kind == TokenKind::RParen) =>
-            {
-                true
-            }
-            (TokenKind::Backtick, TokenKind::Backtick) => true,
-            (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
-            (TokenKind::Quote, TokenKind::Quote) => true,
-            (TokenKind::SingleQuote, TokenKind::SingleQuote) => true,
-            (TokenKind::Esac, TokenKind::Case) => true,
-            (TokenKind::Done, TokenKind::For) => true,
-            (TokenKind::Done, TokenKind::While) => true,
-            (TokenKind::Done, TokenKind::Until) => true,
-            (TokenKind::Fi, TokenKind::If) => true,
-            _ => false,
-        }
-        };
 
     if let Some(last_token) = tokens
         .iter()
@@ -78,85 +27,10 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
         }
     }
 
-    let mut toks = tokens.iter().peekable();
-    loop {
-        let token = match toks.next() {
-            Some(t) => t,
-            None => break,
-        };
+    let mut parser = DParser::new(tokens);
+    parser.walk_to_end();
 
-        if cfg!(test) {
-            dbg!("Token: {:?}", token);
-        }
-
-        match &token.kind {
-            TokenKind::LBrace
-            // | TokenKind::LParen
-            | TokenKind::DoubleLBracket
-            | TokenKind::Quote
-            | TokenKind::SingleQuote
-            | TokenKind::Backtick
-            | TokenKind::CmdSubst
-            | TokenKind::ArithSubst
-            | TokenKind::ArithCommand
-            | TokenKind::ParamExpansion
-            | TokenKind::ProcessSubstIn
-            | TokenKind::ProcessSubstOut
-            | TokenKind::ExtGlob(_)
-            | TokenKind::If
-            | TokenKind::Case
-            | TokenKind::For
-            | TokenKind::While
-            | TokenKind::Until
-                if nested_opening_satisfied(&token, nestings.last()) =>
-            {
-                // dbg!("Pushing nesting:");
-                // dbg!(&token.kind);
-                // dbg!(&nestings);
-                nestings.push(token.kind.clone());
-            }
-            TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
-                heredocs.push_back(delim.to_string());
-            }
-            TokenKind::RParen
-            | TokenKind::RBrace
-            | TokenKind::Backtick
-            | TokenKind::DoubleRBracket
-            | TokenKind::Quote
-            | TokenKind::SingleQuote
-            | TokenKind::Esac
-            | TokenKind::Done
-            | TokenKind::Fi
-                if nested_closing_satisfied(&token, nestings.last(), toks.peek()) =>
-            {
-                // dbg!("Popping nesting:");
-                // dbg!(&token.kind);
-                // dbg!(&nestings);
-                let kind = nestings.pop().unwrap();
-                if kind == TokenKind::ArithSubst {
-                    assert!(
-                        toks.peek().unwrap().kind == TokenKind::RParen,
-                        "expected two RParen tokens"
-                    );
-                    toks.next(); // consume the extra RParen
-                }
-            }
-            _ => {}
-        }
-
-        if let TokenKind::Word(word) = &token.kind {
-            if heredocs.front().is_some_and(|delim| delim == word) {
-                heredocs.pop_front();
-            }
-        }
-    }
-
-    if cfg!(test) {
-        dbg!("Final nestings:");
-        dbg!(&nestings);
-    }
-
-    nestings.is_empty() && heredocs.is_empty()
+    !parser.needs_more_input()
 }
 
 #[cfg(test)]
@@ -376,8 +250,8 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("echo }"), true);
         assert_eq!(will_bash_accept_buffer("echo ]"), true);
 
-        // These are accepted by bash but are harder to analyse since they might affect 
-        // nesting levels. e.g this wont be accepted: function abc { 
+        // These are accepted by bash but are harder to analyse since they might affect
+        // nesting levels. e.g this wont be accepted: function abc {
         // assert_eq!(will_bash_accept_buffer("echo {"), true);
         // assert_eq!(will_bash_accept_buffer("echo ["), true);
         // assert_eq!(will_bash_accept_buffer("echo [["), true);
