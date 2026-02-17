@@ -90,8 +90,8 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
         }
 
         match &token.kind {
-            TokenKind::LParen
-            | TokenKind::LBrace
+            TokenKind::LBrace
+            // | TokenKind::LParen
             | TokenKind::DoubleLBracket
             | TokenKind::Quote
             | TokenKind::SingleQuote
@@ -372,12 +372,22 @@ mod tests {
     }
 
     #[test]
-    fn test_asdf() {
-        assert_eq!(
-            will_bash_accept_buffer("gcm \"no history suggestion if empty\""),
-            true
-        );
+    fn test_unrecognised_tokens() {
+        assert_eq!(will_bash_accept_buffer("echo }"), true);
+        assert_eq!(will_bash_accept_buffer("echo ]"), true);
+
+        // These are accepted by bash but are harder to analyse since they might affect 
+        // nesting levels. e.g this wont be accepted: function abc { 
+        // assert_eq!(will_bash_accept_buffer("echo {"), true);
+        // assert_eq!(will_bash_accept_buffer("echo ["), true);
+        // assert_eq!(will_bash_accept_buffer("echo [["), true);
+        // assert_eq!(will_bash_accept_buffer("echo {{"), true);
     }
 
     // TODO test ones that will be syntax errors but complete commands
+    #[test]
+    fn test_syntax_errors() {
+        assert_eq!(will_bash_accept_buffer("echo ("), true);
+        assert_eq!(will_bash_accept_buffer("echo )"), true);
+    }
 }

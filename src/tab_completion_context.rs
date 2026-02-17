@@ -112,12 +112,16 @@ pub fn get_completion_context<'a>(
     // token also contains it.
     let cursor_token_idx = rev_iter
         .find(|(idx, token)| {
-            if !token.byte_range().contains(&cursor_byte_pos) {
+            if !token.byte_range().to_inclusive().contains(&cursor_byte_pos) {
                 return false;
             }
             if matches!(token.kind, TokenKind::Whitespace(_)) {
                 if let Some(next_token) = tok_vec.get(idx + 1) {
-                    if next_token.byte_range().contains(&cursor_byte_pos) {
+                    if next_token
+                        .byte_range()
+                        .to_inclusive()
+                        .contains(&cursor_byte_pos)
+                    {
                         return false;
                     }
                 }
@@ -131,19 +135,23 @@ pub fn get_completion_context<'a>(
 
     println!("Cursor node: {:?}", cursor_node);
 
+    // TODO: when walking, we need to keep track of if we have entered a subexpression.
+    // If we enter one, we need to keep parsing until it closes.
+
+    let is_token_separator = |token: &Token, going_left: bool| match token.kind {
+        TokenKind::Pipe
+        | TokenKind::Semicolon
+        | TokenKind::DoubleSemicolon
+        | TokenKind::And
+        | TokenKind::Background
+        | TokenKind::Or => true,
+
+        _ => false,
+    };
+
     // Phase 2: continue the same reversed iterator to find a command separator
     let context_start_idx = rev_iter
-        .find(|(_, token)| {
-            matches!(
-                token.kind,
-                TokenKind::Pipe
-                    | TokenKind::Semicolon
-                    | TokenKind::DoubleSemicolon
-                    | TokenKind::And
-                    | TokenKind::Background
-                    | TokenKind::Or
-            )
-        })
+        .find(|(_, token)| is_token_separator(token, true))
         .map(|(idx, _)| idx)
         .unwrap_or(0);
 
@@ -151,28 +159,23 @@ pub fn get_completion_context<'a>(
         .iter()
         .skip(cursor_token_idx)
         .enumerate()
-        .find(|(_, token)| {
-            matches!(
-                token.kind,
-                TokenKind::Pipe
-                    | TokenKind::Semicolon
-                    | TokenKind::DoubleSemicolon
-                    | TokenKind::And
-                    | TokenKind::Background
-                    | TokenKind::Or
-            )
-        })
+        .find(|(_, token)| is_token_separator(token, false))
         .map(|(idx, _)| idx)
         .unwrap_or(tok_vec.len());
 
     let context_tokens = &tok_vec[context_start_idx..context_end_idx];
 
-    let word_under_cursor_range = cursor_node.byte_range();
+    let mut word_under_cursor_range = cursor_node.byte_range();
     assert!(
         word_under_cursor_range
             .to_inclusive()
             .contains(&cursor_byte_pos)
     );
+
+    if let TokenKind::Whitespace(_) = cursor_node.kind {
+        word_under_cursor_range = cursor_byte_pos..cursor_byte_pos;
+    }
+
     let comp_context_range = context_tokens.first().unwrap().byte_range().start
         ..context_tokens.last().unwrap().byte_range().end;
 
