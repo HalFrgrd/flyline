@@ -323,10 +323,10 @@ mod tests {
             will_bash_accept_buffer("cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\n"),
             false
         );
-        // assert_eq!(
-        //     will_bash_accept_buffer("cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\nEOF2"),
-        //     true
-        // );
+        assert_eq!(
+            will_bash_accept_buffer("cat <<EOF1  <<EOF2\nhello\nEOF1\nworld\nEOF2"),
+            true
+        );
     }
 
     #[test]
