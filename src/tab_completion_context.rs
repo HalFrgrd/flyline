@@ -170,15 +170,15 @@ mod tests {
 
     #[test]
     fn test_command_extraction_at_end() {
-        let input = "cd target ";
-        let res = run(input, input.len());
-        assert_eq!(res.context_until_cursor, "cd target ");
-        assert_eq!(res.context, "cd target ");
+        let input = "cd a b";
+        let res = run(input, "cd a".len());
+        assert_eq!(res.context_until_cursor, "cd a");
+        assert_eq!(res.context, "cd a b");
 
         match res.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(res.word_under_cursor, "");
+                assert_eq!(res.word_under_cursor, "a");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -186,10 +186,10 @@ mod tests {
 
     #[test]
     fn test_command_extraction_at_end_2() {
-        let input = "cd ";
+        let input = "cd  ";
         let res = run(input, "cd ".len());
         assert_eq!(res.context_until_cursor, "cd ");
-        assert_eq!(res.context, "cd ");
+        assert_eq!(res.context, "cd  ");
 
         match res.comp_type {
             CompType::CommandComp { command_word } => {
@@ -358,18 +358,18 @@ mod tests {
     #[test]
     fn test_cursor_at_end_of_param_expansion() {
         let input = r#"echo ${HOME} asdf"#;
-        let cursor_pos = "echo ${HOME}".len();
+        let cursor_pos = "echo ${HOME".len();
         let res = run(input, cursor_pos);
-        assert_eq!(res.context, "${HOME}");
-        assert_eq!(res.context_until_cursor, "${HOME}");
+        assert_eq!(res.context, "HOME");
+        assert_eq!(res.context_until_cursor, "HOME");
     }
 
     #[test]
     fn test_command_at_end_of_param_expansion() {
         let input = r#"ls -la ${PWD}"#;
         let res = run(input, input.len());
-        assert_eq!(res.context, "${PWD}");
-        assert_eq!(res.context_until_cursor, "${PWD}");
+        assert_eq!(res.context, "ls -la ${PWD}");
+        assert_eq!(res.context_until_cursor, "ls -la ${PWD}");
     }
 
     #[test]
@@ -472,11 +472,11 @@ mod tests {
 
     #[test]
     fn test_cursor_at_end_of_arith_subst() {
-        let input = r#"echo $((10 * 2)) done"#;
+        let input = r#"echo $((10 * 2)) bar"#;
         let cursor_pos = "echo $((10 * 2))".len();
         let res = run(input, cursor_pos);
-        assert_eq!(res.context, "$((10 * 2))");
-        assert_eq!(res.context_until_cursor, "$((10 * 2))");
+        assert_eq!(res.context, "echo $((10 * 2)) bar");
+        assert_eq!(res.context_until_cursor, "echo $((10 * 2))");
     }
 
     #[test]

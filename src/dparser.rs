@@ -124,7 +124,6 @@ impl DParser {
 
         let mut toks = self.tokens.iter().enumerate().peekable();
         let mut stop_parsing_at_command_boundary = false;
-        let mut current_token_contains_cursor = false;
 
         let mut command_start_stack = Vec::new();
 
@@ -144,7 +143,6 @@ impl DParser {
             {
                 // Stop parsing
                 stop_parsing_at_command_boundary = true;
-                current_token_contains_cursor = true;
             }
 
             match &token.kind {
@@ -189,7 +187,7 @@ impl DParser {
             | TokenKind::Fi
                 if Self::nested_closing_satisfied(&token, self.nestings.last(), toks.peek().map(|(_, t)| t)) =>
             {
-                dbg!("Popping nesting:");
+                println!("Popping nesting:");
                 dbg!(&token.kind);
                 dbg!(&self.nestings);
                 let kind = self.nestings.pop().unwrap();
@@ -199,13 +197,16 @@ impl DParser {
                         "expected two RParen tokens"
                     );
                     (idx, token) = toks.next().unwrap(); // consume the extra RParen
-
                 }
 
-                let should_pop = !stop_parsing_at_command_boundary || current_token_contains_cursor;
+                let strictly_contains_cursor = cursor_byte_pos
+                    .map(|pos| token.byte_range().contains(&pos))
+                    .unwrap_or(false);
+
+                let should_pop = !stop_parsing_at_command_boundary || !strictly_contains_cursor;
                 // Restore command start for the command that this nesting started, if any
                 if should_pop && let Some(prev_command_range) = command_start_stack.pop() {
-                    dbg!("Restoring command range to:");
+                    println!("Restoring command range to:");
                     dbg!(&prev_command_range);
                     self.current_command_range = prev_command_range;
                     if let Some(range) = &mut self.current_command_range {
@@ -214,20 +215,27 @@ impl DParser {
                 }
 
                 if stop_parsing_at_command_boundary {
-                    dbg!("Stopping parsing at command boundary");
+                    println!("Stopping parsing at command boundary");
                     break;
                 }
 
 
             }
             TokenKind::And | TokenKind::Or | TokenKind::Pipe | TokenKind::Semicolon => {
-                    if stop_parsing_at_command_boundary {
-                        break;
-                    }
-                    self.current_command_range = None;
+                if stop_parsing_at_command_boundary {
+                    break;
                 }
+                self.current_command_range = None;
+            }
             TokenKind::Whitespace(_) => {
-               // do nothing
+                    let strictly_contains_cursor = cursor_byte_pos
+                    .map(|pos| token.byte_range().contains(&pos))
+                    .unwrap_or(false);
+                if strictly_contains_cursor {
+                    if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
+                    }
+                }
             }
             _ => {
                 if self.current_command_range.is_none() {
