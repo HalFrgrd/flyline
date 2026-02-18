@@ -95,9 +95,28 @@ pub fn get_completion_context<'a>(
 ) -> CompletionContext<'a> {
     let mut parser = DParser::from(buffer);
 
+    for t in parser.tokens() {
+        dbg!(t);
+    }
+
     parser.walk(Some(cursor_byte_pos));
 
     let context_tokens = parser.get_current_command_tokens();
+
+    dbg!(buffer.len());
+    dbg!(
+        context_tokens
+            .iter()
+            .map(|t| t.byte_range().end - t.byte_range().start)
+            .sum::<usize>()
+    );
+
+    dbg!(cursor_byte_pos);
+    for t in context_tokens.iter() {
+        dbg!(t);
+        dbg!(t.byte_range());
+    }
+
     let cursor_node = context_tokens
         .iter()
         .find(|t| t.byte_range().to_inclusive().contains(&cursor_byte_pos))
