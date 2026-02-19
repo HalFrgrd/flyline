@@ -137,9 +137,25 @@ impl DParser {
             //     dbg!(&token);
             // }
 
-            if let Some(pos) = cursor_byte_pos
-                && token.byte_range().to_inclusive().contains(&pos)
-            {
+            let word_is_part_of_assignment = if let TokenKind::Word(_) = token.kind {
+                idx > 0
+                    && self
+                        .tokens
+                        .get(idx - 1)
+                        .map_or(false, |t| matches!(t.kind, TokenKind::Assignment))
+            } else {
+                false
+            };
+
+            let token_inclusively_contains_cursor = cursor_byte_pos
+                .map(|pos| token.byte_range().to_inclusive().contains(&pos))
+                .unwrap_or(false);
+
+            let token_strictly_contains_cursor = cursor_byte_pos
+                .map(|pos| token.byte_range().contains(&pos))
+                .unwrap_or(false);
+
+            if token_inclusively_contains_cursor {
                 // Stop parsing
                 stop_parsing_at_command_boundary = true;
             }
@@ -217,8 +233,12 @@ impl DParser {
                     println!("Stopping parsing at command boundary");
                     break;
                 }
-
-
+            }
+            TokenKind::Word(_) if word_is_part_of_assignment => {
+                if stop_parsing_at_command_boundary {
+                    break;
+                }
+                self.current_command_range = None;
             }
             TokenKind::And | TokenKind::Or | TokenKind::Pipe | TokenKind::Semicolon => {
                 if stop_parsing_at_command_boundary {
@@ -227,13 +247,19 @@ impl DParser {
                 self.current_command_range = None;
             }
             TokenKind::Whitespace(_) => {
-                let strictly_contains_cursor = cursor_byte_pos
-                    .map(|pos| token.byte_range().contains(&pos))
-                    .unwrap_or(false);
-                if strictly_contains_cursor {
+
+                if token_inclusively_contains_cursor {
                     if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
                     }
+                }
+
+
+                if token_strictly_contains_cursor && stop_parsing_at_command_boundary && self.current_command_range.is_none() {
+                    // Stop parsing
+
+                      self.current_command_range = Some(idx..=idx);
+                    break;
                 }
             }
             _ => {
