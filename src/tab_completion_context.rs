@@ -152,10 +152,20 @@ mod tests {
         get_completion_context(input, cursor_byte_pos)
     }
 
+
+    /// Parse a test string with `█` marking the cursor position.
+    /// Returns (input_without_cursor, cursor_byte_pos).
+    fn run_inline(input: &str) -> CompletionContext<'static> {
+        let cursor_byte_pos = input.find('█').expect("Cursor marker █ not found");
+        let input_without_cursor = input.replace('█', "");
+        let input_without_cursor: &'static str = Box::leak(input_without_cursor.into_boxed_str());
+        run(input_without_cursor, cursor_byte_pos)
+    }
+
     #[test]
     fn test_command_extraction() {
-        let input = r#"git commi café"#;
-        let res = run(input, "git com".len());
+        let res = run_inline(r#"git com█mi café"#);
+
         assert_eq!(res.context_until_cursor, "git com");
         assert_eq!(res.context, "git commi café");
 
@@ -170,8 +180,7 @@ mod tests {
 
     #[test]
     fn test_command_extraction_at_end() {
-        let input = "cd a b";
-        let res = run(input, "cd a".len());
+        let res = run_inline(r#"cd a█ b"#);
         assert_eq!(res.context_until_cursor, "cd a");
         assert_eq!(res.context, "cd a b");
 
@@ -186,8 +195,7 @@ mod tests {
 
     #[test]
     fn test_command_extraction_at_end_2() {
-        let input = "cd  ";
-        let res = run(input, "cd ".len());
+        let res = run_inline(r#"cd  █"#);
         assert_eq!(res.context_until_cursor, "cd ");
         assert_eq!(res.context, "cd  ");
 
@@ -202,9 +210,7 @@ mod tests {
 
     #[test]
     fn test_with_assignment_basic() {
-        let input = "A=b ls -la";
-        let cursor_pos = "A=b ".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"A=b █ls -la"#);
         assert_eq!(res.context, "ls -la");
         assert_eq!(res.context_until_cursor, "");
         match res.comp_type {
@@ -217,34 +223,28 @@ mod tests {
 
     #[test]
     fn test_with_assignment_before_command() {
-        let input = r#"VAR=valué ABC=qwe         ls -la"#;
-        let cursor_pos = "VAR=valué ABC=qwe   ".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"VAR=valué ABC=qwe █        ls -la"#);
         assert_eq!(res.context, "");
         assert_eq!(res.context_until_cursor, "");
     }
 
     #[test]
     fn test_with_assignment_at_assignment() {
-        let input = r#"VAR=valué ABC=qwe ls -la"#;
-        let cursor_pos = "VAR=valué ABC=qwe".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"VAR=valué ABC=qwe█ ls -la"#);
         assert_eq!(res.context, "ABC=qwe");
         assert_eq!(res.context_until_cursor, "ABC=qwe");
     }
 
     #[test]
     fn test_list_of_commands() {
-        let input = r#"git commit -m "Initial "; ls -la"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"git commit -m "Initial "; ls -la█"#);
         assert_eq!(res.context, "ls -la");
         assert_eq!(res.context_until_cursor, "ls -la");
     }
 
     #[test]
     fn test_dollar_sign() {
-        let input = "echo $";
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo $█"#);
         assert_eq!(res.context, "echo $");
         assert_eq!(res.context_until_cursor, "echo $");
         assert_eq!(res.word_under_cursor, "$");
@@ -252,8 +252,7 @@ mod tests {
 
     #[test]
     fn test_dollar_sign_one_letter() {
-        let input = "echo $A";
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo $A█"#);
         assert_eq!(res.context, "echo $A");
         assert_eq!(res.context_until_cursor, "echo $A");
         assert_eq!(res.word_under_cursor, "$A");
@@ -261,14 +260,12 @@ mod tests {
 
     #[test]
     fn test_dollar_concatenation() {
-        let input = "echo $A$B";
-        let res = run(input, "echo $A".len());
+        let res = run_inline(r#"echo $A$B█"#);
         assert_eq!(res.context, "echo $A$B");
         assert_eq!(res.context_until_cursor, "echo $A");
         assert_eq!(res.word_under_cursor, "$A");
 
-        let input = "echo $A$B";
-        let res = run(input, "echo $A$".len());
+        let res = run_inline(r#"echo $A$█B"#);
         assert_eq!(res.context, "echo $A$B");
         assert_eq!(res.context_until_cursor, "echo $A$");
         assert_eq!(res.word_under_cursor, "$B");
@@ -276,26 +273,22 @@ mod tests {
 
     #[test]
     fn test_with_pipeline() {
-        let input = r#"cat filé.txt | grep "pattern" | sort"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"cat filé.txt | grep "pattern" | sort█"#);
         assert_eq!(res.context, "sort");
         assert_eq!(res.context_until_cursor, "sort");
 
-        let input2 = r#"echo "héllo" && echo "wörld""#;
-        let res2 = run(input2, input2.len());
+        let res2 = run_inline(r#"echo "héllo" && echo "wörld"█"#);
         assert_eq!(res2.context, r#"echo "wörld""#);
         assert_eq!(res2.context_until_cursor, r#"echo "wörld""#);
 
-        let input3 = r#"false || echo "fallback 😅""#;
-        let res3 = run(input3, input3.len());
+        let res3 = run_inline(r#"false || echo "fallback 😅"█"#);
         assert_eq!(res3.context, r#"echo "fallback 😅""#);
         assert_eq!(res3.context_until_cursor, r#"echo "fallback 😅""#);
     }
 
     #[test]
     fn test_subshell_in_command() {
-        let input = "echo $(git rev-parse HEAD) résumé";
-        let res = run(input, input.len());
+        let res = run_inline("echo $(git rev-parse HEAD) résumé█");
         assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
         assert_eq!(
             res.context_until_cursor,
@@ -314,85 +307,70 @@ mod tests {
 
     #[test]
     fn test_cursor_in_middle_of_subshell_command() {
-        let input = r#"echo $(git rev-parse HEAD) café"#;
-        let cursor_pos = "echo $(git rev-parse".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo $(git rev-parse█ HEAD) café"#);
         assert_eq!(res.context, r#"git rev-parse HEAD"#);
         assert_eq!(res.context_until_cursor, r#"git rev-parse"#);
     }
 
     #[test]
     fn test_cursor_at_end_of_subshell_command() {
-        let input = r#"echo $(git rev-parse HEAD) 🎉"#;
-        let cursor_pos = "echo $(git rev-parse HEAD".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo $(git rev-parse HEAD█) 🎉"#);
         assert_eq!(res.context, r#"git rev-parse HEAD"#);
         assert_eq!(res.context_until_cursor, r#"git rev-parse HEAD"#);
     }
 
     #[test]
     fn test_command_at_end_of_subshell() {
-        let input = r#"echo $(ls -la)"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo $(ls -la)█"#);
         assert_eq!(res.context, "$(ls -la)");
         assert_eq!(res.context_until_cursor, "$(ls -la)");
     }
 
     #[test]
     fn test_param_expansion_in_command() {
-        let input = r#"echo ${HOME} naïve"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo ${HOME} naïve█"#);
         assert_eq!(res.context, r#"echo ${HOME} naïve"#);
         assert_eq!(res.context_until_cursor, r#"echo ${HOME} naïve"#);
     }
 
     #[test]
     fn test_cursor_in_middle_of_param_expansion() {
-        let input = r#"echo ${HOME} asdf"#;
-        let cursor_pos = "echo ${HO".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo ${HO█ME} asdf"#);
         assert_eq!(res.context, r#"HOME"#);
         assert_eq!(res.context_until_cursor, "HO");
     }
 
     #[test]
     fn test_cursor_at_end_of_param_expansion() {
-        let input = r#"echo ${HOME} asdf"#;
-        let cursor_pos = "echo ${HOME".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo ${HOME█} asdf"#);
         assert_eq!(res.context, "HOME");
         assert_eq!(res.context_until_cursor, "HOME");
     }
 
     #[test]
     fn test_command_at_end_of_param_expansion() {
-        let input = r#"ls -la ${PWD}"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"ls -la ${PWD}█"#);
         assert_eq!(res.context, "ls -la ${PWD}");
         assert_eq!(res.context_until_cursor, "ls -la ${PWD}");
     }
 
     #[test]
     fn test_complex_param_expansion() {
-        let input = r#"echo ${VAR:-dëfault} test 🎯"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo ${VAR:-dëfault} test 🎯█"#);
         assert_eq!(res.context, r#"echo ${VAR:-dëfault} test 🎯"#);
         assert_eq!(res.context_until_cursor, r#"echo ${VAR:-dëfault} test 🎯"#);
     }
 
     #[test]
     fn test_cursor_inside_complex_param_expansion() {
-        let input = r#"echo ${VAR:-dëfault} tëst"#;
-        let cursor_pos = "echo ${VAR:-dëf".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo ${VAR:-dëf█ault} tëst"#);
         assert_eq!(res.context, "dëfault");
         assert_eq!(res.context_until_cursor, "dëf");
     }
 
     #[test]
     fn test_backtick_substitution_in_command() {
-        let input = r#"echo `git rev-parse HEAD` café"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo `git rev-parse HEAD` café█"#);
         assert_eq!(res.context, r#"echo `git rev-parse HEAD` café"#);
         assert_eq!(
             res.context_until_cursor,
@@ -402,128 +380,105 @@ mod tests {
 
     #[test]
     fn test_cursor_in_middle_of_backtick_command() {
-        let input = r#"echo `git rev-parse HEAD` asdf"#;
-        let cursor_pos = "echo `git rev-parse".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo `git rev-parse█ HEAD` asdf"#);
         assert_eq!(res.context, r#"git rev-parse HEAD"#);
         assert_eq!(res.context_until_cursor, r#"git rev-parse"#);
     }
 
     #[test]
     fn test_cursor_at_end_of_backtick_command() {
-        let input = r#"a `b c`"#;
-        let cursor_pos = "a `b c".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"a `b c█`"#);
         assert_eq!(res.context, "b c");
         assert_eq!(res.context_until_cursor, "b c");
     }
 
     #[test]
     fn test_command_at_end_of_backtick() {
-        let input = r#"echo `ls -la` qwe"#;
-        let cursor_pos = "echo `ls -la`".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo `ls -la`█ qwe"#);
         assert_eq!(res.context, "`ls -la`");
         assert_eq!(res.context_until_cursor, "`ls -la`");
     }
 
     #[test]
     fn test_nested_backticks_in_command() {
-        let input = r#"echo `echo \`date\`` tëst 🎯"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo `echo \`date\`` tëst 🎯█"#);
         assert_eq!(res.context, r#"echo `echo \`date\`` tëst 🎯"#);
         assert_eq!(res.context_until_cursor, r#"echo `echo \`date\`` tëst 🎯"#);
     }
 
     #[test]
     fn test_cursor_in_backtick_with_pipe() {
-        let input = r#"echo `ls | grep test` done"#;
-        let cursor_pos = "echo `ls | grep".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo `ls | grep█ test` done"#);
         assert_eq!(res.context, r#"grep test"#);
         assert_eq!(res.context_until_cursor, r#"grep"#);
     }
 
     #[test]
     fn test_arith_subst_in_command() {
-        let input = r#"echo $((5 + 3)) rësult 📊"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo $((5 + 3)) rësult 📊█"#);
         assert_eq!(res.context, r#"echo $((5 + 3)) rësult 📊"#);
         assert_eq!(res.context_until_cursor, r#"echo $((5 + 3)) rësult 📊"#);
     }
 
     #[test]
     fn test_cursor_in_middle_of_arith_subst() {
-        let input = r#"echo $((5 + 3)) result"#;
-        let cursor_pos = "echo $((5 + 3".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo $((5 + 3█)) result"#);
         assert_eq!(res.context, "5 + 3");
         assert_eq!(res.context_until_cursor, "5 + 3");
     }
 
     #[test]
     fn test_cursor_in_middle_of_arith_subst_2() {
-        let input = r#"echo $((5 + 3)) result"#;
-        let cursor_pos = "echo $((5 + 3)".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo $((5 + 3)█) result"#);
         assert_eq!(res.context, "$((5 + 3))");
         assert_eq!(res.context_until_cursor, "$((5 + 3)");
     }
 
     #[test]
     fn test_cursor_at_end_of_arith_subst() {
-        let input = r#"echo $((10 * 2)) bar"#;
-        let cursor_pos = "echo $((10 * 2))".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"echo $((10 * 2))█ bar"#);
         assert_eq!(res.context, "echo $((10 * 2)) bar");
         assert_eq!(res.context_until_cursor, "echo $((10 * 2))");
     }
 
     #[test]
     fn test_command_at_mid_end_of_arith_subst() {
-        let input = r#"result=$((100 / 5))"#;
-        let res = run(input, input.len() - 1);
+        let res = run_inline(r#"result=$((100 / 5)█)"#);
         assert_eq!(res.context, r#"$((100 / 5))"#);
         assert_eq!(res.context_until_cursor, r#"$((100 / 5)"#);
     }
 
     #[test]
     fn test_command_at_end_end_of_arith_subst() {
-        let input = r#"result=$((100 / 5))"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"result=$((100 / 5))█"#);
         assert_eq!(res.context, r#"$((100 / 5))"#);
         assert_eq!(res.context_until_cursor, r#"$((100 / 5))"#);
     }
 
     #[test]
     fn test_complex_arith_with_variables() {
-        let input = r#"echo $(($VAR + 10)) test"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"echo $(($VAR + 10)) test█"#);
         assert_eq!(res.context, r#"echo $(($VAR + 10)) test"#);
         assert_eq!(res.context_until_cursor, r#"echo $(($VAR + 10)) test"#);
     }
 
     #[test]
     fn test_cursor_inside_complex_arith() {
-        let input = r#"val=$((VAR * 2 + 5))"#;
-        let cursor_pos = "val=$((VAR * 2".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"val=$((VAR * 2█ + 5))"#);
         assert_eq!(res.context, "VAR * 2 + 5");
         assert_eq!(res.context_until_cursor, "VAR * 2");
     }
 
     #[test]
     fn test_nested_arith_operations() {
-        let input = r#"echo $(( $(( 5 + 3 )) * 2 )) ënd ✅"#;
-        let res = run(input, "echo $(( $(( 5 +".len());
+        let res = run_inline(r#"echo $(( $(( 5 +█ 3 )) * 2 )) ënd ✅"#);
         assert_eq!(res.context, r#"5 + 3"#);
         assert_eq!(res.context_until_cursor, r#"5 +"#);
     }
 
     #[test]
     fn test_proc_subst_in_command() {
-        let input = r#"diff <(ls /tmp) <(ls /var) résult 🔍"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"diff <(ls /tmp) <(ls /var) résult 🔍█"#);
         assert_eq!(res.context, r#"diff <(ls /tmp) <(ls /var) résult 🔍"#);
         assert_eq!(
             res.context_until_cursor,
@@ -533,34 +488,28 @@ mod tests {
 
     #[test]
     fn test_cursor_in_middle_of_proc_subst_in() {
-        let input = r#"diff <(ls /tmp) <(ls /var) done"#;
-        let cursor_pos = "diff <(ls /t".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"diff <(ls /t█mp) <(ls /var) done"#);
         assert_eq!(res.context, r#"ls /tmp"#);
         assert_eq!(res.context_until_cursor, r#"ls /t"#);
     }
 
     #[test]
     fn test_cursor_at_end_of_proc_subst_in() {
-        let input = r#"diff <(ls /tmp) <(ls /var) done"#;
-        let cursor_pos = "diff <(ls /tmp".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"diff <(ls /tmp█) <(ls /var) done"#);
         assert_eq!(res.context, r#"ls /tmp"#);
         assert_eq!(res.context_until_cursor, r#"ls /tmp"#);
     }
 
     #[test]
     fn test_command_at_end_of_proc_subst_in() {
-        let input = r#"cat <(echo test)"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"cat <(echo test)█"#);
         assert_eq!(res.context, r#"<(echo test)"#);
         assert_eq!(res.context_until_cursor, r#"<(echo test)"#);
     }
 
     #[test]
     fn test_proc_subst_out_in_command() {
-        let input = r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉█"#);
         assert_eq!(
             res.context,
             r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
@@ -573,26 +522,21 @@ mod tests {
 
     #[test]
     fn test_cursor_in_middle_of_proc_subst_out() {
-        let input = r#"tee >(gzip > file.gz) test"#;
-        let cursor_pos = "tee >(gzip > fi".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"tee >(gzip > fi█le.gz) test"#);
         assert_eq!(res.context, r#"gzip > file.gz"#);
         assert_eq!(res.context_until_cursor, r#"gzip > fi"#);
     }
 
     #[test]
     fn test_cursor_at_end_of_proc_subst_out() {
-        let input = r#"tee >(cat) done"#;
-        let cursor_pos = "tee >(cat".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"tee >(cat█) done"#);
         assert_eq!(res.context, r#"cat"#);
         assert_eq!(res.context_until_cursor, r#"cat"#);
     }
 
     #[test]
     fn test_mixed_proc_subst_in_and_out() {
-        let input = r#"cmd <(input cmd) >(output cmd) final"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"cmd <(input cmd) >(output cmd) final█"#);
         assert_eq!(res.context, r#"cmd <(input cmd) >(output cmd) final"#);
         assert_eq!(
             res.context_until_cursor,
@@ -603,67 +547,56 @@ mod tests {
     #[test]
     #[ignore] // Need to think more on what the expected behavior is here
     fn test_double_bracket_condition() {
-        let input = r#"if [[ -f file.txt ]]; then echo found; fi"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"if [[ -f file.txt ]]; then echo found; fi█"#);
         assert_eq!(res.context, "fi");
         assert_eq!(res.context_until_cursor, "fi");
     }
 
     #[test]
     fn test_cursor_inside_double_bracket() {
-        let input = r#"[[ -f filé.txt ]] && echo yës"#;
-        let cursor_pos = "[[ -f filé".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"[[ -f filé█.txt ]] && echo yës"#);
         assert_eq!(res.context, "-f filé.txt");
         assert_eq!(res.context_until_cursor, "-f filé");
     }
 
     #[test]
     fn test_double_bracket_with_string_comparison() {
-        let input = r#"[[ "$var" == "café" ]] && echo match 🎯"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"[[ "$var" == "café" ]] && echo match 🎯█"#);
         assert_eq!(res.context, r#"echo match 🎯"#);
         assert_eq!(res.context_until_cursor, r#"echo match 🎯"#);
     }
 
     #[test]
     fn test_double_bracket_with_pattern() {
-        let input = r#"[[ $file == *.txt ]] || echo "not a text file""#;
-        let cursor_pos = "[[ $file == *.txt ]".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"[[ $file == *.txt ]█] || echo "not a text file""#);
         assert_eq!(res.context, "[[ $file == *.txt ]]");
         assert_eq!(res.context_until_cursor, "[[ $file == *.txt ]");
     }
 
     #[test]
     fn test_double_bracket_with_regex() {
-        let input = r#"[[ $email =~ ^[a-z]+@[a-z]+$ ]]"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"[[ $email =~ ^[a-z]+@[a-z]+$ ]]█"#);
         assert_eq!(res.context, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
         assert_eq!(res.context_until_cursor, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
     }
 
     #[test]
     fn test_double_bracket_logical_operators() {
-        let input = r#"[[ -f file.txt && -r file.txt ]] && cat file.txt"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"[[ -f file.txt && -r file.txt ]] && cat file.txt█"#);
         assert_eq!(res.context, "cat file.txt");
         assert_eq!(res.context_until_cursor, "cat file.txt");
     }
 
     #[test]
     fn test_cursor_before_double_bracket() {
-        let input = r#"if [[ -d /path/café ]]; then ls; fi"#;
-        let cursor_pos = "if [[ -d /path/caf".len();
-        let res = run(input, cursor_pos);
+        let res = run_inline(r#"if [[ -d /path/caf█é ]]; then ls; fi"#);
         assert_eq!(res.context, "-d /path/café");
         assert_eq!(res.context_until_cursor, "-d /path/caf");
     }
 
     #[test]
     fn test_double_bracket_with_emoji() {
-        let input = r#"[[ "$msg" == "✅ done" ]] && echo success"#;
-        let res = run(input, input.len());
+        let res = run_inline(r#"[[ "$msg" == "✅ done" ]] && echo success█"#);
         assert_eq!(res.context, "echo success");
         assert_eq!(res.context_until_cursor, "echo success");
     }
@@ -673,8 +606,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_at_start_of_line() {
         // Cursor at position 0 (start of line)
-        let input = "café --option 🎯";
-        let ctx = get_completion_context(input, 0);
+        let ctx = run_inline("█café --option 🎯");
         match ctx.comp_type {
             CompType::FirstWord => {
                 assert_eq!(ctx.word_under_cursor, "café");
@@ -686,9 +618,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_in_first_word() {
         // Cursor in the middle of first word with non-ASCII
-        let input = "café --option 🎯";
-        let cursor_pos = "caf".len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("caf█é --option 🎯");
         match ctx.comp_type {
             CompType::FirstWord => {
                 assert_eq!(ctx.word_under_cursor, "café");
@@ -700,9 +630,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_after_first_word_emoji() {
         // Cursor after first word that contains emoji
-        let input = "🚀rocket --verbose naïve";
-        let cursor_pos = "🚀rock".len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("🚀rock█et --verbose naïve");
         match ctx.comp_type {
             CompType::FirstWord => {
                 assert_eq!(ctx.word_under_cursor, "🚀rocket");
@@ -714,9 +642,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_at_end_of_line() {
         // Cursor at end of line with non-ASCII
-        let input = "echo 'Tëst message' résumé 📄";
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("echo 'Tëst message' résumé 📄█");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -731,9 +657,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_in_middle_word_with_unicode() {
         // Cursor in middle of word with unicode characters
-        let input = "ls --sïze café 日本語";
-        let cursor_pos = "ls --sïze caf".len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("ls --sïze caf█é 日本語");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -748,9 +672,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_at_start_chinese_chars() {
         // Cursor at start with Chinese characters
-        let input = "文件 --option värde";
-        let cursor_pos = 0;
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("█文件 --option värde");
         match ctx.comp_type {
             CompType::FirstWord => {
                 assert_eq!(ctx.word_under_cursor, "文件");
@@ -762,9 +684,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_in_middle_chinese() {
         // Cursor in middle of Chinese word
-        let input = "git 提交 --mëssage 'hëllo'";
-        let cursor_pos = "git 提".len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("git 提█交 --mëssage 'hëllo'");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -779,9 +699,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_end_arabic_text() {
         // Cursor at end with Arabic text
-        let input = "cat مرحبا --öption 🔥";
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("cat مرحبا --öption 🔥█");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -796,9 +714,7 @@ mod tests {
     #[test]
     fn test_completion_context_cursor_middle_cyrillic() {
         // Cursor in middle of Cyrillic word
-        let input = "ls файл --süze привет 🎯";
-        let cursor_pos = "ls фай".len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("ls фай█л --süze привет 🎯");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -813,9 +729,7 @@ mod tests {
     #[test]
     fn test_completion_context_blank_space_mixed_scripts() {
         // Cursor on blank space with mixed scripts
-        let input = "grep 'pättërn' файл.txt 日本語 🚀";
-        let cursor_pos = "grep 'pättërn' ".len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("grep 'pättërn' █файл.txt 日本語 🚀");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -830,9 +744,7 @@ mod tests {
     #[test]
     fn test_completion_context_start_emoji_only() {
         // Cursor at start of emoji-only command
-        let input = "🎉 🎊 🎈 --flâg";
-        let cursor_pos = 0;
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("█🎉 🎊 🎈 --flâg");
         match ctx.comp_type {
             CompType::FirstWord => {
                 assert_eq!(ctx.word_under_cursor, "🎉");
@@ -844,9 +756,7 @@ mod tests {
     #[test]
     fn test_completion_context_end_accented_characters() {
         // Cursor at end with heavily accented text
-        let input = "find . -näme 'fîlé' -type f 🔍";
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("find . -näme 'fîlé' -type f 🔍█");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -861,9 +771,7 @@ mod tests {
     #[test]
     fn test_completion_context_space_between_multibyte() {
         // Cursor on space between multibyte characters
-        let input = "écho 'mëssagé' 文件 🎨";
-        let cursor_pos = "écho 'mëssagé' ".len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("écho 'mëssagé' █文件 🎨");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -878,9 +786,7 @@ mod tests {
     #[test]
     fn test_completion_context_middle_thai_text() {
         // Cursor in middle of Thai text
-        let input = "cat ไฟล์ --öption วันนี้ 🌟";
-        let cursor_pos = "cat ไฟ".len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("cat ไฟ█ล์ --öption วันนี้ 🌟");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -897,9 +803,7 @@ mod tests {
         // This is the bug: when cursor is at END of word AND there's a word after,
         // word_under_cursor should be the current word, not ""
         // Example: "cd fo[cursor] bar" - word_under_cursor should be "fo", not ""
-        let input = "cd fo bar";
-        let cursor_pos = "cd fo".len(); // cursor right after "fo" (at end of word)
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("cd fo█ bar");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -913,9 +817,7 @@ mod tests {
     #[test]
     fn test_word_under_cursor_in_middle_with_word_after() {
         // Cursor in the middle of "foo" when "bar" follows
-        let input = "cd foo bar";
-        let cursor_pos = "cd f".len(); // cursor after "f" in "foo" (in middle of word)
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline("cd f█oo bar");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -929,9 +831,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_word_with_double_quote_1() {
-        let input = r#"cd "foo"#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"cd "foo█"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -946,9 +846,7 @@ mod tests {
     #[ignore]
 
     fn test_word_with_double_quote_2() {
-        let input = r#"cd "foo   asdf"#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"cd "foo   asdf█"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -962,9 +860,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_word_with_double_quote_3() {
-        let input = r#"cd "foo "#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"cd "foo █"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -978,9 +874,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_word_with_double_quote_4() {
-        let input = r#"echo && cd "foo "#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"echo && cd "foo █"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -994,9 +888,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_word_with_single_quote_1() {
-        let input = r#"cd 'foo"#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"cd 'foo█"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -1010,9 +902,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_word_with_single_quote_2() {
-        let input = r#"cd 'foo   asdf"#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"cd 'foo   asdf█"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -1026,9 +916,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_word_with_single_quote_3() {
-        let input = r#"echo && cd 'foo   asdf"#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"echo && cd 'foo   asdf█"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -1042,9 +930,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_word_with_backslash_1() {
-        let input = r#"echo && cd foo\"#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"echo && cd foo\█"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
@@ -1058,9 +944,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_word_with_backslash_2() {
-        let input = r#"cd foo\ "#;
-        let cursor_pos = input.len();
-        let ctx = get_completion_context(input, cursor_pos);
+        let ctx = run_inline(r#"cd foo\ █"#);
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {

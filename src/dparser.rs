@@ -1,4 +1,3 @@
-use crossterm::cursor;
 use flash::lexer::{Lexer, Token, TokenKind};
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
@@ -228,7 +227,7 @@ impl DParser {
                 self.current_command_range = None;
             }
             TokenKind::Whitespace(_) => {
-                    let strictly_contains_cursor = cursor_byte_pos
+                let strictly_contains_cursor = cursor_byte_pos
                     .map(|pos| token.byte_range().contains(&pos))
                     .unwrap_or(false);
                 if strictly_contains_cursor {
