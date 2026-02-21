@@ -57,6 +57,7 @@ impl DParser {
         }
     }
 
+    #[allow(dead_code)]
     pub fn tokens(&self) -> &[Token] {
         &self.tokens
     }
@@ -366,6 +367,7 @@ impl DParser {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_current_command_str(&self) -> String {
         self.get_current_command_tokens()
             .iter()

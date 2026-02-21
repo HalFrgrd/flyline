@@ -1,5 +1,4 @@
-use crossterm::cursor;
-use flash::lexer::{Token, TokenKind};
+use flash::lexer::TokenKind;
 
 use crate::dparser::{DParser, ToInclusiveRange};
 
@@ -25,15 +24,6 @@ pub struct CompletionContext<'a> {
     pub comp_type: CompType,
 }
 
-trait IsSubRange {
-    fn is_sub_range(&self, other: &core::ops::Range<usize>) -> bool;
-}
-
-impl IsSubRange for core::ops::Range<usize> {
-    fn is_sub_range(&self, other: &core::ops::Range<usize>) -> bool {
-        self.start >= other.start && self.end <= other.end
-    }
-}
 
 impl<'a> CompletionContext<'a> {
     fn classify_word_type(word: &str) -> Option<CompType> {
@@ -102,14 +92,6 @@ pub fn get_completion_context<'a>(
 
     if cfg!(test) {
         println!("Context tokens:");
-        dbg!(buffer.len());
-        // dbg!(
-        //     context_tokens
-        //         .iter()
-        //         .map(|t| t.byte_range().end - t.byte_range().start)
-        //         .sum::<usize>()
-        // );
-
         dbg!(cursor_byte_pos);
         for t in context_tokens.iter() {
             println!("{:?} byte_range={:?}", t, t.byte_range());
