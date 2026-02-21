@@ -208,11 +208,6 @@ impl DParser {
                 None => break,
             };
 
-            // if cfg!(test) {
-            //     dbg!(idx);
-            //     dbg!(&token);
-            // }
-
             let word_is_part_of_assignment = if let TokenKind::Word(_) = token.kind {
                 idx > 0
                     && self
@@ -229,7 +224,6 @@ impl DParser {
             let token_strictly_contains_cursor = token.byte_range().contains(&cursor_byte_pos);
 
             if token_strictly_contains_cursor {
-                // Stop parsing
                 stop_parsing_at_command_boundary = true;
             }
 
@@ -274,11 +268,6 @@ impl DParser {
                         toks.peek().map(|(_, t)| t),
                     ) =>
                 {
-                    println!("Popping nesting:");
-                    dbg!(&token.kind);
-                    dbg!(&token);
-                    dbg!(&token.byte_range());
-                    dbg!(&self.nestings);
                     let kind = self.nestings.pop().unwrap();
                     if kind == TokenKind::ArithSubst {
                         assert!(
@@ -289,16 +278,10 @@ impl DParser {
                     }
 
                     if token.kind == TokenKind::DoubleRBracket && token_strictly_contains_cursor {
-                        println!(
-                            "Cursor is inside the closing token of a [[ ]] command, treating it as if it is outside for command boundary purposes"
-                        );
-                        dbg!(&command_start_stack);
                         if let Some(prev_command_range) = command_start_stack.pop() {
                             self.current_command_range = prev_command_range;
                             if let Some(range) = &mut self.current_command_range {
                                 *range = *range.start()..=idx;
-                                println!("Extended range to closing token:");
-                                dbg!(&range);
                             }
                         }
                         break;
@@ -313,8 +296,6 @@ impl DParser {
                         self.current_command_range = prev_command_range;
                         if let Some(range) = &mut self.current_command_range {
                             *range = *range.start()..=idx;
-                            println!("Extended range to closing token:");
-                            dbg!(&range);
                         }
                     }
                 }
