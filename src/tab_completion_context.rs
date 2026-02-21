@@ -102,7 +102,7 @@ pub fn get_completion_context<'a>(
         dbg!(t.byte_range());
     }
 
-    parser.walk(Some(cursor_byte_pos));
+    parser.walk(cursor_byte_pos);
 
     let context_tokens = parser.get_current_command_tokens();
 
