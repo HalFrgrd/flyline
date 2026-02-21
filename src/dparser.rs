@@ -228,17 +228,14 @@ impl DParser {
 
             let token_strictly_contains_cursor = token.byte_range().contains(&cursor_byte_pos);
 
-            if token_inclusively_contains_cursor {
+            if token_strictly_contains_cursor {
                 // Stop parsing
                 stop_parsing_at_command_boundary = true;
             }
 
             match &token.kind {
             TokenKind::LBrace
-            // | TokenKind::LParen
             | TokenKind::DoubleLBracket
-            // | TokenKind::Quote
-            // | TokenKind::SingleQuote
             | TokenKind::Backtick
             | TokenKind::CmdSubst
             | TokenKind::ArithSubst
@@ -254,9 +251,6 @@ impl DParser {
             | TokenKind::Until
                 if Self::nested_opening_satisfied(&token, self.nestings.last()) =>
             {
-                // dbg!("Pushing nesting:");
-                // dbg!(&token.kind);
-                // dbg!(&nestings);
                 self.nestings.push(token.kind.clone());
                 command_start_stack.push(self.current_command_range.clone());
                 self.current_command_range = None; // set for next word after this
@@ -268,8 +262,6 @@ impl DParser {
             | TokenKind::RBrace
             | TokenKind::Backtick
             | TokenKind::DoubleRBracket
-            // | TokenKind::Quote
-            // | TokenKind::SingleQuote
             | TokenKind::Esac
             | TokenKind::Done
             | TokenKind::Fi
@@ -277,6 +269,8 @@ impl DParser {
             {
                 println!("Popping nesting:");
                 dbg!(&token.kind);
+                dbg!(&token);
+                dbg!(&token.byte_range());
                 dbg!(&self.nestings);
                 let kind = self.nestings.pop().unwrap();
                 if kind == TokenKind::ArithSubst {
@@ -287,25 +281,28 @@ impl DParser {
                     (idx, token) = toks.next().unwrap(); // consume the extra RParen
                 }
 
-
-                let should_pop = !stop_parsing_at_command_boundary || token_strictly_contains_cursor;
-                // Restore command start for the command that this nesting started, if any
-                if should_pop && let Some(prev_command_range) = command_start_stack.pop() {
-                    println!("Restoring command range to:");
-                    dbg!(&prev_command_range);
-                    self.current_command_range = prev_command_range;
-                    if let Some(range) = &mut self.current_command_range {
-                        *range = *range.start()..=idx;
-                    }
-                }
-
                 if stop_parsing_at_command_boundary {
                     println!("Stopping parsing at command boundary");
                     break;
                 }
+
+
+                if let Some(prev_command_range) = command_start_stack.pop() {
+                    self.current_command_range = prev_command_range;
+                    if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
+                        println!("Extended range to closing token:");
+                        dbg!(&range);
+                    }
+                }
+
             }
             TokenKind::Word(_) if word_is_part_of_assignment => {
-                if stop_parsing_at_command_boundary {
+                if let Some(range) = &mut self.current_command_range {
+                    *range = *range.start()..=idx;
+                }
+
+                if stop_parsing_at_command_boundary || token_inclusively_contains_cursor {
                     break;
                 }
                 self.current_command_range = None;
@@ -325,8 +322,7 @@ impl DParser {
 
                 if token_strictly_contains_cursor && stop_parsing_at_command_boundary && self.current_command_range.is_none() {
                     // Stop parsing
-
-                      self.current_command_range = Some(idx..=idx);
+                    self.current_command_range = Some(idx..=idx);
                     break;
                 }
             }

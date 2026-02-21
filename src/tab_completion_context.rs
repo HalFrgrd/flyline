@@ -98,8 +98,7 @@ pub fn get_completion_context<'a>(
 
     println!("Tokens:");
     for t in parser.tokens() {
-        dbg!(t);
-        dbg!(t.byte_range());
+        println!("{:?} byte_range={:?}", t, t.byte_range());
     }
 
     parser.walk(cursor_byte_pos);
@@ -108,45 +107,47 @@ pub fn get_completion_context<'a>(
 
     println!("Context tokens:");
     dbg!(buffer.len());
-    dbg!(
-        context_tokens
-            .iter()
-            .map(|t| t.byte_range().end - t.byte_range().start)
-            .sum::<usize>()
-    );
+    // dbg!(
+    //     context_tokens
+    //         .iter()
+    //         .map(|t| t.byte_range().end - t.byte_range().start)
+    //         .sum::<usize>()
+    // );
 
     dbg!(cursor_byte_pos);
     for t in context_tokens.iter() {
-        dbg!(t);
-        dbg!(t.byte_range());
+        println!("{:?} byte_range={:?}", t, t.byte_range());
     }
 
     let opt_cursor_node = context_tokens
         .iter()
         .find(|t| t.byte_range().to_inclusive().contains(&cursor_byte_pos));
 
-    let cursor_node = match opt_cursor_node {
-        Some(node) => node,
-        None => {
-            println!("Cursor is not on any token, setting word_under_cursor to empty");
-            // Cursor is not on any token, return empty context
+    let word_under_cursor_range = match opt_cursor_node {
+        Some(cursor_node) => {
+            let mut word_under_cursor_range = cursor_node.byte_range();
+            assert!(
+                word_under_cursor_range
+                    .to_inclusive()
+                    .contains(&cursor_byte_pos)
+            );
+
+            dbg!(&cursor_node);
+
+            if let TokenKind::Whitespace(_) = cursor_node.kind {
+                println!("Cursor is on whitespace, setting word_under_cursor to empty");
+                word_under_cursor_range = cursor_byte_pos..cursor_byte_pos;
+            }
+            word_under_cursor_range
+        }
+        None if context_tokens.is_empty() => {
+            println!("No context tokens, setting word_under_cursor to empty");
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
+        None => {
+            todo!("Cursor is outside of all context tokens");
+        }
     };
-
-    let mut word_under_cursor_range = cursor_node.byte_range();
-    assert!(
-        word_under_cursor_range
-            .to_inclusive()
-            .contains(&cursor_byte_pos)
-    );
-
-    dbg!(&cursor_node);
-
-    if let TokenKind::Whitespace(_) = cursor_node.kind {
-        println!("Cursor is on whitespace, setting word_under_cursor to empty");
-        word_under_cursor_range = cursor_byte_pos..cursor_byte_pos;
-    }
 
     let comp_context_range = if context_tokens
         .iter()
@@ -269,10 +270,10 @@ mod tests {
     }
 
     #[test]
-    fn test_with_assignment_at_assignment() {
+    fn test_with_assignment_at_end() {
         let res = run_inline(r#"VAR=valué ABC=qwe█ ls -la"#);
-        assert_eq!(res.context, "");
-        assert_eq!(res.context_until_cursor, "");
+        assert_eq!(res.context, "ABC=qwe");
+        assert_eq!(res.context_until_cursor, "ABC=qwe");
     }
 
     #[test]
@@ -347,271 +348,279 @@ mod tests {
 
     #[test]
     fn test_cursor_in_middle_of_subshell_command() {
-        let res = run_inline(r#"echo $(git rev-parse█ HEAD) café"#);
+        let res = run_inline(r#"echo $(git rev-parse HEA█D) café"#);
+        assert_eq!(res.context, r#"git rev-parse HEAD"#);
+        assert_eq!(res.context_until_cursor, r#"git rev-parse HEA"#);
+    }
+
+    #[test]
+    fn test_cursor_at_end_of_subshell_command() {
+        let res = run_inline(r#"echo $(git rev-parse HEAD█) 🎉"#);
+        assert_eq!(res.context, r#"git rev-parse HEAD"#);
+        assert_eq!(res.context_until_cursor, r#"git rev-parse HEAD"#);
+    }
+
+
+    #[test]
+    fn test_cursor_just_outside_of_subshell_command() {
+        let res = run_inline(r#"echo $(git rev-parse HEAD)█ 🎉"#);
+        assert_eq!(res.context, r#"echo $(git rev-parse HEAD) 🎉"#);
+        assert_eq!(res.context_until_cursor, r#"echo $(git rev-parse HEAD)"#);
+    }
+
+    #[test]
+    fn test_command_at_end_of_subshell() {
+        let res = run_inline(r#"echo $(ls -la)█"#);
+        assert_eq!(res.context, "echo $(ls -la)");
+        assert_eq!(res.context_until_cursor, "echo $(ls -la)");
+    }
+
+    #[test]
+    fn test_param_expansion_in_command() {
+        let res = run_inline(r#"echo ${HOME} naïve█"#);
+        assert_eq!(res.context, r#"echo ${HOME} naïve"#);
+        assert_eq!(res.context_until_cursor, r#"echo ${HOME} naïve"#);
+    }
+
+    #[test]
+    fn test_cursor_in_middle_of_param_expansion() {
+        let res = run_inline(r#"echo ${HO█ME} asdf"#);
+        assert_eq!(res.context, r#"HOME"#);
+        assert_eq!(res.context_until_cursor, "HO");
+    }
+
+    #[test]
+    fn test_cursor_at_end_of_param_expansion() {
+        let res = run_inline(r#"echo ${HOME█} asdf"#);
+        assert_eq!(res.context, "HOME");
+        assert_eq!(res.context_until_cursor, "HOME");
+    }
+
+    #[test]
+    fn test_command_at_end_of_param_expansion() {
+        let res = run_inline(r#"ls -la ${PWD}█"#);
+        assert_eq!(res.context, "ls -la ${PWD}");
+        assert_eq!(res.context_until_cursor, "ls -la ${PWD}");
+    }
+
+    #[test]
+    fn test_complex_param_expansion() {
+        let res = run_inline(r#"echo ${VAR:-dëfault} test 🎯█"#);
+        assert_eq!(res.context, r#"echo ${VAR:-dëfault} test 🎯"#);
+        assert_eq!(res.context_until_cursor, r#"echo ${VAR:-dëfault} test 🎯"#);
+    }
+
+    #[test]
+    fn test_cursor_inside_complex_param_expansion() {
+        let res = run_inline(r#"echo ${VAR:-dëf█ault} tëst"#);
+        assert_eq!(res.context, "VAR:-dëfault");
+        assert_eq!(res.context_until_cursor, "VAR:-dëf");
+    }
+
+    #[test]
+    fn test_backtick_substitution_in_command() {
+        let res = run_inline(r#"echo `git rev-parse HEAD` café█"#);
+        assert_eq!(res.context, r#"echo `git rev-parse HEAD` café"#);
+        assert_eq!(
+            res.context_until_cursor,
+            r#"echo `git rev-parse HEAD` café"#
+        );
+    }
+
+    #[test]
+    fn test_cursor_in_middle_of_backtick_command() {
+        let res = run_inline(r#"echo `git rev-parse█ HEAD` asdf"#);
         assert_eq!(res.context, r#"git rev-parse HEAD"#);
         assert_eq!(res.context_until_cursor, r#"git rev-parse"#);
     }
 
-    // #[test]
-    // fn test_cursor_at_end_of_subshell_command() {
-    //     let res = run_inline(r#"echo $(git rev-parse HEAD█) 🎉"#);
-    //     assert_eq!(res.context, r#"git rev-parse HEAD"#);
-    //     assert_eq!(res.context_until_cursor, r#"git rev-parse HEAD"#);
-    // }
+    #[test]
+    fn test_cursor_at_end_of_backtick_command() {
+        let res = run_inline(r#"echo `b c█`"#);
+        assert_eq!(res.context, "b c");
+        assert_eq!(res.context_until_cursor, "b c");
+    }
 
-    // #[test]
-    // fn test_command_at_end_of_subshell() {
-    //     let res = run_inline(r#"echo $(ls -la)█"#);
-    //     assert_eq!(res.context, "$(ls -la)");
-    //     assert_eq!(res.context_until_cursor, "$(ls -la)");
-    // }
+    #[test]
+    fn test_command_at_end_of_backtick() {
+        let res = run_inline(r#"echo `ls -la`█ qwe"#);
+        assert_eq!(res.context, "echo `ls -la` qwe");
+        assert_eq!(res.context_until_cursor, "echo `ls -la`");
+    }
 
-    // #[test]
-    // fn test_param_expansion_in_command() {
-    //     let res = run_inline(r#"echo ${HOME} naïve█"#);
-    //     assert_eq!(res.context, r#"echo ${HOME} naïve"#);
-    //     assert_eq!(res.context_until_cursor, r#"echo ${HOME} naïve"#);
-    // }
+    #[test]
+    fn test_nested_backticks_in_command() {
+        let res = run_inline(r#"echo `echo \`date\`` tëst 🎯█"#);
+        assert_eq!(res.context, r#"echo `echo \`date\`` tëst 🎯"#);
+        assert_eq!(res.context_until_cursor, r#"echo `echo \`date\`` tëst 🎯"#);
+    }
 
-    // #[test]
-    // fn test_cursor_in_middle_of_param_expansion() {
-    //     let res = run_inline(r#"echo ${HO█ME} asdf"#);
-    //     assert_eq!(res.context, r#"HOME"#);
-    //     assert_eq!(res.context_until_cursor, "HO");
-    // }
+    #[test]
+    fn test_cursor_in_backtick_with_pipe() {
+        let res = run_inline(r#"echo `ls | grep█ test` done"#);
+        assert_eq!(res.context, r#"grep test"#);
+        assert_eq!(res.context_until_cursor, r#"grep"#);
+    }
 
-    // #[test]
-    // fn test_cursor_at_end_of_param_expansion() {
-    //     let res = run_inline(r#"echo ${HOME█} asdf"#);
-    //     assert_eq!(res.context, "HOME");
-    //     assert_eq!(res.context_until_cursor, "HOME");
-    // }
+    #[test]
+    fn test_arith_subst_in_command() {
+        let res = run_inline(r#"echo $((5 + 3)) rësult 📊█"#);
+        assert_eq!(res.context, r#"echo $((5 + 3)) rësult 📊"#);
+        assert_eq!(res.context_until_cursor, r#"echo $((5 + 3)) rësult 📊"#);
+    }
 
-    // #[test]
-    // fn test_command_at_end_of_param_expansion() {
-    //     let res = run_inline(r#"ls -la ${PWD}█"#);
-    //     assert_eq!(res.context, "ls -la ${PWD}");
-    //     assert_eq!(res.context_until_cursor, "ls -la ${PWD}");
-    // }
+    #[test]
+    fn test_cursor_in_middle_of_arith_subst() {
+        let res = run_inline(r#"echo $((5 + 3█)) result"#);
+        assert_eq!(res.context, "5 + 3");
+        assert_eq!(res.context_until_cursor, "5 + 3");
+    }
 
-    // #[test]
-    // fn test_complex_param_expansion() {
-    //     let res = run_inline(r#"echo ${VAR:-dëfault} test 🎯█"#);
-    //     assert_eq!(res.context, r#"echo ${VAR:-dëfault} test 🎯"#);
-    //     assert_eq!(res.context_until_cursor, r#"echo ${VAR:-dëfault} test 🎯"#);
-    // }
+    #[test]
+    fn test_cursor_in_middle_of_arith_subst_2() {
+        let res = run_inline(r#"echo $((5 + 3)█) result"#);
+        assert_eq!(res.context, "echo $((5 + 3)) result");
+        assert_eq!(res.context_until_cursor, "echo $((5 + 3)");
+    }
 
-    // #[test]
-    // fn test_cursor_inside_complex_param_expansion() {
-    //     let res = run_inline(r#"echo ${VAR:-dëf█ault} tëst"#);
-    //     assert_eq!(res.context, "dëfault");
-    //     assert_eq!(res.context_until_cursor, "dëf");
-    // }
+    #[test]
+    fn test_cursor_at_end_of_arith_subst() {
+        let res = run_inline(r#"echo $((10 * 2))█ bar"#);
+        assert_eq!(res.context, "echo $((10 * 2)) bar");
+        assert_eq!(res.context_until_cursor, "echo $((10 * 2))");
+    }
 
-    // #[test]
-    // fn test_backtick_substitution_in_command() {
-    //     let res = run_inline(r#"echo `git rev-parse HEAD` café█"#);
-    //     assert_eq!(res.context, r#"echo `git rev-parse HEAD` café"#);
-    //     assert_eq!(
-    //         res.context_until_cursor,
-    //         r#"echo `git rev-parse HEAD` café"#
-    //     );
-    // }
+    #[test]
+    fn test_command_at_mid_end_of_arith_subst() {
+        let res = run_inline(r#"result=$((100 / 5)█)"#);
+        assert_eq!(res.context, r#"result=$((100 / 5))"#);
+        assert_eq!(res.context_until_cursor, r#"result=$((100 / 5)"#);
+    }
 
-    // #[test]
-    // fn test_cursor_in_middle_of_backtick_command() {
-    //     let res = run_inline(r#"echo `git rev-parse█ HEAD` asdf"#);
-    //     assert_eq!(res.context, r#"git rev-parse HEAD"#);
-    //     assert_eq!(res.context_until_cursor, r#"git rev-parse"#);
-    // }
+    #[test]
+    fn test_command_at_end_end_of_arith_subst() {
+        let res = run_inline(r#"result=$((100 / 5))█"#);
+        assert_eq!(res.context, r#"result=$((100 / 5))"#);
+        assert_eq!(res.context_until_cursor, r#"result=$((100 / 5))"#);
+    }
 
-    // #[test]
-    // fn test_cursor_at_end_of_backtick_command() {
-    //     let res = run_inline(r#"a `b c█`"#);
-    //     assert_eq!(res.context, "b c");
-    //     assert_eq!(res.context_until_cursor, "b c");
-    // }
+    #[test]
+    fn test_complex_arith_with_variables() {
+        let res = run_inline(r#"echo $(($VAR + 10)) test█"#);
+        assert_eq!(res.context, r#"echo $(($VAR + 10)) test"#);
+        assert_eq!(res.context_until_cursor, r#"echo $(($VAR + 10)) test"#);
+    }
 
-    // #[test]
-    // fn test_command_at_end_of_backtick() {
-    //     let res = run_inline(r#"echo `ls -la`█ qwe"#);
-    //     assert_eq!(res.context, "`ls -la`");
-    //     assert_eq!(res.context_until_cursor, "`ls -la`");
-    // }
+    #[test]
+    fn test_cursor_inside_complex_arith() {
+        let res = run_inline(r#"val=$((VAR * 2█ + 5))"#);
+        assert_eq!(res.context, "VAR * 2 + 5");
+        assert_eq!(res.context_until_cursor, "VAR * 2");
+    }
 
-    // #[test]
-    // fn test_nested_backticks_in_command() {
-    //     let res = run_inline(r#"echo `echo \`date\`` tëst 🎯█"#);
-    //     assert_eq!(res.context, r#"echo `echo \`date\`` tëst 🎯"#);
-    //     assert_eq!(res.context_until_cursor, r#"echo `echo \`date\`` tëst 🎯"#);
-    // }
+    #[test]
+    fn test_nested_arith_operations() {
+        let res = run_inline(r#"echo $(( $(( 5 +█ 3 )) * 2 )) ënd ✅"#);
+        assert_eq!(res.context, r#"5 + 3"#);
+        assert_eq!(res.context_until_cursor, r#"5 +"#);
+    }
 
-    // #[test]
-    // fn test_cursor_in_backtick_with_pipe() {
-    //     let res = run_inline(r#"echo `ls | grep█ test` done"#);
-    //     assert_eq!(res.context, r#"grep test"#);
-    //     assert_eq!(res.context_until_cursor, r#"grep"#);
-    // }
+    #[test]
+    fn test_proc_subst_in_command() {
+        let res = run_inline(r#"diff <(ls /tmp) <(ls /var) résult 🔍█"#);
+        assert_eq!(res.context, r#"diff <(ls /tmp) <(ls /var) résult 🔍"#);
+        assert_eq!(
+            res.context_until_cursor,
+            r#"diff <(ls /tmp) <(ls /var) résult 🔍"#
+        );
+    }
 
-    // #[test]
-    // fn test_arith_subst_in_command() {
-    //     let res = run_inline(r#"echo $((5 + 3)) rësult 📊█"#);
-    //     assert_eq!(res.context, r#"echo $((5 + 3)) rësult 📊"#);
-    //     assert_eq!(res.context_until_cursor, r#"echo $((5 + 3)) rësult 📊"#);
-    // }
+    #[test]
+    fn test_cursor_in_middle_of_proc_subst_in() {
+        let res = run_inline(r#"diff <(ls /t█mp) <(ls /var) done"#);
+        assert_eq!(res.context, r#"ls /tmp"#);
+        assert_eq!(res.context_until_cursor, r#"ls /t"#);
+    }
 
-    // #[test]
-    // fn test_cursor_in_middle_of_arith_subst() {
-    //     let res = run_inline(r#"echo $((5 + 3█)) result"#);
-    //     assert_eq!(res.context, "5 + 3");
-    //     assert_eq!(res.context_until_cursor, "5 + 3");
-    // }
+    #[test]
+    fn test_cursor_at_end_of_proc_subst_in() {
+        let res = run_inline(r#"diff <(ls /tmp█) <(ls /var) done"#);
+        assert_eq!(res.context, r#"ls /tmp"#);
+        assert_eq!(res.context_until_cursor, r#"ls /tmp"#);
+    }
 
-    // #[test]
-    // fn test_cursor_in_middle_of_arith_subst_2() {
-    //     let res = run_inline(r#"echo $((5 + 3)█) result"#);
-    //     assert_eq!(res.context, "$((5 + 3))");
-    //     assert_eq!(res.context_until_cursor, "$((5 + 3)");
-    // }
+    #[test]
+    fn test_command_at_end_of_proc_subst_in() {
+        let res = run_inline(r#"cat <(echo test)█"#);
+        assert_eq!(res.context, r#"cat <(echo test)"#);
+        assert_eq!(res.context_until_cursor, r#"cat <(echo test)"#);
+    }
 
-    // #[test]
-    // fn test_cursor_at_end_of_arith_subst() {
-    //     let res = run_inline(r#"echo $((10 * 2))█ bar"#);
-    //     assert_eq!(res.context, "echo $((10 * 2)) bar");
-    //     assert_eq!(res.context_until_cursor, "echo $((10 * 2))");
-    // }
+    #[test]
+    fn test_proc_subst_out_in_command() {
+        let res = run_inline(r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉█"#);
+        assert_eq!(
+            res.context,
+            r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
+        );
+        assert_eq!(
+            res.context_until_cursor,
+            r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
+        );
+    }
 
-    // #[test]
-    // fn test_command_at_mid_end_of_arith_subst() {
-    //     let res = run_inline(r#"result=$((100 / 5)█)"#);
-    //     assert_eq!(res.context, r#"$((100 / 5))"#);
-    //     assert_eq!(res.context_until_cursor, r#"$((100 / 5)"#);
-    // }
+    #[test]
+    fn test_cursor_in_middle_of_proc_subst_out() {
+        let res = run_inline(r#"tee >(gzip > fi█le.gz) test"#);
+        assert_eq!(res.context, r#"gzip > file.gz"#);
+        assert_eq!(res.context_until_cursor, r#"gzip > fi"#);
+    }
 
-    // #[test]
-    // fn test_command_at_end_end_of_arith_subst() {
-    //     let res = run_inline(r#"result=$((100 / 5))█"#);
-    //     assert_eq!(res.context, r#"$((100 / 5))"#);
-    //     assert_eq!(res.context_until_cursor, r#"$((100 / 5))"#);
-    // }
+    #[test]
+    fn test_cursor_at_end_of_proc_subst_out() {
+        let res = run_inline(r#"tee >(cat█) done"#);
+        assert_eq!(res.context, r#"cat"#);
+        assert_eq!(res.context_until_cursor, r#"cat"#);
+    }
 
-    // #[test]
-    // fn test_complex_arith_with_variables() {
-    //     let res = run_inline(r#"echo $(($VAR + 10)) test█"#);
-    //     assert_eq!(res.context, r#"echo $(($VAR + 10)) test"#);
-    //     assert_eq!(res.context_until_cursor, r#"echo $(($VAR + 10)) test"#);
-    // }
+    #[test]
+    fn test_mixed_proc_subst_in_and_out() {
+        let res = run_inline(r#"cmd <(input cmd) >(output cmd) final█"#);
+        assert_eq!(res.context, r#"cmd <(input cmd) >(output cmd) final"#);
+        assert_eq!(
+            res.context_until_cursor,
+            r#"cmd <(input cmd) >(output cmd) final"#
+        );
+    }
 
-    // #[test]
-    // fn test_cursor_inside_complex_arith() {
-    //     let res = run_inline(r#"val=$((VAR * 2█ + 5))"#);
-    //     assert_eq!(res.context, "VAR * 2 + 5");
-    //     assert_eq!(res.context_until_cursor, "VAR * 2");
-    // }
+    #[test]
+    #[ignore] // Need to think more on what the expected behavior is here
+    fn test_double_bracket_condition() {
+        let res = run_inline(r#"if [[ -f file.txt ]]; then echo found; fi█"#);
+        assert_eq!(res.context, "fi");
+        assert_eq!(res.context_until_cursor, "fi");
+    }
 
-    // #[test]
-    // fn test_nested_arith_operations() {
-    //     let res = run_inline(r#"echo $(( $(( 5 +█ 3 )) * 2 )) ënd ✅"#);
-    //     assert_eq!(res.context, r#"5 + 3"#);
-    //     assert_eq!(res.context_until_cursor, r#"5 +"#);
-    // }
+    #[test]
+    fn test_cursor_inside_double_bracket() {
+        let res = run_inline(r#"[[ -f filé█.txt ]] && echo yës"#);
+        assert_eq!(res.context, "-f filé.txt");
+        assert_eq!(res.context_until_cursor, "-f filé");
+    }
 
-    // #[test]
-    // fn test_proc_subst_in_command() {
-    //     let res = run_inline(r#"diff <(ls /tmp) <(ls /var) résult 🔍█"#);
-    //     assert_eq!(res.context, r#"diff <(ls /tmp) <(ls /var) résult 🔍"#);
-    //     assert_eq!(
-    //         res.context_until_cursor,
-    //         r#"diff <(ls /tmp) <(ls /var) résult 🔍"#
-    //     );
-    // }
+    #[test]
+    fn test_double_bracket_with_string_comparison() {
+        let res = run_inline(r#"[[ "$var" == "café" ]] && echo match 🎯█"#);
+        assert_eq!(res.context, r#"echo match 🎯"#);
+        assert_eq!(res.context_until_cursor, r#"echo match 🎯"#);
+    }
 
-    // #[test]
-    // fn test_cursor_in_middle_of_proc_subst_in() {
-    //     let res = run_inline(r#"diff <(ls /t█mp) <(ls /var) done"#);
-    //     assert_eq!(res.context, r#"ls /tmp"#);
-    //     assert_eq!(res.context_until_cursor, r#"ls /t"#);
-    // }
-
-    // #[test]
-    // fn test_cursor_at_end_of_proc_subst_in() {
-    //     let res = run_inline(r#"diff <(ls /tmp█) <(ls /var) done"#);
-    //     assert_eq!(res.context, r#"ls /tmp"#);
-    //     assert_eq!(res.context_until_cursor, r#"ls /tmp"#);
-    // }
-
-    // #[test]
-    // fn test_command_at_end_of_proc_subst_in() {
-    //     let res = run_inline(r#"cat <(echo test)█"#);
-    //     assert_eq!(res.context, r#"<(echo test)"#);
-    //     assert_eq!(res.context_until_cursor, r#"<(echo test)"#);
-    // }
-
-    // #[test]
-    // fn test_proc_subst_out_in_command() {
-    //     let res = run_inline(r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉█"#);
-    //     assert_eq!(
-    //         res.context,
-    //         r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
-    //     );
-    //     assert_eq!(
-    //         res.context_until_cursor,
-    //         r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
-    //     );
-    // }
-
-    // #[test]
-    // fn test_cursor_in_middle_of_proc_subst_out() {
-    //     let res = run_inline(r#"tee >(gzip > fi█le.gz) test"#);
-    //     assert_eq!(res.context, r#"gzip > file.gz"#);
-    //     assert_eq!(res.context_until_cursor, r#"gzip > fi"#);
-    // }
-
-    // #[test]
-    // fn test_cursor_at_end_of_proc_subst_out() {
-    //     let res = run_inline(r#"tee >(cat█) done"#);
-    //     assert_eq!(res.context, r#"cat"#);
-    //     assert_eq!(res.context_until_cursor, r#"cat"#);
-    // }
-
-    // #[test]
-    // fn test_mixed_proc_subst_in_and_out() {
-    //     let res = run_inline(r#"cmd <(input cmd) >(output cmd) final█"#);
-    //     assert_eq!(res.context, r#"cmd <(input cmd) >(output cmd) final"#);
-    //     assert_eq!(
-    //         res.context_until_cursor,
-    //         r#"cmd <(input cmd) >(output cmd) final"#
-    //     );
-    // }
-
-    // #[test]
-    // #[ignore] // Need to think more on what the expected behavior is here
-    // fn test_double_bracket_condition() {
-    //     let res = run_inline(r#"if [[ -f file.txt ]]; then echo found; fi█"#);
-    //     assert_eq!(res.context, "fi");
-    //     assert_eq!(res.context_until_cursor, "fi");
-    // }
-
-    // #[test]
-    // fn test_cursor_inside_double_bracket() {
-    //     let res = run_inline(r#"[[ -f filé█.txt ]] && echo yës"#);
-    //     assert_eq!(res.context, "-f filé.txt");
-    //     assert_eq!(res.context_until_cursor, "-f filé");
-    // }
-
-    // #[test]
-    // fn test_double_bracket_with_string_comparison() {
-    //     let res = run_inline(r#"[[ "$var" == "café" ]] && echo match 🎯█"#);
-    //     assert_eq!(res.context, r#"echo match 🎯"#);
-    //     assert_eq!(res.context_until_cursor, r#"echo match 🎯"#);
-    // }
-
-    // #[test]
-    // fn test_double_bracket_with_pattern() {
-    //     let res = run_inline(r#"[[ $file == *.txt ]█] || echo "not a text file""#);
-    //     assert_eq!(res.context, "[[ $file == *.txt ]]");
-    //     assert_eq!(res.context_until_cursor, "[[ $file == *.txt ]");
-    // }
+    #[test]
+    fn test_double_bracket_with_pattern() {
+        let res = run_inline(r#"[[ $file == *.txt ]█] || echo "not a text file""#);
+        assert_eq!(res.context, "[[ $file == *.txt ]]");
+        assert_eq!(res.context_until_cursor, "[[ $file == *.txt ]");
+    }
 
     // #[test]
     // fn test_double_bracket_with_regex() {
