@@ -234,106 +234,130 @@ impl DParser {
             }
 
             match &token.kind {
-            TokenKind::LBrace
-            | TokenKind::DoubleLBracket
-            | TokenKind::Backtick
-            | TokenKind::CmdSubst
-            | TokenKind::ArithSubst
-            | TokenKind::ArithCommand
-            | TokenKind::ParamExpansion
-            | TokenKind::ProcessSubstIn
-            | TokenKind::ProcessSubstOut
-            | TokenKind::ExtGlob(_)
-            | TokenKind::If
-            | TokenKind::Case
-            | TokenKind::For
-            | TokenKind::While
-            | TokenKind::Until
-                if Self::nested_opening_satisfied(&token, self.nestings.last()) =>
-            {
-                self.nestings.push(token.kind.clone());
-                command_start_stack.push(self.current_command_range.clone());
-                self.current_command_range = None; // set for next word after this
-            }
-            TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
-                self.heredocs.push_back(delim.to_string());
-            }
-            TokenKind::RParen
-            | TokenKind::RBrace
-            | TokenKind::Backtick
-            | TokenKind::DoubleRBracket
-            | TokenKind::Esac
-            | TokenKind::Done
-            | TokenKind::Fi
-                if Self::nested_closing_satisfied(&token, self.nestings.last(), toks.peek().map(|(_, t)| t)) =>
-            {
-                println!("Popping nesting:");
-                dbg!(&token.kind);
-                dbg!(&token);
-                dbg!(&token.byte_range());
-                dbg!(&self.nestings);
-                let kind = self.nestings.pop().unwrap();
-                if kind == TokenKind::ArithSubst {
-                    assert!(
-                        toks.peek().unwrap().1.kind == TokenKind::RParen,
-                        "expected two RParen tokens"
-                    );
-                    (idx, token) = toks.next().unwrap(); // consume the extra RParen
+                TokenKind::LBrace
+                | TokenKind::DoubleLBracket
+                | TokenKind::Backtick
+                | TokenKind::CmdSubst
+                | TokenKind::ArithSubst
+                | TokenKind::ArithCommand
+                | TokenKind::ParamExpansion
+                | TokenKind::ProcessSubstIn
+                | TokenKind::ProcessSubstOut
+                | TokenKind::ExtGlob(_)
+                | TokenKind::If
+                | TokenKind::Case
+                | TokenKind::For
+                | TokenKind::While
+                | TokenKind::Until
+                    if Self::nested_opening_satisfied(&token, self.nestings.last()) =>
+                {
+                    if self.current_command_range.is_none() {
+                        self.current_command_range = Some(idx..=idx);
+                    }
+                    self.nestings.push(token.kind.clone());
+                    command_start_stack.push(self.current_command_range.clone());
+                    self.current_command_range = None; // set for next word after this
                 }
-
-                if stop_parsing_at_command_boundary {
-                    println!("Stopping parsing at command boundary");
-                    break;
+                TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
+                    self.heredocs.push_back(delim.to_string());
                 }
+                TokenKind::RParen
+                | TokenKind::RBrace
+                | TokenKind::Backtick
+                | TokenKind::DoubleRBracket
+                | TokenKind::Esac
+                | TokenKind::Done
+                | TokenKind::Fi
+                    if Self::nested_closing_satisfied(
+                        &token,
+                        self.nestings.last(),
+                        toks.peek().map(|(_, t)| t),
+                    ) =>
+                {
+                    println!("Popping nesting:");
+                    dbg!(&token.kind);
+                    dbg!(&token);
+                    dbg!(&token.byte_range());
+                    dbg!(&self.nestings);
+                    let kind = self.nestings.pop().unwrap();
+                    if kind == TokenKind::ArithSubst {
+                        assert!(
+                            toks.peek().unwrap().1.kind == TokenKind::RParen,
+                            "expected two RParen tokens"
+                        );
+                        (idx, token) = toks.next().unwrap(); // consume the extra RParen
+                    }
 
+                    if token.kind == TokenKind::DoubleRBracket && token_strictly_contains_cursor {
+                        println!(
+                            "Cursor is inside the closing token of a [[ ]] command, treating it as if it is outside for command boundary purposes"
+                        );
+                        dbg!(&command_start_stack);
+                        if let Some(prev_command_range) = command_start_stack.pop() {
+                            self.current_command_range = prev_command_range;
+                            if let Some(range) = &mut self.current_command_range {
+                                *range = *range.start()..=idx;
+                                println!("Extended range to closing token:");
+                                dbg!(&range);
+                            }
+                        }
+                        break;
+                    }
 
-                if let Some(prev_command_range) = command_start_stack.pop() {
-                    self.current_command_range = prev_command_range;
-                    if let Some(range) = &mut self.current_command_range {
-                        *range = *range.start()..=idx;
-                        println!("Extended range to closing token:");
-                        dbg!(&range);
+                    if stop_parsing_at_command_boundary {
+                        println!("Stopping parsing at command boundary");
+                        break;
+                    }
+
+                    if let Some(prev_command_range) = command_start_stack.pop() {
+                        self.current_command_range = prev_command_range;
+                        if let Some(range) = &mut self.current_command_range {
+                            *range = *range.start()..=idx;
+                            println!("Extended range to closing token:");
+                            dbg!(&range);
+                        }
                     }
                 }
-
-            }
-            TokenKind::Word(_) if word_is_part_of_assignment => {
-                if let Some(range) = &mut self.current_command_range {
-                    *range = *range.start()..=idx;
-                }
-
-                if stop_parsing_at_command_boundary || token_inclusively_contains_cursor {
-                    break;
-                }
-                self.current_command_range = None;
-            }
-            TokenKind::And | TokenKind::Or | TokenKind::Pipe | TokenKind::Semicolon => {
-                if stop_parsing_at_command_boundary {
-                    break;
-                }
-                self.current_command_range = None;
-            }
-            TokenKind::Whitespace(_) => {
-                if token_inclusively_contains_cursor {
+                TokenKind::Word(_) if word_is_part_of_assignment => {
                     if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
                     }
-                }
 
-                if token_strictly_contains_cursor && stop_parsing_at_command_boundary && self.current_command_range.is_none() {
-                    // Stop parsing
-                    self.current_command_range = Some(idx..=idx);
-                    break;
+                    if stop_parsing_at_command_boundary || token_inclusively_contains_cursor {
+                        break;
+                    }
+                    self.current_command_range = None;
+                }
+                TokenKind::And | TokenKind::Or | TokenKind::Pipe | TokenKind::Semicolon => {
+                    if stop_parsing_at_command_boundary {
+                        break;
+                    }
+                    self.current_command_range = None;
+                }
+                TokenKind::Whitespace(_) => {
+                    if token_inclusively_contains_cursor {
+                        if let Some(range) = &mut self.current_command_range {
+                            *range = *range.start()..=idx;
+                        }
+                    }
+
+                    if token_strictly_contains_cursor
+                        && stop_parsing_at_command_boundary
+                        && self.current_command_range.is_none()
+                    {
+                        // Stop parsing
+                        self.current_command_range = Some(idx..=idx);
+                        break;
+                    }
+                }
+                _ => {
+                    if self.current_command_range.is_none() {
+                        self.current_command_range = Some(idx..=idx);
+                    } else if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
+                    }
                 }
             }
-            _ => {
-                if self.current_command_range.is_none() {
-                    self.current_command_range = Some(idx..=idx);
-                } else if let Some(range) = &mut self.current_command_range {
-                    *range = *range.start()..=idx;
-                }
-            }
-        }
 
             if let TokenKind::Word(word) = &token.kind {
                 if self.heredocs.front().is_some_and(|delim| delim == word) {

@@ -119,13 +119,28 @@ pub fn get_completion_context<'a>(
         println!("{:?} byte_range={:?}", t, t.byte_range());
     }
 
-    let opt_cursor_node = context_tokens
+    // first try and find a non whitespace token that inclusivly contains the cursor.
+    // if there is one, that is the word under the cursor.
+    // Otherwise allow whitespace tokens to be the word under the cursor.
+    // If there still isnt a node, then the word under the cursor is empty and the context is empty.
+    let opt_cursor_node = match context_tokens
         .iter()
-        .find(|t| t.byte_range().to_inclusive().contains(&cursor_byte_pos));
+        .filter(|t| !matches!(t.kind, TokenKind::Whitespace(_)))
+        .find(|t| t.byte_range().to_inclusive().contains(&cursor_byte_pos))
+    {
+        Some(node) => Some(node),
+        None => context_tokens
+            .iter()
+            .find(|t| t.byte_range().to_inclusive().contains(&cursor_byte_pos)),
+    };
 
     let word_under_cursor_range = match opt_cursor_node {
+        Some(cursor_node) if matches!(cursor_node.kind, TokenKind::Whitespace(_)) => {
+            println!("Cursor is on whitespace, setting word_under_cursor to empty");
+            cursor_byte_pos..cursor_byte_pos
+        }
         Some(cursor_node) => {
-            let mut word_under_cursor_range = cursor_node.byte_range();
+            let word_under_cursor_range = cursor_node.byte_range();
             assert!(
                 word_under_cursor_range
                     .to_inclusive()
@@ -134,10 +149,6 @@ pub fn get_completion_context<'a>(
 
             dbg!(&cursor_node);
 
-            if let TokenKind::Whitespace(_) = cursor_node.kind {
-                println!("Cursor is on whitespace, setting word_under_cursor to empty");
-                word_under_cursor_range = cursor_byte_pos..cursor_byte_pos;
-            }
             word_under_cursor_range
         }
         None if context_tokens.is_empty() => {
@@ -284,6 +295,14 @@ mod tests {
     }
 
     #[test]
+    fn test_cursor_at_start_of_word() {
+        let res = run_inline(r#"git █commit"#);
+        assert_eq!(res.context, "git commit");
+        assert_eq!(res.context_until_cursor, "git ");
+        assert_eq!(res.word_under_cursor, "commit");
+    }
+
+    #[test]
     fn test_dollar_sign() {
         let res = run_inline(r#"echo $█"#);
         assert_eq!(res.context, "echo $");
@@ -359,7 +378,6 @@ mod tests {
         assert_eq!(res.context, r#"git rev-parse HEAD"#);
         assert_eq!(res.context_until_cursor, r#"git rev-parse HEAD"#);
     }
-
 
     #[test]
     fn test_cursor_just_outside_of_subshell_command() {
@@ -594,11 +612,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Need to think more on what the expected behavior is here
+    // #[ignore] // Need to think more on what the expected behavior is here
     fn test_double_bracket_condition() {
         let res = run_inline(r#"if [[ -f file.txt ]]; then echo found; fi█"#);
-        assert_eq!(res.context, "fi");
-        assert_eq!(res.context_until_cursor, "fi");
+        assert_eq!(res.context, "if [[ -f file.txt ]]; then echo found; fi");
+        assert_eq!(
+            res.context_until_cursor,
+            "if [[ -f file.txt ]]; then echo found; fi"
+        );
+        assert_eq!(res.word_under_cursor, "fi");
     }
 
     #[test]
@@ -622,385 +644,390 @@ mod tests {
         assert_eq!(res.context_until_cursor, "[[ $file == *.txt ]");
     }
 
-    // #[test]
-    // fn test_double_bracket_with_regex() {
-    //     let res = run_inline(r#"[[ $email =~ ^[a-z]+@[a-z]+$ ]]█"#);
-    //     assert_eq!(res.context, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
-    //     assert_eq!(res.context_until_cursor, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
-    // }
+    #[test]
+    fn test_start_with_subshell() {
+        let res = run_inline(r#"$(echo test)█"#);
+        assert_eq!(res.context, "$(echo test)");
+        assert_eq!(res.context_until_cursor, "$(echo test)");
+    }
 
-    // #[test]
-    // fn test_double_bracket_logical_operators() {
-    //     let res = run_inline(r#"[[ -f file.txt && -r file.txt ]] && cat file.txt█"#);
-    //     assert_eq!(res.context, "cat file.txt");
-    //     assert_eq!(res.context_until_cursor, "cat file.txt");
-    // }
+    #[test]
+    fn test_double_bracket_with_regex() {
+        let res = run_inline(r#"[[ $email =~ ^[a-z]+@[a-z]+$ ]]█"#);
+        assert_eq!(res.context, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
+        assert_eq!(res.context_until_cursor, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
+    }
 
-    // #[test]
-    // fn test_cursor_before_double_bracket() {
-    //     let res = run_inline(r#"if [[ -d /path/caf█é ]]; then ls; fi"#);
-    //     assert_eq!(res.context, "-d /path/café");
-    //     assert_eq!(res.context_until_cursor, "-d /path/caf");
-    // }
+    #[test]
+    fn test_double_bracket_logical_operators() {
+        let res = run_inline(r#"[[ -f file.txt && -r file.txt ]] && cat file.txt█"#);
+        assert_eq!(res.context, "cat file.txt");
+        assert_eq!(res.context_until_cursor, "cat file.txt");
+    }
 
-    // #[test]
-    // fn test_double_bracket_with_emoji() {
-    //     let res = run_inline(r#"[[ "$msg" == "✅ done" ]] && echo success█"#);
-    //     assert_eq!(res.context, "echo success");
-    //     assert_eq!(res.context_until_cursor, "echo success");
-    // }
+    #[test]
+    fn test_cursor_before_double_bracket() {
+        let res = run_inline(r#"if [[ -d /path/caf█é ]]; then ls; fi"#);
+        assert_eq!(res.context, "-d /path/café");
+        assert_eq!(res.context_until_cursor, "-d /path/caf");
+    }
 
-    // // Tests for CompletionContext with various cursor positions and non-ASCII characters
+    #[test]
+    fn test_double_bracket_with_emoji() {
+        let res = run_inline(r#"[[ "$msg" == "✅ done" ]] && echo success█"#);
+        assert_eq!(res.context, "echo success");
+        assert_eq!(res.context_until_cursor, "echo success");
+    }
 
-    // #[test]
-    // fn test_completion_context_cursor_at_start_of_line() {
-    //     // Cursor at position 0 (start of line)
-    //     let ctx = run_inline("█café --option 🎯");
-    //     match ctx.comp_type {
-    //         CompType::FirstWord => {
-    //             assert_eq!(ctx.word_under_cursor, "café");
-    //         }
-    //         _ => panic!("Expected FirstWord"),
-    //     }
-    // }
+    // Tests for CompletionContext with various cursor positions and non-ASCII characters
 
-    // #[test]
-    // fn test_completion_context_cursor_in_first_word() {
-    //     // Cursor in the middle of first word with non-ASCII
-    //     let ctx = run_inline("caf█é --option 🎯");
-    //     match ctx.comp_type {
-    //         CompType::FirstWord => {
-    //             assert_eq!(ctx.word_under_cursor, "café");
-    //         }
-    //         _ => panic!("Expected FirstWord"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_cursor_at_start_of_line() {
+        // Cursor at position 0 (start of line)
+        let ctx = run_inline("█café --option 🎯");
+        match ctx.comp_type {
+            CompType::FirstWord => {
+                assert_eq!(ctx.word_under_cursor, "café");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
+    }
 
-    // #[test]
-    // fn test_completion_context_cursor_after_first_word_emoji() {
-    //     // Cursor after first word that contains emoji
-    //     let ctx = run_inline("🚀rock█et --verbose naïve");
-    //     match ctx.comp_type {
-    //         CompType::FirstWord => {
-    //             assert_eq!(ctx.word_under_cursor, "🚀rocket");
-    //         }
-    //         _ => panic!("Expected FirstWord"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_cursor_in_first_word() {
+        // Cursor in the middle of first word with non-ASCII
+        let ctx = run_inline("caf█é --option 🎯");
+        match ctx.comp_type {
+            CompType::FirstWord => {
+                assert_eq!(ctx.word_under_cursor, "café");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
+    }
 
-    // #[test]
-    // fn test_completion_context_cursor_at_end_of_line() {
-    //     // Cursor at end of line with non-ASCII
-    //     let ctx = run_inline("echo 'Tëst message' résumé 📄█");
+    #[test]
+    fn test_completion_context_cursor_after_first_word_emoji() {
+        // Cursor after first word that contains emoji
+        let ctx = run_inline("🚀rock█et --verbose naïve");
+        match ctx.comp_type {
+            CompType::FirstWord => {
+                assert_eq!(ctx.word_under_cursor, "🚀rocket");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "echo 'Tëst message' résumé 📄");
-    //             assert_eq!(command_word, "echo");
-    //             assert_eq!(ctx.word_under_cursor, "📄");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_cursor_at_end_of_line() {
+        // Cursor at end of line with non-ASCII
+        let ctx = run_inline("echo 'Tëst message' résumé 📄█");
 
-    // #[test]
-    // fn test_completion_context_cursor_in_middle_word_with_unicode() {
-    //     // Cursor in middle of word with unicode characters
-    //     let ctx = run_inline("ls --sïze caf█é 日本語");
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "echo 'Tëst message' résumé 📄");
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "📄");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "ls --sïze café 日本語");
-    //             assert_eq!(command_word, "ls");
-    //             assert_eq!(ctx.word_under_cursor, "café");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_cursor_in_middle_word_with_unicode() {
+        // Cursor in middle of word with unicode characters
+        let ctx = run_inline("ls --sïze caf█é 日本語");
 
-    // #[test]
-    // fn test_completion_context_cursor_at_start_chinese_chars() {
-    //     // Cursor at start with Chinese characters
-    //     let ctx = run_inline("█文件 --option värde");
-    //     match ctx.comp_type {
-    //         CompType::FirstWord => {
-    //             assert_eq!(ctx.word_under_cursor, "文件");
-    //         }
-    //         _ => panic!("Expected FirstWord"),
-    //     }
-    // }
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "ls --sïze café 日本語");
+                assert_eq!(command_word, "ls");
+                assert_eq!(ctx.word_under_cursor, "café");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    // #[test]
-    // fn test_completion_context_cursor_in_middle_chinese() {
-    //     // Cursor in middle of Chinese word
-    //     let ctx = run_inline("git 提█交 --mëssage 'hëllo'");
+    #[test]
+    fn test_completion_context_cursor_at_start_chinese_chars() {
+        // Cursor at start with Chinese characters
+        let ctx = run_inline("█文件 --option värde");
+        match ctx.comp_type {
+            CompType::FirstWord => {
+                assert_eq!(ctx.word_under_cursor, "文件");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "git 提交 --mëssage 'hëllo'");
-    //             assert_eq!(command_word, "git");
-    //             assert_eq!(ctx.word_under_cursor, "提交");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_cursor_in_middle_chinese() {
+        // Cursor in middle of Chinese word
+        let ctx = run_inline("git 提█交 --mëssage 'hëllo'");
 
-    // #[test]
-    // fn test_completion_context_cursor_end_arabic_text() {
-    //     // Cursor at end with Arabic text
-    //     let ctx = run_inline("cat مرحبا --öption 🔥█");
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "git 提交 --mëssage 'hëllo'");
+                assert_eq!(command_word, "git");
+                assert_eq!(ctx.word_under_cursor, "提交");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "cat مرحبا --öption 🔥");
-    //             assert_eq!(command_word, "cat");
-    //             assert_eq!(ctx.word_under_cursor, "🔥");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_cursor_end_arabic_text() {
+        // Cursor at end with Arabic text
+        let ctx = run_inline("cat مرحبا --öption 🔥█");
 
-    // #[test]
-    // fn test_completion_context_cursor_middle_cyrillic() {
-    //     // Cursor in middle of Cyrillic word
-    //     let ctx = run_inline("ls фай█л --süze привет 🎯");
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "cat مرحبا --öption 🔥");
+                assert_eq!(command_word, "cat");
+                assert_eq!(ctx.word_under_cursor, "🔥");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "ls файл --süze привет 🎯");
-    //             assert_eq!(command_word, "ls");
-    //             assert_eq!(ctx.word_under_cursor, "файл");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_cursor_middle_cyrillic() {
+        // Cursor in middle of Cyrillic word
+        let ctx = run_inline("ls фай█л --süze привет 🎯");
 
-    // #[test]
-    // fn test_completion_context_blank_space_mixed_scripts() {
-    //     // Cursor on blank space with mixed scripts
-    //     let ctx = run_inline("grep 'pättërn' █файл.txt 日本語 🚀");
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "ls файл --süze привет 🎯");
+                assert_eq!(command_word, "ls");
+                assert_eq!(ctx.word_under_cursor, "файл");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "grep 'pättërn' файл.txt 日本語 🚀");
-    //             assert_eq!(command_word, "grep");
-    //             assert_eq!(ctx.word_under_cursor, "файл.txt");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_blank_space_mixed_scripts() {
+        // Cursor on blank space with mixed scripts
+        let ctx = run_inline("grep 'pättërn' █файл.txt 日本語 🚀");
 
-    // #[test]
-    // fn test_completion_context_start_emoji_only() {
-    //     // Cursor at start of emoji-only command
-    //     let ctx = run_inline("█🎉 🎊 🎈 --flâg");
-    //     match ctx.comp_type {
-    //         CompType::FirstWord => {
-    //             assert_eq!(ctx.word_under_cursor, "🎉");
-    //         }
-    //         _ => panic!("Expected FirstWord"),
-    //     }
-    // }
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "grep 'pättërn' файл.txt 日本語 🚀");
+                assert_eq!(command_word, "grep");
+                assert_eq!(ctx.word_under_cursor, "файл.txt");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    // #[test]
-    // fn test_completion_context_end_accented_characters() {
-    //     // Cursor at end with heavily accented text
-    //     let ctx = run_inline("find . -näme 'fîlé' -type f 🔍█");
+    #[test]
+    fn test_completion_context_start_emoji_only() {
+        // Cursor at start of emoji-only command
+        let ctx = run_inline("█🎉 🎊 🎈 --flâg");
+        match ctx.comp_type {
+            CompType::FirstWord => {
+                assert_eq!(ctx.word_under_cursor, "🎉");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "find . -näme 'fîlé' -type f 🔍");
-    //             assert_eq!(command_word, "find");
-    //             assert_eq!(ctx.word_under_cursor, "🔍");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_end_accented_characters() {
+        // Cursor at end with heavily accented text
+        let ctx = run_inline("find . -näme 'fîlé' -type f 🔍█");
 
-    // #[test]
-    // fn test_completion_context_space_between_multibyte() {
-    //     // Cursor on space between multibyte characters
-    //     let ctx = run_inline("écho 'mëssagé' █文件 🎨");
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "find . -näme 'fîlé' -type f 🔍");
+                assert_eq!(command_word, "find");
+                assert_eq!(ctx.word_under_cursor, "🔍");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "écho 'mëssagé' 文件 🎨");
-    //             assert_eq!(command_word, "écho");
-    //             assert_eq!(ctx.word_under_cursor, "文件");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_space_between_multibyte() {
+        // Cursor on space between multibyte characters
+        let ctx = run_inline("écho 'mëssagé' █文件 🎨");
 
-    // #[test]
-    // fn test_completion_context_middle_thai_text() {
-    //     // Cursor in middle of Thai text
-    //     let ctx = run_inline("cat ไฟ█ล์ --öption วันนี้ 🌟");
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "écho 'mëssagé' 文件 🎨");
+                assert_eq!(command_word, "écho");
+                assert_eq!(ctx.word_under_cursor, "文件");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(ctx.context, "cat ไฟล์ --öption วันนี้ 🌟");
-    //             assert_eq!(command_word, "cat");
-    //             assert_eq!(ctx.word_under_cursor, "ไฟล์");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_completion_context_middle_thai_text() {
+        // Cursor in middle of Thai text
+        let ctx = run_inline("cat ไฟ█ล์ --öption วันนี้ 🌟");
 
-    // #[test]
-    // fn test_word_under_cursor_with_word_after() {
-    //     // This is the bug: when cursor is at END of word AND there's a word after,
-    //     // word_under_cursor should be the current word, not ""
-    //     // Example: "cd fo[cursor] bar" - word_under_cursor should be "fo", not ""
-    //     let ctx = run_inline("cd fo█ bar");
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(ctx.context, "cat ไฟล์ --öption วันนี้ 🌟");
+                assert_eq!(command_word, "cat");
+                assert_eq!(ctx.word_under_cursor, "ไฟล์");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "fo");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_word_under_cursor_with_word_after() {
+        // This is the bug: when cursor is at END of word AND there's a word after,
+        // word_under_cursor should be the current word, not ""
+        // Example: "cd fo[cursor] bar" - word_under_cursor should be "fo", not ""
+        let ctx = run_inline("cd fo█ bar");
 
-    // #[test]
-    // fn test_word_under_cursor_in_middle_with_word_after() {
-    //     // Cursor in the middle of "foo" when "bar" follows
-    //     let ctx = run_inline("cd f█oo bar");
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "fo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "foo");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_word_under_cursor_in_middle_with_word_after() {
+        // Cursor in the middle of "foo" when "bar" follows
+        let ctx = run_inline("cd f█oo bar");
 
-    // #[test]
-    // #[ignore]
-    // fn test_word_with_double_quote_1() {
-    //     let ctx = run_inline(r#"cd "foo█"#);
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "foo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "\"foo");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    #[ignore]
+    fn test_word_with_double_quote_1() {
+        let ctx = run_inline(r#"cd "foo█"#);
 
-    // #[test]
-    // #[ignore]
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "\"foo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    // fn test_word_with_double_quote_2() {
-    //     let ctx = run_inline(r#"cd "foo   asdf█"#);
+    #[test]
+    #[ignore]
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "\"foo   asdf");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    fn test_word_with_double_quote_2() {
+        let ctx = run_inline(r#"cd "foo   asdf█"#);
 
-    // #[test]
-    // #[ignore]
-    // fn test_word_with_double_quote_3() {
-    //     let ctx = run_inline(r#"cd "foo █"#);
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "\"foo   asdf");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "\"foo ");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    #[ignore]
+    fn test_word_with_double_quote_3() {
+        let ctx = run_inline(r#"cd "foo █"#);
 
-    // #[test]
-    // #[ignore]
-    // fn test_word_with_double_quote_4() {
-    //     let ctx = run_inline(r#"echo && cd "foo █"#);
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "\"foo ");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "\"foo ");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    #[ignore]
+    fn test_word_with_double_quote_4() {
+        let ctx = run_inline(r#"echo && cd "foo █"#);
 
-    // #[test]
-    // #[ignore]
-    // fn test_word_with_single_quote_1() {
-    //     let ctx = run_inline(r#"cd 'foo█"#);
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "\"foo ");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "'foo");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    #[ignore]
+    fn test_word_with_single_quote_1() {
+        let ctx = run_inline(r#"cd 'foo█"#);
 
-    // #[test]
-    // #[ignore]
-    // fn test_word_with_single_quote_2() {
-    //     let ctx = run_inline(r#"cd 'foo   asdf█"#);
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "'foo");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "'foo   asdf");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    #[ignore]
+    fn test_word_with_single_quote_2() {
+        let ctx = run_inline(r#"cd 'foo   asdf█"#);
 
-    // #[test]
-    // #[ignore]
-    // fn test_word_with_single_quote_3() {
-    //     let ctx = run_inline(r#"echo && cd 'foo   asdf█"#);
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "'foo   asdf");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "'foo   asdf");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    #[ignore]
+    fn test_word_with_single_quote_3() {
+        let ctx = run_inline(r#"echo && cd 'foo   asdf█"#);
 
-    // #[test]
-    // #[ignore]
-    // fn test_word_with_backslash_1() {
-    //     let ctx = run_inline(r#"echo && cd foo\█"#);
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "'foo   asdf");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "foo\\");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_word_with_backslash_1() {
+        let ctx = run_inline(r#"echo && cd foo\█"#);
 
-    // #[test]
-    // #[ignore]
-    // fn test_word_with_backslash_2() {
-    //     let ctx = run_inline(r#"cd foo\ █"#);
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "foo\\");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    //     match ctx.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(command_word, "cd");
-    //             assert_eq!(ctx.word_under_cursor, "foo\\ ");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+    #[test]
+    fn test_word_with_backslash_2() {
+        let ctx = run_inline(r#"cd foo\ █"#);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "foo\\ ");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 }
