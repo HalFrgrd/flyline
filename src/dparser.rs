@@ -111,7 +111,83 @@ impl DParser {
     }
 
     pub fn walk_to_end(&mut self) {
-        self.walk(None);
+        // Walk through the tokens until we reach the end or the cursor position, updating nestings and heredocs along the way
+
+        // echo $(( grep 1 + 2      # command is grep
+        // echo $(( grep 1 + 2 )    # command is grep
+        // echo $(( grep 1 + 2 ))   # command is echo, since the cursor is after the closing ))
+
+        let mut toks = self.tokens.iter().peekable();
+
+        loop {
+            let token = match toks.next() {
+                Some(t) => t,
+                None => break,
+            };
+
+            match &token.kind {
+                TokenKind::LBrace
+                // | TokenKind::LParen
+                | TokenKind::DoubleLBracket
+                | TokenKind::Quote
+                | TokenKind::SingleQuote
+                | TokenKind::Backtick
+                | TokenKind::CmdSubst
+                | TokenKind::ArithSubst
+                | TokenKind::ArithCommand
+                | TokenKind::ParamExpansion
+                | TokenKind::ProcessSubstIn
+                | TokenKind::ProcessSubstOut
+                | TokenKind::ExtGlob(_)
+                | TokenKind::If
+                | TokenKind::Case
+                | TokenKind::For
+                | TokenKind::While
+                | TokenKind::Until
+                    if Self::nested_opening_satisfied(&token, self.nestings.last()) =>
+                {
+                    self.nestings.push(token.kind.clone());
+                }
+                TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
+                    self.heredocs.push_back(delim.to_string());
+                }
+                TokenKind::RParen
+                | TokenKind::RBrace
+                | TokenKind::Backtick
+                | TokenKind::DoubleRBracket
+                | TokenKind::Quote
+                | TokenKind::SingleQuote
+                | TokenKind::Esac
+                | TokenKind::Done
+                | TokenKind::Fi
+                    if Self::nested_closing_satisfied(&token, self.nestings.last(), toks.peek()) =>
+                {
+                    let kind = self.nestings.pop().unwrap();
+                    if kind == TokenKind::ArithSubst {
+                        assert!(
+                            toks.peek().unwrap().kind == TokenKind::RParen,
+                            "expected two RParen tokens"
+                        );
+                        toks.next(); // consume the extra RParen
+                    }
+
+
+                }
+                _ => {
+                }
+            }
+
+            if let TokenKind::Word(word) = &token.kind {
+                if self.heredocs.front().is_some_and(|delim| delim == word) {
+                    self.heredocs.pop_front();
+                }
+            }
+        }
+
+        if cfg!(test) {
+            dbg!("Final nestings:");
+            dbg!(&self.nestings);
+        }
     }
 
     pub fn walk(&mut self, cursor_byte_pos: Option<usize>) {
