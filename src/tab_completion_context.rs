@@ -139,18 +139,21 @@ pub fn get_completion_context<'a>(
             println!("Cursor is on whitespace, setting word_under_cursor to empty");
             cursor_byte_pos..cursor_byte_pos
         }
-        Some(cursor_node) => {
-            let word_under_cursor_range = cursor_node.byte_range();
-            assert!(
-                word_under_cursor_range
-                    .to_inclusive()
-                    .contains(&cursor_byte_pos)
-            );
+        Some(cursor_node) if matches!(cursor_node.kind, TokenKind::Word(_)) => {
+            // try grow to the left if there are single or double quotes
+            let mut byte_range = cursor_node.byte_range();
 
-            dbg!(&cursor_node);
+            if byte_range.start > 0 {
+                if let Some(prev_char) = buffer[..byte_range.start].chars().rev().next() {
+                    if prev_char == '"' || prev_char == '\'' {
+                        byte_range.start -= prev_char.len_utf8();
+                    }
+                }
+            }
 
-            word_under_cursor_range
+            byte_range
         }
+        Some(cursor_node) => cursor_node.byte_range(),
         None if context_tokens.is_empty() => {
             println!("No context tokens, setting word_under_cursor to empty");
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
@@ -159,6 +162,12 @@ pub fn get_completion_context<'a>(
             todo!("Cursor is outside of all context tokens");
         }
     };
+
+    assert!(
+        word_under_cursor_range
+            .to_inclusive()
+            .contains(&cursor_byte_pos)
+    );
 
     let comp_context_range = if context_tokens
         .iter()
@@ -907,7 +916,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_word_with_double_quote_1() {
         let ctx = run_inline(r#"cd "foo█"#);
 
@@ -921,7 +929,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
 
     fn test_word_with_double_quote_2() {
         let ctx = run_inline(r#"cd "foo   asdf█"#);
@@ -936,7 +943,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_word_with_double_quote_3() {
         let ctx = run_inline(r#"cd "foo █"#);
 
@@ -950,7 +956,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_word_with_double_quote_4() {
         let ctx = run_inline(r#"echo && cd "foo █"#);
 
@@ -964,7 +969,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_word_with_single_quote_1() {
         let ctx = run_inline(r#"cd 'foo█"#);
 
@@ -978,7 +982,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_word_with_single_quote_2() {
         let ctx = run_inline(r#"cd 'foo   asdf█"#);
 
@@ -992,7 +995,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_word_with_single_quote_3() {
         let ctx = run_inline(r#"echo && cd 'foo   asdf█"#);
 
