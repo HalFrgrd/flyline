@@ -96,27 +96,24 @@ pub fn get_completion_context<'a>(
 ) -> CompletionContext<'a> {
     let mut parser = DParser::from(buffer);
 
-    println!("Tokens:");
-    for t in parser.tokens() {
-        println!("{:?} byte_range={:?}", t, t.byte_range());
-    }
-
     parser.walk(cursor_byte_pos);
 
     let context_tokens = parser.get_current_command_tokens();
 
-    println!("Context tokens:");
-    dbg!(buffer.len());
-    // dbg!(
-    //     context_tokens
-    //         .iter()
-    //         .map(|t| t.byte_range().end - t.byte_range().start)
-    //         .sum::<usize>()
-    // );
+    if cfg!(test) {
+        println!("Context tokens:");
+        dbg!(buffer.len());
+        // dbg!(
+        //     context_tokens
+        //         .iter()
+        //         .map(|t| t.byte_range().end - t.byte_range().start)
+        //         .sum::<usize>()
+        // );
 
-    dbg!(cursor_byte_pos);
-    for t in context_tokens.iter() {
-        println!("{:?} byte_range={:?}", t, t.byte_range());
+        dbg!(cursor_byte_pos);
+        for t in context_tokens.iter() {
+            println!("{:?} byte_range={:?}", t, t.byte_range());
+        }
     }
 
     // first try and find a non whitespace token that inclusivly contains the cursor.
@@ -136,7 +133,6 @@ pub fn get_completion_context<'a>(
 
     let word_under_cursor_range = match opt_cursor_node {
         Some(cursor_node) if matches!(cursor_node.kind, TokenKind::Whitespace(_)) => {
-            println!("Cursor is on whitespace, setting word_under_cursor to empty");
             cursor_byte_pos..cursor_byte_pos
         }
         Some(cursor_node) if matches!(cursor_node.kind, TokenKind::Word(_)) => {
@@ -155,7 +151,6 @@ pub fn get_completion_context<'a>(
         }
         Some(cursor_node) => cursor_node.byte_range(),
         None if context_tokens.is_empty() => {
-            println!("No context tokens, setting word_under_cursor to empty");
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
         None => {
@@ -173,9 +168,6 @@ pub fn get_completion_context<'a>(
         .iter()
         .all(|t| matches!(t.kind, TokenKind::Whitespace(_)))
     {
-        println!(
-            "All context tokens are whitespace, setting context and context_until_cursor to empty"
-        );
         cursor_byte_pos..cursor_byte_pos
     } else {
         context_tokens.first().unwrap().byte_range().start
