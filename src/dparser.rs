@@ -190,7 +190,7 @@ impl DParser {
         }
     }
 
-    pub fn walk(&mut self, cursor_byte_pos: Option<usize>) {
+    pub fn walk(&mut self, cursor_byte_pos: usize) {
         // Walk through the tokens until we reach the end or the cursor position, updating nestings and heredocs along the way
 
         // echo $(( grep 1 + 2      # command is grep
@@ -223,13 +223,10 @@ impl DParser {
                 false
             };
 
-            let token_inclusively_contains_cursor = cursor_byte_pos
-                .map(|pos| token.byte_range().to_inclusive().contains(&pos))
-                .unwrap_or(false);
+            let token_inclusively_contains_cursor =
+                token.byte_range().to_inclusive().contains(&cursor_byte_pos);
 
-            let token_strictly_contains_cursor = cursor_byte_pos
-                .map(|pos| token.byte_range().contains(&pos))
-                .unwrap_or(false);
+            let token_strictly_contains_cursor = token.byte_range().contains(&cursor_byte_pos);
 
             if token_inclusively_contains_cursor {
                 // Stop parsing
@@ -240,8 +237,8 @@ impl DParser {
             TokenKind::LBrace
             // | TokenKind::LParen
             | TokenKind::DoubleLBracket
-            | TokenKind::Quote
-            | TokenKind::SingleQuote
+            // | TokenKind::Quote
+            // | TokenKind::SingleQuote
             | TokenKind::Backtick
             | TokenKind::CmdSubst
             | TokenKind::ArithSubst
@@ -271,8 +268,8 @@ impl DParser {
             | TokenKind::RBrace
             | TokenKind::Backtick
             | TokenKind::DoubleRBracket
-            | TokenKind::Quote
-            | TokenKind::SingleQuote
+            // | TokenKind::Quote
+            // | TokenKind::SingleQuote
             | TokenKind::Esac
             | TokenKind::Done
             | TokenKind::Fi
@@ -320,13 +317,11 @@ impl DParser {
                 self.current_command_range = None;
             }
             TokenKind::Whitespace(_) => {
-
                 if token_inclusively_contains_cursor {
                     if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
                     }
                 }
-
 
                 if token_strictly_contains_cursor && stop_parsing_at_command_boundary && self.current_command_range.is_none() {
                     // Stop parsing
@@ -389,44 +384,34 @@ mod tests {
     fn test_nested_commands() {
         let input = r#"     echo $(ls $(echo nested) | grep pattern) > output.txt       "#;
         let mut parser = DParser::from(input);
-        parser.walk_to_end();
+        parser.walk(input.len());
         assert!(parser.nestings.is_empty());
         assert!(parser.heredocs.is_empty());
 
-        let command_tokens = parser.get_current_command_tokens();
-        let command_str = command_tokens
-            .iter()
-            .map(|t| t.value.to_string())
-            .collect::<Vec<_>>()
-            .join("");
-        assert_eq!(command_str, input.trim());
+        let command_str = parser.get_current_command_str();
+        assert_eq!(command_str, input.trim_start());
     }
 
     #[test]
     fn test_in_nested_command() {
         let input = r#"echo $(ls $(   echo nest    "#;
         let mut parser = DParser::from(input);
-        parser.walk_to_end();
+        parser.walk(input.len());
         assert_eq!(
             parser.nestings,
             vec![TokenKind::CmdSubst, TokenKind::CmdSubst]
         );
         assert!(parser.heredocs.is_empty());
 
-        let command_tokens = parser.get_current_command_tokens();
-        let command_str = command_tokens
-            .iter()
-            .map(|t| t.value.to_string())
-            .collect::<Vec<_>>()
-            .join("");
-        assert_eq!(command_str, "echo nest");
+        let command_str = parser.get_current_command_str();
+        assert_eq!(command_str, "echo nest    ");
     }
 
     #[test]
     fn test_pipeline() {
         let input = r#"echo "héllo" && echo "wörld""#;
         let mut parser = DParser::from(input);
-        parser.walk_to_end();
+        parser.walk(input.len());
         assert!(parser.nestings.is_empty());
         assert!(parser.heredocs.is_empty());
         let command_str = parser.get_current_command_str();
@@ -437,23 +422,23 @@ mod tests {
     fn test_pipeline_with_nesting_1() {
         let input = r#"echo "héllo" && echo $(( bar "#;
         let mut parser = DParser::from(input);
-        parser.walk_to_end();
-        assert_eq!(parser.get_current_command_str(), r#"bar"#);
+        parser.walk(input.len());
+        assert_eq!(parser.get_current_command_str(), r#"bar "#);
     }
 
     #[test]
     fn test_pipeline_with_nesting_2() {
         let input = r#"echo "héllo" && echo $(( bar ) "#;
         let mut parser = DParser::from(input);
-        parser.walk_to_end();
-        assert_eq!(parser.get_current_command_str(), r#"bar )"#);
+        parser.walk(input.len());
+        assert_eq!(parser.get_current_command_str(), r#"bar ) "#);
     }
 
     #[test]
     fn test_pipeline_with_nesting_3() {
         let input = r#"echo "héllo" && echo $(( bar )) "#;
         let mut parser = DParser::from(input);
-        parser.walk_to_end();
-        assert_eq!(parser.get_current_command_str(), r#"echo $(( bar ))"#);
+        parser.walk(input.len());
+        assert_eq!(parser.get_current_command_str(), r#"echo $(( bar )) "#);
     }
 }
