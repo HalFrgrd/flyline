@@ -268,89 +268,89 @@ mod tests {
         assert_eq!(res.word_under_cursor, "");
     }
 
-    // #[test]
-    // fn test_with_assignment_at_assignment() {
-    //     let res = run_inline(r#"VAR=valué ABC=qwe█ ls -la"#);
-    //     assert_eq!(res.context, "ABC=qwe");
-    //     assert_eq!(res.context_until_cursor, "ABC=qwe");
-    // }
+    #[test]
+    fn test_with_assignment_at_assignment() {
+        let res = run_inline(r#"VAR=valué ABC=qwe█ ls -la"#);
+        assert_eq!(res.context, "");
+        assert_eq!(res.context_until_cursor, "");
+    }
 
-    // #[test]
-    // fn test_list_of_commands() {
-    //     let res = run_inline(r#"git commit -m "Initial "; ls -la█"#);
-    //     assert_eq!(res.context, "ls -la");
-    //     assert_eq!(res.context_until_cursor, "ls -la");
-    // }
+    #[test]
+    fn test_list_of_commands() {
+        let res = run_inline(r#"git commit -m "Initial "; ls -la█"#);
+        assert_eq!(res.context, "ls -la");
+        assert_eq!(res.context_until_cursor, "ls -la");
+    }
 
-    // #[test]
-    // fn test_dollar_sign() {
-    //     let res = run_inline(r#"echo $█"#);
-    //     assert_eq!(res.context, "echo $");
-    //     assert_eq!(res.context_until_cursor, "echo $");
-    //     assert_eq!(res.word_under_cursor, "$");
-    // }
+    #[test]
+    fn test_dollar_sign() {
+        let res = run_inline(r#"echo $█"#);
+        assert_eq!(res.context, "echo $");
+        assert_eq!(res.context_until_cursor, "echo $");
+        assert_eq!(res.word_under_cursor, "$");
+    }
 
-    // #[test]
-    // fn test_dollar_sign_one_letter() {
-    //     let res = run_inline(r#"echo $A█"#);
-    //     assert_eq!(res.context, "echo $A");
-    //     assert_eq!(res.context_until_cursor, "echo $A");
-    //     assert_eq!(res.word_under_cursor, "$A");
-    // }
+    #[test]
+    fn test_dollar_sign_one_letter() {
+        let res = run_inline(r#"echo $A█"#);
+        assert_eq!(res.context, "echo $A");
+        assert_eq!(res.context_until_cursor, "echo $A");
+        assert_eq!(res.word_under_cursor, "A");
+    }
 
-    // #[test]
-    // fn test_dollar_concatenation() {
-    //     let res = run_inline(r#"echo $A$B█"#);
-    //     assert_eq!(res.context, "echo $A$B");
-    //     assert_eq!(res.context_until_cursor, "echo $A");
-    //     assert_eq!(res.word_under_cursor, "$A");
+    #[test]
+    fn test_dollar_concatenation() {
+        let res = run_inline(r#"echo $A█$B"#);
+        assert_eq!(res.context, "echo $A$B");
+        assert_eq!(res.context_until_cursor, "echo $A");
+        assert_eq!(res.word_under_cursor, "A");
 
-    //     let res = run_inline(r#"echo $A$█B"#);
-    //     assert_eq!(res.context, "echo $A$B");
-    //     assert_eq!(res.context_until_cursor, "echo $A$");
-    //     assert_eq!(res.word_under_cursor, "$B");
-    // }
+        let res = run_inline(r#"echo $A$█B"#);
+        assert_eq!(res.context, "echo $A$B");
+        assert_eq!(res.context_until_cursor, "echo $A$");
+        assert_eq!(res.word_under_cursor, "$");
+    }
 
-    // #[test]
-    // fn test_with_pipeline() {
-    //     let res = run_inline(r#"cat filé.txt | grep "pattern" | sort█"#);
-    //     assert_eq!(res.context, "sort");
-    //     assert_eq!(res.context_until_cursor, "sort");
+    #[test]
+    fn test_with_pipeline() {
+        let res = run_inline(r#"cat filé.txt | grep "pattern" | sort█"#);
+        assert_eq!(res.context, "sort");
+        assert_eq!(res.context_until_cursor, "sort");
 
-    //     let res2 = run_inline(r#"echo "héllo" && echo "wörld"█"#);
-    //     assert_eq!(res2.context, r#"echo "wörld""#);
-    //     assert_eq!(res2.context_until_cursor, r#"echo "wörld""#);
+        let res2 = run_inline(r#"echo "héllo" && echo "wörld"█"#);
+        assert_eq!(res2.context, r#"echo "wörld""#);
+        assert_eq!(res2.context_until_cursor, r#"echo "wörld""#);
 
-    //     let res3 = run_inline(r#"false || echo "fallback 😅"█"#);
-    //     assert_eq!(res3.context, r#"echo "fallback 😅""#);
-    //     assert_eq!(res3.context_until_cursor, r#"echo "fallback 😅""#);
-    // }
+        let res3 = run_inline(r#"false || echo "fallback 😅"█"#);
+        assert_eq!(res3.context, r#"echo "fallback 😅""#);
+        assert_eq!(res3.context_until_cursor, r#"echo "fallback 😅""#);
+    }
 
-    // #[test]
-    // fn test_subshell_in_command() {
-    //     let res = run_inline("echo $(git rev-parse HEAD) résumé█");
-    //     assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
-    //     assert_eq!(
-    //         res.context_until_cursor,
-    //         "echo $(git rev-parse HEAD) résumé"
-    //     );
+    #[test]
+    fn test_subshell_in_command() {
+        let res = run_inline("echo $(git rev-parse HEAD) résumé█");
+        assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
+        assert_eq!(
+            res.context_until_cursor,
+            "echo $(git rev-parse HEAD) résumé"
+        );
 
-    //     match res.comp_type {
-    //         CompType::CommandComp { command_word } => {
-    //             assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
-    //             assert_eq!(command_word, "echo");
-    //             assert_eq!(res.word_under_cursor, "résumé");
-    //         }
-    //         _ => panic!("Expected CommandComp"),
-    //     }
-    // }
+        match res.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
+                assert_eq!(command_word, "echo");
+                assert_eq!(res.word_under_cursor, "résumé");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 
-    // #[test]
-    // fn test_cursor_in_middle_of_subshell_command() {
-    //     let res = run_inline(r#"echo $(git rev-parse█ HEAD) café"#);
-    //     assert_eq!(res.context, r#"git rev-parse HEAD"#);
-    //     assert_eq!(res.context_until_cursor, r#"git rev-parse"#);
-    // }
+    #[test]
+    fn test_cursor_in_middle_of_subshell_command() {
+        let res = run_inline(r#"echo $(git rev-parse█ HEAD) café"#);
+        assert_eq!(res.context, r#"git rev-parse HEAD"#);
+        assert_eq!(res.context_until_cursor, r#"git rev-parse"#);
+    }
 
     // #[test]
     // fn test_cursor_at_end_of_subshell_command() {

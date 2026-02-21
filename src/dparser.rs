@@ -214,11 +214,8 @@ impl DParser {
                     (idx, token) = toks.next().unwrap(); // consume the extra RParen
                 }
 
-                let strictly_contains_cursor = cursor_byte_pos
-                    .map(|pos| token.byte_range().contains(&pos))
-                    .unwrap_or(false);
 
-                let should_pop = !stop_parsing_at_command_boundary || !strictly_contains_cursor;
+                let should_pop = !stop_parsing_at_command_boundary || token_strictly_contains_cursor;
                 // Restore command start for the command that this nesting started, if any
                 if should_pop && let Some(prev_command_range) = command_start_stack.pop() {
                     println!("Restoring command range to:");
