@@ -258,7 +258,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
         // Bash expects name to be heap allocated so it can free it later
         // Default global allocator uses libc alloc which should be the same as what bash uses
-        let name = std::ffi::CString::new("flyline_input").unwrap();
+        let name = std::ffi::CString::new("flyline").unwrap();
         let name_ptr = name.into_raw();
         unsafe {
             (*bash_input).stream_type = bash_symbols::StreamType::StStdin;
@@ -276,12 +276,16 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
             let current_input_name =
                 std::ffi::CStr::from_ptr(bash_symbols::bash_input.name).to_string_lossy();
 
-            println!("bash_current_input: name: {}", current_input_name);
             if current_input_name.starts_with("readline") {
                 println!("current bash input is readline, replacing it with flyline input");
                 bash_symbols::push_stream(0);
                 setup_bash_input(&raw mut bash_symbols::bash_input);
                 return SUCCESS;
+            } else if current_input_name.starts_with("flyline") {
+                println!("current bash input is already flyline, not modifying it");
+                return SUCCESS;
+            } else {
+                println!("current bash input is {}", current_input_name);
             }
         }
 
@@ -305,6 +309,13 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
                     idx, name, stream.bash_input.stream_type
                 );
                 if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin {
+                    if name.starts_with("flyline") {
+                        println!(
+                            "Found existing flyline input stream in stream_list, not modifying stream_list"
+                        );
+                        return SUCCESS;
+                    }
+
                     println!(
                         "Found existing stdin stream in stream_list, not modifying stream_list"
                     );

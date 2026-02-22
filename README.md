@@ -10,6 +10,8 @@ Features:
 - Mouse support:
     - Click to move cursor in buffer
     - Hover over command for tooltips
+- Tab completions when writing subshells, command substitutions, process substitutions
+- Tab completions for aliases (e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected )
 
 # Installation
 Download the latest `libflyline.so`.
