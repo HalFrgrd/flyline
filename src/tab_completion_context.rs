@@ -104,7 +104,7 @@ pub fn get_completion_context<'a>(
     let opt_cursor_node = match context_tokens
         .iter()
         .enumerate()
-        .filter(|(_, t)| !matches!(t.kind, TokenKind::Whitespace(_)))
+        .filter(|(_, t)| !t.kind.is_whitespace())
         .find(|(_, t)| t.byte_range().to_inclusive().contains(&cursor_byte_pos))
     {
         Some(idx_and_node) => Some(idx_and_node),
@@ -115,10 +115,10 @@ pub fn get_completion_context<'a>(
     };
 
     let word_under_cursor_range = match opt_cursor_node {
-        Some((_, cursor_node)) if matches!(cursor_node.kind, TokenKind::Whitespace(_)) => {
+        Some((_, cursor_node)) if cursor_node.kind.is_whitespace() => {
             cursor_byte_pos..cursor_byte_pos
         }
-        Some((node_idx, cursor_node)) if matches!(cursor_node.kind, TokenKind::Word(_)) => {
+        Some((node_idx, cursor_node)) if cursor_node.kind.is_word() => {
             // try grow to the left if there are single or double quotes
             let mut byte_range = cursor_node.byte_range();
 
@@ -151,7 +151,7 @@ pub fn get_completion_context<'a>(
 
     let comp_context_range = if context_tokens
         .iter()
-        .all(|t| matches!(t.kind, TokenKind::Whitespace(_)))
+        .all(|t| t.kind.is_whitespace())
     {
         cursor_byte_pos..cursor_byte_pos
     } else {
