@@ -20,6 +20,7 @@ use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{
     KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent, MouseEventKind,
 };
+use flash::lexer::TokenKind;
 use futures::StreamExt;
 use itertools::Itertools;
 use ratatui::prelude::*;
@@ -871,14 +872,16 @@ impl App {
                 cursor_anim_pos = Some(self.cursor_animation.get_position());
             }
 
-            if part.span_to_use().content == "\n" {
+            if part.token.kind == TokenKind::Newline {
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
             } else if part.cursor_info.unwrap_or(true) {
-                content
-                    .write_span_dont_overwrite(&part.span_to_use(), Tag::Command(part.start_byte));
+                content.write_span_dont_overwrite(
+                    &part.span_to_use(),
+                    Tag::Command(part.token.byte_range().start),
+                );
             }
         }
         if let Some((animated_vis_row, animated_vis_col)) = cursor_anim_pos {
