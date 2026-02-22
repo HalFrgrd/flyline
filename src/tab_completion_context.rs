@@ -103,34 +103,38 @@ pub fn get_completion_context<'a>(
     // If there still isnt a node, then the word under the cursor is empty and the context is empty.
     let opt_cursor_node = match context_tokens
         .iter()
-        .filter(|t| !matches!(t.kind, TokenKind::Whitespace(_)))
-        .find(|t| t.byte_range().to_inclusive().contains(&cursor_byte_pos))
+        .enumerate()
+        .filter(|(_, t)| !matches!(t.kind, TokenKind::Whitespace(_)))
+        .find(|(_, t)| t.byte_range().to_inclusive().contains(&cursor_byte_pos))
     {
-        Some(node) => Some(node),
+        Some(idx_and_node) => Some(idx_and_node),
         None => context_tokens
             .iter()
-            .find(|t| t.byte_range().to_inclusive().contains(&cursor_byte_pos)),
+            .enumerate()
+            .find(|(_, t)| t.byte_range().to_inclusive().contains(&cursor_byte_pos)),
     };
 
     let word_under_cursor_range = match opt_cursor_node {
-        Some(cursor_node) if matches!(cursor_node.kind, TokenKind::Whitespace(_)) => {
+        Some((_, cursor_node)) if matches!(cursor_node.kind, TokenKind::Whitespace(_)) => {
             cursor_byte_pos..cursor_byte_pos
         }
-        Some(cursor_node) if matches!(cursor_node.kind, TokenKind::Word(_)) => {
+        Some((node_idx, cursor_node)) if matches!(cursor_node.kind, TokenKind::Word(_)) => {
             // try grow to the left if there are single or double quotes
             let mut byte_range = cursor_node.byte_range();
 
-            if byte_range.start > 0 {
-                if let Some(prev_char) = buffer[..byte_range.start].chars().rev().next() {
-                    if prev_char == '"' || prev_char == '\'' {
-                        byte_range.start -= prev_char.len_utf8();
-                    }
+            match context_tokens.get(node_idx.wrapping_sub(1)) {
+                Some(prev_node) if matches!(prev_node.kind, TokenKind::SingleQuote) => {
+                    byte_range = prev_node.byte_range().start..byte_range.end;
                 }
+                Some(prev_node) if matches!(prev_node.kind, TokenKind::Quote) => {
+                    byte_range = prev_node.byte_range().start..byte_range.end;
+                }
+                _ => {}
             }
 
             byte_range
         }
-        Some(cursor_node) => cursor_node.byte_range(),
+        Some((_, cursor_node)) => cursor_node.byte_range(),
         None if context_tokens.is_empty() => {
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
