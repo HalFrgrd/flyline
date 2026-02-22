@@ -85,7 +85,7 @@ pub fn get_completion_context<'a>(
 ) -> CompletionContext<'a> {
     let mut parser = DParser::from(buffer);
 
-    parser.walk(cursor_byte_pos);
+    parser.walk_to_cursor(cursor_byte_pos);
 
     let context_tokens = parser.get_current_command_tokens();
 
