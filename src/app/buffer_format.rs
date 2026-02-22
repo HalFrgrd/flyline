@@ -1,52 +1,21 @@
+use flash::lexer::{Position, Token, TokenKind};
 use std::borrow::Cow;
 use std::vec;
 
-use tree_sitter_highlight::HighlightConfiguration;
-use tree_sitter_highlight::HighlightEvent;
-use tree_sitter_highlight::Highlighter;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use crate::dparser::collect_tokens_include_whitespace;
 use crate::palette::Palette;
 use crate::text_buffer::TextBuffer;
 use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
 
-const HIGHLIGHT_NAMES: &[&str] = &[
-    "attribute",
-    "comment",
-    "constant",
-    "constant.builtin",
-    "constructor",
-    "embedded",
-    "function",
-    "function.builtin",
-    "keyword",
-    "module",
-    "number",
-    "operator",
-    "property",
-    "property.builtin",
-    "punctuation",
-    "punctuation.bracket",
-    "punctuation.delimiter",
-    "punctuation.special",
-    "string",
-    "string_content",
-    "string.special",
-    "tag",
-    "type",
-    "type.builtin",
-    "variable",
-    "variable.builtin",
-    "variable.parameter",
-];
-
 #[derive(Debug)]
 pub struct FormattedBuffer {
     pub parts: Vec<FormattedBufferPart>,
     pub cursor_byte_pos: usize,
-    byte_length: usize,
+    buf_byte_length: usize,
 }
 
 impl FormattedBuffer {
@@ -58,11 +27,10 @@ impl FormattedBuffer {
         self.parts
             .iter()
             .flat_map(move |part| {
-                let part_start = part.start_byte;
-                let part_end = part.start_byte + part.span.content.len();
+                let part_start = part.token.byte_range().start;
 
                 let mut parts = vec![];
-                let split = if cursor_pos >= part_start && cursor_pos < part_end {
+                let split = if part.token.byte_range().contains(&cursor_pos) {
                     part.span
                         .content
                         .grapheme_indices(true)
@@ -96,12 +64,21 @@ impl FormattedBuffer {
             })
             .chain(
                 // If the cursor is at the end of the buffer, we need to add an extra part for it
-                if cursor_pos >= self.byte_length {
+                if cursor_pos >= self.buf_byte_length {
+                    let space = " ".to_string();
+
                     Some(Cow::Owned(FormattedBufferPart {
-                        start_byte: cursor_pos,
-                        span: Span::from(" ".to_string()),
+                        token: Token {
+                            kind: TokenKind::Whitespace(space.clone()),
+                            value: space.clone(),
+                            position: Position {
+                                byte: cursor_pos,
+                                line: 0,
+                                column: 0,
+                            },
+                        },
+                        span: Span::from(space),
                         alternative_span: None,
-                        highlight_name: None,
                         cursor_info: Some(false),
                         tooltip: None,
                     }))
@@ -113,11 +90,9 @@ impl FormattedBuffer {
     }
 
     pub fn get_part_from_byte_pos(&self, byte_pos: usize) -> Option<&FormattedBufferPart> {
-        self.parts.iter().find(|part| {
-            let part_start = part.start_byte;
-            let part_end = part.start_byte + part.span.content.len();
-            byte_pos >= part_start && byte_pos < part_end
-        })
+        self.parts
+            .iter()
+            .find(|part| part.token.byte_range().contains(&byte_pos))
     }
 }
 
@@ -126,21 +101,20 @@ impl Default for FormattedBuffer {
         FormattedBuffer {
             parts: vec![],
             cursor_byte_pos: 0,
-            byte_length: 0,
+            buf_byte_length: 0,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct FormattedBufferPart {
-    pub start_byte: usize,
+    pub token: flash::lexer::Token,
     span: Span<'static>,
     /// Meant for animations. Should have the same grapheme widths as span,
     /// but can have different content and style. If present, it will be used
     /// instead of span for display, but span will still be used for cursor
     /// positioning and other logic.
     alternative_span: Option<Span<'static>>,
-    pub highlight_name: Option<String>,
     /// None means no cursor,
     /// Some(true) means cursor is on an actual grapheme, (and we should draw the contents with the cursor style)
     /// Some(false) means cursor is on an artificial position (e.g. end of line)
@@ -148,13 +122,12 @@ pub struct FormattedBufferPart {
     pub tooltip: Option<String>,
 }
 
-fn name_to_style(name: Option<&'static str>, recognised_command: Option<bool>) -> Style {
-    match name {
-        Some("command") | Some("function") if recognised_command.unwrap_or(false) => {
-            Palette::recognised_word()
+fn token_kind_to_style(kind: &TokenKind, recognised_command: Option<bool>) -> Style {
+    match kind {
+        TokenKind::Word(_) if recognised_command.unwrap_or(false) => Palette::recognised_word(),
+        TokenKind::Word(w) if w.starts_with("'") || w.starts_with("\"") => {
+            Palette::unrecognised_word()
         }
-        Some("command") | Some("function") => Palette::unrecognised_word(),
-        Some("string") | Some("string_content") => Palette::unrecognised_word(),
         _ => Palette::normal_text(),
     }
 }
@@ -168,26 +141,18 @@ pub struct WordInfo {
 pub type WordInfoFn<'a> = Box<dyn FnMut(&str, Option<&'static str>) -> Option<WordInfo> + 'a>;
 
 impl FormattedBufferPart {
-    pub fn new(
-        start_byte: usize,
-        content: &str,
-        highlight_name: Option<&'static str>,
-        wordinfo_fn: &mut Option<WordInfoFn<'_>>,
-    ) -> Self {
-        let word_info = wordinfo_fn
-            .as_mut()
-            .and_then(|f| f(content, highlight_name));
+    pub fn new(token: Token, wordinfo_fn: &mut Option<WordInfoFn<'_>>) -> Self {
+        let word_info = wordinfo_fn.as_mut().and_then(|f| f(&token.value, None));
         let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
         let recognised_command = word_info.as_ref().map(|info| info.is_recognised_command);
 
-        let style = name_to_style(highlight_name, recognised_command);
-        let span = Span::styled(content.to_string(), style);
+        let style = token_kind_to_style(&token.kind, recognised_command);
+        let span = Span::styled(token.value.clone(), style);
 
         Self {
-            start_byte,
+            token,
             span,
             alternative_span: None,
-            highlight_name: highlight_name.map(|s| s.to_string()),
             cursor_info: None,
             tooltip,
         }
@@ -261,10 +226,13 @@ impl FormattedBufferPart {
 
         let left = if !left_text.is_empty() {
             Some(Self {
-                start_byte: self.start_byte,
+                token: Token {
+                    kind: self.token.kind.clone(),
+                    value: left_text.to_string(),
+                    position: self.token.position,
+                },
                 span: Span::styled(left_text.to_string(), self.span.style),
                 alternative_span: alt_left,
-                highlight_name: self.highlight_name.clone(),
                 cursor_info: None,
                 tooltip: self.tooltip.clone(),
             })
@@ -274,10 +242,17 @@ impl FormattedBufferPart {
 
         let right = if !right_text.is_empty() {
             Some(Self {
-                start_byte: self.start_byte + split_byte,
+                token: Token {
+                    kind: self.token.kind.clone(),
+                    value: right_text.to_string(),
+                    position: Position {
+                        byte: self.token.position.byte + split_byte,
+                        line: self.token.position.line,
+                        column: self.token.position.column + split_grapheme_idx,
+                    },
+                },
                 span: Span::styled(right_text.to_string(), self.span.style),
                 alternative_span: alt_right,
-                highlight_name: self.highlight_name.clone(),
                 cursor_info: Some(true),
                 tooltip: self.tooltip.clone(),
             })
@@ -293,151 +268,34 @@ pub fn format_buffer<'a>(
     buffer: &TextBuffer,
     mut wordinfo_fn: Option<WordInfoFn<'a>>,
 ) -> FormattedBuffer {
-    let mut highlighter = Highlighter::new();
+    let tokens = collect_tokens_include_whitespace(buffer.buffer());
 
-    let bash_language = tree_sitter_bash::LANGUAGE.into();
-
-    let mut bash_config = HighlightConfiguration::new(
-        bash_language,
-        "bash",
-        tree_sitter_bash::HIGHLIGHT_QUERY,
-        "",
-        "",
-    )
-    .unwrap();
-
-    bash_config.configure(&HIGHLIGHT_NAMES);
-
-    let source = buffer.buffer();
-
-    let highlights = highlighter
-        .highlight(&bash_config, source.as_bytes(), None, |_| None)
-        .unwrap();
-
-    let mut last_style: Option<&str> = None;
-    let spans: Vec<FormattedBufferPart> = highlights
+    let spans: Vec<FormattedBufferPart> = tokens
         .into_iter()
-        .filter_map(|event| match event {
-            Ok(HighlightEvent::HighlightStart(s)) => {
-                last_style = HIGHLIGHT_NAMES.get(s.0).map(|s| *s);
-                log::debug!("Highlight start: {:?}, style: {:?}", s, last_style);
-                None
-            }
-            Ok(HighlightEvent::HighlightEnd) => {
-                last_style = None;
-                None
-            }
-            Ok(HighlightEvent::Source { start, end }) => {
-                // Sometimes a new line will be in the middle of a span, so we need to split it into multiple spans
-                let mut lines = vec![];
-                let mut span_start = start;
-                for (char_idx, c) in source[start..end].char_indices() {
-                    let global_char_idx = start + char_idx;
-                    if c == '\n' {
-                        if span_start < global_char_idx {
-                            lines.push((span_start, global_char_idx, last_style));
-                        }
-                        lines.push((global_char_idx, global_char_idx + 1, last_style));
-                        span_start = global_char_idx + 1;
-                    }
-                }
-                if span_start < end {
-                    lines.push((span_start, end, last_style));
-                }
-
-                Some(lines)
-            }
-            Err(_) => None,
-        })
-        .flatten()
-        .inspect(|x| {
-            if cfg!(test) {
-                let text = &source[x.0..x.1];
-                let text_to_print = if text == "\n" { "\\n" } else { text };
-
-                println!("{:?} {}", x, &text_to_print);
-            }
-        })
-        .map(|(start, end, highlight_name)| {
-            FormattedBufferPart::new(start, &source[start..end], highlight_name, &mut wordinfo_fn)
-        })
+        .map(|tok| FormattedBufferPart::new(tok, &mut wordinfo_fn))
         .collect();
 
     let cursor_pos = buffer.cursor_byte_pos();
-    let byte_length = source.len();
+    let buf_byte_length = buffer.buffer().len();
 
     FormattedBuffer {
         parts: spans,
         cursor_byte_pos: cursor_pos,
-        byte_length,
+        buf_byte_length,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use unicode_width::UnicodeWidthStr;
 
     // #[test]
-    // #[ignore]
-    // fn bash_highlight_example() {
-    //     let buf = TextBuffer::new("       for       f in *.rs; do\necho '$f';\n\n;done");
 
-    //     let tooltip_fn = |_|  None;
+    // fn test_format_buffer() {
+    //     let buffer = TextBuffer::new("echo \"hel\nlo\"");
+    //     let formatted = format_buffer(&buffer, None);
+    //     println!("{:#?}", formatted);
 
-    //     let formatted_buffer = format_buffer(&buf, tooltip_fn);
-    //     for span in formatted_buffer.parts {
-    //         eprintln!("{:?}", span);
-    //     }
-
-    //     assert!(false);
+    //     panic!("Test not implemented yet");
     // }
-
-    #[test]
-    #[ignore]
-    fn grapheme_widths() {
-        let text = "pyt⢸";
-        println!("Text: {:?}", text);
-        println!("Text width: {}", text.width());
-        for g in text.graphemes(true) {
-            println!("'{}  ({:?})' width: {}", g, g.as_bytes(), g.width());
-        }
-    }
-    fn make_part(s: &str) -> FormattedBufferPart {
-        FormattedBufferPart {
-            start_byte: 0,
-            span: Span::from(s.to_string()),
-            alternative_span: None,
-            highlight_name: None,
-            cursor_info: None,
-            tooltip: None,
-        }
-    }
-
-    #[test]
-    fn set_alternative_span_accepts_same_grapheme_widths() {
-        let mut part = make_part("ab");
-        let alt = Span::from("cd".to_string());
-
-        assert!(part.set_alternative_span(alt).is_ok());
-        assert_eq!(part.span_to_use().content, "cd");
-    }
-
-    #[test]
-    fn set_alternative_span_rejects_different_grapheme_count() {
-        let mut part = make_part("ab");
-        let alt = Span::from("abc".to_string());
-
-        assert!(part.set_alternative_span(alt).is_err());
-        assert_eq!(part.span_to_use().content, "ab");
-    }
-
-    #[test]
-    fn set_alternative_span_rejects_different_grapheme_widths() {
-        let mut part = make_part("ab");
-        let alt = Span::from("a🙂".to_string());
-
-        assert!(part.set_alternative_span(alt).is_err());
-        assert_eq!(part.span_to_use().content, "ab");
-    }
 }

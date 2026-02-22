@@ -1,6 +1,94 @@
-use flash::lexer::{Lexer, Token, TokenKind};
+use flash::lexer::{Lexer, Position, Token, TokenKind};
+use itertools::Itertools;
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
+
+fn split_token_into_lines(token: Token) -> Vec<Token> {
+    match &token.kind {
+        TokenKind::Word(s) => {
+            let mut tokens = vec![];
+
+            let mut row = token.position.line;
+            let mut col = token.position.column;
+
+            for (_, chunk) in &s
+                .char_indices()
+                .chunk_by(|(idx, c)| if *c == '\n' { *idx as i32 } else { -1 })
+            {
+                let chunk: Vec<(usize, char)> = chunk.collect();
+                let chunk_str: String = chunk.iter().map(|(_, c)| *c).collect();
+                let chunk_byte_start = chunk.first().map(|(idx, _)| *idx).unwrap_or(0);
+
+                match chunk_str.as_str() {
+                    "\n" => {
+                        tokens.push(Token {
+                            kind: TokenKind::Newline,
+                            value: chunk_str,
+                            position: Position {
+                                line: row,
+                                column: col,
+                                byte: token.position.byte + chunk_byte_start,
+                            },
+                        });
+
+                        row += 1;
+                        col = 1; // flash lexer uses 1 based column numbers
+                    }
+                    _ => {
+                        tokens.push(Token {
+                            kind: TokenKind::Word(chunk_str.clone()),
+                            value: chunk_str.clone(),
+                            position: Position {
+                                line: row,
+                                column: col,
+                                byte: token.position.byte + chunk_byte_start,
+                            },
+                        });
+
+                        // flash lexer uses char indicies for col counts instead of grapheme width.
+                        col += chunk_str.chars().count();
+                    }
+                }
+            }
+            tokens
+        }
+        _ => vec![token],
+    }
+}
+
+#[test]
+fn test_split_token_into_lines() {
+    let token = Token {
+        kind: TokenKind::Word("hello\nworld".to_string()),
+        value: "hello\nworld".to_string(),
+        position: Position {
+            line: 1,
+            column: 1,
+            byte: 0,
+        },
+    };
+
+    let tokens = split_token_into_lines(token);
+    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens[0].kind, TokenKind::Word("hello".to_string()));
+    assert_eq!(tokens[0].position.line, 1);
+    assert_eq!(tokens[0].position.column, 1);
+    assert_eq!(tokens[0].position.byte, 0);
+
+    assert_eq!(tokens[1].kind, TokenKind::Newline);
+    assert_eq!(tokens[1].position.line, 1);
+    assert_eq!(tokens[1].position.column, 6);
+    assert_eq!(tokens[1].position.byte, 5);
+
+    assert_eq!(tokens[2].kind, TokenKind::Word("world".to_string()));
+    assert_eq!(tokens[2].position.line, 2);
+    assert_eq!(tokens[2].position.column, 1);
+    assert_eq!(tokens[2].position.byte, 6);
+
+    let tokens = split_token_into_lines(tokens[0].clone());
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0].kind, TokenKind::Word("hello".to_string()));
+}
 
 pub fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
     let mut lexer = Lexer::new(input);
@@ -12,7 +100,7 @@ pub fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
         if is_eof {
             break;
         }
-        tokens.push(token);
+        tokens.extend(split_token_into_lines(token));
     }
 
     tokens

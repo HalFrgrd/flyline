@@ -24,7 +24,6 @@ pub struct CompletionContext<'a> {
     pub comp_type: CompType,
 }
 
-
 impl<'a> CompletionContext<'a> {
     fn classify_word_type(word: &str) -> Option<CompType> {
         if false && word.starts_with('$') {
