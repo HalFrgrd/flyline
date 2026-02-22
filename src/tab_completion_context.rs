@@ -149,10 +149,7 @@ pub fn get_completion_context<'a>(
             .contains(&cursor_byte_pos)
     );
 
-    let comp_context_range = if context_tokens
-        .iter()
-        .all(|t| t.kind.is_whitespace())
-    {
+    let comp_context_range = if context_tokens.iter().all(|t| t.kind.is_whitespace()) {
         cursor_byte_pos..cursor_byte_pos
     } else {
         context_tokens.first().unwrap().byte_range().start

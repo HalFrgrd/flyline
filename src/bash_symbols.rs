@@ -155,7 +155,11 @@ unsafe extern "C" {
     pub fn pop_stream();
 
     // from shell.h
+    pub static interactive: c_int;
     pub static interactive_shell: c_int;
+
+    // from shell.h
+    pub static no_line_editing: c_int;
 
     // y.tab.c
     // void with_input_from_stdin (void)

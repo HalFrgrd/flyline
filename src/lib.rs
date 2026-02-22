@@ -219,12 +219,26 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // Returning 0 means the load fails
+    const SUCCESS: c_int = 1;
+    const FAILURE: c_int = 0;
+
+    // When do we want to set up flyline's input stream?
+    // shell.c:main:792:set_bash_input: sets up readline if interactive && no_line_editing
+
+    unsafe {
+        println!(
+            "interactive: {}, interactive_shell: {}, no_line_editing: {}",
+            bash_symbols::interactive,
+            bash_symbols::interactive_shell,
+            bash_symbols::no_line_editing
+        );
+    }
 
     // TODO: panic catch
     unsafe {
-        if bash_symbols::interactive_shell == 0 {
-            // Not an interactive shell, do nothing
-            return 1;
+        if bash_symbols::interactive_shell == 0 || bash_symbols::no_line_editing != 0 {
+            eprintln!("Not an interactive shell, flyline will not be loaded");
+            return FAILURE;
         }
     }
 
@@ -242,21 +256,10 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // with_input_from_stdin will see that the current bash_input is fit for purpose and not add readline stdin.
 
     let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
-        // Allocate the name string on the heap using libc
         // Bash expects name to be heap allocated so it can free it later
-        let name_bytes = b"flyline_input\0";
-        let name_ptr = unsafe {
-            let ptr = libc::malloc(name_bytes.len()) as *mut libc::c_char;
-            if !ptr.is_null() {
-                std::ptr::copy_nonoverlapping(
-                    name_bytes.as_ptr(),
-                    ptr as *mut u8,
-                    name_bytes.len(),
-                );
-            }
-            ptr
-        };
-
+        // Default global allocator uses libc alloc which should be the same as what bash uses
+        let name = std::ffi::CString::new("flyline_input").unwrap();
+        let name_ptr = name.into_raw();
         unsafe {
             (*bash_input).stream_type = bash_symbols::StreamType::StStdin;
             (*bash_input).name = name_ptr;
@@ -269,46 +272,62 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     };
 
     unsafe {
+        if !bash_symbols::bash_input.name.is_null() {
+            let current_input_name =
+                std::ffi::CStr::from_ptr(bash_symbols::bash_input.name).to_string_lossy();
+
+            println!("bash_current_input: name: {}", current_input_name);
+            if current_input_name.starts_with("readline") {
+                println!("current bash input is readline, replacing it with flyline input");
+                bash_symbols::push_stream(0);
+                setup_bash_input(&raw mut bash_symbols::bash_input);
+                return SUCCESS;
+            }
+        }
+
         if !bash_symbols::stream_list.is_null() {
-            let stream_list_head: &mut bash_symbols::StreamSaver = &mut *bash_symbols::stream_list;
-            let next_is_null = stream_list_head.next.is_null();
-            if next_is_null {
-                // No streams in the list, we can set ours
-                // and then with_input_from_stdin won't add readline
-                // stream_on_stack (st_stdin) will be true.
-                // This basically takes over the sentinel node at the base of the stream_list
-                log::info!("Setting flyline input stream at the head of the list");
-                setup_bash_input(&mut stream_list_head.bash_input);
-            } else {
-                log::error!("stream_list has more than one entry, cannot set flyline input stream");
-            }
-        } else {
-            // This is so that we can load it on the repl after startup
-            log::warn!("stream_list is null, seeing if we can set flyline input stream");
-
-            if !bash_symbols::bash_input.name.is_null() {
-                log::info!("Setting flyline input stream via bash_input");
-
-                let current_input_name =
-                    std::ffi::CStr::from_ptr(bash_symbols::bash_input.name).to_string_lossy();
-
-                if current_input_name.starts_with("readline") {
-                    log::info!("bash_input.name is readline, safe to override");
-                    bash_symbols::push_stream(0);
-                    setup_bash_input(&raw mut bash_symbols::bash_input);
+            // iterate through the list
+            // if there is a stream that is of stdin type, exit, we dosetn't want to mess with it
+            // if we get to the end and there are no stdin streams, we can  our stream on the sentinel node and it should work
+            let mut current = bash_symbols::stream_list;
+            let mut idx = 0;
+            while !current.is_null() {
+                let stream = &*current;
+                let name = if stream.bash_input.name.is_null() {
+                    "?".to_string()
                 } else {
-                    log::warn!(
-                        "bash_input.name is '{}', not overriding anyway",
-                        current_input_name
+                    std::ffi::CStr::from_ptr(stream.bash_input.name)
+                        .to_string_lossy()
+                        .into_owned()
+                };
+                println!(
+                    "stream_list[{}]: name: {}, type: {:?}",
+                    idx, name, stream.bash_input.stream_type
+                );
+                if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin {
+                    println!(
+                        "Found existing stdin stream in stream_list, not modifying stream_list"
                     );
+                    return FAILURE;
+                } else if stream.bash_input.stream_type == bash_symbols::StreamType::StNone {
+                    // We found the sentinel node
+                    // Replace it with flyline
+                    println!(
+                        "Found stream_list entry with type StNone, setting flyline input stream on this node"
+                    );
+                    setup_bash_input(&raw mut (*current).bash_input);
+                    return SUCCESS;
                 }
-            } else {
-                log::error!("bash_input.name is null, cannot set flyline input stream");
+
+                current = stream.next;
+                idx += 1;
             }
+            println!("Could not setup flyline");
+            return FAILURE;
         }
     }
 
-    1
+    SUCCESS
 }
 
 #[unsafe(no_mangle)]
