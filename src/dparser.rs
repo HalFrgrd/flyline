@@ -295,7 +295,7 @@ impl DParser {
                 | TokenKind::Until
                     if Self::nested_opening_satisfied(
                         &token,
-                        nestings.last().map(|(idx, k)| k),
+                        nestings.last().map(|(_, k)| k),
                         cursor_byte_pos.is_some(),
                     ) =>
                 {
@@ -324,7 +324,7 @@ impl DParser {
                 | TokenKind::Fi
                     if Self::nested_closing_satisfied(
                         &token,
-                        nestings.last().map(|(idx, k)| k),
+                        nestings.last().map(|(_, k)| k),
                         annotated_tokens.peek().map(|(_, t)| &t.token).as_ref(),
                     ) =>
                 {

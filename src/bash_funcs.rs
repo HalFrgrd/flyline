@@ -381,13 +381,6 @@ impl Default for QuoteType {
     }
 }
 
-// Delim can only appear the start (or end?) of a word
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Delim {
-    SingleQuote,
-    DoubleQuote,
-}
-
 impl QuoteType {
     pub fn from_char(c: char) -> Option<QuoteType> {
         match c {
@@ -557,15 +550,6 @@ fn find_quote_type(s: &str) -> Option<QuoteType> {
     None
 }
 
-fn find_delim_type(s: &str) -> Option<Delim> {
-    if s.starts_with("\"") {
-        return Some(Delim::DoubleQuote);
-    } else if s.starts_with('\'') {
-        return Some(Delim::SingleQuote);
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -648,12 +632,5 @@ mod tests {
         assert_eq!(find_quote_type(r#"qwe\ asdf"#), Some(QuoteType::Backslash));
         assert_eq!(find_quote_type(r#"qwe asdf"#), None);
         assert_eq!(find_quote_type(r#"qwe\\asdf"#), None);
-    }
-
-    #[test]
-    fn test_find_delims() {
-        assert_eq!(find_delim_type(r#""qwe asdf"#), Some(Delim::DoubleQuote));
-        assert_eq!(find_delim_type(r#"'qwe asdf"#), Some(Delim::SingleQuote));
-        assert_eq!(find_delim_type(r#"qwe asdf"#), None);
     }
 }
