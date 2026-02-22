@@ -116,9 +116,33 @@ impl ToInclusiveRange for Range<usize> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum TokenAnnotation {
+    None,
+    HasOpeningQuote,
+    IsOpening(Option<usize>), // index of the closing token in the tokens vector
+    IsClosing(Option<usize>), // index of the opening token in the tokens vector
+    IsCommandWord, // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
+}
+
+#[derive(Debug, Clone)]
+pub struct AnnotatedToken {
+    pub token: Token,
+    pub annotation: TokenAnnotation,
+}
+
+impl AnnotatedToken {
+    pub fn new(token: Token) -> Self {
+        Self {
+            token,
+            annotation: TokenAnnotation::None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DParser {
-    tokens: Vec<Token>,
+    tokens: Vec<AnnotatedToken>,
     nestings: Vec<TokenKind>,
     // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
     heredocs: VecDeque<String>,
@@ -128,7 +152,7 @@ pub struct DParser {
 impl DParser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
-            tokens,
+            tokens: tokens.into_iter().map(AnnotatedToken::new).collect(),
             nestings: Vec::new(),
             heredocs: VecDeque::new(),
             current_command_range: None,
@@ -137,21 +161,19 @@ impl DParser {
 
     pub fn from(input: &str) -> Self {
         let tokens = collect_tokens_include_whitespace(input);
-        Self {
-            tokens,
-            nestings: Vec::new(),
-            heredocs: VecDeque::new(),
-            current_command_range: None,
-        }
+        Self::new(tokens)
     }
 
     #[allow(dead_code)]
-    pub fn tokens(&self) -> &[Token] {
+    pub fn tokens(&self) -> &[AnnotatedToken] {
         &self.tokens
     }
 
-    fn nested_opening_satisfied(token: &Token, current_nesting: Option<&TokenKind>) -> bool {
+    fn nested_opening_satisfied(token: &Token, current_nesting: Option<&TokenKind>, is_command_extraction: bool) -> bool {
         match token.kind {
+            TokenKind::Quote | TokenKind::SingleQuote if is_command_extraction => {
+                return false;
+            }
             TokenKind::Backtick | TokenKind::Quote | TokenKind::SingleQuote => {
                 if Some(&token.kind) == current_nesting {
                     // backtick or quote is acting as closer
@@ -200,117 +222,47 @@ impl DParser {
     }
 
     pub fn walk_to_end(&mut self) {
-        // Walk through the tokens until we reach the end or the cursor position, updating nestings and heredocs along the way
-
-        // echo $(( grep 1 + 2      # command is grep
-        // echo $(( grep 1 + 2 )    # command is grep
-        // echo $(( grep 1 + 2 ))   # command is echo, since the cursor is after the closing ))
-
-        let mut toks = self.tokens.iter().peekable();
-
-        loop {
-            let token = match toks.next() {
-                Some(t) => t,
-                None => break,
-            };
-
-            match &token.kind {
-                TokenKind::LBrace
-                // | TokenKind::LParen
-                | TokenKind::DoubleLBracket
-                | TokenKind::Quote
-                | TokenKind::SingleQuote
-                | TokenKind::Backtick
-                | TokenKind::CmdSubst
-                | TokenKind::ArithSubst
-                | TokenKind::ArithCommand
-                | TokenKind::ParamExpansion
-                | TokenKind::ProcessSubstIn
-                | TokenKind::ProcessSubstOut
-                | TokenKind::ExtGlob(_)
-                | TokenKind::If
-                | TokenKind::Case
-                | TokenKind::For
-                | TokenKind::While
-                | TokenKind::Until
-                    if Self::nested_opening_satisfied(&token, self.nestings.last()) =>
-                {
-                    self.nestings.push(token.kind.clone());
-                }
-                TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
-                    self.heredocs.push_back(delim.to_string());
-                }
-                TokenKind::RParen
-                | TokenKind::RBrace
-                | TokenKind::Backtick
-                | TokenKind::DoubleRBracket
-                | TokenKind::Quote
-                | TokenKind::SingleQuote
-                | TokenKind::Esac
-                | TokenKind::Done
-                | TokenKind::Fi
-                    if Self::nested_closing_satisfied(&token, self.nestings.last(), toks.peek()) =>
-                {
-                    let kind = self.nestings.pop().unwrap();
-                    if kind == TokenKind::ArithSubst {
-                        assert!(
-                            toks.peek().unwrap().kind == TokenKind::RParen,
-                            "expected two RParen tokens"
-                        );
-                        toks.next(); // consume the extra RParen
-                    }
-
-
-                }
-                _ => {
-                }
-            }
-
-            if let TokenKind::Word(word) = &token.kind {
-                if self.heredocs.front().is_some_and(|delim| delim == word) {
-                    self.heredocs.pop_front();
-                }
-            }
-        }
-
-        if cfg!(test) {
-            dbg!("Final nestings:");
-            dbg!(&self.nestings);
-        }
+        self.walk(None);
     }
 
-    pub fn walk(&mut self, cursor_byte_pos: usize) {
+    pub fn walk_to_cursor(&mut self, cursor_byte_pos: usize) {
+        self.walk(Some(cursor_byte_pos));
+    }
+
+    fn walk(&mut self, cursor_byte_pos: Option<usize>) {
         // Walk through the tokens until we reach the end or the cursor position, updating nestings and heredocs along the way
 
         // echo $(( grep 1 + 2      # command is grep
         // echo $(( grep 1 + 2 )    # command is grep
         // echo $(( grep 1 + 2 ))   # command is echo, since the cursor is after the closing ))
 
-        let mut toks = self.tokens.iter().enumerate().peekable();
+        let mut annotated_tokens = self.tokens.iter().enumerate().peekable();
         let mut stop_parsing_at_command_boundary = false;
 
         let mut command_start_stack = Vec::new();
 
         loop {
-            let (mut idx, mut token) = match toks.next() {
+            let (mut idx, mut annotated_token) = match annotated_tokens.next() {
                 Some(t) => t,
                 None => break,
             };
+            let mut token = &annotated_token.token;
 
             let word_is_part_of_assignment = if let TokenKind::Word(_) = token.kind {
                 idx > 0
                     && self
                         .tokens
                         .get(idx - 1)
-                        .map_or(false, |t| matches!(t.kind, TokenKind::Assignment))
+                        .map_or(false, |t| matches!(t.token.kind, TokenKind::Assignment))
             } else {
                 false
             };
 
-            let token_inclusively_contains_cursor =
-                token.byte_range().to_inclusive().contains(&cursor_byte_pos);
+            let token_inclusively_contains_cursor = cursor_byte_pos
+                .map_or(false, |pos| token.byte_range().to_inclusive().contains(&pos));
 
-            let token_strictly_contains_cursor = token.byte_range().contains(&cursor_byte_pos);
+            let token_strictly_contains_cursor = cursor_byte_pos
+                .map_or(false, |pos| token.byte_range().contains(&pos));
 
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
@@ -318,6 +270,8 @@ impl DParser {
 
             match &token.kind {
                 TokenKind::LBrace
+                | TokenKind::Quote
+                | TokenKind::SingleQuote
                 | TokenKind::DoubleLBracket
                 | TokenKind::Backtick
                 | TokenKind::CmdSubst
@@ -332,7 +286,7 @@ impl DParser {
                 | TokenKind::For
                 | TokenKind::While
                 | TokenKind::Until
-                    if Self::nested_opening_satisfied(&token, self.nestings.last()) =>
+                    if Self::nested_opening_satisfied(&token, self.nestings.last(), cursor_byte_pos.is_some()) =>
                 {
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
@@ -345,6 +299,8 @@ impl DParser {
                     self.heredocs.push_back(delim.to_string());
                 }
                 TokenKind::RParen
+                | TokenKind::Quote
+                | TokenKind::SingleQuote
                 | TokenKind::RBrace
                 | TokenKind::Backtick
                 | TokenKind::DoubleRBracket
@@ -354,16 +310,17 @@ impl DParser {
                     if Self::nested_closing_satisfied(
                         &token,
                         self.nestings.last(),
-                        toks.peek().map(|(_, t)| t),
+                        annotated_tokens.peek().map(|(_, t)| &t.token).as_ref(),
                     ) =>
                 {
                     let kind = self.nestings.pop().unwrap();
                     if kind == TokenKind::ArithSubst {
                         assert!(
-                            toks.peek().unwrap().1.kind == TokenKind::RParen,
+                            annotated_tokens.peek().unwrap().1.token.kind == TokenKind::RParen,
                             "expected two RParen tokens"
                         );
-                        (idx, token) = toks.next().unwrap(); // consume the extra RParen
+                        (idx, annotated_token) = annotated_tokens.next().unwrap(); // consume the extra RParen
+                        token = &annotated_token.token;
                     }
 
                     if token.kind == TokenKind::DoubleRBracket && token_strictly_contains_cursor {
@@ -446,12 +403,15 @@ impl DParser {
         !self.nestings.is_empty() || !self.heredocs.is_empty()
     }
 
-    pub fn get_current_command_tokens(&self) -> &[Token] {
+    pub fn get_current_command_tokens(&self) -> Vec<&Token> {
         match &self.current_command_range {
             Some(range) => {
-                return &self.tokens[range.clone()];
+                return self.tokens[range.clone()]
+                    .iter()
+                    .map(|t| &t.token)
+                    .collect::<Vec<_>>();
             }
-            None => return &[],
+            None => return Vec::new(),
         }
     }
 
@@ -475,7 +435,7 @@ mod tests {
     fn test_nested_commands() {
         let input = r#"     echo $(ls $(echo nested) | grep pattern) > output.txt       "#;
         let mut parser = DParser::from(input);
-        parser.walk(input.len());
+        parser.walk_to_cursor(input.len());
         assert!(parser.nestings.is_empty());
         assert!(parser.heredocs.is_empty());
 
@@ -487,7 +447,7 @@ mod tests {
     fn test_in_nested_command() {
         let input = r#"echo $(ls $(   echo nest    "#;
         let mut parser = DParser::from(input);
-        parser.walk(input.len());
+        parser.walk_to_cursor(input.len());
         assert_eq!(
             parser.nestings,
             vec![TokenKind::CmdSubst, TokenKind::CmdSubst]
@@ -502,7 +462,7 @@ mod tests {
     fn test_pipeline() {
         let input = r#"echo "héllo" && echo "wörld""#;
         let mut parser = DParser::from(input);
-        parser.walk(input.len());
+        parser.walk_to_cursor(input.len());
         assert!(parser.nestings.is_empty());
         assert!(parser.heredocs.is_empty());
         let command_str = parser.get_current_command_str();
@@ -513,7 +473,7 @@ mod tests {
     fn test_pipeline_with_nesting_1() {
         let input = r#"echo "héllo" && echo $(( bar "#;
         let mut parser = DParser::from(input);
-        parser.walk(input.len());
+        parser.walk_to_cursor(input.len());
         assert_eq!(parser.get_current_command_str(), r#"bar "#);
     }
 
@@ -521,7 +481,7 @@ mod tests {
     fn test_pipeline_with_nesting_2() {
         let input = r#"echo "héllo" && echo $(( bar ) "#;
         let mut parser = DParser::from(input);
-        parser.walk(input.len());
+        parser.walk_to_cursor(input.len());
         assert_eq!(parser.get_current_command_str(), r#"bar ) "#);
     }
 
@@ -529,7 +489,7 @@ mod tests {
     fn test_pipeline_with_nesting_3() {
         let input = r#"echo "héllo" && echo $(( bar )) "#;
         let mut parser = DParser::from(input);
-        parser.walk(input.len());
+        parser.walk_to_cursor(input.len());
         assert_eq!(parser.get_current_command_str(), r#"echo $(( bar )) "#);
     }
 }
