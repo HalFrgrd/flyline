@@ -5,7 +5,7 @@ use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::dparser::{AnnotatedToken, DParser, TokenAnnotation, collect_tokens_include_whitespace};
+use crate::dparser::{AnnotatedToken, DParser, TokenAnnotation};
 use crate::palette::Palette;
 use crate::text_buffer::TextBuffer;
 use itertools::{EitherOrBoth, Itertools};
