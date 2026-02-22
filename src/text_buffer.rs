@@ -528,8 +528,9 @@ impl TextBuffer {
     }
 
     fn insert_str_no_snapshot(&mut self, s: &str) {
-        self.buf.insert_str(self.cursor_byte, s);
-        self.cursor_byte += s.len();
+        let sanitized_str = s.replace('\r', ""); // remove carriage returns, which can mess up the display
+        self.buf.insert_str(self.cursor_byte, &sanitized_str);
+        self.cursor_byte += sanitized_str.len();
     }
 }
 

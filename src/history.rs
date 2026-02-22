@@ -162,9 +162,9 @@ impl HistoryManager {
             log::warn!("No bash history entries found");
         } else {
             log::info!("Loaded {} bash history entries", bash_entries.len());
-            // for entry in bash_entries.iter().rev().take(5) {
-            //     log::info!("bash_entries => {:?}", entry);
-            // }
+            for entry in bash_entries.iter().rev().take(5) {
+                log::info!("bash_entries => {:?}", entry);
+            }
         }
 
         // Alternative is to do it ourselves
@@ -402,7 +402,7 @@ impl std::fmt::Debug for FuzzyHistorySearch {
 
 impl FuzzyHistorySearch {
     // Check time budget every N entries to balance responsiveness and performance
-    const TIME_CHECK_INTERVAL: usize = 50;
+    const TIME_CHECK_INTERVAL: usize = 64;
     // Time budget for processing history entries in milliseconds
     const TIME_BUDGET_MS: u64 = 15;
 
