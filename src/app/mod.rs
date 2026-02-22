@@ -595,11 +595,7 @@ impl App {
             } => {
                 match &mut self.content_mode {
                     ContentMode::FuzzyHistorySearch => {
-                        if let Some(entry) = self.history_manager.accept_fuzzy_search_result() {
-                            let new_command = entry.command.clone();
-                            self.buffer.replace_buffer(new_command.as_str());
-                        }
-                        self.content_mode = ContentMode::Normal;
+                        self.accept_fuzzy_history_search();
                     }
                     ContentMode::TabCompletion(active_suggestions) => {
                         active_suggestions.accept_currently_selected(&mut self.buffer);
@@ -638,13 +634,17 @@ impl App {
             // Tab - cycle suggestions or trigger completion
             KeyEvent {
                 code: KeyCode::Tab, ..
-            } => {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+            } => match &mut self.content_mode {
+                ContentMode::FuzzyHistorySearch => {
+                    self.accept_fuzzy_history_search();
+                }
+                ContentMode::TabCompletion(active_suggestions) => {
                     active_suggestions.on_tab(false);
-                } else {
+                }
+                ContentMode::Normal => {
                     self.start_tab_complete();
                 }
-            }
+            },
 
             // Escape - clear suggestions or toggle mouse
             KeyEvent {
@@ -723,6 +723,14 @@ impl App {
 
         self.on_possible_buffer_change();
         return false;
+    }
+
+    fn accept_fuzzy_history_search(&mut self) {
+        if let Some(entry) = self.history_manager.accept_fuzzy_search_result() {
+            let new_command = entry.command.clone();
+            self.buffer.replace_buffer(new_command.as_str());
+        }
+        self.content_mode = ContentMode::Normal;
     }
 
     fn on_keyrelease(&mut self, key: KeyEvent) {
