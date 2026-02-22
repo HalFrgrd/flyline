@@ -121,7 +121,7 @@ pub enum TokenAnnotation {
     None,
     HasOpeningQuote,
     IsOpening(Option<usize>), // index of the closing token in the tokens vector
-    IsClosing(Option<usize>), // index of the opening token in the tokens vector
+    IsClosing(usize),         // index of the opening token in the tokens vector
     IsCommandWord, // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
 }
 
@@ -143,9 +143,7 @@ impl AnnotatedToken {
 #[derive(Debug)]
 pub struct DParser {
     tokens: Vec<AnnotatedToken>,
-    nestings: Vec<TokenKind>,
-    // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
-    heredocs: VecDeque<String>,
+
     current_command_range: Option<RangeInclusive<usize>>,
 }
 
@@ -153,8 +151,7 @@ impl DParser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
             tokens: tokens.into_iter().map(AnnotatedToken::new).collect(),
-            nestings: Vec::new(),
-            heredocs: VecDeque::new(),
+
             current_command_range: None,
         }
     }
@@ -169,7 +166,11 @@ impl DParser {
         &self.tokens
     }
 
-    fn nested_opening_satisfied(token: &Token, current_nesting: Option<&TokenKind>, is_command_extraction: bool) -> bool {
+    fn nested_opening_satisfied(
+        token: &Token,
+        current_nesting: Option<&TokenKind>,
+        is_command_extraction: bool,
+    ) -> bool {
         match token.kind {
             TokenKind::Quote | TokenKind::SingleQuote if is_command_extraction => {
                 return false;
@@ -236,10 +237,17 @@ impl DParser {
         // echo $(( grep 1 + 2 )    # command is grep
         // echo $(( grep 1 + 2 ))   # command is echo, since the cursor is after the closing ))
 
-        let mut annotated_tokens = self.tokens.iter().enumerate().peekable();
+        // The index of the last opening nesting token and its kind
+        let mut nestings: Vec<(usize, TokenKind)> = Vec::new();
+        // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
+        let mut heredocs: VecDeque<(usize, String)> = VecDeque::new();
+
+        let mut annotated_tokens = self.tokens.iter_mut().enumerate().peekable();
         let mut stop_parsing_at_command_boundary = false;
 
         let mut command_start_stack = Vec::new();
+
+        let mut previous_token_kind: Option<TokenKind> = None;
 
         loop {
             let (mut idx, mut annotated_token) = match annotated_tokens.next() {
@@ -249,20 +257,17 @@ impl DParser {
             let mut token = &annotated_token.token;
 
             let word_is_part_of_assignment = if let TokenKind::Word(_) = token.kind {
-                idx > 0
-                    && self
-                        .tokens
-                        .get(idx - 1)
-                        .map_or(false, |t| matches!(t.token.kind, TokenKind::Assignment))
+                previous_token_kind.map_or(false, |kind| matches!(kind, TokenKind::Assignment))
             } else {
                 false
             };
 
-            let token_inclusively_contains_cursor = cursor_byte_pos
-                .map_or(false, |pos| token.byte_range().to_inclusive().contains(&pos));
+            let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
+                token.byte_range().to_inclusive().contains(&pos)
+            });
 
-            let token_strictly_contains_cursor = cursor_byte_pos
-                .map_or(false, |pos| token.byte_range().contains(&pos));
+            let token_strictly_contains_cursor =
+                cursor_byte_pos.map_or(false, |pos| token.byte_range().contains(&pos));
 
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
@@ -286,17 +291,25 @@ impl DParser {
                 | TokenKind::For
                 | TokenKind::While
                 | TokenKind::Until
-                    if Self::nested_opening_satisfied(&token, self.nestings.last(), cursor_byte_pos.is_some()) =>
+                    if Self::nested_opening_satisfied(
+                        &token,
+                        nestings.last().map(|(idx, k)| k),
+                        cursor_byte_pos.is_some(),
+                    ) =>
                 {
+                    annotated_token.annotation = TokenAnnotation::IsOpening(None);
+
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
                     }
-                    self.nestings.push(token.kind.clone());
+                    nestings.push((idx, token.kind.clone()));
                     command_start_stack.push(self.current_command_range.clone());
                     self.current_command_range = None; // set for next word after this
                 }
                 TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
-                    self.heredocs.push_back(delim.to_string());
+                    annotated_token.annotation = TokenAnnotation::IsOpening(None);
+
+                    heredocs.push_back((idx, delim.to_string()));
                 }
                 TokenKind::RParen
                 | TokenKind::Quote
@@ -309,11 +322,12 @@ impl DParser {
                 | TokenKind::Fi
                     if Self::nested_closing_satisfied(
                         &token,
-                        self.nestings.last(),
+                        nestings.last().map(|(idx, k)| k),
                         annotated_tokens.peek().map(|(_, t)| &t.token).as_ref(),
                     ) =>
                 {
-                    let kind = self.nestings.pop().unwrap();
+                    let (opening_idx, kind) = nestings.pop().unwrap();
+                    annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
                     if kind == TokenKind::ArithSubst {
                         assert!(
                             annotated_tokens.peek().unwrap().1.token.kind == TokenKind::RParen,
@@ -387,20 +401,40 @@ impl DParser {
             }
 
             if let TokenKind::Word(word) = &token.kind {
-                if self.heredocs.front().is_some_and(|delim| delim == word) {
-                    self.heredocs.pop_front();
+                if heredocs.front().is_some_and(|(_, delim)| delim == word) {
+                    let (opening_idx, _) = heredocs.pop_front().unwrap();
+                    annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
                 }
             }
+
+            previous_token_kind = Some(token.kind.clone());
         }
 
         if cfg!(test) {
             dbg!("Final nestings:");
-            dbg!(&self.nestings);
+            dbg!(&nestings);
+        }
+
+        // Mark the opening tokens with the closing tokens:
+        // We need to collect the updates first to avoid mutable borrow issues
+        let mut updates = Vec::new();
+        for (idx, annotated_token) in self.tokens.iter().enumerate() {
+            if let TokenAnnotation::IsClosing(opening_idx) = annotated_token.annotation {
+                updates.push((opening_idx, idx));
+            }
+        }
+
+        for (opening_idx, closing_idx) in updates {
+            if let TokenAnnotation::IsOpening(None) = self.tokens[opening_idx].annotation {
+                self.tokens[opening_idx].annotation = TokenAnnotation::IsOpening(Some(closing_idx));
+            }
         }
     }
 
     pub fn needs_more_input(&self) -> bool {
-        !self.nestings.is_empty() || !self.heredocs.is_empty()
+        self.tokens
+            .iter()
+            .any(|t| matches!(t.annotation, TokenAnnotation::IsOpening(None)))
     }
 
     pub fn get_current_command_tokens(&self) -> Vec<&Token> {
@@ -436,8 +470,6 @@ mod tests {
         let input = r#"     echo $(ls $(echo nested) | grep pattern) > output.txt       "#;
         let mut parser = DParser::from(input);
         parser.walk_to_cursor(input.len());
-        assert!(parser.nestings.is_empty());
-        assert!(parser.heredocs.is_empty());
 
         let command_str = parser.get_current_command_str();
         assert_eq!(command_str, input.trim_start());
@@ -448,11 +480,6 @@ mod tests {
         let input = r#"echo $(ls $(   echo nest    "#;
         let mut parser = DParser::from(input);
         parser.walk_to_cursor(input.len());
-        assert_eq!(
-            parser.nestings,
-            vec![TokenKind::CmdSubst, TokenKind::CmdSubst]
-        );
-        assert!(parser.heredocs.is_empty());
 
         let command_str = parser.get_current_command_str();
         assert_eq!(command_str, "echo nest    ");
@@ -463,8 +490,7 @@ mod tests {
         let input = r#"echo "héllo" && echo "wörld""#;
         let mut parser = DParser::from(input);
         parser.walk_to_cursor(input.len());
-        assert!(parser.nestings.is_empty());
-        assert!(parser.heredocs.is_empty());
+
         let command_str = parser.get_current_command_str();
         assert_eq!(command_str, r#"echo "wörld""#);
     }
