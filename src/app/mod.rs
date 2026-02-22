@@ -4,10 +4,10 @@ mod tab_completion;
 use crate::active_suggestions::ActiveSuggestions;
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
-use crate::bash_funcs;
 use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag};
 use crate::cursor_animation::CursorAnimation;
+use crate::dparser::AnnotatedToken;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
@@ -16,6 +16,7 @@ use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
+use crate::{bash_funcs, dparser};
 use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{
     KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent, MouseEventKind,
@@ -773,18 +774,18 @@ impl App {
             }
         }
 
-        let wordinfo_fn =
-            |s: &str, highlight_style: Option<&'static str>| -> Option<buffer_format::WordInfo> {
-                if let Some("function") = highlight_style {
-                    let (command_type, description) = self.bash_env.get_command_info(s);
-                    return Some(buffer_format::WordInfo {
-                        tooltip: Some(description.to_string()),
-                        is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
-                    });
-                }
+        let wordinfo_fn = |token: &AnnotatedToken| -> Option<buffer_format::WordInfo> {
+            if token.annotation == dparser::TokenAnnotation::IsCommandWord {
+                let (command_type, description) =
+                    self.bash_env.get_command_info(&token.token.value);
+                return Some(buffer_format::WordInfo {
+                    tooltip: Some(description.to_string()),
+                    is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+                });
+            }
 
-                None
-            };
+            None
+        };
 
         self.formatted_buffer_cache = format_buffer(&self.buffer, Some(Box::new(wordinfo_fn)));
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
@@ -872,7 +873,7 @@ impl App {
                 cursor_anim_pos = Some(self.cursor_animation.get_position());
             }
 
-            if part.token.kind == TokenKind::Newline {
+            if part.token.token.kind == TokenKind::Newline {
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
@@ -880,7 +881,7 @@ impl App {
             } else if part.cursor_info.unwrap_or(true) {
                 content.write_span_dont_overwrite(
                     &part.span_to_use(),
-                    Tag::Command(part.token.byte_range().start),
+                    Tag::Command(part.token.token.byte_range().start),
                 );
             }
         }

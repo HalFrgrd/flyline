@@ -116,7 +116,7 @@ impl ToInclusiveRange for Range<usize> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenAnnotation {
     None,
     HasOpeningQuote,
@@ -257,7 +257,9 @@ impl DParser {
             let mut token = &annotated_token.token;
 
             let word_is_part_of_assignment = if let TokenKind::Word(_) = token.kind {
-                previous_token_kind.map_or(false, |kind| matches!(kind, TokenKind::Assignment))
+                previous_token_kind
+                    .as_ref()
+                    .map_or(false, |kind| matches!(kind, TokenKind::Assignment))
             } else {
                 false
             };
@@ -393,6 +395,17 @@ impl DParser {
                 }
                 _ => {
                     if self.current_command_range.is_none() {
+                        if matches!(token.kind, TokenKind::Word(_)) {
+                            match previous_token_kind.as_ref() {
+                                Some(TokenKind::Quote | TokenKind::SingleQuote) => {
+                                    annotated_token.annotation = TokenAnnotation::HasOpeningQuote;
+                                }
+                                _ => {
+                                    // This is the first token, so it must be a command
+                                    annotated_token.annotation = TokenAnnotation::IsCommandWord;
+                                }
+                            }
+                        }
                         self.current_command_range = Some(idx..=idx);
                     } else if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;

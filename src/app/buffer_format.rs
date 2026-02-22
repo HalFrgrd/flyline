@@ -5,7 +5,7 @@ use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::dparser::collect_tokens_include_whitespace;
+use crate::dparser::{AnnotatedToken, DParser, TokenAnnotation, collect_tokens_include_whitespace};
 use crate::palette::Palette;
 use crate::text_buffer::TextBuffer;
 use itertools::{EitherOrBoth, Itertools};
@@ -27,10 +27,10 @@ impl FormattedBuffer {
         self.parts
             .iter()
             .flat_map(move |part| {
-                let part_start = part.token.byte_range().start;
+                let part_start = part.token.token.byte_range().start;
 
                 let mut parts = vec![];
-                let split = if part.token.byte_range().contains(&cursor_pos) {
+                let split = if part.token.token.byte_range().contains(&cursor_pos) {
                     part.span
                         .content
                         .grapheme_indices(true)
@@ -68,14 +68,17 @@ impl FormattedBuffer {
                     let space = " ".to_string();
 
                     Some(Cow::Owned(FormattedBufferPart {
-                        token: Token {
-                            kind: TokenKind::Whitespace(space.clone()),
-                            value: space.clone(),
-                            position: Position {
-                                byte: cursor_pos,
-                                line: 0,
-                                column: 0,
+                        token: AnnotatedToken {
+                            token: Token {
+                                kind: TokenKind::Whitespace(space.clone()),
+                                value: space.clone(),
+                                position: Position {
+                                    byte: cursor_pos,
+                                    line: 0,
+                                    column: 0,
+                                },
                             },
+                            annotation: TokenAnnotation::None,
                         },
                         span: Span::from(space),
                         alternative_span: None,
@@ -92,7 +95,7 @@ impl FormattedBuffer {
     pub fn get_part_from_byte_pos(&self, byte_pos: usize) -> Option<&FormattedBufferPart> {
         self.parts
             .iter()
-            .find(|part| part.token.byte_range().contains(&byte_pos))
+            .find(|part| part.token.token.byte_range().contains(&byte_pos))
     }
 }
 
@@ -108,7 +111,7 @@ impl Default for FormattedBuffer {
 
 #[derive(Debug, Clone)]
 pub struct FormattedBufferPart {
-    pub token: flash::lexer::Token,
+    pub token: AnnotatedToken,
     span: Span<'static>,
     /// Meant for animations. Should have the same grapheme widths as span,
     /// but can have different content and style. If present, it will be used
@@ -122,14 +125,17 @@ pub struct FormattedBufferPart {
     pub tooltip: Option<String>,
 }
 
-fn token_kind_to_style(kind: &TokenKind, recognised_command: Option<bool>) -> Style {
-    match kind {
-        TokenKind::Word(_) if recognised_command.unwrap_or(false) => Palette::recognised_word(),
-        TokenKind::Word(w) if w.starts_with("'") || w.starts_with("\"") => {
-            Palette::unrecognised_word()
-        }
-        _ => Palette::normal_text(),
+fn token_to_style(token: &AnnotatedToken, recognised_command: Option<bool>) -> Style {
+    if recognised_command == Some(true) {
+        return Palette::recognised_word();
     }
+
+    if token.annotation == TokenAnnotation::HasOpeningQuote
+        || matches!(token.token.kind, TokenKind::SingleQuote | TokenKind::Quote)
+    {
+        return Palette::unrecognised_word();
+    }
+    Palette::normal_text()
 }
 
 #[derive(Debug)]
@@ -138,19 +144,19 @@ pub struct WordInfo {
     pub is_recognised_command: bool,
 }
 
-pub type WordInfoFn<'a> = Box<dyn FnMut(&str, Option<&'static str>) -> Option<WordInfo> + 'a>;
+pub type WordInfoFn<'a> = Box<dyn FnMut(&AnnotatedToken) -> Option<WordInfo> + 'a>;
 
 impl FormattedBufferPart {
-    pub fn new(token: Token, wordinfo_fn: &mut Option<WordInfoFn<'_>>) -> Self {
-        let word_info = wordinfo_fn.as_mut().and_then(|f| f(&token.value, None));
+    pub fn new(token: &AnnotatedToken, wordinfo_fn: &mut Option<WordInfoFn<'_>>) -> Self {
+        let word_info = wordinfo_fn.as_mut().and_then(|f| f(token));
         let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
         let recognised_command = word_info.as_ref().map(|info| info.is_recognised_command);
 
-        let style = token_kind_to_style(&token.kind, recognised_command);
-        let span = Span::styled(token.value.clone(), style);
+        let style = token_to_style(&token, recognised_command);
+        let span = Span::styled(token.token.value.clone(), style);
 
         Self {
-            token,
+            token: token.clone(),
             span,
             alternative_span: None,
             cursor_info: None,
@@ -226,10 +232,13 @@ impl FormattedBufferPart {
 
         let left = if !left_text.is_empty() {
             Some(Self {
-                token: Token {
-                    kind: self.token.kind.clone(),
-                    value: left_text.to_string(),
-                    position: self.token.position,
+                token: AnnotatedToken {
+                    token: Token {
+                        kind: self.token.token.kind.clone(),
+                        value: left_text.to_string(),
+                        position: self.token.token.position,
+                    },
+                    annotation: self.token.annotation.clone(),
                 },
                 span: Span::styled(left_text.to_string(), self.span.style),
                 alternative_span: alt_left,
@@ -242,14 +251,17 @@ impl FormattedBufferPart {
 
         let right = if !right_text.is_empty() {
             Some(Self {
-                token: Token {
-                    kind: self.token.kind.clone(),
-                    value: right_text.to_string(),
-                    position: Position {
-                        byte: self.token.position.byte + split_byte,
-                        line: self.token.position.line,
-                        column: self.token.position.column + split_grapheme_idx,
+                token: AnnotatedToken {
+                    token: Token {
+                        kind: self.token.token.kind.clone(),
+                        value: right_text.to_string(),
+                        position: Position {
+                            byte: self.token.token.position.byte + split_byte,
+                            line: self.token.token.position.line,
+                            column: self.token.token.position.column + split_grapheme_idx,
+                        },
                     },
+                    annotation: self.token.annotation.clone(),
                 },
                 span: Span::styled(right_text.to_string(), self.span.style),
                 alternative_span: alt_right,
@@ -268,9 +280,11 @@ pub fn format_buffer<'a>(
     buffer: &TextBuffer,
     mut wordinfo_fn: Option<WordInfoFn<'a>>,
 ) -> FormattedBuffer {
-    let tokens = collect_tokens_include_whitespace(buffer.buffer());
+    let mut parser = DParser::from(buffer.buffer());
+    parser.walk_to_end();
+    let annoted_tokens = parser.tokens();
 
-    let spans: Vec<FormattedBufferPart> = tokens
+    let spans: Vec<FormattedBufferPart> = annoted_tokens
         .into_iter()
         .map(|tok| FormattedBufferPart::new(tok, &mut wordinfo_fn))
         .collect();
