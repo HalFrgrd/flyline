@@ -531,4 +531,77 @@ mod tests {
         parser.walk_to_cursor(input.len());
         assert_eq!(parser.get_current_command_str(), r#"echo $(( bar )) "#);
     }
+
+    #[test]
+    fn test_annotations() {
+        let input = r#"echo "héllo" && echo 'wörld'"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+
+        for t in tokens {
+            println!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "\"");
+        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(4)));
+        assert_eq!(tokens[3].token.value, "héllo");
+        assert_eq!(tokens[3].annotation, TokenAnnotation::HasOpeningQuote);
+        assert_eq!(tokens[4].token.value, "\"");
+        assert_eq!(tokens[4].annotation, TokenAnnotation::IsClosing(2));
+        assert_eq!(tokens[5].token.value, " ");
+        assert_eq!(tokens[6].token.value, "&&");
+        assert_eq!(tokens[6].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[7].token.value, " ");
+        assert_eq!(tokens[8].token.value, "echo");
+        assert_eq!(tokens[8].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(tokens[9].token.value, " ");
+        assert_eq!(tokens[10].token.value, "'");
+        assert_eq!(tokens[10].annotation, TokenAnnotation::IsOpening(Some(12)));
+        assert_eq!(tokens[11].token.value, "wörld");
+        assert_eq!(tokens[11].annotation, TokenAnnotation::HasOpeningQuote);
+        assert_eq!(tokens[12].token.value, "'");
+        assert_eq!(tokens[12].annotation, TokenAnnotation::IsClosing(10));
+    }
+
+    #[test]
+    fn test_heredoc_annotations() {
+        let input = "cat <<A <<-B\nline1\nA\nline2\nB\n";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+
+        for t in tokens {
+            println!("{:?} - {:?}", t.token, t.annotation);
+        }
+        assert_eq!(tokens[0].token.value, "cat");
+        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "<<A");
+        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(8)));
+        assert_eq!(tokens[3].token.value, " ");
+        assert_eq!(tokens[4].token.value, "<<-B");
+        assert_eq!(tokens[4].annotation, TokenAnnotation::IsOpening(Some(12)));
+        assert_eq!(tokens[5].token.value, "\n");
+        assert_eq!(tokens[5].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[6].token.value, "line1");
+        assert_eq!(tokens[6].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[7].token.value, "\n");
+        assert_eq!(tokens[7].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[8].token.value, "A");
+        assert_eq!(tokens[8].annotation, TokenAnnotation::IsClosing(2));
+        assert_eq!(tokens[9].token.value, "\n");
+        assert_eq!(tokens[9].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[10].token.value, "line2");
+        assert_eq!(tokens[10].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[11].token.value, "\n");
+        assert_eq!(tokens[11].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[12].token.value, "B");
+        assert_eq!(tokens[12].annotation, TokenAnnotation::IsClosing(4));
+    }
 }
