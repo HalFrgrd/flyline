@@ -45,9 +45,8 @@ impl SuggestionFormatted {
             self.spans.clone()
         };
 
-        if self.display_len < col_width {
-            spans.push(Span::raw(" ".repeat(col_width - self.display_len)));
-        }
+        let text_len = self.display_len.saturating_sub(2);
+        spans.push(Span::raw(" ".repeat(col_width.saturating_sub(text_len))));
 
         spans
     }
