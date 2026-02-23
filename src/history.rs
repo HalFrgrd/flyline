@@ -27,6 +27,8 @@ pub struct HistoryManager {
 pub enum HistorySearchDirection {
     Backward,
     Forward,
+    PageBackward,
+    PageForward,
 }
 
 impl HistoryManager {
@@ -312,8 +314,12 @@ impl HistoryManager {
         let prefix = self.last_search_prefix.as_ref().unwrap();
 
         let indices: Vec<usize> = match direction {
-            HistorySearchDirection::Backward => (0..self.index).rev().collect(),
-            HistorySearchDirection::Forward => (self.index + 1..self.entries.len()).collect(),
+            HistorySearchDirection::Backward | HistorySearchDirection::PageBackward => {
+                (0..self.index).rev().collect()
+            }
+            HistorySearchDirection::Forward | HistorySearchDirection::PageForward => {
+                (self.index + 1..self.entries.len()).collect()
+            }
         };
 
         for i in indices {
@@ -342,10 +348,6 @@ impl HistoryManager {
 
     pub fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
         self.fuzzy_search.fuzzy_search_onkeypress(direction);
-    }
-
-    pub fn fuzzy_search_page(&mut self, direction: HistorySearchDirection) {
-        self.fuzzy_search.fuzzy_search_page(direction);
     }
 
     // fuzzy search cache logic moved to FuzzyHistorySearch
@@ -504,20 +506,12 @@ impl FuzzyHistorySearch {
                     self.cache_index -= 1;
                 }
             }
-        }
-    }
-
-    fn fuzzy_search_page(&mut self, direction: HistorySearchDirection) {
-        if self.cache.is_empty() {
-            return;
-        }
-        let page_size = Self::VISIBLE_CACHE_SIZE;
-        match direction {
-            HistorySearchDirection::Backward => {
-                self.cache_index = (self.cache_index + page_size).min(self.cache.len() - 1);
+            HistorySearchDirection::PageBackward => {
+                self.cache_index =
+                    (self.cache_index + Self::VISIBLE_CACHE_SIZE).min(self.cache.len() - 1);
             }
-            HistorySearchDirection::Forward => {
-                self.cache_index = self.cache_index.saturating_sub(page_size);
+            HistorySearchDirection::PageForward => {
+                self.cache_index = self.cache_index.saturating_sub(Self::VISIBLE_CACHE_SIZE);
             }
         }
     }
