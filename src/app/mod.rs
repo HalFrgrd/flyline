@@ -789,6 +789,7 @@ impl App {
             &annotated_tokens,
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
+            self.mode.is_running(),
             Some(Box::new(wordinfo_fn)),
         );
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);

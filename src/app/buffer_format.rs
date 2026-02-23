@@ -294,31 +294,33 @@ pub fn format_buffer<'a>(
     annotated_tokens: &[AnnotatedToken],
     cursor_byte_pos: usize,
     buffer_byte_length: usize,
+    app_is_running: bool,
     mut wordinfo_fn: Option<WordInfoFn<'a>>,
 ) -> FormattedBuffer {
     let spans: Vec<FormattedBufferPart> = annotated_tokens
         .into_iter()
         .map(|tok| {
-            let cursor_on_this_or_closing_token = match tok.annotation {
-                TokenAnnotation::IsOpening(Some(corresponding_token_idx))
-                | TokenAnnotation::IsClosing(corresponding_token_idx) => {
-                    tok.token
-                        .byte_range()
-                        .to_inclusive()
-                        .contains(&cursor_byte_pos)
-                        || annotated_tokens.get(corresponding_token_idx).map_or(
-                            false,
-                            |corresponding_tok| {
-                                corresponding_tok
-                                    .token
-                                    .byte_range()
-                                    .to_inclusive()
-                                    .contains(&cursor_byte_pos)
-                            },
-                        )
-                }
-                _ => false,
-            };
+            let cursor_on_this_or_closing_token = app_is_running
+                && match tok.annotation {
+                    TokenAnnotation::IsOpening(Some(corresponding_token_idx))
+                    | TokenAnnotation::IsClosing(corresponding_token_idx) => {
+                        tok.token
+                            .byte_range()
+                            .to_inclusive()
+                            .contains(&cursor_byte_pos)
+                            || annotated_tokens.get(corresponding_token_idx).map_or(
+                                false,
+                                |corresponding_tok| {
+                                    corresponding_tok
+                                        .token
+                                        .byte_range()
+                                        .to_inclusive()
+                                        .contains(&cursor_byte_pos)
+                                },
+                            )
+                    }
+                    _ => false,
+                };
 
             FormattedBufferPart::new(&tok, &mut wordinfo_fn, cursor_on_this_or_closing_token)
         })
