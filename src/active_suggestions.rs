@@ -193,7 +193,7 @@ impl ActiveSuggestions {
         self.sanitize_selected_index(idx as i32);
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (usize, &SuggestionFormatted, bool)> {
+    pub fn iter(&self) -> impl Iterator<Item = (usize, &SuggestionFormatted, bool)> {
         // prefix and suffix aren't shown in the suggestion list
         // but are applied when the suggestion is accepted
         self.filtered_suggestions
