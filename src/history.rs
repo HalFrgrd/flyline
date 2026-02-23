@@ -6,7 +6,7 @@ use crate::palette::Palette;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
-use ratatui::text::Span;
+use ratatui::text::Line;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -355,8 +355,8 @@ pub(crate) struct HistoryEntryFormatted {
     pub entry: HistoryEntry,
     pub score: i64,
     pub match_indices: Vec<usize>,
-    pub command_spans: Option<Vec<Span<'static>>>,
-    pub command_spans_selected: Option<Vec<Span<'static>>>,
+    pub command_spans: Option<Vec<Line<'static>>>,
+    pub command_spans_selected: Option<Vec<Line<'static>>>,
 }
 
 impl HistoryEntryFormatted {
