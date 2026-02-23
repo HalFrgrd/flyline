@@ -344,6 +344,10 @@ impl HistoryManager {
         self.fuzzy_search.fuzzy_search_onkeypress(direction);
     }
 
+    pub fn fuzzy_search_page(&mut self, direction: HistorySearchDirection) {
+        self.fuzzy_search.fuzzy_search_page(direction);
+    }
+
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 
@@ -405,6 +409,8 @@ impl FuzzyHistorySearch {
     const TIME_CHECK_INTERVAL: usize = 64;
     // Time budget for processing history entries in milliseconds
     const TIME_BUDGET_MS: u64 = 15;
+    // Number of visible rows in the fuzzy history search list
+    const VISIBLE_CACHE_SIZE: usize = 18;
 
     fn new() -> Self {
         FuzzyHistorySearch {
@@ -443,7 +449,7 @@ impl FuzzyHistorySearch {
 
         self.cache_index = self.cache_index.min(self.cache.len().saturating_sub(1));
 
-        let visible_cache_size = 18;
+        let visible_cache_size = Self::VISIBLE_CACHE_SIZE;
 
         if self.cache_visible_offset + visible_cache_size <= self.cache_index + 2 {
             self.cache_visible_offset =
@@ -497,6 +503,21 @@ impl FuzzyHistorySearch {
                 if self.cache_index > 0 {
                     self.cache_index -= 1;
                 }
+            }
+        }
+    }
+
+    fn fuzzy_search_page(&mut self, direction: HistorySearchDirection) {
+        if self.cache.is_empty() {
+            return;
+        }
+        let page_size = Self::VISIBLE_CACHE_SIZE;
+        match direction {
+            HistorySearchDirection::Backward => {
+                self.cache_index = (self.cache_index + page_size).min(self.cache.len() - 1);
+            }
+            HistorySearchDirection::Forward => {
+                self.cache_index = self.cache_index.saturating_sub(page_size);
             }
         }
     }
