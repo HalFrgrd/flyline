@@ -781,7 +781,16 @@ impl App {
             None
         };
 
-        self.formatted_buffer_cache = format_buffer(&self.buffer, Some(Box::new(wordinfo_fn)));
+        let mut parser = dparser::DParser::from(self.buffer.buffer());
+        parser.walk_to_end();
+        let annotated_tokens = parser.tokens();
+
+        self.formatted_buffer_cache = format_buffer(
+            &annotated_tokens,
+            self.buffer.cursor_byte_pos(),
+            self.buffer.buffer().len(),
+            Some(Box::new(wordinfo_fn)),
+        );
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
     }
 
