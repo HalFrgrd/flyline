@@ -83,7 +83,6 @@ impl FormattedBuffer {
                         alternative_span: None,
                         is_cursor_on_first_grapheme: true,
                         is_artificial_space: true,
-                        cursor_on_this_or_closing_token: true,
                         tooltip: None,
                     }))
                 } else {
@@ -122,7 +121,6 @@ pub struct FormattedBufferPart {
     /// true means cursor is on first grapheme, (and we should draw the contents with the cursor style)
     pub is_cursor_on_first_grapheme: bool,
     pub is_artificial_space: bool, // whether this part is an artificial space added for cursor positioning at the end of the buffer
-    pub cursor_on_this_or_closing_token: bool,
     pub tooltip: Option<String>,
 }
 
@@ -174,7 +172,6 @@ impl FormattedBufferPart {
             alternative_span: None,
             is_cursor_on_first_grapheme: false,
             is_artificial_space: false,
-            cursor_on_this_or_closing_token,
             tooltip,
         }
     }
@@ -259,7 +256,6 @@ impl FormattedBufferPart {
                 alternative_span: alt_left,
                 is_cursor_on_first_grapheme: false,
                 is_artificial_space: self.is_artificial_space,
-                cursor_on_this_or_closing_token: self.cursor_on_this_or_closing_token,
                 tooltip: self.tooltip.clone(),
             })
         } else {
@@ -284,7 +280,6 @@ impl FormattedBufferPart {
                 alternative_span: alt_right,
                 is_cursor_on_first_grapheme: true,
                 is_artificial_space: self.is_artificial_space,
-                cursor_on_this_or_closing_token: self.cursor_on_this_or_closing_token,
                 tooltip: self.tooltip.clone(),
             })
         } else {
