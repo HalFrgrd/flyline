@@ -423,6 +423,11 @@ impl App {
                             active_suggestions.set_selected_by_idx(idx);
                         }
                     }
+                    Some(Tag::HistoryResult(idx)) => {
+                        if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
+                            self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                        }
+                    }
                     Some(Tag::Command(byte_pos)) => {
                         log::debug!("Mouse over command at byte position {}", byte_pos);
                         if let Some(part) =
@@ -451,6 +456,15 @@ impl App {
                         active_suggestions.set_selected_by_idx(idx);
                         active_suggestions.accept_currently_selected(&mut self.buffer);
                         self.content_mode = ContentMode::Normal;
+                        update_buffer = true;
+                    }
+                }
+            }
+            Some(Tag::HistoryResult(idx)) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
+                        self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                        self.accept_fuzzy_history_search();
                         update_buffer = true;
                     }
                 }
@@ -1001,7 +1015,7 @@ impl App {
                     }
 
                     let line = Line::from(spans);
-                    content.write_line(&line, false, Tag::FuzzySearch);
+                    content.write_line(&line, false, Tag::HistoryResult(row_idx));
 
                     let formatted_text = if is_selected {
                         if formatted_entry.command_spans_selected.is_none() {
@@ -1018,7 +1032,7 @@ impl App {
                     };
 
                     for span in formatted_text {
-                        content.write_span(span, Tag::FuzzySearch);
+                        content.write_span(span, Tag::HistoryResult(row_idx));
                     }
                     content.newline();
                 }
