@@ -119,7 +119,7 @@ impl ToInclusiveRange for Range<usize> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenAnnotation {
     None,
-    HasOpeningQuote,
+    IsPartOfQuotedString,
     IsOpening(Option<usize>), // index of the closing token in the tokens vector
     IsClosing(usize),         // index of the opening token in the tokens vector
     IsCommandWord, // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
@@ -247,7 +247,7 @@ impl DParser {
 
         let mut command_start_stack = Vec::new();
 
-        let mut previous_token_kind: Option<TokenKind> = None;
+        let mut previous_token: Option<AnnotatedToken> = None;
 
         loop {
             let (mut idx, mut annotated_token) = match annotated_tokens.next() {
@@ -257,9 +257,9 @@ impl DParser {
             let mut token = &annotated_token.token;
 
             let word_is_part_of_assignment = if token.kind.is_word() {
-                previous_token_kind
-                    .as_ref()
-                    .map_or(false, |kind| matches!(kind, TokenKind::Assignment))
+                previous_token.as_ref().map_or(false, |token| {
+                    matches!(token.token.kind, TokenKind::Assignment)
+                })
             } else {
                 false
             };
@@ -400,19 +400,48 @@ impl DParser {
                         break;
                     }
                 }
+                TokenKind::Newline => {
+                    if let Some(prev_token) = &previous_token {
+                        if prev_token.annotation == TokenAnnotation::IsPartOfQuotedString
+                            || matches!(
+                                prev_token.token.kind,
+                                TokenKind::Quote | TokenKind::SingleQuote
+                            )
+                        {
+                            annotated_token.annotation = TokenAnnotation::IsPartOfQuotedString;
+                        }
+                    }
+                }
                 _ => {
-                    if self.current_command_range.is_none() {
-                        if token.kind.is_word() {
-                            match previous_token_kind.as_ref() {
-                                Some(TokenKind::Quote | TokenKind::SingleQuote) => {
-                                    annotated_token.annotation = TokenAnnotation::HasOpeningQuote;
+                    if token.kind.is_word() {
+                        // println!("prev token: {:?}", previous_token.as_ref().map(|t| &t.token));
+                        if let Some(prev_token) = &previous_token {
+                            match prev_token.token.kind {
+                                TokenKind::Quote | TokenKind::SingleQuote => {
+                                    annotated_token.annotation =
+                                        TokenAnnotation::IsPartOfQuotedString;
                                 }
-                                _ => {
-                                    // This is the first token, so it must be a command
+                                TokenKind::Newline
+                                    if matches!(
+                                        prev_token.annotation,
+                                        TokenAnnotation::IsPartOfQuotedString
+                                    ) =>
+                                {
+                                    annotated_token.annotation =
+                                        TokenAnnotation::IsPartOfQuotedString;
+                                }
+                                _ if self.current_command_range.is_none() => {
                                     annotated_token.annotation = TokenAnnotation::IsCommandWord;
                                 }
+                                _ => {
+                                    // leave as None
+                                }
                             }
+                        } else {
+                            annotated_token.annotation = TokenAnnotation::IsCommandWord;
                         }
+                    }
+                    if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
                     } else if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
@@ -420,7 +449,7 @@ impl DParser {
                 }
             }
 
-            previous_token_kind = Some(token.kind.clone());
+            previous_token = Some(annotated_token.clone());
         }
 
         if cfg!(test) {
@@ -550,7 +579,7 @@ mod tests {
         assert_eq!(tokens[2].token.value, "\"");
         assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(4)));
         assert_eq!(tokens[3].token.value, "héllo");
-        assert_eq!(tokens[3].annotation, TokenAnnotation::HasOpeningQuote);
+        assert_eq!(tokens[3].annotation, TokenAnnotation::IsPartOfQuotedString);
         assert_eq!(tokens[4].token.value, "\"");
         assert_eq!(tokens[4].annotation, TokenAnnotation::IsClosing(2));
         assert_eq!(tokens[5].token.value, " ");
@@ -563,7 +592,7 @@ mod tests {
         assert_eq!(tokens[10].token.value, "'");
         assert_eq!(tokens[10].annotation, TokenAnnotation::IsOpening(Some(12)));
         assert_eq!(tokens[11].token.value, "wörld");
-        assert_eq!(tokens[11].annotation, TokenAnnotation::HasOpeningQuote);
+        assert_eq!(tokens[11].annotation, TokenAnnotation::IsPartOfQuotedString);
         assert_eq!(tokens[12].token.value, "'");
         assert_eq!(tokens[12].annotation, TokenAnnotation::IsClosing(10));
     }
@@ -603,5 +632,31 @@ mod tests {
         assert_eq!(tokens[11].annotation, TokenAnnotation::None);
         assert_eq!(tokens[12].token.value, "B");
         assert_eq!(tokens[12].annotation, TokenAnnotation::IsClosing(4));
+    }
+
+    #[test]
+    fn test_multiline_string_annotations() {
+        let input = "echo 'line1\nline2'";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+
+        for t in tokens {
+            println!("{:?} - {:?}", t.token, t.annotation);
+        }
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "'");
+        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
+        assert_eq!(tokens[3].token.value, "line1");
+        assert_eq!(tokens[3].annotation, TokenAnnotation::IsPartOfQuotedString);
+        assert_eq!(tokens[4].token.kind, TokenKind::Newline);
+        assert_eq!(tokens[4].annotation, TokenAnnotation::IsPartOfQuotedString);
+        assert_eq!(tokens[5].token.value, "line2");
+        assert_eq!(tokens[5].annotation, TokenAnnotation::IsPartOfQuotedString);
+        assert_eq!(tokens[6].token.value, "'");
+        assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
     }
 }
