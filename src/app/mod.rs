@@ -1046,8 +1046,13 @@ impl App {
                         formatted_entry.command_spans.as_ref().unwrap()
                     };
 
-                    for span in formatted_text {
-                        content.write_span(span, Tag::HistoryResult(row_idx));
+                    for (line_idx, line) in formatted_text.iter().enumerate() {
+                        if line_idx > 0 {
+                            content.newline();
+                        }
+                        for span in &line.spans {
+                            content.write_span(span, Tag::HistoryResult(row_idx));
+                        }
                     }
                     content.newline();
                 }
