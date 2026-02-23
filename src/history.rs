@@ -340,6 +340,10 @@ impl HistoryManager {
         self.fuzzy_search.accept_fuzzy_search_result()
     }
 
+    pub fn fuzzy_search_set_by_visual_idx(&mut self, visual_idx: usize) {
+        self.fuzzy_search.set_fuzzy_search_by_visual_idx(visual_idx);
+    }
+
     pub fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
         self.fuzzy_search.fuzzy_search_onkeypress(direction);
     }
@@ -481,6 +485,13 @@ impl FuzzyHistorySearch {
         self.cache
             .get(self.cache_index)
             .map(|formatted| &formatted.entry)
+    }
+
+    fn set_fuzzy_search_by_visual_idx(&mut self, visual_idx: usize) {
+        let new_index = self.cache_visible_offset + visual_idx;
+        if new_index < self.cache.len() {
+            self.cache_index = new_index;
+        }
     }
 
     fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
