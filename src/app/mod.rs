@@ -576,14 +576,14 @@ impl App {
                 ..
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.history_manager
-                    .fuzzy_search_page(HistorySearchDirection::Forward);
+                    .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
             }
             KeyEvent {
                 code: KeyCode::PageDown,
                 ..
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.history_manager
-                    .fuzzy_search_page(HistorySearchDirection::Backward);
+                    .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
             }
             // Handle Down with history navigation when at last line
             KeyEvent {
