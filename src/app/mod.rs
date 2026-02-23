@@ -194,10 +194,6 @@ impl App {
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
         terminal.hide_cursor().unwrap();
-        log::debug!(
-            "Initial terminal cursor position: {:?}",
-            terminal.get_cursor_position()
-        );
 
         // Set up event stream and timers directly
         let mut reader = crossterm::event::EventStream::new();
@@ -275,45 +271,6 @@ impl App {
                         log::error!("Failed to set cursor position: {}", e);
                     } else {
                         log::debug!("Set cursor position to ({}, {})", 0, final_cursor_row);
-                    }
-
-                    // Retry up to 10 times to verify cursor position
-                    for attempt in 0..10 {
-                        match terminal.get_cursor_position() {
-                            Ok(actual_pos) => {
-                                if actual_pos == pos {
-                                    log::debug!(
-                                        "Cursor position verified at ({}, {}) on attempt {}",
-                                        actual_pos.x,
-                                        actual_pos.y,
-                                        attempt + 1
-                                    );
-                                    break;
-                                } else {
-                                    log::debug!(
-                                        "Cursor position mismatch: expected ({}, {}), got ({}, {}) on attempt {}",
-                                        pos.x,
-                                        pos.y,
-                                        actual_pos.x,
-                                        actual_pos.y,
-                                        attempt + 1
-                                    );
-                                    if attempt < 9 {
-                                        tokio::time::sleep(Duration::from_millis(10)).await;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to get cursor position on attempt {}: {}",
-                                    attempt + 1,
-                                    e
-                                );
-                                if attempt < 9 {
-                                    tokio::time::sleep(Duration::from_millis(10)).await;
-                                }
-                            }
-                        }
                     }
                 }
             }
