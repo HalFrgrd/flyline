@@ -27,14 +27,14 @@ impl SuggestionFormatted {
         suggestion_idx: usize,
         matching_indices: Vec<usize>,
     ) -> Self {
-        let (spans, spans_selected) =
+        let (lines, lines_selected) =
             Palette::highlight_maching_indices(&suggestion.s, &matching_indices);
 
         SuggestionFormatted {
             suggestion_idx,
             display_len: suggestion.s.len() + 2,
-            spans,
-            spans_selected,
+            spans: lines.into_iter().flat_map(|l| l.spans).collect(),
+            spans_selected: lines_selected.into_iter().flat_map(|l| l.spans).collect(),
         }
     }
 
