@@ -570,6 +570,21 @@ impl App {
                 self.history_manager
                     .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
             }
+            // Page Up/Down - scroll by a full page in fuzzy history search
+            KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
+                self.history_manager
+                    .fuzzy_search_page(HistorySearchDirection::Forward);
+            }
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
+                self.history_manager
+                    .fuzzy_search_page(HistorySearchDirection::Backward);
+            }
             // Handle Down with history navigation when at last line
             KeyEvent {
                 code: KeyCode::Down,
