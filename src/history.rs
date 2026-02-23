@@ -27,6 +27,8 @@ pub struct HistoryManager {
 pub enum HistorySearchDirection {
     Backward,
     Forward,
+    PageBackward,
+    PageForward,
 }
 
 impl HistoryManager {
@@ -312,8 +314,12 @@ impl HistoryManager {
         let prefix = self.last_search_prefix.as_ref().unwrap();
 
         let indices: Vec<usize> = match direction {
-            HistorySearchDirection::Backward => (0..self.index).rev().collect(),
-            HistorySearchDirection::Forward => (self.index + 1..self.entries.len()).collect(),
+            HistorySearchDirection::Backward | HistorySearchDirection::PageBackward => {
+                (0..self.index).rev().collect()
+            }
+            HistorySearchDirection::Forward | HistorySearchDirection::PageForward => {
+                (self.index + 1..self.entries.len()).collect()
+            }
         };
 
         for i in indices {
@@ -409,6 +415,8 @@ impl FuzzyHistorySearch {
     const TIME_CHECK_INTERVAL: usize = 64;
     // Time budget for processing history entries in milliseconds
     const TIME_BUDGET_MS: u64 = 15;
+    // Number of visible rows in the fuzzy history search list
+    const VISIBLE_CACHE_SIZE: usize = 18;
 
     fn new() -> Self {
         FuzzyHistorySearch {
@@ -447,7 +455,7 @@ impl FuzzyHistorySearch {
 
         self.cache_index = self.cache_index.min(self.cache.len().saturating_sub(1));
 
-        let visible_cache_size = 18;
+        let visible_cache_size = Self::VISIBLE_CACHE_SIZE;
 
         if self.cache_visible_offset + visible_cache_size <= self.cache_index + 2 {
             self.cache_visible_offset =
@@ -508,6 +516,13 @@ impl FuzzyHistorySearch {
                 if self.cache_index > 0 {
                     self.cache_index -= 1;
                 }
+            }
+            HistorySearchDirection::PageBackward => {
+                self.cache_index =
+                    (self.cache_index + Self::VISIBLE_CACHE_SIZE).min(self.cache.len() - 1);
+            }
+            HistorySearchDirection::PageForward => {
+                self.cache_index = self.cache_index.saturating_sub(Self::VISIBLE_CACHE_SIZE);
             }
         }
     }
