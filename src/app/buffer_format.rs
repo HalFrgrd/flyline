@@ -81,7 +81,8 @@ impl FormattedBuffer {
                         },
                         span: Span::from(space),
                         alternative_span: None,
-                        cursor_info: Some(false),
+                        is_cursor_on_first_grapheme: true,
+                        is_artificial_space: true,
                         tooltip: None,
                     }))
                 } else {
@@ -117,10 +118,9 @@ pub struct FormattedBufferPart {
     /// instead of span for display, but span will still be used for cursor
     /// positioning and other logic.
     alternative_span: Option<Span<'static>>,
-    /// None means no cursor,
-    /// Some(true) means cursor is on an actual grapheme, (and we should draw the contents with the cursor style)
-    /// Some(false) means cursor is on an artificial position (e.g. end of line)
-    pub cursor_info: Option<bool>,
+    /// true means cursor is on first grapheme, (and we should draw the contents with the cursor style)
+    pub is_cursor_on_first_grapheme: bool,
+    pub is_artificial_space: bool, // whether this part is an artificial space added for cursor positioning at the end of the buffer
     pub tooltip: Option<String>,
 }
 
@@ -158,7 +158,8 @@ impl FormattedBufferPart {
             token: token.clone(),
             span,
             alternative_span: None,
-            cursor_info: None,
+            is_cursor_on_first_grapheme: false,
+            is_artificial_space: false,
             tooltip,
         }
     }
@@ -241,7 +242,8 @@ impl FormattedBufferPart {
                 },
                 span: Span::styled(left_text.to_string(), self.span.style),
                 alternative_span: alt_left,
-                cursor_info: None,
+                is_cursor_on_first_grapheme: false,
+                is_artificial_space: self.is_artificial_space,
                 tooltip: self.tooltip.clone(),
             })
         } else {
@@ -264,7 +266,8 @@ impl FormattedBufferPart {
                 },
                 span: Span::styled(right_text.to_string(), self.span.style),
                 alternative_span: alt_right,
-                cursor_info: Some(true),
+                is_cursor_on_first_grapheme: true,
+                is_artificial_space: self.is_artificial_space,
                 tooltip: self.tooltip.clone(),
             })
         } else {
