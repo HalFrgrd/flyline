@@ -369,39 +369,38 @@ impl App {
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
 
-        if let Some((contents, offset)) = &self.last_contents {
-            if let Some(tagged_cell) = contents.get_tagged_cell(mouse.column, mouse.row, *offset) {
-                self.last_mouse_over_cell = Some(tagged_cell.tag.clone());
-                match self.last_mouse_over_cell {
-                    Some(Tag::Suggestion(idx)) => {
-                        if let ContentMode::TabCompletion(active_suggestions) =
-                            &mut self.content_mode
-                        {
-                            active_suggestions.set_selected_by_idx(idx);
-                        }
-                    }
-                    Some(Tag::HistoryResult(idx)) => {
-                        if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
-                            self.history_manager.fuzzy_search_set_by_visual_idx(idx);
-                        }
-                    }
-                    Some(Tag::Command(byte_pos)) => {
-                        log::debug!("Mouse over command at byte position {}", byte_pos);
-                        if let Some(part) =
-                            self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
-                        {
-                            if let Some(tooltip) = part.tooltip.as_ref() {
-                                self.tooltip = Some(tooltip.clone());
-                            }
-                        }
-                    }
-                    _ => {}
+        let mut cursor_directly_on_cell = true;
+
+        match self.last_contents.as_ref().and_then(|(contents, offset)| {
+            contents.get_tagged_cell(mouse.column, mouse.row, *offset)
+        }) {
+            Some((tag @ Tag::Suggestion(idx), true)) => {
+                self.last_mouse_over_cell = Some(tag.clone());
+                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                    active_suggestions.set_selected_by_idx(idx);
                 }
-            } else {
+            }
+            Some((tag @ Tag::HistoryResult(idx), true)) => {
+                self.last_mouse_over_cell = Some(tag.clone());
+                if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
+                    self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                }
+            }
+            Some((tag @ Tag::Command(byte_pos), direct)) => {
+                cursor_directly_on_cell = direct;
+                self.last_mouse_over_cell = Some(tag.clone());
+                log::trace!("Mouse over command at byte position {}", byte_pos);
+                if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos) {
+                    if let Some(tooltip) = part.tooltip.as_ref() {
+                        self.tooltip = Some(tooltip.clone());
+                    }
+                }
+            }
+
+            t => {
+                log::trace!("Mouse over  {:?}", t);
                 self.last_mouse_over_cell = None;
             }
-        } else {
-            self.last_mouse_over_cell = None;
         }
 
         let mut update_buffer = false;
@@ -431,8 +430,9 @@ impl App {
                     mouse.kind,
                     MouseEventKind::Up(_) | MouseEventKind::Down(_) | MouseEventKind::Drag(_)
                 ) {
-                    log::debug!("Mouse clicked on command at byte position {}", byte_pos);
-                    self.buffer.try_move_cursor_to_byte_pos(byte_pos);
+                    self.buffer.try_move_cursor_to_byte_pos(
+                        byte_pos + if cursor_directly_on_cell { 0 } else { 1 },
+                    );
                     update_buffer = true;
                 }
             }
@@ -868,6 +868,14 @@ impl App {
             }
 
             if part.token.token.kind == TokenKind::Newline {
+                // if content.cursor_position().0 < width {
+                //     // if there is room on the line, add a space with the command tag so that clicking to the right of the end of the line will move the cursor to the right spot
+                //     content.write_span(
+                //         &Span::from(" "),
+                //         Tag::Command(part.token.token.byte_range().start),
+                //     );
+                // }
+
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());

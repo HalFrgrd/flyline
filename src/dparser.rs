@@ -371,12 +371,13 @@ impl DParser {
                     }
                     self.current_command_range = None;
                 }
-                TokenKind::Word(word) if heredocs.front().is_some_and(|(_, delim)| delim == word) => {
-                
+                TokenKind::Word(word)
+                    if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
+                {
                     let (opening_idx, _) = heredocs.pop_front().unwrap();
                     annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
                 }
-            
+
                 TokenKind::And | TokenKind::Or | TokenKind::Pipe | TokenKind::Semicolon => {
                     if stop_parsing_at_command_boundary {
                         break;
