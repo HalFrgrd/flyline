@@ -860,9 +860,7 @@ impl App {
             });
 
         for part in self.formatted_buffer_cache.split_at_cursor_from() {
-            if self.mode.is_running()
-                && let Some(_) = part.cursor_info
-            {
+            if self.mode.is_running() && part.is_cursor_on_first_grapheme {
                 let first_graph = part
                     .span_to_use()
                     .styled_graphemes(Style::default())
@@ -877,19 +875,11 @@ impl App {
             }
 
             if part.token.token.kind == TokenKind::Newline {
-                // if content.cursor_position().0 < width {
-                //     // if there is room on the line, add a space with the command tag so that clicking to the right of the end of the line will move the cursor to the right spot
-                //     content.write_span(
-                //         &Span::from(" "),
-                //         Tag::Command(part.token.token.byte_range().start),
-                //     );
-                // }
-
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
-            } else if part.cursor_info.unwrap_or(true) {
+            } else if !part.is_artificial_space {
                 content.write_span_dont_overwrite(
                     &part.span_to_use(),
                     Tag::Command(part.token.token.byte_range().start),
