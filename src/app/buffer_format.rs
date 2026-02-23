@@ -5,7 +5,7 @@ use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::dparser::{AnnotatedToken, TokenAnnotation};
+use crate::dparser::{AnnotatedToken, ToInclusiveRange, TokenAnnotation};
 use crate::palette::Palette;
 use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
@@ -83,6 +83,7 @@ impl FormattedBuffer {
                         alternative_span: None,
                         is_cursor_on_first_grapheme: true,
                         is_artificial_space: true,
+                        cursor_on_this_or_closing_token: true,
                         tooltip: None,
                     }))
                 } else {
@@ -121,10 +122,19 @@ pub struct FormattedBufferPart {
     /// true means cursor is on first grapheme, (and we should draw the contents with the cursor style)
     pub is_cursor_on_first_grapheme: bool,
     pub is_artificial_space: bool, // whether this part is an artificial space added for cursor positioning at the end of the buffer
+    pub cursor_on_this_or_closing_token: bool,
     pub tooltip: Option<String>,
 }
 
-fn token_to_style(token: &AnnotatedToken, recognised_command: Option<bool>) -> Style {
+fn token_to_style(
+    token: &AnnotatedToken,
+    recognised_command: Option<bool>,
+    cursor_on_this_or_closing_token: bool,
+) -> Style {
+    if cursor_on_this_or_closing_token {
+        return Palette::selection_style();
+    }
+
     if recognised_command == Some(true) {
         return Palette::recognised_word();
     }
@@ -146,12 +156,16 @@ pub struct WordInfo {
 pub type WordInfoFn<'a> = Box<dyn FnMut(&AnnotatedToken) -> Option<WordInfo> + 'a>;
 
 impl FormattedBufferPart {
-    pub fn new(token: &AnnotatedToken, wordinfo_fn: &mut Option<WordInfoFn<'_>>) -> Self {
+    pub fn new(
+        token: &AnnotatedToken,
+        wordinfo_fn: &mut Option<WordInfoFn<'_>>,
+        cursor_on_this_or_closing_token: bool,
+    ) -> Self {
         let word_info = wordinfo_fn.as_mut().and_then(|f| f(token));
         let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
         let recognised_command = word_info.as_ref().map(|info| info.is_recognised_command);
 
-        let style = token_to_style(&token, recognised_command);
+        let style = token_to_style(&token, recognised_command, cursor_on_this_or_closing_token);
         let span = Span::styled(token.token.value.clone(), style);
 
         Self {
@@ -160,6 +174,7 @@ impl FormattedBufferPart {
             alternative_span: None,
             is_cursor_on_first_grapheme: false,
             is_artificial_space: false,
+            cursor_on_this_or_closing_token,
             tooltip,
         }
     }
@@ -244,6 +259,7 @@ impl FormattedBufferPart {
                 alternative_span: alt_left,
                 is_cursor_on_first_grapheme: false,
                 is_artificial_space: self.is_artificial_space,
+                cursor_on_this_or_closing_token: self.cursor_on_this_or_closing_token,
                 tooltip: self.tooltip.clone(),
             })
         } else {
@@ -268,6 +284,7 @@ impl FormattedBufferPart {
                 alternative_span: alt_right,
                 is_cursor_on_first_grapheme: true,
                 is_artificial_space: self.is_artificial_space,
+                cursor_on_this_or_closing_token: self.cursor_on_this_or_closing_token,
                 tooltip: self.tooltip.clone(),
             })
         } else {
@@ -286,7 +303,30 @@ pub fn format_buffer<'a>(
 ) -> FormattedBuffer {
     let spans: Vec<FormattedBufferPart> = annotated_tokens
         .into_iter()
-        .map(|tok| FormattedBufferPart::new(&tok, &mut wordinfo_fn))
+        .map(|tok| {
+            let cursor_on_this_or_closing_token = match tok.annotation {
+                TokenAnnotation::IsOpening(Some(corresponding_token_idx))
+                | TokenAnnotation::IsClosing(corresponding_token_idx) => {
+                    tok.token
+                        .byte_range()
+                        .to_inclusive()
+                        .contains(&cursor_byte_pos)
+                        || annotated_tokens.get(corresponding_token_idx).map_or(
+                            false,
+                            |corresponding_tok| {
+                                corresponding_tok
+                                    .token
+                                    .byte_range()
+                                    .to_inclusive()
+                                    .contains(&cursor_byte_pos)
+                            },
+                        )
+                }
+                _ => false,
+            };
+
+            FormattedBufferPart::new(&tok, &mut wordinfo_fn, cursor_on_this_or_closing_token)
+        })
         .collect();
 
     let cursor_pos = cursor_byte_pos;
