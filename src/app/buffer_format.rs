@@ -5,9 +5,8 @@ use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::dparser::{AnnotatedToken, DParser, TokenAnnotation};
+use crate::dparser::{AnnotatedToken, TokenAnnotation};
 use crate::palette::Palette;
-use crate::text_buffer::TextBuffer;
 use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
 
@@ -277,39 +276,21 @@ impl FormattedBufferPart {
 }
 
 pub fn format_buffer<'a>(
-    buffer: &TextBuffer,
+    annotated_tokens: &[AnnotatedToken],
+    cursor_byte_pos: usize,
+    buffer_byte_length: usize,
     mut wordinfo_fn: Option<WordInfoFn<'a>>,
 ) -> FormattedBuffer {
-    let mut parser = DParser::from(buffer.buffer());
-    parser.walk_to_end();
-    let annoted_tokens = parser.tokens();
-
-    let spans: Vec<FormattedBufferPart> = annoted_tokens
+    let spans: Vec<FormattedBufferPart> = annotated_tokens
         .into_iter()
-        .map(|tok| FormattedBufferPart::new(tok, &mut wordinfo_fn))
+        .map(|tok| FormattedBufferPart::new(&tok, &mut wordinfo_fn))
         .collect();
 
-    let cursor_pos = buffer.cursor_byte_pos();
-    let buf_byte_length = buffer.buffer().len();
-
+    let cursor_pos = cursor_byte_pos;
+    let buf_byte_length = buffer_byte_length;
     FormattedBuffer {
         parts: spans,
         cursor_byte_pos: cursor_pos,
         buf_byte_length,
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // #[test]
-
-    // fn test_format_buffer() {
-    //     let buffer = TextBuffer::new("echo \"hel\nlo\"");
-    //     let formatted = format_buffer(&buffer, None);
-    //     println!("{:#?}", formatted);
-
-    //     panic!("Test not implemented yet");
-    // }
 }
