@@ -13,6 +13,7 @@ pub enum Tag {
     Suggestion(usize),
     HistorySuggestion,
     FuzzySearch,
+    HistoryResult(usize),
     Tooltip,
 }
 
