@@ -1,4 +1,4 @@
-use clap::{Arg, Command as ClapCommand};
+use clap::Parser;
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
@@ -20,6 +20,26 @@ mod prompt_manager;
 mod snake_animation;
 mod tab_completion_context;
 mod text_buffer;
+
+#[derive(Parser, Debug)]
+#[command(name = "flyline")]
+struct FlylineArgs {
+    /// Show version information
+    #[arg(long)]
+    version: bool,
+    /// Disable animations
+    #[arg(long = "disable-animations")]
+    disable_animations: bool,
+    /// Dump in-memory logs to file
+    #[arg(long = "dump-logs")]
+    dump_logs: bool,
+    /// Dump current logs to PATH and append new logs
+    #[arg(long = "stream-logs", value_name = "PATH")]
+    stream_logs: Option<String>,
+    /// Set the logging level (error, warn, info, debug, trace)
+    #[arg(long = "log-level", value_name = "LEVEL")]
+    log_level: Option<String>,
+}
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
@@ -83,70 +103,35 @@ impl Flyline {
         }
         log::debug!("flyline called with args: {:?}", args);
 
-        // Parse arguments using clap
-        let app = ClapCommand::new("flyline")
-            .arg(
-                Arg::new("version")
-                    .long("version")
-                    .action(clap::ArgAction::SetTrue)
-                    .help("Show version information"),
-            )
-            .arg(
-                Arg::new("disable-animations")
-                    .long("disable-animations")
-                    .action(clap::ArgAction::SetTrue)
-                    .help("Disable animations"),
-            )
-            .arg(
-                Arg::new("dump-logs")
-                    .long("dump-logs")
-                    .action(clap::ArgAction::SetTrue)
-                    .help("Dump in-memory logs to file"),
-            )
-            .arg(
-                Arg::new("stream-logs")
-                    .long("stream-logs")
-                    .value_name("PATH")
-                    .num_args(1)
-                    .help("Dump current logs to PATH and append new logs"),
-            )
-            .arg(
-                Arg::new("log-level")
-                    .long("log-level")
-                    .value_name("LEVEL")
-                    .num_args(1)
-                    .help("Set the logging level (error, warn, info, debug, trace)"),
-            );
-
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
-        match app.try_get_matches_from(args_with_prog) {
-            Ok(matches) => {
-                log::debug!("Parsed flyline arguments: {:?}", matches);
+        match FlylineArgs::try_parse_from(args_with_prog) {
+            Ok(parsed) => {
+                log::debug!("Parsed flyline arguments: {:?}", parsed);
 
-                if matches.get_flag("version") {
+                if parsed.version {
                     println!("flyline version {}", env!("CARGO_PKG_VERSION"));
                 }
 
-                if matches.get_flag("disable-animations") {
+                if parsed.disable_animations {
                     log::info!("Animations disabled");
                     // TODO: Set animation flag or pass to app
                 }
 
-                if matches.get_flag("dump-logs") {
+                if parsed.dump_logs {
                     match logging::dump_logs() {
                         Ok(path) => println!("Flyline logs dumped to {}", path.display()),
                         Err(e) => eprintln!("Failed to dump logs: {}", e),
                     }
                 }
 
-                if let Some(path) = matches.get_one::<String>("stream-logs") {
+                if let Some(ref path) = parsed.stream_logs {
                     match logging::stream_logs(path.into()) {
                         Ok(path) => println!("Flyline logs streaming to {}", path.display()),
                         Err(e) => eprintln!("Failed to stream logs: {}", e),
                     }
                 }
 
-                if let Some(level) = matches.get_one::<String>("log-level") {
+                if let Some(ref level) = parsed.log_level {
                     match level.as_str() {
                         "error" => log::set_max_level(log::LevelFilter::Error),
                         "warn" => log::set_max_level(log::LevelFilter::Warn),
