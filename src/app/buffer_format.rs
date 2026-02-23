@@ -130,7 +130,7 @@ fn token_to_style(token: &AnnotatedToken, recognised_command: Option<bool>) -> S
         return Palette::recognised_word();
     }
 
-    if token.annotation == TokenAnnotation::HasOpeningQuote
+    if token.annotation == TokenAnnotation::IsPartOfQuotedString
         || matches!(token.token.kind, TokenKind::SingleQuote | TokenKind::Quote)
     {
         return Palette::unrecognised_word();
