@@ -63,8 +63,7 @@ impl Palette {
                         chunk_str.clone(),
                         Palette::matched_character(),
                     ));
-                    selected_spans
-                        .push(Span::styled(chunk_str, Palette::selected_matching_char()));
+                    selected_spans.push(Span::styled(chunk_str, Palette::selected_matching_char()));
                 } else {
                     normal_spans.push(Span::styled(chunk_str.clone(), Palette::normal_text()));
                     selected_spans.push(Span::styled(chunk_str, Palette::selection_style()));

@@ -255,7 +255,7 @@ impl Contents {
         term_em_x: u16,
         term_em_y: u16,
         term_em_offset: i16,
-    ) -> Option<&TaggedCell> {
+    ) -> Option<(Tag, bool)> {
         // log::debug!(
         //     "Getting tagged cell at terminal em coords ({}, {}), offset {}",
         //     term_em_x,
@@ -271,8 +271,27 @@ impl Contents {
             return None;
         }
 
+        let direct_contact = self
+            .buf
+            .get(term_em_y.saturating_sub_signed(term_em_offset) as usize)
+            .and_then(|row| row.get(term_em_x as usize));
+
+        if direct_contact.is_some_and(|cell| {
+            matches!(
+                cell.tag,
+                Tag::Command(_) | Tag::Suggestion(_) | Tag::HistoryResult(_)
+            )
+        }) {
+            return direct_contact.map(|cell| (cell.tag, true));
+        }
+
         self.buf
             .get(term_em_y.saturating_sub_signed(term_em_offset) as usize)
-            .and_then(|row| row.get(term_em_x as usize))
+            .and_then(|row| {
+                row.iter().enumerate().rev().find(|(col_idx, tagged_cell)| {
+                    *col_idx <= term_em_x as usize && matches!(tagged_cell.tag, Tag::Command(_))
+                })
+            })
+            .map(|(_, cell)| (cell.tag, false))
     }
 }
