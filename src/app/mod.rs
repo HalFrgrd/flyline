@@ -18,7 +18,8 @@ use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crossterm::event::{
-    self, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent, MouseEventKind, Event as CrosstermEvent
+    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
+    MouseEventKind,
 };
 use flash::lexer::TokenKind;
 use itertools::Itertools;
@@ -243,10 +244,7 @@ impl App {
                 break;
             }
 
-            redraw = if !event::poll(Duration::from_millis(50)).unwrap() {
-                // redraw at least 10fps
-                false
-            } else {
+            redraw = if event::poll(Duration::from_millis(50)).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => match key.kind {
                         crossterm::event::KeyEventKind::Press
@@ -280,11 +278,15 @@ impl App {
                         false
                     }
                     CrosstermEvent::Paste(pasted) => {
+                        log::debug!("Pasted content: {}", pasted);
+                        log::debug!("Pasted content as bytes: {:?}", pasted.as_bytes());
                         self.buffer.insert_str(&pasted);
                         self.on_possible_buffer_change();
                         true
                     }
                 }
+            } else {
+                true
             }
         }
 
