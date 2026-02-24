@@ -400,8 +400,11 @@ impl DParser {
                         break;
                     }
                 }
-                TokenKind::Newline => {
-                    if let Some(prev_token) = &previous_token {
+
+                _ => {
+                    if token.kind == TokenKind::Newline
+                        && let Some(prev_token) = &previous_token
+                    {
                         if prev_token.annotation == TokenAnnotation::IsPartOfQuotedString
                             || matches!(
                                 prev_token.token.kind,
@@ -411,8 +414,7 @@ impl DParser {
                             annotated_token.annotation = TokenAnnotation::IsPartOfQuotedString;
                         }
                     }
-                }
-                _ => {
+
                     if token.kind.is_word() {
                         // println!("prev token: {:?}", previous_token.as_ref().map(|t| &t.token));
                         if let Some(prev_token) = &previous_token {

@@ -416,7 +416,12 @@ impl TextBuffer {
         self.cursor_byte = self.buf.len();
     }
 
-    pub fn try_move_cursor_to_byte_pos(&mut self, byte_pos: usize) {
+    pub fn try_move_cursor_to_byte_pos(&mut self, byte_pos: usize, move_past_final_cell: bool) {
+        if byte_pos >= self.buf.len().saturating_sub(1) && move_past_final_cell {
+            self.cursor_byte = self.buf.len();
+            return;
+        }
+
         if byte_pos <= self.buf.len() {
             // Round up to next char boundary if not already on one
             let mut pos = byte_pos;

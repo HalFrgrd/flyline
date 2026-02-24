@@ -115,7 +115,9 @@ pub fn get_completion_context<'a>(
     };
 
     let word_under_cursor_range = match opt_cursor_node {
-        Some((_, cursor_node)) if cursor_node.kind.is_whitespace() => {
+        Some((_, cursor_node))
+            if cursor_node.kind.is_whitespace() || cursor_node.kind == TokenKind::Newline =>
+        {
             cursor_byte_pos..cursor_byte_pos
         }
         Some((node_idx, cursor_node)) if cursor_node.kind.is_word() => {
@@ -139,6 +141,10 @@ pub fn get_completion_context<'a>(
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
         None => {
+            for t in context_tokens.iter() {
+                log::error!("Token: {:?} byte_range={:?}", t, t.byte_range());
+            }
+
             todo!("Cursor is outside of all context tokens");
         }
     };
@@ -1002,6 +1008,19 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
                 assert_eq!(ctx.word_under_cursor, "foo\\ ");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_past_newline() {
+        let ctx = run_inline("echo \"\n█");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "");
             }
             _ => panic!("Expected CommandComp"),
         }

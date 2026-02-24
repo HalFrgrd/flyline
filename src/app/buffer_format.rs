@@ -297,47 +297,51 @@ pub fn format_buffer<'a>(
     app_is_running: bool,
     mut wordinfo_fn: Option<WordInfoFn<'a>>,
 ) -> FormattedBuffer {
-    let token_has_matched_pair_highlight = annotated_tokens.iter().map(|tok| {
-        matches!(
-            tok.annotation,
-            TokenAnnotation::IsOpening(Some(corresponding_token_idx))
-                | TokenAnnotation::IsClosing(corresponding_token_idx)
-                if tok.token.byte_range().contains(&cursor_byte_pos)
-                    || annotated_tokens.get(corresponding_token_idx).is_some_and(|corresponding_tok| {
-                        corresponding_tok
-                            .token
-                            .byte_range()
-                            .contains(&cursor_byte_pos)
-                    })
-        )
-    }).collect::<Vec<bool>>();
+    let check_highlight = |inclusive: bool| {
+        annotated_tokens
+            .iter()
+            .map(|tok| {
+                let range_check = |t: &AnnotatedToken| {
+                    let range = t.token.byte_range();
+                    if inclusive {
+                        range.to_inclusive().contains(&cursor_byte_pos)
+                    } else {
+                        range.contains(&cursor_byte_pos)
+                    }
+                };
 
-    let token_has_matched_highlight_inclusive = annotated_tokens.iter().map(|tok| {
-        matches!(
-            tok.annotation,
-            TokenAnnotation::IsOpening(Some(corresponding_token_idx))
-                | TokenAnnotation::IsClosing(corresponding_token_idx)
-                if tok.token.byte_range().to_inclusive().contains(&cursor_byte_pos)
-                    || annotated_tokens.get(corresponding_token_idx).is_some_and(|corresponding_tok| {
-                        corresponding_tok
-                            .token
-                            .byte_range()
-                            .to_inclusive()
-                            .contains(&cursor_byte_pos)
-                    })
-        )
-    }).collect::<Vec<bool>>();
+                match tok.annotation {
+                    TokenAnnotation::IsOpening(Some(corresponding_idx)) => {
+                        range_check(tok)
+                            || annotated_tokens
+                                .get(corresponding_idx)
+                                .is_some_and(range_check)
+                    }
+                    TokenAnnotation::IsClosing(corresponding_idx) => {
+                        range_check(tok)
+                            || annotated_tokens
+                                .get(corresponding_idx)
+                                .is_some_and(range_check)
+                    }
+                    _ => false,
+                }
+            })
+            .collect::<Vec<bool>>()
+    };
+
+    let strict_highlight = check_highlight(false);
+    let inclusive_highlight = check_highlight(true);
+
+    let use_inclusive = !strict_highlight.iter().any(|&b| b);
 
     let spans: Vec<FormattedBufferPart> = annotated_tokens
-        .into_iter()
+        .iter()
         .enumerate()
         .map(|(idx, tok)| {
-            let token_has_matching_pair_highlight = app_is_running
-                && (token_has_matched_pair_highlight[idx]
-                    || (!token_has_matched_pair_highlight.iter().any(|b| *b)
-                        && token_has_matched_highlight_inclusive[idx]));
+            let highlight = app_is_running
+                && (strict_highlight[idx] || (use_inclusive && inclusive_highlight[idx]));
 
-            FormattedBufferPart::new(&tok, &mut wordinfo_fn, token_has_matching_pair_highlight)
+            FormattedBufferPart::new(tok, &mut wordinfo_fn, highlight)
         })
         .collect();
 
