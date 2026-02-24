@@ -28,6 +28,10 @@ impl Palette {
             .fg(Color::Green)
             .add_modifier(Modifier::BOLD)
     }
+    pub fn opening_and_closing_pair() -> Style {
+        Self::matched_character().add_modifier(Modifier::UNDERLINED)
+    }
+
     pub fn cursor_style(intensity: u8) -> Style {
         Style::new().bg(Color::Rgb(intensity, intensity, intensity))
     }
