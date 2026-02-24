@@ -372,9 +372,8 @@ impl App {
                     mouse.kind,
                     MouseEventKind::Up(_) | MouseEventKind::Down(_) | MouseEventKind::Drag(_)
                 ) {
-                    self.buffer.try_move_cursor_to_byte_pos(
-                        byte_pos + if cursor_directly_on_cell { 0 } else { 1 },
-                    );
+                    self.buffer
+                        .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
                     update_buffer = true;
                 }
             }
@@ -818,6 +817,10 @@ impl App {
             }
 
             if part.token.token.kind == TokenKind::Newline {
+                content.write_span_dont_overwrite(
+                    &Span::from(" "),
+                    Tag::Command(part.token.token.byte_range().start),
+                );
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
