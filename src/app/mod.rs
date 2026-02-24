@@ -955,12 +955,14 @@ impl App {
 
                     for (line_idx, line) in formatted_text.iter().enumerate() {
                         if line_idx > 0 {
+                            content.fill_line(Tag::HistoryResult(row_idx));
                             content.newline();
                         }
                         for span in &line.spans {
                             content.write_span(span, Tag::HistoryResult(row_idx));
                         }
                     }
+                    content.fill_line(Tag::HistoryResult(row_idx));
                     content.newline();
                 }
                 content.write_span(

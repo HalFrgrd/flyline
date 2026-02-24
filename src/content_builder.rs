@@ -203,6 +203,14 @@ impl Contents {
         }
     }
 
+    /// Fill the rest of the current row with spaces tagged with the given tag
+    pub fn fill_line(&mut self, tag: Tag) {
+        let remaining = self.width.saturating_sub(self.cursor_vis_col) as usize;
+        if remaining > 0 {
+            self.write_span(&Span::raw(" ".repeat(remaining)), tag);
+        }
+    }
+
     /// Move to the next line (carriage return + line feed)
     pub fn newline(&mut self) {
         self.cursor_vis_row += 1;
