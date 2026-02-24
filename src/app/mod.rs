@@ -244,7 +244,7 @@ impl App {
                 break;
             }
 
-            redraw = if event::poll(Duration::from_millis(50)).unwrap() {
+            redraw = if event::poll(Duration::from_millis(30)).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => match key.kind {
                         crossterm::event::KeyEventKind::Press
