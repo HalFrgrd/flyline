@@ -17,12 +17,10 @@ use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
-use crossterm::event::Event as CrosstermEvent;
 use crossterm::event::{
-    KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent, MouseEventKind,
+    self, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent, MouseEventKind, Event as CrosstermEvent
 };
 use flash::lexer::TokenKind;
-use futures::StreamExt;
 use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
@@ -174,20 +172,6 @@ impl App {
         mut self,
         backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
     ) -> ExitState {
-        // Clear any pending events before creating terminal
-        // This helps prevent cursor position query timeouts
-        log::debug!("Clearing any pending events before terminal creation");
-        let clear_start = Instant::now();
-        while crossterm::event::poll(Duration::from_millis(0)).unwrap_or(false) {
-            if let Ok(event) = crossterm::event::read() {
-                log::debug!("Discarded pending event: {:?}", event);
-            }
-            if clear_start.elapsed().as_millis() > 50 {
-                log::warn!("Took too long clearing events, continuing anyway");
-                break;
-            }
-        }
-
         let options = TerminalOptions {
             viewport: Viewport::Inline(0),
         };
@@ -196,7 +180,6 @@ impl App {
         terminal.hide_cursor().unwrap();
 
         // Set up event stream and timers directly
-        let mut reader = crossterm::event::EventStream::new();
         let mut time_since_last_input = Instant::now();
 
         const ANIMATION_FPS_MAX: u64 = 60;
@@ -205,32 +188,13 @@ impl App {
         const ANIM_SWITCH_INACTIVITY_LEN: u128 = 10000;
 
         let anim_period = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
-        let mut anim_tick = tokio::time::interval(anim_period);
-
-        // Track last resize time to suppress animations during and after resize
-        let mut last_resize_time: Option<Instant> = None;
-        const RESIZE_COOLDOWN_MS: u128 = 200;
 
         let mut redraw = true;
         let mut needs_screen_cleared = false;
         let mut last_terminal_area = terminal.size().unwrap();
-        let mut last_terminal_area_on_render = terminal.size().unwrap();
 
         loop {
-            let been_long_enough_since_last_resize = if let Some(resize_time) = last_resize_time {
-                resize_time.elapsed().as_millis() >= RESIZE_COOLDOWN_MS
-            } else {
-                true
-            };
-
-            if redraw && been_long_enough_since_last_resize {
-                if last_terminal_area_on_render != last_terminal_area {
-                    terminal.autoresize().unwrap_or_else(|e| {
-                        log::error!("Failed to autoresize terminal: {}", e);
-                    });
-                    last_terminal_area_on_render = last_terminal_area;
-                }
-
+            if redraw {
                 let frame_area = terminal.get_frame().area();
 
                 let mut content = self.create_content(frame_area.width);
@@ -279,73 +243,49 @@ impl App {
                 break;
             }
 
-            // Event handling with tokio::select
-            let anim_tick_delay = anim_tick.tick();
-
-            // log::debug!("Waiting for events...");
-
-            redraw = tokio::select! {
-                _ = anim_tick_delay => {
-                    self.animation_tick = self.animation_tick.wrapping_add(1);
-
-                    // Adjust animation FPS based on inactivity
-                    let inactivity_duration = time_since_last_input.elapsed().as_millis();
-                    let x: f32 = inactivity_duration.saturating_sub(ANIM_SWITCH_INACTIVITY_START) as f32 / ANIM_SWITCH_INACTIVITY_LEN as f32;
-                    let x = x.max(0.0).min(1.0);
-                    let fps = (ANIMATION_FPS_MAX as f32 * (1.0 - x)) + (ANIMATION_FPS_MIN as f32 * x);
-                    assert!(fps >= 0.0);
-                    let period = Duration::from_millis((1000.0 / fps) as u64);
-                    anim_tick = tokio::time::interval_at((Instant::now() + period).into(), period);
-
-                    true
-                }
-                Some(Ok(evt)) = reader.next() => {
-                    time_since_last_input = Instant::now();
-
-                    match evt {
-                        CrosstermEvent::Key(key) => {
-                            match key.kind {
-                                crossterm::event::KeyEventKind::Press | crossterm::event::KeyEventKind::Repeat => {
-                                    needs_screen_cleared = self.on_keypress(key);
-                                    true
-                                }
-                                crossterm::event::KeyEventKind::Release => {
-                                    self.on_keyrelease(key);
-                                    false
-                                }
-                            }
-                        }
-                        CrosstermEvent::Mouse(mouse) => {
-                            self.on_mouse(mouse)
-                        }
-                        CrosstermEvent::Resize(new_cols, new_rows) => {
-                            log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
-                            last_terminal_area = Size {
-                                width: new_cols,
-                                height: new_rows,
-                            };
-
-                            last_resize_time = Some(Instant::now());
+            redraw = if !event::poll(Duration::from_millis(50)).unwrap() {
+                // redraw at least 10fps
+                false
+            } else {
+                match event::read().unwrap() {
+                    CrosstermEvent::Key(key) => match key.kind {
+                        crossterm::event::KeyEventKind::Press
+                        | crossterm::event::KeyEventKind::Repeat => {
+                            needs_screen_cleared = self.on_keypress(key);
                             true
                         }
-                        CrosstermEvent::FocusLost => {
-                            // log::debug!("Terminal focus lost");
-                            self.cursor_animation.term_has_focus = false;
+                        crossterm::event::KeyEventKind::Release => {
+                            self.on_keyrelease(key);
                             false
-                        },
-                        CrosstermEvent::FocusGained => {
-                            // log::debug!("Terminal focus gained");
-                            self.cursor_animation.term_has_focus = true;
-                            false
-                        },
-                        CrosstermEvent::Paste(pasted) => {
-                            self.buffer.insert_str(&pasted);
-                            self.on_possible_buffer_change();
-                            true
-                        },
+                        }
+                    },
+                    CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
+                    CrosstermEvent::Resize(new_cols, new_rows) => {
+                        log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
+                        last_terminal_area = Size {
+                            width: new_cols,
+                            height: new_rows,
+                        };
+
+                        true
+                    }
+                    CrosstermEvent::FocusLost => {
+                        // log::debug!("Terminal focus lost");
+                        self.cursor_animation.term_has_focus = false;
+                        false
+                    }
+                    CrosstermEvent::FocusGained => {
+                        // log::debug!("Terminal focus gained");
+                        self.cursor_animation.term_has_focus = true;
+                        false
+                    }
+                    CrosstermEvent::Paste(pasted) => {
+                        self.buffer.insert_str(&pasted);
+                        self.on_possible_buffer_change();
+                        true
                     }
                 }
-            };
+            }
         }
 
         match self.mode {
