@@ -378,7 +378,12 @@ impl DParser {
                     annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
                 }
 
-                TokenKind::And | TokenKind::Or | TokenKind::Pipe | TokenKind::Semicolon => {
+                TokenKind::And
+                | TokenKind::Or
+                | TokenKind::Pipe
+                | TokenKind::Semicolon
+                | TokenKind::Background
+                | TokenKind::DoubleSemicolon => {
                     if stop_parsing_at_command_boundary {
                         break;
                     }
@@ -630,6 +635,38 @@ mod tests {
         assert_eq!(tokens[11].annotation, TokenAnnotation::None);
         assert_eq!(tokens[12].token.value, "B");
         assert_eq!(tokens[12].annotation, TokenAnnotation::IsClosing(4));
+    }
+
+    #[test]
+    fn test_pipe_and_separator() {
+        let input = r#"echo "héllo" |& cat"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(input.len());
+        assert_eq!(parser.get_current_command_str(), "cat");
+    }
+
+    #[test]
+    fn test_pipe_and_separator_with_nesting() {
+        let input = r#"echo "héllo" |& echo $(( bar "#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(input.len());
+        assert_eq!(parser.get_current_command_str(), r#"bar "#);
+    }
+
+    #[test]
+    fn test_background_separator() {
+        let input = r#"echo "héllo" & echo "wörld""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(input.len());
+        assert_eq!(parser.get_current_command_str(), r#"echo "wörld""#);
+    }
+
+    #[test]
+    fn test_double_semicolon_separator() {
+        let input = r#"echo "héllo";; echo "wörld""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(input.len());
+        assert_eq!(parser.get_current_command_str(), r#"echo "wörld""#);
     }
 
     #[test]
