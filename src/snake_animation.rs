@@ -24,6 +24,10 @@ impl SnakeAnimation {
         snake
     }
 
+    pub fn snake_chars_string(&self) -> String {
+        self.to_string()
+    }
+
     pub fn apply_to_string(&self, s: &str) -> String {
         let snake_chars: Vec<char> = self.to_string().chars().collect();
 

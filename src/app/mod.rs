@@ -2,7 +2,7 @@ mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
-use crate::app::buffer_format::{FormattedBuffer, format_buffer};
+use crate::app::buffer_format::{AnimatedSpanFn, FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag};
@@ -27,7 +27,7 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
-
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
@@ -722,6 +722,35 @@ impl App {
             None
         };
 
+        let is_running = self.mode.is_running();
+        if is_running {
+            self.snake_animation.update_anim();
+        }
+        let snake_string = Arc::new(self.snake_animation.snake_chars_string());
+
+        let animated_span_fn: Option<buffer_format::AnimatedSpanFnProvider<'_>> =
+            if is_running {
+                Some(Box::new(move |token: &AnnotatedToken| {
+                    if token.token.value.starts_with("python") {
+                        let s = Arc::clone(&snake_string);
+                        Some(AnimatedSpanFn::new(move |span: &Span<'static>| {
+                            let snake_chars: Vec<char> = s.chars().collect();
+                            let new_content: String = span.content.chars().enumerate().map(|(i, c)| {
+                                snake_chars.get(i)
+                                    .filter(|&&sc| sc != '⠀')
+                                    .unwrap_or(&c)
+                                    .to_owned()
+                            }).collect();
+                            Span::styled(new_content, span.style)
+                        }))
+                    } else {
+                        None
+                    }
+                }))
+            } else {
+                None
+            };
+
         let mut parser = dparser::DParser::from(self.buffer.buffer());
         parser.walk_to_end();
         let annotated_tokens = parser.tokens();
@@ -732,6 +761,7 @@ impl App {
             self.buffer.buffer().len(),
             self.mode.is_running(),
             Some(Box::new(wordinfo_fn)),
+            animated_span_fn,
         );
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
     }
@@ -782,29 +812,11 @@ impl App {
 
         let mut line_idx = 0;
         let mut cursor_anim_pos = None;
-        self.formatted_buffer_cache
-            .parts
-            .iter_mut()
-            .for_each(|part| {
-                if self.mode.is_running() && part.normal_span().content.starts_with("python") {
-                    self.snake_animation.update_anim();
-                    let snake_str = self
-                        .snake_animation
-                        .apply_to_string(&part.normal_span().content);
-                    if let Err(e) =
-                        part.set_alternative_span(Span::styled(snake_str, part.normal_span().style))
-                    {
-                        log::warn!("Failed to set alternative span for snake animation: {}", e);
-                    }
-                } else {
-                    part.clear_alternative_span();
-                }
-            });
 
         for part in self.formatted_buffer_cache.split_at_cursor_from() {
             if self.mode.is_running() && part.is_cursor_on_first_grapheme {
-                let first_graph = part
-                    .span_to_use()
+                let span = part.span_to_use();
+                let first_graph = span
                     .styled_graphemes(Style::default())
                     .next()
                     .unwrap_or(StyledGrapheme::new(" ", Style::default()));
