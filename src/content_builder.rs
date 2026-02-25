@@ -1,7 +1,7 @@
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, StyledGrapheme};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
@@ -161,7 +161,7 @@ impl Contents {
     pub fn write_line_lrjustified(
         &mut self,
         l_line: &Line,
-        fill_char: char,
+        fill_span: &Span,
         r_line: &Line,
         tag: Tag,
         leave_cursor_after_l_line: bool,
@@ -173,23 +173,14 @@ impl Contents {
         let cursor_after_l_line = self.cursor_vis_col;
 
         if self.cursor_vis_row == starting_row {
-            let fill_char_override = if fill_char.width() == Some(1) {
-                fill_char
-            } else {
-                log::warn!(
-                    "Fill character '{}' is not width 1, defaulting to space",
-                    fill_char
-                );
-                ' '
-            };
-
-            if fill_char == ' ' {
-                // If filling with spaces, we can just move the cursor to the right position without writing fill chars
+            if fill_span.content == " "
+                && fill_span.style == ratatui::style::Style::default()
+            {
+                // If filling with unstyled spaces, we can just move the cursor to the right position without writing fill chars
                 self.cursor_vis_col = self.width.saturating_sub(r_width);
             } else {
-                // Only fill if we are still on the same line after writing the left line
                 for _ in self.cursor_vis_col..self.width.saturating_sub(r_width) {
-                    self.write_span(&Span::from(fill_char_override.to_string()), tag);
+                    self.write_span(fill_span, tag);
                 }
             }
         }
