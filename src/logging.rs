@@ -86,12 +86,21 @@ pub fn init() -> Result<()> {
     let logger = LOGGER.get_or_init(MemoryLogger::new);
     match log::set_logger(logger) {
         Ok(()) => {
-            log::set_max_level(LevelFilter::Debug);
+            log::set_max_level(LevelFilter::Trace);
             Ok(())
         }
         Err(_) => {
-            log::set_max_level(LevelFilter::Debug);
+            log::set_max_level(LevelFilter::Trace);
             Ok(())
+        }
+    }
+}
+
+pub fn print_logs() {
+    if let Some(logger) = LOGGER.get() {
+        let entries = logger.snapshot();
+        for entry in entries {
+            eprintln!("{}", entry);
         }
     }
 }
