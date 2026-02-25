@@ -173,7 +173,14 @@ impl Contents {
         let cursor_after_l_line = self.cursor_vis_col;
 
         if self.cursor_vis_row == starting_row {
-            if fill_span.content == " "
+            if fill_span.content.width() != 1 {
+                log::warn!(
+                    "Fill span content '{}' is not width 1, defaulting to space",
+                    fill_span.content
+                );
+                // If the fill char is not width 1, treat it as a space
+                self.cursor_vis_col = self.width.saturating_sub(r_width);
+            } else if fill_span.content == " "
                 && fill_span.style == ratatui::style::Style::default()
             {
                 // If filling with unstyled spaces, we can just move the cursor to the right position without writing fill chars
