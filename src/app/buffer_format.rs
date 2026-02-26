@@ -1,14 +1,31 @@
 use flash::lexer::{Position, Token, TokenKind};
 use std::borrow::Cow;
+use std::sync::Arc;
 use std::vec;
 
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 use crate::dparser::{AnnotatedToken, ToInclusiveRange, TokenAnnotation};
 use crate::palette::Palette;
-use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
+
+/// A closure that takes the normal span and returns an animated span with grapheme-width-matching content.
+#[derive(Clone)]
+pub struct AnimatedSpanFn(Arc<dyn Fn(&Span<'static>) -> Span<'static> + Send + Sync>);
+
+impl AnimatedSpanFn {
+    pub fn new(f: impl Fn(&Span<'static>) -> Span<'static> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+}
+
+impl std::fmt::Debug for AnimatedSpanFn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AnimatedSpanFn")
+    }
+}
+
+pub type AnimatedSpanFnProvider<'a> = Box<dyn FnMut(&AnnotatedToken) -> Option<AnimatedSpanFn> + 'a>;
 
 #[derive(Debug)]
 pub struct FormattedBuffer {
@@ -80,7 +97,7 @@ impl FormattedBuffer {
                             annotation: TokenAnnotation::None,
                         },
                         span: Span::from(space),
-                        alternative_span: None,
+                        animated_span: None,
                         is_cursor_on_first_grapheme: true,
                         is_artificial_space: true,
                         tooltip: None,
@@ -113,11 +130,10 @@ impl Default for FormattedBuffer {
 pub struct FormattedBufferPart {
     pub token: AnnotatedToken,
     span: Span<'static>,
-    /// Meant for animations. Should have the same grapheme widths as span,
-    /// but can have different content and style. If present, it will be used
-    /// instead of span for display, but span will still be used for cursor
-    /// positioning and other logic.
-    alternative_span: Option<Span<'static>>,
+    /// Meant for animations. A closure that takes the normal span and returns a grapheme-width-matching span.
+    /// If present, it will be used instead of span for display, but span will still be used for
+    /// cursor positioning and other logic.
+    animated_span: Option<AnimatedSpanFn>,
     /// true means cursor is on first grapheme, (and we should draw the contents with the cursor style)
     pub is_cursor_on_first_grapheme: bool,
     pub is_artificial_space: bool, // whether this part is an artificial space added for cursor positioning at the end of the buffer
@@ -169,7 +185,7 @@ impl FormattedBufferPart {
         Self {
             token: token.clone(),
             span,
-            alternative_span: None,
+            animated_span: None,
             is_cursor_on_first_grapheme: false,
             is_artificial_space: false,
             tooltip,
@@ -180,29 +196,20 @@ impl FormattedBufferPart {
         &self.span
     }
 
-    pub fn span_to_use(&self) -> &Span<'static> {
-        self.alternative_span.as_ref().unwrap_or(&self.span)
+    pub fn span_to_use(&self) -> std::borrow::Cow<'_, Span<'static>> {
+        if let Some(f) = &self.animated_span {
+            std::borrow::Cow::Owned((f.0)(&self.span))
+        } else {
+            std::borrow::Cow::Borrowed(&self.span)
+        }
     }
 
-    pub fn clear_alternative_span(&mut self) {
-        self.alternative_span = None;
+    pub fn set_animated_span(&mut self, f: AnimatedSpanFn) {
+        self.animated_span = Some(f);
     }
 
-    pub fn set_alternative_span(&mut self, new_alt: Span<'static>) -> Result<(), String> {
-        new_alt.content.graphemes(true).zip_longest(self.span.content.graphemes(true))
-            .try_for_each(|g| match g {
-                EitherOrBoth::Both(new_g, old_g) => {
-                    if new_g.width() != old_g.width() {
-                        Err(format!("New alternative span has different grapheme widths than the original span. Original grapheme: '{}' (width: {}), new grapheme: '{}' (width: {})", old_g, old_g.width(), new_g, new_g.width()))
-                    } else {
-                        Ok(())
-                    }
-                },
-                _ => Err("New alternative span has different number of graphemes than the original span".to_string()),
-            })?;
-
-        self.alternative_span = Some(new_alt);
-        Ok(())
+    pub fn clear_animated_span(&mut self) {
+        self.animated_span = None;
     }
 
     pub fn split_at_cursor(
@@ -210,37 +217,8 @@ impl FormattedBufferPart {
         split_byte: usize,
         split_grapheme_idx: usize,
     ) -> (Option<Self>, Option<Self>) {
-        let build_alt = |alt_span: &Span<'static>, split_idx: usize| {
-            let mut left = String::new();
-            let mut right = String::new();
-            for (idx, g) in alt_span.content.graphemes(true).enumerate() {
-                if idx < split_idx {
-                    left.push_str(g);
-                } else {
-                    right.push_str(g);
-                }
-            }
-            (
-                if left.is_empty() {
-                    None
-                } else {
-                    Some(Span::styled(left, alt_span.style))
-                },
-                if right.is_empty() {
-                    None
-                } else {
-                    Some(Span::styled(right, alt_span.style))
-                },
-            )
-        };
-
         let left_text = &self.span.content[..split_byte];
         let right_text = &self.span.content[split_byte..];
-
-        let (alt_left, alt_right) = match self.alternative_span.as_ref() {
-            Some(alt_span) => build_alt(alt_span, split_grapheme_idx),
-            None => (None, None),
-        };
 
         let left = if !left_text.is_empty() {
             Some(Self {
@@ -253,7 +231,7 @@ impl FormattedBufferPart {
                     annotation: self.token.annotation.clone(),
                 },
                 span: Span::styled(left_text.to_string(), self.span.style),
-                alternative_span: alt_left,
+                animated_span: self.animated_span.clone(),
                 is_cursor_on_first_grapheme: false,
                 is_artificial_space: self.is_artificial_space,
                 tooltip: self.tooltip.clone(),
@@ -277,7 +255,7 @@ impl FormattedBufferPart {
                     annotation: self.token.annotation.clone(),
                 },
                 span: Span::styled(right_text.to_string(), self.span.style),
-                alternative_span: alt_right,
+                animated_span: self.animated_span.clone(),
                 is_cursor_on_first_grapheme: true,
                 is_artificial_space: self.is_artificial_space,
                 tooltip: self.tooltip.clone(),
@@ -296,6 +274,7 @@ pub fn format_buffer<'a>(
     buffer_byte_length: usize,
     app_is_running: bool,
     mut wordinfo_fn: Option<WordInfoFn<'a>>,
+    mut animated_span_fn: Option<AnimatedSpanFnProvider<'a>>,
 ) -> FormattedBuffer {
     let check_highlight = |inclusive: bool| {
         annotated_tokens
@@ -341,7 +320,11 @@ pub fn format_buffer<'a>(
             let highlight = app_is_running
                 && (strict_highlight[idx] || (use_inclusive && inclusive_highlight[idx]));
 
-            FormattedBufferPart::new(tok, &mut wordinfo_fn, highlight)
+            let mut part = FormattedBufferPart::new(tok, &mut wordinfo_fn, highlight);
+            if let Some(f) = animated_span_fn.as_mut().and_then(|p| p(tok)) {
+                part.set_animated_span(f);
+            }
+            part
         })
         .collect();
 
