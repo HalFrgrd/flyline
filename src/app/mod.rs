@@ -776,15 +776,15 @@ impl App {
         let mut content = Contents::new(width);
         let empty_line = Line::from(vec![]);
 
-        let (lprompt, rprompt, fill_char) = self.prompt_manager.get_ps1_lines();
+        let (lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines();
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
             let (l_line, r_line) = either_or_both.or(&empty_line, &empty_line);
             if is_last {
-                content.write_line_lrjustified(l_line, ' ', r_line, Tag::Ps1Prompt, true);
+                content.write_line_lrjustified(l_line, &Span::raw(" "), r_line, Tag::Ps1Prompt, true);
             } else {
-                content.write_line_lrjustified(l_line, fill_char, r_line, Tag::Ps1Prompt, false);
+                content.write_line_lrjustified(l_line, &fill_span, r_line, Tag::Ps1Prompt, false);
             }
             if !is_last {
                 content.newline();

@@ -1,12 +1,13 @@
 use crate::bash_funcs;
 use crate::bash_symbols;
 use ansi_to_tui::IntoText;
-use ratatui::text::{Line, Span, Text};
+use ratatui::text::{Line, Span, StyledGrapheme, Text};
+use unicode_width::UnicodeWidthStr;
 
 pub struct PromptManager {
     prompt: Vec<Line<'static>>,
     rprompt: Vec<Line<'static>>,
-    fill_char: char,
+    fill_span: Span<'static>,
     last_time_str: String,
 }
 
@@ -56,7 +57,7 @@ impl PromptManager {
                     Line::from("> "),
                 ],
                 rprompt: vec![],
-                fill_char: ' ',
+                fill_span: Span::raw(" "),
                 last_time_str: "".into(),
             }
         } else {
@@ -109,14 +110,33 @@ impl PromptManager {
 
             log::debug!("Parsed RPS1: {:?}", rps1);
 
-            let ps1_fill = bash_funcs::get_env_variable("PS1_FILL")
-                .and_then(|s| s.chars().next())
-                .unwrap_or(' ');
+            let fill_span = bash_funcs::get_env_variable("PS1_FILL")
+                .and_then(|s| {
+                    let text = s.into_text().ok()?;
+                    let line = text.lines.into_iter().next()?;
+                    let graphemes: Vec<StyledGrapheme> = line
+                        .spans
+                        .iter()
+                        .flat_map(|span| span.styled_graphemes(span.style))
+                        .collect();
+                    if graphemes.len() == 1 && graphemes[0].symbol.width() == 1 {
+                        Some(Span::styled(
+                            graphemes[0].symbol.to_string(),
+                            graphemes[0].style,
+                        ))
+                    } else {
+                        log::warn!(
+                            "PS1_FILL must be a single styled grapheme of width 1, defaulting to space"
+                        );
+                        None
+                    }
+                })
+                .unwrap_or_else(|| Span::raw(" "));
 
             PromptManager {
                 prompt: ps1,
                 rprompt: rps1,
-                fill_char: ps1_fill,
+                fill_span,
                 last_time_str: "".into(),
             }
         }
@@ -137,7 +157,7 @@ impl PromptManager {
         Line::from(spans)
     }
 
-    pub fn get_ps1_lines(&mut self) -> (Vec<Line<'static>>, Vec<Line<'static>>, char) {
+    pub fn get_ps1_lines(&mut self) -> (Vec<Line<'static>>, Vec<Line<'static>>, Span<'static>) {
         // Format the current time using the system locale
         use chrono::Local;
         let now = Local::now();
@@ -161,6 +181,6 @@ impl PromptManager {
             .map(|line| self.format_prompt_line(line))
             .collect();
 
-        (formatted_prompt, formatted_rprompt, self.fill_char)
+        (formatted_prompt, formatted_rprompt, self.fill_span.clone())
     }
 }
