@@ -207,11 +207,15 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     const SUCCESS: c_int = 1;
     const FAILURE: c_int = 0;
 
+    logging::init().unwrap_or_else(|e| {
+        eprintln!("Flyline failed to setup logging: {}", e);
+    });
+
     // When do we want to set up flyline's input stream?
     // shell.c:main:792:set_bash_input: sets up readline if interactive && no_line_editing
 
     unsafe {
-        println!(
+        log::trace!(
             "interactive: {}, interactive_shell: {}, no_line_editing: {}",
             bash_symbols::interactive,
             bash_symbols::interactive_shell,
@@ -222,14 +226,11 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // TODO: panic catch
     unsafe {
         if bash_symbols::interactive_shell == 0 || bash_symbols::no_line_editing != 0 {
-            eprintln!("Not an interactive shell, flyline will not be loaded");
+            log::warn!("Not an interactive shell, flyline will not be loaded");
+            logging::print_logs();
             return FAILURE;
         }
     }
-
-    logging::init().unwrap_or_else(|e| {
-        eprintln!("Flyline failed to setup logging: {}", e);
-    });
 
     // This is how we ensure that our custom input stream is used by bash instead of readline.
     // This code is run during `run_startup_files` so we can't modify bash_input directly.
@@ -262,22 +263,24 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
                 std::ffi::CStr::from_ptr(bash_symbols::bash_input.name).to_string_lossy();
 
             if current_input_name.starts_with("readline") {
-                println!("current bash input is readline, replacing it with flyline input");
+                log::trace!("current bash input is readline, replacing it with flyline input");
                 bash_symbols::push_stream(0);
                 setup_bash_input(&raw mut bash_symbols::bash_input);
+                log::set_max_level(log::LevelFilter::Info);
                 return SUCCESS;
             } else if current_input_name.starts_with("flyline") {
-                println!("current bash input is already flyline, not modifying it");
+                log::trace!("current bash input is already flyline, not modifying it");
+                log::set_max_level(log::LevelFilter::Info);
                 return SUCCESS;
             } else {
-                println!("current bash input is {}", current_input_name);
+                log::trace!("current bash input is {}", current_input_name);
             }
         }
 
         if !bash_symbols::stream_list.is_null() {
             // iterate through the list
-            // if there is a stream that is of stdin type, exit, we dosetn't want to mess with it
-            // if we get to the end and there are no stdin streams, we can  our stream on the sentinel node and it should work
+            // if there is a stream that is of stdin type, exit, we doesn't want to mess with it
+            // if we get to the end and there are no stdin streams, we can put our stream on the sentinel node and it should work
             let mut current = bash_symbols::stream_list;
             let mut idx = 0;
             while !current.is_null() {
@@ -289,40 +292,45 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
                         .to_string_lossy()
                         .into_owned()
                 };
-                println!(
+                log::trace!(
                     "stream_list[{}]: name: {}, type: {:?}",
                     idx, name, stream.bash_input.stream_type
                 );
                 if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin {
                     if name.starts_with("flyline") {
-                        println!(
+                        log::trace!(
                             "Found existing flyline input stream in stream_list, not modifying stream_list"
                         );
+                        log::set_max_level(log::LevelFilter::Info);
                         return SUCCESS;
                     }
 
-                    println!(
+                    log::warn!(
                         "Found existing stdin stream in stream_list, not modifying stream_list"
                     );
+                    logging::print_logs();
                     return FAILURE;
                 } else if stream.bash_input.stream_type == bash_symbols::StreamType::StNone {
                     // We found the sentinel node
                     // Replace it with flyline
-                    println!(
+                    log::trace!(
                         "Found stream_list entry with type StNone, setting flyline input stream on this node"
                     );
                     setup_bash_input(&raw mut (*current).bash_input);
+                    log::set_max_level(log::LevelFilter::Info);
                     return SUCCESS;
                 }
 
                 current = stream.next;
                 idx += 1;
             }
-            println!("Could not setup flyline");
+            log::error!("Could not setup flyline");
+            logging::print_logs();
             return FAILURE;
         }
     }
 
+    log::set_max_level(log::LevelFilter::Info);
     SUCCESS
 }
 
@@ -332,7 +340,7 @@ pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
 
     unsafe {
         if bash_symbols::stream_list.is_null() {
-            println!("stream_list is null, trying to setup readline");
+            log::trace!("stream_list is null, trying to setup readline");
 
             // we don't have access to yy_readline_(un)get so we can't set it directly
             // but we can call with_input_from_stdin which will set it up properly
@@ -342,7 +350,7 @@ pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
             let head: &mut bash_symbols::StreamSaver = &mut *bash_symbols::stream_list;
             let current_input_name =
                 std::ffi::CStr::from_ptr(head.bash_input.name).to_string_lossy();
-            println!(
+            log::trace!(
                 "Found stream_list entry with name: {} and type: {:?}",
                 current_input_name, head.bash_input.stream_type
             );
