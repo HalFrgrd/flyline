@@ -510,6 +510,14 @@ impl App {
                     self.buffer.replace_buffer(new_command.as_str());
                 }
             }
+            // Shift+Enter in fuzzy search - accept without running (move to buffer only)
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
+                self.accept_fuzzy_history_search();
+            }
             // Enter key - accept suggestions or submit command
             KeyEvent {
                 code: KeyCode::Enter,
@@ -523,6 +531,9 @@ impl App {
                 match &mut self.content_mode {
                     ContentMode::FuzzyHistorySearch => {
                         self.accept_fuzzy_history_search();
+                        self.mode = AppRunningState::Exiting(ExitState::WithCommand(
+                            self.buffer.buffer().to_string(),
+                        ));
                     }
                     ContentMode::TabCompletion(active_suggestions) => {
                         active_suggestions.accept_currently_selected(&mut self.buffer);
