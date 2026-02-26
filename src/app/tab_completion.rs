@@ -208,6 +208,13 @@ impl App {
 
         let mut res = self.bash_env.get_first_word_completions(&command);
 
+        if res.is_empty() {
+            // No prefix matches found, fall back to fuzzy search
+            log::debug!("No prefix matches for '{}', trying fuzzy search", command);
+            res = self.bash_env.get_fuzzy_first_word_completions(&command);
+            return Suggestion::from_string_vec(res, "", " ", None);
+        }
+
         // TODO: could prioritize based on frequency of use
         res.sort();
         res.sort_by_key(|s| s.len());

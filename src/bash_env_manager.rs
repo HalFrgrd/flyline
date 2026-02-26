@@ -1,4 +1,6 @@
 use crate::bash_funcs;
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -63,6 +65,31 @@ impl BashEnvManager {
         }
 
         res
+    }
+
+    /// Get fuzzy first word completions using SkimMatcherV2 for when no exact prefix match is found
+    pub fn get_fuzzy_first_word_completions(&self, command: &str) -> Vec<String> {
+        if command.is_empty() {
+            return vec![];
+        }
+
+        let matcher = SkimMatcherV2::default().smart_case();
+        let mut scored: Vec<(i64, String)> = self
+            .defined_aliases
+            .iter()
+            .chain(self.defined_reserved_words.iter())
+            .chain(self.defined_shell_functions.iter())
+            .chain(self.defined_builtins.iter())
+            .chain(self.defined_executables.iter().map(|(_, name)| name))
+            .filter_map(|poss_completion| {
+                matcher
+                    .fuzzy_match(poss_completion, command)
+                    .map(|score| (score, poss_completion.to_string()))
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.into_iter().map(|(_, s)| s).collect()
     }
 
     /// Get executables from PATH environment variable
