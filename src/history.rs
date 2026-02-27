@@ -3,6 +3,7 @@ use std::vec;
 
 use crate::bash_symbols;
 use crate::palette::Palette;
+use crate::settings::Settings;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
@@ -155,7 +156,7 @@ impl HistoryManager {
         res
     }
 
-    pub fn new() -> HistoryManager {
+    pub fn new(settings: &Settings) -> HistoryManager {
         // Bash will load the history into memory, so we can read it from there
         // Bash parses it after bashrc is loaded.
         let bash_entries = Self::parse_bash_history_from_memory();
@@ -172,16 +173,18 @@ impl HistoryManager {
         // Alternative is to do it ourselves
         // let bash_entries = Self::parse_bash_history_from_file();
 
-        // As a zsh user migrating to bash, I want to have my zsh history available too
-        let zsh_entries = Self::parse_zsh_history();
-
-        let mut entries: Vec<_> = zsh_entries
-            .into_iter()
-            .merge_by(bash_entries, |a, b| {
-                a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
-            })
-            .collect();
-        // let mut entries = bash_entries;
+        let mut entries: Vec<_> = if settings.load_zsh_history {
+            // As a zsh user migrating to bash, I want to have my zsh history available too
+            let zsh_entries = Self::parse_zsh_history();
+            zsh_entries
+                .into_iter()
+                .merge_by(bash_entries, |a, b| {
+                    a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
+                })
+                .collect()
+        } else {
+            bash_entries
+        };
 
         entries.dedup_by(|a, b| a.command == b.command);
 
