@@ -33,6 +33,9 @@ use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
 
+const TUTORIAL_FUZZY_SEARCH_HINT: &str =
+    "type to search, press arrow keys / page up/down to browse, enter to run the command, shift+enter to accept command for editing";
+
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -855,6 +858,20 @@ impl<'a> App<'a> {
             content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
         }
 
+        if self.mode.is_running()
+            && self.settings.tutorial_mode
+            && self.buffer.buffer().is_empty()
+            && matches!(self.content_mode, ContentMode::Normal)
+        {
+            content.write_span_dont_overwrite(
+                &Span::styled(
+                    "Start typing or search history with Ctrl+R",
+                    Palette::secondary_text(),
+                ),
+                Tag::HistorySuggestion,
+            );
+        }
+
         if let Some((sug, suf)) = &self.history_suggestion
             && self.mode.is_running()
         {
@@ -877,6 +894,10 @@ impl<'a> App<'a> {
                         if let Some(ts) = sug.timestamp {
                             let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
+                        }
+
+                        if self.settings.tutorial_mode {
+                            extra_info_text.push_str(" [→ or End to accept]");
                         }
 
                         content.write_span_dont_overwrite(
@@ -989,6 +1010,13 @@ impl<'a> App<'a> {
                     ),
                     Tag::FuzzySearch,
                 );
+                if self.settings.tutorial_mode {
+                    content.newline();
+                    content.write_span(
+                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::secondary_text()),
+                        Tag::FuzzySearch,
+                    );
+                }
             }
             ContentMode::Normal if self.mode.is_running() => {}
             _ => {}
