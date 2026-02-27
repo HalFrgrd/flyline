@@ -4,6 +4,30 @@ use ratatui::text::{Line, Span, StyledGrapheme};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Coord {
+    pub row: u16,
+    pub col: u16,
+}
+
+impl Coord {
+    pub fn new(row: u16, col: u16) -> Self {
+        Coord { row, col }
+    }
+
+    pub fn abs_diff(&self, other: &Coord) -> usize {
+        self.col.abs_diff(other.col) as usize + self.row.abs_diff(other.row) as usize
+    }
+
+    pub fn interpolate(&self, other: &Coord, factor: f32) -> Coord {
+        // factor = 0.0 => self
+        // factor = 1.0 => other
+        let col = self.col as f32 + (other.col as f32 - self.col as f32) * factor;
+        let row = self.row as f32 + (other.row as f32 - self.row as f32) * factor;
+        Coord::new(row as u16, col as u16)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
     Blank,
     Ps1Prompt,
@@ -42,9 +66,8 @@ impl TaggedCell {
 pub struct Contents {
     pub buf: Vec<Vec<TaggedCell>>, // each inner Vec is a row of Cells of width `width`
     pub width: u16,
-    cursor_vis_col: u16,
-    cursor_vis_row: u16, // visual cursor position with line wrapping
-    pub edit_cursor_pos: Option<(u16, u16)>,
+    cursor_pos: Coord, // visual cursor position with line wrapping
+    pub edit_cursor_pos: Option<Coord>,
 }
 
 impl Contents {
@@ -56,15 +79,14 @@ impl Contents {
         Contents {
             buf: vec![],
             width,
-            cursor_vis_col: 0,
-            cursor_vis_row: 0,
+            cursor_pos: Coord::new(0, 0),
             edit_cursor_pos: None,
         }
     }
 
     /// Get the current cursor position (x, y)
-    pub fn cursor_position(&self) -> (u16, u16) {
-        (self.cursor_vis_col, self.cursor_vis_row)
+    pub fn cursor_position(&self) -> Coord {
+        self.cursor_pos
     }
 
     pub fn increase_buf_single_row(&mut self) {
@@ -79,15 +101,15 @@ impl Contents {
     pub fn move_to_next_insertion_point(&mut self, graph: &StyledGrapheme, overwrite: bool) {
         let graph_w = graph.symbol.width() as u16;
         loop {
-            if self.cursor_vis_row >= self.buf.len() as u16 {
+            if self.cursor_pos.row >= self.buf.len() as u16 {
                 self.increase_buf_single_row();
-            } else if self.cursor_vis_col as usize + graph_w as usize > self.width as usize {
+            } else if self.cursor_pos.col as usize + graph_w as usize > self.width as usize {
                 // log::debug!("Wrapping line for grapheme of width {}", graph_w);
-                self.cursor_vis_row += 1;
-                self.cursor_vis_col = 0;
+                self.cursor_pos.row += 1;
+                self.cursor_pos.col = 0;
             } else if !overwrite
-                && self.buf[self.cursor_vis_row as usize][(self.cursor_vis_col as usize)
-                    ..(self.cursor_vis_col as usize + graph_w as usize)]
+                && self.buf[self.cursor_pos.row as usize][(self.cursor_pos.col as usize)
+                    ..(self.cursor_pos.col as usize + graph_w as usize)]
                     .iter()
                     .all(|cell| cell.tag == Tag::Blank)
             {
@@ -95,7 +117,7 @@ impl Contents {
             } else if overwrite {
                 break;
             } else {
-                self.cursor_vis_col += 1;
+                self.cursor_pos.col += 1;
             }
         }
     }
@@ -109,7 +131,7 @@ impl Contents {
 
             self.move_to_next_insertion_point(&graph, overwrite);
 
-            let next_graph_x = self.cursor_vis_col + graph_w;
+            let next_graph_x = self.cursor_pos.col + graph_w;
             if next_graph_x > self.width {
                 // cold_path();
                 // If the grapheme is still too wide after wrapping, skip it
@@ -122,16 +144,16 @@ impl Contents {
                 continue;
             }
 
-            self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize]
+            self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
                 .update(&graph, tag);
-            self.cursor_vis_col += 1;
+            self.cursor_pos.col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
-            while self.cursor_vis_col < next_graph_x {
-                self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize]
+            while self.cursor_pos.col < next_graph_x {
+                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
                     .cell
                     .reset();
-                self.buf[self.cursor_vis_row as usize][self.cursor_vis_col as usize].tag = tag;
-                self.cursor_vis_col += 1;
+                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag = tag;
+                self.cursor_pos.col += 1;
             }
             if let Tag::Command(byte_start) = tag {
                 tag = Tag::Command(byte_start + graph.symbol.len());
@@ -167,26 +189,26 @@ impl Contents {
         leave_cursor_after_l_line: bool,
     ) {
         let r_width = r_line.width() as u16;
-        let starting_row = self.cursor_vis_row;
+        let starting_row = self.cursor_pos.row;
         self.write_line(l_line, false, tag);
 
-        let cursor_after_l_line = self.cursor_vis_col;
+        let cursor_after_l_line = self.cursor_pos.col;
 
-        if self.cursor_vis_row == starting_row {
+        if self.cursor_pos.row == starting_row {
             if fill_span.content.width() != 1 {
                 log::warn!(
                     "Fill span content '{}' is not width 1, defaulting to space",
                     fill_span.content
                 );
                 // If the fill char is not width 1, treat it as a space
-                self.cursor_vis_col = self.width.saturating_sub(r_width);
+                self.cursor_pos.col = self.width.saturating_sub(r_width);
             } else if fill_span.content == " "
                 && fill_span.style == ratatui::style::Style::default()
             {
                 // If filling with unstyled spaces, we can just move the cursor to the right position without writing fill chars
-                self.cursor_vis_col = self.width.saturating_sub(r_width);
+                self.cursor_pos.col = self.width.saturating_sub(r_width);
             } else {
-                for _ in self.cursor_vis_col..self.width.saturating_sub(r_width) {
+                for _ in self.cursor_pos.col..self.width.saturating_sub(r_width) {
                     self.write_span(fill_span, tag);
                 }
             }
@@ -196,14 +218,14 @@ impl Contents {
         }
 
         if leave_cursor_after_l_line {
-            self.cursor_vis_row = starting_row;
-            self.cursor_vis_col = cursor_after_l_line;
+            self.cursor_pos.row = starting_row;
+            self.cursor_pos.col = cursor_after_l_line;
         }
     }
 
     /// Fill the rest of the current row with spaces tagged with the given tag
     pub fn fill_line(&mut self, tag: Tag) {
-        let remaining = self.width.saturating_sub(self.cursor_vis_col) as usize;
+        let remaining = self.width.saturating_sub(self.cursor_pos.col) as usize;
         if remaining > 0 {
             self.write_span(&Span::raw(" ".repeat(remaining)), tag);
         }
@@ -211,8 +233,8 @@ impl Contents {
 
     /// Move to the next line (carriage return + line feed)
     pub fn newline(&mut self) {
-        self.cursor_vis_row += 1;
-        self.cursor_vis_col = 0;
+        self.cursor_pos.row += 1;
+        self.cursor_pos.col = 0;
     }
 
     fn set_style(&mut self, area: Rect, style: ratatui::style::Style) {
@@ -233,12 +255,11 @@ impl Contents {
 
     pub fn set_edit_cursor_style(
         &mut self,
-        vis_row: u16,
-        vis_col: u16,
+        cursor: Coord,
         style: ratatui::style::Style,
     ) {
-        self.edit_cursor_pos = Some((vis_col, vis_row));
-        self.set_style(Rect::new(vis_col, vis_row, 1, 1), style);
+        self.edit_cursor_pos = Some(cursor);
+        self.set_style(Rect::new(cursor.col, cursor.row, 1, 1), style);
     }
 
     pub fn get_row_range_to_show(&self, height: u16) -> (u16, u16) {
@@ -246,8 +267,8 @@ impl Contents {
         let total_rows = self.height();
         if total_rows <= height {
             (0, total_rows)
-        } else if let Some((_, vis_row)) = self.edit_cursor_pos {
-            let bottom = std::cmp::min(vis_row.saturating_add(1), total_rows);
+        } else if let Some(cursor) = self.edit_cursor_pos {
+            let bottom = std::cmp::min(cursor.row.saturating_add(1), total_rows);
             let top = bottom.saturating_sub(height);
             (top, bottom)
         } else {
