@@ -2,4 +2,6 @@
 pub struct Settings {
     /// Whether to load zsh history in addition to bash history.
     pub load_zsh_history: bool,
+    /// Whether to show tutorial hints for first-time users.
+    pub tutorial_mode: bool,
 }

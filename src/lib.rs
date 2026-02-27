@@ -43,6 +43,9 @@ struct FlylineArgs {
     /// Load zsh history in addition to bash history
     #[arg(long = "load-zsh-history")]
     load_zsh_history: bool,
+    /// Enable tutorial mode with hints for first-time users
+    #[arg(long = "tutorial-mode")]
+    tutorial_mode: bool,
 }
 
 // Global state for our custom input stream
@@ -150,6 +153,10 @@ impl Flyline {
 
                 if parsed.load_zsh_history {
                     self.settings.load_zsh_history = true;
+                }
+
+                if parsed.tutorial_mode {
+                    self.settings.tutorial_mode = true;
                 }
 
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
