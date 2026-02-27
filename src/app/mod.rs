@@ -16,7 +16,7 @@ use crate::prompt_manager::PromptManager;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
-use crate::{bash_funcs, dparser};
+use crate::{bash_funcs, dparser, settings};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -852,6 +852,20 @@ impl App {
             content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
         }
 
+        if self.mode.is_running()
+            && self.buffer.buffer().is_empty()
+            && matches!(self.content_mode, ContentMode::Normal)
+            && settings::tutorial_mode()
+        {
+            content.write_span_dont_overwrite(
+                &Span::styled(
+                    "Start typing or search history with Ctrl+R",
+                    Palette::secondary_text(),
+                ),
+                Tag::Tooltip,
+            );
+        }
+
         if let Some((sug, suf)) = &self.history_suggestion
             && self.mode.is_running()
         {
@@ -874,6 +888,10 @@ impl App {
                         if let Some(ts) = sug.timestamp {
                             let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
+                        }
+
+                        if settings::tutorial_mode() {
+                            extra_info_text.push_str(" [→ or End to accept]");
                         }
 
                         content.write_span_dont_overwrite(
@@ -986,6 +1004,24 @@ impl App {
                     ),
                     Tag::FuzzySearch,
                 );
+                if settings::tutorial_mode() {
+                    content.newline();
+                    content.write_span(
+                        &Span::styled(
+                            "type to search, press arrow keys / page up/down to browse,",
+                            Palette::secondary_text(),
+                        ),
+                        Tag::Tooltip,
+                    );
+                    content.newline();
+                    content.write_span(
+                        &Span::styled(
+                            "enter to run the command, shift+enter to accept command for editing",
+                            Palette::secondary_text(),
+                        ),
+                        Tag::Tooltip,
+                    );
+                }
             }
             ContentMode::Normal if self.mode.is_running() => {}
             _ => {}

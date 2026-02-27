@@ -17,6 +17,7 @@ mod logging;
 mod mouse_state;
 mod palette;
 mod prompt_manager;
+mod settings;
 mod snake_animation;
 mod tab_completion_context;
 mod text_buffer;
@@ -39,6 +40,9 @@ struct FlylineArgs {
     /// Set the logging level (error, warn, info, debug, trace)
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<String>,
+    /// Enable tutorial mode with hints for new users
+    #[arg(long = "tutorial-mode")]
+    tutorial_mode: bool,
 }
 
 // Global state for our custom input stream
@@ -115,6 +119,11 @@ impl Flyline {
                 if parsed.disable_animations {
                     log::info!("Animations disabled");
                     // TODO: Set animation flag or pass to app
+                }
+
+                if parsed.tutorial_mode {
+                    log::info!("Tutorial mode enabled");
+                    settings::set_tutorial_mode(true);
                 }
 
                 if parsed.dump_logs {
