@@ -20,7 +20,7 @@ impl Coord {
         // factor = 1.0 => other
         let col = self.col as f32 + (other.col as f32 - self.col as f32) * factor;
         let row = self.row as f32 + (other.row as f32 - self.row as f32) * factor;
-        Coord::new(row as u16, col as u16)
+        Coord::new(row.round() as u16, col.round() as u16)
     }
 
     fn to_tuple(&self) -> (u16, u16) {
