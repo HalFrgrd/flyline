@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 clap = { version = "4.5.49", features = ["derive"] }
+clap_complete = "4.5.66"
 ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3.31"
