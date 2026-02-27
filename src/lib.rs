@@ -227,6 +227,9 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     unsafe {
         if bash_symbols::interactive_shell == 0 || bash_symbols::no_line_editing != 0 {
             log::warn!("Not an interactive shell, flyline will not be loaded");
+            log::info!(
+                "To avoid loading flyline in non-interactive shells, add the following to your .bashrc before the flyline enable line: if [[ $- != *i* ]]; then return; fi"
+            );
             logging::print_logs();
             return FAILURE;
         }
