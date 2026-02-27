@@ -1,13 +1,13 @@
 use crate::bash_funcs;
 use crate::bash_symbols;
 use ansi_to_tui::IntoText;
-use ratatui::text::{Line, Span, StyledGrapheme, Text};
+use ratatui::text::{Line, Span, Text};
 use unicode_width::UnicodeWidthStr;
 
 pub struct PromptManager {
     prompt: Vec<Line<'static>>,
     rprompt: Vec<Line<'static>>,
-    fill_span: Span<'static>,
+    fill_span: Line<'static>,
     last_time_str: String,
 }
 
@@ -57,7 +57,7 @@ impl PromptManager {
                     Line::from("> "),
                 ],
                 rprompt: vec![],
-                fill_span: Span::raw(" "),
+                fill_span: Line::from(" "),
                 last_time_str: "".into(),
             }
         } else {
@@ -110,28 +110,33 @@ impl PromptManager {
 
             log::debug!("Parsed RPS1: {:?}", rps1);
 
-            let fill_span = bash_funcs::get_env_variable("PS1_FILL")
+            let fill_span: Line<'static> = bash_funcs::get_env_variable("PS1_FILL")
                 .and_then(|s| {
-                    let text = s.into_text().ok()?;
-                    let line = text.lines.into_iter().next()?;
-                    let graphemes: Vec<StyledGrapheme> = line
-                        .spans
-                        .iter()
-                        .flat_map(|span| span.styled_graphemes(span.style))
-                        .collect();
-                    if graphemes.len() == 1 && graphemes[0].symbol.width() == 1 {
-                        Some(Span::styled(
-                            graphemes[0].symbol.to_string(),
-                            graphemes[0].style,
-                        ))
-                    } else {
-                        log::warn!(
-                            "PS1_FILL must be a single styled grapheme of width 1, defaulting to space"
-                        );
-                        None
+                    // Strip literal "\\[" and "\\]" markers (they wrap non-printing sequences)
+                    let s = s.replace("\\[", "").replace("\\]", "");
+                    let c_prompt = std::ffi::CString::new(s).ok()?;
+
+                    unsafe {
+                        let decoded_prompt_cstr =
+                            bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
+                        if decoded_prompt_cstr.is_null() {
+                            return None;
+                        }
+
+                        let decoded = std::ffi::CStr::from_ptr(decoded_prompt_cstr)
+                            .to_str()
+                            .ok()?
+                            .to_string();
+
+                        // `decode_prompt_string` returns an allocated buffer.
+                        libc::free(decoded_prompt_cstr as *mut libc::c_void);
+
+                        Some(decoded)
                     }
                 })
-                .unwrap_or_else(|| Span::raw(" "));
+                .and_then(|s| s.into_text().ok())
+                .and_then(|text| text.lines.into_iter().next())
+                .unwrap_or_else(|| Line::from(" "));
 
             PromptManager {
                 prompt: ps1,
@@ -157,7 +162,7 @@ impl PromptManager {
         Line::from(spans)
     }
 
-    pub fn get_ps1_lines(&mut self) -> (Vec<Line<'static>>, Vec<Line<'static>>, Span<'static>) {
+    pub fn get_ps1_lines(&mut self) -> (Vec<Line<'static>>, Vec<Line<'static>>, Line<'static>) {
         // Format the current time using the system locale
         use chrono::Local;
         let now = Local::now();
