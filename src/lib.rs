@@ -17,6 +17,7 @@ mod logging;
 mod mouse_state;
 mod palette;
 mod prompt_manager;
+mod settings;
 mod snake_animation;
 mod tab_completion_context;
 mod text_buffer;
@@ -39,6 +40,9 @@ struct FlylineArgs {
     /// Set the logging level (error, warn, info, debug, trace)
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<String>,
+    /// Load zsh history in addition to bash history
+    #[arg(long = "load-zsh-history")]
+    load_zsh_history: bool,
 }
 
 // Global state for our custom input stream
@@ -74,6 +78,7 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
 struct Flyline {
     content: Vec<u8>,
     position: usize,
+    settings: settings::Settings,
 }
 
 impl Flyline {
@@ -81,6 +86,7 @@ impl Flyline {
         Self {
             content: vec![],
             position: 0,
+            settings: settings::Settings::default(),
         }
     }
 
@@ -141,6 +147,11 @@ impl Flyline {
                         _ => eprintln!("Invalid log level: {}", level),
                     }
                 }
+
+                if parsed.load_zsh_history {
+                    self.settings.load_zsh_history = true;
+                }
+
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
             }
             Err(e) => {
@@ -155,7 +166,7 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("---------------------- Starting app ------------------------");
 
-            self.content = match app::get_command() {
+            self.content = match app::get_command(&self.settings) {
                 app::ExitState::WithCommand(cmd) => cmd.into_bytes(),
                 app::ExitState::WithoutCommand => vec![],
             };
