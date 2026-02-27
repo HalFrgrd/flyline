@@ -13,6 +13,7 @@ use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
+use crate::settings::Settings;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
@@ -76,7 +77,7 @@ impl AppRunningState {
     }
 }
 
-pub fn get_command() -> ExitState {
+pub fn get_command(settings: &Settings) -> ExitState {
     // if let Err(e) = color_eyre::install() {
     //     log::error!("Failed to install color_eyre panic handler: {}", e);
     // }
@@ -102,7 +103,7 @@ pub fn get_command() -> ExitState {
 
     let runtime = build_runtime();
 
-    let end_state = runtime.block_on(App::new().run(backend));
+    let end_state = runtime.block_on(App::new(settings).run(backend));
 
     restore();
 
@@ -117,7 +118,7 @@ enum ContentMode {
     TabCompletion(ActiveSuggestions),
 }
 
-struct App {
+struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
     formatted_buffer_cache: FormattedBuffer,
@@ -135,10 +136,11 @@ struct App {
     last_contents: Option<(Contents, i16)>,
     last_mouse_over_cell: Option<Tag>,
     tooltip: Option<String>,
+    settings: &'a Settings,
 }
 
-impl App {
-    fn new() -> Self {
+impl<'a> App<'a> {
+    fn new(settings: &'a Settings) -> Self {
         let user = bash_funcs::get_env_variable("USER").unwrap_or("user".into());
 
         let home_path =
@@ -157,7 +159,7 @@ impl App {
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(unfinished_from_prev_command),
             home_path: home_path,
-            history_manager: HistoryManager::new(),
+            history_manager: HistoryManager::new(settings),
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
@@ -166,6 +168,7 @@ impl App {
             last_contents: None,
             last_mouse_over_cell: None,
             tooltip: None,
+            settings,
         }
     }
 
