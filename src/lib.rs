@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
@@ -21,8 +21,37 @@ mod snake_animation;
 mod tab_completion_context;
 mod text_buffer;
 
+fn get_styles() -> clap::builder::Styles {
+    clap::builder::Styles::styled()
+        .header(
+            clap::builder::styling::AnsiColor::Yellow.on_default()
+                | clap::builder::styling::Effects::BOLD,
+        )
+        .usage(
+            clap::builder::styling::AnsiColor::Yellow.on_default()
+                | clap::builder::styling::Effects::BOLD,
+        )
+        .literal(
+            clap::builder::styling::AnsiColor::Green.on_default()
+                | clap::builder::styling::Effects::BOLD,
+        )
+        .placeholder(clap::builder::styling::AnsiColor::White.on_default())
+        .error(
+            clap::builder::styling::AnsiColor::Red.on_default()
+                | clap::builder::styling::Effects::BOLD,
+        )
+        .valid(
+            clap::builder::styling::AnsiColor::Green.on_default()
+                | clap::builder::styling::Effects::BOLD,
+        )
+        .invalid(
+            clap::builder::styling::AnsiColor::Red.on_default()
+                | clap::builder::styling::Effects::BOLD,
+        )
+}
+
 #[derive(Parser, Debug)]
-#[command(name = "flyline")]
+#[command(name = "flyline", styles = get_styles())]
 struct FlylineArgs {
     /// Show version information
     #[arg(long)]
@@ -102,6 +131,14 @@ impl Flyline {
             }
         }
         log::debug!("flyline called with args: {:?}", args);
+
+        // args contains words from WordList; first word is the command name "flyline"
+        // If no additional args were provided, print help
+        if args.len() <= 1 {
+            FlylineArgs::command().print_help().ok();
+            println!();
+            return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
+        }
 
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
         match FlylineArgs::try_parse_from(args_with_prog) {
