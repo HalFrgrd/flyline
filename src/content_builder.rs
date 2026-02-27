@@ -161,7 +161,7 @@ impl Contents {
     pub fn write_line_lrjustified(
         &mut self,
         l_line: &Line,
-        fill_span: &Span,
+        fill_line: &Line,
         r_line: &Line,
         tag: Tag,
         leave_cursor_after_l_line: bool,
@@ -173,22 +173,45 @@ impl Contents {
         let cursor_after_l_line = self.cursor_vis_col;
 
         if self.cursor_vis_row == starting_row {
-            if fill_span.content.width() != 1 {
-                log::warn!(
-                    "Fill span content '{}' is not width 1, defaulting to space",
-                    fill_span.content
-                );
-                // If the fill char is not width 1, treat it as a space
-                self.cursor_vis_col = self.width.saturating_sub(r_width);
-            } else if fill_span.content == " "
-                && fill_span.style == ratatui::style::Style::default()
+            let target_col = self.width.saturating_sub(r_width);
+
+            // Collect all styled graphemes from the fill line
+            let fill_graphemes: Vec<StyledGrapheme> = fill_line
+                .spans
+                .iter()
+                .flat_map(|span| span.styled_graphemes(span.style))
+                .collect();
+
+            let has_nonzero_width = fill_graphemes.iter().any(|g| g.symbol.width() > 0);
+
+            if !has_nonzero_width {
+                // Zero-width fill: no progress can be made, just move the cursor
+                self.cursor_vis_col = target_col;
+            } else if fill_graphemes.len() == 1
+                && fill_graphemes[0].symbol == " "
+                && fill_graphemes[0].style == ratatui::style::Style::default()
             {
-                // If filling with unstyled spaces, we can just move the cursor to the right position without writing fill chars
-                self.cursor_vis_col = self.width.saturating_sub(r_width);
+                // Filling with unstyled spaces: just move the cursor without writing fill chars
+                self.cursor_vis_col = target_col;
             } else {
-                for _ in self.cursor_vis_col..self.width.saturating_sub(r_width) {
-                    self.write_span(fill_span, tag);
+                // Cycle through graphemes one at a time until there isn't room for the next one
+                let mut idx = 0;
+                loop {
+                    let graph = &fill_graphemes[idx % fill_graphemes.len()];
+                    let graph_w = graph.symbol.width() as u16;
+                    if graph_w == 0 {
+                        idx += 1;
+                        continue;
+                    }
+                    if self.cursor_vis_col + graph_w > target_col {
+                        break;
+                    }
+                    let span = Span::styled(graph.symbol.to_string(), graph.style);
+                    self.write_span(&span, tag);
+                    idx += 1;
                 }
+                // Move cursor to where right-aligned content should start
+                self.cursor_vis_col = target_col;
             }
         }
         if r_width > 0 {
