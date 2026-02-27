@@ -336,7 +336,11 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
-    *FLYLINE_INSTANCE_PTR.lock().unwrap() = None;
+    let had_instance = FLYLINE_INSTANCE_PTR.lock().unwrap().take().is_some();
+
+    if !had_instance {
+        return;
+    }
 
     unsafe {
         if bash_symbols::stream_list.is_null() {
