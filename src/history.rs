@@ -49,7 +49,7 @@ impl HistoryManager {
         let res = HistoryManager::parse_bash_history_str(&content);
 
         let duration = start_time.elapsed();
-        log::info!(
+        log::debug!(
             "Parsed bash history ({} entries) in {:?}",
             res.len(),
             duration
@@ -147,7 +147,7 @@ impl HistoryManager {
         let res = HistoryManager::parse_zsh_history_str(&content);
 
         let duration = start_time.elapsed();
-        log::info!(
+        log::debug!(
             "Parsed zsh history ({} entries) in {:?}",
             res.len(),
             duration
@@ -163,9 +163,9 @@ impl HistoryManager {
         if bash_entries.is_empty() {
             log::warn!("No bash history entries found");
         } else {
-            log::info!("Loaded {} bash history entries", bash_entries.len());
+            log::debug!("Loaded {} bash history entries", bash_entries.len());
             for entry in bash_entries.iter().rev().take(5) {
-                log::info!("bash_entries => {:?}", entry);
+                log::debug!("bash_entries => {:?}", entry);
             }
         }
 
