@@ -828,8 +828,8 @@ impl<'a> App<'a> {
 
                 content.move_to_next_insertion_point(&first_graph, false);
 
-                let (vis_col, vis_row) = content.cursor_position();
-                self.cursor_animation.update_position(vis_row, vis_col);
+                let cursor_pos = content.cursor_position();
+                self.cursor_animation.update_position(cursor_pos);
                 cursor_anim_pos = Some(self.cursor_animation.get_position());
             }
 
@@ -849,13 +849,13 @@ impl<'a> App<'a> {
                 );
             }
         }
-        if let Some((animated_vis_row, animated_vis_col)) = cursor_anim_pos {
+        if let Some(anim_pos) = cursor_anim_pos {
             let cursor_style = {
                 let cursor_intensity = self.cursor_animation.get_intensity();
                 Palette::cursor_style(cursor_intensity)
             };
 
-            content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
+            content.set_edit_cursor_style(anim_pos, cursor_style);
         }
 
         if self.mode.is_running()
