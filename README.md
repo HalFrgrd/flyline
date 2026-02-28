@@ -8,9 +8,7 @@
 
 </div>
 
-A modern `readline` alternative for bash.
-
-Features:
+A bash plugin for modern command line editing. Flyline replaces readline to provide a code-editor-like experience and other features:
 - Undo and redo support
 - Cursor animations
 - Fuzzy history suggestions
@@ -21,6 +19,10 @@ Features:
     - Hover over command for tooltips
 - Tab completions when writing subshells, command substitutions, process substitutions
 - Tab completions for aliases (e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected )
+- Tooltips
+- Auto close brackets and quotes
+- Syntax highlighting
+
 
 # Installation
 Download the latest `libflyline.so`.
