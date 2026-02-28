@@ -160,7 +160,7 @@ impl<'a> App<'a> {
             formatted_buffer_cache,
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
-            prompt_manager: PromptManager::new(unfinished_from_prev_command),
+            prompt_manager: PromptManager::new(unfinished_from_prev_command, settings.time_format.clone()),
             home_path: home_path,
             history_manager: HistoryManager::new(settings),
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?

@@ -9,6 +9,7 @@ pub struct PromptManager {
     rprompt: Vec<Line<'static>>,
     fill_span: Span<'static>,
     last_time_str: String,
+    time_format: Option<String>,
 }
 
 fn get_current_readline_prompt() -> Option<String> {
@@ -30,7 +31,7 @@ fn get_current_readline_prompt() -> Option<String> {
 }
 
 impl PromptManager {
-    pub fn new(unfinished_from_prev_command: bool) -> Self {
+    pub fn new(unfinished_from_prev_command: bool, time_format: Option<String>) -> Self {
         if unfinished_from_prev_command {
             // If the previous command was unfinished, use a simple prompt to avoid confusion
 
@@ -59,6 +60,7 @@ impl PromptManager {
                 rprompt: vec![],
                 fill_span: Span::raw(" "),
                 last_time_str: "".into(),
+                time_format,
             }
         } else {
             let ps1 = get_current_readline_prompt().unwrap_or_else(|| "default> ".into());
@@ -138,6 +140,7 @@ impl PromptManager {
                 rprompt: rps1,
                 fill_span,
                 last_time_str: "".into(),
+                time_format,
             }
         }
     }
@@ -161,11 +164,14 @@ impl PromptManager {
         // Format the current time using the system locale
         use chrono::Local;
         let now = Local::now();
-        // Use the system locale for formatting
-        // This will use the default time format for the locale
-        self.last_time_str = now.format("%X%.3f").to_string();
-        self.last_time_str =
-            self.last_time_str[..self.last_time_str.len().saturating_sub(2)].to_string();
+        self.last_time_str = if let Some(ref fmt) = self.time_format {
+            now.format(fmt).to_string()
+        } else {
+            // Use the system locale for formatting
+            // This will use the default time format for the locale
+            let s = now.format("%X%.3f").to_string();
+            s[..s.len().saturating_sub(2)].to_string()
+        };
 
         let formatted_prompt: Vec<Line<'static>> = self
             .prompt
