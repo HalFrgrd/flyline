@@ -39,4 +39,24 @@ Two fixes are:
 - Map `Command+<KEY>` to`Control+<KEY>` in your termianl emulator settings.
 - Use a terminal emulator that supports [Kitty's exteneded keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
+# Dynamic prompts
 
+Flyline supports dynamic content in your right prompt (`RPS1` / `RPROMPT`).
+
+## FLYLINE_TIME
+
+Place the literal string `FLYLINE_TIME` anywhere in your `RPS1` or `RPROMPT` and flyline will replace it with the current time each time the prompt is drawn.
+
+```bash
+export RPROMPT='\[\033[01;32m\]FLYLINE_TIME\[\033[0m\]'
+```
+
+By default the time is formatted as `HH:MM:SS.s` (locale time with one decimal second). You can customise this with `--time-format` using any [Chrono format string](https://docs.rs/chrono/latest/chrono/format/strftime/index.html):
+
+```bash
+# Show date and time
+flyline --time-format "%Y-%m-%d %H:%M:%S"
+
+# Show only hours and minutes
+flyline --time-format "%H:%M"
+```

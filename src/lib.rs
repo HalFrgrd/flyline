@@ -46,6 +46,9 @@ struct FlylineArgs {
     /// Enable tutorial mode with hints for first-time users
     #[arg(long = "tutorial-mode")]
     tutorial_mode: bool,
+    /// Set the time format for FLYLINE_TIME using a Chrono format string (e.g. "%H:%M:%S")
+    #[arg(long = "time-format", value_name = "FORMAT")]
+    time_format: Option<String>,
 }
 
 // Global state for our custom input stream
@@ -157,6 +160,10 @@ impl Flyline {
 
                 if parsed.tutorial_mode {
                     self.settings.tutorial_mode = true;
+                }
+
+                if let Some(fmt) = parsed.time_format {
+                    self.settings.time_format = Some(fmt);
                 }
 
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
