@@ -268,7 +268,7 @@ unsafe extern "C" {
     // char* getenv(const char* name);
     pub fn getenv(name: *const c_char) -> *mut c_char;
 
-    // eval.c / execute_cmd.h
+    // common.h
     // int evalstring (char *string, const char *from_file, int flags)
     pub fn evalstring(string: *mut c_char, from_file: *const c_char, flags: c_int) -> c_int;
 
