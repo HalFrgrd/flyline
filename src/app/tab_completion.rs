@@ -42,7 +42,7 @@ use std::path::Path;
 //   rl_filename_dequoting_function = bash_dequote_filename;
 //   rl_char_is_quoted_p = char_is_quoted; // TODO  probably not necessary?
 
-impl App {
+impl App<'_> {
     pub fn start_tab_complete(&mut self) {
         let buffer: &str = self.buffer.buffer();
         let completion_context =
