@@ -36,8 +36,8 @@ flyline --tutorial-mode
 # Integrations
 ## VS Code:
 - I'd recommend setting `terminal.integrated.minimumContrastRatio = 1` to prevent the cell's foreground colour changing when it's under the cursor.
-- You may want to set `terminal.integrated.macOptionIsMeta` so `Option+key` shortcuts are properly recognised.
-- Shell integration WIP
+- You may want to set `terminal.integrated.macOptionIsMeta` so `Option+<KEY>` shortcuts are properly recognised.
+- Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
 
 ## macOS
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
