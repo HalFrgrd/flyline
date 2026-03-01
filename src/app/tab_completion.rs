@@ -128,18 +128,23 @@ impl App<'_> {
                                     sug.clone()
                                 };
 
+                                let space_to_append = if comp_result.suppress_append {
+                                    ""
+                                } else {
+                                    " "
+                                };
+
                                 let (appended, suffix) = if comp_result.filename_quoting_desired {
                                     let path = Path::new(sug);
                                     log::debug!("Checking if path is directory for completion result '{}': {:?} (is_dir: {})", sug, path, path.is_dir());
 
                                     if path.is_dir() {
-                                        
                                         (format!("{}/", quoted), "")
                                     } else {
-                                        (quoted, " ")
+                                        (quoted, space_to_append)
                                     }
                                 } else {
-                                    (quoted, " ")
+                                    (quoted, space_to_append)
                                 };
 
                                 Suggestion::new(appended, "".to_string(), suffix.to_string())

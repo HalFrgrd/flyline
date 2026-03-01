@@ -326,7 +326,7 @@ pub fn run_programmable_completions(
         // similar to set_completion_defaults
         bash_symbols::rl_filename_completion_desired = 0;
         bash_symbols::rl_filename_quoting_desired = 1;
-        bash_symbols::rl_completion_suppress_append = 1;
+        bash_symbols::rl_completion_suppress_append = 0;
         bash_symbols::rl_completion_suppress_quote = 0;
 
         let found: std::ffi::c_int = 0;
