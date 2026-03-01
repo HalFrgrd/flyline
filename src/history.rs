@@ -176,6 +176,10 @@ impl HistoryManager {
         let mut entries: Vec<_> = if settings.load_zsh_history {
             // As a zsh user migrating to bash, I want to have my zsh history available too
             let zsh_entries = Self::parse_zsh_history();
+            log::debug!("Loaded {} zsh history entries", zsh_entries.len());
+            for entry in zsh_entries.iter().rev().take(5) {
+                log::debug!("zsh_entries => {:?}", entry);
+            }
             zsh_entries
                 .into_iter()
                 .merge_by(bash_entries, |a, b| {
