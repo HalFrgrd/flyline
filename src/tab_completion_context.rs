@@ -25,17 +25,18 @@ pub struct CompletionContext<'a> {
 }
 
 impl<'a> CompletionContext<'a> {
-    fn classify_word_type(word: &str) -> Option<CompType> {
-        if false && word.starts_with('$') {
-            Some(CompType::EnvVariable)
-        } else if false && word.starts_with('~') && !word.contains("/") {
-            Some(CompType::TildeExpansion)
-        } else if word.contains('*') || word.contains('?') || word.contains('[') {
-            // TODO "*.md will match this. need some better logic here
-            Some(CompType::GlobExpansion)
-        } else {
-            None
-        }
+    fn classify_word_type(_word: &str) -> Option<CompType> {
+        // if false && word.starts_with('$') {
+        //     Some(CompType::EnvVariable)
+        // } else if false && word.starts_with('~') && !word.contains("/") {
+        //     Some(CompType::TildeExpansion)
+        // } else if word.contains('*') || word.contains('?') || word.contains('[') {
+        //     // TODO "*.md will match this. need some better logic here
+        //     Some(CompType::GlobExpansion)
+        // } else {
+        //     None
+        // }
+        None
     }
 
     pub fn new(

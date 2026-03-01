@@ -103,7 +103,7 @@ impl App<'_> {
                     alias.to_string() + &completion_context.context[command_word.len()..];
                 command_word = alias.split_whitespace().next().unwrap().to_string();
 
-                let poss_completions = bash_funcs::run_autocomplete_compspec(
+                let poss_completions = bash_funcs::run_programmable_completions(
                     &full_command,
                     &command_word,
                     &word_under_cursor,
@@ -111,10 +111,43 @@ impl App<'_> {
                     word_under_cursor_end,
                 );
                 match poss_completions {
-                    Ok((completions, quote_type)) => {
+                    Ok(comp_result) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
+                        log::debug!("Completions: {:?}", comp_result);
+
+                        let suggestions = comp_result
+                            .completions
+                            .iter()
+                            .map(|sug| {
+                                let quoted = if comp_result.filename_quoting_desired {
+                                    bash_funcs::quote_function_rust(
+                                        sug,
+                                        comp_result.quote_type.unwrap_or_default(),
+                                    )
+                                } else {
+                                    sug.clone()
+                                };
+
+                                let (appended, suffix) = if comp_result.filename_quoting_desired {
+                                    let path = Path::new(sug);
+                                    log::debug!("Checking if path is directory for completion result '{}': {:?} (is_dir: {})", sug, path, path.is_dir());
+
+                                    if path.is_dir() {
+                                        
+                                        (format!("{}/", quoted), "")
+                                    } else {
+                                        (quoted, " ")
+                                    }
+                                } else {
+                                    (quoted, " ")
+                                };
+
+                                Suggestion::new(appended, "".to_string(), suffix.to_string())
+                            })
+                            .collect::<Vec<_>>();
+
                         self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                            Suggestion::from_string_vec(completions, "", " ", quote_type),
+                            suggestions,
                             word_under_cursor,
                             &self.buffer,
                         ));
@@ -125,12 +158,12 @@ impl App<'_> {
                             full_command,
                             e
                         );
-                        let completions = self.tab_complete_current_path(word_under_cursor);
-                        self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                            completions,
-                            word_under_cursor,
-                            &self.buffer,
-                        ));
+                        // let completions = self.tab_complete_current_path(word_under_cursor);
+                        // self.try_accept_tab_completion(ActiveSuggestions::try_new(
+                        //     completions,
+                        //     word_under_cursor,
+                        //     &self.buffer,
+                        // ));
                     }
                 }
             }
@@ -187,7 +220,7 @@ impl App<'_> {
                     );
                 } else {
                     self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                        Suggestion::from_string_vec(vec![completions_as_string], "", " ", None),
+                        Suggestion::from_string_vec(vec![completions_as_string], "", " "),
                         word_under_cursor,
                         &self.buffer,
                     ));
@@ -212,7 +245,7 @@ impl App<'_> {
             // No prefix matches found, fall back to fuzzy search
             log::debug!("No prefix matches for '{}', trying fuzzy search", command);
             res = self.bash_env.get_fuzzy_first_word_completions(&command);
-            return Suggestion::from_string_vec(res, "", " ", None);
+            return Suggestion::from_string_vec(res, "", " ");
         }
 
         // TODO: could prioritize based on frequency of use
@@ -221,7 +254,7 @@ impl App<'_> {
 
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
-        Suggestion::from_string_vec(res, "", " ", None)
+        Suggestion::from_string_vec(res, "", " ")
     }
 
     fn tab_complete_current_path(&self, pattern: &str) -> Vec<Suggestion> {
@@ -301,16 +334,10 @@ impl App<'_> {
                             format!("{}/", unexpanded),
                             "".to_string(),
                             "".to_string(),
-                            None,
                         ));
                     } else {
                         // trailing space for files
-                        results.push(Suggestion::new(
-                            unexpanded,
-                            "".to_string(),
-                            " ".to_string(),
-                            None,
-                        ));
+                        results.push(Suggestion::new(unexpanded, "".to_string(), " ".to_string()));
                     }
                 }
             }
