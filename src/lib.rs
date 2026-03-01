@@ -299,21 +299,21 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // When do we want to set up flyline's input stream?
     // shell.c:main:792:set_bash_input: sets up readline if interactive && no_line_editing
 
-    unsafe {
-        log::trace!(
-            "interactive: {}, interactive_shell: {}, no_line_editing: {}",
-            bash_symbols::interactive,
-            bash_symbols::interactive_shell,
-            bash_symbols::no_line_editing
-        );
-    }
+    // unsafe {
+    //     log::trace!(
+    //         "interactive: {}, interactive_shell: {}, no_line_editing: {}",
+    //         bash_symbols::interactive,
+    //         bash_symbols::interactive_shell,
+    //         bash_symbols::no_line_editing
+    //     );
+    // }
 
     // TODO: panic catch
     unsafe {
         if bash_symbols::interactive_shell == 0 || bash_symbols::no_line_editing != 0 {
             log::warn!("Not an interactive shell, flyline will not be loaded");
             log::info!(
-                "To avoid loading flyline in non-interactive shells, add the following to your .bashrc before the flyline enable line: if [[ $- != *i* ]]; then return; fi"
+                "To avoid loading flyline in non-interactive shells, add the following to your .bashrc before the flyline enable line:\nif [[ $- != *i* ]]; then return; fi"
             );
             logging::print_logs();
             return FAILURE;
