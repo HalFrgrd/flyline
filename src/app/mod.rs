@@ -33,8 +33,7 @@ use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
 
-const TUTORIAL_FUZZY_SEARCH_HINT: &str =
-    "type to search, press arrow keys / page up/down to browse, enter to run the command, shift+enter to accept command for editing";
+const TUTORIAL_FUZZY_SEARCH_HINT: &str = "type to search, press arrow keys / page up/down to browse, enter to run the command, shift+enter to accept command for editing";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -160,7 +159,10 @@ impl<'a> App<'a> {
             formatted_buffer_cache,
             animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
-            prompt_manager: PromptManager::new(unfinished_from_prev_command, settings.time_format.clone()),
+            prompt_manager: PromptManager::new(
+                unfinished_from_prev_command,
+                settings.time_format.clone(),
+            ),
             home_path: home_path,
             history_manager: HistoryManager::new(settings),
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
@@ -788,7 +790,13 @@ impl<'a> App<'a> {
         {
             let (l_line, r_line) = either_or_both.or(&empty_line, &empty_line);
             if is_last {
-                content.write_line_lrjustified(l_line, &Line::from(" "), r_line, Tag::Ps1Prompt, true);
+                content.write_line_lrjustified(
+                    l_line,
+                    &Line::from(" "),
+                    r_line,
+                    Tag::Ps1Prompt,
+                    true,
+                );
             } else {
                 content.write_line_lrjustified(l_line, &fill_span, r_line, Tag::Ps1Prompt, false);
             }
