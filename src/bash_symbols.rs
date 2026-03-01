@@ -3,6 +3,11 @@ use libc::{c_char, c_int, c_uint};
 pub const EOF: c_int = -1;
 
 pub const BUILTIN_ENABLED: c_int = 0x01;
+
+// common.h seval flags
+pub const SEVAL_NOHIST: c_int = 0x004;
+pub const SEVAL_NOOPTIMIZE: c_int = 0x400 /* don't try to set optimization flags */
+
 /* A structure which represents a word. */
 // typedef struct word_desc {
 //   char *word;		/* Zero terminated string. */
@@ -262,6 +267,10 @@ unsafe extern "C" {
     // getenv.c
     // char* getenv(const char* name);
     pub fn getenv(name: *const c_char) -> *mut c_char;
+
+    // common.h
+    // int evalstring (char *string, const char *from_file, int flags)
+    pub fn evalstring(string: *mut c_char, from_file: *const c_char, flags: c_int) -> c_int;
 
     // y.tab.c
     // char * decode_prompt_string (char *string, int is_prompt)
