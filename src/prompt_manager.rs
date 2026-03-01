@@ -2,7 +2,6 @@ use crate::bash_funcs;
 use crate::bash_symbols;
 use ansi_to_tui::IntoText;
 use ratatui::text::{Line, Span, Text};
-use unicode_width::UnicodeWidthStr;
 
 pub struct PromptManager {
     prompt: Vec<Line<'static>>,

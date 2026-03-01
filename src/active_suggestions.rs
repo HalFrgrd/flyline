@@ -1,4 +1,3 @@
-use crate::bash_funcs::{QuoteType, quote_function_rust};
 use crate::palette::Palette;
 use crate::text_buffer::{SubString, TextBuffer};
 use fuzzy_matcher::FuzzyMatcher;
@@ -10,7 +9,6 @@ pub struct Suggestion {
     pub s: String,
     pub prefix: String,
     pub suffix: String,
-    pub quote_type: Option<QuoteType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,32 +51,18 @@ impl SuggestionFormatted {
 }
 
 impl Suggestion {
-    pub fn new(s: String, prefix: String, suffix: String, quote_type: Option<QuoteType>) -> Self {
-        Suggestion {
-            s,
-            prefix,
-            suffix,
-            quote_type,
-        }
+    pub fn new(s: String, prefix: String, suffix: String) -> Self {
+        Suggestion { s, prefix, suffix }
     }
 
     pub fn formatted(&self) -> String {
-        let quoted = quote_function_rust(&self.s, self.quote_type.unwrap_or_default());
-        log::debug!(
-            "Formatted suggestion: original={}\nquoted={}\nquote_type={:?}",
-            self.s,
-            quoted,
-            self.quote_type
-        );
-
-        format!("{}{}{}", self.prefix, quoted, self.suffix)
+        format!("{}{}{}", self.prefix, self.s, self.suffix)
     }
 
     pub fn from_string_vec(
         suggestions: Vec<String>,
         prefix: &str,
         suffix: &str,
-        quote_type: Option<QuoteType>,
     ) -> Vec<Suggestion> {
         suggestions
             .into_iter()
@@ -88,7 +72,7 @@ impl Suggestion {
                 } else {
                     suffix.to_string()
                 };
-                Suggestion::new(s, prefix.to_string(), new_suffix, quote_type)
+                Suggestion::new(s, prefix.to_string(), new_suffix)
             })
             .collect()
     }
