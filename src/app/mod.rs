@@ -29,7 +29,7 @@ use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 
-use std::time::{Duration};
+use std::time::Duration;
 use std::vec;
 use timeago;
 
