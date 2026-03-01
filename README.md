@@ -8,9 +8,7 @@
 
 </div>
 
-A modern `readline` alternative for bash.
-
-Features:
+A bash plugin for modern command line editing. Flyline replaces readline to provide a code-editor-like experience and other features:
 - Undo and redo support
 - Cursor animations
 - Fuzzy history suggestions
@@ -20,23 +18,31 @@ Features:
     - Click to move cursor in buffer
     - Hover over command for tooltips
 - Tab completions when writing subshells, command substitutions, process substitutions
-- Tab completions for aliases (e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected )
+- Tab completions for aliases (e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected)
+- Tooltips
+- Auto close brackets and quotes
+- Syntax highlighting
+
 
 # Installation
 Download the latest `libflyline.so`.
-In your `.bashrc` (or in your current bash session): `enable -f /path/to/libflyline.so flyline`.
+In your `.bashrc` (or in your current bash session):
+```bash
+enable -f /path/to/libflyline.so flyline
+flyline --tutorial-mode
+```
 
 
 # Integrations
-## VsCode:
-- I'd recommend setting `terminal.integrated.minimumContrastRatio = 1` to prevent the cell's foreground colour changing it's under the cursor.
-- You may want to set `terminal.integrated.macOptionIsMeta` so `Option+key` shortcuts are properly recognised.
-- Shell integration WIP
+## VS Code:
+- I'd recommend setting `terminal.integrated.minimumContrastRatio = 1` to prevent the cell's foreground colour changing when it's under the cursor.
+- You may want to set `terminal.integrated.macOptionIsMeta` so `Option+<KEY>` shortcuts are properly recognised.
+- Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
 
-## MacOs
+## macOS
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
-Two fixes are:
-- Map `Command+<KEY>` to`Control+<KEY>` in your termianl emulator settings.
+Two possible fixes are:
+- Map `Command+<KEY>` to`Control+<KEY>` in your terminal emulator settings.
 - Use a terminal emulator that supports [Kitty's exteneded keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
 
