@@ -45,6 +45,8 @@ docker build -f docker/release_builder.Dockerfile --target flyline-tests .
 
 **Bash integration tests** (load `libflyline.so` into real Bash builds):
 
+Don't run these unless specified.
+
 ```bash
 # Build the library first (see above), then:
 docker build \
