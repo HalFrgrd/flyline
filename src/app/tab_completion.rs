@@ -61,6 +61,7 @@ impl App<'_> {
                     word_under_cursor,
                     &self.buffer,
                 ));
+                return;
             }
             tab_completion_context::CompType::CommandComp { mut command_word } => {
                 // This isnt just for commands like `git`, `cargo`
@@ -156,6 +157,7 @@ impl App<'_> {
                             word_under_cursor,
                             &self.buffer,
                         ));
+                        return;
                     }
                     Err(e) => {
                         log::debug!(
@@ -163,37 +165,18 @@ impl App<'_> {
                             full_command,
                             e
                         );
-                        // let completions = self.tab_complete_current_path(word_under_cursor);
-                        // self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                        //     completions,
-                        //     word_under_cursor,
-                        //     &self.buffer,
-                        // ));
                     }
                 }
             }
-            // tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
-            //     log::debug!("Cursor is on blank space, no tab completion performed");
-            //     let completions = self.tab_complete_current_path("");
-            //     self.active_tab_suggestions = ActiveSuggestions::try_new(
-            //         completions
-            //             .into_iter()
-            //             .map(|mut sug| {
-            //                 sug.prefix = " ".to_string();
-            //                 sug
-            //             })
-            //             .collect(),
-            //         word_under_cursor,
-            //         &mut self.buffer,
-            //     );
-            // }
-            tab_completion_context::CompType::EnvVariable => {
+        }
+        match completion_context.comp_type_secondary {
+            Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
                 log::debug!(
                     "Environment variable completion not yet implemented: {:?}",
                     word_under_cursor
                 );
             }
-            tab_completion_context::CompType::TildeExpansion => {
+            Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = self.tab_complete_tilde_expansion(&word_under_cursor);
                 self.try_accept_tab_completion(ActiveSuggestions::try_new(
@@ -202,7 +185,7 @@ impl App<'_> {
                     &self.buffer,
                 ));
             }
-            tab_completion_context::CompType::GlobExpansion => {
+            Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
                 let completions = self.tab_complete_glob_expansion(&word_under_cursor);
 
@@ -230,6 +213,12 @@ impl App<'_> {
                         &self.buffer,
                     ));
                 }
+            }
+            None => {
+                log::debug!(
+                    "No secondary completion type detected for: {:?}",
+                    word_under_cursor
+                );
             }
         }
     }
@@ -260,10 +249,6 @@ impl App<'_> {
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
         Suggestion::from_string_vec(res, "", " ")
-    }
-
-    fn tab_complete_current_path(&self, pattern: &str) -> Vec<Suggestion> {
-        self.tab_complete_glob_expansion(&(pattern.to_string() + "*"))
     }
 
     fn expand_path_pattern(&self, pattern: &str) -> (String, Vec<(String, String)>) {

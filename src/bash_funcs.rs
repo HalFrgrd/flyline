@@ -280,6 +280,7 @@ pub struct ProgrammableCompleteReturn {
     pub quote_type: Option<QuoteType>,
     pub filename_quoting_desired: bool,
     pub suppress_append: bool,
+    #[allow(dead_code)]
     pub closing_quote_desired: bool,
 }
 
