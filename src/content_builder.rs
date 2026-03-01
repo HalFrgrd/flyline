@@ -23,7 +23,7 @@ impl Coord {
         // factor = 1.0 => other
         let col = self.col as f32 + (other.col as f32 - self.col as f32) * factor;
         let row = self.row as f32 + (other.row as f32 - self.row as f32) * factor;
-        Coord::new(row as u16, col as u16)
+        Coord::new(row.round() as u16, col.round() as u16)
     }
 }
 
@@ -194,7 +194,7 @@ impl Contents {
 
         let cursor_after_l_line = self.cursor_pos.col;
 
-        if self.cursor_vis_row == starting_row {
+        if self.cursor_pos.row == starting_row {
             let target_col = self.width.saturating_sub(r_width);
 
             // Collect all styled graphemes from the fill line
@@ -208,13 +208,13 @@ impl Contents {
 
             if !has_nonzero_width {
                 // Zero-width fill: no progress can be made, just move the cursor
-                self.cursor_vis_col = target_col;
+                self.cursor_pos.col = target_col;
             } else if fill_graphemes.len() == 1
                 && fill_graphemes[0].symbol == " "
                 && fill_graphemes[0].style == ratatui::style::Style::default()
             {
                 // Filling with unstyled spaces: just move the cursor without writing fill chars
-                self.cursor_vis_col = target_col;
+                self.cursor_pos.col = target_col;
             } else {
                 // Cycle through graphemes one at a time until there isn't room for the next one
                 let mut idx = 0;
@@ -225,7 +225,7 @@ impl Contents {
                         idx += 1;
                         continue;
                     }
-                    if self.cursor_vis_col + graph_w > target_col {
+                    if self.cursor_pos.col + graph_w > target_col {
                         break;
                     }
                     let span = Span::styled(graph.symbol.to_string(), graph.style);
@@ -233,7 +233,7 @@ impl Contents {
                     idx += 1;
                 }
                 // Move cursor to where right-aligned content should start
-                self.cursor_vis_col = target_col;
+                self.cursor_pos.col = target_col;
             }
         }
         if r_width > 0 {
