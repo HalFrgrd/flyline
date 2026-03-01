@@ -8,35 +8,10 @@ Set Width 1200
 Set Height 600
 Set Framerate 60
 
-
 Hide
 
 # vhs doesnt source our bashrc so lets run bash here so that it will source it
 Type "bash"
-Enter
-
-Type "flyline -v"
-Enter
-
-Type "echo a"
-Enter
-
-Type "echo b"
-Enter
-
-Type "echo c"
-Enter
-
-Type "echo foo"
-Enter
-
-Type "echo bar"
-Enter
-
-Type "echo baz"
-Enter
-
-Type "clear"
 Enter
 
 Show
