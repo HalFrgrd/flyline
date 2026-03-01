@@ -1,4 +1,5 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::{generate, Shell};
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
@@ -219,6 +220,28 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     handle: std::ptr::null(),
 };
 
+fn setup_autocompletion() {
+    let mut completion = Vec::new();
+    generate(
+        Shell::Bash,
+        &mut FlylineArgs::command(),
+        "flyline",
+        &mut completion,
+    );
+    let completion_str = match std::ffi::CString::new(completion) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Failed to create completion CString: {}", e);
+            return;
+        }
+    };
+    let from_file = c"flyline_setup_autocompletion";
+    let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
+    unsafe {
+        bash_symbols::evalstring(completion_str.into_raw(), from_file.as_ptr(), flags);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // Returning 0 means the load fails
@@ -249,6 +272,8 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
             return FAILURE;
         }
     }
+
+    setup_autocompletion();
 
     // This is how we ensure that our custom input stream is used by bash instead of readline.
     // This code is run during `run_startup_files` so we can't modify bash_input directly.
