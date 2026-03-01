@@ -26,7 +26,8 @@ A bash plugin for modern command line editing. Flyline replaces readline to prov
 
 # Installation
 Download the latest `libflyline.so`.
-In your `.bashrc` (or in your current bash session): ```bash
+In your `.bashrc` (or in your current bash session):
+```bash
 enable -f /path/to/libflyline.so flyline
 flyline --tutorial-mode
 ```
