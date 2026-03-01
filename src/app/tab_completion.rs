@@ -136,7 +136,8 @@ impl App<'_> {
                                 };
 
                                 let (appended, suffix) = if comp_result.filename_quoting_desired {
-                                    let path = Path::new(sug);
+                                    let expanded = self.tilde_expand_pattern(sug);
+                                    let path = Path::new(&expanded);
                                     log::debug!("Checking if path is directory for completion result '{}': {:?} (is_dir: {})", sug, path, path.is_dir());
 
                                     if path.is_dir() {
@@ -249,6 +250,17 @@ impl App<'_> {
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
         Suggestion::from_string_vec(res, "", " ")
+    }
+
+    fn tilde_expand_pattern(&self, pattern: &str) -> String {
+        if pattern.starts_with("~/") {
+            pattern.replacen("~", &self.home_path, 1)
+        } else if pattern.starts_with('~') {
+            // This is a naive tilde expansion for other users, it just replaces ~ with /home/ which works in most cases but not all (e.g. if someone has a custom home directory or if it's a different OS). For a more robust solution, we would need to read /etc/passwd or use a crate that can do this for us.
+            pattern.replacen("~", "/home/", 1)
+        } else {
+            pattern.to_string()
+        }
     }
 
     fn expand_path_pattern(&self, pattern: &str) -> (String, Vec<(String, String)>) {
