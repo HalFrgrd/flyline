@@ -788,7 +788,7 @@ impl<'a> App<'a> {
         {
             let (l_line, r_line) = either_or_both.or(&empty_line, &empty_line);
             if is_last {
-                content.write_line_lrjustified(l_line, &Span::raw(" "), r_line, Tag::Ps1Prompt, true);
+                content.write_line_lrjustified(l_line, &Line::from(" "), r_line, Tag::Ps1Prompt, true);
             } else {
                 content.write_line_lrjustified(l_line, &fill_span, r_line, Tag::Ps1Prompt, false);
             }
