@@ -41,8 +41,7 @@ impl CursorAnimation {
             factor = 1.0;
         }
 
-        self.prev_pos
-            .interpolate(&self.target_pos, factor.min(1.0))
+        self.prev_pos.interpolate(&self.target_pos, factor.min(1.0))
     }
 
     pub fn get_intensity(&self) -> u8 {

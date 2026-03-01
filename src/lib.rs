@@ -1,5 +1,5 @@
 use clap::{CommandFactory, Parser};
-use clap_complete::{generate, Shell};
+use clap_complete::{Shell, generate};
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
@@ -145,14 +145,14 @@ impl Flyline {
         }
         log::debug!("flyline called with args: {:?}", args);
 
-        // args contains words from WordList; first word is the command name "flyline"
-        // If no additional args were provided, print help
-        if args.len() <= 1 {
+        // If no args were provided, print help
+        if args.len() == 0 {
             FlylineArgs::command().print_help().ok();
             println!();
             return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
         }
 
+        // args contains words from WordList; first word is not the command name unlike argv
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
         match FlylineArgs::try_parse_from(args_with_prog) {
             Ok(parsed) => {
@@ -384,7 +384,9 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
                 };
                 log::trace!(
                     "stream_list[{}]: name: {}, type: {:?}",
-                    idx, name, stream.bash_input.stream_type
+                    idx,
+                    name,
+                    stream.bash_input.stream_type
                 );
                 if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin {
                     if name.starts_with("flyline") {
@@ -446,7 +448,8 @@ pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
                 std::ffi::CStr::from_ptr(head.bash_input.name).to_string_lossy();
             log::trace!(
                 "Found stream_list entry with name: {} and type: {:?}",
-                current_input_name, head.bash_input.stream_type
+                current_input_name,
+                head.bash_input.stream_type
             );
             bash_symbols::pop_stream();
         }

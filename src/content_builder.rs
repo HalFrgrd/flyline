@@ -276,11 +276,7 @@ impl Contents {
         }
     }
 
-    pub fn set_edit_cursor_style(
-        &mut self,
-        cursor: Coord,
-        style: ratatui::style::Style,
-    ) {
+    pub fn set_edit_cursor_style(&mut self, cursor: Coord, style: ratatui::style::Style) {
         self.edit_cursor_pos = Some(cursor);
         self.set_style(Rect::new(cursor.col, cursor.row, 1, 1), style);
     }
