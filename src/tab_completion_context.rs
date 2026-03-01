@@ -61,7 +61,7 @@ impl<'a> CompletionContext<'a> {
 
         let comp_type = if context.trim().is_empty() {
             CompType::FirstWord
-        } else if context_until_cursor.chars().all(|c| c.is_whitespace()) {
+        } else if !context_until_cursor.chars().any(|c| c.is_whitespace()) {
             CompType::FirstWord
         } else {
             CompType::CommandComp {
@@ -701,6 +701,7 @@ mod tests {
     fn test_completion_context_cursor_after_first_word_emoji() {
         // Cursor after first word that contains emoji
         let ctx = run_inline("🚀rock█et --verbose naïve");
+        dbg!(&ctx);
         match ctx.comp_type {
             CompType::FirstWord => {
                 assert_eq!(ctx.word_under_cursor, "🚀rocket");
