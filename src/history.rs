@@ -3,6 +3,7 @@ use std::vec;
 
 use crate::bash_symbols;
 use crate::palette::Palette;
+use crate::settings::Settings;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
@@ -49,7 +50,7 @@ impl HistoryManager {
         let res = HistoryManager::parse_bash_history_str(&content);
 
         let duration = start_time.elapsed();
-        log::info!(
+        log::debug!(
             "Parsed bash history ({} entries) in {:?}",
             res.len(),
             duration
@@ -147,7 +148,7 @@ impl HistoryManager {
         let res = HistoryManager::parse_zsh_history_str(&content);
 
         let duration = start_time.elapsed();
-        log::info!(
+        log::debug!(
             "Parsed zsh history ({} entries) in {:?}",
             res.len(),
             duration
@@ -155,7 +156,7 @@ impl HistoryManager {
         res
     }
 
-    pub fn new() -> HistoryManager {
+    pub fn new(settings: &Settings) -> HistoryManager {
         // Bash will load the history into memory, so we can read it from there
         // Bash parses it after bashrc is loaded.
         let bash_entries = Self::parse_bash_history_from_memory();
@@ -163,25 +164,27 @@ impl HistoryManager {
         if bash_entries.is_empty() {
             log::warn!("No bash history entries found");
         } else {
-            log::info!("Loaded {} bash history entries", bash_entries.len());
+            log::debug!("Loaded {} bash history entries", bash_entries.len());
             for entry in bash_entries.iter().rev().take(5) {
-                log::info!("bash_entries => {:?}", entry);
+                log::debug!("bash_entries => {:?}", entry);
             }
         }
 
         // Alternative is to do it ourselves
         // let bash_entries = Self::parse_bash_history_from_file();
 
-        // As a zsh user migrating to bash, I want to have my zsh history available too
-        let zsh_entries = Self::parse_zsh_history();
-
-        let mut entries: Vec<_> = zsh_entries
-            .into_iter()
-            .merge_by(bash_entries, |a, b| {
-                a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
-            })
-            .collect();
-        // let mut entries = bash_entries;
+        let mut entries: Vec<_> = if settings.load_zsh_history {
+            // As a zsh user migrating to bash, I want to have my zsh history available too
+            let zsh_entries = Self::parse_zsh_history();
+            zsh_entries
+                .into_iter()
+                .merge_by(bash_entries, |a, b| {
+                    a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
+                })
+                .collect()
+        } else {
+            bash_entries
+        };
 
         entries.dedup_by(|a, b| a.command == b.command);
 
@@ -417,6 +420,8 @@ impl FuzzyHistorySearch {
     const TIME_BUDGET_MS: u64 = 15;
     // Number of visible rows in the fuzzy history search list
     const VISIBLE_CACHE_SIZE: usize = 18;
+    // Number of recent cache entries to check for duplicates before inserting
+    const DUPLICATE_CHECK_WINDOW: usize = 50;
 
     fn new() -> Self {
         FuzzyHistorySearch {
@@ -539,8 +544,6 @@ impl FuzzyHistorySearch {
             _ => 30,
         };
 
-        let mut new_entries = vec![];
-
         // Process as many entries as possible within the time budget
         for (idx, entry) in entries.iter().rev().skip(self.global_index).enumerate() {
             // Check if we've exceeded the time budget every TIME_CHECK_INTERVAL entries
@@ -551,24 +554,22 @@ impl FuzzyHistorySearch {
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
             {
                 if score >= score_threshold {
-                    let new_entry = HistoryEntryFormatted::new(entry.clone(), score, indices);
-                    new_entries.push(new_entry);
+                    let trimmed_cmd = entry.command.trim();
+                    // Before inserting, check if any of the 50 latest cache entries match after trimming
+                    let is_duplicate = self
+                        .cache
+                        .iter()
+                        .rev()
+                        .take(Self::DUPLICATE_CHECK_WINDOW)
+                        .any(|cached| cached.entry.command.trim() == trimmed_cmd);
+                    if !is_duplicate {
+                        let new_entry = HistoryEntryFormatted::new(entry.clone(), score, indices);
+                        self.cache.push(new_entry);
+                    }
                 }
             }
             self.global_index += 1;
         }
-
-        // Sort explicitly by score. Then insert stable order of history entries
-        new_entries.sort_by_key(|e| std::cmp::Reverse(e.score));
-
-        let mut new_cache = std::mem::take(&mut self.cache)
-            .into_iter()
-            .merge_by(new_entries.into_iter(), |a, b| a.score >= b.score)
-            .collect::<Vec<_>>();
-
-        // Remove duplicates, keeping the lowest indexed one (first occurrence)
-        new_cache.dedup_by(|a, b| a.entry.command == b.entry.command);
-        self.cache = new_cache;
 
         if start_index != self.global_index {
             let duration = start.elapsed();
