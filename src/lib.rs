@@ -1,4 +1,5 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::{generate, Shell};
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
@@ -17,6 +18,7 @@ mod logging;
 mod mouse_state;
 mod palette;
 mod prompt_manager;
+mod settings;
 mod snake_animation;
 mod tab_completion_context;
 mod text_buffer;
@@ -39,6 +41,12 @@ struct FlylineArgs {
     /// Set the logging level (error, warn, info, debug, trace)
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<String>,
+    /// Load zsh history in addition to bash history
+    #[arg(long = "load-zsh-history")]
+    load_zsh_history: bool,
+    /// Enable tutorial mode with hints for first-time users
+    #[arg(long = "tutorial-mode")]
+    tutorial_mode: bool,
 }
 
 // Global state for our custom input stream
@@ -74,6 +82,7 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
 struct Flyline {
     content: Vec<u8>,
     position: usize,
+    settings: settings::Settings,
 }
 
 impl Flyline {
@@ -81,6 +90,7 @@ impl Flyline {
         Self {
             content: vec![],
             position: 0,
+            settings: settings::Settings::default(),
         }
     }
 
@@ -141,6 +151,15 @@ impl Flyline {
                         _ => eprintln!("Invalid log level: {}", level),
                     }
                 }
+
+                if parsed.load_zsh_history {
+                    self.settings.load_zsh_history = true;
+                }
+
+                if parsed.tutorial_mode {
+                    self.settings.tutorial_mode = true;
+                }
+
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
             }
             Err(e) => {
@@ -155,7 +174,7 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("---------------------- Starting app ------------------------");
 
-            self.content = match app::get_command() {
+            self.content = match app::get_command(&self.settings) {
                 app::ExitState::WithCommand(cmd) => cmd.into_bytes(),
                 app::ExitState::WithoutCommand => vec![],
             };
@@ -201,6 +220,28 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     handle: std::ptr::null(),
 };
 
+fn setup_autocompletion() {
+    let mut completion = Vec::new();
+    generate(
+        Shell::Bash,
+        &mut FlylineArgs::command(),
+        "flyline",
+        &mut completion,
+    );
+    let completion_str = match std::ffi::CString::new(completion) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Failed to create completion CString: {}", e);
+            return;
+        }
+    };
+    let from_file = c"flyline_setup_autocompletion";
+    let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
+    unsafe {
+        bash_symbols::evalstring(completion_str.into_raw(), from_file.as_ptr(), flags);
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // Returning 0 means the load fails
@@ -231,6 +272,8 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
             return FAILURE;
         }
     }
+
+    setup_autocompletion();
 
     // This is how we ensure that our custom input stream is used by bash instead of readline.
     // This code is run during `run_startup_files` so we can't modify bash_input directly.
@@ -336,7 +379,11 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
-    *FLYLINE_INSTANCE_PTR.lock().unwrap() = None;
+    let had_instance = FLYLINE_INSTANCE_PTR.lock().unwrap().take().is_some();
+
+    if !had_instance {
+        return;
+    }
 
     unsafe {
         if bash_symbols::stream_list.is_null() {

@@ -13,6 +13,7 @@ use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
+use crate::settings::Settings;
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
@@ -31,6 +32,9 @@ use std::boxed::Box;
 use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
+
+const TUTORIAL_FUZZY_SEARCH_HINT: &str =
+    "type to search, press arrow keys / page up/down to browse, enter to run the command, shift+enter to accept command for editing";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -76,7 +80,7 @@ impl AppRunningState {
     }
 }
 
-pub fn get_command() -> ExitState {
+pub fn get_command(settings: &Settings) -> ExitState {
     // if let Err(e) = color_eyre::install() {
     //     log::error!("Failed to install color_eyre panic handler: {}", e);
     // }
@@ -102,7 +106,7 @@ pub fn get_command() -> ExitState {
 
     let runtime = build_runtime();
 
-    let end_state = runtime.block_on(App::new().run(backend));
+    let end_state = runtime.block_on(App::new(settings).run(backend));
 
     restore();
 
@@ -117,7 +121,7 @@ enum ContentMode {
     TabCompletion(ActiveSuggestions),
 }
 
-struct App {
+struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
     formatted_buffer_cache: FormattedBuffer,
@@ -135,10 +139,11 @@ struct App {
     last_contents: Option<(Contents, i16)>,
     last_mouse_over_cell: Option<Tag>,
     tooltip: Option<String>,
+    settings: &'a Settings,
 }
 
-impl App {
-    fn new() -> Self {
+impl<'a> App<'a> {
+    fn new(settings: &'a Settings) -> Self {
         let user = bash_funcs::get_env_variable("USER").unwrap_or("user".into());
 
         let home_path =
@@ -157,7 +162,7 @@ impl App {
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(unfinished_from_prev_command),
             home_path: home_path,
-            history_manager: HistoryManager::new(),
+            history_manager: HistoryManager::new(settings),
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
@@ -166,6 +171,7 @@ impl App {
             last_contents: None,
             last_mouse_over_cell: None,
             tooltip: None,
+            settings,
         }
     }
 
@@ -822,8 +828,8 @@ impl App {
 
                 content.move_to_next_insertion_point(&first_graph, false);
 
-                let (vis_col, vis_row) = content.cursor_position();
-                self.cursor_animation.update_position(vis_row, vis_col);
+                let cursor_pos = content.cursor_position();
+                self.cursor_animation.update_position(cursor_pos);
                 cursor_anim_pos = Some(self.cursor_animation.get_position());
             }
 
@@ -843,13 +849,27 @@ impl App {
                 );
             }
         }
-        if let Some((animated_vis_row, animated_vis_col)) = cursor_anim_pos {
+        if let Some(anim_pos) = cursor_anim_pos {
             let cursor_style = {
                 let cursor_intensity = self.cursor_animation.get_intensity();
                 Palette::cursor_style(cursor_intensity)
             };
 
-            content.set_edit_cursor_style(animated_vis_row, animated_vis_col, cursor_style);
+            content.set_edit_cursor_style(anim_pos, cursor_style);
+        }
+
+        if self.mode.is_running()
+            && self.settings.tutorial_mode
+            && self.buffer.buffer().is_empty()
+            && matches!(self.content_mode, ContentMode::Normal)
+        {
+            content.write_span_dont_overwrite(
+                &Span::styled(
+                    "Start typing or search history with Ctrl+R",
+                    Palette::secondary_text(),
+                ),
+                Tag::HistorySuggestion,
+            );
         }
 
         if let Some((sug, suf)) = &self.history_suggestion
@@ -874,6 +894,10 @@ impl App {
                         if let Some(ts) = sug.timestamp {
                             let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
+                        }
+
+                        if self.settings.tutorial_mode {
+                            extra_info_text.push_str(" [→ or End to accept]");
                         }
 
                         content.write_span_dont_overwrite(
@@ -986,6 +1010,13 @@ impl App {
                     ),
                     Tag::FuzzySearch,
                 );
+                if self.settings.tutorial_mode {
+                    content.newline();
+                    content.write_span(
+                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::secondary_text()),
+                        Tag::FuzzySearch,
+                    );
+                }
             }
             ContentMode::Normal if self.mode.is_running() => {}
             _ => {}
