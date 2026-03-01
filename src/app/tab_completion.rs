@@ -61,6 +61,7 @@ impl App<'_> {
                     word_under_cursor,
                     &self.buffer,
                 ));
+                return;
             }
             tab_completion_context::CompType::CommandComp { mut command_word } => {
                 // This isnt just for commands like `git`, `cargo`
@@ -103,7 +104,7 @@ impl App<'_> {
                     alias.to_string() + &completion_context.context[command_word.len()..];
                 command_word = alias.split_whitespace().next().unwrap().to_string();
 
-                let poss_completions = bash_funcs::run_autocomplete_compspec(
+                let poss_completions = bash_funcs::run_programmable_completions(
                     &full_command,
                     &command_word,
                     &word_under_cursor,
@@ -111,13 +112,53 @@ impl App<'_> {
                     word_under_cursor_end,
                 );
                 match poss_completions {
-                    Ok((completions, quote_type)) => {
+                    Ok(comp_result) => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
+                        log::debug!("Completions: {:?}", comp_result);
+
+                        let suggestions = comp_result
+                            .completions
+                            .iter()
+                            .map(|sug| {
+                                let quoted = if comp_result.filename_quoting_desired {
+                                    bash_funcs::quote_function_rust(
+                                        sug,
+                                        comp_result.quote_type.unwrap_or_default(),
+                                    )
+                                } else {
+                                    sug.clone()
+                                };
+
+                                let space_to_append = if comp_result.suppress_append {
+                                    ""
+                                } else {
+                                    " "
+                                };
+
+                                let (appended, suffix) = if comp_result.filename_quoting_desired {
+                                    let expanded = self.tilde_expand_pattern(sug);
+                                    let path = Path::new(&expanded);
+                                    log::debug!("Checking if path is directory for completion result '{}': {:?} (is_dir: {})", sug, path, path.is_dir());
+
+                                    if path.is_dir() {
+                                        (format!("{}/", quoted), "")
+                                    } else {
+                                        (quoted, space_to_append)
+                                    }
+                                } else {
+                                    (quoted, space_to_append)
+                                };
+
+                                Suggestion::new(appended, "".to_string(), suffix.to_string())
+                            })
+                            .collect::<Vec<_>>();
+
                         self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                            Suggestion::from_string_vec(completions, "", " ", quote_type),
+                            suggestions,
                             word_under_cursor,
                             &self.buffer,
                         ));
+                        return;
                     }
                     Err(e) => {
                         log::debug!(
@@ -125,37 +166,18 @@ impl App<'_> {
                             full_command,
                             e
                         );
-                        let completions = self.tab_complete_current_path(word_under_cursor);
-                        self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                            completions,
-                            word_under_cursor,
-                            &self.buffer,
-                        ));
                     }
                 }
             }
-            // tab_completion::CompType::CursorOnBlank(word_under_cursor) => {
-            //     log::debug!("Cursor is on blank space, no tab completion performed");
-            //     let completions = self.tab_complete_current_path("");
-            //     self.active_tab_suggestions = ActiveSuggestions::try_new(
-            //         completions
-            //             .into_iter()
-            //             .map(|mut sug| {
-            //                 sug.prefix = " ".to_string();
-            //                 sug
-            //             })
-            //             .collect(),
-            //         word_under_cursor,
-            //         &mut self.buffer,
-            //     );
-            // }
-            tab_completion_context::CompType::EnvVariable => {
+        }
+        match completion_context.comp_type_secondary {
+            Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
                 log::debug!(
                     "Environment variable completion not yet implemented: {:?}",
                     word_under_cursor
                 );
             }
-            tab_completion_context::CompType::TildeExpansion => {
+            Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = self.tab_complete_tilde_expansion(&word_under_cursor);
                 self.try_accept_tab_completion(ActiveSuggestions::try_new(
@@ -164,7 +186,7 @@ impl App<'_> {
                     &self.buffer,
                 ));
             }
-            tab_completion_context::CompType::GlobExpansion => {
+            Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
                 let completions = self.tab_complete_glob_expansion(&word_under_cursor);
 
@@ -187,11 +209,17 @@ impl App<'_> {
                     );
                 } else {
                     self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                        Suggestion::from_string_vec(vec![completions_as_string], "", " ", None),
+                        Suggestion::from_string_vec(vec![completions_as_string], "", " "),
                         word_under_cursor,
                         &self.buffer,
                     ));
                 }
+            }
+            None => {
+                log::debug!(
+                    "No secondary completion type detected for: {:?}",
+                    word_under_cursor
+                );
             }
         }
     }
@@ -212,7 +240,7 @@ impl App<'_> {
             // No prefix matches found, fall back to fuzzy search
             log::debug!("No prefix matches for '{}', trying fuzzy search", command);
             res = self.bash_env.get_fuzzy_first_word_completions(&command);
-            return Suggestion::from_string_vec(res, "", " ", None);
+            return Suggestion::from_string_vec(res, "", " ");
         }
 
         // TODO: could prioritize based on frequency of use
@@ -221,11 +249,18 @@ impl App<'_> {
 
         let mut seen = std::collections::HashSet::new();
         res.retain(|s| seen.insert(s.clone()));
-        Suggestion::from_string_vec(res, "", " ", None)
+        Suggestion::from_string_vec(res, "", " ")
     }
 
-    fn tab_complete_current_path(&self, pattern: &str) -> Vec<Suggestion> {
-        self.tab_complete_glob_expansion(&(pattern.to_string() + "*"))
+    fn tilde_expand_pattern(&self, pattern: &str) -> String {
+        if pattern.starts_with("~/") {
+            pattern.replacen("~", &self.home_path, 1)
+        } else if pattern.starts_with('~') {
+            // This is a naive tilde expansion for other users, it just replaces ~ with /home/ which works in most cases but not all (e.g. if someone has a custom home directory or if it's a different OS). For a more robust solution, we would need to read /etc/passwd or use a crate that can do this for us.
+            pattern.replacen("~", "/home/", 1)
+        } else {
+            pattern.to_string()
+        }
     }
 
     fn expand_path_pattern(&self, pattern: &str) -> (String, Vec<(String, String)>) {
@@ -301,16 +336,10 @@ impl App<'_> {
                             format!("{}/", unexpanded),
                             "".to_string(),
                             "".to_string(),
-                            None,
                         ));
                     } else {
                         // trailing space for files
-                        results.push(Suggestion::new(
-                            unexpanded,
-                            "".to_string(),
-                            " ".to_string(),
-                            None,
-                        ));
+                        results.push(Suggestion::new(unexpanded, "".to_string(), " ".to_string()));
                     }
                 }
             }

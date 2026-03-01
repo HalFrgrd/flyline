@@ -220,6 +220,37 @@ unsafe extern "C" {
     #[link_name = "rl_completion_quote_character"]
     pub static mut rl_completion_quote_character: c_int;
 
+    /* Non-zero means that the results of the matches are to be quoted using
+    double quotes (or an application-specific quoting mechanism) if the
+    filename contains any characters in rl_filename_quote_chars.  This is
+    ALWAYS non-zero on entry, and can only be changed within a completion
+    entry finder function. */
+    // complete.c
+    #[link_name = "rl_filename_quoting_desired"]
+    pub static mut rl_filename_quoting_desired: c_int;
+
+    /* Non-zero means that the results of the matches are to be treated
+    as filenames.  This is ALWAYS zero on entry, and can only be changed
+    within a completion entry finder function. */
+    // int rl_filename_completion_desired = 0;
+    #[link_name = "rl_filename_completion_desired"]
+    pub static mut rl_filename_completion_desired: c_int;
+
+    /* If non-zero, the completion functions don't append any closing quote.
+    This is set to 0 by rl_complete_internal and may be changed by an
+    application-specific completion function. */
+    // complete.c
+    // int rl_completion_suppress_quote = 0;
+    #[link_name = "rl_completion_suppress_quote"]
+    pub static mut rl_completion_suppress_quote: c_int;
+
+    /* If non-zero, the completion functions don't append anything except a
+    possible closing quote.  This is set to 0 by rl_complete_internal and
+    may be changed by an application-specific completion function. */
+    // int rl_completion_suppress_append = 0;
+    #[link_name = "rl_completion_suppress_append"]
+    pub static mut rl_completion_suppress_append: c_int;
+
     // typedef char *rl_dequote_func_t (char *, int);
     // rl_dequote_func_t *rl_filename_dequoting_function
     pub static mut rl_filename_dequoting_function:

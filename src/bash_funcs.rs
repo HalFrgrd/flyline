@@ -274,15 +274,25 @@ pub fn get_all_shell_builtins() -> Vec<String> {
     builtins
 }
 
-pub fn run_autocomplete_compspec(
+#[derive(Debug)]
+pub struct ProgrammableCompleteReturn {
+    pub completions: Vec<String>,
+    pub quote_type: Option<QuoteType>,
+    pub filename_quoting_desired: bool,
+    pub suppress_append: bool,
+    #[allow(dead_code)]
+    pub closing_quote_desired: bool,
+}
+
+pub fn run_programmable_completions(
     full_command: &str,                // "git commi asdf" with cursor just after com
     command_word: &str,                // "git"
     word_under_cursor: &str,           // "commi"
     cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
-) -> Result<(Vec<String>, Option<QuoteType>)> {
+) -> Result<ProgrammableCompleteReturn> {
     log::debug!(
-        "run_autocomplete_compspec called with\nfull_command='{}'\ncommand_word='{}'\nword_under_cursor='{}'\ncursor_byte_pos={}\nword_under_cursor_byte_end={}",
+        "run_programmable_completions called with\nfull_command='{}'\ncommand_word='{}'\nword_under_cursor='{}'\ncursor_byte_pos={}\nword_under_cursor_byte_end={}",
         full_command,
         command_word,
         word_under_cursor,
@@ -314,6 +324,11 @@ pub fn run_autocomplete_compspec(
         bash_symbols::rl_completion_found_quote = if quote_type.is_some() { 1 } else { 0 };
         bash_symbols::rl_filename_quoting_function = Some(quoting_function_c);
         bash_symbols::rl_filename_dequoting_function = Some(dequoting_function_c);
+        // similar to set_completion_defaults
+        bash_symbols::rl_filename_completion_desired = 0;
+        bash_symbols::rl_filename_quoting_desired = 1;
+        bash_symbols::rl_completion_suppress_append = 0;
+        bash_symbols::rl_completion_suppress_quote = 0;
 
         let found: std::ffi::c_int = 0;
         let foundp = &found as *const std::ffi::c_int as *mut std::ffi::c_int;
@@ -348,7 +363,13 @@ pub fn run_autocomplete_compspec(
                 }
             }
         }
-        Ok((res, quote_type))
+        Ok(ProgrammableCompleteReturn {
+            completions: res,
+            quote_type,
+            filename_quoting_desired: bash_symbols::rl_filename_quoting_desired != 0,
+            suppress_append: bash_symbols::rl_completion_suppress_append != 0,
+            closing_quote_desired: bash_symbols::rl_completion_suppress_quote == 0,
+        })
     }
 }
 

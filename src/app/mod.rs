@@ -29,7 +29,7 @@ use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::vec;
 use timeago;
 
@@ -124,7 +124,6 @@ struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
     formatted_buffer_cache: FormattedBuffer,
-    animation_tick: u64,
     cursor_animation: CursorAnimation,
     prompt_manager: PromptManager,
     home_path: String,
@@ -157,7 +156,6 @@ impl<'a> App<'a> {
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
-            animation_tick: 0,
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(
                 unfinished_from_prev_command,
@@ -189,14 +187,14 @@ impl<'a> App<'a> {
         terminal.hide_cursor().unwrap();
 
         // Set up event stream and timers directly
-        let mut time_since_last_input = Instant::now();
+        // let mut time_since_last_input = Instant::now();
 
-        const ANIMATION_FPS_MAX: u64 = 60;
-        const ANIMATION_FPS_MIN: u64 = 5;
-        const ANIM_SWITCH_INACTIVITY_START: u128 = 10000;
-        const ANIM_SWITCH_INACTIVITY_LEN: u128 = 10000;
+        // const ANIMATION_FPS_MAX: u64 = 60;
+        // const ANIMATION_FPS_MIN: u64 = 5;
+        // const ANIM_SWITCH_INACTIVITY_START: u128 = 10000;
+        // const ANIM_SWITCH_INACTIVITY_LEN: u128 = 10000;
 
-        let anim_period = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
+        // let anim_period = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
 
         let mut redraw = true;
         let mut needs_screen_cleared = false;

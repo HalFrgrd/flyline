@@ -10,9 +10,29 @@ pub enum CompType {
         // "git commi asdf" with cursor just after com
         command_word: String, // "git"
     },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum SecondaryCompType {
     EnvVariable,    // the env variable under the cursor, with the leading $
     TildeExpansion, // the tilde under the cursor, e.g. "~us|erna"
     GlobExpansion,  // the glob pattern under the cursor, e.g. "*.rs|t"
+}
+
+impl SecondaryCompType {
+    fn from(word: &str) -> Option<Self> {
+        // TOOD test these
+        if false && word.starts_with('$') {
+            Some(Self::EnvVariable)
+        } else if false && word.starts_with('~') && !word.contains("/") {
+            Some(Self::TildeExpansion)
+        } else if word.contains('*') || word.contains('?') || word.contains('[') {
+            // TODO "*.md will match this. need some better logic here
+            Some(Self::GlobExpansion)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -22,22 +42,10 @@ pub struct CompletionContext<'a> {
     pub context_until_cursor: &'a str,
     pub word_under_cursor: &'a str,
     pub comp_type: CompType,
+    pub comp_type_secondary: Option<SecondaryCompType>,
 }
 
 impl<'a> CompletionContext<'a> {
-    fn classify_word_type(word: &str) -> Option<CompType> {
-        if false && word.starts_with('$') {
-            Some(CompType::EnvVariable)
-        } else if false && word.starts_with('~') && !word.contains("/") {
-            Some(CompType::TildeExpansion)
-        } else if word.contains('*') || word.contains('?') || word.contains('[') {
-            // TODO "*.md will match this. need some better logic here
-            Some(CompType::GlobExpansion)
-        } else {
-            None
-        }
-    }
-
     pub fn new(
         buffer: &'a str,
         context_until_cursor: &'a str,
@@ -54,20 +62,14 @@ impl<'a> CompletionContext<'a> {
         let comp_type = if context.trim().is_empty() {
             CompType::FirstWord
         } else if !context_until_cursor.chars().any(|c| c.is_whitespace()) {
-            if let Some(comp_type) = Self::classify_word_type(word_under_cursor) {
-                comp_type
-            } else {
-                CompType::FirstWord
-            }
+            CompType::FirstWord
         } else {
-            if let Some(comp_type) = Self::classify_word_type(&word_under_cursor) {
-                comp_type
-            } else {
-                CompType::CommandComp {
-                    command_word: context.split_whitespace().next().unwrap_or("").to_string(),
-                }
+            CompType::CommandComp {
+                command_word: context.split_whitespace().next().unwrap_or("").to_string(),
             }
         };
+
+        let secondary_comp_type = SecondaryCompType::from(word_under_cursor);
 
         CompletionContext {
             buffer,
@@ -75,6 +77,7 @@ impl<'a> CompletionContext<'a> {
             context,
             word_under_cursor,
             comp_type,
+            comp_type_secondary: secondary_comp_type,
         }
     }
 }
@@ -698,6 +701,7 @@ mod tests {
     fn test_completion_context_cursor_after_first_word_emoji() {
         // Cursor after first word that contains emoji
         let ctx = run_inline("🚀rock█et --verbose naïve");
+        dbg!(&ctx);
         match ctx.comp_type {
             CompType::FirstWord => {
                 assert_eq!(ctx.word_under_cursor, "🚀rocket");
