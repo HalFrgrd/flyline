@@ -6,6 +6,8 @@
 [![License](https://img.shields.io/github/license/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/blob/main/LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/releases)
 
+![Demo](demo.gif)
+
 </div>
 
 A bash plugin for modern command line editing. Flyline replaces readline to provide a code-editor-like experience and other features:
