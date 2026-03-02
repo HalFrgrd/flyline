@@ -229,13 +229,14 @@ unsafe extern "C" {
     #[link_name = "rl_filename_quoting_desired"]
     pub static mut rl_filename_quoting_desired: c_int;
 
+    // Only in more recent versions of readline / bash so not using it.
     /* Non-zero means we should apply filename-type quoting to all completions
     even if we are not otherwise treating the matches as filenames. This is
     ALWAYS zero on entry, and can only be changed within a completion entry
     finder function. */
     // int rl_full_quoting_desired = 0;
-    #[link_name = "rl_full_quoting_desired"]
-    pub static mut rl_full_quoting_desired: c_int;
+    // #[link_name = "rl_full_quoting_desired"]
+    // pub static mut rl_full_quoting_desired: c_int;
 
     /* Non-zero means that the results of the matches are to be treated
     as filenames.  This is ALWAYS zero on entry, and can only be changed
