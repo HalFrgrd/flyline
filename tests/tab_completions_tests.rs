@@ -4,6 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+// cargo build && cargo test --test tab_completions_tests -- --no-capture
+
 #[test]
 fn test_tab_completions_integration() {
     // 1. Helper to find the dynamic library
@@ -16,7 +18,9 @@ fn test_tab_completions_integration() {
     } else if release_lib.exists() {
         release_lib
     } else {
-        eprintln!("Skipping integration test: libflyline.so not found in target/debug or target/release. Please run 'cargo build' first.");
+        eprintln!(
+            "Skipping integration test: libflyline.so not found in target/debug or target/release. Please run 'cargo build' first."
+        );
         return;
     };
 
@@ -36,6 +40,14 @@ fn test_tab_completions_integration() {
     fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
     println!("Created temp dir: {:?}", temp_dir);
 
+    fs::create_dir(&temp_dir.join("foo")).unwrap();
+    fs::create_dir(&temp_dir.join("many spaces here")).unwrap();
+    fs::write(&temp_dir.join("file1.txt"), "content").unwrap();
+    fs::write(&temp_dir.join("file with spaces.txt"), "content").unwrap();
+
+    // Change working directory to temp_dir for the test
+    env::set_current_dir(&temp_dir).expect("Failed to set working directory to temp_dir");
+
     // 3. Create simple_bashrc.sh
     let bashrc_path = temp_dir.join("simple_bashrc.sh");
     // We also link/copy the completion_util.sh helper if needed?
@@ -45,13 +57,25 @@ fn test_tab_completions_integration() {
     let source_util_cmd = if completion_util_path.exists() {
         format!(" \"{}\"", completion_util_path.display())
     } else {
-        panic!("Helper script completion_util.sh not found at expected path: {:?}", completion_util_path);
+        panic!(
+            "Helper script completion_util.sh not found at expected path: {:?}",
+            completion_util_path
+        );
     };
 
     let bashrc_content = format!(
         r#"
 # Ensure we catch errors? strict mode might be too much for bashrc but helpful
 set -e 
+
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    echo "sourcing bash completion"
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
 
 echo "Loading flyline from {}"
 enable -f "{}" flyline
@@ -63,6 +87,8 @@ flyline --version
 # Run the test command provided by flyline
 echo "Running flyline --run-tab-completion-tests..."
 flyline --run-tab-completion-tests
+
+exit 0
 "#,
         lib_path.display(),
         lib_path.display(),
@@ -74,7 +100,7 @@ flyline --run-tab-completion-tests
     // 4. Run bash in PTY via script
     // We force interactive mode with -i, although running in script (PTY) usually implies it.
     let bash_cmd = format!("bash --rcfile '{}' -i", bashrc_path.display());
-    
+
     println!("Executing: script -q -c \"{}\" /dev/null", bash_cmd);
 
     let output = Command::new("script")
@@ -95,7 +121,6 @@ flyline --run-tab-completion-tests
 
     println!("--- SCRIPT OUTPUT ---\n{}", stdout);
     println!("--- SCRIPT STDERR ---\n{}", stderr);
-    
 
     // Verify success
     if !stdout.contains("FLYLINE_TEST_SUCCESS") {

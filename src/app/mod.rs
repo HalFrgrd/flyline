@@ -179,13 +179,11 @@ impl<'a> App<'a> {
         mut self,
         backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
     ) -> ExitState {
-        
-        println!("Starting flyline with settings: {:#?}", self.settings);
         if self.settings.run_tab_completion_tests {
             self.test_tab_completions();
             return ExitState::WithoutCommand;
         }
-        
+
         let options = TerminalOptions {
             viewport: Viewport::Inline(0),
         };
