@@ -132,7 +132,6 @@ pub fn get_completion_context<'a>(
                     prev_node.byte_range().start..byte_range.end
                 }
                 Some(prev_node) if matches!(prev_node.kind, TokenKind::Quote) => {
-                    // See if there is a $ inside this token preceding the cursor with no whitespace in between. If so, we want to include the $ in the completion.
                     // See if there is a $ inside this token preceding the cursor with no whitespace in between.
                     // If so, we want to include the $ in the completion.
                     // Scan backwards from cursor_byte_pos to prev_node.byte_range().start,
@@ -152,7 +151,7 @@ pub fn get_completion_context<'a>(
                         }
                     }
                     if let Some(pos) = dollar_pos {
-                        pos..byte_range.end
+                        pos..cursor_byte_pos
                     } else {
                         prev_node.byte_range().start..byte_range.end
                     }
