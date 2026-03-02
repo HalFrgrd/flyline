@@ -51,8 +51,16 @@ impl SuggestionFormatted {
 }
 
 impl Suggestion {
-    pub fn new(s: String, prefix: String, suffix: String) -> Self {
-        Suggestion { s, prefix, suffix }
+    pub fn new<S: Into<String>, P: Into<String>, X: Into<String>>(
+        s: S,
+        prefix: P,
+        suffix: X,
+    ) -> Self {
+        Suggestion {
+            s: s.into(),
+            prefix: prefix.into(),
+            suffix: suffix.into(),
+        }
     }
 
     pub fn formatted(&self) -> String {
