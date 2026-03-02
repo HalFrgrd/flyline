@@ -179,6 +179,13 @@ impl<'a> App<'a> {
         mut self,
         backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
     ) -> ExitState {
+        
+        println!("Starting flyline with settings: {:#?}", self.settings);
+        if self.settings.run_tab_completion_tests {
+            self.test_tab_completions();
+            return ExitState::WithoutCommand;
+        }
+        
         let options = TerminalOptions {
             viewport: Viewport::Inline(0),
         };
@@ -751,17 +758,6 @@ impl<'a> App<'a> {
             Some(Box::new(wordinfo_fn)),
         );
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
-    }
-
-    fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
-        match opt_suggestion.and_then(|s| s.try_accept(&mut self.buffer)) {
-            None => {
-                self.content_mode = ContentMode::Normal;
-            }
-            Some(suggestions) => {
-                self.content_mode = ContentMode::TabCompletion(suggestions);
-            }
-        }
     }
 
     fn ts_to_timeago_string_5chars(ts: u64) -> String {

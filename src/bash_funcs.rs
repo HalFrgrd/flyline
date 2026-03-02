@@ -281,8 +281,6 @@ pub struct ProgrammableCompleteReturn {
     pub filename_quoting_desired: bool,
     pub filename_completion_desired: bool,
     pub suppress_append: bool,
-    #[allow(dead_code)]
-    pub closing_quote_desired: bool,
 }
 
 pub fn run_programmable_completions(
@@ -329,7 +327,6 @@ pub fn run_programmable_completions(
         bash_symbols::rl_filename_completion_desired = 0;
         bash_symbols::rl_filename_quoting_desired = 1;
         bash_symbols::rl_completion_suppress_append = 0;
-        bash_symbols::rl_completion_suppress_quote = 0;
 
         let found: std::ffi::c_int = 0;
         let foundp = &found as *const std::ffi::c_int as *mut std::ffi::c_int;
@@ -370,7 +367,6 @@ pub fn run_programmable_completions(
             filename_quoting_desired: bash_symbols::rl_filename_quoting_desired != 0,
             filename_completion_desired: bash_symbols::rl_filename_completion_desired != 0,
             suppress_append: bash_symbols::rl_completion_suppress_append != 0,
-            closing_quote_desired: bash_symbols::rl_completion_suppress_quote == 0,
         })
     }
 }

@@ -6,4 +6,6 @@ pub struct Settings {
     pub tutorial_mode: bool,
     /// Chrono format string for FLYLINE_TIME (e.g. "%H:%M:%S"). None uses the default format.
     pub time_format: Option<String>,
+    /// Whether to run tab completion tests (used for integration testing).
+    pub run_tab_completion_tests: bool,
 }

@@ -79,6 +79,8 @@ struct FlylineArgs {
     /// Set the time format for FLYLINE_TIME using a Chrono format string (e.g. "%H:%M:%S")
     #[arg(long = "time-format", value_name = "FORMAT")]
     time_format: Option<String>,
+    #[arg(long = "run-tab-completion-tests")]
+    run_tab_completion_tests: bool,
 }
 
 // Global state for our custom input stream
@@ -202,6 +204,13 @@ impl Flyline {
 
                 if let Some(fmt) = parsed.time_format {
                     self.settings.time_format = Some(fmt);
+                }
+
+                if parsed.run_tab_completion_tests {
+                    self.settings.run_tab_completion_tests = true;
+                    println!("Running tab completion tests...");
+                    app::get_command(&self.settings);
+                    println!("Finished running tab completion tests.");
                 }
 
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int

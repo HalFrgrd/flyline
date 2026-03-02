@@ -245,13 +245,15 @@ unsafe extern "C" {
     #[link_name = "rl_filename_completion_desired"]
     pub static mut rl_filename_completion_desired: c_int;
 
+    // This isn't set by any completion script.
+    // Bash sets it in command_subst_completion_function but I can't figure out how to trigger that.
     /* If non-zero, the completion functions don't append any closing quote.
     This is set to 0 by rl_complete_internal and may be changed by an
     application-specific completion function. */
     // complete.c
     // int rl_completion_suppress_quote = 0;
-    #[link_name = "rl_completion_suppress_quote"]
-    pub static mut rl_completion_suppress_quote: c_int;
+    // #[link_name = "rl_completion_suppress_quote"]
+    // pub static mut rl_completion_suppress_quote: c_int;
 
     /* If non-zero, the completion functions don't append anything except a
     possible closing quote.  This is set to 0 by rl_complete_internal and
