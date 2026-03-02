@@ -1,5 +1,5 @@
 use crate::active_suggestions::{ActiveSuggestions, Suggestion};
-use crate::app::App;
+use crate::app::{App, ContentMode};
 use crate::bash_funcs;
 use crate::tab_completion_context;
 use glob::glob;
@@ -43,11 +43,30 @@ use std::path::Path;
 //   rl_char_is_quoted_p = char_is_quoted; // TODO  probably not necessary?
 
 impl App<'_> {
+    fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
+        match opt_suggestion.and_then(|s| s.try_accept(&mut self.buffer)) {
+            None => {
+                self.content_mode = ContentMode::Normal;
+            }
+            Some(suggestions) => {
+                self.content_mode = ContentMode::TabCompletion(suggestions);
+            }
+        }
+    }
+
     pub fn start_tab_complete(&mut self) {
         let buffer: &str = self.buffer.buffer();
         let completion_context =
             tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos());
 
+        let completions = self.gen_completions_internal(completion_context);
+        self.try_accept_tab_completion(completions);
+    }
+
+    pub fn gen_completions_internal(
+        &self,
+        completion_context: tab_completion_context::CompletionContext,
+    ) -> Option<ActiveSuggestions> {
         log::debug!("Completion context: {:?}", completion_context);
 
         let word_under_cursor = completion_context.word_under_cursor;
@@ -56,12 +75,7 @@ impl App<'_> {
             tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
                 log::debug!("First word completions: {:?}", completions);
-                self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                    completions,
-                    word_under_cursor,
-                    &self.buffer,
-                ));
-                return;
+                return ActiveSuggestions::try_new(completions, word_under_cursor, &self.buffer);
             }
             tab_completion_context::CompType::CommandComp { mut command_word } => {
                 // This isnt just for commands like `git`, `cargo`
@@ -157,12 +171,11 @@ impl App<'_> {
                             })
                             .collect::<Vec<_>>();
 
-                        self.try_accept_tab_completion(ActiveSuggestions::try_new(
+                        return ActiveSuggestions::try_new(
                             suggestions,
                             word_under_cursor,
                             &self.buffer,
-                        ));
-                        return;
+                        );
                     }
                     Err(e) => {
                         log::debug!(
@@ -184,11 +197,7 @@ impl App<'_> {
             Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = self.tab_complete_tilde_expansion(&word_under_cursor);
-                self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                    completions,
-                    word_under_cursor,
-                    &self.buffer,
-                ));
+                return ActiveSuggestions::try_new(completions, word_under_cursor, &self.buffer);
             }
             Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
@@ -212,11 +221,11 @@ impl App<'_> {
                         word_under_cursor
                     );
                 } else {
-                    self.try_accept_tab_completion(ActiveSuggestions::try_new(
+                    return ActiveSuggestions::try_new(
                         Suggestion::from_string_vec(vec![completions_as_string], "", " "),
                         word_under_cursor,
                         &self.buffer,
-                    ));
+                    );
                 }
             }
             None => {
@@ -226,6 +235,8 @@ impl App<'_> {
                 );
             }
         }
+
+        None
     }
 
     fn tab_complete_first_word(&self, command: &str) -> Vec<Suggestion> {
@@ -361,5 +372,18 @@ impl App<'_> {
         };
 
         self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
+    }
+
+    pub fn test_tab_completions(&mut self) {
+        self.buffer.replace_buffer("flyline_comp_util --suppress-quote ");
+        self.buffer.move_to_end();
+
+        let suggestions = self.gen_completions_internal(tab_completion_context::get_completion_context(
+            self.buffer.buffer(),
+            self.buffer.cursor_byte_pos(),
+        ));
+        println!("Test completions: {:?}", suggestions);
+
+        println!("Tab completion tests completed");
     }
 }
