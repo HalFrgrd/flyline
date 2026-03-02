@@ -1,9 +1,8 @@
 use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::app::{App, ContentMode};
+use crate::bash_funcs;
 use crate::tab_completion_context;
-use crate::{bash_funcs, logging};
 use glob::glob;
-use itertools::Itertools;
 use std::path::Path;
 
 /// bash programmable completions:
@@ -388,8 +387,11 @@ impl App<'_> {
         self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
     }
 
-    /// Meant for integration testing
+    #[cfg(feature = "integration-tests")]
     pub fn test_tab_completions(&mut self) {
+        use crate::logging;
+        use itertools::Itertools;
+
         log::set_max_level(log::LevelFilter::Info);
         logging::stream_logs("stderr".into()).unwrap();
 
