@@ -3,6 +3,7 @@ use crate::app::{App, ContentMode};
 use crate::bash_funcs;
 use crate::tab_completion_context;
 use glob::glob;
+use itertools::Itertools;
 use std::path::Path;
 
 /// bash programmable completions:
@@ -59,25 +60,41 @@ impl App<'_> {
         let completion_context =
             tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos());
 
-        let completions = self.gen_completions_internal(completion_context);
-        self.try_accept_tab_completion(completions);
+        let suggestions = self.gen_completions_internal(&completion_context);
+        match suggestions {
+            Some(sugs) => {
+                self.try_accept_tab_completion(ActiveSuggestions::try_new(
+                    sugs,
+                    completion_context.word_under_cursor,
+                    &self.buffer,
+                ));
+            }
+            None => {
+                log::debug!(
+                    "No suggestions generated for completion context: {:?}",
+                    completion_context
+                );
+            }
+        }
     }
 
     pub fn gen_completions_internal(
         &self,
-        completion_context: tab_completion_context::CompletionContext,
-    ) -> Option<ActiveSuggestions> {
+        completion_context: &tab_completion_context::CompletionContext,
+    ) -> Option<Vec<Suggestion>> {
         log::debug!("Completion context: {:?}", completion_context);
 
         let word_under_cursor = completion_context.word_under_cursor;
 
-        match completion_context.comp_type {
+        match &completion_context.comp_type {
             tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
                 log::debug!("First word completions: {:?}", completions);
-                return ActiveSuggestions::try_new(completions, word_under_cursor, &self.buffer);
+                return Some(completions);
             }
-            tab_completion_context::CompType::CommandComp { mut command_word } => {
+            tab_completion_context::CompType::CommandComp {
+                command_word: initial_command_word,
+            } => {
                 // This isnt just for commands like `git`, `cargo`
                 // Because we call bash_symbols::programmable_completions
                 // Bash also completes env vars (`echo $HO`) and other useful completions.
@@ -85,6 +102,7 @@ impl App<'_> {
                 // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
+                let mut command_word = initial_command_word.to_string();
                 let poss_alias = bash_funcs::find_alias(&command_word);
                 log::debug!(
                     "Checking for alias for command word '{}': {:?}",
@@ -171,11 +189,7 @@ impl App<'_> {
                             })
                             .collect::<Vec<_>>();
 
-                        return ActiveSuggestions::try_new(
-                            suggestions,
-                            word_under_cursor,
-                            &self.buffer,
-                        );
+                        return Some(suggestions);
                     }
                     Err(e) => {
                         log::debug!(
@@ -197,7 +211,7 @@ impl App<'_> {
             Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = self.tab_complete_tilde_expansion(&word_under_cursor);
-                return ActiveSuggestions::try_new(completions, word_under_cursor, &self.buffer);
+                return Some(completions);
             }
             Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
@@ -221,11 +235,11 @@ impl App<'_> {
                         word_under_cursor
                     );
                 } else {
-                    return ActiveSuggestions::try_new(
-                        Suggestion::from_string_vec(vec![completions_as_string], "", " "),
-                        word_under_cursor,
-                        &self.buffer,
-                    );
+                    return Some(Suggestion::from_string_vec(
+                        vec![completions_as_string],
+                        "",
+                        " ",
+                    ));
                 }
             }
             None => {
@@ -374,26 +388,79 @@ impl App<'_> {
         self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
     }
 
+    /// Meant for integration testing
     pub fn test_tab_completions(&mut self) {
-        self.buffer.replace_buffer("flyline_comp_util --filenames ");
-        self.buffer.move_to_end();
+        let mut run_test_on = |command: &str, expected_suggestions: &[&Suggestion]| {
+            self.buffer.replace_buffer(command);
+            self.buffer.move_to_end();
 
-        let suggestions =
-            self.gen_completions_internal(tab_completion_context::get_completion_context(
+            let comp_context = tab_completion_context::get_completion_context(
                 self.buffer.buffer(),
                 self.buffer.cursor_byte_pos(),
-            ));
-        // println!("Test completions: {:?}", suggestions);
-        match suggestions {
-            Some(sugs) => {
-                for (_, sug, _) in sugs.iter() {
-                    println!("Suggestion: '{:?}'", sug);
+            );
+            let some_suggestions = self.gen_completions_internal(&comp_context);
+
+            if some_suggestions.is_none() {
+                if expected_suggestions.is_empty() {
+                    println!(
+                        "No suggestions generated for command '{}', as expected.",
+                        command
+                    );
+                    return;
+                } else {
+                    panic!(
+                        "Expected some tab completion suggestions for command '{}', but got None",
+                        command
+                    );
                 }
             }
-            None => {
-                panic!("Expected some tab completion suggestions, but got None");
+
+            let mut suggestions = some_suggestions.unwrap();
+
+            suggestions.sort_by(|a, b| a.s.cmp(&b.s));
+
+            for pair in suggestions.iter().zip_longest(expected_suggestions.iter()) {
+                match pair {
+                    itertools::EitherOrBoth::Both(sug, &expected) => {
+                        assert_eq!(
+                            sug, expected,
+                            "For command '{}', expected suggestion '{:?}' but got '{:?}'",
+                            command, expected, sug
+                        );
+                    }
+                    itertools::EitherOrBoth::Left(sug) => {
+                        panic!(
+                            "For command '{}', got unexpected extra suggestion: '{:?}'",
+                            command, sug
+                        );
+                    }
+                    itertools::EitherOrBoth::Right(&expected) => {
+                        panic!(
+                            "For command '{}', expected suggestion '{:?}' was missing",
+                            command, expected
+                        );
+                    }
+                }
             }
-        }
+        };
+
+        run_test_on(
+            "flyline_comp_util --filenames ",
+            &[
+                &Suggestion::new(r#"file1.txt"#.to_string(), "".to_string(), " ".to_string()),
+                &Suggestion::new(
+                    r#"file\ with\ spaces.txt"#.to_string(),
+                    "".to_string(),
+                    " ".to_string(),
+                ),
+                &Suggestion::new(r#"foo/"#.to_string(), "".to_string(), "".to_string()),
+                &Suggestion::new(
+                    r#"many\ spaces\ here/"#.to_string(),
+                    "".to_string(),
+                    "".to_string(),
+                ),
+            ],
+        );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
