@@ -28,6 +28,7 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
+use unicode_width::UnicodeWidthStr;
 
 use std::time::Duration;
 use std::vec;
@@ -804,7 +805,7 @@ impl<'a> App<'a> {
         }
 
         let mut line_idx = 0;
-        let mut cursor_anim_pos = None;
+        let mut cursor_pos_maybe = None;
         self.formatted_buffer_cache
             .parts
             .iter_mut()
@@ -824,44 +825,47 @@ impl<'a> App<'a> {
                 }
             });
 
-        for part in self.formatted_buffer_cache.split_at_cursor_from() {
-            if self.mode.is_running() && part.is_cursor_on_first_grapheme {
-                let first_graph = part
-                    .span_to_use()
-                    .styled_graphemes(Style::default())
-                    .next()
-                    .unwrap_or(StyledGrapheme::new(" ", Style::default()));
+        for part in self.formatted_buffer_cache.parts.iter() {
+            let span_to_draw = if part.token.token.kind == TokenKind::Newline {
+                // For newlines, draw a space instead so that we can have a place to put the cursor
+                &Span::from(" ")
+            } else {
+                part.span_to_use()
+            };
 
-                content.move_to_next_insertion_point(&first_graph, false);
-
-                let cursor_pos = content.cursor_position();
-                self.cursor_animation.update_position(cursor_pos);
-                cursor_anim_pos = Some(self.cursor_animation.get_position());
+            let poss_cursor_anim_pos = content.write_span_dont_overwrite(
+                &span_to_draw,
+                Tag::Command(part.token.token.byte_range().start),
+                part.cursor_grapheme_idx,
+            );
+            if cursor_pos_maybe.is_none() {
+                cursor_pos_maybe = poss_cursor_anim_pos;
             }
 
             if part.token.token.kind == TokenKind::Newline {
-                content.write_span_dont_overwrite(
-                    &Span::from(" "),
-                    Tag::Command(part.token.token.byte_range().start),
-                );
                 line_idx += 1;
                 content.newline();
                 let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
                 content.write_span(&ps2, Tag::Ps2Prompt);
-            } else if !part.is_artificial_space {
-                content.write_span_dont_overwrite(
-                    &part.span_to_use(),
-                    Tag::Command(part.token.token.byte_range().start),
-                );
             }
         }
-        if let Some(anim_pos) = cursor_anim_pos {
+        if self.formatted_buffer_cache.draw_cursor_at_end {
+            let space = StyledGrapheme::new(" ", Style::default());
+            content.move_to_next_insertion_point(&space, false);
+            cursor_pos_maybe = Some(content.cursor_position());
+        }
+
+        if self.mode.is_running()
+            && let Some(cursor_pos) = cursor_pos_maybe
+        {
+            self.cursor_animation.update_position(cursor_pos);
+            let cursor_anim_pos = self.cursor_animation.get_position();
             let cursor_style = {
                 let cursor_intensity = self.cursor_animation.get_intensity();
                 Palette::cursor_style(cursor_intensity)
             };
 
-            content.set_edit_cursor_style(anim_pos, cursor_style);
+            content.set_edit_cursor_style(cursor_anim_pos, cursor_style);
         }
 
         if self.mode.is_running()
@@ -875,6 +879,7 @@ impl<'a> App<'a> {
                     Palette::secondary_text(),
                 ),
                 Tag::HistorySuggestion,
+                None,
             );
         }
 
@@ -893,6 +898,7 @@ impl<'a> App<'a> {
                     content.write_span_dont_overwrite(
                         &Span::from(line.to_owned()).style(Palette::secondary_text()),
                         Tag::HistorySuggestion,
+                        None,
                     );
 
                     if is_last {
@@ -909,6 +915,7 @@ impl<'a> App<'a> {
                         content.write_span_dont_overwrite(
                             &Span::from(extra_info_text).style(Palette::secondary_text()),
                             Tag::HistorySuggestion,
+                            None,
                         );
                     }
                 });

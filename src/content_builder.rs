@@ -89,6 +89,10 @@ impl Contents {
         self.cursor_pos
     }
 
+    pub fn set_cursor_position(&mut self, pos: Coord) {
+        self.cursor_pos = pos;
+    }
+
     pub fn increase_buf_single_row(&mut self) {
         let blank_row = vec![TaggedCell::default(); self.width as usize];
         self.buf.push(blank_row);
@@ -124,9 +128,17 @@ impl Contents {
 
     /// Write a single span at the current cursor position
     /// Will automatically wrap to the next line if necessary
-    fn write_span_internal(&mut self, span: &Span, mut tag: Tag, overwrite: bool) {
+    fn write_span_internal(
+        &mut self,
+        span: &Span,
+        mut tag: Tag,
+        overwrite: bool,
+        mark_nth_grapheme: Option<usize>,
+    ) -> Option<Coord> {
         let graphemes = span.styled_graphemes(span.style);
-        for graph in graphemes {
+        let mut marked_graph_coord = None;
+
+        for (i, graph) in graphemes.enumerate() {
             let graph_w = graph.symbol.width() as u16;
             if graph_w == 0 {
                 continue;
@@ -146,6 +158,9 @@ impl Contents {
                 );
                 continue;
             }
+            if Some(i) == mark_nth_grapheme {
+                marked_graph_coord = Some(self.cursor_pos);
+            }
 
             self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
                 .update(&graph, tag);
@@ -162,14 +177,20 @@ impl Contents {
                 tag = Tag::Command(byte_start + graph.symbol.len());
             }
         }
+        return marked_graph_coord;
     }
 
-    pub fn write_span_dont_overwrite(&mut self, span: &Span, tag: Tag) {
-        self.write_span_internal(span, tag, false);
+    pub fn write_span_dont_overwrite(
+        &mut self,
+        span: &Span,
+        tag: Tag,
+        mark_nth_grapheme: Option<usize>,
+    ) -> Option<Coord> {
+        self.write_span_internal(span, tag, false, mark_nth_grapheme)
     }
 
     pub fn write_span(&mut self, span: &Span, tag: Tag) {
-        self.write_span_internal(span, tag, true);
+        self.write_span_internal(span, tag, true, None);
     }
 
     /// Write a line at the current cursor position
