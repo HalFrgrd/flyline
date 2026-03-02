@@ -120,7 +120,7 @@ impl App<'_> {
                             .completions
                             .iter()
                             .map(|sug| {
-                                let quoted = if comp_result.full_quoting_desired || (comp_result.filename_quoting_desired && comp_result.filename_completion_desired){
+                                let quoted = if comp_result.filename_quoting_desired && comp_result.filename_completion_desired {
                                     bash_funcs::quote_function_rust(
                                         sug,
                                         comp_result.quote_type.unwrap_or_default(),

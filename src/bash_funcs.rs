@@ -280,7 +280,6 @@ pub struct ProgrammableCompleteReturn {
     pub quote_type: Option<QuoteType>,
     pub filename_quoting_desired: bool,
     pub filename_completion_desired: bool,
-    pub full_quoting_desired: bool,
     pub suppress_append: bool,
     #[allow(dead_code)]
     pub closing_quote_desired: bool,
@@ -329,7 +328,6 @@ pub fn run_programmable_completions(
         // similar to set_completion_defaults
         bash_symbols::rl_filename_completion_desired = 0;
         bash_symbols::rl_filename_quoting_desired = 1;
-        bash_symbols::rl_full_quoting_desired = 0;
         bash_symbols::rl_completion_suppress_append = 0;
         bash_symbols::rl_completion_suppress_quote = 0;
 
@@ -371,7 +369,6 @@ pub fn run_programmable_completions(
             quote_type,
             filename_quoting_desired: bash_symbols::rl_filename_quoting_desired != 0,
             filename_completion_desired: bash_symbols::rl_filename_completion_desired != 0,
-            full_quoting_desired: bash_symbols::rl_full_quoting_desired != 0,
             suppress_append: bash_symbols::rl_completion_suppress_append != 0,
             closing_quote_desired: bash_symbols::rl_completion_suppress_quote == 0,
         })
