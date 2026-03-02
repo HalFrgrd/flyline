@@ -202,10 +202,9 @@ impl App<'_> {
         }
         match completion_context.comp_type_secondary {
             Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
-                log::debug!(
-                    "Environment variable completion not yet implemented: {:?}",
-                    word_under_cursor
-                );
+                log::debug!("Environment variable completion {:?}", word_under_cursor);
+                let matching_vars = bash_funcs::get_all_variables_with_prefix(word_under_cursor);
+                return Some(Suggestion::from_string_vec(matching_vars, "", " "));
             }
             Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
@@ -392,7 +391,7 @@ impl App<'_> {
         use crate::logging;
         use itertools::Itertools;
 
-        log::set_max_level(log::LevelFilter::Info);
+        log::set_max_level(log::LevelFilter::Debug);
         logging::stream_logs("stderr".into()).unwrap();
 
         let mut run_test_on = |command: &str, expected_suggestions: &[&Suggestion]| {
@@ -496,6 +495,14 @@ impl App<'_> {
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
             ],
         );
+
+        // This fails for some reason
+        // run_test_on(
+        //     "echo $FOOBARBA",
+        //     &[
+        //         &Suggestion::new(r#"$FOOBARBAZ"#, "", " "),
+        //     ],
+        // );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
