@@ -120,7 +120,7 @@ impl App<'_> {
                             .completions
                             .iter()
                             .map(|sug| {
-                                let quoted = if comp_result.filename_quoting_desired {
+                                let quoted = if comp_result.full_quoting_desired || (comp_result.filename_quoting_desired && comp_result.filename_completion_desired){
                                     bash_funcs::quote_function_rust(
                                         sug,
                                         comp_result.quote_type.unwrap_or_default(),
@@ -132,7 +132,11 @@ impl App<'_> {
                                 let space_to_append = if comp_result.suppress_append {
                                     ""
                                 } else {
-                                    " "
+                                    if sug.ends_with(" ") {
+                                        ""
+                                    } else {
+                                        " "
+                                    }
                                 };
 
                                 let (appended, suffix) = if comp_result.filename_quoting_desired {
