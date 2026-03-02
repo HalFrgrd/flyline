@@ -1,4 +1,4 @@
-use flash::lexer::{Position, Token, TokenKind};
+use flash::lexer::TokenKind;
 use std::vec;
 
 use unicode_segmentation::UnicodeSegmentation;

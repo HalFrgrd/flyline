@@ -89,10 +89,6 @@ impl Contents {
         self.cursor_pos
     }
 
-    pub fn set_cursor_position(&mut self, pos: Coord) {
-        self.cursor_pos = pos;
-    }
-
     pub fn increase_buf_single_row(&mut self) {
         let blank_row = vec![TaggedCell::default(); self.width as usize];
         self.buf.push(blank_row);
