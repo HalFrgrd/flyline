@@ -202,10 +202,17 @@ impl App<'_> {
         }
         match completion_context.comp_type_secondary {
             Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
-                log::debug!(
-                    "Environment variable completion not yet implemented: {:?}",
+                log::debug!("Environment variable completion {:?}", word_under_cursor);
+                let matching_vars = bash_funcs::get_all_variables_with_prefix(
                     word_under_cursor
+                        .strip_prefix('$')
+                        .unwrap_or(word_under_cursor),
                 );
+                let matching_vars = matching_vars
+                    .into_iter()
+                    .map(|var| format!("${}", var))
+                    .collect();
+                return Some(Suggestion::from_string_vec(matching_vars, "", " "));
             }
             Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
