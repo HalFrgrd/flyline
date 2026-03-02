@@ -124,20 +124,44 @@ pub fn get_completion_context<'a>(
             cursor_byte_pos..cursor_byte_pos
         }
         Some((node_idx, cursor_node)) if cursor_node.kind.is_word() => {
-            // try grow to the left if there are single or double quotes
-            let mut byte_range = cursor_node.byte_range();
+            let byte_range = cursor_node.byte_range();
 
+            // try grow to the left if there are single or double quotes or $
             match context_tokens.get(node_idx.wrapping_sub(1)) {
                 Some(prev_node) if matches!(prev_node.kind, TokenKind::SingleQuote) => {
-                    byte_range = prev_node.byte_range().start..byte_range.end;
+                    prev_node.byte_range().start..byte_range.end
                 }
                 Some(prev_node) if matches!(prev_node.kind, TokenKind::Quote) => {
-                    byte_range = prev_node.byte_range().start..byte_range.end;
+                    // See if there is a $ inside this token preceding the cursor with no whitespace in between. If so, we want to include the $ in the completion.
+                    // See if there is a $ inside this token preceding the cursor with no whitespace in between.
+                    // If so, we want to include the $ in the completion.
+                    // Scan backwards from cursor_byte_pos to prev_node.byte_range().start,
+                    // looking for a '$' not separated by whitespace.
+                    let mut dollar_pos = None;
+                    for (idx, ch) in buffer[prev_node.byte_range().start..cursor_byte_pos]
+                        .char_indices()
+                        .rev()
+                    {
+                        if ch.is_whitespace() {
+                            break;
+                        }
+                        if ch == '$' {
+                            // Found a $ with no whitespace between it and the cursor
+                            dollar_pos = Some(prev_node.byte_range().start + idx);
+                            break;
+                        }
+                    }
+                    if let Some(pos) = dollar_pos {
+                        pos..byte_range.end
+                    } else {
+                        prev_node.byte_range().start..byte_range.end
+                    }
                 }
-                _ => {}
+                Some(prev_node) if prev_node.kind == TokenKind::Dollar => {
+                    prev_node.byte_range().start..byte_range.end
+                }
+                _ => byte_range,
             }
-
-            byte_range
         }
         Some((_, cursor_node)) => cursor_node.byte_range(),
         None if context_tokens.is_empty() => {
@@ -307,7 +331,7 @@ mod tests {
         let res = run_inline(r#"echo $A█"#);
         assert_eq!(res.context, "echo $A");
         assert_eq!(res.context_until_cursor, "echo $A");
-        assert_eq!(res.word_under_cursor, "A");
+        assert_eq!(res.word_under_cursor, "$A");
     }
 
     #[test]
@@ -315,7 +339,7 @@ mod tests {
         let res = run_inline(r#"echo $A█$B"#);
         assert_eq!(res.context, "echo $A$B");
         assert_eq!(res.context_until_cursor, "echo $A");
-        assert_eq!(res.word_under_cursor, "A");
+        assert_eq!(res.word_under_cursor, "$A");
 
         let res = run_inline(r#"echo $A$█B"#);
         assert_eq!(res.context, "echo $A$B");
@@ -1025,6 +1049,45 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
                 assert_eq!(ctx.word_under_cursor, "");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_env_var_completion() {
+        let ctx = run_inline("echo $HOM█");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "$HOM");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_env_var_completion_in_double_quotes() {
+        let ctx = run_inline("echo \"$HOM█\"");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "$HOM");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
+    #[test]
+    fn test_second_env_var_completion_in_double_quotes() {
+        let ctx = run_inline("echo \"$FOO$HOM█\"");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "$HOM");
             }
             _ => panic!("Expected CommandComp"),
         }
