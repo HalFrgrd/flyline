@@ -185,7 +185,7 @@ impl App<'_> {
                                     (quoted, space_to_append)
                                 };
 
-                                Suggestion::new(appended, "".to_string(), suffix.to_string())
+                                Suggestion::new(appended, "", suffix)
                             })
                             .collect::<Vec<_>>();
 
@@ -447,19 +447,31 @@ impl App<'_> {
         run_test_on(
             "flyline_comp_util --filenames ",
             &[
-                &Suggestion::new(r#"file1.txt"#.to_string(), "".to_string(), " ".to_string()),
-                &Suggestion::new(
-                    r#"file\ with\ spaces.txt"#.to_string(),
-                    "".to_string(),
-                    " ".to_string(),
-                ),
-                &Suggestion::new(r#"foo/"#.to_string(), "".to_string(), "".to_string()),
-                &Suggestion::new(
-                    r#"many\ spaces\ here/"#.to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                ),
+                &Suggestion::new(r#"file1.txt"#, "", " "),
+                &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
+                &Suggestion::new(r#"foo/"#, "", ""),
+                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
             ],
+        );
+
+        run_test_on(
+            "flyline_comp_util --quoting-desired ",
+            &[&Suggestion::new(r#"multi\ word\ option"#, "", " ")],
+        );
+
+        run_test_on(
+            "flyline_comp_util --suppress-quote ",
+            &[&Suggestion::new(r#"multi word option"#, "", " ")],
+        );
+
+        run_test_on(
+            "flyline_comp_util --dont-suppress-append ",
+            &[&Suggestion::new(r#"foo"#, "", " ")],
+        );
+
+        run_test_on(
+            "flyline_comp_util --suppress-append ",
+            &[&Suggestion::new(r#"foo"#, "", "")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
