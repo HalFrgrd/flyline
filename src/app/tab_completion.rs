@@ -139,7 +139,7 @@ impl App<'_> {
                                     }
                                 };
 
-                                let (appended, suffix) = if comp_result.filename_quoting_desired {
+                                let (appended, suffix) = if comp_result.filename_completion_desired {
                                     let expanded = self.tilde_expand_pattern(sug);
                                     let path = Path::new(&expanded);
                                     log::debug!("Checking if path is directory for completion result '{}': {:?} (is_dir: {})", sug, path, path.is_dir());
