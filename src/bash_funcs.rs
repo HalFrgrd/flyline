@@ -3,6 +3,7 @@ use crate::bash_symbols;
 use anyhow::Result;
 
 use libc::{c_char, c_int};
+use std::fmt::format;
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
 
@@ -190,10 +191,9 @@ pub fn get_all_reserved_words() -> Vec<String> {
     .collect();
 }
 
-#[allow(dead_code)]
 pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
     let mut variables = Vec::new();
-    let prefix_c_str = std::ffi::CString::new(prefix).unwrap();
+    let prefix_c_str = std::ffi::CString::new(prefix.strip_prefix('$').unwrap_or(prefix)).unwrap();
 
     unsafe {
         let var_ptr = bash_symbols::all_variables_matching_prefix(prefix_c_str.as_ptr());
@@ -209,7 +209,7 @@ pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
             }
             let c_str = std::ffi::CStr::from_ptr(ptr);
             if let Ok(str_slice) = c_str.to_str() {
-                variables.push(str_slice.to_string());
+                variables.push(format!("${}", str_slice));
             }
             offset += 1;
         }
