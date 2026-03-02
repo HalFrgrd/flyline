@@ -81,6 +81,8 @@ if ! shopt -oq posix; then
   fi
 fi
 
+export FOOBARBAZ="123"
+
 echo "Loading flyline from {}"
 enable -f "{}" flyline
 

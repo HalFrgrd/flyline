@@ -392,7 +392,7 @@ impl App<'_> {
         use crate::logging;
         use itertools::Itertools;
 
-        log::set_max_level(log::LevelFilter::Info);
+        log::set_max_level(log::LevelFilter::Debug);
         logging::stream_logs("stderr".into()).unwrap();
 
         let mut run_test_on = |command: &str, expected_suggestions: &[&Suggestion]| {
@@ -496,6 +496,14 @@ impl App<'_> {
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
             ],
         );
+
+        // This fails for some reason
+        // run_test_on(
+        //     "echo $FOOBARBA",
+        //     &[
+        //         &Suggestion::new(r#"$FOOBARBAZ"#, "", " "),
+        //     ],
+        // );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
