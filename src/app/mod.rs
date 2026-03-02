@@ -28,7 +28,6 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
-use unicode_width::UnicodeWidthStr;
 
 use std::time::Duration;
 use std::vec;
