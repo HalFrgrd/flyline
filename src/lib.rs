@@ -79,6 +79,8 @@ struct FlylineArgs {
     /// Set the time format for FLYLINE_TIME using a Chrono format string (e.g. "%H:%M:%S")
     #[arg(long = "time-format", value_name = "FORMAT")]
     time_format: Option<String>,
+    // Only for integration tests
+    #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
     run_tab_completion_tests: bool,
 }
@@ -206,6 +208,7 @@ impl Flyline {
                     self.settings.time_format = Some(fmt);
                 }
 
+                #[cfg(feature = "integration-tests")]
                 if parsed.run_tab_completion_tests {
                     self.settings.run_tab_completion_tests = true;
                     println!("Running tab completion tests...");

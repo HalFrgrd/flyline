@@ -425,7 +425,8 @@ impl App<'_> {
             for sug in &suggestions {
                 log::debug!(
                     "Generated suggestion for command '{}': '{:?}'",
-                    command, sug
+                    command,
+                    sug
                 );
             }
 

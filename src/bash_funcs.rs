@@ -338,8 +338,6 @@ pub fn run_programmable_completions(
             &foundcs as *const std::ffi::c_int as *mut std::ffi::c_int,
         );
 
-        log::debug!("foundcs: {}", foundcs);
-        println!("programmable_completions returned found={}", foundcs);
         print_copt_flags(foundcs);
 
         let rl_filename_quoting_desired_pre_call = bash_symbols::rl_filename_quoting_desired;
@@ -352,21 +350,21 @@ pub fn run_programmable_completions(
         }
 
         if rl_filename_quoting_desired_pre_call != bash_symbols::rl_filename_quoting_desired {
-            log::info!(
+            log::debug!(
                 "rl_filename_quoting_desired changed from {} to {}",
                 rl_filename_quoting_desired_pre_call,
                 bash_symbols::rl_filename_quoting_desired as i32
             );
         }
         if rl_filename_completion_desired_pre_call != bash_symbols::rl_filename_completion_desired {
-            log::info!(
+            log::debug!(
                 "rl_filename_completion_desired changed from {} to {}",
                 rl_filename_completion_desired_pre_call,
                 bash_symbols::rl_filename_completion_desired as i32
             );
         }
         if rl_completion_suppress_append_pre_call != bash_symbols::rl_completion_suppress_append {
-            log::info!(
+            log::debug!(
                 "rl_completion_suppress_append changed from {} to {}",
                 rl_completion_suppress_append_pre_call,
                 bash_symbols::rl_completion_suppress_append as i32
@@ -431,10 +429,10 @@ pub fn print_copt_flags(flag: c_int) {
         (1 << 9, "COPT_FULLQUOTE"),
     ];
 
-    println!("COMPSPEC options flags set:");
+    log::debug!("COMPSPEC options flags set for flag {}:", flag);
     for (bit, name) in &options {
         if flag & *bit != 0 {
-            println!(" - {}", name);
+            log::debug!(" - {}", name);
         }
     }
 }
