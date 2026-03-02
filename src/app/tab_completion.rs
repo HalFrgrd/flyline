@@ -375,15 +375,26 @@ impl App<'_> {
     }
 
     pub fn test_tab_completions(&mut self) {
-        self.buffer.replace_buffer("flyline_comp_util --suppress-quote ");
+        self.buffer.replace_buffer("flyline_comp_util --filenames ");
         self.buffer.move_to_end();
 
-        let suggestions = self.gen_completions_internal(tab_completion_context::get_completion_context(
-            self.buffer.buffer(),
-            self.buffer.cursor_byte_pos(),
-        ));
-        println!("Test completions: {:?}", suggestions);
+        let suggestions =
+            self.gen_completions_internal(tab_completion_context::get_completion_context(
+                self.buffer.buffer(),
+                self.buffer.cursor_byte_pos(),
+            ));
+        // println!("Test completions: {:?}", suggestions);
+        match suggestions {
+            Some(sugs) => {
+                for (_, sug, _) in sugs.iter() {
+                    println!("Suggestion: '{:?}'", sug);
+                }
+            }
+            None => {
+                panic!("Expected some tab completion suggestions, but got None");
+            }
+        }
 
-        println!("Tab completion tests completed");
+        println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
 }
