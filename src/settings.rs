@@ -7,5 +7,6 @@ pub struct Settings {
     /// Chrono format string for FLYLINE_TIME (e.g. "%H:%M:%S"). None uses the default format.
     pub time_format: Option<String>,
     /// Whether to run tab completion tests (used for integration testing).
+    #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
 }

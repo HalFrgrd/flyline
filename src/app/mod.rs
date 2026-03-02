@@ -179,6 +179,7 @@ impl<'a> App<'a> {
         mut self,
         backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
     ) -> ExitState {
+        #[cfg(feature = "integration-tests")]
         if self.settings.run_tab_completion_tests {
             self.test_tab_completions();
             return ExitState::WithoutCommand;

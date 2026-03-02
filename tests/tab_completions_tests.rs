@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-// cargo build && cargo test --test tab_completions_tests -- --no-capture
+// cargo build --features integration-tests && cargo test --test tab_completions_tests -- --no-capture
 
 #[test]
 fn test_tab_completions_integration() {
