@@ -163,7 +163,15 @@ impl Flyline {
                 log::debug!("Parsed flyline arguments: {:?}", parsed);
 
                 if parsed.version {
-                    println!("flyline version {}", env!("CARGO_PKG_VERSION"));
+                    println!(
+                        "flyline version {} ({})",
+                        env!("CARGO_PKG_VERSION"),
+                        if cfg!(debug_assertions) {
+                            "debug"
+                        } else {
+                            "release"
+                        }
+                    );
                 }
 
                 if parsed.disable_animations {
