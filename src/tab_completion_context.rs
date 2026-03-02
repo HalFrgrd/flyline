@@ -22,7 +22,7 @@ pub enum SecondaryCompType {
 impl SecondaryCompType {
     fn from(word: &str) -> Option<Self> {
         // TOOD test these
-        if false && word.starts_with('$') {
+        if word.starts_with('$') {
             Some(Self::EnvVariable)
         } else if false && word.starts_with('~') && !word.contains("/") {
             Some(Self::TildeExpansion)
@@ -1065,6 +1065,11 @@ mod tests {
             }
             _ => panic!("Expected CommandComp"),
         }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::EnvVariable)
+        );
     }
 
     #[test]
@@ -1078,6 +1083,11 @@ mod tests {
             }
             _ => panic!("Expected CommandComp"),
         }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::EnvVariable)
+        );
     }
 
     #[test]
@@ -1091,5 +1101,10 @@ mod tests {
             }
             _ => panic!("Expected CommandComp"),
         }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::EnvVariable)
+        );
     }
 }
