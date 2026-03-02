@@ -328,16 +328,51 @@ pub fn run_programmable_completions(
         bash_symbols::rl_filename_quoting_desired = 1;
         bash_symbols::rl_completion_suppress_append = 0;
 
-        let found: std::ffi::c_int = 0;
-        let foundp = &found as *const std::ffi::c_int as *mut std::ffi::c_int;
+        let foundcs: std::ffi::c_int = 0;
 
         let list_of_strs = bash_symbols::programmable_completions(
             std::ffi::CString::new(command_word).unwrap().as_ptr(),
             std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
             0,
             word_under_cursor_byte_end as std::ffi::c_int,
-            foundp,
+            &foundcs as *const std::ffi::c_int as *mut std::ffi::c_int,
         );
+
+        log::debug!("foundcs: {}", foundcs);
+        println!("programmable_completions returned found={}", foundcs);
+        print_copt_flags(foundcs);
+
+        let rl_filename_quoting_desired_pre_call = bash_symbols::rl_filename_quoting_desired;
+        let rl_filename_completion_desired_pre_call = bash_symbols::rl_filename_completion_desired;
+        let rl_completion_suppress_append_pre_call = bash_symbols::rl_completion_suppress_append;
+        if foundcs != 0 {
+            // Copying logic from bashline.c:attempt_shell_completion
+            // This is to pickup the filename desire from calls like `complete -o filenames`
+            bash_symbols::pcomp_set_readline_variables(foundcs, 1);
+        }
+
+        if rl_filename_quoting_desired_pre_call != bash_symbols::rl_filename_quoting_desired {
+            log::info!(
+                "rl_filename_quoting_desired changed from {} to {}",
+                rl_filename_quoting_desired_pre_call,
+                bash_symbols::rl_filename_quoting_desired as i32
+            );
+        }
+        if rl_filename_completion_desired_pre_call != bash_symbols::rl_filename_completion_desired {
+            log::info!(
+                "rl_filename_completion_desired changed from {} to {}",
+                rl_filename_completion_desired_pre_call,
+                bash_symbols::rl_filename_completion_desired as i32
+            );
+        }
+        if rl_completion_suppress_append_pre_call != bash_symbols::rl_completion_suppress_append {
+            log::info!(
+                "rl_completion_suppress_append changed from {} to {}",
+                rl_completion_suppress_append_pre_call,
+                bash_symbols::rl_completion_suppress_append as i32
+            );
+        }
+
         if list_of_strs.is_null() {
             return Err(anyhow::anyhow!("programmable_completions returned null"));
         }
@@ -368,6 +403,39 @@ pub fn run_programmable_completions(
             filename_completion_desired: bash_symbols::rl_filename_completion_desired != 0,
             suppress_append: bash_symbols::rl_completion_suppress_append != 0,
         })
+    }
+}
+
+pub fn print_copt_flags(flag: c_int) {
+    /* Values for COMPSPEC options field. */
+    // #define COPT_RESERVED	(1<<0)		/* reserved for other use */
+    // #define COPT_DEFAULT	(1<<1)
+    // #define COPT_FILENAMES	(1<<2)
+    // #define COPT_DIRNAMES	(1<<3)
+    // #define COPT_NOQUOTE	(1<<4)
+    // #define COPT_NOSPACE	(1<<5)
+    // #define COPT_BASHDEFAULT (1<<6)
+    // #define COPT_PLUSDIRS	(1<<7)
+    // #define COPT_NOSORT	(1<<8)
+    // #define COPT_FULLQUOTE	(1<<9)
+    let options = [
+        (1 << 0, "COPT_RESERVED"),
+        (1 << 1, "COPT_DEFAULT"),
+        (1 << 2, "COPT_FILENAMES"),
+        (1 << 3, "COPT_DIRNAMES"),
+        (1 << 4, "COPT_NOQUOTE"),
+        (1 << 5, "COPT_NOSPACE"),
+        (1 << 6, "COPT_BASHDEFAULT"),
+        (1 << 7, "COPT_PLUSDIRS"),
+        (1 << 8, "COPT_NOSORT"),
+        (1 << 9, "COPT_FULLQUOTE"),
+    ];
+
+    println!("COMPSPEC options flags set:");
+    for (bit, name) in &options {
+        if flag & *bit != 0 {
+            println!(" - {}", name);
+        }
     }
 }
 

@@ -46,7 +46,7 @@ fn test_tab_completions_integration() {
 
     fs::create_dir(&example_fs.join("foo")).unwrap();
     fs::create_dir(&example_fs.join("many spaces here")).unwrap();
-    fs::write(&example_fs.join("file1.txt"), "content").unwrap();
+    fs::write(&example_fs.join("bar.txt"), "content").unwrap();
     fs::write(&example_fs.join("file with spaces.txt"), "content").unwrap();
 
     // Change working directory to temp_dir for the test
