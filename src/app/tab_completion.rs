@@ -1,7 +1,7 @@
 use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::app::{App, ContentMode};
-use crate::bash_funcs;
 use crate::tab_completion_context;
+use crate::{bash_funcs, logging};
 use glob::glob;
 use itertools::Itertools;
 use std::path::Path;
@@ -390,6 +390,9 @@ impl App<'_> {
 
     /// Meant for integration testing
     pub fn test_tab_completions(&mut self) {
+        log::set_max_level(log::LevelFilter::Info);
+        logging::stream_logs("stderr".into()).unwrap();
+
         let mut run_test_on = |command: &str, expected_suggestions: &[&Suggestion]| {
             self.buffer.replace_buffer(command);
             self.buffer.move_to_end();
@@ -402,7 +405,7 @@ impl App<'_> {
 
             if some_suggestions.is_none() {
                 if expected_suggestions.is_empty() {
-                    println!(
+                    log::debug!(
                         "No suggestions generated for command '{}', as expected.",
                         command
                     );
@@ -418,6 +421,13 @@ impl App<'_> {
             let mut suggestions = some_suggestions.unwrap();
 
             suggestions.sort_by(|a, b| a.s.cmp(&b.s));
+
+            for sug in &suggestions {
+                log::debug!(
+                    "Generated suggestion for command '{}': '{:?}'",
+                    command, sug
+                );
+            }
 
             for pair in suggestions.iter().zip_longest(expected_suggestions.iter()) {
                 match pair {
@@ -447,7 +457,7 @@ impl App<'_> {
         run_test_on(
             "flyline_comp_util --filenames ",
             &[
-                &Suggestion::new(r#"file1.txt"#, "", " "),
+                &Suggestion::new(r#"bar.txt"#, "", " "),
                 &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
                 &Suggestion::new(r#"foo/"#, "", ""),
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
@@ -472,6 +482,16 @@ impl App<'_> {
         run_test_on(
             "flyline_comp_util --suppress-append ",
             &[&Suggestion::new(r#"foo"#, "", "")],
+        );
+
+        run_test_on(
+            "flyline_comp_util_default_filenames  ",
+            &[
+                &Suggestion::new(r#"bar.txt"#, "", " "),
+                &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
+                &Suggestion::new(r#"foo/"#, "", ""),
+                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
+            ],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");

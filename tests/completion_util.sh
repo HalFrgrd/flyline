@@ -11,12 +11,7 @@ flyline_comp_util() {
     done
 }
 
-flyline_comp_util_default_filenames() {
-    echo "flyline_comp_util_default_filenames called with args:"
-    for arg in "$@"; do
-        echo "  '$arg'"
-    done
-}
+
 
 _flyline_comp_util_completions() {
     local cur prev words cword
@@ -68,5 +63,21 @@ _flyline_comp_util_completions() {
 # Register the completion function
 complete -F _flyline_comp_util_completions flyline_comp_util
 echo "flyline_comp_util loaded. Try 'flyline_comp_util <tab>'"
-complete -F _flyline_comp_util_completions -o filenames flyline_comp_util_default_filenames
+
+
+flyline_comp_util_default_filenames() {
+    echo "flyline_comp_util_default_filenames called with args:"
+    for arg in "$@"; do
+        echo "  '$arg'"
+    done
+}
+
+_flyline_comp_util_completions_default_filenames() {
+    local cur=${COMP_WORDS[COMP_CWORD]}
+
+    mapfile -t COMPREPLY < <(compgen -f -- "$cur")
+}
+
+
+complete -F _flyline_comp_util_completions_default_filenames -o filenames flyline_comp_util_default_filenames
 echo "flyline_comp_util_default_filenames loaded. Try 'flyline_comp_util_default_filenames <tab>'"

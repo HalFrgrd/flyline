@@ -11,14 +11,14 @@ const MAX_LOGS: usize = 10_000;
 
 struct MemoryLogger {
     entries: Mutex<VecDeque<String>>,
-    stream_file: Mutex<Option<File>>,
+    stream_writer: Mutex<Option<Box<dyn Write + Send>>>,
 }
 
 impl MemoryLogger {
     fn new() -> Self {
         Self {
             entries: Mutex::new(VecDeque::with_capacity(MAX_LOGS)),
-            stream_file: Mutex::new(None),
+            stream_writer: Mutex::new(None),
         }
     }
 
@@ -35,15 +35,15 @@ impl MemoryLogger {
         entries.iter().cloned().collect()
     }
 
-    fn set_stream_file(&self, file: File) {
-        let mut stream_file = self.stream_file.lock().unwrap();
-        *stream_file = Some(file);
+    fn set_stream_writer(&self, writer: Box<dyn Write + Send>) {
+        let mut stream_writer = self.stream_writer.lock().unwrap();
+        *stream_writer = Some(writer);
     }
 
     fn write_stream_entry(&self, entry: &str) {
-        let mut stream_file = self.stream_file.lock().unwrap();
-        if let Some(file) = stream_file.as_mut() {
-            let _ = writeln!(file, "{}", entry);
+        let mut stream_writer = self.stream_writer.lock().unwrap();
+        if let Some(writer) = stream_writer.as_mut() {
+            let _ = writeln!(writer, "{}", entry);
         }
     }
 }
@@ -128,13 +128,18 @@ pub fn stream_logs(path: PathBuf) -> Result<PathBuf> {
         .ok_or_else(|| anyhow!("Logger not initialized"))?;
     let entries = logger.snapshot();
 
-    let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+    let mut writer: Box<dyn Write + Send> = if path.as_os_str() == "stderr" {
+        Box::new(std::io::stderr())
+    } else {
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
+        Box::new(file)
+    };
 
     for entry in entries {
-        writeln!(file, "{}", entry)?;
+        writeln!(writer, "{}", entry)?;
     }
 
-    logger.set_stream_file(file);
+    logger.set_stream_writer(writer);
 
     Ok(path)
 }
