@@ -1,5 +1,4 @@
-use flash::lexer::{Position, Token, TokenKind};
-use std::borrow::Cow;
+use flash::lexer::TokenKind;
 use std::vec;
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,85 +12,10 @@ use ratatui::prelude::*;
 #[derive(Debug)]
 pub struct FormattedBuffer {
     pub parts: Vec<FormattedBufferPart>,
-    pub cursor_byte_pos: usize,
-    buf_byte_length: usize,
+    pub draw_cursor_at_end: bool, // if true, it means the cursor is after all the tokens, so we should draw a cursor at the end of the line
 }
 
 impl FormattedBuffer {
-    pub fn split_at_cursor_from<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = Cow<'a, FormattedBufferPart>> {
-        let cursor_pos = self.cursor_byte_pos;
-
-        self.parts
-            .iter()
-            .flat_map(move |part| {
-                let part_start = part.token.token.byte_range().start;
-
-                let mut parts = vec![];
-                let split = if part.token.token.byte_range().contains(&cursor_pos) {
-                    part.span
-                        .content
-                        .grapheme_indices(true)
-                        .enumerate()
-                        .find_map(|(grapheme_idx, (byte_idx, _))| {
-                            if part_start + byte_idx == cursor_pos {
-                                Some((byte_idx, grapheme_idx))
-                            } else {
-                                None
-                            }
-                        })
-                } else {
-                    None
-                };
-
-                if let Some((split_byte, split_grapheme_idx)) = split {
-                    let (left, right) = part.split_at_cursor(split_byte, split_grapheme_idx);
-
-                    if let Some(left) = left {
-                        parts.push(Cow::Owned(left));
-                    }
-
-                    if let Some(right) = right {
-                        parts.push(Cow::Owned(right));
-                    }
-                } else {
-                    parts.push(Cow::Borrowed(part));
-                }
-
-                parts
-            })
-            .chain(
-                // If the cursor is at the end of the buffer, we need to add an extra part for it
-                if cursor_pos >= self.buf_byte_length {
-                    let space = " ".to_string();
-
-                    Some(Cow::Owned(FormattedBufferPart {
-                        token: AnnotatedToken {
-                            token: Token {
-                                kind: TokenKind::Whitespace(space.clone()),
-                                value: space.clone(),
-                                position: Position {
-                                    byte: cursor_pos,
-                                    line: 0,
-                                    column: 0,
-                                },
-                            },
-                            annotation: TokenAnnotation::None,
-                        },
-                        span: Span::from(space),
-                        alternative_span: None,
-                        is_cursor_on_first_grapheme: true,
-                        is_artificial_space: true,
-                        tooltip: None,
-                    }))
-                } else {
-                    None
-                }
-                .into_iter(),
-            )
-    }
-
     pub fn get_part_from_byte_pos(&self, byte_pos: usize) -> Option<&FormattedBufferPart> {
         self.parts
             .iter()
@@ -103,8 +27,7 @@ impl Default for FormattedBuffer {
     fn default() -> Self {
         FormattedBuffer {
             parts: vec![],
-            cursor_byte_pos: 0,
-            buf_byte_length: 0,
+            draw_cursor_at_end: true,
         }
     }
 }
@@ -119,8 +42,7 @@ pub struct FormattedBufferPart {
     /// positioning and other logic.
     alternative_span: Option<Span<'static>>,
     /// true means cursor is on first grapheme, (and we should draw the contents with the cursor style)
-    pub is_cursor_on_first_grapheme: bool,
-    pub is_artificial_space: bool, // whether this part is an artificial space added for cursor positioning at the end of the buffer
+    pub cursor_grapheme_idx: Option<usize>,
     pub tooltip: Option<String>,
 }
 
@@ -158,6 +80,7 @@ impl FormattedBufferPart {
         token: &AnnotatedToken,
         wordinfo_fn: &mut Option<WordInfoFn<'_>>,
         cursor_on_this_or_closing_token: bool,
+        cursor_byte_pos_in_token: Option<usize>,
     ) -> Self {
         let word_info = wordinfo_fn.as_mut().and_then(|f| f(token));
         let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
@@ -166,12 +89,43 @@ impl FormattedBufferPart {
         let style = token_to_style(&token, recognised_command, cursor_on_this_or_closing_token);
         let span = Span::styled(token.token.value.clone(), style);
 
+        let cursor_grapheme_idx = cursor_byte_pos_in_token.map(|byte_pos| {
+            log::debug!(
+                "Calculating cursor_grapheme_idx for byte_pos {} in token '{}'",
+                byte_pos,
+                token.token.value
+            );
+
+            let mut grapheme_byte_start = 0;
+            span.styled_graphemes(Style::default())
+                .enumerate()
+                .find_map(|(grapheme_idx, grapheme)| {
+                    let grapheme_byte_len = grapheme.symbol.width();
+                    let start = grapheme_byte_start;
+                    grapheme_byte_start += grapheme_byte_len;
+                    if start <= byte_pos && byte_pos < grapheme_byte_start {
+                        Some(grapheme_idx)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0) // if byte_pos is out of bounds, just put the cursor on the first grapheme
+        });
+
+        if let Some(idx) = cursor_grapheme_idx {
+            log::debug!(
+                "Cursor byte position {} corresponds to grapheme index {} in token '{}'",
+                cursor_byte_pos_in_token.unwrap_or(0),
+                idx,
+                token.token.value
+            );
+        }
+
         Self {
             token: token.clone(),
             span,
             alternative_span: None,
-            is_cursor_on_first_grapheme: false,
-            is_artificial_space: false,
+            cursor_grapheme_idx: cursor_grapheme_idx,
             tooltip,
         }
     }
@@ -203,90 +157,6 @@ impl FormattedBufferPart {
 
         self.alternative_span = Some(new_alt);
         Ok(())
-    }
-
-    pub fn split_at_cursor(
-        &self,
-        split_byte: usize,
-        split_grapheme_idx: usize,
-    ) -> (Option<Self>, Option<Self>) {
-        let build_alt = |alt_span: &Span<'static>, split_idx: usize| {
-            let mut left = String::new();
-            let mut right = String::new();
-            for (idx, g) in alt_span.content.graphemes(true).enumerate() {
-                if idx < split_idx {
-                    left.push_str(g);
-                } else {
-                    right.push_str(g);
-                }
-            }
-            (
-                if left.is_empty() {
-                    None
-                } else {
-                    Some(Span::styled(left, alt_span.style))
-                },
-                if right.is_empty() {
-                    None
-                } else {
-                    Some(Span::styled(right, alt_span.style))
-                },
-            )
-        };
-
-        let left_text = &self.span.content[..split_byte];
-        let right_text = &self.span.content[split_byte..];
-
-        let (alt_left, alt_right) = match self.alternative_span.as_ref() {
-            Some(alt_span) => build_alt(alt_span, split_grapheme_idx),
-            None => (None, None),
-        };
-
-        let left = if !left_text.is_empty() {
-            Some(Self {
-                token: AnnotatedToken {
-                    token: Token {
-                        kind: self.token.token.kind.clone(),
-                        value: left_text.to_string(),
-                        position: self.token.token.position,
-                    },
-                    annotation: self.token.annotation.clone(),
-                },
-                span: Span::styled(left_text.to_string(), self.span.style),
-                alternative_span: alt_left,
-                is_cursor_on_first_grapheme: false,
-                is_artificial_space: self.is_artificial_space,
-                tooltip: self.tooltip.clone(),
-            })
-        } else {
-            None
-        };
-
-        let right = if !right_text.is_empty() {
-            Some(Self {
-                token: AnnotatedToken {
-                    token: Token {
-                        kind: self.token.token.kind.clone(),
-                        value: right_text.to_string(),
-                        position: Position {
-                            byte: self.token.token.position.byte + split_byte,
-                            line: self.token.token.position.line,
-                            column: self.token.token.position.column + split_grapheme_idx,
-                        },
-                    },
-                    annotation: self.token.annotation.clone(),
-                },
-                span: Span::styled(right_text.to_string(), self.span.style),
-                alternative_span: alt_right,
-                is_cursor_on_first_grapheme: true,
-                is_artificial_space: self.is_artificial_space,
-                tooltip: self.tooltip.clone(),
-            })
-        } else {
-            None
-        };
-
-        (left, right)
     }
 }
 
@@ -340,16 +210,17 @@ pub fn format_buffer<'a>(
         .map(|(idx, tok)| {
             let highlight = app_is_running
                 && (strict_highlight[idx] || (use_inclusive && inclusive_highlight[idx]));
-
-            FormattedBufferPart::new(tok, &mut wordinfo_fn, highlight)
+            let cursor_pos_in_token = if tok.token.byte_range().contains(&cursor_byte_pos) {
+                Some(cursor_byte_pos - tok.token.byte_range().start)
+            } else {
+                None
+            };
+            FormattedBufferPart::new(tok, &mut wordinfo_fn, highlight, cursor_pos_in_token)
         })
         .collect();
 
-    let cursor_pos = cursor_byte_pos;
-    let buf_byte_length = buffer_byte_length;
     FormattedBuffer {
         parts: spans,
-        cursor_byte_pos: cursor_pos,
-        buf_byte_length,
+        draw_cursor_at_end: cursor_byte_pos >= buffer_byte_length,
     }
 }
