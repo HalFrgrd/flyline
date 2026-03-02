@@ -27,14 +27,9 @@ _flyline_comp_util_completions() {
     
     case "$prev" in
         --filenames)
-            # Demonstrates rl_filename_completion_desired
-            # Setting this tells readline (and flyline) to treat matches as filenames
-            # which usually implies quoting them if they contain special chars.
             compopt -o filenames
-            # no default:    dirs with slash and no space, files with space. doesnt work with files with spaces in name (considers them separate values)
-            # defualt files: dirs with slash and no space, files with space. doesnt work with files with spaces in name (considers them separate values)
-
-            COMPREPLY=( $(compgen -f -- "$cur") )
+            # Use mapfile to read compgen output into an array, preserving spaces in filenames
+            mapfile -t COMPREPLY < <(compgen -f -- "$cur")
             return 0
             ;;
             

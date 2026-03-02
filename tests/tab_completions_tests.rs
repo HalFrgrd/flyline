@@ -40,13 +40,17 @@ fn test_tab_completions_integration() {
     fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
     println!("Created temp dir: {:?}", temp_dir);
 
-    fs::create_dir(&temp_dir.join("foo")).unwrap();
-    fs::create_dir(&temp_dir.join("many spaces here")).unwrap();
-    fs::write(&temp_dir.join("file1.txt"), "content").unwrap();
-    fs::write(&temp_dir.join("file with spaces.txt"), "content").unwrap();
+    // fs::create_dir(&temp_dir)
+    let example_fs = temp_dir.join("example_fs");
+    fs::create_dir(&example_fs).unwrap();
+
+    fs::create_dir(&example_fs.join("foo")).unwrap();
+    fs::create_dir(&example_fs.join("many spaces here")).unwrap();
+    fs::write(&example_fs.join("file1.txt"), "content").unwrap();
+    fs::write(&example_fs.join("file with spaces.txt"), "content").unwrap();
 
     // Change working directory to temp_dir for the test
-    env::set_current_dir(&temp_dir).expect("Failed to set working directory to temp_dir");
+    env::set_current_dir(&example_fs).expect("Failed to set working directory to example_fs");
 
     // 3. Create simple_bashrc.sh
     let bashrc_path = temp_dir.join("simple_bashrc.sh");
