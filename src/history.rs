@@ -364,12 +364,31 @@ impl HistoryManager {
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct HistoryEntryFormatted {
     pub entry: HistoryEntry,
     pub score: i64,
     pub match_indices: Vec<usize>,
     pub command_spans: Option<Vec<Line<'static>>>,
     pub command_spans_selected: Option<Vec<Line<'static>>>,
+}
+
+impl std::cmp::Eq for HistoryEntryFormatted {}
+impl std::cmp::PartialEq for HistoryEntryFormatted {
+    fn eq(&self, other: &Self) -> bool {
+        self.score == other.score
+    }
+}
+
+impl std::cmp::Ord for HistoryEntryFormatted {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.score.cmp(&self.score)
+    }
+}
+impl std::cmp::PartialOrd for HistoryEntryFormatted {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(other.score.cmp(&self.score))
+    }
 }
 
 impl HistoryEntryFormatted {
@@ -424,8 +443,39 @@ impl FuzzyHistorySearch {
     const TIME_BUDGET_MS: u64 = 20;
     // Number of visible rows in the fuzzy history search list
     const VISIBLE_CACHE_SIZE: usize = 18;
-    // // Number of recent cache entries to check for duplicates before inserting
-    // const DUPLICATE_CHECK_WINDOW: usize = 50;
+    // Number of recent cache entries to check for duplicates before inserting
+    const DUPLICATE_CHECK_WINDOW: usize = 50;
+
+    fn merge_sort_and_window_dedup(
+        &mut self,
+        sorted_new_cache_entries: Vec<HistoryEntryFormatted>,
+    ) {
+        if sorted_new_cache_entries.is_empty() {
+            return;
+        }
+
+        let old_cache = std::mem::take(&mut self.cache);
+        self.cache = old_cache
+            .into_iter()
+            .merge(sorted_new_cache_entries.into_iter())
+            .collect();
+
+        let mut deduped: Vec<HistoryEntryFormatted> = Vec::with_capacity(self.cache.len());
+        for entry in self.cache.drain(..) {
+            let entry_trimmed = entry.entry.command.trim();
+            let is_duplicate = deduped
+                .iter()
+                .rev()
+                .take(Self::DUPLICATE_CHECK_WINDOW)
+                .any(|e| e.entry.command.trim() == entry_trimmed);
+
+            if !is_duplicate {
+                deduped.push(entry);
+            }
+        }
+
+        self.cache = deduped;
+    }
 
     fn new() -> Self {
         FuzzyHistorySearch {
@@ -571,14 +621,8 @@ impl FuzzyHistorySearch {
             self.global_index += 1;
         }
 
-        new_cache_entries.sort_by_key(|e| -e.score);
-        let old_cache = std::mem::take(&mut self.cache);
-        self.cache = old_cache
-            .into_iter()
-            .merge_by(new_cache_entries, |x, y| x.score >= y.score)
-            .collect();
-        self.cache
-            .dedup_by(|x, y| x.entry.command.trim() == y.entry.command.trim());
+        new_cache_entries.sort();
+        self.merge_sort_and_window_dedup(new_cache_entries);
 
         if start_index != self.global_index {
             let duration = start.elapsed();
@@ -665,5 +709,75 @@ git status
         assert_eq!(entries[1].timestamp, Some(1625078460));
         assert_eq!(entries[2].command, "cd /tmp");
         assert_eq!(entries[2].timestamp, Some(1625078520));
+    }
+
+    #[test]
+    fn test_merge_sort_and_window_dedup_respects_window() {
+        let mut search = FuzzyHistorySearch::new();
+
+        // Pre-populate cache with a high-score "echo hi".
+        search.cache.push(HistoryEntryFormatted::new(
+            HistoryEntry {
+                timestamp: None,
+                index: 0,
+                command: "echo hi".to_string(),
+            },
+            100,
+            vec![],
+        ));
+
+        // Add entries sorted by score after merge. We place another "echo hi" far enough away
+        // (more than DUPLICATE_CHECK_WINDOW ranks lower) so it should NOT be removed.
+        let mut new_entries = Vec::new();
+
+        // Many unique commands that will sit between the two duplicates.
+        for i in 0..(FuzzyHistorySearch::DUPLICATE_CHECK_WINDOW + 5) {
+            new_entries.push(HistoryEntryFormatted::new(
+                HistoryEntry {
+                    timestamp: None,
+                    index: i + 1,
+                    command: format!("cmd_{i}"),
+                },
+                99 - (i as i64),
+                vec![],
+            ));
+        }
+
+        // Lower-score duplicate; should survive because it's outside the window.
+        new_entries.push(HistoryEntryFormatted::new(
+            HistoryEntry {
+                timestamp: None,
+                index: 999,
+                command: "  echo hi  ".to_string(),
+            },
+            1,
+            vec![],
+        ));
+
+        // Another near-duplicate (close in rank): should be removed.
+        new_entries.push(HistoryEntryFormatted::new(
+            HistoryEntry {
+                timestamp: None,
+                index: 1000,
+                command: "echo hi".to_string(),
+            },
+            98,
+            vec![],
+        ));
+
+        new_entries.sort();
+
+        search.merge_sort_and_window_dedup(new_entries);
+
+        // After sorting/merging we should have exactly 2 "echo hi" entries:
+        // - the original high-score one
+        // - the far-away low-score one (outside dedup window)
+        let echo_hi_count = search
+            .cache
+            .iter()
+            .filter(|e| e.entry.command.trim() == "echo hi")
+            .count();
+
+        assert_eq!(echo_hi_count, 2);
     }
 }
