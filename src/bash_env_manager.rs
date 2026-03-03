@@ -1,6 +1,6 @@
 use crate::bash_funcs;
-use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::skim::SkimMatcherV2;
+use skim::fuzzy_matcher::FuzzyMatcher;
+use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -73,7 +73,7 @@ impl BashEnvManager {
             return vec![];
         }
 
-        let matcher = SkimMatcherV2::default().smart_case();
+        let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
         let mut scored: Vec<(i64, String)> = self
             .defined_aliases
             .iter()

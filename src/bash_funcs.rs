@@ -3,7 +3,6 @@ use crate::bash_symbols;
 use anyhow::Result;
 
 use libc::{c_char, c_int};
-use std::fmt::format;
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
 

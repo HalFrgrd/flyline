@@ -953,26 +953,29 @@ impl<'a> App<'a> {
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
                     .get_fuzzy_search_results(self.buffer.buffer());
+
+                let num_digits_for_index = num_searched.to_string().len();
+                let num_digits_for_score = 3;
                 for (row_idx, formatted_entry) in fuzzy_results.iter_mut().enumerate() {
                     let entry = &formatted_entry.entry;
                     let mut spans = vec![];
 
                     spans.push(Span::styled(
-                        format!("{} ", entry.index + 1),
+                        format!("{:>num_digits_for_index$} ", entry.index + 1),
                         Palette::secondary_text(),
                     ));
 
                     spans.push(Span::styled(
-                        format!("{} ", formatted_entry.score),
+                        format!("{:>num_digits_for_score$} ", formatted_entry.score),
                         Palette::secondary_text(),
                     ));
 
                     let timeago_str = entry
                         .timestamp
-                        .map(|ts| Self::ts_to_timeago_string_5chars(ts));
-                    if let Some(timeago) = timeago_str {
-                        spans.push(Span::styled(timeago, Palette::secondary_text()));
-                    }
+                        .map(|ts| Self::ts_to_timeago_string_5chars(ts))
+                        .unwrap_or("     ".to_string());
+
+                    spans.push(Span::styled(timeago_str, Palette::secondary_text()));
 
                     let is_selected = fuzzy_search_index == row_idx;
                     if is_selected {
