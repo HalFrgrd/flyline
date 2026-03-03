@@ -273,17 +273,17 @@ pub fn get_all_shell_builtins() -> Vec<String> {
     builtins
 }
 
-    /* Values for COMPSPEC options field. */
-    // #define COPT_RESERVED	(1<<0)		/* reserved for other use */
-    // #define COPT_DEFAULT	(1<<1)
-    // #define COPT_FILENAMES	(1<<2)
-    // #define COPT_DIRNAMES	(1<<3)
-    // #define COPT_NOQUOTE	(1<<4)
-    // #define COPT_NOSPACE	(1<<5)
-    // #define COPT_BASHDEFAULT (1<<6)
-    // #define COPT_PLUSDIRS	(1<<7)
-    // #define COPT_NOSORT	(1<<8)
-    // #define COPT_FULLQUOTE	(1<<9)
+/* Values for COMPSPEC options field. */
+// #define COPT_RESERVED	(1<<0)		/* reserved for other use */
+// #define COPT_DEFAULT	(1<<1)
+// #define COPT_FILENAMES	(1<<2)
+// #define COPT_DIRNAMES	(1<<3)
+// #define COPT_NOQUOTE	(1<<4)
+// #define COPT_NOSPACE	(1<<5)
+// #define COPT_BASHDEFAULT (1<<6)
+// #define COPT_PLUSDIRS	(1<<7)
+// #define COPT_NOSORT	(1<<8)
+// #define COPT_FULLQUOTE	(1<<9)
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CompspecOption {
     Reserved = 1 << 0,
@@ -297,7 +297,6 @@ pub enum CompspecOption {
     NoSort = 1 << 8,
     FullQuote = 1 << 9,
 }
-
 
 #[derive(Debug)]
 pub struct ProgrammableCompleteReturn {
@@ -316,8 +315,12 @@ pub struct ProgrammableCompleteReturn {
 }
 
 impl ProgrammableCompleteReturn {
-
-    pub fn from(completions: Vec<String>, quote_type: Option<QuoteType>, foundcs: c_int, append_char: i32) -> Self {
+    pub fn from(
+        completions: Vec<String>,
+        quote_type: Option<QuoteType>,
+        foundcs: c_int,
+        append_char: i32,
+    ) -> Self {
         Self {
             completions,
             quote_type,
@@ -330,7 +333,6 @@ impl ProgrammableCompleteReturn {
             nosort_desired: foundcs & (CompspecOption::NoSort as c_int) != 0,
         }
     }
-
 }
 
 pub fn run_programmable_completions(
@@ -378,6 +380,7 @@ pub fn run_programmable_completions(
         bash_symbols::rl_filename_quoting_desired = 1;
         bash_symbols::rl_completion_suppress_append = 0;
         bash_symbols::rl_completion_append_character = ' ' as c_int;
+        bash_symbols::rl_sort_completion_matches = 1;
 
         let foundcs: std::ffi::c_int = 0;
 
@@ -390,7 +393,6 @@ pub fn run_programmable_completions(
         );
 
         print_copt_flags(foundcs);
-
 
         if foundcs != 0 {
             // Copying logic from bashline.c:attempt_shell_completion
@@ -413,12 +415,16 @@ pub fn run_programmable_completions(
             if let Ok(str_slice) = c_str.to_str() {
                 log::debug!("programmable_completions result[{}]: {}", i, str_slice);
                 res.push(str_slice.to_string());
-                
             }
         }
         // Readline also deplucates the results
         res.dedup(); // TODO does this need sorting?
-        Ok(ProgrammableCompleteReturn::from(res, quote_type, foundcs, bash_symbols::rl_completion_append_character))
+        Ok(ProgrammableCompleteReturn::from(
+            res,
+            quote_type,
+            foundcs,
+            bash_symbols::rl_completion_append_character,
+        ))
     }
 }
 
@@ -442,16 +448,14 @@ pub fn print_copt_flags(flag: c_int) {
     }
 }
 
-pub fn run_bash_default_completion (
+pub fn run_bash_default_completion(
     full_command: &str,                // "git commi asdf" with cursor just after com
     word_under_cursor: &str,           // "commi"
     cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
     word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
-    quote_type: Option<QuoteType>,
+    prev_prog_comp: &ProgrammableCompleteReturn,
 ) -> Result<ProgrammableCompleteReturn> {
-
     unsafe {
-
         bash_symbols::rl_line_buffer = std::ffi::CString::new(full_command).unwrap().into_raw(); // git commi asdf
         bash_symbols::rl_point = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
         bash_symbols::rl_readline_state |= 0x00004000; // RL_STATE_COMPLETING
@@ -461,28 +465,41 @@ pub fn run_bash_default_completion (
             std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
             word_under_cursor_byte_end.saturating_sub(word_under_cursor.len()) as std::ffi::c_int,
             word_under_cursor_byte_end as std::ffi::c_int,
-            quote_type.unwrap_or_default().into_byte() as std::ffi::c_int,
+            prev_prog_comp.quote_type.unwrap_or_default().into_byte() as std::ffi::c_int,
             in_command_position as std::ffi::c_int,
         );
 
         if bash_default_completions.is_null() {
             return Err(anyhow::anyhow!("bash_default_completion returned null"));
         }
-        
+
         let mut res: Vec<String> = Vec::new();
         for i in 0.. {
             let ptr = *bash_default_completions.add(i as usize);
             if ptr.is_null() {
-                break; 
+                break;
             }
             let c_str = std::ffi::CStr::from_ptr(ptr);
             if let Ok(str_slice) = c_str.to_str() {
                 log::debug!("bash_default_completion result[{}]: {}", i, str_slice);
-                res.push(str_slice.to_string());    
+                res.push(str_slice.to_string());
             }
         }
         res.dedup();
-        Ok(ProgrammableCompleteReturn::from(res, quote_type, foundcs, bash_symbols::rl_completion_append_character))
+        let ret = ProgrammableCompleteReturn {
+            completions: res,
+            quote_type: prev_prog_comp.quote_type,
+            readline_default_fallback_desired: prev_prog_comp.readline_default_fallback_desired,
+            filename_quoting_desired: prev_prog_comp.filename_quoting_desired,
+            filename_completion_desired: bash_symbols::rl_filename_completion_desired != 0,
+            no_suffix_desired: bash_symbols::rl_completion_suppress_append != 0,
+            suffix_character: char::from_u32(bash_symbols::rl_completion_append_character as u32)
+                .unwrap_or(' '),
+            bash_default_fallback_desired: prev_prog_comp.bash_default_fallback_desired,
+            nosort_desired: bash_symbols::rl_sort_completion_matches != 0,
+        };
+
+        Ok(ret)
     }
 }
 

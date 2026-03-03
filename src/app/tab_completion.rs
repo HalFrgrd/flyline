@@ -77,7 +77,9 @@ impl App<'_> {
         }
     }
 
-    fn post_process_completions(&self, completions: Vec<String>, 
+    fn post_process_completions(
+        &self,
+        completions: Vec<String>,
         filename_quoting_desired: bool,
         filename_completion_desired: bool,
         no_space_suffix_desired: bool,
@@ -190,50 +192,11 @@ impl App<'_> {
                     word_under_cursor_end,
                 );
 
-                if let Ok(comp_result) = poss_completions && !comp_result.completions.is_empty() {
-                    log::debug!("Bash autocomplete results for command: {}", full_command);
-                    log::debug!("Completions: {:?}", comp_result);
-
-                    let suggestions = self.post_process_completions(
-                        comp_result.completions,
-                        comp_result.filename_quoting_desired,
-                        comp_result.filename_completion_desired,
-                        comp_result.no_suffix_desired,
-                        comp_result.quote_type,
-                    );
-                    return Some(suggestions);
-                }
-
-                if let Err(e) = &poss_completions {
-                    log::error!(
-                        "Error during bash programmable completion for command '{}': {}",
-                        full_command, e
-                    );
-                }
-
-
-                log::debug!(
-                    "Bash autocompletion returned no results for command: {}.",
-                    full_command
-                );
-
-                if let Ok(comp_result) = &poss_completions && comp_result.bash_default_fallback_desired {
-                    log::debug!(
-                        "Bash autocompletion requested fallback to default completion for command: {}.",
-                        full_command
-                    );
-                    let bash_default_completions = bash_funcs::run_bash_default_completion(
-                        &full_command,
-                        &word_under_cursor,
-                        cursor_byte_pos,
-                        word_under_cursor_end,
-                        comp_result.quote_type,
-                    );
-
-                    if let Ok(default_comp_result) = bash_default_completions && !default_comp_result.completions.is_empty() {
-                        log::debug!("Bash default completion results for command: {}", full_command);
-                        log::debug!("Completions: {:?}", default_comp_result);
-
+                match poss_completions {
+                    Ok(comp_result) if !comp_result.completions.is_empty() => {
+                        log::debug!("Bash autocomplete results for command: {}", full_command);
+                        log::debug!("Completions: {:?}", comp_result);
+    
                         let suggestions = self.post_process_completions(
                             comp_result.completions,
                             comp_result.filename_quoting_desired,
@@ -243,8 +206,46 @@ impl App<'_> {
                         );
                         return Some(suggestions);
                     }
+
+                    Ok(comp_result) if comp_result.bash_default_fallback_desired => {
+                        log::debug!(
+                            "Bash autocompletion requested fallback to default completion for command: {}.",
+                            full_command
+                        );
+                        let bash_default_completions = bash_funcs::run_bash_default_completion(
+                            &full_command,
+                            &word_under_cursor,
+                            cursor_byte_pos,
+                            word_under_cursor_end,
+                            &comp_result,
+                        );
+
+                        if let Ok(default_comp_result) = bash_default_completions
+                            && !default_comp_result.completions.is_empty()
+                        {
+                            log::debug!(
+                                "Bash default completion results for command: {}",
+                                full_command
+                            );
+                            log::debug!("Completions: {:?}", default_comp_result);
+
+                            let suggestions = self.post_process_completions(
+                                default_comp_result.completions,
+                                default_comp_result.filename_quoting_desired,
+                                default_comp_result.filename_completion_desired,
+                                default_comp_result.no_suffix_desired,
+                                default_comp_result.quote_type,
+                            );
+                            return Some(suggestions);
+                        }
+                    }
+                    _ => {
+                        log::debug!(
+                            "No bash programmable completions found for command: {}. Falling back to default completion.",
+                            full_command
+                        );
+                    }
                 }
-                    
 
             }
         }
