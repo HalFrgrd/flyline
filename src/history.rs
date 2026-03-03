@@ -4,11 +4,10 @@ use std::vec;
 use crate::bash_symbols;
 use crate::palette::Palette;
 use crate::settings::Settings;
-use skim::fuzzy_matcher::FuzzyMatcher;
-use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use itertools::Itertools;
 use ratatui::text::Line;
-
+use skim::fuzzy_matcher::FuzzyMatcher;
+use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -562,7 +561,11 @@ impl FuzzyHistorySearch {
             {
                 if score >= score_threshold {
                     // Before inserting, check if any of the 50 latest cache entries match after trimming
-                    new_cache_entries.push(HistoryEntryFormatted::new(entry.clone(), score, indices));
+                    new_cache_entries.push(HistoryEntryFormatted::new(
+                        entry.clone(),
+                        score,
+                        indices,
+                    ));
                 }
             }
             self.global_index += 1;
@@ -570,9 +573,12 @@ impl FuzzyHistorySearch {
 
         new_cache_entries.sort_by_key(|e| -e.score);
         let old_cache = std::mem::take(&mut self.cache);
-        self.cache = old_cache.into_iter().merge_by(new_cache_entries, |x, y| x.score >= y.score).collect();
-        self.cache.dedup_by(|x, y| x.entry.command.trim() == y.entry.command.trim());
-        
+        self.cache = old_cache
+            .into_iter()
+            .merge_by(new_cache_entries, |x, y| x.score >= y.score)
+            .collect();
+        self.cache
+            .dedup_by(|x, y| x.entry.command.trim() == y.entry.command.trim());
 
         if start_index != self.global_index {
             let duration = start.elapsed();

@@ -1,8 +1,8 @@
 use crate::palette::Palette;
 use crate::text_buffer::{SubString, TextBuffer};
+use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
-use ratatui::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
