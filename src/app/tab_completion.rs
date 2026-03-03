@@ -77,6 +77,53 @@ impl App<'_> {
         }
     }
 
+    fn post_process_completions(&self, completions: Vec<String>, 
+        filename_quoting_desired: bool,
+        filename_completion_desired: bool,
+        no_space_suffix_desired: bool,
+        quote_type: Option<bash_funcs::QuoteType>,
+    ) -> Vec<Suggestion> {
+        completions
+        .iter()
+        .map(|sug| {
+            let quoted = if filename_quoting_desired && filename_completion_desired {
+                bash_funcs::quote_function_rust(
+                    sug,
+                    quote_type.unwrap_or_default(),
+                )
+            } else {
+                sug.clone()
+            };
+
+            let space_to_append = if no_space_suffix_desired {
+                ""
+            } else {
+                if sug.ends_with(" ") {
+                    ""
+                } else {
+                    " "
+                }
+            };
+
+            let (appended, suffix) = if filename_completion_desired {
+                let expanded = self.tilde_expand_pattern(sug);
+                let path = Path::new(&expanded);
+                log::debug!("Checking if path is directory for completion result '{}': {:?} (is_dir: {})", sug, path, path.is_dir());
+
+                if path.is_dir() {
+                    (format!("{}/", quoted), "")
+                } else {
+                    (quoted, space_to_append)
+                }
+            } else {
+                (quoted, space_to_append)
+            };
+
+            Suggestion::new(appended, "", suffix)
+        })
+        .collect::<Vec<_>>()
+    }
+
     pub fn gen_completions_internal(
         &self,
         completion_context: &tab_completion_context::CompletionContext,
@@ -142,62 +189,63 @@ impl App<'_> {
                     cursor_byte_pos,
                     word_under_cursor_end,
                 );
-                match poss_completions {
-                    Ok(comp_result) => {
-                        log::debug!("Bash autocomplete results for command: {}", full_command);
-                        log::debug!("Completions: {:?}", comp_result);
 
-                        let suggestions = comp_result
-                            .completions
-                            .iter()
-                            .map(|sug| {
-                                let quoted = if comp_result.filename_quoting_desired && comp_result.filename_completion_desired {
-                                    bash_funcs::quote_function_rust(
-                                        sug,
-                                        comp_result.quote_type.unwrap_or_default(),
-                                    )
-                                } else {
-                                    sug.clone()
-                                };
+                if let Ok(comp_result) = poss_completions && !comp_result.completions.is_empty() {
+                    log::debug!("Bash autocomplete results for command: {}", full_command);
+                    log::debug!("Completions: {:?}", comp_result);
 
-                                let space_to_append = if comp_result.suppress_append {
-                                    ""
-                                } else {
-                                    if sug.ends_with(" ") {
-                                        ""
-                                    } else {
-                                        " "
-                                    }
-                                };
+                    let suggestions = self.post_process_completions(
+                        comp_result.completions,
+                        comp_result.filename_quoting_desired,
+                        comp_result.filename_completion_desired,
+                        comp_result.no_suffix_desired,
+                        comp_result.quote_type,
+                    );
+                    return Some(suggestions);
+                }
 
-                                let (appended, suffix) = if comp_result.filename_completion_desired {
-                                    let expanded = self.tilde_expand_pattern(sug);
-                                    let path = Path::new(&expanded);
-                                    log::debug!("Checking if path is directory for completion result '{}': {:?} (is_dir: {})", sug, path, path.is_dir());
+                if let Err(e) = &poss_completions {
+                    log::error!(
+                        "Error during bash programmable completion for command '{}': {}",
+                        full_command, e
+                    );
+                }
 
-                                    if path.is_dir() {
-                                        (format!("{}/", quoted), "")
-                                    } else {
-                                        (quoted, space_to_append)
-                                    }
-                                } else {
-                                    (quoted, space_to_append)
-                                };
 
-                                Suggestion::new(appended, "", suffix)
-                            })
-                            .collect::<Vec<_>>();
+                log::debug!(
+                    "Bash autocompletion returned no results for command: {}.",
+                    full_command
+                );
 
+                if let Ok(comp_result) = &poss_completions && comp_result.bash_default_fallback_desired {
+                    log::debug!(
+                        "Bash autocompletion requested fallback to default completion for command: {}.",
+                        full_command
+                    );
+                    let bash_default_completions = bash_funcs::run_bash_default_completion(
+                        &full_command,
+                        &word_under_cursor,
+                        cursor_byte_pos,
+                        word_under_cursor_end,
+                        comp_result.quote_type,
+                    );
+
+                    if let Ok(default_comp_result) = bash_default_completions && !default_comp_result.completions.is_empty() {
+                        log::debug!("Bash default completion results for command: {}", full_command);
+                        log::debug!("Completions: {:?}", default_comp_result);
+
+                        let suggestions = self.post_process_completions(
+                            comp_result.completions,
+                            comp_result.filename_quoting_desired,
+                            comp_result.filename_completion_desired,
+                            comp_result.no_suffix_desired,
+                            comp_result.quote_type,
+                        );
                         return Some(suggestions);
                     }
-                    Err(e) => {
-                        log::debug!(
-                            "Bash autocompletion failed for command: {} with error: {}. Falling back to glob expansion.",
-                            full_command,
-                            e
-                        );
-                    }
                 }
+                    
+
             }
         }
         match completion_context.comp_type_secondary {
