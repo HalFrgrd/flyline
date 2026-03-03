@@ -4,10 +4,11 @@ use std::vec;
 use crate::bash_symbols;
 use crate::palette::Palette;
 use crate::settings::Settings;
-use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::skim::SkimMatcherV2;
+use skim::fuzzy_matcher::FuzzyMatcher;
+use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use itertools::Itertools;
 use ratatui::text::Line;
+
 
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
@@ -397,7 +398,7 @@ impl HistoryEntryFormatted {
 }
 
 struct FuzzyHistorySearch {
-    matcher: SkimMatcherV2,
+    matcher: ArinaeMatcher,
     cache: Vec<HistoryEntryFormatted>,
     cache_command: Option<String>,
     global_index: usize,
@@ -421,15 +422,15 @@ impl FuzzyHistorySearch {
     // Check time budget every N entries to balance responsiveness and performance
     const TIME_CHECK_INTERVAL: usize = 64;
     // Time budget for processing history entries in milliseconds
-    const TIME_BUDGET_MS: u64 = 15;
+    const TIME_BUDGET_MS: u64 = 20;
     // Number of visible rows in the fuzzy history search list
     const VISIBLE_CACHE_SIZE: usize = 18;
-    // Number of recent cache entries to check for duplicates before inserting
-    const DUPLICATE_CHECK_WINDOW: usize = 50;
+    // // Number of recent cache entries to check for duplicates before inserting
+    // const DUPLICATE_CHECK_WINDOW: usize = 50;
 
     fn new() -> Self {
         FuzzyHistorySearch {
-            matcher: SkimMatcherV2::default().smart_case(),
+            matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
             cache: Vec::new(),
             cache_command: None,
             global_index: 0,
@@ -548,6 +549,8 @@ impl FuzzyHistorySearch {
             _ => 30,
         };
 
+        let mut new_cache_entries = vec![];
+
         // Process as many entries as possible within the time budget
         for (idx, entry) in entries.iter().rev().skip(self.global_index).enumerate() {
             // Check if we've exceeded the time budget every TIME_CHECK_INTERVAL entries
@@ -558,22 +561,18 @@ impl FuzzyHistorySearch {
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
             {
                 if score >= score_threshold {
-                    let trimmed_cmd = entry.command.trim();
                     // Before inserting, check if any of the 50 latest cache entries match after trimming
-                    let is_duplicate = self
-                        .cache
-                        .iter()
-                        .rev()
-                        .take(Self::DUPLICATE_CHECK_WINDOW)
-                        .any(|cached| cached.entry.command.trim() == trimmed_cmd);
-                    if !is_duplicate {
-                        let new_entry = HistoryEntryFormatted::new(entry.clone(), score, indices);
-                        self.cache.push(new_entry);
-                    }
+                    new_cache_entries.push(HistoryEntryFormatted::new(entry.clone(), score, indices));
                 }
             }
             self.global_index += 1;
         }
+
+        new_cache_entries.sort_by_key(|e| -e.score);
+        let old_cache = std::mem::take(&mut self.cache);
+        self.cache = old_cache.into_iter().merge_by(new_cache_entries, |x, y| x.score >= y.score).collect();
+        self.cache.dedup_by(|x, y| x.entry.command.trim() == y.entry.command.trim());
+        
 
         if start_index != self.global_index {
             let duration = start.elapsed();
