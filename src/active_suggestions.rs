@@ -1,7 +1,7 @@
 use crate::palette::Palette;
 use crate::text_buffer::{SubString, TextBuffer};
-use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::skim::SkimMatcherV2;
+use skim::fuzzy_matcher::FuzzyMatcher;
+use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use ratatui::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,7 +103,7 @@ pub struct ActiveSuggestions {
     selected_filtered_index: usize,
     pub word_under_cursor: SubString,
     last_grid_size: (usize, usize),
-    fuzzy_matcher: SkimMatcherV2,
+    fuzzy_matcher: ArinaeMatcher,
 }
 
 impl std::fmt::Debug for ActiveSuggestions {
@@ -138,7 +138,7 @@ impl ActiveSuggestions {
             selected_filtered_index: 0,
             word_under_cursor,
             last_grid_size: (0, 0),
-            fuzzy_matcher: SkimMatcherV2::default(),
+            fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
         })
     }
 
