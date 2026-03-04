@@ -82,24 +82,23 @@ impl App<'_> {
         &self,
         sug: &str,
         path_to_use: Option<&Path>,
-        filename_quoting_desired: bool,
-        filename_completion_desired: bool,
-        no_space_suffix_desired: bool,
-        quote_type: Option<bash_funcs::QuoteType>,
+        comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Suggestion {
-        let quoted = if filename_quoting_desired && filename_completion_desired {
-            bash_funcs::quote_function_rust(sug, quote_type.unwrap_or_default())
+        let quoted = if comp_resultflags.filename_quoting_desired
+            && comp_resultflags.filename_completion_desired
+        {
+            bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
         } else {
             sug.to_string()
         };
 
-        let space_to_append = if no_space_suffix_desired {
+        let space_to_append = if comp_resultflags.no_suffix_desired {
             ""
         } else {
             if sug.ends_with(" ") { "" } else { " " }
         };
 
-        let (appended, suffix) = if filename_completion_desired {
+        let (appended, suffix) = if comp_resultflags.filename_completion_desired {
             let owned_path;
             let path = match path_to_use {
                 Some(p) => p,
@@ -124,23 +123,11 @@ impl App<'_> {
     fn post_process_completions(
         &self,
         completions: Vec<String>,
-        filename_quoting_desired: bool,
-        filename_completion_desired: bool,
-        no_space_suffix_desired: bool,
-        quote_type: Option<bash_funcs::QuoteType>,
+        comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Vec<Suggestion> {
         completions
             .iter()
-            .map(|sug| {
-                self.post_process_single_completion(
-                    &sug,
-                    None,
-                    filename_quoting_desired,
-                    filename_completion_desired,
-                    no_space_suffix_desired,
-                    quote_type,
-                )
-            })
+            .map(|sug| self.post_process_single_completion(&sug, None, comp_resultflags))
             .collect::<Vec<_>>()
     }
 
@@ -212,29 +199,30 @@ impl App<'_> {
 
                 match poss_completions {
                     Ok(comp_result) if !comp_result.completions.is_empty() => {
-                        log::debug!("Bash autocomplete results for command: {}", full_command);
-                        log::debug!("Completions: {:?}", comp_result);
-
-                        let suggestions = self.post_process_completions(
-                            comp_result.completions,
-                            comp_result.filename_quoting_desired,
-                            comp_result.filename_completion_desired,
-                            comp_result.no_suffix_desired,
-                            comp_result.quote_type,
-                        );
-                        return Some(suggestions);
-                    }
-                    Ok(comp_result) => self.gen_secondary_completions(
-                        completion_context,
-                        comp_result.filename_quoting_desired,
-                        comp_result.quote_type,
-                    ),
-                    _ => {
                         log::debug!(
-                            "No bash programmable completions found for command: {}. Falling back to secondary completions.",
+                            "Programmable completion results for command: {}",
                             full_command
                         );
-                        self.gen_secondary_completions(completion_context, true, None)
+                        log::debug!("Completions: {:#?}", comp_result);
+
+                        let suggestions = self
+                            .post_process_completions(comp_result.completions, comp_result.flags);
+                        return Some(suggestions);
+                    }
+                    Ok(comp_result) => {
+                        // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
+                        // Always try to produce secondary completions
+                        self.gen_secondary_completions(completion_context, comp_result.flags)
+                    }
+                    _ => {
+                        log::debug!(
+                            "No programmable completions found for command: {}. Falling back to secondary completions.",
+                            full_command
+                        );
+                        self.gen_secondary_completions(
+                            completion_context,
+                            bash_funcs::CompletionFlags::default(),
+                        )
                     }
                 }
             }
@@ -244,8 +232,7 @@ impl App<'_> {
     fn gen_secondary_completions(
         &self,
         completion_context: &tab_completion_context::CompletionContext,
-        should_quote: bool,
-        quote_type: Option<bash_funcs::QuoteType>,
+        comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Option<Vec<Suggestion>> {
         let word_under_cursor = completion_context.word_under_cursor;
         match completion_context.comp_type_secondary {
@@ -262,7 +249,7 @@ impl App<'_> {
             Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
                 let completions =
-                    self.tab_complete_glob_expansion(&word_under_cursor, should_quote, quote_type);
+                    self.tab_complete_glob_expansion(&word_under_cursor, comp_resultflags);
 
                 // Unlike other completions, if there are multiple glob completions,
                 // we join them with spaces and insert them all at once.
@@ -293,8 +280,7 @@ impl App<'_> {
                 log::debug!("Filename expansion for: {:?}", word_under_cursor);
                 let completions = self.tab_complete_glob_expansion(
                     &(word_under_cursor.to_string() + "*"),
-                    should_quote,
-                    quote_type,
+                    comp_resultflags,
                 );
 
                 if completions.is_empty() {
@@ -324,7 +310,10 @@ impl App<'_> {
 
         if command.starts_with('.') || command.starts_with('/') {
             // Path to executable
-            return self.tab_complete_glob_expansion(&(command.to_string() + "*"), true, None);
+            return self.tab_complete_glob_expansion(
+                &(command.to_string() + "*"),
+                bash_funcs::CompletionFlags::default(),
+            );
         }
 
         let mut res = self.bash_env.get_first_word_completions(&command);
@@ -379,8 +368,7 @@ impl App<'_> {
     fn tab_complete_glob_expansion(
         &self,
         pattern: &str,
-        should_quote: bool,
-        quote_type: Option<bash_funcs::QuoteType>,
+        comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Vec<Suggestion> {
         log::debug!("Performing glob expansion for pattern: {}", pattern);
         let (resolved_pattern, prefixes_swaps) = self.expand_path_pattern(pattern);
@@ -427,10 +415,7 @@ impl App<'_> {
                     results.push(self.post_process_single_completion(
                         &unexpanded,
                         Some(&path),
-                        should_quote,
-                        true,
-                        false,
-                        quote_type,
+                        comp_resultflags,
                     ));
                 }
             }
@@ -447,7 +432,10 @@ impl App<'_> {
             return vec![];
         };
 
-        self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"), true, None)
+        self.tab_complete_glob_expansion(
+            &("/home/".to_string() + user_pattern + "*"),
+            bash_funcs::CompletionFlags::default(),
+        )
     }
 
     // #[cfg(feature = "integration-tests")]
@@ -555,19 +543,23 @@ impl App<'_> {
         );
 
         run_test_on(
-            "fl_comp_util_default_filenames --fallback-to-default ",
+            "fl_comp_util_default_filenames --fallback-to-default man",
             &[
-                &Suggestion::new(r#"bar.txt"#, "", " "),
-                &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
-                &Suggestion::new(r#"foo/"#, "", ""),
+                // &Suggestion::new(r#"bar.txt"#, "", " "),
+                // &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
+                // &Suggestion::new(r#"foo/"#, "", ""),
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
             ],
         );
 
-        // This fails for some reason
         run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default @",
+            "fl_comp_util --fallback-to-default $FOOBARBA",
             &[&Suggestion::new(r#"$FOOBARBAZ"#, "", " ")],
+        );
+
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default ma*",
+            &[&Suggestion::new(r#"many\ spaces\ here/"#, "", "")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");

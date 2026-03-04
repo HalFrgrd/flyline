@@ -298,10 +298,10 @@ pub enum CompspecOption {
     FullQuote = 1 << 9,
 }
 
-#[derive(Debug)]
-pub struct ProgrammableCompleteReturn {
-    pub completions: Vec<String>,
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct CompletionFlags {
     pub quote_type: Option<QuoteType>,
+
     pub readline_default_fallback_desired: bool,
     // pub dirnames_desired: bool, // Bash handles this already during call to programmable_completions
     // pub plus_dirs: bool, // Likewise
@@ -314,15 +314,9 @@ pub struct ProgrammableCompleteReturn {
     // pub full_quote: bool,
 }
 
-impl ProgrammableCompleteReturn {
-    pub fn from(
-        completions: Vec<String>,
-        quote_type: Option<QuoteType>,
-        foundcs: c_int,
-        append_char: i32,
-    ) -> Self {
+impl CompletionFlags {
+    pub fn from(quote_type: Option<QuoteType>, foundcs: c_int, append_char: i32) -> Self {
         Self {
-            completions,
             quote_type,
             readline_default_fallback_desired: foundcs & (CompspecOption::Default as c_int) != 0,
             filename_quoting_desired: foundcs & (CompspecOption::NoQuote as c_int) == 0,
@@ -332,6 +326,45 @@ impl ProgrammableCompleteReturn {
             bash_default_fallback_desired: foundcs & (CompspecOption::BashDefault as c_int) != 0,
             nosort_desired: foundcs & (CompspecOption::NoSort as c_int) != 0,
         }
+    }
+}
+
+impl Default for CompletionFlags {
+    fn default() -> Self {
+        Self {
+            quote_type: None,
+            readline_default_fallback_desired: true,
+            filename_quoting_desired: true,
+            filename_completion_desired: false,
+            no_suffix_desired: false,
+            suffix_character: ' ',
+            bash_default_fallback_desired: false,
+            nosort_desired: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ProgrammableCompleteReturn {
+    pub completions: Vec<String>,
+    pub flags: CompletionFlags,
+}
+
+impl ProgrammableCompleteReturn {
+    pub fn new(completions: Vec<String>, flags: CompletionFlags) -> Self {
+        Self { completions, flags }
+    }
+
+    pub fn from(
+        completions: Vec<String>,
+        quote_type: Option<QuoteType>,
+        foundcs: c_int,
+        append_char: i32,
+    ) -> Self {
+        Self::new(
+            completions,
+            CompletionFlags::from(quote_type, foundcs, append_char),
+        )
     }
 }
 
@@ -426,7 +459,7 @@ pub fn run_programmable_completions(
         let mut completion_strings = vec_of_strings_from_char_char_ptr(list_of_strs);
         // Readline also deplucates the results
         completion_strings.dedup(); // TODO does this need sorting?
-        let mut res = ProgrammableCompleteReturn::from(
+        let res = ProgrammableCompleteReturn::from(
             completion_strings,
             quote_type,
             foundcs,
@@ -434,15 +467,15 @@ pub fn run_programmable_completions(
         );
 
         log::debug!(
-            "Programmable completions found with foundcs={}: {:?}",
+            "Programmable completions found with foundcs={}: {:#?}",
             foundcs,
             res
         );
 
-        if res.completions.is_empty() && res.bash_default_fallback_desired {
+        if res.completions.is_empty() && res.flags.bash_default_fallback_desired {
             log::debug!(
-                "Bash default fallback desired: {}. Falling back to bash default completion.",
-                res.bash_default_fallback_desired
+                "No completions and bash default fallback desired: {}. Falling back to bash default completion.",
+                res.flags.bash_default_fallback_desired
             );
         } else {
             log::debug!(
@@ -450,6 +483,9 @@ pub fn run_programmable_completions(
             );
             return Ok(res);
         }
+
+        let mut flags = res.flags;
+        std::mem::drop(res);
 
         // I handle first word completion seperately
         let in_command_position = 0;
@@ -464,12 +500,15 @@ pub fn run_programmable_completions(
         let mut completion_strings = vec_of_strings_from_char_char_ptr(bash_default_completions);
         completion_strings.dedup();
 
-        res.completions = completion_strings;
-        res.filename_completion_desired = bash_symbols::rl_filename_completion_desired != 0;
-        res.no_suffix_desired = bash_symbols::rl_completion_suppress_append != 0;
-        res.suffix_character =
+        log::debug!("Bash default completions: {:?}", completion_strings);
+
+        flags.filename_completion_desired = bash_symbols::rl_filename_completion_desired != 0;
+        flags.no_suffix_desired = bash_symbols::rl_completion_suppress_append != 0;
+        flags.suffix_character =
             char::from_u32(bash_symbols::rl_completion_append_character as u32).unwrap_or(' ');
-        res.nosort_desired = bash_symbols::rl_sort_completion_matches != 0;
+        flags.nosort_desired = bash_symbols::rl_sort_completion_matches != 0;
+
+        let res = ProgrammableCompleteReturn::new(completion_strings, flags);
 
         Ok(res)
     }
