@@ -335,6 +335,27 @@ impl ProgrammableCompleteReturn {
     }
 }
 
+fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
+    let mut strings = Vec::new();
+    unsafe {
+        if ptr.is_null() {
+            return strings;
+        }
+
+        for i in 0.. {
+            let c_str_ptr = *ptr.add(i);
+            if c_str_ptr.is_null() {
+                break;
+            }
+            let c_str = std::ffi::CStr::from_ptr(c_str_ptr);
+            if let Ok(str_slice) = c_str.to_str() {
+                strings.push(str_slice.to_string());
+            }
+        }
+    }
+    strings
+}
+
 pub fn run_programmable_completions(
     full_command: &str,                // "git commi asdf" with cursor just after com
     command_word: &str,                // "git"
@@ -401,22 +422,8 @@ pub fn run_programmable_completions(
             bash_symbols::pcomp_set_readline_variables(foundcs, 1);
         }
 
-        if list_of_strs.is_null() {
-            return Err(anyhow::anyhow!("programmable_completions returned null"));
-        }
         // The matches won't be escaped / quoted.
-        let mut completion_strings: Vec<String> = Vec::new();
-        for i in 0.. {
-            let ptr = *list_of_strs.add(i as usize);
-            if ptr.is_null() {
-                break;
-            }
-            let c_str = std::ffi::CStr::from_ptr(ptr);
-            if let Ok(str_slice) = c_str.to_str() {
-                log::debug!("programmable_completions result[{}]: {}", i, str_slice);
-                completion_strings.push(str_slice.to_string());
-            }
-        }
+        let mut completion_strings = vec_of_strings_from_char_char_ptr(list_of_strs);
         // Readline also deplucates the results
         completion_strings.dedup(); // TODO does this need sorting?
         let mut res = ProgrammableCompleteReturn::from(
@@ -426,7 +433,21 @@ pub fn run_programmable_completions(
             bash_symbols::rl_completion_append_character,
         );
 
-        if res.completions.is_empty() && !res.bash_default_fallback_desired {
+        log::debug!(
+            "Programmable completions found with foundcs={}: {:?}",
+            foundcs,
+            res
+        );
+
+        if res.completions.is_empty() && res.bash_default_fallback_desired {
+            log::debug!(
+                "Bash default fallback desired: {}. Falling back to bash default completion.",
+                res.bash_default_fallback_desired
+            );
+        } else {
+            log::debug!(
+                "Bash default fallback not desired or completions found. Not falling back to bash default completion."
+            );
             return Ok(res);
         }
 
@@ -440,26 +461,10 @@ pub fn run_programmable_completions(
             in_command_position as std::ffi::c_int,
         );
 
-        if bash_default_completions.is_null() {
-            return Err(anyhow::anyhow!("bash_default_completion returned null"));
-        }
-
-        let mut completion_strings: Vec<String> = Vec::new();
-        for i in 0.. {
-            let ptr = *bash_default_completions.add(i as usize);
-            if ptr.is_null() {
-                break;
-            }
-            let c_str = std::ffi::CStr::from_ptr(ptr);
-            if let Ok(str_slice) = c_str.to_str() {
-                log::debug!("bash_default_completion result[{}]: {}", i, str_slice);
-                completion_strings.push(str_slice.to_string());
-            }
-        }
+        let mut completion_strings = vec_of_strings_from_char_char_ptr(bash_default_completions);
         completion_strings.dedup();
 
         res.completions = completion_strings;
-
         res.filename_completion_desired = bash_symbols::rl_filename_completion_desired != 0;
         res.no_suffix_desired = bash_symbols::rl_completion_suppress_append != 0;
         res.suffix_character =
@@ -487,6 +492,18 @@ pub fn print_copt_flags(flag: c_int) {
         if flag & (*option as c_int) != 0 {
             log::debug!(" - {:?}", option);
         }
+    }
+}
+
+pub fn get_env_variable(var_name: &str) -> Option<String> {
+    unsafe {
+        let var_cstr = std::ffi::CString::new(var_name).unwrap();
+        let value_ptr = bash_symbols::getenv(var_cstr.as_ptr());
+        if value_ptr.is_null() {
+            return None;
+        }
+        let c_str = std::ffi::CStr::from_ptr(value_ptr);
+        c_str.to_str().ok().map(|s| s.to_string())
     }
 }
 

@@ -14,9 +14,9 @@ pub enum CompType {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SecondaryCompType {
-    EnvVariable,    // the env variable under the cursor, with the leading $
-    TildeExpansion, // the tilde under the cursor, e.g. "~us|erna"
-    GlobExpansion,  // the glob pattern under the cursor, e.g. "*.rs|t"
+    EnvVariable,       // the env variable under the cursor, with the leading $
+    TildeExpansion,    // the tilde under the cursor, e.g. "~us|erna"
+    GlobExpansion,     // the glob pattern under the cursor, e.g. "*.rs|t"
     FilenameExpansion, // the filename under the cursor, e.g. "fi|le.txt"
 }
 

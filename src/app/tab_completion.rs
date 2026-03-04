@@ -2,6 +2,7 @@ use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::app::{App, ContentMode};
 use crate::bash_funcs;
 use crate::tab_completion_context;
+use core::panic;
 use glob::glob;
 use std::path::Path;
 
@@ -77,6 +78,49 @@ impl App<'_> {
         }
     }
 
+    fn post_process_single_completion(
+        &self,
+        sug: &str,
+        path_to_use: Option<&Path>,
+        filename_quoting_desired: bool,
+        filename_completion_desired: bool,
+        no_space_suffix_desired: bool,
+        quote_type: Option<bash_funcs::QuoteType>,
+    ) -> Suggestion {
+        let quoted = if filename_quoting_desired && filename_completion_desired {
+            bash_funcs::quote_function_rust(sug, quote_type.unwrap_or_default())
+        } else {
+            sug.to_string()
+        };
+
+        let space_to_append = if no_space_suffix_desired {
+            ""
+        } else {
+            if sug.ends_with(" ") { "" } else { " " }
+        };
+
+        let (appended, suffix) = if filename_completion_desired {
+            let owned_path;
+            let path = match path_to_use {
+                Some(p) => p,
+                None => {
+                    owned_path = std::path::PathBuf::from(self.tilde_expand_pattern(&sug));
+                    &owned_path
+                }
+            };
+
+            if path.is_dir() {
+                (format!("{}/", quoted), "")
+            } else {
+                (quoted, space_to_append)
+            }
+        } else {
+            (quoted, space_to_append)
+        };
+
+        Suggestion::new(appended, "", suffix)
+    }
+
     fn post_process_completions(
         &self,
         completions: Vec<String>,
@@ -86,44 +130,18 @@ impl App<'_> {
         quote_type: Option<bash_funcs::QuoteType>,
     ) -> Vec<Suggestion> {
         completions
-        .iter()
-        .map(|sug| {
-            let quoted = if filename_quoting_desired && filename_completion_desired {
-                bash_funcs::quote_function_rust(
-                    sug,
-                    quote_type.unwrap_or_default(),
+            .iter()
+            .map(|sug| {
+                self.post_process_single_completion(
+                    &sug,
+                    None,
+                    filename_quoting_desired,
+                    filename_completion_desired,
+                    no_space_suffix_desired,
+                    quote_type,
                 )
-            } else {
-                sug.clone()
-            };
-
-            let space_to_append = if no_space_suffix_desired {
-                ""
-            } else {
-                if sug.ends_with(" ") {
-                    ""
-                } else {
-                    " "
-                }
-            };
-
-            let (appended, suffix) = if filename_completion_desired {
-                let expanded = self.tilde_expand_pattern(sug);
-                let path = Path::new(&expanded);
-                log::debug!("Checking if path is directory for completion result '{}': {:?} (is_dir: {})", sug, path, path.is_dir());
-
-                if path.is_dir() {
-                    (format!("{}/", quoted), "")
-                } else {
-                    (quoted, space_to_append)
-                }
-            } else {
-                (quoted, space_to_append)
-            };
-
-            Suggestion::new(appended, "", suffix)
-        })
-        .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
     }
 
     pub fn gen_completions_internal(
@@ -206,16 +224,30 @@ impl App<'_> {
                         );
                         return Some(suggestions);
                     }
-
+                    Ok(comp_result) => self.gen_secondary_completions(
+                        completion_context,
+                        comp_result.filename_quoting_desired,
+                        comp_result.quote_type,
+                    ),
                     _ => {
                         log::debug!(
-                            "No bash programmable completions found for command: {}. Falling back to default completion.",
+                            "No bash programmable completions found for command: {}. Falling back to secondary completions.",
                             full_command
                         );
+                        self.gen_secondary_completions(completion_context, true, None)
                     }
                 }
             }
         }
+    }
+
+    fn gen_secondary_completions(
+        &self,
+        completion_context: &tab_completion_context::CompletionContext,
+        should_quote: bool,
+        quote_type: Option<bash_funcs::QuoteType>,
+    ) -> Option<Vec<Suggestion>> {
+        let word_under_cursor = completion_context.word_under_cursor;
         match completion_context.comp_type_secondary {
             Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
                 log::debug!("Environment variable completion {:?}", word_under_cursor);
@@ -229,7 +261,8 @@ impl App<'_> {
             }
             Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
-                let completions = self.tab_complete_glob_expansion(&word_under_cursor);
+                let completions =
+                    self.tab_complete_glob_expansion(&word_under_cursor, should_quote, quote_type);
 
                 // Unlike other completions, if there are multiple glob completions,
                 // we join them with spaces and insert them all at once.
@@ -258,7 +291,11 @@ impl App<'_> {
             }
             Some(tab_completion_context::SecondaryCompType::FilenameExpansion) => {
                 log::debug!("Filename expansion for: {:?}", word_under_cursor);
-                let completions = self.tab_complete_glob_expansion(&(word_under_cursor.to_string() + "*"));
+                let completions = self.tab_complete_glob_expansion(
+                    &(word_under_cursor.to_string() + "*"),
+                    should_quote,
+                    quote_type,
+                );
 
                 if completions.is_empty() {
                     log::debug!(
@@ -287,7 +324,7 @@ impl App<'_> {
 
         if command.starts_with('.') || command.starts_with('/') {
             // Path to executable
-            return self.tab_complete_glob_expansion(&(command.to_string() + "*"));
+            return self.tab_complete_glob_expansion(&(command.to_string() + "*"), true, None);
         }
 
         let mut res = self.bash_env.get_first_word_completions(&command);
@@ -300,11 +337,8 @@ impl App<'_> {
         }
 
         // TODO: could prioritize based on frequency of use
-        res.sort();
-        res.sort_by_key(|s| s.len());
-
-        let mut seen = std::collections::HashSet::new();
-        res.retain(|s| seen.insert(s.clone()));
+        res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
+        res.dedup();
         Suggestion::from_string_vec(res, "", " ")
     }
 
@@ -342,7 +376,12 @@ impl App<'_> {
         (pattern, prefixes_swaps)
     }
 
-    fn tab_complete_glob_expansion(&self, pattern: &str) -> Vec<Suggestion> {
+    fn tab_complete_glob_expansion(
+        &self,
+        pattern: &str,
+        should_quote: bool,
+        quote_type: Option<bash_funcs::QuoteType>,
+    ) -> Vec<Suggestion> {
         log::debug!("Performing glob expansion for pattern: {}", pattern);
         let (resolved_pattern, prefixes_swaps) = self.expand_path_pattern(pattern);
         log::debug!(
@@ -385,18 +424,14 @@ impl App<'_> {
                         p
                     };
 
-                    // Add trailing slash for directories
-                    if path.is_dir() {
-                        // no trailing space for directories
-                        results.push(Suggestion::new(
-                            format!("{}/", unexpanded),
-                            "".to_string(),
-                            "".to_string(),
-                        ));
-                    } else {
-                        // trailing space for files
-                        results.push(Suggestion::new(unexpanded, "".to_string(), " ".to_string()));
-                    }
+                    results.push(self.post_process_single_completion(
+                        &unexpanded,
+                        Some(&path),
+                        should_quote,
+                        true,
+                        false,
+                        quote_type,
+                    ));
                 }
             }
         }
@@ -412,7 +447,7 @@ impl App<'_> {
             return vec![];
         };
 
-        self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
+        self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"), true, None)
     }
 
     // #[cfg(feature = "integration-tests")]
@@ -424,6 +459,10 @@ impl App<'_> {
         logging::stream_logs("stderr".into()).unwrap();
 
         let mut run_test_on = |command: &str, expected_suggestions: &[&Suggestion]| {
+            log::info!(
+                "\n\n---------------------------------------------------------------------------------"
+            );
+            log::info!("Testing tab completion for command: '{}'", command);
             self.buffer.replace_buffer(command);
             self.buffer.move_to_end();
 
@@ -516,7 +555,7 @@ impl App<'_> {
         );
 
         run_test_on(
-            "fl_comp_util_default_filenames  ",
+            "fl_comp_util_default_filenames --fallback-to-default ",
             &[
                 &Suggestion::new(r#"bar.txt"#, "", " "),
                 &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
@@ -526,12 +565,10 @@ impl App<'_> {
         );
 
         // This fails for some reason
-        // run_test_on(
-        //     "echo $FOOBARBA",
-        //     &[
-        //         &Suggestion::new(r#"$FOOBARBAZ"#, "", " "),
-        //     ],
-        // );
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default @",
+            &[&Suggestion::new(r#"$FOOBARBAZ"#, "", " ")],
+        );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }

@@ -66,7 +66,7 @@ _fl_comp_util_completions() {
     esac
 
     # Default completion shows available flags
-    local opts="--filenames --quoting-desired --suppress-quote --suppress-append"
+    local opts="--filenames --quoting-desired --suppress-quote --dont-suppress-append --suppress-append --nosort --fallback-to-default"
     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
 }
 
@@ -82,16 +82,22 @@ fl_comp_util_default_filenames() {
     done
 }
 
-_fl_comp_util_default_filenames() {
-    local cur=${COMP_WORDS[COMP_CWORD]}
 
-    # mapfile -t COMPREPLY < <(compgen -f -- "$cur")
-    COMPREPLY=()
+complete -F _fl_comp_util_completions -o filenames fl_comp_util_default_filenames
+echo "fl_comp_util_default_filenames loaded. Try 'fl_comp_util_default_filenames <tab>'"
+
+
+
+fl_comp_util_bashdefault() {
+    echo "fl_comp_util_bashdefault called with args:"
+    for arg in "$@"; do
+        echo "  '$arg'"
+    done
 }
 
+complete -F _fl_comp_util_completions -o bashdefault fl_comp_util_bashdefault
+echo "fl_comp_util_bashdefault loaded. Try 'fl_comp_util_bashdefault <tab>'"
 
-complete -F _fl_comp_util_default_filenames -o filenames fl_comp_util_default_filenames
-echo "fl_comp_util_default_filenames loaded. Try 'fl_comp_util_default_filenames <tab>'"
 
 
 # TODO add tests for bashdefault and default fallback
