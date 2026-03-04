@@ -1,5 +1,3 @@
-
-
 FROM ubuntu:24.04
 
 ARG BASH_VERSION
@@ -14,8 +12,8 @@ RUN apt update && apt install -y \
 
 
 WORKDIR /tmp/bash-build
-RUN curl -LO https://ftp.gnu.org/gnu/bash/bash-${BASH_VERSION}.tar.gz
-RUN tar xzf bash-${BASH_VERSION}.tar.gz \
+RUN curl -LO https://ftp.gnu.org/gnu/bash/bash-${BASH_VERSION}.tar.gz \
+ && tar xzf bash-${BASH_VERSION}.tar.gz \
  && cd bash-${BASH_VERSION} \
  && ./configure --prefix=/opt/bash-${BASH_VERSION} --with-readline \
  && make -j"$(nproc)" \
