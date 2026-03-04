@@ -39,14 +39,13 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN cargo build --release
+RUN cargo build --release --features integration-tests
 
-# Stage 4: Run library tests inside the builder container
-FROM flyline-builder AS flyline-tests
+FROM flyline-builder AS flyline-lib-tests
 RUN cargo test --release --lib
 
 
-# Stage 5: Build image with output. This won't have anything in the file system apart from the built library
+# Build image with output. This won't have anything in the file system apart from the built library
 # this makes it convenient to copy the built library without creating a container
-FROM scratch AS flyline-extracted-library
+FROM scratch AS flyline-built-artifact
 COPY --from=flyline-builder /app/target/release/libflyline.so /libflyline.so

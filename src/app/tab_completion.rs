@@ -445,9 +445,8 @@ impl App<'_> {
     #[cfg(feature = "integration-tests")]
     pub fn test_tab_completions(&mut self) {
         use crate::logging;
-        use itertools::Itertools;
         use core::panic;
-
+        use itertools::Itertools;
 
         log::set_max_level(log::LevelFilter::Debug);
         logging::stream_logs("stderr".into()).unwrap();
