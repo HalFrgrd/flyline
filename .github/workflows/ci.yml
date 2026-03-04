@@ -58,32 +58,47 @@ jobs:
             *.cache-to=type=gha,mode=max
       
 
-  # bash-integration-tests:
-  #   name: Test bashn${{ matrix.bash_version }} using built library
-  #   needs: build-ubuntu-1604
-  #   runs-on: ubuntu-latest
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       bash_version: [ "4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+  bash-integration-tests:
+    name: Test bash_${{ matrix.bash_version }} using built library
+    needs: build-ubuntu-1604
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bash_version: [ "4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Download built library artifact
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: built-flyline-library
-  #         path: ${{ runner.temp }}/flyline-build
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-  #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@v3
+      - name: Run integration tests
+        uses: docker/bake-action@v6
+        with:
+          files: docker/docker-bake.hcl
+          targets: bash-integration-test
+          set: |
+            bash-integration-test.args.BASH_VERSION=${{ matrix.bash_version }}
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
 
-  #     - name: Run integration tests
-  #       uses: docker/build-push-action@v6
-  #       with:
-  #         context: ${{ runner.temp }}/flyline-build
-  #         file: docker/bash_integration_test.Dockerfile
-  #         build-args: BASH_VERSION=${{ matrix.bash_version }}
-  #         # cache-from: type=gha
-  #         # cache-to: type=gha,mode=max
+  tab-completion-tests:
+    name: Test tab completion using built library
+    needs: build-ubuntu-1604
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run tab completion tests
+        uses: docker/bake-action@v6
+        with:
+          files: docker/docker-bake.hcl
+          targets: tab-completion-tests
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
