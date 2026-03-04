@@ -63,3 +63,12 @@ target "tab-completion-tests" {
     }
     dockerfile = "docker/tab_completions.Dockerfile"
 }
+
+target "vhs-extracted-gif" {
+    context = "."
+    dockerfile = "docker/vhs.Dockerfile"
+    contexts = {
+        flyline-extracted-library = "target:built-artifact"
+    }
+    target = "vhs-extracted-gif"
+}

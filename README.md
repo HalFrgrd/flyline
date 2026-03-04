@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/blob/main/LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/releases)
 
-![Demo](demo.gif)
+![Demo](assets/demo.gif)
 
 </div>
 
