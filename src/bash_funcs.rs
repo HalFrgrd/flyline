@@ -405,7 +405,7 @@ pub fn run_programmable_completions(
             return Err(anyhow::anyhow!("programmable_completions returned null"));
         }
         // The matches won't be escaped / quoted.
-        let mut res: Vec<String> = Vec::new();
+        let mut completion_strings: Vec<String> = Vec::new();
         for i in 0.. {
             let ptr = *list_of_strs.add(i as usize);
             if ptr.is_null() {
@@ -414,17 +414,59 @@ pub fn run_programmable_completions(
             let c_str = std::ffi::CStr::from_ptr(ptr);
             if let Ok(str_slice) = c_str.to_str() {
                 log::debug!("programmable_completions result[{}]: {}", i, str_slice);
-                res.push(str_slice.to_string());
+                completion_strings.push(str_slice.to_string());
             }
         }
         // Readline also deplucates the results
-        res.dedup(); // TODO does this need sorting?
-        Ok(ProgrammableCompleteReturn::from(
-            res,
+        completion_strings.dedup(); // TODO does this need sorting?
+        let mut res = ProgrammableCompleteReturn::from(
+            completion_strings,
             quote_type,
             foundcs,
             bash_symbols::rl_completion_append_character,
-        ))
+        );
+
+        if res.completions.is_empty() && !res.bash_default_fallback_desired {
+            return Ok(res);
+        }
+
+        // I handle first word completion seperately
+        let in_command_position = 0;
+        let bash_default_completions = bash_symbols::bash_default_completion(
+            std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
+            word_under_cursor_byte_end.saturating_sub(word_under_cursor.len()) as std::ffi::c_int,
+            word_under_cursor_byte_end as std::ffi::c_int,
+            quote_type.unwrap_or_default().into_byte() as std::ffi::c_int,
+            in_command_position as std::ffi::c_int,
+        );
+
+        if bash_default_completions.is_null() {
+            return Err(anyhow::anyhow!("bash_default_completion returned null"));
+        }
+
+        let mut completion_strings: Vec<String> = Vec::new();
+        for i in 0.. {
+            let ptr = *bash_default_completions.add(i as usize);
+            if ptr.is_null() {
+                break;
+            }
+            let c_str = std::ffi::CStr::from_ptr(ptr);
+            if let Ok(str_slice) = c_str.to_str() {
+                log::debug!("bash_default_completion result[{}]: {}", i, str_slice);
+                completion_strings.push(str_slice.to_string());
+            }
+        }
+        completion_strings.dedup();
+
+        res.completions = completion_strings;
+
+        res.filename_completion_desired = bash_symbols::rl_filename_completion_desired != 0;
+        res.no_suffix_desired = bash_symbols::rl_completion_suppress_append != 0;
+        res.suffix_character =
+            char::from_u32(bash_symbols::rl_completion_append_character as u32).unwrap_or(' ');
+        res.nosort_desired = bash_symbols::rl_sort_completion_matches != 0;
+
+        Ok(res)
     }
 }
 
@@ -446,76 +488,6 @@ pub fn print_copt_flags(flag: c_int) {
             log::debug!(" - {:?}", option);
         }
     }
-}
-
-pub fn run_bash_default_completion(
-    full_command: &str,                // "git commi asdf" with cursor just after com
-    word_under_cursor: &str,           // "commi"
-    cursor_byte_pos: usize,            // 7 since cursor is after "com" in "git com|mi asdf"
-    word_under_cursor_byte_end: usize, // 9 since we want the end of "commi"
-    prev_prog_comp: &ProgrammableCompleteReturn,
-) -> Result<ProgrammableCompleteReturn> {
-    unsafe {
-        bash_symbols::rl_line_buffer = std::ffi::CString::new(full_command).unwrap().into_raw(); // git commi asdf
-        bash_symbols::rl_point = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
-        bash_symbols::rl_readline_state |= 0x00004000; // RL_STATE_COMPLETING
-
-        let in_command_position = 0;
-        let bash_default_completions = bash_symbols::bash_default_completion(
-            std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
-            word_under_cursor_byte_end.saturating_sub(word_under_cursor.len()) as std::ffi::c_int,
-            word_under_cursor_byte_end as std::ffi::c_int,
-            prev_prog_comp.quote_type.unwrap_or_default().into_byte() as std::ffi::c_int,
-            in_command_position as std::ffi::c_int,
-        );
-
-        if bash_default_completions.is_null() {
-            return Err(anyhow::anyhow!("bash_default_completion returned null"));
-        }
-
-        let mut res: Vec<String> = Vec::new();
-        for i in 0.. {
-            let ptr = *bash_default_completions.add(i as usize);
-            if ptr.is_null() {
-                break;
-            }
-            let c_str = std::ffi::CStr::from_ptr(ptr);
-            if let Ok(str_slice) = c_str.to_str() {
-                log::debug!("bash_default_completion result[{}]: {}", i, str_slice);
-                res.push(str_slice.to_string());
-            }
-        }
-        res.dedup();
-        let ret = ProgrammableCompleteReturn {
-            completions: res,
-            quote_type: prev_prog_comp.quote_type,
-            readline_default_fallback_desired: prev_prog_comp.readline_default_fallback_desired,
-            filename_quoting_desired: prev_prog_comp.filename_quoting_desired,
-            filename_completion_desired: bash_symbols::rl_filename_completion_desired != 0,
-            no_suffix_desired: bash_symbols::rl_completion_suppress_append != 0,
-            suffix_character: char::from_u32(bash_symbols::rl_completion_append_character as u32)
-                .unwrap_or(' '),
-            bash_default_fallback_desired: prev_prog_comp.bash_default_fallback_desired,
-            nosort_desired: bash_symbols::rl_sort_completion_matches != 0,
-        };
-
-        Ok(ret)
-    }
-}
-
-pub fn get_env_variable(var_name: &str) -> Option<String> {
-    unsafe {
-        let var_cstr = std::ffi::CString::new(var_name).unwrap();
-        let value_ptr = bash_symbols::getenv(var_cstr.as_ptr());
-        if value_ptr.is_null() {
-            return None;
-        }
-        let c_str = std::ffi::CStr::from_ptr(value_ptr);
-        if let Ok(str_slice) = c_str.to_str() {
-            return Some(str_slice.to_string());
-        }
-    }
-    None
 }
 
 // QuoteType can be  in the middle  of a word (i.e.  backslash)

@@ -196,7 +196,7 @@ impl App<'_> {
                     Ok(comp_result) if !comp_result.completions.is_empty() => {
                         log::debug!("Bash autocomplete results for command: {}", full_command);
                         log::debug!("Completions: {:?}", comp_result);
-    
+
                         let suggestions = self.post_process_completions(
                             comp_result.completions,
                             comp_result.filename_quoting_desired,
@@ -207,38 +207,6 @@ impl App<'_> {
                         return Some(suggestions);
                     }
 
-                    Ok(comp_result) if comp_result.bash_default_fallback_desired => {
-                        log::debug!(
-                            "Bash autocompletion requested fallback to default completion for command: {}.",
-                            full_command
-                        );
-                        let bash_default_completions = bash_funcs::run_bash_default_completion(
-                            &full_command,
-                            &word_under_cursor,
-                            cursor_byte_pos,
-                            word_under_cursor_end,
-                            &comp_result,
-                        );
-
-                        if let Ok(default_comp_result) = bash_default_completions
-                            && !default_comp_result.completions.is_empty()
-                        {
-                            log::debug!(
-                                "Bash default completion results for command: {}",
-                                full_command
-                            );
-                            log::debug!("Completions: {:?}", default_comp_result);
-
-                            let suggestions = self.post_process_completions(
-                                default_comp_result.completions,
-                                default_comp_result.filename_quoting_desired,
-                                default_comp_result.filename_completion_desired,
-                                default_comp_result.no_suffix_desired,
-                                default_comp_result.quote_type,
-                            );
-                            return Some(suggestions);
-                        }
-                    }
                     _ => {
                         log::debug!(
                             "No bash programmable completions found for command: {}. Falling back to default completion.",
@@ -246,7 +214,6 @@ impl App<'_> {
                         );
                     }
                 }
-
             }
         }
         match completion_context.comp_type_secondary {
