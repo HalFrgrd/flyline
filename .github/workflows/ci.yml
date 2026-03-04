@@ -23,9 +23,9 @@ jobs:
           files: docker/docker-bake.hcl
           targets: extract-artifact
           set: |
-            target.output=type=local,dest=${{ runner.temp }}/docker/build
-            target.cache-from=type=gha
-            target.cache-to=type=gha,mode=max
+            extract-artifact.output=type=local,dest=${{ runner.temp }}/docker/build
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
 
       - name: Save built library artifact
         uses: actions/upload-artifact@v4
@@ -39,6 +39,12 @@ jobs:
     needs: build-ubuntu-1604
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Run tests
         # running the tests by building an image is a cache friendly way to do it
         # if we build a container, the previous step would need to have exported the image to docker
@@ -48,8 +54,8 @@ jobs:
           files: docker/docker-bake.hcl
           targets: lib-tests
           set: |
-            target.output=type=local,dest=${{ runner.temp }}/docker/build
-            target.cache-from=type=gha
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
       
 
   # bash-integration-tests:
