@@ -17,6 +17,7 @@ pub enum SecondaryCompType {
     EnvVariable,    // the env variable under the cursor, with the leading $
     TildeExpansion, // the tilde under the cursor, e.g. "~us|erna"
     GlobExpansion,  // the glob pattern under the cursor, e.g. "*.rs|t"
+    FilenameExpansion, // the filename under the cursor, e.g. "fi|le.txt"
 }
 
 impl SecondaryCompType {
@@ -30,7 +31,7 @@ impl SecondaryCompType {
             // TODO "*.md will match this. need some better logic here
             Some(Self::GlobExpansion)
         } else {
-            None
+            Some(Self::FilenameExpansion)
         }
     }
 }

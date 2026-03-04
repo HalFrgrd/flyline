@@ -256,6 +256,19 @@ impl App<'_> {
                     ));
                 }
             }
+            Some(tab_completion_context::SecondaryCompType::FilenameExpansion) => {
+                log::debug!("Filename expansion for: {:?}", word_under_cursor);
+                let completions = self.tab_complete_glob_expansion(&(word_under_cursor.to_string() + "*"));
+
+                if completions.is_empty() {
+                    log::debug!(
+                        "No filename expansion completions found for pattern: {}",
+                        word_under_cursor
+                    );
+                } else {
+                    return Some(completions);
+                }
+            }
             None => {
                 log::debug!(
                     "No secondary completion type detected for: {:?}",
@@ -402,7 +415,7 @@ impl App<'_> {
         self.tab_complete_glob_expansion(&("/home/".to_string() + user_pattern + "*"))
     }
 
-    #[cfg(feature = "integration-tests")]
+    // #[cfg(feature = "integration-tests")]
     pub fn test_tab_completions(&mut self) {
         use crate::logging;
         use itertools::Itertools;
@@ -473,7 +486,7 @@ impl App<'_> {
         };
 
         run_test_on(
-            "flyline_comp_util --filenames ",
+            "fl_comp_util --filenames ",
             &[
                 &Suggestion::new(r#"bar.txt"#, "", " "),
                 &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
@@ -483,27 +496,27 @@ impl App<'_> {
         );
 
         run_test_on(
-            "flyline_comp_util --quoting-desired ",
+            "fl_comp_util --quoting-desired ",
             &[&Suggestion::new(r#"multi\ word\ option"#, "", " ")],
         );
 
         run_test_on(
-            "flyline_comp_util --suppress-quote ",
+            "fl_comp_util --suppress-quote ",
             &[&Suggestion::new(r#"multi word option"#, "", " ")],
         );
 
         run_test_on(
-            "flyline_comp_util --dont-suppress-append ",
+            "fl_comp_util --dont-suppress-append ",
             &[&Suggestion::new(r#"foo"#, "", " ")],
         );
 
         run_test_on(
-            "flyline_comp_util --suppress-append ",
+            "fl_comp_util --suppress-append ",
             &[&Suggestion::new(r#"foo"#, "", "")],
         );
 
         run_test_on(
-            "flyline_comp_util_default_filenames  ",
+            "fl_comp_util_default_filenames  ",
             &[
                 &Suggestion::new(r#"bar.txt"#, "", " "),
                 &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
