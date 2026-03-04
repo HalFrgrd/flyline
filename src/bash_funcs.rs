@@ -273,13 +273,120 @@ pub fn get_all_shell_builtins() -> Vec<String> {
     builtins
 }
 
+/* Values for COMPSPEC options field. */
+// #define COPT_RESERVED	(1<<0)		/* reserved for other use */
+// #define COPT_DEFAULT	(1<<1)
+// #define COPT_FILENAMES	(1<<2)
+// #define COPT_DIRNAMES	(1<<3)
+// #define COPT_NOQUOTE	(1<<4)
+// #define COPT_NOSPACE	(1<<5)
+// #define COPT_BASHDEFAULT (1<<6)
+// #define COPT_PLUSDIRS	(1<<7)
+// #define COPT_NOSORT	(1<<8)
+// #define COPT_FULLQUOTE	(1<<9)
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CompspecOption {
+    Reserved = 1 << 0,
+    Default = 1 << 1,
+    Filenames = 1 << 2,
+    Dirnames = 1 << 3,
+    NoQuote = 1 << 4,
+    NoSpace = 1 << 5,
+    BashDefault = 1 << 6,
+    PlusDirs = 1 << 7,
+    NoSort = 1 << 8,
+    FullQuote = 1 << 9,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct CompletionFlags {
+    pub quote_type: Option<QuoteType>,
+
+    pub readline_default_fallback_desired: bool,
+    // pub dirnames_desired: bool, // Bash handles this already during call to programmable_completions
+    // pub plus_dirs: bool, // Likewise
+    pub filename_quoting_desired: bool,
+    pub filename_completion_desired: bool,
+    pub no_suffix_desired: bool,
+    pub suffix_character: char,
+    pub bash_default_fallback_desired: bool,
+    pub nosort_desired: bool,
+    // pub full_quote: bool,
+}
+
+impl CompletionFlags {
+    pub fn from(quote_type: Option<QuoteType>, foundcs: c_int, append_char: i32) -> Self {
+        Self {
+            quote_type,
+            readline_default_fallback_desired: foundcs & (CompspecOption::Default as c_int) != 0,
+            filename_quoting_desired: foundcs & (CompspecOption::NoQuote as c_int) == 0,
+            filename_completion_desired: foundcs & (CompspecOption::Filenames as c_int) != 0,
+            no_suffix_desired: foundcs & (CompspecOption::NoSpace as c_int) != 0,
+            suffix_character: char::from_u32(append_char as u32).unwrap_or(' '),
+            bash_default_fallback_desired: foundcs & (CompspecOption::BashDefault as c_int) != 0,
+            nosort_desired: foundcs & (CompspecOption::NoSort as c_int) != 0,
+        }
+    }
+}
+
+impl Default for CompletionFlags {
+    fn default() -> Self {
+        Self {
+            quote_type: None,
+            readline_default_fallback_desired: true,
+            filename_quoting_desired: true,
+            filename_completion_desired: false,
+            no_suffix_desired: false,
+            suffix_character: ' ',
+            bash_default_fallback_desired: false,
+            nosort_desired: false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ProgrammableCompleteReturn {
     pub completions: Vec<String>,
-    pub quote_type: Option<QuoteType>,
-    pub filename_quoting_desired: bool,
-    pub filename_completion_desired: bool,
-    pub suppress_append: bool,
+    pub flags: CompletionFlags,
+}
+
+impl ProgrammableCompleteReturn {
+    pub fn new(completions: Vec<String>, flags: CompletionFlags) -> Self {
+        Self { completions, flags }
+    }
+
+    pub fn from(
+        completions: Vec<String>,
+        quote_type: Option<QuoteType>,
+        foundcs: c_int,
+        append_char: i32,
+    ) -> Self {
+        Self::new(
+            completions,
+            CompletionFlags::from(quote_type, foundcs, append_char),
+        )
+    }
+}
+
+fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
+    let mut strings = Vec::new();
+    unsafe {
+        if ptr.is_null() {
+            return strings;
+        }
+
+        for i in 0.. {
+            let c_str_ptr = *ptr.add(i);
+            if c_str_ptr.is_null() {
+                break;
+            }
+            let c_str = std::ffi::CStr::from_ptr(c_str_ptr);
+            if let Ok(str_slice) = c_str.to_str() {
+                strings.push(str_slice.to_string());
+            }
+        }
+    }
+    strings
 }
 
 pub fn run_programmable_completions(
@@ -326,6 +433,8 @@ pub fn run_programmable_completions(
         bash_symbols::rl_filename_completion_desired = 0;
         bash_symbols::rl_filename_quoting_desired = 1;
         bash_symbols::rl_completion_suppress_append = 0;
+        bash_symbols::rl_completion_append_character = ' ' as c_int;
+        bash_symbols::rl_sort_completion_matches = 1;
 
         let foundcs: std::ffi::c_int = 0;
 
@@ -339,99 +448,88 @@ pub fn run_programmable_completions(
 
         print_copt_flags(foundcs);
 
-        let rl_filename_quoting_desired_pre_call = bash_symbols::rl_filename_quoting_desired;
-        let rl_filename_completion_desired_pre_call = bash_symbols::rl_filename_completion_desired;
-        let rl_completion_suppress_append_pre_call = bash_symbols::rl_completion_suppress_append;
         if foundcs != 0 {
             // Copying logic from bashline.c:attempt_shell_completion
             // This is to pickup the filename desire from calls like `complete -o filenames`
+            // This probably isn't necessary since I am reading the values from foundcs directly but it doesn't hurt to be safe
             bash_symbols::pcomp_set_readline_variables(foundcs, 1);
         }
 
-        if rl_filename_quoting_desired_pre_call != bash_symbols::rl_filename_quoting_desired {
-            log::debug!(
-                "rl_filename_quoting_desired changed from {} to {}",
-                rl_filename_quoting_desired_pre_call,
-                bash_symbols::rl_filename_quoting_desired as i32
-            );
-        }
-        if rl_filename_completion_desired_pre_call != bash_symbols::rl_filename_completion_desired {
-            log::debug!(
-                "rl_filename_completion_desired changed from {} to {}",
-                rl_filename_completion_desired_pre_call,
-                bash_symbols::rl_filename_completion_desired as i32
-            );
-        }
-        if rl_completion_suppress_append_pre_call != bash_symbols::rl_completion_suppress_append {
-            log::debug!(
-                "rl_completion_suppress_append changed from {} to {}",
-                rl_completion_suppress_append_pre_call,
-                bash_symbols::rl_completion_suppress_append as i32
-            );
-        }
-
-        if list_of_strs.is_null() {
-            return Err(anyhow::anyhow!("programmable_completions returned null"));
-        }
         // The matches won't be escaped / quoted.
-        let mut res: Vec<String> = Vec::new();
-        for i in 0.. {
-            let ptr = *list_of_strs.add(i as usize);
-            if ptr.is_null() {
-                break;
-            }
-            let c_str = std::ffi::CStr::from_ptr(ptr);
-            if let Ok(str_slice) = c_str.to_str() {
-                log::debug!("programmable_completions result[{}]: {}", i, str_slice);
-
-                // TODO figure why bash is giving us sudplicates  in   the first  place
-                let already_exists = res.iter().any(|s| s == str_slice);
-                if already_exists {
-                    log::debug!("Skipping duplicate completion: {}", str_slice);
-                } else {
-                    res.push(str_slice.to_string());
-                }
-            }
-        }
-        Ok(ProgrammableCompleteReturn {
-            completions: res,
+        let mut completion_strings = vec_of_strings_from_char_char_ptr(list_of_strs);
+        // Readline also deplucates the results
+        completion_strings.dedup(); // TODO does this need sorting?
+        let res = ProgrammableCompleteReturn::from(
+            completion_strings,
             quote_type,
-            filename_quoting_desired: bash_symbols::rl_filename_quoting_desired != 0,
-            filename_completion_desired: bash_symbols::rl_filename_completion_desired != 0,
-            suppress_append: bash_symbols::rl_completion_suppress_append != 0,
-        })
+            foundcs,
+            bash_symbols::rl_completion_append_character,
+        );
+
+        log::debug!(
+            "Programmable completions found with foundcs={}: {:#?}",
+            foundcs,
+            res
+        );
+
+        if res.completions.is_empty() && res.flags.bash_default_fallback_desired {
+            log::debug!(
+                "No completions and bash default fallback desired: {}. Falling back to bash default completion.",
+                res.flags.bash_default_fallback_desired
+            );
+        } else {
+            log::debug!(
+                "Bash default fallback not desired or completions found. Not falling back to bash default completion."
+            );
+            return Ok(res);
+        }
+
+        let mut flags = res.flags;
+        std::mem::drop(res);
+
+        // I handle first word completion seperately
+        let in_command_position = 0;
+        let bash_default_completions = bash_symbols::bash_default_completion(
+            std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
+            word_under_cursor_byte_end.saturating_sub(word_under_cursor.len()) as std::ffi::c_int,
+            word_under_cursor_byte_end as std::ffi::c_int,
+            quote_type.unwrap_or_default().into_byte() as std::ffi::c_int,
+            in_command_position as std::ffi::c_int,
+        );
+
+        let mut completion_strings = vec_of_strings_from_char_char_ptr(bash_default_completions);
+        completion_strings.dedup();
+
+        log::debug!("Bash default completions: {:?}", completion_strings);
+
+        flags.filename_completion_desired = bash_symbols::rl_filename_completion_desired != 0;
+        flags.no_suffix_desired = bash_symbols::rl_completion_suppress_append != 0;
+        flags.suffix_character =
+            char::from_u32(bash_symbols::rl_completion_append_character as u32).unwrap_or(' ');
+        flags.nosort_desired = bash_symbols::rl_sort_completion_matches != 0;
+
+        let res = ProgrammableCompleteReturn::new(completion_strings, flags);
+
+        Ok(res)
     }
 }
 
 pub fn print_copt_flags(flag: c_int) {
-    /* Values for COMPSPEC options field. */
-    // #define COPT_RESERVED	(1<<0)		/* reserved for other use */
-    // #define COPT_DEFAULT	(1<<1)
-    // #define COPT_FILENAMES	(1<<2)
-    // #define COPT_DIRNAMES	(1<<3)
-    // #define COPT_NOQUOTE	(1<<4)
-    // #define COPT_NOSPACE	(1<<5)
-    // #define COPT_BASHDEFAULT (1<<6)
-    // #define COPT_PLUSDIRS	(1<<7)
-    // #define COPT_NOSORT	(1<<8)
-    // #define COPT_FULLQUOTE	(1<<9)
-    let options = [
-        (1 << 0, "COPT_RESERVED"),
-        (1 << 1, "COPT_DEFAULT"),
-        (1 << 2, "COPT_FILENAMES"),
-        (1 << 3, "COPT_DIRNAMES"),
-        (1 << 4, "COPT_NOQUOTE"),
-        (1 << 5, "COPT_NOSPACE"),
-        (1 << 6, "COPT_BASHDEFAULT"),
-        (1 << 7, "COPT_PLUSDIRS"),
-        (1 << 8, "COPT_NOSORT"),
-        (1 << 9, "COPT_FULLQUOTE"),
-    ];
-
     log::debug!("COMPSPEC options flags set for flag {}:", flag);
-    for (bit, name) in &options {
-        if flag & *bit != 0 {
-            log::debug!(" - {}", name);
+    for option in &[
+        CompspecOption::Reserved,
+        CompspecOption::Default,
+        CompspecOption::Filenames,
+        CompspecOption::Dirnames,
+        CompspecOption::NoQuote,
+        CompspecOption::NoSpace,
+        CompspecOption::BashDefault,
+        CompspecOption::PlusDirs,
+        CompspecOption::NoSort,
+        CompspecOption::FullQuote,
+    ] {
+        if flag & (*option as c_int) != 0 {
+            log::debug!(" - {:?}", option);
         }
     }
 }
@@ -444,11 +542,8 @@ pub fn get_env_variable(var_name: &str) -> Option<String> {
             return None;
         }
         let c_str = std::ffi::CStr::from_ptr(value_ptr);
-        if let Ok(str_slice) = c_str.to_str() {
-            return Some(str_slice.to_string());
-        }
+        c_str.to_str().ok().map(|s| s.to_string())
     }
-    None
 }
 
 // QuoteType can be  in the middle  of a word (i.e.  backslash)

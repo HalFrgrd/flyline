@@ -2,18 +2,17 @@
 # readline variable emulation in flyline.
 #
 # Usage: source tests/completion_util.sh
-# Then try: flyline_comp_util <tab>
+# Then try: fl_comp_util <tab>
 
-flyline_comp_util() {
-    echo "flyline_comp_util called with args:"
+fl_comp_util() {
+    echo "fl_comp_util called with args:"
     for arg in "$@"; do
         echo "  '$arg'"
     done
 }
 
 
-
-_flyline_comp_util_completions() {
+_fl_comp_util_completions() {
     local cur prev words cword
     _init_completion || return
 
@@ -52,32 +51,51 @@ _flyline_comp_util_completions() {
             COMPREPLY=( "foo" )
             return 0
             ;;
+        
+        --nosort)
+            compopt -o nosort
+            COMPREPLY=( "banana" "apple" "cherry" )
+            return 0
+            ;;
 
+        --fallback-to-default)
+            # Don't provide any completions, which should trigger the default completion behavior
+            COMPREPLY=()
+            return 0
+            ;;
     esac
 
     # Default completion shows available flags
-    local opts="--filenames --quoting-desired --suppress-quote --suppress-append"
+    local opts="--filenames --quoting-desired --suppress-quote --dont-suppress-append --suppress-append --nosort --fallback-to-default"
     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
 }
 
 # Register the completion function
-complete -F _flyline_comp_util_completions flyline_comp_util
-echo "flyline_comp_util loaded. Try 'flyline_comp_util <tab>'"
+complete -F _fl_comp_util_completions fl_comp_util
+echo "fl_comp_util loaded. Try 'fl_comp_util <tab>'"
 
 
-flyline_comp_util_default_filenames() {
-    echo "flyline_comp_util_default_filenames called with args:"
+fl_comp_util_default_filenames() {
+    echo "fl_comp_util_default_filenames called with args:"
     for arg in "$@"; do
         echo "  '$arg'"
     done
 }
 
-_flyline_comp_util_completions_default_filenames() {
-    local cur=${COMP_WORDS[COMP_CWORD]}
 
-    mapfile -t COMPREPLY < <(compgen -f -- "$cur")
+complete -F _fl_comp_util_completions -o filenames fl_comp_util_default_filenames
+echo "fl_comp_util_default_filenames loaded. Try 'fl_comp_util_default_filenames <tab>'"
+
+
+
+fl_comp_util_bashdefault() {
+    echo "fl_comp_util_bashdefault called with args:"
+    for arg in "$@"; do
+        echo "  '$arg'"
+    done
 }
 
+complete -F _fl_comp_util_completions -o bashdefault fl_comp_util_bashdefault
+echo "fl_comp_util_bashdefault loaded. Try 'fl_comp_util_bashdefault <tab>'"
 
-complete -F _flyline_comp_util_completions_default_filenames -o filenames flyline_comp_util_default_filenames
-echo "flyline_comp_util_default_filenames loaded. Try 'flyline_comp_util_default_filenames <tab>'"
+
