@@ -37,13 +37,9 @@ target "tab-completion-test" {
     contexts = {
         built-artifact = "target:built-artifact"
     }
-    name = "tab-completion-test"
     dockerfile = "docker/tab_completions.Dockerfile"
 }
 
-group "default" {
-    targets = ["lib-tests"]
-}
 
 group "bash-integration-tests" {
     targets = ["bash-integration-test"]
