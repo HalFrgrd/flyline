@@ -23,7 +23,10 @@ _fl_comp_util_completions() {
         --filenames)
             compopt -o filenames
             # Use mapfile to read compgen output into an array, preserving spaces in filenames
-            mapfile -t COMPREPLY < <(compgen -f -- "$cur")
+
+            COMPREPLY=( "$cur")
+            
+            # mapfile -t COMPREPLY < <(compgen -f -- "$cur")
             return 0
             ;;
 

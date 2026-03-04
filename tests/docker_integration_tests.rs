@@ -1,51 +1,21 @@
-use anyhow::Result;
-use std::env;
-use std::process::{Command, Stdio};
+mod common;
 
-fn run_bake_target(target: &str) -> Result<()> {
-    let stream = env::var("RUST_TEST_NOCAPTURE").is_ok();
-    let mut command = Command::new("docker");
-    command.args(["buildx", "bake", "-f", "docker/docker-bake.hcl", target]);
-    if stream {
-        let status = command
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()?;
-        if !status.success() {
-            anyhow::bail!("Command failed");
-        }
-    } else {
-        let output = command.output()?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Command failed: {}", stderr);
-        }
-    }
-    Ok(())
-}
-
-fn bake_target_for_bash_version(bash_version: &str) -> String {
-    format!("bash-integration-test-{}", bash_version.replace('.', "_"))
-}
-
-fn run_bash_version_test(bash_version: &str) -> Result<()> {
+fn run_bash_version_test(bash_version: &str) {
     println!("Testing Bash version: {}", bash_version);
 
-    run_bake_target(&bake_target_for_bash_version(bash_version))?;
+    let target = format!("bash-integration-test-{}", bash_version.replace('.', "_"));
+
+    common::run_bake_target(&target)
+        .expect(&format!("Test failed for Bash version: {}", bash_version));
 
     println!("Successfully tested Bash {} with flyline", bash_version);
-    Ok(())
 }
 
 macro_rules! bash_integration_test {
     ($name:ident, $version:expr) => {
         #[test]
         fn $name() {
-            run_bash_version_test($version).expect(concat!(
-                "Bash ",
-                $version,
-                " integration test failed"
-            ));
+            run_bash_version_test($version)
         }
     };
 }
