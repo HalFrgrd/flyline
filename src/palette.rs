@@ -14,11 +14,8 @@ impl Palette {
     pub fn secondary_text() -> Style {
         Style::default().add_modifier(Modifier::DIM)
     }
-    pub fn selection_style() -> Style {
-        Style::default().add_modifier(Modifier::REVERSED)
-    }
-    pub fn selected_matching_char() -> Style {
-        Self::matched_character().add_modifier(Modifier::REVERSED)
+    pub fn convert_to_selected(style: Style) -> Style {
+        style.add_modifier(Modifier::REVERSED)
     }
     pub fn normal_text() -> Style {
         Style::default()
@@ -39,9 +36,8 @@ impl Palette {
     pub fn highlight_maching_indices(
         s: &str,
         matching_indices: &[usize],
-    ) -> (Vec<Line<'static>>, Vec<Line<'static>>) {
+    ) -> Vec<Line<'static>> {
         let mut normal_lines = Vec::new();
-        let mut selected_lines = Vec::new();
 
         let mut char_offset = 0usize;
         for text_line in s.split('\n') {
@@ -55,7 +51,6 @@ impl Palette {
                 .collect();
 
             let mut normal_spans = Vec::new();
-            let mut selected_spans = Vec::new();
 
             for (is_matching, chunk) in &text_line
                 .char_indices()
@@ -64,22 +59,19 @@ impl Palette {
                 let chunk_str = chunk.map(|(_, c)| c).collect::<String>();
                 if is_matching {
                     normal_spans.push(Span::styled(
-                        chunk_str.clone(),
+                        chunk_str,
                         Palette::matched_character(),
                     ));
-                    selected_spans.push(Span::styled(chunk_str, Palette::selected_matching_char()));
                 } else {
-                    normal_spans.push(Span::styled(chunk_str.clone(), Palette::normal_text()));
-                    selected_spans.push(Span::styled(chunk_str, Palette::selection_style()));
+                    normal_spans.push(Span::styled(chunk_str, Palette::normal_text()));
                 }
             }
 
             normal_lines.push(Line::from(normal_spans));
-            selected_lines.push(Line::from(selected_spans));
 
             char_offset = line_end_offset + 1; // +1 for the '\n' character
         }
 
-        (normal_lines, selected_lines)
+        normal_lines
     }
 }

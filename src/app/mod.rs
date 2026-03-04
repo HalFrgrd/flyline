@@ -987,15 +987,9 @@ impl<'a> App<'a> {
                     let line = Line::from(spans);
                     content.write_line(&line, false, Tag::HistoryResult(row_idx));
 
-                    let formatted_text = if is_selected {
-                        if formatted_entry.command_spans_selected.is_none() {
-                            // Lazily generate the formatted command with highlights for the selected entry
-                            formatted_entry.gen_formatted_command();
-                        }
-                        formatted_entry.command_spans_selected.as_ref().unwrap()
-                    } else {
+                    let formatted_text = {
                         if formatted_entry.command_spans.is_none() {
-                            // Lazily generate the formatted command with highlights for the selected entry
+                            // Lazily generate the formatted command with highlights
                             formatted_entry.gen_formatted_command();
                         }
                         formatted_entry.command_spans.as_ref().unwrap()
@@ -1007,7 +1001,15 @@ impl<'a> App<'a> {
                             content.newline();
                         }
                         for span in &line.spans {
-                            content.write_span(span, Tag::HistoryResult(row_idx));
+                            if is_selected {
+                                let selected_span = Span::styled(
+                                    span.content.clone(),
+                                    Palette::convert_to_selected(span.style),
+                                );
+                                content.write_span(&selected_span, Tag::HistoryResult(row_idx));
+                            } else {
+                                content.write_span(span, Tag::HistoryResult(row_idx));
+                            }
                         }
                     }
                     content.fill_line(Tag::HistoryResult(row_idx));
