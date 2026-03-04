@@ -81,3 +81,6 @@ _flyline_comp_util_completions_default_filenames() {
 
 complete -F _flyline_comp_util_completions_default_filenames -o filenames flyline_comp_util_default_filenames
 echo "flyline_comp_util_default_filenames loaded. Try 'flyline_comp_util_default_filenames <tab>'"
+
+
+# TODO add tests for bashdefault and default fallback
