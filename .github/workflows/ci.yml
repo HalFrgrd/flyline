@@ -21,6 +21,7 @@ jobs:
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
+          source: .
           targets: extract-artifact
           set: |
             extract-artifact.output=type=local,dest=${{ runner.temp }}/docker/build
@@ -52,6 +53,7 @@ jobs:
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
+          source: .
           targets: lib-tests
           set: |
             *.cache-from=type=gha
@@ -77,6 +79,7 @@ jobs:
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
+          source: .
           targets: bash-integration-test
           set: |
             bash-integration-test.args.BASH_VERSION=${{ matrix.bash_version }}
@@ -98,6 +101,7 @@ jobs:
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
+          source: .
           targets: tab-completion-tests
           set: |
             *.cache-from=type=gha
