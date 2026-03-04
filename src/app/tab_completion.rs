@@ -445,9 +445,8 @@ impl App<'_> {
     #[cfg(feature = "integration-tests")]
     pub fn test_tab_completions(&mut self) {
         use crate::logging;
-        use itertools::Itertools;
         use core::panic;
-
+        use itertools::Itertools;
 
         log::set_max_level(log::LevelFilter::Debug);
         logging::stream_logs("stderr".into()).unwrap();
@@ -517,6 +516,25 @@ impl App<'_> {
                 }
             }
         };
+
+        let cwd = std::env::current_dir().unwrap();
+        log::info!("Current directory: {:?}", cwd);
+
+        if let Ok(entries) = std::fs::read_dir(&cwd) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    let file_type = entry.file_type().unwrap();
+                    if file_type.is_dir() {
+                        log::info!("DIR: {:?}", path);
+                    } else if file_type.is_file() {
+                        log::info!("FILE: {:?}", path);
+                    } else {
+                        log::info!("OTHER: {:?}", path);
+                    }
+                }
+            }
+        }
 
         run_test_on(
             "fl_comp_util --filenames ",
