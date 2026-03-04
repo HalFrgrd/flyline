@@ -2,10 +2,10 @@ use anyhow::Result;
 use std::env;
 use std::process::{Command, Stdio};
 
-fn run_command(cmd: &str, args: Vec<String>) -> Result<()> {
+fn run_bake_target(target: &str) -> Result<()> {
     let stream = env::var("RUST_TEST_NOCAPTURE").is_ok();
-    let mut command = Command::new(cmd);
-    command.args(&args);
+    let mut command = Command::new("docker");
+    command.args(["buildx", "bake", "-f", "docker/docker-bake.hcl", target]);
     if stream {
         let status = command
             .stdout(Stdio::inherit())
@@ -24,25 +24,14 @@ fn run_command(cmd: &str, args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+fn bake_target_for_bash_version(bash_version: &str) -> String {
+    format!("bash-integration-test-{}", bash_version.replace('.', "_"))
+}
+
 fn run_bash_version_test(bash_version: &str) -> Result<()> {
     println!("Testing Bash version: {}", bash_version);
 
-    // Ensure the builder image reflects current source
-    run_command("docker/docker_build.sh", vec![])?;
-
-    run_command(
-        "docker",
-        vec![
-            "build".to_string(),
-            "--build-arg".to_string(),
-            format!("BASH_VERSION={}", bash_version),
-            "--file".to_string(),
-            "docker/bash_integration_test.Dockerfile".to_string(),
-            "--tag".to_string(),
-            format!("flyline-test-bash{}", bash_version.replace(".", "")),
-            "docker/build".to_string(),
-        ],
-    )?;
+    run_bake_target(&bake_target_for_bash_version(bash_version))?;
 
     println!("Successfully tested Bash {} with flyline", bash_version);
     Ok(())
