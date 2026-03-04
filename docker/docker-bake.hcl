@@ -10,13 +10,20 @@ target "built-artifact" {
     target = "flyline-built-artifact"
 }
 
+target "extract-artifact" {
+    context = "."
+  output = ["type=local,dest=docker/build"]
+    dockerfile = "docker/integration_test_build.Dockerfile"
+    target = "flyline-built-artifact"
+}
+
 target "lib-tests" {
     context = "."
     dockerfile = "docker/integration_test_build.Dockerfile"
     target = "flyline-lib-tests"
 }
 
-target "bash-integration-test" {
+target "bash-integration-tests" {
     context = "."
     contexts = {
         built-artifact = "target:built-artifact"
@@ -32,7 +39,7 @@ target "bash-integration-test" {
     tags = ["flyline-bash-integration-test:${bash_version}"]
 }
 
-target "tab-completion-test" {
+target "tab-completion-tests" {
     context = "."
     contexts = {
         built-artifact = "target:built-artifact"
@@ -42,5 +49,5 @@ target "tab-completion-test" {
 
 
 group "bash-integration-tests" {
-    targets = ["bash-integration-test"]
+    targets = ["bash-integration-tests"]
 }
