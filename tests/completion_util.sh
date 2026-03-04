@@ -99,5 +99,3 @@ complete -F _fl_comp_util_completions -o bashdefault fl_comp_util_bashdefault
 echo "fl_comp_util_bashdefault loaded. Try 'fl_comp_util_bashdefault <tab>'"
 
 
-
-# TODO add tests for bashdefault and default fallback
