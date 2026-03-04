@@ -193,6 +193,16 @@ unsafe extern "C" {
         foundp: *mut c_int,
     ) -> *mut *mut c_char;
 
+    // from bashline.c
+    // char ** bash_default_completion (const char *text, int start, int end, int qc, int compflags)
+    pub fn bash_default_completion(
+        text: *const c_char,
+        start: c_int,
+        end: c_int,
+        qc: c_int,
+        compflags: c_int,
+    ) -> *mut *mut c_char;
+
     // from readline/readline.h
     // Line buffer and maintenance
     // char *rl_line_buffer
@@ -261,6 +271,17 @@ unsafe extern "C" {
     // int rl_completion_suppress_append = 0;
     #[link_name = "rl_completion_suppress_append"]
     pub static mut rl_completion_suppress_append: c_int;
+
+    /* Character appended to completed words when at the end of the line.  The
+    default is a space. */
+    // int rl_completion_append_character = ' ';
+    #[link_name = "rl_completion_append_character"]
+    pub static mut rl_completion_append_character: c_int;
+
+    /* If non-zero, sort the completion matches.  On by default. */
+    // int rl_sort_completion_matches = 1;
+    #[link_name = "rl_sort_completion_matches"]
+    pub static mut rl_sort_completion_matches: c_int;
 
     // typedef char *rl_dequote_func_t (char *, int);
     // rl_dequote_func_t *rl_filename_dequoting_function
