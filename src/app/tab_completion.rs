@@ -2,7 +2,6 @@ use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::app::{App, ContentMode};
 use crate::bash_funcs;
 use crate::tab_completion_context;
-use core::panic;
 use glob::glob;
 use std::path::Path;
 
@@ -92,10 +91,14 @@ impl App<'_> {
             sug.to_string()
         };
 
-        let space_to_append = if comp_resultflags.no_suffix_desired {
-            ""
+        let suffix = if comp_resultflags.no_suffix_desired {
+            None
         } else {
-            if sug.ends_with(" ") { "" } else { " " }
+            if comp_resultflags.suffix_character == ' ' {
+                if sug.ends_with(" ") { None } else { Some(' ') }
+            } else {
+                Some(comp_resultflags.suffix_character)
+            }
         };
 
         let (appended, suffix) = if comp_resultflags.filename_completion_desired {
@@ -109,15 +112,16 @@ impl App<'_> {
             };
 
             if path.is_dir() {
-                (format!("{}/", quoted), "")
+                (format!("{}/", quoted), None)
             } else {
-                (quoted, space_to_append)
+                (quoted, suffix)
             }
         } else {
-            (quoted, space_to_append)
+            (quoted, suffix)
         };
 
-        Suggestion::new(appended, "", suffix)
+        let suffix_str = suffix.map(|f| f.to_string()).unwrap_or_default();
+        Suggestion::new(appended, "", &suffix_str)
     }
 
     fn post_process_completions(
@@ -438,10 +442,12 @@ impl App<'_> {
         )
     }
 
-    // #[cfg(feature = "integration-tests")]
+    #[cfg(feature = "integration-tests")]
     pub fn test_tab_completions(&mut self) {
         use crate::logging;
         use itertools::Itertools;
+        use core::panic;
+
 
         log::set_max_level(log::LevelFilter::Debug);
         logging::stream_logs("stderr".into()).unwrap();
