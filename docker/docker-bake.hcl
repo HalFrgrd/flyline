@@ -10,6 +10,8 @@ target "built-artifact" {
     target = "flyline-built-artifact"
 }
 
+# example command:
+# docker buildx bake -f docker/docker-bake.hcl extract-artifact
 target "extract-artifact" {
     context = "."
   output = ["type=local,dest=docker/build"]
