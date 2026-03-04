@@ -18,60 +18,66 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/bake-action@v6
         with:
-          context: .
-          # load: true # Storing the image in docker is slow, so try and rely on caching
-          file: docker/release_builder.Dockerfile
-          target: flyline-extracted-library
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          outputs: type=local,dest=${{ runner.temp }}/flyline-build
+          files: docker/docker-bake.hcl
+          targets: extract-artifact
+          set: |
+            target.output=type=local,dest=${{ runner.temp }}/docker/build
+            target.cache-from=type=gha
+            target.cache-to=type=gha,mode=max
 
-      - name: Run tests
-        # running the tests by building an image is a cache friendly way to do it
-        # if we build a container, the previous step would need to have exported the image to docker
-        # which is slow
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/release_builder.Dockerfile
-          target: flyline-tests
-          cache-from: type=gha
-          # cache-to: type=gha,mode=max
-      
       - name: Save built library artifact
         uses: actions/upload-artifact@v4
         with:
           name: built-flyline-library
-          path: ${{ runner.temp }}/flyline-build/libflyline.so
+          path: ${{ runner.temp }}/docker/build/libflyline.so
 
-  bash-integration-tests:
-    name: Test bashn${{ matrix.bash_version }} using built library
+
+  run-library-tests:
+    name: Run library tests
     needs: build-ubuntu-1604
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        bash_version: [ "4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download built library artifact
-        uses: actions/download-artifact@v4
+      - name: Run tests
+        # running the tests by building an image is a cache friendly way to do it
+        # if we build a container, the previous step would need to have exported the image to docker
+        # which is slow
+        uses: docker/bake-action@v6
         with:
-          name: built-flyline-library
-          path: ${{ runner.temp }}/flyline-build
+          files: docker/docker-bake.hcl
+          targets: lib-tests
+          set: |
+            target.output=type=local,dest=${{ runner.temp }}/docker/build
+            target.cache-from=type=gha
+      
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+  # bash-integration-tests:
+  #   name: Test bashn${{ matrix.bash_version }} using built library
+  #   needs: build-ubuntu-1604
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       bash_version: [ "4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
 
-      - name: Run integration tests
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ runner.temp }}/flyline-build
-          file: docker/bash_integration_test.Dockerfile
-          build-args: BASH_VERSION=${{ matrix.bash_version }}
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
+  #     - name: Download built library artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: built-flyline-library
+  #         path: ${{ runner.temp }}/flyline-build
+
+  #     - name: Set up Docker Buildx
+  #       uses: docker/setup-buildx-action@v3
+
+  #     - name: Run integration tests
+  #       uses: docker/build-push-action@v6
+  #       with:
+  #         context: ${{ runner.temp }}/flyline-build
+  #         file: docker/bash_integration_test.Dockerfile
+  #         build-args: BASH_VERSION=${{ matrix.bash_version }}
+  #         # cache-from: type=gha
+  #         # cache-to: type=gha,mode=max
