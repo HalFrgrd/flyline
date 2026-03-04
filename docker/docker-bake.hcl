@@ -41,15 +41,25 @@ target "bash-integration-tests" {
     tags = ["flyline-bash-integration-test:${bash_version}"]
 }
 
+# Single-version target intended for CI matrix jobs.
+# Override these in CI via `--set` / bake-action `set:`:
+# - bash-integration-test.args.BASH_VERSION
+# - bash-integration-test.contexts.built-artifact (to point at a downloaded libflyline.so)
+target "bash-integration-test" {
+    context = "."
+    contexts = {
+        built-artifact = "target:built-artifact"
+    }
+    dockerfile = "docker/bash_integration_test.Dockerfile"
+    args = {
+        BASH_VERSION = "5.2"
+    }
+}
+
 target "tab-completion-tests" {
     context = "."
     contexts = {
         built-artifact = "target:built-artifact"
     }
     dockerfile = "docker/tab_completions.Dockerfile"
-}
-
-
-group "bash-integration-tests" {
-    targets = ["bash-integration-tests"]
 }
