@@ -442,7 +442,7 @@ impl App<'_> {
         )
     }
 
-    // #[cfg(feature = "integration-tests")]
+    #[cfg(feature = "integration-tests")]
     pub fn test_tab_completions(&mut self) {
         use crate::logging;
         use core::panic;
