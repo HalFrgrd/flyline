@@ -568,6 +568,16 @@ impl App<'_> {
             &[&Suggestion::new(r#"many\ spaces\ here/"#, "", "")],
         );
 
+        run_test_on(
+            "fl_comp_util_dirnames --fallback-to-default man",
+            &[&Suggestion::new(r#"many\ spaces\ here/"#, "", "")],
+        );
+
+        run_test_on(
+            "fl_comp_util_plusdirs --fallback-to-default man",
+            &[&Suggestion::new(r#"many\ spaces\ here/"#, "", "")],
+        );
+
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
 }

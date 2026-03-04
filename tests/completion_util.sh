@@ -99,3 +99,27 @@ complete -F _fl_comp_util_completions -o bashdefault fl_comp_util_bashdefault
 echo "fl_comp_util_bashdefault loaded. Try 'fl_comp_util_bashdefault <tab>'"
 
 
+
+fl_comp_util_dirnames() {
+    echo "fl_comp_util_dirnames called with args:"
+    for arg in "$@"; do
+        echo "  '$arg'"
+    done
+}
+
+complete -F _fl_comp_util_completions -o dirnames fl_comp_util_dirnames
+echo "fl_comp_util_dirnames loaded. Try 'fl_comp_util_dirnames <tab>'"
+
+
+
+fl_comp_util_plusdirs() {
+    echo "fl_comp_util_plusdirs called with args:"
+    for arg in "$@"; do
+        echo "  '$arg'"
+    done
+}
+
+complete -F _fl_comp_util_completions -o plusdirs fl_comp_util_plusdirs
+echo "fl_comp_util_plusdirs loaded. Try 'fl_comp_util_plusdirs <tab>'"
+
+
