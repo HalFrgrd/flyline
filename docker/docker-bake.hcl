@@ -14,7 +14,7 @@ target "built-artifact" {
 # docker buildx bake -f docker/docker-bake.hcl extract-artifact
 target "extract-artifact" {
     context = "."
-  output = ["type=local,dest=docker/build"]
+    output = ["type=local,dest=docker/build"]
     dockerfile = "docker/integration_test_build.Dockerfile"
     target = "flyline-built-artifact"
 }
