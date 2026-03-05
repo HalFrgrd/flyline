@@ -956,6 +956,13 @@ impl<'a> App<'a> {
 
                 let num_digits_for_index = num_searched.to_string().len();
                 let num_digits_for_score = 3;
+                let timeago_width = 5; // ts_to_timeago_string_5chars always returns 5 chars
+                let indicator_width = 1; // "▐" or " "
+                // Width of the header prefix: "{index} {score} {timeago}{indicator}"
+                let header_prefix_width = (num_digits_for_index + 1)
+                    + (num_digits_for_score + 1)
+                    + timeago_width
+                    + indicator_width;
                 for (row_idx, formatted_entry) in fuzzy_results.iter_mut().enumerate() {
                     let entry = &formatted_entry.entry;
                     let mut spans = vec![];
@@ -995,12 +1002,35 @@ impl<'a> App<'a> {
                         formatted_entry.command_spans.as_ref().unwrap()
                     };
 
-                    for (line_idx, line) in formatted_text.iter().enumerate() {
+                    let total_lines = formatted_text.len();
+                    let max_lines = if is_selected { 4 } else { 1 };
+                    let has_more = total_lines > max_lines;
+                    let lines_displayed = total_lines.min(max_lines);
+
+                    for (line_idx, cmd_line) in
+                        formatted_text.iter().take(max_lines).enumerate()
+                    {
                         if line_idx > 0 {
                             content.fill_line(Tag::HistoryResult(row_idx));
                             content.newline();
+                            // Write a padding span aligned to the header width.
+                            // Show "X/N" (line number / total lines) right-justified
+                            // in the header area so text aligns with the first line.
+                            let line_num_str =
+                                format!("{}/{}", line_idx + 1, total_lines);
+                            let padding = format!(
+                                "{:>width$} ",
+                                line_num_str,
+                                // -1 because the format string appends a trailing " " explicitly
+                                width = header_prefix_width - 1
+                            );
+                            content.write_span(
+                                &Span::styled(padding, Palette::secondary_text()),
+                                Tag::HistoryResult(row_idx),
+                            );
                         }
-                        for span in &line.spans {
+
+                        for span in &cmd_line.spans {
                             if is_selected {
                                 let selected_span = Span::styled(
                                     span.content.clone(),
@@ -1010,6 +1040,19 @@ impl<'a> App<'a> {
                             } else {
                                 content.write_span(span, Tag::HistoryResult(row_idx));
                             }
+                        }
+
+                        // Append ellipsis on the last displayed line when more lines exist
+                        if line_idx + 1 == lines_displayed && has_more {
+                            let ellipsis_style = if is_selected {
+                                Palette::convert_to_selected(Palette::secondary_text())
+                            } else {
+                                Palette::secondary_text()
+                            };
+                            content.write_span(
+                                &Span::styled("…", ellipsis_style),
+                                Tag::HistoryResult(row_idx),
+                            );
                         }
                     }
                     content.fill_line(Tag::HistoryResult(row_idx));
