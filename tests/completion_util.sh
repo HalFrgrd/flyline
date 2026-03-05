@@ -63,10 +63,17 @@ _fl_comp_util_completions() {
             COMPREPLY=()
             return 0
             ;;
+        
+        --fallback-to-default-filenames)
+            compopt -o filenames
+            COMPREPLY=()
+            return 0
+            ;;
+
     esac
 
     # Default completion shows available flags
-    local opts="--filenames --quoting-desired --suppress-quote --dont-suppress-append --suppress-append --nosort --fallback-to-default"
+    local opts="--filenames --quoting-desired --suppress-quote --dont-suppress-append --suppress-append --nosort --fallback-to-default --fallback-to-default-filenames"
     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
 }
 
@@ -98,4 +105,27 @@ fl_comp_util_bashdefault() {
 complete -F _fl_comp_util_completions -o bashdefault fl_comp_util_bashdefault
 echo "fl_comp_util_bashdefault loaded. Try 'fl_comp_util_bashdefault <tab>'"
 
+
+
+fl_comp_util_dirnames() {
+    echo "fl_comp_util_dirnames called with args:"
+    for arg in "$@"; do
+        echo "  '$arg'"
+    done
+}
+
+complete -F _fl_comp_util_completions -o dirnames fl_comp_util_dirnames
+echo "fl_comp_util_dirnames loaded. Try 'fl_comp_util_dirnames <tab>'"
+
+
+
+fl_comp_util_plusdirs() {
+    echo "fl_comp_util_plusdirs called with args:"
+    for arg in "$@"; do
+        echo "  '$arg'"
+    done
+}
+
+complete -F _fl_comp_util_completions -o plusdirs fl_comp_util_plusdirs
+echo "fl_comp_util_plusdirs loaded. Try 'fl_comp_util_plusdirs <tab>'"
 
