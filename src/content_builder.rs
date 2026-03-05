@@ -267,6 +267,13 @@ impl Contents {
         }
     }
 
+    /// Move the cursor to a specific column on the current row.
+    /// This allows positioning the cursor before writing content (e.g. right-aligned ellipsis).
+    /// `col` is clamped to `self.width` to avoid an inconsistent cursor position.
+    pub fn set_cursor_col(&mut self, col: u16) {
+        self.cursor_pos.col = col.min(self.width);
+    }
+
     /// Fill the rest of the current row with spaces tagged with the given tag
     pub fn fill_line(&mut self, tag: Tag) {
         let remaining = self.width.saturating_sub(self.cursor_pos.col) as usize;
