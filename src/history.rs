@@ -370,7 +370,6 @@ pub(crate) struct HistoryEntryFormatted {
     pub score: i64,
     pub match_indices: Vec<usize>,
     pub command_spans: Option<Vec<Line<'static>>>,
-    pub command_spans_selected: Option<Vec<Line<'static>>>,
 }
 
 impl std::cmp::Eq for HistoryEntryFormatted {}
@@ -398,20 +397,18 @@ impl HistoryEntryFormatted {
             score,
             match_indices,
             command_spans: None,
-            command_spans_selected: None,
         }
     }
 
     pub fn gen_formatted_command(&mut self) {
-        if self.command_spans.is_some() && self.command_spans_selected.is_some() {
+        if self.command_spans.is_some() {
             return;
         }
 
-        let (command_spans, command_spans_selected) =
+        let command_spans =
             Palette::highlight_maching_indices(&self.entry.command, &self.match_indices);
 
         self.command_spans = Some(command_spans);
-        self.command_spans_selected = Some(command_spans_selected);
     }
 }
 
