@@ -2,25 +2,25 @@
 Output demo.gif
 
 
-# Set up a 1200x600 terminal with 46px font.
-Set FontSize 24
-Set Width 1200
-Set Height 600
+# Set up a 1560x780 terminal with 31px font (30% bigger than original 1200x600 / 24px).
+Set FontSize 31
+Set Width 1560
+Set Height 780
 Set Framerate 60
 
 Hide
 
 # vhs doesnt source our bashrc so lets run bash here so that it will source it
-Type "bash"
+Type "clear && bash"
 Enter
 
 Show
 
 Type "echo long command here abcdefghijklmnopqrstuvwwxyz"
 Sleep 1000ms
-Left 50
+Ctrl+Left 5
 Sleep 1000ms
-Right 50
+Ctrl+Right 5
 Enter
 
 # Pause for dramatic effect...
