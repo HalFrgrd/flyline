@@ -65,7 +65,7 @@ jobs:
           target: bash-integration-tests
 
   bash-integration-tests:
-    name: Test ${{ matrix.target }} using built library
+    name: Bash integration tests using built library
     needs:
       - bash-integration-tests-matrix
       - build-ubuntu-1604
