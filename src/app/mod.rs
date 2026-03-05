@@ -5,7 +5,7 @@ use crate::active_suggestions::ActiveSuggestions;
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::command_acceptance;
-use crate::content_builder::{Contents, Tag};
+use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::AnnotatedToken;
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
@@ -1002,35 +1002,56 @@ impl<'a> App<'a> {
                         formatted_entry.command_spans.as_ref().unwrap()
                     };
 
-                    let total_lines = formatted_text.len();
-                    let max_lines = if is_selected { 4 } else { 1 };
-                    let has_more = total_lines > max_lines;
-                    let lines_displayed = total_lines.min(max_lines);
+                    // Width available for command content on each terminal row
+                    // (the header/indent prefix always occupies header_prefix_width columns)
+                    let available_cols =
+                        content.width.saturating_sub(header_prefix_width as u16);
 
-                    for (line_idx, cmd_line) in
-                        formatted_text.iter().take(max_lines).enumerate()
+                    // Pre-process all logical lines into terminal display rows.
+                    // Each element is: (is_start_of_logical_line, logical_line_idx, row_spans)
+                    let total_logical_lines = formatted_text.len();
+                    let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
+                    for (logical_idx, logical_line) in formatted_text.iter().enumerate() {
+                        let terminal_rows =
+                            split_line_to_terminal_rows(logical_line, available_cols);
+                        for (sub_idx, terminal_row) in terminal_rows.into_iter().enumerate() {
+                            all_display_rows.push((sub_idx == 0, logical_idx, terminal_row));
+                        }
+                    }
+
+                    let total_display_rows = all_display_rows.len();
+                    let max_display_rows = if is_selected { 4 } else { 1 };
+                    let has_more = total_display_rows > max_display_rows;
+                    let rows_to_show = total_display_rows.min(max_display_rows);
+
+                    for (display_idx, (is_start_of_logical, logical_idx, display_line)) in
+                        all_display_rows.into_iter().take(max_display_rows).enumerate()
                     {
-                        if line_idx > 0 {
+                        if display_idx > 0 {
                             content.fill_line(Tag::HistoryResult(row_idx));
                             content.newline();
-                            // Write a padding span aligned to the header width.
-                            // Show "X/N" (line number / total lines) right-justified
-                            // in the header area so text aligns with the first line.
-                            let line_num_str =
-                                format!("{}/{}", line_idx + 1, total_lines);
-                            let padding = format!(
-                                "{:>width$} ",
-                                line_num_str,
-                                // -1 because the format string appends a trailing " " explicitly
-                                width = header_prefix_width - 1
-                            );
+                            // Write indent prefix aligned to the header width.
+                            // For the first terminal row of a new logical line, show "X/N"
+                            // right-justified; for wrapped continuation rows, use blank padding.
+                            let indent_str = if is_start_of_logical {
+                                let line_num_str =
+                                    format!("{}/{}", logical_idx + 1, total_logical_lines);
+                                format!(
+                                    "{:>width$} ",
+                                    line_num_str,
+                                    // -1 because the format string appends a trailing " "
+                                    width = header_prefix_width - 1
+                                )
+                            } else {
+                                " ".repeat(header_prefix_width)
+                            };
                             content.write_span(
-                                &Span::styled(padding, Palette::secondary_text()),
+                                &Span::styled(indent_str, Palette::secondary_text()),
                                 Tag::HistoryResult(row_idx),
                             );
                         }
 
-                        for span in &cmd_line.spans {
+                        for span in &display_line.spans {
                             if is_selected {
                                 let selected_span = Span::styled(
                                     span.content.clone(),
@@ -1042,8 +1063,8 @@ impl<'a> App<'a> {
                             }
                         }
 
-                        // Append ellipsis on the last displayed line when more lines exist
-                        if line_idx + 1 == lines_displayed && has_more {
+                        // Append ellipsis on the last displayed row when more content exists
+                        if display_idx + 1 == rows_to_show && has_more {
                             let ellipsis_style = if is_selected {
                                 Palette::convert_to_selected(Palette::secondary_text())
                             } else {
