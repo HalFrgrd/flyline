@@ -18,9 +18,9 @@ Show
 
 Type "echo long command here abcdefghijklmnopqrstuvwwxyz"
 Sleep 1000ms
-Ctrl+Left 5
+Left 5
 Sleep 1000ms
-Ctrl+Right 5
+Right 5
 Enter
 
 # Pause for dramatic effect...
@@ -29,13 +29,13 @@ Sleep 100ms
 Type "echo"
 Sleep 1500ms
 Ctrl+R
-Sleep 1500ms
+Sleep 1000ms
 Down
-Sleep 1500ms
+Sleep 1000ms
 Down
-Sleep 1500ms
+Sleep 1000ms
 Up
-Sleep 1500ms
+Sleep 1000ms
 
 Enter
 
