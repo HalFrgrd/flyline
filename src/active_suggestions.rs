@@ -16,7 +16,6 @@ pub struct SuggestionFormatted {
     pub suggestion_idx: usize,
     pub display_len: usize,
     pub spans: Vec<Span<'static>>,
-    pub spans_selected: Vec<Span<'static>>,
 }
 
 impl SuggestionFormatted {
@@ -25,20 +24,27 @@ impl SuggestionFormatted {
         suggestion_idx: usize,
         matching_indices: Vec<usize>,
     ) -> Self {
-        let (lines, lines_selected) =
+        let lines =
             Palette::highlight_maching_indices(&suggestion.s, &matching_indices);
 
         SuggestionFormatted {
             suggestion_idx,
             display_len: suggestion.s.len() + 2,
             spans: lines.into_iter().flat_map(|l| l.spans).collect(),
-            spans_selected: lines_selected.into_iter().flat_map(|l| l.spans).collect(),
         }
     }
 
     pub fn render(&self, col_width: usize, is_selected: bool) -> Vec<Span<'static>> {
-        let mut spans = if is_selected {
-            self.spans_selected.clone()
+        let mut spans: Vec<Span<'static>> = if is_selected {
+            self.spans
+                .iter()
+                .map(|span| {
+                    Span::styled(
+                        span.content.clone(),
+                        Palette::convert_to_selected(span.style),
+                    )
+                })
+                .collect()
         } else {
             self.spans.clone()
         };
