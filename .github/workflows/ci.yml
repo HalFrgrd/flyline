@@ -55,8 +55,10 @@ jobs:
     name: Create bash integration tests matrix
     runs-on: ubuntu-latest
     steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
       - name: Generate matrix
-        id: generate
         uses: docker/bake-action/subaction/matrix@v6
         with:
           files: docker/docker-bake.hcl
