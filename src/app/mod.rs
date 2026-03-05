@@ -1063,13 +1063,17 @@ impl<'a> App<'a> {
                             }
                         }
 
-                        // Append ellipsis on the last displayed row when more content exists
+                        // Append ellipsis on the last displayed row when more content exists.
+                        // Move the cursor to the last column so the ellipsis overwrites the
+                        // final character of the line rather than wrapping to the next row.
                         if display_idx + 1 == rows_to_show && has_more {
                             let ellipsis_style = if is_selected {
                                 Palette::convert_to_selected(Palette::secondary_text())
                             } else {
                                 Palette::secondary_text()
                             };
+                            // "…" (U+2026) has a terminal display width of 1.
+                            content.set_cursor_col(content.width.saturating_sub(1));
                             content.write_span(
                                 &Span::styled("…", ellipsis_style),
                                 Tag::HistoryResult(row_idx),
