@@ -586,6 +586,23 @@ impl App<'_> {
             &[&Suggestion::new(r#"many\ spaces\ here/"#, "", "")],
         );
 
+        run_test_on(
+            "fl_comp_util_dirnames --fallback-to-default-filenames ",
+            &[
+                &Suggestion::new(r#"foo/"#, "", ""),
+                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
+            ],
+        );
+
+        run_test_on(
+            "fl_comp_util_plusdirs --quoting-desired ",
+            &[
+                &Suggestion::new(r#"foo/"#, "", ""),
+                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &Suggestion::new(r#"multi\ word\ option"#, "", " "),
+            ],
+        );
+
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
 }

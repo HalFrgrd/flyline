@@ -1,7 +1,7 @@
 use clap::{CommandFactory, Parser};
 use clap_complete::{Shell, generate};
-use libc::{c_char, c_int};
 use core::panic;
+use libc::{c_char, c_int};
 use std::sync::Mutex;
 
 mod active_suggestions;
