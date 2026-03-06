@@ -159,7 +159,6 @@ impl<'a> App<'a> {
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(
                 unfinished_from_prev_command,
-                settings.time_format.clone(),
             ),
             home_path: home_path,
             history_manager: HistoryManager::new(settings),
