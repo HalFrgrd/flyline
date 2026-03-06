@@ -1,14 +1,18 @@
 use crate::bash_funcs;
 use crate::bash_symbols;
 use ansi_to_tui::IntoText;
-use ratatui::text::{Line, Span, Text};
+use ratatui::text::{Line, Span};
+use std::collections::HashMap;
 
 pub struct PromptManager {
     prompt: Vec<Line<'static>>,
     rprompt: Vec<Line<'static>>,
     fill_span: Line<'static>,
-    last_time_str: String,
-    time_format: Option<String>,
+    /// Maps 8-character placeholder identifiers (e.g. `FLYT0000`) to the
+    /// chrono format string they represent.  Populated from bash time escape
+    /// sequences found in PS1 / RPS1 / PS1_FILL at construction time and
+    /// applied on every render in `get_ps1_lines`.
+    time_map: HashMap<String, String>,
 }
 
 fn get_current_readline_prompt() -> Option<String> {
@@ -29,8 +33,147 @@ fn get_current_readline_prompt() -> Option<String> {
     }
 }
 
+/// Scan a raw bash prompt string and replace every time format escape sequence
+/// with a unique 8-character placeholder.  Returns the modified string and a
+/// map of placeholder → chrono format string.
+///
+/// Recognised bash time escape sequences (see
+/// <https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html>):
+///
+/// | Sequence     | Meaning                        | Chrono format |
+/// |--------------|--------------------------------|---------------|
+/// | `\t`         | 24-hour HH:MM:SS               | `%H:%M:%S`    |
+/// | `\T`         | 12-hour HH:MM:SS               | `%I:%M:%S`    |
+/// | `\@`         | 12-hour am/pm                  | `%I:%M %p`    |
+/// | `\A`         | 24-hour HH:MM                  | `%H:%M`       |
+/// | `\D{format}` | chrono format string (custom)  | `format`      |
+fn extract_time_codes(s: &str) -> (String, HashMap<String, String>) {
+    let mut result = String::with_capacity(s.len());
+    let mut mapping: HashMap<String, String> = HashMap::new();
+    let mut counter: u32 = 0;
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            result.push(c);
+            continue;
+        }
+
+        match chars.peek().copied() {
+            Some('\\') => {
+                // Escaped backslash — pass both through so `decode_prompt_string`
+                // still sees `\\` as a literal `\`.
+                result.push('\\');
+                result.push('\\');
+                chars.next();
+            }
+            Some('t') => {
+                chars.next();
+                let id = format!("FLYT{:04X}", counter);
+                counter += 1;
+                mapping.insert(id.clone(), "%H:%M:%S".to_string());
+                result.push_str(&id);
+            }
+            Some('T') => {
+                chars.next();
+                let id = format!("FLYT{:04X}", counter);
+                counter += 1;
+                mapping.insert(id.clone(), "%I:%M:%S".to_string());
+                result.push_str(&id);
+            }
+            Some('@') => {
+                chars.next();
+                let id = format!("FLYT{:04X}", counter);
+                counter += 1;
+                mapping.insert(id.clone(), "%I:%M %p".to_string());
+                result.push_str(&id);
+            }
+            Some('A') => {
+                chars.next();
+                let id = format!("FLYT{:04X}", counter);
+                counter += 1;
+                mapping.insert(id.clone(), "%H:%M".to_string());
+                result.push_str(&id);
+            }
+            Some('D') => {
+                chars.next(); // consume 'D'
+                if chars.peek().copied() == Some('{') {
+                    chars.next(); // consume '{'
+                    let mut fmt = String::new();
+                    for nc in chars.by_ref() {
+                        if nc == '}' {
+                            break;
+                        }
+                        fmt.push(nc);
+                    }
+                    // An empty \D{} falls back to 24-hour HH:MM:SS (%T).
+                    // Bash would use strftime with the locale's time format here,
+                    // but chrono does not expose a locale-aware equivalent, so %T
+                    // is used as a reasonable default.
+                    let chrono_fmt = if fmt.is_empty() {
+                        "%T".to_string()
+                    } else {
+                        fmt
+                    };
+                    let id = format!("FLYT{:04X}", counter);
+                    counter += 1;
+                    mapping.insert(id.clone(), chrono_fmt);
+                    result.push_str(&id);
+                } else {
+                    // Not \D{...} — pass through unchanged.
+                    result.push('\\');
+                    result.push('D');
+                }
+            }
+            _ => {
+                // Not a time code — pass the backslash through so
+                // `decode_prompt_string` can handle the sequence.
+                result.push('\\');
+            }
+        }
+    }
+
+    (result, mapping)
+}
+
+/// Expand a raw prompt string (e.g. from `PS1`, `RPS1`, `PS1_FILL`) through
+/// bash's `decode_prompt_string`, intercepting bash time escape sequences
+/// first so that the time can be substituted dynamically on every render.
+///
+/// Returns `None` when the string cannot be processed (e.g. contains interior
+/// NUL bytes or bash returns a null pointer).
+fn expand_prompt_string(raw: String) -> Option<(Vec<Line<'static>>, HashMap<String, String>)> {
+    let (modified, time_map) = extract_time_codes(&raw);
+
+    // Strip literal `\[` / `\]` non-printing-sequence markers before handing
+    // the string to `decode_prompt_string`.
+    let modified = modified.replace("\\[", "").replace("\\]", "");
+
+    let c_prompt = std::ffi::CString::new(modified).ok()?;
+
+    let decoded = unsafe {
+        let decoded_prompt_cstr = bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
+        if decoded_prompt_cstr.is_null() {
+            return None;
+        }
+
+        let decoded = std::ffi::CStr::from_ptr(decoded_prompt_cstr)
+            .to_str()
+            .ok()?
+            .to_string();
+
+        // `decode_prompt_string` returns an allocated buffer.
+        libc::free(decoded_prompt_cstr as *mut libc::c_void);
+
+        decoded
+    };
+
+    let lines = decoded.into_text().ok()?.lines;
+    Some((lines, time_map))
+}
+
 impl PromptManager {
-    pub fn new(unfinished_from_prev_command: bool, time_format: Option<String>) -> Self {
+    pub fn new(unfinished_from_prev_command: bool) -> Self {
         if unfinished_from_prev_command {
             // If the previous command was unfinished, use a simple prompt to avoid confusion
 
@@ -58,139 +201,116 @@ impl PromptManager {
                 ],
                 rprompt: vec![],
                 fill_span: Line::from(" "),
-                last_time_str: "".into(),
-                time_format,
+                time_map: HashMap::new(),
             }
         } else {
-            let ps1 = get_current_readline_prompt().unwrap_or_else(|| "default> ".into());
-
-            // Strip literal "\[" and "\]" markers from PS1 (they wrap non-printing sequences)
-            let ps1 = ps1.replace("\\[", "").replace("\\]", "");
             const PS1_DEFAULT: &str = "bad ps1> ";
 
-            let ps1: Vec<Line<'static>> =
-                match ps1.into_text().unwrap_or(Text::from(PS1_DEFAULT)).lines {
-                    lines if lines.is_empty() => {
-                        log::warn!("Failed to parse PS1, defaulting to '>'");
+            // Read the raw PS1 env var so we can intercept time format codes
+            // before handing the string to decode_prompt_string.  Fall back to
+            // the already-expanded readline prompt when PS1 is not available.
+            let ps1_raw = bash_funcs::get_env_variable("PS1")
+                .or_else(get_current_readline_prompt);
+
+            let (ps1, mut time_map) = ps1_raw
+                .and_then(expand_prompt_string)
+                .map(|(lines, map)| {
+                    let lines = if lines.is_empty() {
+                        log::warn!("Failed to parse PS1, defaulting to '{}'", PS1_DEFAULT);
                         vec![Line::from(PS1_DEFAULT)]
-                    }
-                    lines => lines,
-                };
+                    } else {
+                        lines
+                    };
+                    (lines, map)
+                })
+                .unwrap_or_else(|| {
+                    log::warn!("Failed to parse PS1, defaulting to '{}'", PS1_DEFAULT);
+                    (vec![Line::from(PS1_DEFAULT)], HashMap::new())
+                });
 
             // Examples:
-            // export RPS1='\[\033[01;32m\]$(date)\[\033[0m\]'
-            // export RPROMPT='\[\033[01;32m\]FLYLINE_TIME\[\033[0m\]'
-            let rps1: Vec<Line<'static>> = bash_funcs::get_env_variable("RPS1")
+            // export RPS1='\[\033[01;32m\]\t\[\033[0m\]'
+            // export RPROMPT='\[\033[01;32m\]\D{%H:%M:%S}\[\033[0m\]'
+            let (rps1, rps1_time_map) = bash_funcs::get_env_variable("RPS1")
                 .or_else(|| bash_funcs::get_env_variable("RPROMPT"))
-                .and_then(|rps1| {
-                    // Strip literal "\\[" and "\\]" markers (they wrap non-printing sequences)
-                    let rps1 = rps1.replace("\\[", "").replace("\\]", "");
-                    let c_prompt = std::ffi::CString::new(rps1).ok()?;
-
-                    unsafe {
-                        let decoded_prompt_cstr =
-                            bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
-                        if decoded_prompt_cstr.is_null() {
-                            return None;
-                        }
-
-                        let decoded = std::ffi::CStr::from_ptr(decoded_prompt_cstr)
-                            .to_str()
-                            .ok()?
-                            .to_string();
-
-                        // `decode_prompt_string` returns an allocated buffer.
-                        libc::free(decoded_prompt_cstr as *mut libc::c_void);
-
-                        Some(decoded)
-                    }
-                })
-                .and_then(|s| s.into_text().ok())
-                .unwrap_or_else(|| Text::from(""))
-                .lines;
+                .and_then(expand_prompt_string)
+                .unwrap_or_else(|| (vec![], HashMap::new()));
+            time_map.extend(rps1_time_map);
 
             log::debug!("Parsed RPS1: {:?}", rps1);
 
-            let fill_span: Line<'static> = bash_funcs::get_env_variable("PS1_FILL")
-                .and_then(|s| {
-                    // Strip literal "\\[" and "\\]" markers (they wrap non-printing sequences)
-                    let s = s.replace("\\[", "").replace("\\]", "");
-                    let c_prompt = std::ffi::CString::new(s).ok()?;
+            let (fill_lines, fill_time_map) = bash_funcs::get_env_variable("PS1_FILL")
+                .and_then(expand_prompt_string)
+                .unwrap_or_else(|| (vec![Line::from(" ")], HashMap::new()));
+            time_map.extend(fill_time_map);
 
-                    unsafe {
-                        let decoded_prompt_cstr =
-                            bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
-                        if decoded_prompt_cstr.is_null() {
-                            return None;
-                        }
-
-                        let decoded = std::ffi::CStr::from_ptr(decoded_prompt_cstr)
-                            .to_str()
-                            .ok()?
-                            .to_string();
-
-                        // `decode_prompt_string` returns an allocated buffer.
-                        libc::free(decoded_prompt_cstr as *mut libc::c_void);
-
-                        Some(decoded)
-                    }
-                })
-                .and_then(|s| s.into_text().ok())
-                .and_then(|text| text.lines.into_iter().next())
+            let fill_span = fill_lines
+                .into_iter()
+                .next()
                 .unwrap_or_else(|| Line::from(" "));
+
+            log::debug!("Time map entries: {}", time_map.len());
 
             PromptManager {
                 prompt: ps1,
                 rprompt: rps1,
                 fill_span,
-                last_time_str: "".into(),
-                time_format,
+                time_map,
             }
         }
     }
 
-    fn format_prompt_line(&self, line: Line<'static>) -> Line<'static> {
-        const FLYLINE_TIME_STR: &str = "FLYLINE_TIME";
+    fn format_prompt_line(
+        &self,
+        line: Line<'static>,
+        now: &chrono::DateTime<chrono::Local>,
+    ) -> Line<'static> {
+        if self.time_map.is_empty() {
+            return line;
+        }
         let spans: Vec<Span> = line
             .spans
             .into_iter()
             .map(|span| {
-                Span::styled(
-                    span.content.replace(FLYLINE_TIME_STR, &self.last_time_str),
-                    span.style,
-                )
+                // Only allocate a new String when at least one placeholder is present.
+                let raw = span.content.as_ref();
+                let needs_replacement = self.time_map.keys().any(|id| raw.contains(id.as_str()));
+                if !needs_replacement {
+                    return span;
+                }
+                let mut content = raw.to_owned();
+                for (id, fmt) in &self.time_map {
+                    if content.contains(id.as_str()) {
+                        let time_str = now.format(fmt).to_string();
+                        content = content.replace(id.as_str(), &time_str);
+                    }
+                }
+                Span::styled(content, span.style)
             })
             .collect();
         Line::from(spans)
     }
 
     pub fn get_ps1_lines(&mut self) -> (Vec<Line<'static>>, Vec<Line<'static>>, Line<'static>) {
-        // Format the current time using the system locale
         use chrono::Local;
         let now = Local::now();
-        self.last_time_str = if let Some(ref fmt) = self.time_format {
-            now.format(fmt).to_string()
-        } else {
-            // Use the system locale for formatting
-            // This will use the default time format for the locale
-            let s = now.format("%X%.3f").to_string();
-            s[..s.len().saturating_sub(2)].to_string()
-        };
 
         let formatted_prompt: Vec<Line<'static>> = self
             .prompt
             .clone()
             .into_iter()
-            .map(|line| self.format_prompt_line(line))
+            .map(|line| self.format_prompt_line(line, &now))
             .collect();
 
         let formatted_rprompt: Vec<Line<'static>> = self
             .rprompt
             .clone()
             .into_iter()
-            .map(|line| self.format_prompt_line(line))
+            .map(|line| self.format_prompt_line(line, &now))
             .collect();
 
-        (formatted_prompt, formatted_rprompt, self.fill_span.clone())
+        let formatted_fill = self.format_prompt_line(self.fill_span.clone(), &now);
+
+        (formatted_prompt, formatted_rprompt, formatted_fill)
     }
 }
