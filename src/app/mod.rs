@@ -1033,22 +1033,35 @@ impl<'a> App<'a> {
                             // Write indent prefix aligned to the header width.
                             // For the first terminal row of a new logical line, show "X/N"
                             // right-justified; for wrapped continuation rows, use blank padding.
-                            let indent_str = if is_start_of_logical {
+                            // The last column of the prefix is the indicator column (▐ or space).
+                            let indent_prefix = if is_start_of_logical {
                                 let line_num_str =
                                     format!("{}/{}", logical_idx + 1, total_logical_lines);
                                 format!(
-                                    "{:>width$} ",
+                                    "{:>width$}",
                                     line_num_str,
-                                    // -1 because the format string appends a trailing " "
+                                    // header_prefix_width - 1: last column is the indicator
                                     width = header_prefix_width - 1
                                 )
                             } else {
-                                " ".repeat(header_prefix_width)
+                                " ".repeat(header_prefix_width - 1)
                             };
                             content.write_span(
-                                &Span::styled(indent_str, Palette::secondary_text()),
+                                &Span::styled(indent_prefix, Palette::secondary_text()),
                                 Tag::HistoryResult(row_idx),
                             );
+                            // Write the indicator for every line of the selected entry
+                            if is_selected {
+                                content.write_span(
+                                    &Span::styled("▐", Palette::matched_character()),
+                                    Tag::HistoryResult(row_idx),
+                                );
+                            } else {
+                                content.write_span(
+                                    &Span::styled(" ", Palette::secondary_text()),
+                                    Tag::HistoryResult(row_idx),
+                                );
+                            }
                         }
 
                         for span in &display_line.spans {
@@ -1064,8 +1077,9 @@ impl<'a> App<'a> {
                         }
 
                         // Append ellipsis on the last displayed row when more content exists.
-                        // Move the cursor to the last column so the ellipsis overwrites the
-                        // final character of the line rather than wrapping to the next row.
+                        // If the row is full (cursor at the end), jump back one column to
+                        // overwrite the last character; otherwise write the ellipsis right
+                        // after the last character so it isn't pushed to the line's far end.
                         if display_idx + 1 == rows_to_show && has_more {
                             let ellipsis_style = if is_selected {
                                 Palette::convert_to_selected(Palette::secondary_text())
@@ -1073,7 +1087,9 @@ impl<'a> App<'a> {
                                 Palette::secondary_text()
                             };
                             // "…" (U+2026) has a terminal display width of 1.
-                            content.set_cursor_col(content.width.saturating_sub(1));
+                            if content.cursor_position().col >= content.width.saturating_sub(1) {
+                                content.set_cursor_col(content.width.saturating_sub(1));
+                            }
                             content.write_span(
                                 &Span::styled("…", ellipsis_style),
                                 Tag::HistoryResult(row_idx),
