@@ -2,6 +2,7 @@ use flash::lexer::{Lexer, Position, Token, TokenKind};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
+use log::debug;
 
 fn split_token_into_lines(token: Token) -> Vec<Token> {
     match &token.kind {
@@ -350,7 +351,7 @@ impl DParser {
                     }
 
                     if stop_parsing_at_command_boundary {
-                        println!("Stopping parsing at command boundary");
+                        debug!("Stopping parsing at command boundary");
                         break;
                     }
 
@@ -577,7 +578,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            println!("{:?} - {:?}", t.token, t.annotation);
+            debug!("{:?} - {:?}", t.token, t.annotation);
         }
 
         assert_eq!(tokens[0].token.value, "echo");
@@ -609,7 +610,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            println!("{:?} - {:?}", t.token, t.annotation);
+            debug!("{:?} - {:?}", t.token, t.annotation);
         }
         assert_eq!(tokens[0].token.value, "cat");
         assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
@@ -678,7 +679,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            println!("{:?} - {:?}", t.token, t.annotation);
+            debug!("{:?} - {:?}", t.token, t.annotation);
         }
         assert_eq!(tokens[0].token.value, "echo");
         assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
