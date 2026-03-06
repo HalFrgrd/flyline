@@ -150,8 +150,8 @@ impl Flyline {
         }
         log::debug!("flyline called with args: {:?}", args);
 
-        // If no args were provided, print help
-        if args.len() == 0 {
+        // If no args were provided, or --help/-h was requested, print help
+        if args.is_empty() || args.iter().any(|a| *a == "--help" || *a == "-h") {
             FlylineArgs::command().print_help().ok();
             println!();
             return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
