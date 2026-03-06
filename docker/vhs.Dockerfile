@@ -12,7 +12,7 @@ RUN touch /root/.bashrc && \
     'alias ll="ls -alF"' \
     'export HISTTIMEFORMAT="%F %T  "' \
     'export PS1="\[\033[01;32m\]john@host\[\033[00m\]:\[\033[01;34m\]~\[\033[00m\]\$ "' \
-    'export RPS1="\[\033[01;32m\]FLYLINE_TIME\[\033[0m\]"' \
+    'export RPS1="\[\033[01;32m\]\t\[\033[0m\]"' \
     'enable -f /app/libflyline.so flyline' \
     >> /root/.bashrc
 
