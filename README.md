@@ -49,22 +49,38 @@ Two possible fixes are:
 
 # Dynamic prompts
 
-Flyline supports dynamic content in your right prompt (`RPS1` / `RPROMPT`).
+Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
-## FLYLINE_TIME
+## Time in prompts
 
-Place the literal string `FLYLINE_TIME` anywhere in your `RPS1` or `RPROMPT` and flyline will replace it with the current time each time the prompt is drawn.
+Flyline recognises the standard bash time escape sequences and re-evaluates them on every prompt draw, so the time shown is always current:
+
+| Sequence       | Output                          |
+|----------------|---------------------------------|
+| `\t`           | 24-hour time — `HH:MM:SS`       |
+| `\T`           | 12-hour time — `HH:MM:SS`       |
+| `\@`           | 12-hour time with am/pm         |
+| `\A`           | 24-hour time — `HH:MM`          |
+| `\D{format}`   | Custom format (see below)       |
+
+These can be placed in any of the supported prompt variables:
 
 ```bash
-export RPROMPT='\[\033[01;32m\]FLYLINE_TIME\[\033[0m\]'
+# Right prompt showing 24-hour time in green
+export RPROMPT='\[\033[01;32m\]\t\[\033[0m\]'
+
+# Right prompt showing 12-hour am/pm time
+export RPROMPT='\[\033[01;34m\]\@\[\033[0m\]'
 ```
 
-By default the time is formatted as `HH:MM:SS.s` (locale time with one decimal second). You can customise this with `--time-format` using any [Chrono format string](https://docs.rs/chrono/latest/chrono/format/strftime/index.html):
+### Custom time format with `\D{format}`
+
+Use `\D{format}` with any [Chrono format string](https://docs.rs/chrono/latest/chrono/format/strftime/index.html) to display the time exactly how you want it. This is similar to `\D{format}` in the [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), but the format string is interpreted by Chrono rather than strftime.
 
 ```bash
 # Show date and time
-flyline --time-format "%Y-%m-%d %H:%M:%S"
+export RPROMPT='\[\033[01;32m\]\D{%Y-%m-%d %H:%M:%S}\[\033[0m\]'
 
 # Show only hours and minutes
-flyline --time-format "%H:%M"
+export RPROMPT='\D{%H:%M}'
 ```
