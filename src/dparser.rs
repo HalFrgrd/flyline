@@ -237,8 +237,10 @@ impl DParser {
         // echo $(( grep 1 + 2 )    # command is grep
         // echo $(( grep 1 + 2 ))   # command is echo, since the cursor is after the closing ))
 
-        // The index of the last opening nesting token and its kind
-        let mut nestings: Vec<(usize, TokenKind)> = Vec::new();
+        // Stack of currently-open nesting tokens (LIFO order); each entry holds the token index,
+        // the nesting kind, and the byte start of the opening token so the closing handler can
+        // tell whether the cursor precedes the opening.
+        let mut nestings: Vec<(usize, TokenKind, usize)> = Vec::new();
         // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
         let mut heredocs: VecDeque<(usize, String)> = VecDeque::new();
 
@@ -295,7 +297,7 @@ impl DParser {
                 | TokenKind::Until
                     if Self::nested_opening_satisfied(
                         &token,
-                        nestings.last().map(|(_, k)| k),
+                        nestings.last().map(|(_, k, _)| k),
                         cursor_byte_pos.is_some(),
                     ) =>
                 {
@@ -304,7 +306,7 @@ impl DParser {
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
                     }
-                    nestings.push((idx, token.kind.clone()));
+                    nestings.push((idx, token.kind.clone(), token.position.byte));
                     command_start_stack.push(self.current_command_range.clone());
                     self.current_command_range = None; // set for next word after this
                 }
@@ -324,11 +326,11 @@ impl DParser {
                 | TokenKind::Fi
                     if Self::nested_closing_satisfied(
                         &token,
-                        nestings.last().map(|(_, k)| k),
+                        nestings.last().map(|(_, k, _)| k),
                         annotated_tokens.peek().map(|(_, t)| &t.token).as_ref(),
                     ) =>
                 {
-                    let (opening_idx, kind) = nestings.pop().unwrap();
+                    let (opening_idx, kind, opening_byte) = nestings.pop().unwrap();
                     annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
                     if kind == TokenKind::ArithSubst {
                         assert!(
@@ -349,17 +351,29 @@ impl DParser {
                         break;
                     }
 
-                    if stop_parsing_at_command_boundary {
-                        println!("Stopping parsing at command boundary");
+                    // Determine whether the cursor byte position falls strictly before the byte
+                    // where this nesting's opening token begins.  If cursor_byte_pos < opening_byte
+                    // the cursor is in the outer command; otherwise it is inside the nesting.
+                    let cursor_before_nesting = cursor_byte_pos
+                        .map_or(false, |pos| pos < opening_byte);
+
+                    if stop_parsing_at_command_boundary && !cursor_before_nesting {
+                        // Cursor was inside this nesting; keep inner command and stop.
                         break;
                     }
 
+                    // Restore the outer command range, extending it to include this closing token.
                     if let Some(prev_command_range) = command_start_stack.pop() {
                         self.current_command_range = prev_command_range;
                         if let Some(range) = &mut self.current_command_range {
                             *range = *range.start()..=idx;
                         }
                     }
+
+                    // When cursor_before_nesting is true we continue walking so that any further
+                    // tokens in the outer command (e.g. additional nestings or words) are included
+                    // in the context.  The loop will stop naturally at the next command boundary
+                    // (|, &&, ;, etc.) or at end of input.
                 }
                 TokenKind::Word(_) if word_is_part_of_assignment => {
                     if let Some(range) = &mut self.current_command_range {
