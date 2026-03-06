@@ -47,11 +47,22 @@ Two possible fixes are:
 - Map `Command+<KEY>` to`Control+<KEY>` in your terminal emulator settings.
 - Use a terminal emulator that supports [Kitty's exteneded keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
-# Dynamic prompts
+# Rich prompts
 
 Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
-## Time in prompts
+## Setting your prompt
+- The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html) for more information or [starship integration](#starship-integration).
+- `RPS1` / `RPROMPT` sets the right prompt similarly to zsh.
+- `PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
+For instance:
+![Prompt demo](assets/prompt_demo.gif)
+
+## Starship integration
+TODO:
+Starship provides customizable prompts for any shell. The git metrics prompt part is very useful but can slow down the time it takes to generate the prompt. Because Flyline can redraw the prompt, it can asynchronously load the slower widgets in the background to keep the shell feeling snappy 
+
+## Dynamic time in prompts
 
 Flyline recognises the standard bash time escape sequences and re-evaluates them on every prompt draw, so the time shown is always current:
 
