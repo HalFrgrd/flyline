@@ -19,7 +19,7 @@ Type "# Let's set some prompts!"
 Enter
 Sleep 1000ms
 
-Type "PS1='\\u@\\h:\\w$ '"
+Type "PS1='\u@\h:\w$ '"
 Enter
 Sleep 1500ms
 
@@ -27,7 +27,7 @@ Type "# now let's set the right hand side prompt to show the time"
 Enter
 Sleep 1000ms
 
-Type "RPS1='\\t'"
+Type "RPS1='\t'"
 Enter
 Sleep 1500ms
 
@@ -35,7 +35,7 @@ Type "# how about multilines"
 Enter
 Sleep 1000ms
 
-Type "PS1='\\u@\\h:\\w\\n$ '"
+Type "PS1='\u@\h:\w\n$ '"
 Enter
 Sleep 1500ms
 
@@ -51,7 +51,7 @@ Type "# let's add some colour"
 Enter
 Sleep 1000ms
 
-Type "PS1='\\[\\033[01;32m\\]\\u@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\n$ '"
+Type "PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
 Enter
 Sleep 1500ms
 
