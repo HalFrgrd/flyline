@@ -19,7 +19,7 @@ Type "# Let's set some prompts!"
 Enter
 Sleep 1000ms
 
-Type "PS1='\u@\h:\w$ '"
+Type "export PS1='\u@\h:\w$ '"
 Enter
 Sleep 1500ms
 
@@ -27,7 +27,7 @@ Type "# now let's set the right hand side prompt to show the time"
 Enter
 Sleep 1000ms
 
-Type "export RPROMPT='\t'"
+Type "export RPS1='\t'"
 Enter
 Sleep 1500ms
 
@@ -43,7 +43,7 @@ Type "# and let's fill in the gap"
 Enter
 Sleep 1000ms
 
-Type "PS1_FILL='-'"
+Type "export PS1_FILL='-'"
 Enter
 Sleep 1500ms
 
@@ -59,7 +59,7 @@ Type "# PS1_FILL can be multiple chars"
 Enter
 Sleep 1000ms
 
-Type "PS1_FILL='▁▂▃▄▅▆▇█▇▆▅▄▃▂▁'"
+Type "export PS1_FILL='▁▂▃▄▅▆▇█▇▆▅▄▃▂▁'"
 Enter
 
 Type "# wonderful. look at our beautiful prompt"
