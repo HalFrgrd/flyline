@@ -57,7 +57,7 @@ Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 - `PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
 
 For instance:
-![Prompt demo](assets/prompt_demo.gif)
+![Prompt demo](assets/demo_prompts.gif)
 
 ## Starship integration
 TODO:
