@@ -1,4 +1,4 @@
-# Dockerfile for Charmbracelet VHS using official image as base
+# Base image for VHS demo GIFs
 
 # Use the published Charmbracelet VHS image by digest
 FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS vhs-base
@@ -16,7 +16,7 @@ RUN touch /root/.bashrc && \
     'enable -f /app/libflyline.so flyline' \
     >> /root/.bashrc
 
-RUN touch /root/.bashhistory && \
+RUN touch /root/.bash_history && \
     printf '%s\n' \
  '#1771881194' \
  'ls -la' \
@@ -83,7 +83,7 @@ RUN touch /root/.bashhistory && \
  '#1771881442' \
  'du -sh *' \
  '#1771881450' \
- 'alias ll='ls -lah'' \
+ 'alias ll='\''ls -lah'\''' \
  '#1771881458' \
  'source ~/.bashrc' \
  '#1771881466' \
@@ -121,12 +121,3 @@ RUN touch /root/.bashhistory && \
  '#1771881594' \
  'clear' \
     >> /root/.bash_history
-
-
-# The base image already provides `vhs` as the entrypoint; no override needed.
-COPY docker/vhs_demo.tape .
-
-RUN vhs vhs_demo.tape
-
-FROM scratch AS vhs-extracted-gif
-COPY --from=vhs-base /app/demo.gif /demo.gif

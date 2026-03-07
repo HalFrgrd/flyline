@@ -50,11 +50,28 @@ target "tab-completion-tests" {
     dockerfile = "docker/tab_completions.Dockerfile"
 }
 
-target "vhs-extracted-gif" {
+target "vhs-base" {
     context = "."
-    dockerfile = "docker/vhs.Dockerfile"
+    dockerfile = "docker/vhs_base.Dockerfile"
     contexts = {
         flyline-extracted-library = "target:built-artifact"
     }
-    target = "vhs-extracted-gif"
+}
+
+target "demo-main-extracted-gif" {
+    context = "."
+    dockerfile = "docker/demo_main.Dockerfile"
+    contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    target = "demo-main-extracted-gif"
+}
+
+target "demo-prompts-extracted-gif" {
+    context = "."
+    dockerfile = "docker/demo_prompts.Dockerfile"
+    contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    target = "demo-prompts-extracted-gif"
 }
