@@ -27,11 +27,11 @@ Type "# now let's set the right hand side prompt to show the time"
 Enter
 Sleep 1000ms
 
-Type "RPS1='\t'"
+Type "export RPROMPT='\t'"
 Enter
 Sleep 1500ms
 
-Type "# how about multilines"
+Type "# how about a multiline prompt:"
 Enter
 Sleep 1000ms
 
@@ -59,8 +59,9 @@ Type "# PS1_FILL can be multiple chars"
 Enter
 Sleep 1000ms
 
-Type "PS1_FILL='▁▂▃▄▅▆▇█▇▆▅▄▃▁'"
+Type "PS1_FILL='▁▂▃▄▅▆▇█▇▆▅▄▃▂▁'"
 Enter
 
+Type "# wonderful. look at our beautiful prompt"
 # Admire the output for a bit.
 Sleep 2s
