@@ -121,3 +121,6 @@ RUN touch /root/.bash_history && \
  '#1771881594' \
  'clear' \
     >> /root/.bash_history
+
+
+RUN echo somehost > /etc/hostname
