@@ -17,13 +17,14 @@ A bash plugin for modern command line editing. Flyline replaces readline to prov
 - Fuzzy autocompletions
 - Integration with bash autocomplete
 - Mouse support:
-    - Click to move cursor in buffer
-    - Hover over command for tooltips
+    - Click to move cursor
+    - Hover over words for tooltips
 - Tab completions when writing subshells, command substitutions, process substitutions
 - Tab completions for aliases (e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected)
 - Tooltips
 - Auto close brackets and quotes
 - Syntax highlighting
+- Runs in the same process as bash
 
 
 # Installation
@@ -58,6 +59,14 @@ Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
 For instance:
 ![Prompt demo](assets/demo_prompts.gif)
+```bash
+export PS1='\u@\h:\w$ '
+export RPS1='\t'
+export PS1='\u@\h:\w\n$ '
+export PS1_FILL='-'
+export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '
+export PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
+```
 
 ## Starship integration
 TODO:
@@ -79,10 +88,10 @@ These can be placed in any of the supported prompt variables:
 
 ```bash
 # Right prompt showing 24-hour time in green
-export RPROMPT='\[\033[01;32m\]\t\[\033[0m\]'
+export RPS1='\[\033[01;32m\]\t\[\033[0m\]'
 
 # Right prompt showing 12-hour am/pm time
-export RPROMPT='\[\033[01;34m\]\@\[\033[0m\]'
+export RPS1='\[\033[01;34m\]\@\[\033[0m\]'
 ```
 
 ### Custom time format with `\D{format}`
@@ -91,8 +100,8 @@ Use `\D{format}` with any [Chrono format string](https://docs.rs/chrono/latest/c
 
 ```bash
 # Show date and time
-export RPROMPT='\[\033[01;32m\]\D{%Y-%m-%d %H:%M:%S}\[\033[0m\]'
+export RPS1='\[\033[01;32m\]\D{%Y-%m-%d %H:%M:%S}\[\033[0m\]'
 
 # Show only hours and minutes
-export RPROMPT='\D{%H:%M}'
+export RPS1='\D{%H:%M}'
 ```
