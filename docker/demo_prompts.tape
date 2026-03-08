@@ -59,7 +59,7 @@ Type "# PS1_FILL can be multiple chars"
 Enter
 Sleep 1000ms
 
-Type "export PS1_FILL='▁▂▃▄▅▆▇█▇▆▅▄▃▂▁'"
+Type "export PS1_FILL='🯁🯂🯃🮲🮳'"
 Enter
 
 Type "# wonderful. look at our beautiful prompt"
