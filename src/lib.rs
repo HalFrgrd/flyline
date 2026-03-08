@@ -269,12 +269,11 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
     long_doc: (&[
-        c"longer docs here".as_ptr() as *const c_char,
-        c"more help here".as_ptr() as *const c_char,
+        c"Refer to `flyline --help` for more help.".as_ptr() as *const c_char,
         ::std::ptr::null(),
     ])
         .as_ptr(),
-    short_doc: c"flyline: advanced command line interface for bash".as_ptr() as *const c_char,
+    short_doc: c"flyline: advanced command line editing for bash.".as_ptr() as *const c_char,
     handle: std::ptr::null(),
 };
 
