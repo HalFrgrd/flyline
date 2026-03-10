@@ -17,8 +17,8 @@ struct PathPatternExpansion {
     rhs_pattern: String,
 }
 
-/// Expand `$VAR` and `${VAR}` occurrences in `s` using the current process
-/// environment.  Unknown variables are left as-is.
+/// Expand `$VAR` and `${VAR}` occurrences in `s` using bash's variable lookup.
+/// Unknown variables are left as-is.
 fn expand_env_vars(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut remaining = s;
@@ -31,7 +31,7 @@ fn expand_env_vars(s: &str) -> String {
             remaining = &remaining[1..]; // skip '{'
             if let Some(close_pos) = remaining.find('}') {
                 let var_name = &remaining[..close_pos];
-                if let Ok(val) = std::env::var(var_name) {
+                if let Some(val) = bash_funcs::get_env_variable(var_name) {
                     result.push_str(&val);
                 } else {
                     result.push_str("${");
@@ -55,7 +55,7 @@ fn expand_env_vars(s: &str) -> String {
             if var_name.is_empty() {
                 // Bare `$` not followed by a valid variable start — keep it verbatim.
                 result.push('$');
-            } else if let Ok(val) = std::env::var(var_name) {
+            } else if let Some(val) = bash_funcs::get_env_variable(var_name) {
                 result.push_str(&val);
             } else {
                 result.push('$');
