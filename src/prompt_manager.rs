@@ -323,7 +323,17 @@ impl PromptManager {
         Line::from(spans)
     }
 
-    pub fn get_ps1_lines(&mut self) -> (Vec<Line<'static>>, Vec<Line<'static>>, Line<'static>) {
+    pub fn get_ps1_lines(
+        &mut self,
+        disable_animations: bool,
+    ) -> (Vec<Line<'static>>, Vec<Line<'static>>, Line<'static>) {
+        if disable_animations {
+            return (
+                self.prompt.clone(),
+                self.rprompt.clone(),
+                self.fill_span.clone(),
+            );
+        }
         use chrono::Local;
         let now = Local::now();
 
