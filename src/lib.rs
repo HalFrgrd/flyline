@@ -1,4 +1,4 @@
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, ValueEnum};
 use clap_complete::{Shell, generate};
 use core::panic;
 use libc::{c_char, c_int};
@@ -53,6 +53,15 @@ fn get_styles() -> clap::builder::Styles {
         )
 }
 
+#[derive(ValueEnum, Clone, Debug)]
+enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "flyline", styles = get_styles())]
 struct FlylineArgs {
@@ -68,9 +77,9 @@ struct FlylineArgs {
     /// Dump current logs to PATH and append new logs
     #[arg(long = "stream-logs", value_name = "PATH")]
     stream_logs: Option<String>,
-    /// Set the logging level (error, warn, info, debug, trace)
+    /// Set the logging level
     #[arg(long = "log-level", value_name = "LEVEL")]
-    log_level: Option<String>,
+    log_level: Option<LogLevel>,
     /// Load zsh history in addition to bash history
     #[arg(long = "load-zsh-history")]
     load_zsh_history: bool,
@@ -192,14 +201,14 @@ impl Flyline {
                 }
 
                 if let Some(ref level) = parsed.log_level {
-                    match level.as_str() {
-                        "error" => log::set_max_level(log::LevelFilter::Error),
-                        "warn" => log::set_max_level(log::LevelFilter::Warn),
-                        "info" => log::set_max_level(log::LevelFilter::Info),
-                        "debug" => log::set_max_level(log::LevelFilter::Debug),
-                        "trace" => log::set_max_level(log::LevelFilter::Trace),
-                        _ => eprintln!("Invalid log level: {}", level),
-                    }
+                    let filter = match level {
+                        LogLevel::Error => log::LevelFilter::Error,
+                        LogLevel::Warn => log::LevelFilter::Warn,
+                        LogLevel::Info => log::LevelFilter::Info,
+                        LogLevel::Debug => log::LevelFilter::Debug,
+                        LogLevel::Trace => log::LevelFilter::Trace,
+                    };
+                    log::set_max_level(filter);
                 }
 
                 if parsed.load_zsh_history {
