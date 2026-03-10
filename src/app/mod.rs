@@ -685,15 +685,14 @@ impl<'a> App<'a> {
     /// After a character `c` has been inserted into the buffer, insert the corresponding
     /// closing character when `c` is an unmatched opening delimiter.
     ///
-    /// The decision is made by parsing the current buffer and checking whether the token
-    /// at the just-inserted position is annotated as [`dparser::TokenAnnotation::IsOpening`].
+    /// The decision is made using `formatted_buffer_cache`, which represents the buffer state
+    /// *before* `c` was typed (one character out of date).  The cache is passed to
+    /// [`buffer_format::FormattedBuffer::closing_char_to_insert`] which uses the stale token
+    /// annotations to determine whether `c` opens a new pair or closes an existing one.
     fn insert_closing_char(&mut self, c: char) {
-        let buf = self.buffer.buffer().to_owned();
         let cursor_pos = self.buffer.cursor_byte_pos();
         let just_inserted_pos = cursor_pos.saturating_sub(c.len_utf8());
-
-        let fb = buffer_format::FormattedBuffer::from(&buf, cursor_pos);
-        if let Some(closing) = fb.closing_char_to_insert(c, just_inserted_pos) {
+        if let Some(closing) = self.formatted_buffer_cache.closing_char_to_insert(c, just_inserted_pos) {
             self.buffer.insert_char(closing);
             self.buffer.move_left();
         }

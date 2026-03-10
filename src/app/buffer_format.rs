@@ -22,8 +22,9 @@ impl FormattedBuffer {
             .find(|part| part.token.token.byte_range().contains(&byte_pos))
     }
 
-    /// Create a `FormattedBuffer` from a raw string and cursor position, with no word-info function.
-    /// Useful for testing and for scanning token annotations without extra context.
+    /// Create a `FormattedBuffer` from a raw string and cursor position, with no word-info
+    /// function. Only intended for use in tests.
+    #[cfg(test)]
     pub fn from(input: &str, cursor_pos: usize) -> Self {
         let mut parser = crate::dparser::DParser::from(input);
         parser.walk_to_end();
@@ -32,29 +33,40 @@ impl FormattedBuffer {
     }
 
     /// Returns the closing character that should be automatically inserted after the character `c`
-    /// at byte position `just_inserted_pos` in this formatted buffer, or `None` if nothing should
-    /// be inserted.
+    /// was typed at byte position `just_inserted_pos`.
     ///
-    /// The character `c` is only considered an "opener" when the token at `just_inserted_pos` is
-    /// annotated as [`TokenAnnotation::IsOpening`] by the parser.  This correctly handles
-    /// ambiguous characters such as `"`, `'`, and `` ` `` which can act as either an opening or a
-    /// closing delimiter depending on context.
+    /// `self` is the **stale** (pre-insertion) formatted buffer — i.e. the state of the buffer
+    /// *before* `c` was typed.  This is `self.formatted_buffer_cache` in `App`.
+    ///
+    /// - `{`, `[`, `(` are unambiguously openers and always produce a closing counterpart.
+    /// - `"`, `'`, `` ` `` are ambiguous: they close when there is already an unmatched opener of
+    ///   the same kind before `just_inserted_pos` in the stale buffer; otherwise they open.
     pub fn closing_char_to_insert(&self, c: char, just_inserted_pos: usize) -> Option<char> {
-        let closing = match c {
-            '"' => '"',
-            '\'' => '\'',
-            '`' => '`',
-            '{' => '}',
-            '[' => ']',
-            '(' => ')',
+        // Unambiguously opening characters – always auto-close.
+        match c {
+            '{' => return Some('}'),
+            '[' => return Some(']'),
+            '(' => return Some(')'),
+            _ => {}
+        }
+
+        // Ambiguous characters: consult the stale token annotations.
+        let (closing, opener_kind) = match c {
+            '"' => ('"', TokenKind::Quote),
+            '\'' => ('\'', TokenKind::SingleQuote),
+            '`' => ('`', TokenKind::Backtick),
             _ => return None,
         };
 
-        let is_opening = self
-            .get_part_from_byte_pos(just_inserted_pos)
-            .is_some_and(|p| matches!(p.token.annotation, TokenAnnotation::IsOpening(_)));
+        // If there is already an unmatched opener of the same kind strictly before the
+        // insertion point, the character just typed is closing it – don't auto-insert.
+        let has_unmatched_opener = self.parts.iter().any(|p| {
+            p.token.token.byte_range().start < just_inserted_pos
+                && p.token.token.kind == opener_kind
+                && matches!(p.token.annotation, TokenAnnotation::IsOpening(None))
+        });
 
-        if is_opening { Some(closing) } else { None }
+        if has_unmatched_opener { None } else { Some(closing) }
     }
 }
 
@@ -328,88 +340,83 @@ mod tests {
     }
 
     // ── closing_char_to_insert ───────────────────────────────────────────────
+    // These tests pass a *stale* (pre-insertion) FormattedBuffer to
+    // closing_char_to_insert, mirroring how App uses formatted_buffer_cache.
 
     #[test]
     fn closing_char_for_opening_double_quote() {
-        // Typing `"` when there is no unmatched opener → should return Some('"')
-        let input = r#"echo ""#;
-        let cursor = input.len();
-        let just_inserted = cursor - '"'.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('"', just_inserted), Some('"'));
+        // Stale buffer is "echo " (before the " was typed).
+        let stale = "echo ";
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('"', just_inserted_pos), Some('"'));
     }
 
     #[test]
     fn no_closing_char_for_closing_double_quote() {
-        // The second `"` in `echo "hello"` closes the opener → no extra closing.
-        let input = r#"echo "hello""#;
-        let cursor = input.len();
-        let just_inserted = cursor - '"'.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('"', just_inserted), None);
+        // Stale buffer is `echo "hello` (before the closing " was typed).
+        let stale = r#"echo "hello"#;
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('"', just_inserted_pos), None);
     }
 
     #[test]
     fn closing_char_for_opening_single_quote() {
-        let input = "echo '";
-        let cursor = input.len();
-        let just_inserted = cursor - '\''.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('\'', just_inserted), Some('\''));
+        let stale = "echo ";
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('\'', just_inserted_pos), Some('\''));
     }
 
     #[test]
     fn no_closing_char_for_closing_single_quote() {
-        let input = "echo 'hello'";
-        let cursor = input.len();
-        let just_inserted = cursor - '\''.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('\'', just_inserted), None);
+        let stale = "echo 'hello";
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('\'', just_inserted_pos), None);
     }
 
     #[test]
     fn closing_char_for_opening_brace() {
-        let input = "echo {";
-        let cursor = input.len();
-        let just_inserted = cursor - '{'.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('{', just_inserted), Some('}'));
+        // { is never ambiguous; always produces a closing }.
+        let stale = "echo ";
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('{', just_inserted_pos), Some('}'));
     }
 
     #[test]
     fn closing_char_for_opening_backtick() {
-        let input = "echo `";
-        let cursor = input.len();
-        let just_inserted = cursor - '`'.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('`', just_inserted), Some('`'));
+        let stale = "echo ";
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('`', just_inserted_pos), Some('`'));
     }
 
     #[test]
     fn no_closing_char_for_closing_backtick() {
-        let input = "echo `ls`";
-        let cursor = input.len();
-        let just_inserted = cursor - '`'.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('`', just_inserted), None);
+        // Stale buffer is `echo `ls` (before the closing backtick was typed).
+        let stale = "echo `ls";
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('`', just_inserted_pos), None);
     }
 
     #[test]
     fn no_closing_char_for_unrecognised_character() {
-        let input = "echo a";
-        let cursor = input.len();
-        let just_inserted = cursor - 'a'.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('a', just_inserted), None);
+        let stale = "echo ";
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('a', just_inserted_pos), None);
     }
 
     #[test]
     fn closing_char_second_quote_pair_after_first_closed() {
-        // `echo "a" "` – the third `"` is an opener; should return Some('"').
-        let input = r#"echo "a" ""#;
-        let cursor = input.len();
-        let just_inserted = cursor - '"'.len_utf8();
-        let fb = FormattedBuffer::from(input, cursor);
-        assert_eq!(fb.closing_char_to_insert('"', just_inserted), Some('"'));
+        // `echo "a" ` – the first pair is closed; the next " opens a new pair.
+        let stale = r#"echo "a" "#;
+        let just_inserted_pos = stale.len();
+        let fb = FormattedBuffer::from(stale, stale.len());
+        assert_eq!(fb.closing_char_to_insert('"', just_inserted_pos), Some('"'));
     }
 }
