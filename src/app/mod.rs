@@ -774,7 +774,7 @@ impl<'a> App<'a> {
         let mut content = Contents::new(width);
         let empty_line = Line::from(vec![]);
 
-        let (lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines();
+        let (lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines(self.settings.disable_animations);
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
@@ -862,9 +862,17 @@ impl<'a> App<'a> {
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor_animation.update_position(cursor_pos);
-            let cursor_anim_pos = self.cursor_animation.get_position();
+            let cursor_anim_pos = if self.settings.disable_animations {
+                cursor_pos
+            } else {
+                self.cursor_animation.get_position()
+            };
             let cursor_style = {
-                let cursor_intensity = self.cursor_animation.get_intensity();
+                let cursor_intensity = if self.settings.disable_animations {
+                    255
+                } else {
+                    self.cursor_animation.get_intensity()
+                };
                 Palette::cursor_style(cursor_intensity)
             };
 
