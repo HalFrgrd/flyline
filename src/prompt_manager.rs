@@ -13,6 +13,10 @@ pub struct PromptManager {
     /// sequences found in PS1 / RPS1 / PS1_FILL at construction time and
     /// applied on every render in `get_ps1_lines`.
     time_map: HashMap<String, String>,
+    /// Time captured at construction; used when animations are disabled so
+    /// that time-based prompt fields show the session-start time rather than
+    /// updating on every render.
+    construction_time: chrono::DateTime<chrono::Local>,
 }
 
 fn get_current_readline_prompt() -> Option<String> {
@@ -231,6 +235,7 @@ impl PromptManager {
                 rprompt: vec![],
                 fill_span: Line::from(" "),
                 time_map: HashMap::new(),
+                construction_time: chrono::Local::now(),
             }
         } else {
             const PS1_DEFAULT: &str = "bad ps1> ";
@@ -288,6 +293,7 @@ impl PromptManager {
                 rprompt: rps1,
                 fill_span,
                 time_map,
+                construction_time: chrono::Local::now(),
             }
         }
     }
@@ -327,15 +333,12 @@ impl PromptManager {
         &mut self,
         disable_animations: bool,
     ) -> (Vec<Line<'static>>, Vec<Line<'static>>, Line<'static>) {
-        if disable_animations {
-            return (
-                self.prompt.clone(),
-                self.rprompt.clone(),
-                self.fill_span.clone(),
-            );
-        }
         use chrono::Local;
-        let now = Local::now();
+        let now = if disable_animations {
+            self.construction_time
+        } else {
+            Local::now()
+        };
 
         let formatted_prompt: Vec<Line<'static>> = self
             .prompt
