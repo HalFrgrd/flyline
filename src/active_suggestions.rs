@@ -9,6 +9,8 @@ pub struct Suggestion {
     pub s: String,
     pub prefix: String,
     pub suffix: String,
+    /// Optional display style (e.g. from LS_COLORS) applied when rendering in the completion list.
+    pub style: Option<Style>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,8 +26,9 @@ impl SuggestionFormatted {
         suggestion_idx: usize,
         matching_indices: Vec<usize>,
     ) -> Self {
+        let base_style = suggestion.style.unwrap_or(Palette::normal_text());
         let lines =
-            Palette::highlight_maching_indices(&suggestion.s, &matching_indices);
+            Palette::highlight_maching_indices(&suggestion.s, &matching_indices, base_style);
 
         SuggestionFormatted {
             suggestion_idx,
@@ -66,7 +69,14 @@ impl Suggestion {
             s: s.into(),
             prefix: prefix.into(),
             suffix: suffix.into(),
+            style: None,
         }
+    }
+
+    /// Set an optional display style (e.g. derived from `LS_COLORS`) on this suggestion.
+    pub fn with_style(mut self, style: Style) -> Self {
+        self.style = Some(style);
+        self
     }
 
     pub fn formatted(&self) -> String {

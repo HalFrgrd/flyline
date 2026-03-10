@@ -406,7 +406,7 @@ impl HistoryEntryFormatted {
         }
 
         let command_spans =
-            Palette::highlight_maching_indices(&self.entry.command, &self.match_indices);
+            Palette::highlight_maching_indices(&self.entry.command, &self.match_indices, Palette::normal_text());
 
         self.command_spans = Some(command_spans);
     }
