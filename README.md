@@ -19,8 +19,7 @@ A bash plugin for modern command line editing. Flyline replaces readline to prov
 - Mouse support:
     - Click to move cursor
     - Hover over words for tooltips
-- Tab completions when writing subshells, command substitutions, process substitutions
-- Tab completions for aliases (e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected)
+- [Tab completion improvements](#tab-completion-improvements)
 - Tooltips
 - Auto close brackets and quotes
 - Syntax highlighting
@@ -105,3 +104,13 @@ export RPS1='\[\033[01;32m\]\D{%Y-%m-%d %H:%M:%S}\[\033[0m\]'
 # Show only hours and minutes
 export RPS1='\D{%H:%M}'
 ```
+
+# Tab completion improvements
+Flyline extends bash's tab completion feature in many ways: 
+
+Fuzzy tab completions: when you're presented with suggestions, you can type to fuzzily search through the list:
+![Fuzzy suggestions demo](assets/demo_fuzzy_suggestions.gif)
+
+Alias commands: e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected
+
+Tab completions inside subshell, command substitution, and process substitution expressions: TODO: check this doesn't work in bash normally
