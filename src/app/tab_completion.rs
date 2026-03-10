@@ -651,6 +651,17 @@ impl App<'_> {
             ],
         );
 
+        // Test that alias expansion works: fl_comp_alias is 'fl_comp_util --nosort',
+        // so completing after it should yield the same results as 'fl_comp_util --nosort '.
+        run_test_on(
+            "fl_comp_alias ",
+            &[
+                &Suggestion::new(r#"apple"#, "", " "),
+                &Suggestion::new(r#"banana"#, "", " "),
+                &Suggestion::new(r#"cherry"#, "", " "),
+            ],
+        );
+
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
 }

@@ -129,3 +129,7 @@ fl_comp_util_plusdirs() {
 complete -F _fl_comp_util_completions -o plusdirs fl_comp_util_plusdirs
 echo "fl_comp_util_plusdirs loaded. Try 'fl_comp_util_plusdirs <tab>'"
 
+
+alias fl_comp_alias='fl_comp_util --nosort'
+echo "fl_comp_alias loaded. Try 'fl_comp_alias <tab>'"
+
