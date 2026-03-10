@@ -17,58 +17,6 @@ struct PathPatternExpansion {
     rhs_pattern: String,
 }
 
-/// Expand `$VAR` and `${VAR}` occurrences in `s` using bash's variable lookup.
-/// Unknown variables are left as-is.
-fn expand_env_vars(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut remaining = s;
-
-    while let Some(dollar_pos) = remaining.find('$') {
-        result.push_str(&remaining[..dollar_pos]);
-        remaining = &remaining[dollar_pos + 1..]; // skip '$'
-
-        if remaining.starts_with('{') {
-            remaining = &remaining[1..]; // skip '{'
-            if let Some(close_pos) = remaining.find('}') {
-                let var_name = &remaining[..close_pos];
-                if let Some(val) = bash_funcs::get_env_variable(var_name) {
-                    result.push_str(&val);
-                } else {
-                    result.push_str("${");
-                    result.push_str(var_name);
-                    result.push('}');
-                }
-                remaining = &remaining[close_pos + 1..]; // skip past '}'
-            } else {
-                // No closing brace — emit literally and let the loop continue.
-                result.push_str("${");
-            }
-        } else {
-            // $VAR — collect ASCII alphanumeric + '_' characters.
-            let end = remaining
-                .char_indices()
-                .find(|(_, c)| !c.is_ascii_alphanumeric() && *c != '_')
-                .map(|(i, _)| i)
-                .unwrap_or(remaining.len());
-
-            let var_name = &remaining[..end];
-            if var_name.is_empty() {
-                // Bare `$` not followed by a valid variable start — keep it verbatim.
-                result.push('$');
-            } else if let Some(val) = bash_funcs::get_env_variable(var_name) {
-                result.push_str(&val);
-            } else {
-                result.push('$');
-                result.push_str(var_name);
-            }
-            remaining = &remaining[end..];
-        }
-    }
-
-    result.push_str(remaining);
-    result
-}
-
 /// bash programmable completions:
 ///
 /// - bashline.c: initialize_readline:
@@ -482,18 +430,15 @@ impl App<'_> {
             (String::new(), pattern.to_string())
         };
 
-        // Step 1: tilde expansion on raw_prefix.
-        let after_tilde = if raw_prefix == "~" {
-            self.home_path.clone()
-        } else if raw_prefix.starts_with("~/") {
-            raw_prefix.replacen("~", &self.home_path, 1)
+        // Use bash's own filename expansion (tilde + $VAR + ${VAR} + more).
+        let after_expand = if raw_prefix.is_empty() {
+            String::new()
         } else {
-            raw_prefix.clone()
+            bash_funcs::expand_filename(&raw_prefix)
         };
 
-        // Step 2: absolute path expansion.
-        let after_absolute = if after_tilde.is_empty() {
-            // No prefix — use the current working directory.
+        // Make the path absolute (prepend cwd when relative or empty).
+        let expanded_prefix = if after_expand.is_empty() {
             match std::env::current_dir() {
                 Ok(p) => p.to_string_lossy().to_string(),
                 Err(e) => {
@@ -501,21 +446,17 @@ impl App<'_> {
                     String::new()
                 }
             }
-        } else if !Path::new(&after_tilde).is_absolute() {
-            // Relative prefix — prepend cwd.
+        } else if !Path::new(&after_expand).is_absolute() {
             match std::env::current_dir() {
-                Ok(p) => format!("{}/{}", p.display(), after_tilde),
+                Ok(p) => format!("{}/{}", p.display(), after_expand),
                 Err(e) => {
                     log::warn!("Failed to get current directory: {}", e);
-                    after_tilde
+                    after_expand
                 }
             }
         } else {
-            after_tilde
+            after_expand
         };
-
-        // Step 3: environment variable expansion.
-        let expanded_prefix = expand_env_vars(&after_absolute);
 
         PathPatternExpansion {
             raw_prefix,

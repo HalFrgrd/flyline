@@ -341,6 +341,26 @@ unsafe extern "C" {
     // y.tab.c
     // char * decode_prompt_string (char *string, int is_prompt)
     pub fn decode_prompt_string(string: *const c_char, is_prompt: c_int) -> *mut c_char;
+
+    // subst.h
+    // WORD_LIST *expand_prompt_string (const char *string, int quoted, int wflags)
+    pub fn expand_prompt_string(
+        string: *const c_char,
+        quoted: c_int,
+        wflags: c_int,
+    ) -> *mut WordList;
+
+    // subst.h
+    // char *string_list (WORD_LIST *list)
+    pub fn string_list(list: *mut WordList) -> *mut c_char;
+
+    // Free the memory associated with a word list.
+    // void dispose_words (WORD_LIST *list)
+    pub fn dispose_words(list: *mut WordList);
+
+    // flags.h — non-zero means unbound variables are an error
+    #[link_name = "unbound_vars_is_error"]
+    pub static mut unbound_vars_is_error: c_int;
 }
 
 // history.h
