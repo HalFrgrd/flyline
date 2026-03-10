@@ -543,6 +543,7 @@ impl App<'_> {
                 &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
                 &Suggestion::new(r#"foo/"#, "", ""),
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
@@ -591,6 +592,7 @@ impl App<'_> {
             &[
                 &Suggestion::new(r#"foo/"#, "", ""),
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
@@ -600,6 +602,7 @@ impl App<'_> {
                 &Suggestion::new(r#"foo/"#, "", ""),
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
                 &Suggestion::new(r#"multi\ word\ option"#, "", " "),
+                &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
