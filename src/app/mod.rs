@@ -868,7 +868,7 @@ impl<'a> App<'a> {
         {
             content.write_span_dont_overwrite(
                 &Span::styled(
-                    "Start typing or search history with Ctrl+R",
+                    " Start typing or search history with Ctrl+R",
                     Palette::secondary_text(),
                 ),
                 Tag::HistorySuggestion,
