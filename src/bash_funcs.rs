@@ -3,6 +3,7 @@ use crate::bash_symbols;
 use anyhow::Result;
 
 use libc::{c_char, c_int};
+use std::collections::HashSet;
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
 
@@ -370,6 +371,7 @@ impl ProgrammableCompleteReturn {
 
 fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
     let mut strings = Vec::new();
+    let mut seen = HashSet::new();
     unsafe {
         if ptr.is_null() {
             return strings;
@@ -382,7 +384,9 @@ fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
             }
             let c_str = std::ffi::CStr::from_ptr(c_str_ptr);
             if let Ok(str_slice) = c_str.to_str() {
-                strings.push(str_slice.to_string());
+                if seen.insert(str_slice) {
+                    strings.push(str_slice.to_string());
+                }
             }
         }
     }
@@ -456,9 +460,8 @@ pub fn run_programmable_completions(
         }
 
         // The matches won't be escaped / quoted.
-        let mut completion_strings = vec_of_strings_from_char_char_ptr(list_of_strs);
-        // Readline also deplucates the results
-        completion_strings.dedup(); // TODO does this need sorting?
+        let completion_strings = vec_of_strings_from_char_char_ptr(list_of_strs);
+        // Readline also deduplicates the results
         let res = ProgrammableCompleteReturn::from(
             completion_strings,
             quote_type,
@@ -497,8 +500,7 @@ pub fn run_programmable_completions(
             in_command_position as std::ffi::c_int,
         );
 
-        let mut completion_strings = vec_of_strings_from_char_char_ptr(bash_default_completions);
-        completion_strings.dedup();
+        let completion_strings = vec_of_strings_from_char_char_ptr(bash_default_completions);
 
         log::debug!("Bash default completions: {:?}", completion_strings);
 
