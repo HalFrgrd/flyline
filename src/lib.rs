@@ -382,8 +382,8 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
 
         if !bash_symbols::stream_list.is_null() {
             // iterate through the list
-            // if there is a stream that is of stdin type, exit, we doesn't want to mess with it
-            // if we get to the end and there are no stdin streams, we can put our stream on the sentinel node and it should work
+            // if we find a stream of type StStdin or StNone that is already flyline, return early
+            // if we find a stream of type StStdin or StNone that is not flyline, replace it with flyline
             let mut current = bash_symbols::stream_list;
             let mut idx = 0;
             while !current.is_null() {
@@ -401,7 +401,9 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
                     name,
                     stream.bash_input.stream_type
                 );
-                if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin {
+                if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin
+                    || stream.bash_input.stream_type == bash_symbols::StreamType::StNone
+                {
                     if name.starts_with("flyline") {
                         log::trace!(
                             "Found existing flyline input stream in stream_list, not modifying stream_list"
@@ -409,17 +411,10 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
                         log::set_max_level(log::LevelFilter::Info);
                         return SUCCESS;
                     }
-
-                    log::warn!(
-                        "Found existing stdin stream in stream_list, not modifying stream_list"
-                    );
-                    logging::print_logs();
-                    return FAILURE;
-                } else if stream.bash_input.stream_type == bash_symbols::StreamType::StNone {
-                    // We found the sentinel node
                     // Replace it with flyline
                     log::trace!(
-                        "Found stream_list entry with type StNone, setting flyline input stream on this node"
+                        "Found stream_list entry with type {:?}, setting flyline input stream on this node",
+                        stream.bash_input.stream_type
                     );
                     setup_bash_input(&raw mut (*current).bash_input);
                     log::set_max_level(log::LevelFilter::Info);
