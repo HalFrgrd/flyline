@@ -36,6 +36,7 @@ impl Palette {
     pub fn highlight_maching_indices(
         s: &str,
         matching_indices: &[usize],
+        base_style: Style,
     ) -> Vec<Line<'static>> {
         let mut normal_lines = Vec::new();
 
@@ -60,10 +61,10 @@ impl Palette {
                 if is_matching {
                     normal_spans.push(Span::styled(
                         chunk_str,
-                        Palette::matched_character(),
+                        base_style.patch(Palette::matched_character()),
                     ));
                 } else {
-                    normal_spans.push(Span::styled(chunk_str, Palette::normal_text()));
+                    normal_spans.push(Span::styled(chunk_str, base_style));
                 }
             }
 

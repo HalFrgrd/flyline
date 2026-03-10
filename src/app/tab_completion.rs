@@ -101,7 +101,7 @@ impl App<'_> {
             }
         };
 
-        let (appended, suffix) = if comp_resultflags.filename_completion_desired {
+        let (appended, suffix, ls_style) = if comp_resultflags.filename_completion_desired {
             let owned_path;
             let path = match path_to_use {
                 Some(p) => p,
@@ -111,17 +111,23 @@ impl App<'_> {
                 }
             };
 
-            if path.is_dir() {
+            let appended = if path.is_dir() {
                 (format!("{}/", quoted), None)
             } else {
                 (quoted, suffix)
-            }
+            };
+            let ls_style = self.bash_env.style_for_path(path);
+            (appended.0, appended.1, ls_style)
         } else {
-            (quoted, suffix)
+            (quoted, suffix, None)
         };
 
         let suffix_str = suffix.map(|f| f.to_string()).unwrap_or_default();
-        Suggestion::new(appended, "", &suffix_str)
+        let suggestion = Suggestion::new(appended, "", &suffix_str);
+        match ls_style {
+            Some(style) => suggestion.with_style(style),
+            None => suggestion,
+        }
     }
 
     fn post_process_completions(
