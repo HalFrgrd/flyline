@@ -2,6 +2,7 @@ use crate::bash_funcs;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
@@ -46,6 +47,7 @@ impl BashEnvManager {
     /// Get all potential first word completions (aliases, reserved words, functions, builtins, executables)
     pub fn get_first_word_completions(&self, command: &str) -> Vec<String> {
         let mut res = Vec::new();
+        let mut seen = HashSet::new();
 
         if command.is_empty() {
             return res;
@@ -59,7 +61,7 @@ impl BashEnvManager {
             .chain(self.defined_builtins.iter())
             .chain(self.defined_executables.iter().map(|(_, name)| name))
         {
-            if poss_completion.starts_with(command) {
+            if poss_completion.starts_with(command) && seen.insert(poss_completion.as_str()) {
                 res.push(poss_completion.to_string());
             }
         }
