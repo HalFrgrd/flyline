@@ -21,6 +21,41 @@ impl FormattedBuffer {
             .iter()
             .find(|part| part.token.token.byte_range().contains(&byte_pos))
     }
+
+    /// Create a `FormattedBuffer` from a raw string and cursor position, with no word-info function.
+    /// Useful for testing and for scanning token annotations without extra context.
+    pub fn from(input: &str, cursor_pos: usize) -> Self {
+        let mut parser = crate::dparser::DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens().to_vec();
+        format_buffer(&tokens, cursor_pos, input.len(), false, None)
+    }
+
+    /// Returns the closing character that should be automatically inserted after the character `c`
+    /// at byte position `just_inserted_pos` in this formatted buffer, or `None` if nothing should
+    /// be inserted.
+    ///
+    /// The character `c` is only considered an "opener" when the token at `just_inserted_pos` is
+    /// annotated as [`TokenAnnotation::IsOpening`] by the parser.  This correctly handles
+    /// ambiguous characters such as `"`, `'`, and `` ` `` which can act as either an opening or a
+    /// closing delimiter depending on context.
+    pub fn closing_char_to_insert(&self, c: char, just_inserted_pos: usize) -> Option<char> {
+        let closing = match c {
+            '"' => '"',
+            '\'' => '\'',
+            '`' => '`',
+            '{' => '}',
+            '[' => ']',
+            '(' => ')',
+            _ => return None,
+        };
+
+        let is_opening = self
+            .get_part_from_byte_pos(just_inserted_pos)
+            .is_some_and(|p| matches!(p.token.annotation, TokenAnnotation::IsOpening(_)));
+
+        if is_opening { Some(closing) } else { None }
+    }
 }
 
 impl Default for FormattedBuffer {
@@ -222,5 +257,159 @@ pub fn format_buffer<'a>(
     FormattedBuffer {
         parts: spans,
         draw_cursor_at_end: cursor_byte_pos >= buffer_byte_length,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dparser::TokenAnnotation;
+
+    // Helper: find all parts whose token value equals `val`.
+    fn parts_with_value<'a>(fb: &'a FormattedBuffer, val: &str) -> Vec<&'a FormattedBufferPart> {
+        fb.parts
+            .iter()
+            .filter(|p| p.token.token.value == val)
+            .collect()
+    }
+
+    // ── FormattedBuffer::from ────────────────────────────────────────────────
+
+    #[test]
+    fn from_empty_string() {
+        let fb = FormattedBuffer::from("", 0);
+        assert!(fb.parts.is_empty());
+        assert!(fb.draw_cursor_at_end);
+    }
+
+    #[test]
+    fn from_annotates_opening_double_quote() {
+        // `echo "` – the double quote is an unmatched opener.
+        let input = r#"echo ""#;
+        let cursor = input.len();
+        let fb = FormattedBuffer::from(input, cursor);
+        let quotes = parts_with_value(&fb, "\"");
+        assert_eq!(quotes.len(), 1);
+        assert!(
+            matches!(quotes[0].token.annotation, TokenAnnotation::IsOpening(_)),
+            "expected IsOpening, got {:?}",
+            quotes[0].token.annotation
+        );
+    }
+
+    #[test]
+    fn from_annotates_closing_double_quote() {
+        // `echo "hello"` – the second double quote is a closer.
+        let input = r#"echo "hello""#;
+        let cursor = input.len();
+        let fb = FormattedBuffer::from(input, cursor);
+        let quotes = parts_with_value(&fb, "\"");
+        assert_eq!(quotes.len(), 2);
+        assert!(matches!(quotes[0].token.annotation, TokenAnnotation::IsOpening(_)));
+        assert!(matches!(quotes[1].token.annotation, TokenAnnotation::IsClosing(_)));
+    }
+
+    #[test]
+    fn from_annotates_opening_single_quote() {
+        let input = "echo '";
+        let fb = FormattedBuffer::from(input, input.len());
+        let sq = parts_with_value(&fb, "'");
+        assert_eq!(sq.len(), 1);
+        assert!(matches!(sq[0].token.annotation, TokenAnnotation::IsOpening(_)));
+    }
+
+    #[test]
+    fn from_annotates_opening_brace() {
+        let input = "echo {";
+        let fb = FormattedBuffer::from(input, input.len());
+        let braces = parts_with_value(&fb, "{");
+        assert_eq!(braces.len(), 1);
+        assert!(matches!(braces[0].token.annotation, TokenAnnotation::IsOpening(_)));
+    }
+
+    // ── closing_char_to_insert ───────────────────────────────────────────────
+
+    #[test]
+    fn closing_char_for_opening_double_quote() {
+        // Typing `"` when there is no unmatched opener → should return Some('"')
+        let input = r#"echo ""#;
+        let cursor = input.len();
+        let just_inserted = cursor - '"'.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('"', just_inserted), Some('"'));
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_double_quote() {
+        // The second `"` in `echo "hello"` closes the opener → no extra closing.
+        let input = r#"echo "hello""#;
+        let cursor = input.len();
+        let just_inserted = cursor - '"'.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('"', just_inserted), None);
+    }
+
+    #[test]
+    fn closing_char_for_opening_single_quote() {
+        let input = "echo '";
+        let cursor = input.len();
+        let just_inserted = cursor - '\''.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('\'', just_inserted), Some('\''));
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_single_quote() {
+        let input = "echo 'hello'";
+        let cursor = input.len();
+        let just_inserted = cursor - '\''.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('\'', just_inserted), None);
+    }
+
+    #[test]
+    fn closing_char_for_opening_brace() {
+        let input = "echo {";
+        let cursor = input.len();
+        let just_inserted = cursor - '{'.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('{', just_inserted), Some('}'));
+    }
+
+    #[test]
+    fn closing_char_for_opening_backtick() {
+        let input = "echo `";
+        let cursor = input.len();
+        let just_inserted = cursor - '`'.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('`', just_inserted), Some('`'));
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_backtick() {
+        let input = "echo `ls`";
+        let cursor = input.len();
+        let just_inserted = cursor - '`'.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('`', just_inserted), None);
+    }
+
+    #[test]
+    fn no_closing_char_for_unrecognised_character() {
+        let input = "echo a";
+        let cursor = input.len();
+        let just_inserted = cursor - 'a'.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('a', just_inserted), None);
+    }
+
+    #[test]
+    fn closing_char_second_quote_pair_after_first_closed() {
+        // `echo "a" "` – the third `"` is an opener; should return Some('"').
+        let input = r#"echo "a" ""#;
+        let cursor = input.len();
+        let just_inserted = cursor - '"'.len_utf8();
+        let fb = FormattedBuffer::from(input, cursor);
+        assert_eq!(fb.closing_char_to_insert('"', just_inserted), Some('"'));
     }
 }
