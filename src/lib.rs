@@ -174,7 +174,7 @@ impl Flyline {
 
                 if parsed.disable_animations {
                     log::info!("Animations disabled");
-                    // TODO: Set animation flag or pass to app
+                    self.settings.disable_animations = true;
                 }
 
                 if parsed.dump_logs {
