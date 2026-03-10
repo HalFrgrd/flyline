@@ -42,6 +42,76 @@ use std::path::Path;
 //   rl_filename_dequoting_function = bash_dequote_filename;
 //   rl_char_is_quoted_p = char_is_quoted; // TODO  probably not necessary?
 
+struct AliasExpandedCompletion {
+    command_word: String,
+    full_command: String,
+    cursor_byte_pos: usize,
+    word_under_cursor_end: usize,
+}
+
+/// Expands `command_word` through bash alias resolution and recomputes the
+/// context offsets to account for any length change introduced by the alias.
+///
+/// Taking `command_word` by value (ownership) ensures that the pre-expansion
+/// name is no longer accessible at the call site after this function is called,
+/// preventing accidental re-use of stale data.
+///
+/// `word_under_cursor` must be a sub-slice of `context`.
+fn expand_alias_for_completion(
+    command_word: String,
+    word_under_cursor: &str,
+    context: &str,
+    context_until_cursor: &str,
+) -> AliasExpandedCompletion {
+    let poss_alias = bash_funcs::find_alias(&command_word);
+    log::debug!(
+        "Checking for alias for command word '{}': {:?}",
+        command_word,
+        poss_alias
+    );
+
+    // Capture the original length before potentially moving `command_word`.
+    let command_word_len = command_word.len();
+
+    let alias = if let Some(a) = poss_alias
+        && !a.is_empty()
+    {
+        a
+    } else {
+        command_word
+    };
+
+    let len_delta = alias.len() as isize - command_word_len as isize;
+    let word_under_cursor_end = {
+        // Safety: `word_under_cursor` is guaranteed by the caller to be a
+        // sub-slice of `context`, so this pointer subtraction is valid.
+        let word_start_offset_in_context =
+            word_under_cursor.as_ptr() as usize - context.as_ptr() as usize;
+        (word_start_offset_in_context + word_under_cursor.len()).saturating_add_signed(len_delta)
+    };
+
+    // cursor position relative to the start of the completion context
+    let cursor_byte_pos = context_until_cursor
+        .len()
+        .saturating_add_signed(len_delta);
+
+    let full_command = alias.to_string() + &context[command_word_len..];
+    // `alias` is guaranteed non-empty: it is either a non-empty alias string
+    // (guarded by `!a.is_empty()` above) or the original non-empty command word.
+    let command_word = alias
+        .split_whitespace()
+        .next()
+        .unwrap_or(&alias)
+        .to_string();
+
+    AliasExpandedCompletion {
+        command_word,
+        full_command,
+        cursor_byte_pos,
+        word_under_cursor_end,
+    }
+}
+
 impl App<'_> {
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
         match opt_suggestion.and_then(|s| s.try_accept(&mut self.buffer)) {
@@ -165,39 +235,17 @@ impl App<'_> {
                 // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
-                let mut command_word = initial_command_word.to_string();
-                let poss_alias = bash_funcs::find_alias(&command_word);
-                log::debug!(
-                    "Checking for alias for command word '{}': {:?}",
+                let AliasExpandedCompletion {
                     command_word,
-                    poss_alias
+                    full_command,
+                    cursor_byte_pos,
+                    word_under_cursor_end,
+                } = expand_alias_for_completion(
+                    initial_command_word.to_string(),
+                    word_under_cursor,
+                    completion_context.context,
+                    completion_context.context_until_cursor,
                 );
-
-                let alias = if let Some(a) = poss_alias
-                    && !a.is_empty()
-                {
-                    a
-                } else {
-                    command_word.clone()
-                };
-
-                let len_delta = alias.len() as isize - command_word.len() as isize;
-                let word_under_cursor_end = {
-                    let word_start_offset_in_context = word_under_cursor.as_ptr() as usize
-                        - completion_context.context.as_ptr() as usize;
-                    (word_start_offset_in_context + word_under_cursor.len())
-                        .saturating_add_signed(len_delta)
-                };
-
-                // this it the cursor position relative to the start of the completion context
-                let cursor_byte_pos = completion_context
-                    .context_until_cursor
-                    .len()
-                    .saturating_add_signed(len_delta);
-
-                let full_command =
-                    alias.to_string() + &completion_context.context[command_word.len()..];
-                command_word = alias.split_whitespace().next().unwrap().to_string();
 
                 let poss_completions = bash_funcs::run_programmable_completions(
                     &full_command,
@@ -609,6 +657,17 @@ impl App<'_> {
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
                 &Suggestion::new(r#"multi\ word\ option"#, "", " "),
                 &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
+            ],
+        );
+
+        // Test that alias expansion works: fl_comp_alias is 'fl_comp_util --nosort',
+        // so completing after it should yield the same results as 'fl_comp_util --nosort '.
+        run_test_on(
+            "fl_comp_alias ",
+            &[
+                &Suggestion::new(r#"apple"#, "", " "),
+                &Suggestion::new(r#"banana"#, "", " "),
+                &Suggestion::new(r#"cherry"#, "", " "),
             ],
         );
 
