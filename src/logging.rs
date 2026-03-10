@@ -122,6 +122,40 @@ pub fn dump_logs() -> Result<PathBuf> {
     Ok(path)
 }
 
+/// A writer wrapper that converts `\n` to `\r\n` for use when the terminal is
+/// in raw mode, where bare newlines do not return the cursor to column zero.
+struct RawModeWriter {
+    inner: Box<dyn Write + Send>,
+}
+
+impl Write for RawModeWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // We use write_all for each segment so that every byte in `buf` is
+        // either fully forwarded (possibly expanded to "\r\n") or an error is
+        // returned.  Because write_all guarantees all-or-error semantics, it is
+        // correct to report buf.len() as the number of bytes consumed on
+        // success.
+        let mut start = 0;
+        for (i, &b) in buf.iter().enumerate() {
+            if b == b'\n' {
+                if start < i {
+                    self.inner.write_all(&buf[start..i])?;
+                }
+                self.inner.write_all(b"\r\n")?;
+                start = i + 1;
+            }
+        }
+        if start < buf.len() {
+            self.inner.write_all(&buf[start..])?;
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 pub fn stream_logs(path: PathBuf) -> Result<PathBuf> {
     let logger = LOGGER
         .get()
@@ -129,7 +163,9 @@ pub fn stream_logs(path: PathBuf) -> Result<PathBuf> {
     let entries = logger.snapshot();
 
     let mut writer: Box<dyn Write + Send> = if path.as_os_str() == "stderr" {
-        Box::new(std::io::stderr())
+        Box::new(RawModeWriter {
+            inner: Box::new(std::io::stderr()),
+        })
     } else {
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
         Box::new(file)
