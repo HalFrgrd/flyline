@@ -606,14 +606,12 @@ impl<'a> App<'a> {
                     self.toggle_mouse_state();
                 }
             },
-            // Ctrl+C - cancel with comment
+            // Ctrl+C - cancel
             KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
-                self.buffer.move_to_end();
-                self.buffer.insert_str(" #[Ctrl+C pressed] ");
                 self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
             }
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
@@ -846,6 +844,18 @@ impl<'a> App<'a> {
             let space = StyledGrapheme::new(" ", Style::default());
             content.move_to_next_insertion_point(&space, false);
             cursor_pos_maybe = Some(content.cursor_position());
+        }
+
+        if matches!(self.mode, AppRunningState::Exiting(ExitState::WithoutCommand)) {
+            content.write_span(
+                &Span::styled(
+                    "^C",
+                    Style::default()
+                        .fg(Color::Red)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Tag::Blank,
+            );
         }
 
         if self.mode.is_running()
