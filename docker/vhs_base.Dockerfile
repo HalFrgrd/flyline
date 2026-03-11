@@ -14,6 +14,7 @@ RUN touch /root/.bashrc && \
     'export PS1="\[\033[01;32m\]john@host\[\033[00m\]:\[\033[01;34m\]~\[\033[00m\]\$ "' \
     'export RPS1="\[\033[01;32m\]\t\[\033[0m\]"' \
     'enable -f /app/libflyline.so flyline' \
+    'flyline --disable-auto-closing-char' \
     >> /root/.bashrc
 
 RUN touch /root/.bash_history && \

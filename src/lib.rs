@@ -86,6 +86,9 @@ struct FlylineArgs {
     /// Enable tutorial mode with hints for first-time users
     #[arg(long = "tutorial-mode")]
     tutorial_mode: bool,
+    /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
+    #[arg(long = "disable-auto-closing-char")]
+    disable_auto_closing_char: bool,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
@@ -217,6 +220,11 @@ impl Flyline {
 
                 if parsed.tutorial_mode {
                     self.settings.tutorial_mode = true;
+                }
+
+                if parsed.disable_auto_closing_char {
+                    log::info!("Auto closing char disabled");
+                    self.settings.disable_auto_closing_char = true;
                 }
 
                 #[cfg(feature = "integration-tests")]
