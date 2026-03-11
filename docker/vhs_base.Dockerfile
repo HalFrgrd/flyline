@@ -123,4 +123,5 @@ RUN touch /root/.bash_history && \
     >> /root/.bash_history
 
 
-RUN echo somehost > /etc/hostname
+ENV HOSTNAME=somehost1
+ENV HOST=somehost2
