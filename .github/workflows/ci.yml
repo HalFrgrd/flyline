@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "**" ]
 
+concurrency:
+  group: ci
+  cancel-in-progress: true
+
 jobs:
   build-ubuntu-1604:
     name: Build and test on Ubuntu 16.04
