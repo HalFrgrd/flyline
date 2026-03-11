@@ -4,6 +4,7 @@ FROM vhs-base AS demo-prompts-build
 RUN printf '%s\n' \
     'export PS1="bash$ "' \
     'enable -f /app/libflyline.so flyline' \
+    'flyline --disable-auto-closing-char' \
     > /root/.bashrc
 
 COPY docker/demo_prompts.tape .
