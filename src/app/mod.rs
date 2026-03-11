@@ -669,7 +669,9 @@ impl<'a> App<'a> {
                 ..
             } => {
                 self.buffer.on_keypress(key);
-                self.insert_closing_char(c);
+                if !self.settings.disable_auto_closing_char {
+                    self.insert_closing_char(c);
+                }
             }
             _ => {
                 self.buffer.on_keypress(key);
