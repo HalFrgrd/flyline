@@ -122,6 +122,3 @@ RUN touch /root/.bash_history && \
  'clear' \
     >> /root/.bash_history
 
-
-ENV HOSTNAME=somehost1
-ENV HOST=somehost2
