@@ -56,6 +56,9 @@ target "vhs-base" {
     contexts = {
         flyline-extracted-library = "target:built-artifact"
     }
+    args = {
+        BUILDKIT_SANDBOX_HOSTNAME=my-hostname
+}
 }
 
 target "demo-main-extracted-gif" {
@@ -65,6 +68,9 @@ target "demo-main-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     target = "demo-main-extracted-gif"
+args = {
+        BUILDKIT_SANDBOX_HOSTNAME=my-hostname
+}
 }
 
 target "demo-prompts-extracted-gif" {
@@ -74,4 +80,7 @@ target "demo-prompts-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     target = "demo-prompts-extracted-gif"
+args = {
+        BUILDKIT_SANDBOX_HOSTNAME=my-hostname
+}
 }
