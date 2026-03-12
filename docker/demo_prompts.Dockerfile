@@ -1,7 +1,5 @@
 FROM vhs-base AS demo-prompts-build
 
-ARG BUILDKIT_SANDBOX_HOSTNAME
-
 # Override PS1 with a minimal prompt – the demo will set prompts interactively
 RUN printf '%s\n' \
     'export PS1="bash$ "' \
