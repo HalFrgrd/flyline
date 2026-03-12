@@ -1198,9 +1198,9 @@ impl SnapshotManager {
         }
     }
 
-    fn add_snapshot(&mut self, snapshot: Snapshot, merge_with_recent: bool) -> bool {
+    fn add_snapshot(&mut self, snapshot: Snapshot, merge_with_recent: bool) {
         if Some(&snapshot) == self.undos.last() {
-            return false;
+            return;
         }
 
         let now = std::time::Instant::now();
@@ -1218,7 +1218,6 @@ impl SnapshotManager {
         }
 
         self.redos.clear(); // clear redo stack on new edit
-        true
     }
 
     fn next_snapshot(&mut self, current_state: Snapshot) -> Option<Snapshot> {
