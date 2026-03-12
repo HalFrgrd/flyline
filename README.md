@@ -109,8 +109,25 @@ export RPS1='\D{%H:%M}'
 Flyline extends bash's tab completion feature in many ways: 
 
 Fuzzy tab completions: when you're presented with suggestions, you can type to fuzzily search through the list:
+
 ![Fuzzy suggestions demo](assets/demo_fuzzy_suggestions.gif)
 
 Alias commands: e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected
 
 Tab completions inside subshell, command substitution, and process substitution expressions: TODO: check this doesn't work in bash normally
+
+Mid-word tab completions: when your cursor is mid way through a word and you press tab (e.g. `grep --i<TAB>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
+
+# Command history
+
+## Fuzzy history search
+Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl+R`. The fuzzy search algorithm is aeine from skim which is robust to letters-out-of-order typos.
+
+## Inline suggestion
+Inline suggestions appear as you type based on the most recent matching history entry. Accept them with `Right`/`End`.
+
+## Scroll through prefix matches
+Pressing `Up` will scroll through history entries that are a prefix match with the current command.
+
+## Zsh history entries
+Optionally read zsh history entries to make migrating to bash easier. 
