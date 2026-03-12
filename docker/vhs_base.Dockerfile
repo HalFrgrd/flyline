@@ -1,8 +1,5 @@
 # Base image for VHS demo GIFs
 
-# Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
-ARG BUILDKIT_SANDBOX_HOSTNAME=my-hostname
-
 # Use the published Charmbracelet VHS image by digest
 FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS vhs-base
 
