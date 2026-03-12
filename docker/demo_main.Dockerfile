@@ -1,7 +1,7 @@
+FROM vhs-base AS demo-main-build
+
 # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
 ARG BUILDKIT_SANDBOX_HOSTNAME=my-hostname
-
-FROM vhs-base AS demo-main-build
 
 # The base image already provides `vhs` as the entrypoint; no override needed.
 COPY docker/demo_main.tape .
