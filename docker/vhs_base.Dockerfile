@@ -14,6 +14,8 @@ COPY --from=flyline-extracted-library /libflyline.so .
 # Give john ownership of the app directory
 RUN chown -R john:john /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends libfaketime && rm -rf /var/lib/apt/lists/*
+
 RUN touch /home/john/.bashrc && \
     printf '%s\n' \
     'alias ll="ls -alF"' \
