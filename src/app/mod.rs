@@ -211,7 +211,7 @@ impl<'a> App<'a> {
             if redraw {
                 let frame_area = terminal.get_frame().area();
 
-                let (mut content, term_cursor_pos) = self.create_content(frame_area.width);
+                let mut content = self.create_content(frame_area.width);
 
                 if !self.mode.is_running() {
                     // so that we can put the terminal emulators cursor below the content
@@ -233,7 +233,7 @@ impl<'a> App<'a> {
                 // The problem is that draw might try and query the cursor_position if it needs resizing
                 // and we are using Inline viewport.
                 // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
-                if let Err(e) = terminal.draw(|f| self.ui(f, content, term_cursor_pos)) {
+                if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
                     log::error!("Failed to draw terminal UI: {}", e);
                 }
 
@@ -796,7 +796,7 @@ impl<'a> App<'a> {
         format!("{:>5}", s.trim_start_matches('0'))
     }
 
-    fn create_content(self: &mut Self, width: u16) -> (Contents, Option<crate::content_builder::Coord>) {
+    fn create_content(self: &mut Self, width: u16) -> Contents {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
@@ -886,13 +886,12 @@ impl<'a> App<'a> {
             );
         }
 
-        let term_cursor_pos = if self.mode.is_running()
+        if self.mode.is_running()
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor_animation.update_position(cursor_pos);
             if self.settings.use_term_emulator_cursor {
-                content.set_edit_cursor_pos(cursor_pos);
-                Some(cursor_pos)
+                content.set_term_cursor_pos(cursor_pos);
             } else {
                 let cursor_anim_pos = if self.settings.disable_animations {
                     cursor_pos
@@ -909,11 +908,8 @@ impl<'a> App<'a> {
                 };
 
                 content.set_edit_cursor_style(cursor_anim_pos, cursor_style);
-                None
             }
-        } else {
-            None
-        };
+        }
 
         if self.mode.is_running()
             && self.settings.tutorial_mode
@@ -1205,10 +1201,10 @@ impl<'a> App<'a> {
             //     }
             // }
         }
-        (content, term_cursor_pos)
+        content
     }
 
-    fn ui(&mut self, frame: &mut Frame, content: Contents, term_cursor_pos: Option<crate::content_builder::Coord>) {
+    fn ui(&mut self, frame: &mut Frame, content: Contents) {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
 
@@ -1230,7 +1226,7 @@ impl<'a> App<'a> {
             };
         }
 
-        if let Some(cursor_pos) = term_cursor_pos {
+        if let Some(cursor_pos) = content.term_cursor_pos {
             let screen_row = cursor_pos.row.saturating_sub(start_content_row);
             if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
                 frame.set_cursor_position(Position {
