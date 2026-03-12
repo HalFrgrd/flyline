@@ -476,41 +476,14 @@ pub fn run_programmable_completions(
         );
 
         if res.completions.is_empty() && res.flags.bash_default_fallback_desired {
-            log::debug!(
-                "No completions and bash default fallback desired: {}. Falling back to bash default completion.",
-                res.flags.bash_default_fallback_desired
-            );
+            // Flyline used to support bash default completions as a fallback, but has deprecated
+            // this in favor of flyline's own secondary completions.
+            log::warn!("Bash default completions requested by compspec, but flyline will try its own secondary completions instead.");
         } else {
             log::debug!(
-                "Bash default fallback not desired or completions found. Not falling back to bash default completion."
+                "Bash default fallback not desired or completions found. Returning programmable completions."
             );
-            return Ok(res);
         }
-
-        let mut flags = res.flags;
-        std::mem::drop(res);
-
-        // I handle first word completion seperately
-        let in_command_position = 0;
-        let bash_default_completions = bash_symbols::bash_default_completion(
-            std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),
-            word_under_cursor_byte_end.saturating_sub(word_under_cursor.len()) as std::ffi::c_int,
-            word_under_cursor_byte_end as std::ffi::c_int,
-            quote_type.unwrap_or_default().into_byte() as std::ffi::c_int,
-            in_command_position as std::ffi::c_int,
-        );
-
-        let completion_strings = vec_of_strings_from_char_char_ptr(bash_default_completions);
-
-        log::debug!("Bash default completions: {:?}", completion_strings);
-
-        flags.filename_completion_desired = bash_symbols::rl_filename_completion_desired != 0;
-        flags.no_suffix_desired = bash_symbols::rl_completion_suppress_append != 0;
-        flags.suffix_character =
-            char::from_u32(bash_symbols::rl_completion_append_character as u32).unwrap_or(' ');
-        flags.nosort_desired = bash_symbols::rl_sort_completion_matches != 0;
-
-        let res = ProgrammableCompleteReturn::new(completion_strings, flags);
 
         Ok(res)
     }
