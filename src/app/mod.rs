@@ -189,7 +189,9 @@ impl<'a> App<'a> {
         };
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
-        terminal.hide_cursor().unwrap();
+        if !self.settings.use_term_emulator_cursor {
+            terminal.hide_cursor().unwrap();
+        }
 
         // Set up event stream and timers directly
         // let mut time_since_last_input = Instant::now();
@@ -209,7 +211,7 @@ impl<'a> App<'a> {
             if redraw {
                 let frame_area = terminal.get_frame().area();
 
-                let mut content = self.create_content(frame_area.width);
+                let (mut content, term_cursor_pos) = self.create_content(frame_area.width);
 
                 if !self.mode.is_running() {
                     // so that we can put the terminal emulators cursor below the content
@@ -231,7 +233,7 @@ impl<'a> App<'a> {
                 // The problem is that draw might try and query the cursor_position if it needs resizing
                 // and we are using Inline viewport.
                 // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
-                if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
+                if let Err(e) = terminal.draw(|f| self.ui(f, content, term_cursor_pos)) {
                     log::error!("Failed to draw terminal UI: {}", e);
                 }
 
@@ -794,7 +796,7 @@ impl<'a> App<'a> {
         format!("{:>5}", s.trim_start_matches('0'))
     }
 
-    fn create_content(self: &mut Self, width: u16) -> Contents {
+    fn create_content(self: &mut Self, width: u16) -> (Contents, Option<crate::content_builder::Coord>) {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
@@ -884,26 +886,34 @@ impl<'a> App<'a> {
             );
         }
 
-        if self.mode.is_running()
+        let term_cursor_pos = if self.mode.is_running()
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor_animation.update_position(cursor_pos);
-            let cursor_anim_pos = if self.settings.disable_animations {
-                cursor_pos
+            if self.settings.use_term_emulator_cursor {
+                content.set_edit_cursor_pos(cursor_pos);
+                Some(cursor_pos)
             } else {
-                self.cursor_animation.get_position()
-            };
-            let cursor_style = {
-                let cursor_intensity = if self.settings.disable_animations {
-                    255
+                let cursor_anim_pos = if self.settings.disable_animations {
+                    cursor_pos
                 } else {
-                    self.cursor_animation.get_intensity()
+                    self.cursor_animation.get_position()
                 };
-                Palette::cursor_style(cursor_intensity)
-            };
+                let cursor_style = {
+                    let cursor_intensity = if self.settings.disable_animations {
+                        255
+                    } else {
+                        self.cursor_animation.get_intensity()
+                    };
+                    Palette::cursor_style(cursor_intensity)
+                };
 
-            content.set_edit_cursor_style(cursor_anim_pos, cursor_style);
-        }
+                content.set_edit_cursor_style(cursor_anim_pos, cursor_style);
+                None
+            }
+        } else {
+            None
+        };
 
         if self.mode.is_running()
             && self.settings.tutorial_mode
@@ -1195,10 +1205,10 @@ impl<'a> App<'a> {
             //     }
             // }
         }
-        content
+        (content, term_cursor_pos)
     }
 
-    fn ui(&mut self, frame: &mut Frame, content: Contents) {
+    fn ui(&mut self, frame: &mut Frame, content: Contents, term_cursor_pos: Option<crate::content_builder::Coord>) {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
 
@@ -1218,6 +1228,16 @@ impl<'a> App<'a> {
                 }
                 None => break,
             };
+        }
+
+        if let Some(cursor_pos) = term_cursor_pos {
+            let screen_row = cursor_pos.row.saturating_sub(start_content_row);
+            if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
+                frame.set_cursor_position(Position {
+                    x: cursor_pos.col,
+                    y: screen_row,
+                });
+            }
         }
 
         self.last_contents = Some((content, (frame_area.y as i16) - start_content_row as i16));

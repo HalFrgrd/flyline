@@ -309,6 +309,10 @@ impl Contents {
         self.set_style(Rect::new(cursor.col, cursor.row, 1, 1), style);
     }
 
+    pub fn set_edit_cursor_pos(&mut self, cursor: Coord) {
+        self.edit_cursor_pos = Some(cursor);
+    }
+
     pub fn get_row_range_to_show(&self, height: u16) -> (u16, u16) {
         // Returns the range of visual rows to show given the available height
         let total_rows = self.height();
