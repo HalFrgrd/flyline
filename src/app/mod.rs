@@ -854,7 +854,7 @@ impl<'a> App<'a> {
 
             let poss_cursor_anim_pos = content.write_span_dont_overwrite(
                 &span_to_draw,
-                Tag::Command(part.token.token.byte_range().start),
+                Tag::Command(part.token.byte_range().start),
                 part.cursor_grapheme_idx,
             );
             if cursor_pos_maybe.is_none() {

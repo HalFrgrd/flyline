@@ -19,7 +19,7 @@ impl FormattedBuffer {
     pub fn get_part_from_byte_pos(&self, byte_pos: usize) -> Option<&FormattedBufferPart> {
         self.parts
             .iter()
-            .find(|part| part.token.token.byte_range().contains(&byte_pos))
+            .find(|part| part.token.byte_range().contains(&byte_pos))
     }
 
     /// Create a `FormattedBuffer` from a raw string and cursor position, with no word-info
@@ -61,7 +61,7 @@ impl FormattedBuffer {
         // If there is already an unmatched opener of the same kind strictly before the
         // insertion point, the character just typed is closing it – don't auto-insert.
         let has_unmatched_opener = self.parts.iter().any(|p| {
-            p.token.token.byte_range().start < just_inserted_pos
+            p.token.byte_range().start < just_inserted_pos
                 && p.token.token.kind == opener_kind
                 && matches!(p.token.annotation, TokenAnnotation::IsOpening(None))
         });
@@ -219,7 +219,7 @@ pub fn format_buffer<'a>(
             .iter()
             .map(|tok| {
                 let range_check = |t: &AnnotatedToken| {
-                    let range = t.token.byte_range();
+                    let range = t.byte_range();
                     if inclusive {
                         range.to_inclusive().contains(&cursor_byte_pos)
                     } else {
@@ -257,8 +257,8 @@ pub fn format_buffer<'a>(
         .map(|(idx, tok)| {
             let highlight = app_is_running
                 && (strict_highlight[idx] || (use_inclusive && inclusive_highlight[idx]));
-            let cursor_pos_in_token = if tok.token.byte_range().contains(&cursor_byte_pos) {
-                Some(cursor_byte_pos - tok.token.byte_range().start)
+            let cursor_pos_in_token = if tok.byte_range().contains(&cursor_byte_pos) {
+                Some(cursor_byte_pos - tok.byte_range().start)
             } else {
                 None
             };

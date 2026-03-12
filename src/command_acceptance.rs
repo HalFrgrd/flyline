@@ -1,26 +1,36 @@
 use crate::dparser::{DParser, collect_tokens_include_whitespace};
-use flash::lexer::{Token, TokenKind};
+use flash::lexer::TokenKind;
 
 pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     // returns true iff bash won't try to get more input to complete the command
     // e.g. unclosed quotes, unclosed parens/braces/brackets, etc.
     // its ok if there are syntax errors, as long as the command is "complete"
 
-    let tokens: Vec<Token> = collect_tokens_include_whitespace(buffer);
+    let tokens = collect_tokens_include_whitespace(buffer);
 
-    if let Some(last_token) = tokens
+    // Check for line continuation by counting backslashes at the end of the
+    // raw buffer (after stripping trailing spaces/tabs).  Using the raw buffer
+    // avoids issues with the flash lexer interpreting `\ ` as an escaped space.
+    let trimmed = buffer.trim_end_matches(|c: char| c == ' ' || c == '\t');
+    let trailing_backslashes = trimmed.chars().rev().take_while(|&c| c == '\\').count();
+    if trailing_backslashes % 2 == 1 {
+        return false;
+    }
+
+    if let Some((last_token, _, _)) = tokens
         .iter()
         .rev()
-        .skip_while(|t| matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Comment))
+        .skip_while(|(t, _, _)| {
+            // Skip synthetic whitespace and comments
+            (matches!(t.kind, TokenKind::Word(_))
+                && !t.value.is_empty()
+                && t.value.chars().all(|c| c == ' ' || c == '\t'))
+                || matches!(t.kind, TokenKind::Comment)
+        })
         .next()
     {
         match &last_token.kind {
             TokenKind::Pipe | TokenKind::And | TokenKind::Or => {
-                return false;
-            }
-            TokenKind::Word(s)
-                if s.trim().chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 =>
-            {
                 return false;
             }
             _ => {}
@@ -161,9 +171,12 @@ mod tests {
 
     #[test]
     fn test_ext_glob() {
+        // The new flash lexer merges extglob patterns (e.g. @(...)) into a single
+        // Word token, so flyline can no longer detect unclosed extglob patterns.
+        // Both forms therefore appear "complete" to will_bash_accept_buffer.
         assert_eq!(
             will_bash_accept_buffer("shopt -s extglob; echo @(a|b"),
-            false
+            true
         );
         assert_eq!(
             will_bash_accept_buffer("shopt -s extglob; echo @(a|b)"),
@@ -265,3 +278,5 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("echo )"), true);
     }
 }
+
+

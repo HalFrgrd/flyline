@@ -4,7 +4,10 @@ use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
 use log::debug;
 
-fn split_token_into_lines(token: Token) -> Vec<Token> {
+/// Split a Word token that contains embedded newlines into separate tokens.
+/// Returns a list of `(token, relative_byte_offset)` pairs, where the offset
+/// is relative to the byte_start of the original token.
+fn split_token_into_lines(token: Token) -> Vec<(Token, usize)> {
     match &token.kind {
         TokenKind::Word(s) => {
             let mut tokens = vec![];
@@ -22,38 +25,36 @@ fn split_token_into_lines(token: Token) -> Vec<Token> {
 
                 match chunk_str.as_str() {
                     "\n" => {
-                        tokens.push(Token {
-                            kind: TokenKind::Newline,
-                            value: chunk_str,
-                            position: Position {
-                                line: row,
-                                column: col,
-                                byte: token.position.byte + chunk_byte_start,
+                        tokens.push((
+                            Token {
+                                kind: TokenKind::Newline,
+                                value: chunk_str,
+                                position: Position::new(row, col),
                             },
-                        });
+                            chunk_byte_start,
+                        ));
 
                         row += 1;
                         col = 1; // flash lexer uses 1 based column numbers
                     }
                     _ => {
-                        tokens.push(Token {
-                            kind: TokenKind::Word(chunk_str.clone()),
-                            value: chunk_str.clone(),
-                            position: Position {
-                                line: row,
-                                column: col,
-                                byte: token.position.byte + chunk_byte_start,
+                        tokens.push((
+                            Token {
+                                kind: TokenKind::Word(chunk_str.clone()),
+                                value: chunk_str.clone(),
+                                position: Position::new(row, col),
                             },
-                        });
+                            chunk_byte_start,
+                        ));
 
-                        // flash lexer uses char indicies for col counts instead of grapheme width.
+                        // flash lexer uses char indices for col counts instead of grapheme width.
                         col += chunk_str.chars().count();
                     }
                 }
             }
             tokens
         }
-        _ => vec![token],
+        _ => vec![(token, 0)],
     }
 }
 
@@ -62,49 +63,169 @@ fn test_split_token_into_lines() {
     let token = Token {
         kind: TokenKind::Word("hello\nworld".to_string()),
         value: "hello\nworld".to_string(),
-        position: Position {
-            line: 1,
-            column: 1,
-            byte: 0,
-        },
+        position: Position::new(1, 1),
     };
 
-    let tokens = split_token_into_lines(token);
-    assert_eq!(tokens.len(), 3);
-    assert_eq!(tokens[0].kind, TokenKind::Word("hello".to_string()));
-    assert_eq!(tokens[0].position.line, 1);
-    assert_eq!(tokens[0].position.column, 1);
-    assert_eq!(tokens[0].position.byte, 0);
+    let pairs = split_token_into_lines(token);
+    assert_eq!(pairs.len(), 3);
 
-    assert_eq!(tokens[1].kind, TokenKind::Newline);
-    assert_eq!(tokens[1].position.line, 1);
-    assert_eq!(tokens[1].position.column, 6);
-    assert_eq!(tokens[1].position.byte, 5);
+    let (tok0, rel0) = &pairs[0];
+    assert_eq!(tok0.kind, TokenKind::Word("hello".to_string()));
+    assert_eq!(tok0.position.line, 1);
+    assert_eq!(tok0.position.column, 1);
+    assert_eq!(*rel0, 0);
 
-    assert_eq!(tokens[2].kind, TokenKind::Word("world".to_string()));
-    assert_eq!(tokens[2].position.line, 2);
-    assert_eq!(tokens[2].position.column, 1);
-    assert_eq!(tokens[2].position.byte, 6);
+    let (tok1, rel1) = &pairs[1];
+    assert_eq!(tok1.kind, TokenKind::Newline);
+    assert_eq!(tok1.position.line, 1);
+    assert_eq!(tok1.position.column, 6);
+    assert_eq!(*rel1, 5);
 
-    let tokens = split_token_into_lines(tokens[0].clone());
-    assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].kind, TokenKind::Word("hello".to_string()));
+    let (tok2, rel2) = &pairs[2];
+    assert_eq!(tok2.kind, TokenKind::Word("world".to_string()));
+    assert_eq!(tok2.position.line, 2);
+    assert_eq!(tok2.position.column, 1);
+    assert_eq!(*rel2, 6);
+
+    let pairs2 = split_token_into_lines(pairs[0].0.clone());
+    assert_eq!(pairs2.len(), 1);
+    assert_eq!(pairs2[0].0.kind, TokenKind::Word("hello".to_string()));
 }
 
-pub fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
+/// Collect all tokens from `input`, inserting synthetic whitespace tokens for
+/// the spaces/tabs that the flash lexer skips.  Also combines `HereDoc` /
+/// `HereDocDash` tokens with the immediately-following delimiter word so that
+/// the value (e.g. `"<<EOF"`) matches the old flash behaviour.
+///
+/// Returns a `Vec<(Token, usize, usize)>` where the second element is the
+/// byte start in `input` and the third element is the number of raw bytes
+/// from `input` that this token corresponds to (which may differ from
+/// `token.value.len()` when the flash lexer applies backslash escaping).
+pub fn collect_tokens_include_whitespace(input: &str) -> Vec<(Token, usize, usize)> {
     let mut lexer = Lexer::new(input);
-    let mut tokens = Vec::new();
+    let mut result: Vec<(Token, usize, usize)> = Vec::new();
+
+    // Pre-compute mapping from char index → byte offset in `input`.
+    let char_to_byte: Vec<usize> = input.char_indices().map(|(b, _)| b).collect();
+    let input_len = input.len();
+    let char_pos_to_byte = |char_pos: usize| -> usize {
+        char_to_byte.get(char_pos).copied().unwrap_or(input_len)
+    };
+
+    let input_bytes = input.as_bytes();
+    // Byte position right after the last emitted (non-whitespace) token.
+    let mut prev_end_byte: usize = 0;
 
     loop {
+        // Record where the lexer is before next_token() (which starts by
+        // calling skip_whitespace internally).
+        let pre_call_char_pos = lexer.position;
         let token = lexer.next_token();
-        let is_eof = matches!(token.kind, TokenKind::EOF);
-        if is_eof {
+        let post_call_char_pos = lexer.position;
+
+        if matches!(token.kind, TokenKind::EOF) {
             break;
         }
-        tokens.extend(split_token_into_lines(token));
+
+        // ── Find whitespace between prev_end_byte and the token start ───────
+        // The token starts after any spaces/tabs the lexer skipped.
+        let pre_call_byte = char_pos_to_byte(pre_call_char_pos);
+        let post_call_byte = char_pos_to_byte(post_call_char_pos);
+
+        let mut token_start_byte = pre_call_byte;
+        while token_start_byte < post_call_byte
+            && (input_bytes[token_start_byte] == b' '
+                || input_bytes[token_start_byte] == b'\t')
+        {
+            token_start_byte += 1;
+        }
+
+        // Emit a synthetic whitespace token for the gap, if any.
+        if token_start_byte > prev_end_byte {
+            let ws_str = &input[prev_end_byte..token_start_byte];
+            let ws_len = ws_str.len();
+            result.push((
+                Token {
+                    kind: TokenKind::Word(ws_str.to_string()),
+                    value: ws_str.to_string(),
+                    position: Position::new(0, 0),
+                },
+                prev_end_byte,
+                ws_len,
+            ));
+        }
+
+        // ── Guard against empty tokens (e.g. unclosed quote at EOF) ─────────
+        if token.value.is_empty() {
+            break;
+        }
+
+        // ── HereDoc / HereDocDash: combine with the following delimiter ──────
+        if matches!(token.kind, TokenKind::HereDoc | TokenKind::HereDocDash) {
+            let op = token.value.clone(); // "<<" or "<<-"
+
+            // Consume the delimiter token.
+            let delim_token = lexer.next_token();
+            let delim_post_char = lexer.position;
+            let delim = delim_token.value.clone();
+            let combined_end_byte = char_pos_to_byte(delim_post_char);
+
+            let combined_value = format!("{}{}", op, delim);
+            let combined_raw_len = combined_end_byte - token_start_byte;
+            prev_end_byte = combined_end_byte;
+            result.push((
+                Token {
+                    kind: token.kind,
+                    value: combined_value,
+                    position: token.position,
+                },
+                token_start_byte,
+                combined_raw_len,
+            ));
+            continue;
+        }
+
+        // ── Regular token ────────────────────────────────────────────────────
+        let raw_token_len = post_call_byte - token_start_byte;
+        prev_end_byte = post_call_byte;
+
+        let sub_tokens = split_token_into_lines(token);
+        let sub_count = sub_tokens.len();
+        for (i, (sub_token, rel)) in sub_tokens.into_iter().enumerate() {
+            // For the last sub-token, use the remaining raw bytes; for others
+            // use the sub-token value length (splitting only happens inside
+            // quoted strings where value len == raw byte len).
+            let sub_raw_len = if i + 1 == sub_count {
+                raw_token_len.saturating_sub(rel)
+            } else {
+                sub_token.value.len()
+            };
+            result.push((sub_token, token_start_byte + rel, sub_raw_len));
+        }
     }
 
-    tokens
+    // Emit any trailing whitespace that the lexer skipped after the last token.
+    if prev_end_byte < input_len {
+        let remaining = &input[prev_end_byte..];
+        let ws_len = remaining.len()
+            - remaining
+                .trim_start_matches(|c: char| c == ' ' || c == '\t')
+                .len();
+        if ws_len > 0 {
+            let ws_str = &input[prev_end_byte..prev_end_byte + ws_len];
+            result.push((
+                Token {
+                    kind: TokenKind::Word(ws_str.to_string()),
+                    value: ws_str.to_string(),
+                    position: Position::new(0, 0),
+                },
+                prev_end_byte,
+                ws_len,
+            ));
+        }
+    }
+
+    result
 }
 
 pub trait ToInclusiveRange {
@@ -130,14 +251,40 @@ pub enum TokenAnnotation {
 pub struct AnnotatedToken {
     pub token: Token,
     pub annotation: TokenAnnotation,
+    /// Byte offset of the start of this token within the input string.
+    pub byte_start: usize,
+    /// Number of raw bytes in the original input that this token corresponds
+    /// to.  May differ from `token.value.len()` when the flash lexer applies
+    /// backslash escaping (e.g. `\ ` is two raw bytes but produces a value of
+    /// one space character).
+    raw_byte_len: usize,
 }
 
 impl AnnotatedToken {
-    pub fn new(token: Token) -> Self {
+    pub fn new(token: Token, byte_start: usize, raw_byte_len: usize) -> Self {
         Self {
             token,
             annotation: TokenAnnotation::None,
+            byte_start,
+            raw_byte_len,
         }
+    }
+
+    pub fn byte_range(&self) -> Range<usize> {
+        self.byte_start..self.byte_start + self.raw_byte_len
+    }
+
+    /// Returns true if this token represents synthesized whitespace (spaces /
+    /// tabs between other tokens).
+    pub fn is_whitespace(&self) -> bool {
+        matches!(self.token.kind, TokenKind::Word(_))
+            && !self.token.value.is_empty()
+            && self.token.value.chars().all(|c| c == ' ' || c == '\t')
+    }
+
+    /// Returns true if this token is an actual word (not synthetic whitespace).
+    pub fn is_word(&self) -> bool {
+        matches!(self.token.kind, TokenKind::Word(_)) && !self.is_whitespace()
     }
 }
 
@@ -149,9 +296,12 @@ pub struct DParser {
 }
 
 impl DParser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<(Token, usize, usize)>) -> Self {
         Self {
-            tokens: tokens.into_iter().map(AnnotatedToken::new).collect(),
+            tokens: tokens
+                .into_iter()
+                .map(|(t, byte_start, raw_byte_len)| AnnotatedToken::new(t, byte_start, raw_byte_len))
+                .collect(),
 
             current_command_range: None,
         }
@@ -257,7 +407,7 @@ impl DParser {
             };
             let mut token = &annotated_token.token;
 
-            let word_is_part_of_assignment = if token.kind.is_word() {
+            let word_is_part_of_assignment = if annotated_token.is_word() {
                 previous_token.as_ref().map_or(false, |token| {
                     matches!(token.token.kind, TokenKind::Assignment)
                 })
@@ -266,11 +416,11 @@ impl DParser {
             };
 
             let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                token.byte_range().to_inclusive().contains(&pos)
+                annotated_token.byte_range().to_inclusive().contains(&pos)
             });
 
             let token_strictly_contains_cursor =
-                cursor_byte_pos.map_or(false, |pos| token.byte_range().contains(&pos));
+                cursor_byte_pos.map_or(false, |pos| annotated_token.byte_range().contains(&pos));
 
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
@@ -288,7 +438,6 @@ impl DParser {
                 | TokenKind::ParamExpansion
                 | TokenKind::ProcessSubstIn
                 | TokenKind::ProcessSubstOut
-                | TokenKind::ExtGlob(_)
                 | TokenKind::If
                 | TokenKind::Case
                 | TokenKind::For
@@ -309,10 +458,13 @@ impl DParser {
                     command_start_stack.push(self.current_command_range.clone());
                     self.current_command_range = None; // set for next word after this
                 }
-                TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
+                TokenKind::HereDoc | TokenKind::HereDocDash => {
                     annotated_token.annotation = TokenAnnotation::IsOpening(None);
 
-                    heredocs.push_back((idx, delim.to_string()));
+                    // Extract the delimiter from the combined value (e.g. "<<EOF" → "EOF").
+                    let op_len = if matches!(token.kind, TokenKind::HereDocDash) { 3 } else { 2 };
+                    let delim = token.value[op_len..].to_string();
+                    heredocs.push_back((idx, delim));
                 }
                 TokenKind::RParen
                 | TokenKind::Quote
@@ -390,7 +542,7 @@ impl DParser {
                     }
                     self.current_command_range = None;
                 }
-                TokenKind::Whitespace(_) => {
+                _ if annotated_token.is_whitespace() => {
                     if token_inclusively_contains_cursor {
                         if let Some(range) = &mut self.current_command_range {
                             *range = *range.start()..=idx;
@@ -421,7 +573,7 @@ impl DParser {
                         }
                     }
 
-                    if token.kind.is_word() {
+                    if annotated_token.is_word() {
                         // println!("prev token: {:?}", previous_token.as_ref().map(|t| &t.token));
                         if let Some(prev_token) = &previous_token {
                             match prev_token.token.kind {
@@ -487,12 +639,11 @@ impl DParser {
             .any(|t| matches!(t.annotation, TokenAnnotation::IsOpening(None)))
     }
 
-    pub fn get_current_command_tokens(&self) -> Vec<&Token> {
+    pub fn get_current_command_tokens(&self) -> Vec<&AnnotatedToken> {
         match &self.current_command_range {
             Some(range) => {
                 return self.tokens[range.clone()]
                     .iter()
-                    .map(|t| &t.token)
                     .collect::<Vec<_>>();
             }
             None => return Vec::new(),
@@ -503,7 +654,7 @@ impl DParser {
     pub fn get_current_command_str(&self) -> String {
         self.get_current_command_tokens()
             .iter()
-            .map(|t| t.value.to_string())
+            .map(|t| t.token.value.to_string())
             .collect::<Vec<_>>()
             .join("")
     }

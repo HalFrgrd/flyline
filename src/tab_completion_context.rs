@@ -108,7 +108,7 @@ pub fn get_completion_context<'a>(
     let opt_cursor_node = match context_tokens
         .iter()
         .enumerate()
-        .filter(|(_, t)| !t.kind.is_whitespace())
+        .filter(|(_, t)| !t.is_whitespace())
         .find(|(_, t)| t.byte_range().to_inclusive().contains(&cursor_byte_pos))
     {
         Some(idx_and_node) => Some(idx_and_node),
@@ -120,19 +120,19 @@ pub fn get_completion_context<'a>(
 
     let word_under_cursor_range = match opt_cursor_node {
         Some((_, cursor_node))
-            if cursor_node.kind.is_whitespace() || cursor_node.kind == TokenKind::Newline =>
+            if cursor_node.is_whitespace() || cursor_node.token.kind == TokenKind::Newline =>
         {
             cursor_byte_pos..cursor_byte_pos
         }
-        Some((node_idx, cursor_node)) if cursor_node.kind.is_word() => {
+        Some((node_idx, cursor_node)) if cursor_node.is_word() => {
             let byte_range = cursor_node.byte_range();
 
             // try grow to the left if there are single or double quotes or $
             match context_tokens.get(node_idx.wrapping_sub(1)) {
-                Some(prev_node) if matches!(prev_node.kind, TokenKind::SingleQuote) => {
+                Some(prev_node) if matches!(prev_node.token.kind, TokenKind::SingleQuote) => {
                     prev_node.byte_range().start..byte_range.end
                 }
-                Some(prev_node) if matches!(prev_node.kind, TokenKind::Quote) => {
+                Some(prev_node) if matches!(prev_node.token.kind, TokenKind::Quote) => {
                     // See if there is a $ inside this token preceding the cursor with no whitespace in between.
                     // If so, we want to include the $ in the completion.
                     // Scan backwards from cursor_byte_pos to prev_node.byte_range().start,
@@ -157,7 +157,7 @@ pub fn get_completion_context<'a>(
                         prev_node.byte_range().start..byte_range.end
                     }
                 }
-                Some(prev_node) if prev_node.kind == TokenKind::Dollar => {
+                Some(prev_node) if prev_node.token.kind == TokenKind::Dollar => {
                     prev_node.byte_range().start..byte_range.end
                 }
                 _ => byte_range,
@@ -182,7 +182,7 @@ pub fn get_completion_context<'a>(
             .contains(&cursor_byte_pos)
     );
 
-    let comp_context_range = if context_tokens.iter().all(|t| t.kind.is_whitespace()) {
+    let comp_context_range = if context_tokens.iter().all(|t| t.is_whitespace()) {
         cursor_byte_pos..cursor_byte_pos
     } else {
         context_tokens.first().unwrap().byte_range().start
