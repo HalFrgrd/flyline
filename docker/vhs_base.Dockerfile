@@ -1,23 +1,33 @@
 # Base image for VHS demo GIFs
 
+# Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
+ARG BUILDKIT_SANDBOX_HOSTNAME=my-hostname
+
 # Use the published Charmbracelet VHS image by digest
 FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS vhs-base
+
+# Create a non-root user for demos
+RUN useradd -m -s /bin/bash john
 
 WORKDIR /app
 
 # Copy the Flyline shared library into the container
 COPY --from=flyline-extracted-library /libflyline.so .
-RUN touch /root/.bashrc && \
+
+# Give john ownership of the app directory
+RUN chown -R john:john /app
+
+RUN touch /home/john/.bashrc && \
     printf '%s\n' \
     'alias ll="ls -alF"' \
     'export HISTTIMEFORMAT="%F %T  "' \
-    'export PS1="\[\033[01;32m\]john@host\[\033[00m\]:\[\033[01;34m\]~\[\033[00m\]\$ "' \
+    'export PS1="\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]~\[\033[00m\]\$ "' \
     'export RPS1="\[\033[01;32m\]\t\[\033[0m\]"' \
     'enable -f /app/libflyline.so flyline' \
     'flyline --disable-auto-closing-char' \
-    >> /root/.bashrc
+    >> /home/john/.bashrc
 
-RUN touch /root/.bash_history && \
+RUN touch /home/john/.bash_history && \
     printf '%s\n' \
  '#1771881194' \
  'ls -la' \
@@ -121,5 +131,7 @@ RUN touch /root/.bash_history && \
  'bind -P' \
  '#1771881594' \
  'clear' \
-    >> /root/.bash_history
+    >> /home/john/.bash_history
+
+USER john
 
