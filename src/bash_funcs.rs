@@ -521,6 +521,83 @@ pub fn get_env_variable(var_name: &str) -> Option<String> {
     }
 }
 
+/// Return all known hostnames whose names begin with `prefix`.
+///
+/// Hostnames are gathered from two sources:
+///   1. `/etc/hosts`    – every name/alias on each non-comment line.
+///   2. `~/.ssh/known_hosts` – unencrypted (non-hashed) host entries.
+///
+/// Results are de-duplicated and sorted.
+pub fn get_hostnames_with_prefix(prefix: &str) -> Vec<String> {
+    let mut hostnames: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // /etc/hosts: each non-comment line is: <ip> <hostname> [<alias>...]
+    if let Ok(content) = std::fs::read_to_string("/etc/hosts") {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            // First field is the IP address; the rest are hostname/aliases.
+            for name in line.split_whitespace().skip(1) {
+                if name.starts_with(prefix) {
+                    hostnames.insert(name.to_string());
+                }
+            }
+        }
+    }
+
+    // ~/.ssh/known_hosts: each non-comment line starts with a comma-separated
+    // list of host patterns (or a hashed `|1|…` entry that we skip).
+    let home = std::env::var("HOME").unwrap_or_default();
+    if !home.is_empty() {
+        let known_hosts_path = std::path::Path::new(&home)
+            .join(".ssh")
+            .join("known_hosts");
+        if let Ok(content) = std::fs::read_to_string(&known_hosts_path) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                // The first whitespace-delimited field holds the host patterns.
+                let host_field = match line.split_whitespace().next() {
+                    Some(f) => f,
+                    None => continue,
+                };
+                // Skip hashed entries (|1|salt|hash).
+                if host_field.starts_with('|') {
+                    continue;
+                }
+                for host in host_field.split(',') {
+                    // Strip optional port notation: [hostname]:port → hostname
+                    let host = if host.starts_with('[') {
+                        match host.find(']') {
+                            Some(end) => &host[1..end],
+                            None => host,
+                        }
+                    } else {
+                        host
+                    };
+                    if host.starts_with(prefix) {
+                        hostnames.insert(host.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    log::debug!(
+        "Found hostnames with prefix '{}': {:?}",
+        prefix,
+        hostnames
+    );
+
+    let mut result: Vec<String> = hostnames.into_iter().collect();
+    result.sort();
+    result
+}
+
 // QuoteType can be  in the middle  of a word (i.e.  backslash)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum QuoteType {
