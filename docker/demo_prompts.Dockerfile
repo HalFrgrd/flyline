@@ -1,11 +1,12 @@
+# Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
+ARG BUILDKIT_SANDBOX_HOSTNAME=my-hostname
+
 FROM vhs-base AS demo-prompts-build
 
-# Override .bashrc with a minimal prompt – the demo will set prompts interactively
+# Override PS1 with a minimal prompt – the demo will set prompts interactively
 RUN printf '%s\n' \
     'export PS1="bash$ "' \
-    'enable -f /app/libflyline.so flyline' \
-    'flyline --disable-auto-closing-char' \
-    > /root/.bashrc
+    >> /home/john/.bashrc
 
 COPY docker/demo_prompts.tape .
 
