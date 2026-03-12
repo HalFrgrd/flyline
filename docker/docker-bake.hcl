@@ -56,6 +56,10 @@ target "vhs-base" {
     contexts = {
         flyline-extracted-library = "target:built-artifact"
     }
+    # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
+    args = {
+        BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
+    }
 }
 
 target "demo-main-extracted-gif" {
@@ -65,6 +69,10 @@ target "demo-main-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     target = "demo-main-extracted-gif"
+    # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
+    args = {
+        BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
+    }
 }
 
 target "demo-prompts-extracted-gif" {
@@ -74,4 +82,8 @@ target "demo-prompts-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     target = "demo-prompts-extracted-gif"
+    # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
+    args = {
+        BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
+    }
 }
