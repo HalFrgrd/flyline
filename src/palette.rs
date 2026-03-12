@@ -14,6 +14,9 @@ impl Palette {
     pub fn secondary_text() -> Style {
         Style::default().add_modifier(Modifier::DIM)
     }
+    pub fn tutorial_hint() -> Style {
+        Style::default().add_modifier(Modifier::BOLD)
+    }
     pub fn convert_to_selected(style: Style) -> Style {
         style.add_modifier(Modifier::REVERSED)
     }
