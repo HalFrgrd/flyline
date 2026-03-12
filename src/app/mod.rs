@@ -189,7 +189,9 @@ impl<'a> App<'a> {
         };
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
-        terminal.hide_cursor().unwrap();
+        if !self.settings.use_term_emulator_cursor {
+            terminal.hide_cursor().unwrap();
+        }
 
         // Set up event stream and timers directly
         // let mut time_since_last_input = Instant::now();
@@ -888,21 +890,25 @@ impl<'a> App<'a> {
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor_animation.update_position(cursor_pos);
-            let cursor_anim_pos = if self.settings.disable_animations {
-                cursor_pos
+            if self.settings.use_term_emulator_cursor {
+                content.set_term_cursor_pos(cursor_pos);
             } else {
-                self.cursor_animation.get_position()
-            };
-            let cursor_style = {
-                let cursor_intensity = if self.settings.disable_animations {
-                    255
+                let cursor_anim_pos = if self.settings.disable_animations {
+                    cursor_pos
                 } else {
-                    self.cursor_animation.get_intensity()
+                    self.cursor_animation.get_position()
                 };
-                Palette::cursor_style(cursor_intensity)
-            };
+                let cursor_style = {
+                    let cursor_intensity = if self.settings.disable_animations {
+                        255
+                    } else {
+                        self.cursor_animation.get_intensity()
+                    };
+                    Palette::cursor_style(cursor_intensity)
+                };
 
-            content.set_edit_cursor_style(cursor_anim_pos, cursor_style);
+                content.set_edit_cursor_style(cursor_anim_pos, cursor_style);
+            }
         }
 
         if self.mode.is_running()
@@ -1225,6 +1231,16 @@ impl<'a> App<'a> {
                 }
                 None => break,
             };
+        }
+
+        if let Some(cursor_pos) = content.term_cursor_pos {
+            let screen_row = cursor_pos.row.saturating_sub(start_content_row);
+            if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
+                frame.set_cursor_position(Position {
+                    x: cursor_pos.col,
+                    y: screen_row,
+                });
+            }
         }
 
         self.last_contents = Some((content, (frame_area.y as i16) - start_content_row as i16));

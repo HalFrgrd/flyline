@@ -69,6 +69,8 @@ pub struct Contents {
     pub width: u16,
     cursor_pos: Coord, // visual cursor position with line wrapping
     pub edit_cursor_pos: Option<Coord>,
+    /// Cursor position to hand off to the terminal emulator (used with --use-term-emulator-cursor).
+    pub term_cursor_pos: Option<Coord>,
 }
 
 impl Contents {
@@ -82,6 +84,7 @@ impl Contents {
             width,
             cursor_pos: Coord::new(0, 0),
             edit_cursor_pos: None,
+            term_cursor_pos: None,
         }
     }
 
@@ -307,6 +310,11 @@ impl Contents {
     pub fn set_edit_cursor_style(&mut self, cursor: Coord, style: ratatui::style::Style) {
         self.edit_cursor_pos = Some(cursor);
         self.set_style(Rect::new(cursor.col, cursor.row, 1, 1), style);
+    }
+
+    pub fn set_term_cursor_pos(&mut self, cursor: Coord) {
+        self.edit_cursor_pos = Some(cursor);
+        self.term_cursor_pos = Some(cursor);
     }
 
     pub fn get_row_range_to_show(&self, height: u16) -> (u16, u16) {
