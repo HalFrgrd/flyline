@@ -1,7 +1,5 @@
 # Base image for VHS demo GIFs
 
-ARG BUILDKIT_SANDBOX_HOSTNAME
-
 # Use the published Charmbracelet VHS image by digest
 FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS vhs-base
 
