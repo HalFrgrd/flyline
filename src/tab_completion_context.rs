@@ -186,7 +186,11 @@ pub fn get_completion_context<'a>(
         cursor_byte_pos..cursor_byte_pos
     } else {
         context_tokens.first().unwrap().byte_range().start
-            ..context_tokens.last().unwrap().byte_range().end
+            ..context_tokens
+                .iter()
+                .map(|t| t.byte_range().end)
+                .max()
+                .unwrap_or(cursor_byte_pos)
     };
 
     let context_until_cursor = &buffer[comp_context_range.start..cursor_byte_pos];

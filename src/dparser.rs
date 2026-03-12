@@ -479,6 +479,34 @@ impl DParser {
                 self.tokens[opening_idx].annotation = TokenAnnotation::IsOpening(Some(closing_idx));
             }
         }
+
+        // Merge the two RParen tokens that close an ArithSubst ($((...))) into one.
+        // The lexer produces two separate RParen tokens for )); combining them into a
+        // single "))" token ensures syntax highlighting treats them as a unit.
+        let arith_subst_closing_indices: Vec<usize> = self
+            .tokens
+            .iter()
+            .enumerate()
+            .filter_map(|(i, tok)| {
+                if let TokenAnnotation::IsClosing(opening_idx) = tok.annotation {
+                    if self.tokens[opening_idx].token.kind == TokenKind::ArithSubst {
+                        return Some(i);
+                    }
+                }
+                None
+            })
+            .collect();
+
+        for first_rparen_idx in arith_subst_closing_indices {
+            let second_rparen_idx = first_rparen_idx + 1;
+            if second_rparen_idx < self.tokens.len()
+                && self.tokens[second_rparen_idx].token.kind == TokenKind::RParen
+                && self.tokens[second_rparen_idx].annotation == TokenAnnotation::None
+            {
+                self.tokens[first_rparen_idx].token.value = "))".to_string();
+                self.tokens[second_rparen_idx].token.value = String::new();
+            }
+        }
     }
 
     pub fn needs_more_input(&self) -> bool {
@@ -694,5 +722,37 @@ mod tests {
         assert_eq!(tokens[5].annotation, TokenAnnotation::IsPartOfQuotedString);
         assert_eq!(tokens[6].token.value, "'");
         assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
+    }
+
+    #[test]
+    fn test_arith_subst_closing_parens_merged() {
+        // The two )) tokens that close an arithmetic substitution should be merged
+        // into a single "))" token for correct syntax highlighting.
+        let input = "echo $((1 + 2))";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        // tokens: echo, ' ', $((, 1, ' ', +, ' ', 2, )), '', ...
+        // idx:     0     1    2   3   4   5   6   7   8   9
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "$((");
+        assert_eq!(tokens[2].token.kind, TokenKind::ArithSubst);
+        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(8)));
+
+        // The first RParen should now have value "))" (merged with second RParen)
+        assert_eq!(tokens[8].token.value, "))");
+        assert_eq!(tokens[8].annotation, TokenAnnotation::IsClosing(2));
+
+        // The second RParen should have an empty value after merging
+        assert_eq!(tokens[9].token.value, "");
+        assert_eq!(tokens[9].annotation, TokenAnnotation::None);
     }
 }
