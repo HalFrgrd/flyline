@@ -218,7 +218,7 @@ impl PromptManager {
                 prompt: vec![
                     Line::from(vec![
                         Span::styled(
-                            "Bash is waiting for more input to finish the previous command .",
+                            "Bash needs more input to finish the command. ",
                             style.clone(),
                         ),
                         Span::styled(
@@ -226,7 +226,7 @@ impl PromptManager {
                             style.clone(),
                         ),
                         Span::styled(
-                            "Please open an issue on GitHub with the previous command that caused this message ",
+                            "Please open an issue on GitHub with the command that caused this message. ",
                             style.clone(),
                         ),
                     ]),
