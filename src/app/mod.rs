@@ -34,6 +34,8 @@ use std::vec;
 use timeago;
 
 const TUTORIAL_FUZZY_SEARCH_HINT: &str = "type to search, press arrow keys / page up/down to browse, enter to run the command, shift+enter to accept command for editing";
+const TUTORIAL_HISTORY_PREFIX_HINT: &str =
+    "↑/↓ to scroll through history entries whose prefix matches your current command";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -915,6 +917,12 @@ impl<'a> App<'a> {
                     " Start typing or search history with Ctrl+R",
                     Palette::secondary_text(),
                 ),
+                Tag::HistorySuggestion,
+                None,
+            );
+            content.newline();
+            content.write_span_dont_overwrite(
+                &Span::styled(TUTORIAL_HISTORY_PREFIX_HINT, Palette::secondary_text()),
                 Tag::HistorySuggestion,
                 None,
             );
