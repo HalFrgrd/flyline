@@ -33,9 +33,9 @@ use std::time::Duration;
 use std::vec;
 use timeago;
 
-const TUTORIAL_FUZZY_SEARCH_HINT: &str = "type to search, press arrow keys / page up/down to browse, enter to run the command, shift+enter to accept command for editing";
+const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Shift+Enter to accept the command for editing";
 const TUTORIAL_HISTORY_PREFIX_HINT: &str =
-    "↑/↓ to scroll through history entries whose prefix matches your current command";
+    "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -914,15 +914,15 @@ impl<'a> App<'a> {
         {
             content.write_span_dont_overwrite(
                 &Span::styled(
-                    " Start typing or search history with Ctrl+R",
-                    Palette::secondary_text(),
+                    "💡 Start typing or search history with Ctrl+R",
+                    Palette::tutorial_hint(),
                 ),
                 Tag::HistorySuggestion,
                 None,
             );
             content.newline();
             content.write_span_dont_overwrite(
-                &Span::styled(TUTORIAL_HISTORY_PREFIX_HINT, Palette::secondary_text()),
+                &Span::styled(TUTORIAL_HISTORY_PREFIX_HINT, Palette::tutorial_hint()),
                 Tag::HistorySuggestion,
                 None,
             );
@@ -953,15 +953,22 @@ impl<'a> App<'a> {
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
-                        if self.settings.tutorial_mode {
-                            extra_info_text.push_str(" [→ or End to accept]");
-                        }
-
                         content.write_span_dont_overwrite(
                             &Span::from(extra_info_text).style(Palette::secondary_text()),
                             Tag::HistorySuggestion,
                             None,
                         );
+
+                        if self.settings.tutorial_mode {
+                            content.write_span_dont_overwrite(
+                                &Span::styled(
+                                    " 💡 Press → or End to accept",
+                                    Palette::tutorial_hint(),
+                                ),
+                                Tag::HistorySuggestion,
+                                None,
+                            );
+                        }
                     }
                 });
         }
@@ -1160,7 +1167,7 @@ impl<'a> App<'a> {
                 if self.settings.tutorial_mode {
                     content.newline();
                     content.write_span(
-                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::secondary_text()),
+                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::tutorial_hint()),
                         Tag::FuzzySearch,
                     );
                 }
