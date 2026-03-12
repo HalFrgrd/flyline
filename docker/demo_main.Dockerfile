@@ -1,7 +1,5 @@
 FROM vhs-base AS demo-main-build
 
-ARG BUILDKIT_SANDBOX_HOSTNAME
-
 # The base image already provides `vhs` as the entrypoint; no override needed.
 COPY docker/demo_main.tape .
 
