@@ -191,7 +191,6 @@ impl DParser {
     fn nested_closing_satisfied(
         token: &Token,
         current_nesting: Option<&TokenKind>,
-        next_token: Option<&&Token>,
     ) -> bool {
         let current_nesting = match current_nesting {
             Some(v) => v,
@@ -205,11 +204,7 @@ impl DParser {
             (TokenKind::RParen, TokenKind::ExtGlob(_)) => true,
             (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
             (TokenKind::RBrace, TokenKind::LBrace) => true,
-            (TokenKind::RParen, TokenKind::ArithSubst) // it needs two ))
-                if next_token.map_or(false, |t| t.kind == TokenKind::RParen) =>
-            {
-                true
-            }
+            (TokenKind::DoubleRParen, TokenKind::ArithSubst) => true,
             (TokenKind::Backtick, TokenKind::Backtick) => true,
             (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
             (TokenKind::Quote, TokenKind::Quote) => true,
@@ -251,11 +246,31 @@ impl DParser {
         let mut previous_token: Option<AnnotatedToken> = None;
 
         loop {
-            let (mut idx, mut annotated_token) = match annotated_tokens.next() {
+            let (mut idx, annotated_token) = match annotated_tokens.next() {
                 Some(t) => t,
                 None => break,
             };
-            let mut token = &annotated_token.token;
+
+            // At the top of the loop, if the current nesting is ArithSubst ($((...))), merge
+            // two consecutive RParen tokens into a single DoubleRParen token. This simplifies
+            // the closing logic since ArithSubst now has a single unambiguous closing token.
+            // Only the kind field is changed (not the value), so that byte_range() stays accurate
+            // for cursor detection. idx is updated to the second token's position to keep
+            // command-range tracking consistent with the previous behavior.
+            if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
+                && annotated_token.token.kind == TokenKind::RParen
+                && annotated_tokens
+                    .peek()
+                    .map_or(false, |(_, t)| t.token.kind == TokenKind::RParen)
+            {
+                let (next_idx, _) = annotated_tokens
+                    .next()
+                    .expect("peek confirmed a next RParen token exists");
+                idx = next_idx;
+                annotated_token.token.kind = TokenKind::DoubleRParen;
+            }
+
+            let token = &annotated_token.token;
 
             let word_is_part_of_assignment = if token.kind.is_word() {
                 previous_token.as_ref().map_or(false, |token| {
@@ -315,6 +330,7 @@ impl DParser {
                     heredocs.push_back((idx, delim.to_string()));
                 }
                 TokenKind::RParen
+                | TokenKind::DoubleRParen
                 | TokenKind::Quote
                 | TokenKind::SingleQuote
                 | TokenKind::RBrace
@@ -326,20 +342,10 @@ impl DParser {
                     if Self::nested_closing_satisfied(
                         &token,
                         nestings.last().map(|(_, k)| k),
-                        annotated_tokens.peek().map(|(_, t)| &t.token).as_ref(),
                     ) =>
                 {
-                    let (opening_idx, kind) = nestings.pop().unwrap();
+                    let (opening_idx, _kind) = nestings.pop().unwrap();
                     annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
-                    if kind == TokenKind::ArithSubst {
-                        assert!(
-                            annotated_tokens.peek().unwrap().1.token.kind == TokenKind::RParen,
-                            "expected two RParen tokens"
-                        );
-                        (idx, annotated_token) = annotated_tokens.next().unwrap(); // consume the extra RParen
-                        token = &annotated_token.token;
-                    }
-
                     if token.kind == TokenKind::DoubleRBracket && token_strictly_contains_cursor {
                         if let Some(prev_command_range) = command_start_stack.pop() {
                             self.current_command_range = prev_command_range;
@@ -694,5 +700,32 @@ mod tests {
         assert_eq!(tokens[5].annotation, TokenAnnotation::IsPartOfQuotedString);
         assert_eq!(tokens[6].token.value, "'");
         assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
+    }
+
+    #[test]
+    fn test_arith_subst_annotations() {
+        // Verify that two consecutive RParen tokens closing an ArithSubst are handled correctly:
+        // the first ) is promoted to DoubleRParen and annotated as IsClosing, while the second )
+        // retains its original kind and None annotation.
+        let input = r#"echo $(( bar ))"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        // echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), ) (6, DoubleRParen), ) (7, RParen)
+        assert_eq!(tokens[2].token.kind, TokenKind::ArithSubst);
+        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
+
+        assert_eq!(tokens[6].token.kind, TokenKind::DoubleRParen);
+        assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
+
+        // The second ) is unchanged: kind stays RParen and annotation stays None
+        assert_eq!(tokens[7].token.kind, TokenKind::RParen);
+        assert_eq!(tokens[7].annotation, TokenAnnotation::None);
     }
 }
