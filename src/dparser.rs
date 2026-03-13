@@ -245,29 +245,41 @@ impl DParser {
 
         let mut previous_token: Option<AnnotatedToken> = None;
 
+        let mut merged_phantom_indices: Vec<usize> = Vec::new();
+
         loop {
-            let (mut idx, annotated_token) = match annotated_tokens.next() {
+            let (idx, annotated_token) = match annotated_tokens.next() {
                 Some(t) => t,
                 None => break,
             };
 
+            // Save the original byte range before any merging so that cursor-containment checks
+            // below use the first token's own extent.  When two consecutive RParen tokens are
+            // merged into DoubleRParen the resulting token's value becomes "))" (2 bytes), but
+            // a cursor sitting on the *second* ")" should not be considered "strictly inside"
+            // the current token for the purpose of stop_parsing_at_command_boundary; it should
+            // be as if the second ")" never participated in this iteration of the loop at all,
+            // matching the semantics of the original two-separate-tokens code path.
+            let original_byte_range = annotated_token.token.byte_range();
+
             // At the top of the loop, if the current nesting is ArithSubst ($((...))), merge
             // two consecutive RParen tokens into a single DoubleRParen token. This simplifies
             // the closing logic since ArithSubst now has a single unambiguous closing token.
-            // Only the kind field is changed (not the value), so that byte_range() stays accurate
-            // for cursor detection. idx is updated to the second token's position to keep
-            // command-range tracking consistent with the previous behavior.
+            // The value is updated to "))" so that byte_range() correctly covers both characters.
+            // The phantom second token's index is stored for removal after the walk completes.
+            // idx intentionally stays at the first token's position.
             if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
                 && annotated_token.token.kind == TokenKind::RParen
                 && annotated_tokens
                     .peek()
                     .map_or(false, |(_, t)| t.token.kind == TokenKind::RParen)
             {
-                let (next_idx, _) = annotated_tokens
+                let (next_idx, next_annotated_token) = annotated_tokens
                     .next()
                     .expect("peek confirmed a next RParen token exists");
-                idx = next_idx;
+                annotated_token.token.value.push_str(&next_annotated_token.token.value);
                 annotated_token.token.kind = TokenKind::DoubleRParen;
+                merged_phantom_indices.push(next_idx);
             }
 
             let token = &annotated_token.token;
@@ -281,11 +293,11 @@ impl DParser {
             };
 
             let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                token.byte_range().to_inclusive().contains(&pos)
+                original_byte_range.to_inclusive().contains(&pos)
             });
 
             let token_strictly_contains_cursor =
-                cursor_byte_pos.map_or(false, |pos| token.byte_range().contains(&pos));
+                cursor_byte_pos.map_or(false, |pos| original_byte_range.contains(&pos));
 
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
@@ -483,6 +495,40 @@ impl DParser {
         for (opening_idx, closing_idx) in updates {
             if let TokenAnnotation::IsOpening(None) = self.tokens[opening_idx].annotation {
                 self.tokens[opening_idx].annotation = TokenAnnotation::IsOpening(Some(closing_idx));
+            }
+        }
+
+        // Remove phantom tokens that were consumed during ArithSubst )) merging.
+        // Phantoms are the second ) of each )) pair; their position in self.tokens is one past the
+        // DoubleRParen closing token. After removal every index stored in IsOpening/IsClosing
+        // annotations and in current_command_range that points past a removed phantom must be
+        // decremented by the number of phantoms removed before it.
+        if !merged_phantom_indices.is_empty() {
+            merged_phantom_indices.sort_unstable();
+
+            // Adjust annotation indices: for each index I stored in an annotation, decrement it
+            // by the number of phantom indices that are strictly less than I.
+            let adjust = |i: usize| -> usize {
+                i - merged_phantom_indices.partition_point(|&j| j < i)
+            };
+            for annotated_token in self.tokens.iter_mut() {
+                match &mut annotated_token.annotation {
+                    TokenAnnotation::IsOpening(Some(idx)) => *idx = adjust(*idx),
+                    TokenAnnotation::IsClosing(idx) => *idx = adjust(*idx),
+                    _ => {}
+                }
+            }
+
+            // Adjust current_command_range (it stores token indices into self.tokens).
+            if let Some(ref mut range) = self.current_command_range {
+                let new_start = adjust(*range.start());
+                let new_end = adjust(*range.end());
+                *range = new_start..=new_end;
+            }
+
+            // Remove phantoms in reverse order so earlier indices remain valid during removal.
+            for &j in merged_phantom_indices.iter().rev() {
+                self.tokens.remove(j);
             }
         }
     }
@@ -704,9 +750,8 @@ mod tests {
 
     #[test]
     fn test_arith_subst_annotations() {
-        // Verify that two consecutive RParen tokens closing an ArithSubst are handled correctly:
-        // the first ) is promoted to DoubleRParen and annotated as IsClosing, while the second )
-        // retains its original kind and None annotation.
+        // Verify that two consecutive RParen tokens closing an ArithSubst are merged into a single
+        // DoubleRParen token and the phantom second ) is removed from the token list entirely.
         let input = r#"echo $(( bar ))"#;
         let mut parser = DParser::from(input);
         parser.walk_to_end();
@@ -717,15 +762,15 @@ mod tests {
             debug!("{:?} - {:?}", t.token, t.annotation);
         }
 
-        // echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), ) (6, DoubleRParen), ) (7, RParen)
+        // After merging and phantom removal: echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), )) (6)
+        // The second ) token is removed; total token count is 7.
+        assert_eq!(tokens.len(), 7);
+
         assert_eq!(tokens[2].token.kind, TokenKind::ArithSubst);
         assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
 
         assert_eq!(tokens[6].token.kind, TokenKind::DoubleRParen);
+        assert_eq!(tokens[6].token.value, "))");
         assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
-
-        // The second ) is unchanged: kind stays RParen and annotation stays None
-        assert_eq!(tokens[7].token.kind, TokenKind::RParen);
-        assert_eq!(tokens[7].annotation, TokenAnnotation::None);
     }
 }
