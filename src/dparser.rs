@@ -238,48 +238,53 @@ impl DParser {
         // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
         let mut heredocs: VecDeque<(usize, String)> = VecDeque::new();
 
-        let mut annotated_tokens = self.tokens.iter_mut().enumerate().peekable();
         let mut stop_parsing_at_command_boundary = false;
 
         let mut command_start_stack = Vec::new();
 
         let mut previous_token: Option<AnnotatedToken> = None;
 
-        let mut merged_phantom_indices: Vec<usize> = Vec::new();
+        // Index into self.tokens for the next token to process.
+        let mut raw_idx = 0usize;
+        // Accumulates the final token list; the index of each pushed token equals
+        // processed_tokens.len() at the moment it is pushed, so all stored indices
+        // (nestings, heredocs, current_command_range) are automatically correct.
+        let mut processed_tokens: Vec<AnnotatedToken> = Vec::with_capacity(self.tokens.len());
 
         loop {
-            let (idx, annotated_token) = match annotated_tokens.next() {
-                Some(t) => t,
-                None => break,
-            };
+            if raw_idx >= self.tokens.len() {
+                break;
+            }
 
-            // Save the original byte range before any merging so that cursor-containment checks
-            // below use the first token's own extent.  When two consecutive RParen tokens are
-            // merged into DoubleRParen the resulting token's value becomes "))" (2 bytes), but
-            // a cursor sitting on the *second* ")" should not be considered "strictly inside"
-            // the current token for the purpose of stop_parsing_at_command_boundary; it should
-            // be as if the second ")" never participated in this iteration of the loop at all,
-            // matching the semantics of the original two-separate-tokens code path.
-            let original_byte_range = annotated_token.token.byte_range();
+            // The index this token will occupy in the processed list.
+            let idx = processed_tokens.len();
+            let mut annotated_token = self.tokens[raw_idx].clone();
+            raw_idx += 1;
 
-            // At the top of the loop, if the current nesting is ArithSubst ($((...))), merge
-            // two consecutive RParen tokens into a single DoubleRParen token. This simplifies
-            // the closing logic since ArithSubst now has a single unambiguous closing token.
-            // The value is updated to "))" so that byte_range() correctly covers both characters.
-            // The phantom second token's index is stored for removal after the walk completes.
-            // idx intentionally stays at the first token's position.
+            // Compute cursor-containment flags using the current token's original byte range
+            // BEFORE any merging.  This preserves the invariant that a cursor positioned on
+            // the phantom second ) does not set stop_parsing_at_command_boundary — consistent
+            // with the original two-token behaviour where the phantom was consumed inside the
+            // match arm after the cursor flags had already been evaluated.
+            let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
+                annotated_token.token.byte_range().to_inclusive().contains(&pos)
+            });
+            let token_strictly_contains_cursor = cursor_byte_pos
+                .map_or(false, |pos| annotated_token.token.byte_range().contains(&pos));
+
+            // When closing an ArithSubst, two consecutive ) tokens are required.
+            // Merge them into a single DoubleRParen: update kind and value so the merged token
+            // spans both characters, then skip the phantom second ) by advancing raw_idx.
+            // The cursor flags above already reflect the first ) only, so a cursor sitting on
+            // the phantom byte does not spuriously stop parsing.
             if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
                 && annotated_token.token.kind == TokenKind::RParen
-                && annotated_tokens
-                    .peek()
-                    .map_or(false, |(_, t)| t.token.kind == TokenKind::RParen)
+                && raw_idx < self.tokens.len()
+                && self.tokens[raw_idx].token.kind == TokenKind::RParen
             {
-                let (next_idx, next_annotated_token) = annotated_tokens
-                    .next()
-                    .expect("peek confirmed a next RParen token exists");
-                annotated_token.token.value.push_str(&next_annotated_token.token.value);
+                annotated_token.token.value.push_str(&self.tokens[raw_idx].token.value);
                 annotated_token.token.kind = TokenKind::DoubleRParen;
-                merged_phantom_indices.push(next_idx);
+                raw_idx += 1; // skip phantom
             }
 
             let token = &annotated_token.token;
@@ -292,16 +297,11 @@ impl DParser {
                 false
             };
 
-            let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                original_byte_range.to_inclusive().contains(&pos)
-            });
-
-            let token_strictly_contains_cursor =
-                cursor_byte_pos.map_or(false, |pos| original_byte_range.contains(&pos));
-
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
             }
+
+            let mut should_break = false;
 
             match &token.kind {
                 TokenKind::LBrace
@@ -358,6 +358,7 @@ impl DParser {
                 {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
                     annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
+
                     if token.kind == TokenKind::DoubleRBracket && token_strictly_contains_cursor {
                         if let Some(prev_command_range) = command_start_stack.pop() {
                             self.current_command_range = prev_command_range;
@@ -365,18 +366,16 @@ impl DParser {
                                 *range = *range.start()..=idx;
                             }
                         }
-                        break;
-                    }
-
-                    if stop_parsing_at_command_boundary {
+                        should_break = true;
+                    } else if stop_parsing_at_command_boundary {
                         debug!("Stopping parsing at command boundary");
-                        break;
-                    }
-
-                    if let Some(prev_command_range) = command_start_stack.pop() {
-                        self.current_command_range = prev_command_range;
-                        if let Some(range) = &mut self.current_command_range {
-                            *range = *range.start()..=idx;
+                        should_break = true;
+                    } else {
+                        if let Some(prev_command_range) = command_start_stack.pop() {
+                            self.current_command_range = prev_command_range;
+                            if let Some(range) = &mut self.current_command_range {
+                                *range = *range.start()..=idx;
+                            }
                         }
                     }
                 }
@@ -386,9 +385,10 @@ impl DParser {
                     }
 
                     if stop_parsing_at_command_boundary || token_inclusively_contains_cursor {
-                        break;
+                        should_break = true;
+                    } else {
+                        self.current_command_range = None;
                     }
-                    self.current_command_range = None;
                 }
                 TokenKind::Word(word)
                     if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
@@ -404,9 +404,10 @@ impl DParser {
                 | TokenKind::Background
                 | TokenKind::DoubleSemicolon => {
                     if stop_parsing_at_command_boundary {
-                        break;
+                        should_break = true;
+                    } else {
+                        self.current_command_range = None;
                     }
-                    self.current_command_range = None;
                 }
                 TokenKind::Whitespace(_) => {
                     if token_inclusively_contains_cursor {
@@ -421,7 +422,7 @@ impl DParser {
                     {
                         // Stop parsing
                         self.current_command_range = Some(idx..=idx);
-                        break;
+                        should_break = true;
                     }
                 }
 
@@ -475,8 +476,16 @@ impl DParser {
                 }
             }
 
-            previous_token = Some(annotated_token.clone());
+            processed_tokens.push(annotated_token);
+            previous_token = processed_tokens.last().cloned();
+            if should_break {
+                break;
+            }
         }
+
+        // Append any tokens not reached by the loop (those after an early break) with their
+        // default None annotations, so the full token list is always preserved.
+        processed_tokens.extend_from_slice(&self.tokens[raw_idx..]);
 
         if cfg!(test) {
             dbg!("Final nestings:");
@@ -486,51 +495,20 @@ impl DParser {
         // Mark the opening tokens with the closing tokens:
         // We need to collect the updates first to avoid mutable borrow issues
         let mut updates = Vec::new();
-        for (idx, annotated_token) in self.tokens.iter().enumerate() {
+        for (idx, annotated_token) in processed_tokens.iter().enumerate() {
             if let TokenAnnotation::IsClosing(opening_idx) = annotated_token.annotation {
                 updates.push((opening_idx, idx));
             }
         }
 
         for (opening_idx, closing_idx) in updates {
-            if let TokenAnnotation::IsOpening(None) = self.tokens[opening_idx].annotation {
-                self.tokens[opening_idx].annotation = TokenAnnotation::IsOpening(Some(closing_idx));
+            if let TokenAnnotation::IsOpening(None) = processed_tokens[opening_idx].annotation {
+                processed_tokens[opening_idx].annotation =
+                    TokenAnnotation::IsOpening(Some(closing_idx));
             }
         }
 
-        // Remove phantom tokens that were consumed during ArithSubst )) merging.
-        // Phantoms are the second ) of each )) pair; their position in self.tokens is one past the
-        // DoubleRParen closing token. After removal every index stored in IsOpening/IsClosing
-        // annotations and in current_command_range that points past a removed phantom must be
-        // decremented by the number of phantoms removed before it.
-        if !merged_phantom_indices.is_empty() {
-            merged_phantom_indices.sort_unstable();
-
-            // Adjust annotation indices: for each index I stored in an annotation, decrement it
-            // by the number of phantom indices that are strictly less than I.
-            let adjust = |i: usize| -> usize {
-                i - merged_phantom_indices.partition_point(|&j| j < i)
-            };
-            for annotated_token in self.tokens.iter_mut() {
-                match &mut annotated_token.annotation {
-                    TokenAnnotation::IsOpening(Some(idx)) => *idx = adjust(*idx),
-                    TokenAnnotation::IsClosing(idx) => *idx = adjust(*idx),
-                    _ => {}
-                }
-            }
-
-            // Adjust current_command_range (it stores token indices into self.tokens).
-            if let Some(ref mut range) = self.current_command_range {
-                let new_start = adjust(*range.start());
-                let new_end = adjust(*range.end());
-                *range = new_start..=new_end;
-            }
-
-            // Remove phantoms in reverse order so earlier indices remain valid during removal.
-            for &j in merged_phantom_indices.iter().rev() {
-                self.tokens.remove(j);
-            }
-        }
+        self.tokens = processed_tokens;
     }
 
     pub fn needs_more_input(&self) -> bool {
@@ -750,8 +728,10 @@ mod tests {
 
     #[test]
     fn test_arith_subst_annotations() {
-        // Verify that two consecutive RParen tokens closing an ArithSubst are merged into a single
-        // DoubleRParen token and the phantom second ) is removed from the token list entirely.
+        // The two consecutive ) tokens that close an ArithSubst are merged into a single
+        // DoubleRParen token with value "))" covering both characters.  The phantom second )
+        // is removed from the token list entirely, so subsequent tokens have the correct index
+        // as if the second ) never existed.
         let input = r#"echo $(( bar ))"#;
         let mut parser = DParser::from(input);
         parser.walk_to_end();
@@ -762,8 +742,8 @@ mod tests {
             debug!("{:?} - {:?}", t.token, t.annotation);
         }
 
-        // After merging and phantom removal: echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), )) (6)
-        // The second ) token is removed; total token count is 7.
+        // After merging: echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), )) (6)
+        // The phantom second ) is gone; total token count is 7.
         assert_eq!(tokens.len(), 7);
 
         assert_eq!(tokens[2].token.kind, TokenKind::ArithSubst);
