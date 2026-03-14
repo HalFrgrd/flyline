@@ -244,47 +244,33 @@ impl DParser {
 
         let mut previous_token: Option<AnnotatedToken> = None;
 
-        // Index into self.tokens for the next token to process.
-        let mut raw_idx = 0usize;
-        // Accumulates the final token list; the index of each pushed token equals
-        // processed_tokens.len() at the moment it is pushed, so all stored indices
-        // (nestings, heredocs, current_command_range) are automatically correct.
-        let mut processed_tokens: Vec<AnnotatedToken> = Vec::with_capacity(self.tokens.len());
-
-        loop {
-            if raw_idx >= self.tokens.len() {
-                break;
-            }
-
-            // The index this token will occupy in the processed list.
-            let idx = processed_tokens.len();
-            let mut annotated_token = self.tokens[raw_idx].clone();
-            raw_idx += 1;
-
+        let mut idx = 0;
+        while idx < self.tokens.len() {
             // When closing an ArithSubst, two consecutive ) tokens are required.
-            // Merge them into a single DoubleRParen: update kind and value so the merged token
-            // spans both characters, then skip the phantom second ) by advancing raw_idx.
+            // Merge them into a single DoubleRParen by modifying self.tokens[idx] in place
+            // and removing the phantom second ) from the vector.
             if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
-                && annotated_token.token.kind == TokenKind::RParen
-                && raw_idx < self.tokens.len()
-                && self.tokens[raw_idx].token.kind == TokenKind::RParen
+                && self.tokens[idx].token.kind == TokenKind::RParen
+                && idx + 1 < self.tokens.len()
+                && self.tokens[idx + 1].token.kind == TokenKind::RParen
             {
-                annotated_token.token.value.push_str(&self.tokens[raw_idx].token.value);
-                annotated_token.token.kind = TokenKind::DoubleRParen;
-                raw_idx += 1; // skip phantom
+                let second = self.tokens.remove(idx + 1);
+                self.tokens[idx].token.value.push_str(&second.token.value);
+                self.tokens[idx].token.kind = TokenKind::DoubleRParen;
             }
 
             let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                annotated_token.token.byte_range().to_inclusive().contains(&pos)
+                self.tokens[idx].token.byte_range().to_inclusive().contains(&pos)
             });
             let token_strictly_contains_cursor = cursor_byte_pos
-                .map_or(false, |pos| annotated_token.token.byte_range().contains(&pos));
+                .map_or(false, |pos| self.tokens[idx].token.byte_range().contains(&pos));
 
-            let token = &annotated_token.token;
+            // Clone the token so we can match on it while still mutating self.tokens[idx].annotation.
+            let token = self.tokens[idx].token.clone();
 
             let word_is_part_of_assignment = if token.kind.is_word() {
-                previous_token.as_ref().map_or(false, |token| {
-                    matches!(token.token.kind, TokenKind::Assignment)
+                previous_token.as_ref().map_or(false, |t| {
+                    matches!(t.token.kind, TokenKind::Assignment)
                 })
             } else {
                 false
@@ -293,8 +279,6 @@ impl DParser {
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
             }
-
-            let mut should_break = false;
 
             match &token.kind {
                 TokenKind::LBrace
@@ -320,7 +304,7 @@ impl DParser {
                         cursor_byte_pos.is_some(),
                     ) =>
                 {
-                    annotated_token.annotation = TokenAnnotation::IsOpening(None);
+                    self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
 
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
@@ -330,7 +314,7 @@ impl DParser {
                     self.current_command_range = None; // set for next word after this
                 }
                 TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
-                    annotated_token.annotation = TokenAnnotation::IsOpening(None);
+                    self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
 
                     heredocs.push_back((idx, delim.to_string()));
                 }
@@ -350,21 +334,24 @@ impl DParser {
                     ) =>
                 {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
-                    annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
+                    self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
 
                     if (token.kind == TokenKind::DoubleRBracket
                         || token.kind == TokenKind::DoubleRParen)
-                        && token_strictly_contains_cursor {
+                        && token_strictly_contains_cursor
+                    {
                         if let Some(prev_command_range) = command_start_stack.pop() {
                             self.current_command_range = prev_command_range;
                             if let Some(range) = &mut self.current_command_range {
                                 *range = *range.start()..=idx;
                             }
                         }
-                        should_break = true;
+                        idx += 1;
+                        break;
                     } else if stop_parsing_at_command_boundary {
                         debug!("Stopping parsing at command boundary");
-                        should_break = true;
+                        idx += 1;
+                        break;
                     } else {
                         if let Some(prev_command_range) = command_start_stack.pop() {
                             self.current_command_range = prev_command_range;
@@ -380,7 +367,8 @@ impl DParser {
                     }
 
                     if stop_parsing_at_command_boundary || token_inclusively_contains_cursor {
-                        should_break = true;
+                        idx += 1;
+                        break;
                     } else {
                         self.current_command_range = None;
                     }
@@ -389,7 +377,7 @@ impl DParser {
                     if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
                 {
                     let (opening_idx, _) = heredocs.pop_front().unwrap();
-                    annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
+                    self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
                 }
 
                 TokenKind::And
@@ -399,7 +387,8 @@ impl DParser {
                 | TokenKind::Background
                 | TokenKind::DoubleSemicolon => {
                     if stop_parsing_at_command_boundary {
-                        should_break = true;
+                        idx += 1;
+                        break;
                     } else {
                         self.current_command_range = None;
                     }
@@ -417,7 +406,8 @@ impl DParser {
                     {
                         // Stop parsing
                         self.current_command_range = Some(idx..=idx);
-                        should_break = true;
+                        idx += 1;
+                        break;
                     }
                 }
 
@@ -431,7 +421,7 @@ impl DParser {
                                 TokenKind::Quote | TokenKind::SingleQuote
                             )
                         {
-                            annotated_token.annotation = TokenAnnotation::IsPartOfQuotedString;
+                            self.tokens[idx].annotation = TokenAnnotation::IsPartOfQuotedString;
                         }
                     }
 
@@ -440,7 +430,7 @@ impl DParser {
                         if let Some(prev_token) = &previous_token {
                             match prev_token.token.kind {
                                 TokenKind::Quote | TokenKind::SingleQuote => {
-                                    annotated_token.annotation =
+                                    self.tokens[idx].annotation =
                                         TokenAnnotation::IsPartOfQuotedString;
                                 }
                                 TokenKind::Newline
@@ -449,18 +439,18 @@ impl DParser {
                                         TokenAnnotation::IsPartOfQuotedString
                                     ) =>
                                 {
-                                    annotated_token.annotation =
+                                    self.tokens[idx].annotation =
                                         TokenAnnotation::IsPartOfQuotedString;
                                 }
                                 _ if self.current_command_range.is_none() => {
-                                    annotated_token.annotation = TokenAnnotation::IsCommandWord;
+                                    self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
                                 }
                                 _ => {
                                     // leave as None
                                 }
                             }
                         } else {
-                            annotated_token.annotation = TokenAnnotation::IsCommandWord;
+                            self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
                         }
                     }
                     if self.current_command_range.is_none() {
@@ -471,16 +461,9 @@ impl DParser {
                 }
             }
 
-            processed_tokens.push(annotated_token);
-            previous_token = processed_tokens.last().cloned();
-            if should_break {
-                break;
-            }
+            previous_token = Some(self.tokens[idx].clone());
+            idx += 1;
         }
-
-        // Append any tokens not reached by the loop (those after an early break) with their
-        // default None annotations, so the full token list is always preserved.
-        processed_tokens.extend_from_slice(&self.tokens[raw_idx..]);
 
         if cfg!(test) {
             dbg!("Final nestings:");
@@ -490,20 +473,18 @@ impl DParser {
         // Mark the opening tokens with the closing tokens:
         // We need to collect the updates first to avoid mutable borrow issues
         let mut updates = Vec::new();
-        for (idx, annotated_token) in processed_tokens.iter().enumerate() {
+        for (idx, annotated_token) in self.tokens.iter().enumerate() {
             if let TokenAnnotation::IsClosing(opening_idx) = annotated_token.annotation {
                 updates.push((opening_idx, idx));
             }
         }
 
         for (opening_idx, closing_idx) in updates {
-            if let TokenAnnotation::IsOpening(None) = processed_tokens[opening_idx].annotation {
-                processed_tokens[opening_idx].annotation =
+            if let TokenAnnotation::IsOpening(None) = self.tokens[opening_idx].annotation {
+                self.tokens[opening_idx].annotation =
                     TokenAnnotation::IsOpening(Some(closing_idx));
             }
         }
-
-        self.tokens = processed_tokens;
     }
 
     pub fn needs_more_input(&self) -> bool {
