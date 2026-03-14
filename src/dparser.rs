@@ -246,9 +246,17 @@ impl DParser {
 
         let mut idx = 0;
         while idx < self.tokens.len() {
+            let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
+                self.tokens[idx].token.byte_range().to_inclusive().contains(&pos)
+            });
+            let token_strictly_contains_cursor = cursor_byte_pos
+                .map_or(false, |pos| self.tokens[idx].token.byte_range().contains(&pos));
+
             // When closing an ArithSubst, two consecutive ) tokens are required.
             // Merge them into a single DoubleRParen by modifying self.tokens[idx] in place
             // and removing the phantom second ) from the vector.
+            // Cursor-containment is computed above from the single ) so that a cursor on the
+            // first ) byte correctly contributes to stop_parsing_at_command_boundary.
             if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
                 && self.tokens[idx].token.kind == TokenKind::RParen
                 && idx + 1 < self.tokens.len()
@@ -258,12 +266,6 @@ impl DParser {
                 self.tokens[idx].token.value.push_str(&second.token.value);
                 self.tokens[idx].token.kind = TokenKind::DoubleRParen;
             }
-
-            let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                self.tokens[idx].token.byte_range().to_inclusive().contains(&pos)
-            });
-            let token_strictly_contains_cursor = cursor_byte_pos
-                .map_or(false, |pos| self.tokens[idx].token.byte_range().contains(&pos));
 
             // Clone the token so we can match on it while still mutating self.tokens[idx].annotation.
             let token = self.tokens[idx].token.clone();
@@ -336,8 +338,17 @@ impl DParser {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
                     self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
 
-                    if (token.kind == TokenKind::DoubleRBracket
-                        || token.kind == TokenKind::DoubleRParen)
+                    if token.kind == TokenKind::DoubleRParen {
+                        // ArithSubst produces a value within an outer command; always restore
+                        // the outer command range and continue so that tokens after )) are
+                        // included in the context.
+                        if let Some(prev_command_range) = command_start_stack.pop() {
+                            self.current_command_range = prev_command_range;
+                            if let Some(range) = &mut self.current_command_range {
+                                *range = *range.start()..=idx;
+                            }
+                        }
+                    } else if token.kind == TokenKind::DoubleRBracket
                         && token_strictly_contains_cursor
                     {
                         if let Some(prev_command_range) = command_start_stack.pop() {

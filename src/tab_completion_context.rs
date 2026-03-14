@@ -506,14 +506,14 @@ mod tests {
     #[test]
     fn test_cursor_in_middle_of_arith_subst() {
         let res = run_inline(r#"echo $((5 + 3█)) result"#);
-        assert_eq!(res.context, "echo $((5 + 3))");
+        assert_eq!(res.context, "echo $((5 + 3)) result");
         assert_eq!(res.context_until_cursor, "echo $((5 + 3");
     }
 
     #[test]
     fn test_cursor_in_middle_of_arith_subst_2() {
         let res = run_inline(r#"echo $((5 + 3)█) result"#);
-        assert_eq!(res.context, "echo $((5 + 3))");
+        assert_eq!(res.context, "echo $((5 + 3)) result");
         assert_eq!(res.context_until_cursor, "echo $((5 + 3)");
     }
 
@@ -548,15 +548,15 @@ mod tests {
     #[test]
     fn test_cursor_inside_complex_arith() {
         let res = run_inline(r#"val=$((VAR * 2█ + 5))"#);
-        assert_eq!(res.context, "VAR * 2 + 5");
-        assert_eq!(res.context_until_cursor, "VAR * 2");
+        assert_eq!(res.context, "val=$((VAR * 2 + 5))");
+        assert_eq!(res.context_until_cursor, "val=$((VAR * 2");
     }
 
     #[test]
     fn test_nested_arith_operations() {
         let res = run_inline(r#"echo $(( $(( 5 +█ 3 )) * 2 )) ënd ✅"#);
-        assert_eq!(res.context, r#"5 + 3"#);
-        assert_eq!(res.context_until_cursor, r#"5 +"#);
+        assert_eq!(res.context, r#"echo $(( $(( 5 + 3 )) * 2 )) ënd ✅"#);
+        assert_eq!(res.context_until_cursor, r#"echo $(( $(( 5 +"#);
     }
 
     #[test]
