@@ -14,10 +14,12 @@ COPY --from=flyline-extracted-library /libflyline.so .
 # Give john ownership of the app directory
 RUN chown -R john:john /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends faketime && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends bash-completion faketime && rm -rf /var/lib/apt/lists/*
 
 RUN touch /home/john/.bashrc && \
     printf '%s\n' \
+    'source /usr/share/bash-completion/bash_completion' \
+    'source /etc/bash_completion' \
     'alias ll="ls -alF"' \
     'export HISTTIMEFORMAT="%F %T  "' \
     'export PS1="\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]~\[\033[00m\]\$ "' \
