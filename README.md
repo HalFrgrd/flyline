@@ -118,6 +118,8 @@ Tab completions inside subshell, command substitution, and process substitution 
 
 Mid-word tab completions: when your cursor is mid way through a word and you press tab (e.g. `grep --i<TAB>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
 
+Hostname completions: when the cursor is positioned after an `@` sign within a word (e.g. `ssh user@<TAB>` or `scp file user@ho<TAB>stname`), Flyline offers hostname completions sourced from `/etc/hosts` and `~/.ssh/known_hosts`. This is a secondary completion type—it runs alongside any completions provided by the command's own completion specification. Accepting a hostname suggestion replaces only the hostname portion of the token, leaving the `user@` prefix intact.
+
 # Command history
 
 ## Fuzzy history search

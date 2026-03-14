@@ -18,16 +18,26 @@ pub enum SecondaryCompType {
     TildeExpansion,    // the tilde under the cursor, e.g. "~us|erna"
     GlobExpansion,     // the glob pattern under the cursor, e.g. "*.rs|t"
     FilenameExpansion, // the filename under the cursor, e.g. "fi|le.txt"
+    Hostname,          // a hostname after "@" to the left of the cursor, e.g. "user@ho|st"
 }
 
 impl SecondaryCompType {
-    fn from(word: &str) -> Option<Self> {
-        // TOOD test these
-        if word.starts_with('$') {
+    /// `word_until_cursor` is the portion of the word token that lies to the left of (and
+    /// including) the cursor.  Using this prefix rather than the full `word_under_cursor`
+    /// ensures that characters appearing *after* the cursor do not influence the detected
+    /// completion type (e.g. "user█@host" must not trigger hostname completion).
+    fn from(word_until_cursor: &str) -> Option<Self> {
+        // TODO test these
+        if word_until_cursor.contains('@') {
+            Some(Self::Hostname)
+        } else if word_until_cursor.starts_with('$') {
             Some(Self::EnvVariable)
-        } else if false && word.starts_with('~') && !word.contains("/") {
+        } else if false && word_until_cursor.starts_with('~') && !word_until_cursor.contains("/") {
             Some(Self::TildeExpansion)
-        } else if word.contains('*') || word.contains('?') || word.contains('[') {
+        } else if word_until_cursor.contains('*')
+            || word_until_cursor.contains('?')
+            || word_until_cursor.contains('[')
+        {
             // TODO "*.md will match this. need some better logic here
             Some(Self::GlobExpansion)
         } else {
@@ -42,6 +52,8 @@ pub struct CompletionContext<'a> {
     pub context: &'a str,
     pub context_until_cursor: &'a str,
     pub word_under_cursor: &'a str,
+    /// The portion of `word_under_cursor` that lies to the left of (and including) the cursor.
+    pub word_until_cursor: &'a str,
     pub comp_type: CompType,
     pub comp_type_secondary: Option<SecondaryCompType>,
 }
@@ -70,13 +82,24 @@ impl<'a> CompletionContext<'a> {
             }
         };
 
-        let secondary_comp_type = SecondaryCompType::from(word_under_cursor);
+        // Compute the part of the word token that is to the left of (and including) the cursor.
+        // Both slices are guaranteed to be sub-slices of `buffer`, so pointer arithmetic is safe.
+        let buffer_base = buffer.as_ptr() as usize;
+        let word_start = word_under_cursor.as_ptr() as usize - buffer_base;
+        let cursor_pos =
+            context_until_cursor.as_ptr() as usize - buffer_base + context_until_cursor.len();
+        // cursor_pos is within [word_start, word_start + word_under_cursor.len()] by invariant.
+        let word_until_cursor_end = cursor_pos.min(word_start + word_under_cursor.len());
+        let word_until_cursor = &buffer[word_start..word_until_cursor_end];
+
+        let secondary_comp_type = SecondaryCompType::from(word_until_cursor);
 
         CompletionContext {
             buffer,
             context_until_cursor,
             context,
             word_under_cursor,
+            word_until_cursor,
             comp_type,
             comp_type_secondary: secondary_comp_type,
         }
@@ -1105,6 +1128,106 @@ mod tests {
         assert_eq!(
             ctx.comp_type_secondary,
             Some(SecondaryCompType::EnvVariable)
+        );
+    }
+
+    // ---- hostname completion detection ----
+
+    #[test]
+    fn test_hostname_completion_ssh_user_at_cursor() {
+        // "ssh user@<cursor>" – @ is to the left of the cursor
+        let ctx = run_inline("ssh user@█");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "ssh");
+                assert_eq!(ctx.word_under_cursor, "user@");
+                assert_eq!(ctx.word_until_cursor, "user@");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::Hostname)
+        );
+    }
+
+    #[test]
+    fn test_hostname_completion_ssh_partial_host() {
+        // "ssh user@ho<cursor>stname" – cursor is inside the hostname portion
+        let ctx = run_inline("ssh user@ho█stname");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "ssh");
+                assert_eq!(ctx.word_under_cursor, "user@hostname");
+                assert_eq!(ctx.word_until_cursor, "user@ho");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::Hostname)
+        );
+    }
+
+    #[test]
+    fn test_hostname_completion_scp_with_path() {
+        // "scp file user@<cursor>:/path" – multiple words, @ before cursor
+        let ctx = run_inline("scp file user@█:/path");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "scp");
+                assert_eq!(ctx.word_until_cursor, "user@");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::Hostname)
+        );
+    }
+
+    #[test]
+    fn test_no_hostname_completion_without_at() {
+        // No @ means no hostname completion
+        let ctx = run_inline("ssh userhost█");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "ssh");
+                assert_eq!(ctx.word_under_cursor, "userhost");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_ne!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::Hostname)
+        );
+    }
+
+    #[test]
+    fn test_no_hostname_completion_cursor_before_at() {
+        // Cursor is placed before the @ sign – must NOT trigger hostname completion
+        let ctx = run_inline("ssh user█@hostname");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "ssh");
+                assert_eq!(ctx.word_under_cursor, "user@hostname");
+                assert_eq!(ctx.word_until_cursor, "user");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_ne!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::Hostname)
         );
     }
 }

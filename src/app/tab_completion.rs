@@ -350,6 +350,35 @@ impl App<'_> {
                     return Some(completions);
                 }
             }
+            Some(tab_completion_context::SecondaryCompType::Hostname) => {
+                // The word token contains an "@" to the left of the cursor, e.g. "user@ho".
+                // Complete the hostname portion while preserving the "user@" prefix so that
+                // when the suggestion is accepted it replaces the whole token correctly.
+                let word_until_cursor = completion_context.word_until_cursor;
+                log::debug!("Hostname completion for: {:?}", word_until_cursor);
+                if let Some(at_pos) = word_until_cursor.rfind('@') {
+                    // "user@" – everything in word_until_cursor up to and including "@"
+                    let user_at_prefix = &word_until_cursor[..at_pos + 1];
+                    // "ho" – the hostname characters the user has typed so far
+                    let hostname_prefix = &word_until_cursor[at_pos + 1..];
+                    let hostnames = bash_funcs::get_hostnames_with_prefix(hostname_prefix);
+                    if hostnames.is_empty() {
+                        log::debug!(
+                            "No hostname completions found for prefix: {}",
+                            hostname_prefix
+                        );
+                    } else {
+                        let suggestions = hostnames
+                            .into_iter()
+                            .map(|h| {
+                                let s = format!("{}{}", user_at_prefix, h);
+                                Suggestion::new(s, "", " ")
+                            })
+                            .collect();
+                        return Some(suggestions);
+                    }
+                }
+            }
             None => {
                 log::debug!(
                     "No secondary completion type detected for: {:?}",
