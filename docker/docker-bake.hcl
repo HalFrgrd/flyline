@@ -87,3 +87,16 @@ target "demo-prompts-extracted-gif" {
         BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
     }
 }
+
+target "demo-fuzzy-suggestions-extracted-gif" {
+    context = "."
+    dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
+    contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    target = "demo-fuzzy-suggestions-extracted-gif"
+    # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
+    args = {
+        BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
+    }
+}
