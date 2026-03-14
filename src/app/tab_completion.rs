@@ -5,6 +5,18 @@ use crate::tab_completion_context;
 use glob::glob;
 use std::path::Path;
 
+struct PathPatternExpansion {
+    /// The part of the pattern before the last `/`, kept in its original form
+    /// (e.g. `~/foo` or `relative/dir`).
+    raw_prefix: String,
+    /// `raw_prefix` after tilde expansion, conversion to an absolute path, and
+    /// environment-variable expansion (e.g. `/home/user/foo` or `/cwd/relative/dir`).
+    expanded_prefix: String,
+    /// The part of the pattern after the last `/` — the glob portion
+    /// (e.g. `ba*` or `*.txt`).
+    rhs_pattern: String,
+}
+
 /// bash programmable completions:
 ///
 /// - bashline.c: initialize_readline:
@@ -406,27 +418,47 @@ impl App<'_> {
         }
     }
 
-    fn expand_path_pattern(&self, pattern: &str) -> (String, Vec<(String, String)>) {
-        // TODO expand other variables?
-        let mut prefixes_swaps = vec![];
-        let mut pattern = pattern.to_string();
-        if pattern.starts_with("~/") {
-            prefixes_swaps.push((self.home_path.to_string() + "/", "~/".to_string()));
-            pattern = pattern.replace(&prefixes_swaps[0].1, &prefixes_swaps[0].0);
-        }
+    fn expand_path_pattern(&self, pattern: &str) -> PathPatternExpansion {
+        // Split the pattern at the last '/'.
+        let (raw_prefix, rhs_pattern) = if let Some(pos) = pattern.rfind('/') {
+            (pattern[..pos].to_string(), pattern[pos + 1..].to_string())
+        } else {
+            (String::new(), pattern.to_string())
+        };
 
-        // Resolve the pattern relative to cwd if it's not absolute
-        if !Path::new(&pattern).is_absolute() {
-            // Get the current working directory for relative paths
-            if let Ok(cwd) = std::env::current_dir() {
-                if let Some(cwd_str) = cwd.to_str() {
-                    prefixes_swaps.push((format!("{}/", cwd_str), "".to_string()));
-                    pattern = format!("{}/{}", cwd_str, pattern);
+        // Use bash's own filename expansion (tilde + $VAR + ${VAR} + more).
+        let after_expand = if raw_prefix.is_empty() {
+            String::new()
+        } else {
+            bash_funcs::expand_filename(&raw_prefix)
+        };
+
+        // Make the path absolute (prepend cwd when relative or empty).
+        let expanded_prefix = if after_expand.is_empty() {
+            match std::env::current_dir() {
+                Ok(p) => p.to_string_lossy().to_string(),
+                Err(e) => {
+                    log::warn!("Failed to get current directory: {}", e);
+                    String::new()
                 }
             }
-        }
+        } else if !Path::new(&after_expand).is_absolute() {
+            match std::env::current_dir() {
+                Ok(p) => format!("{}/{}", p.display(), after_expand),
+                Err(e) => {
+                    log::warn!("Failed to get current directory: {}", e);
+                    after_expand
+                }
+            }
+        } else {
+            after_expand
+        };
 
-        (pattern, prefixes_swaps)
+        PathPatternExpansion {
+            raw_prefix,
+            expanded_prefix,
+            rhs_pattern,
+        }
     }
 
     fn tab_complete_glob_expansion(
@@ -435,11 +467,18 @@ impl App<'_> {
         comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Vec<Suggestion> {
         log::debug!("Performing glob expansion for pattern: {}", pattern);
-        let (resolved_pattern, prefixes_swaps) = self.expand_path_pattern(pattern);
+        let expanded = self.expand_path_pattern(pattern);
+        let resolved_pattern = if expanded.expanded_prefix.is_empty() {
+            expanded.rhs_pattern.clone()
+        } else {
+            format!("{}/{}", expanded.expanded_prefix, expanded.rhs_pattern)
+        };
         log::debug!(
-            "resolved_pattern: {} {:?}",
+            "raw_prefix: {:?}, expanded_prefix: {:?}, rhs_pattern: {:?}, resolved_pattern: {:?}",
+            expanded.raw_prefix,
+            expanded.expanded_prefix,
+            expanded.rhs_pattern,
             resolved_pattern,
-            prefixes_swaps
         );
 
         // Use glob to find matching paths
@@ -457,23 +496,27 @@ impl App<'_> {
                     break;
                 }
                 if let Ok(path) = path_result {
-                    // Convert the path to a string relative to cwd (or absolute if pattern was absolute)
+                    // Compute the relative path of the result compared to
+                    // expanded_prefix, then reconstruct using raw_prefix so the
+                    // suggestion preserves the user's original prefix spelling
+                    // (e.g. `~/`, `$HOME/`, or a relative path segment).
                     let unexpanded = {
-                        let mut p = path.to_string_lossy().to_string();
-
-                        for (prefix_to_remove, prefix_to_replace) in &prefixes_swaps {
-                            if p.starts_with(prefix_to_remove) {
-                                p = p.replacen(prefix_to_remove, prefix_to_replace, 1);
+                        let p = path.to_string_lossy().to_string();
+                        if let Some(relative) = p.strip_prefix(&expanded.expanded_prefix) {
+                            let relative = relative.trim_start_matches('/');
+                            if expanded.raw_prefix.is_empty() {
+                                relative.to_string()
                             } else {
-                                log::warn!(
-                                    "Expected path '{}' to start with prefix '{}', but it did not.",
-                                    p,
-                                    prefix_to_remove
-                                );
-                                break;
+                                format!("{}/{}", expanded.raw_prefix, relative)
                             }
+                        } else {
+                            log::warn!(
+                                "Expected path '{}' to start with expanded_prefix '{}', but it did not.",
+                                p,
+                                expanded.expanded_prefix
+                            );
+                            p
                         }
-                        p
                     };
 
                     results.push(self.post_process_single_completion(
