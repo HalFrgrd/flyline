@@ -33,6 +33,8 @@ jobs:
           set: |
             demo-main-extracted-gif.output=type=local,dest=assets/
             demo-prompts-extracted-gif.output=type=local,dest=assets/
+ta
+            demo-fuzzy-suggestions-extracted-gif.output=type=local,dest=assets/
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
