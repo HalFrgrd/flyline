@@ -120,6 +120,7 @@ enum ContentMode {
     Normal,
     FuzzyHistorySearch,
     TabCompletion(ActiveSuggestions),
+    AiMode(std::sync::mpsc::Receiver<std::io::Result<String>>),
 }
 
 struct App<'a> {
@@ -208,6 +209,36 @@ impl<'a> App<'a> {
         let mut last_terminal_area = terminal.size().unwrap();
 
         loop {
+            // Poll AI background task: check if a result has arrived without blocking.
+            let ai_result = if let ContentMode::AiMode(ref receiver) = self.content_mode {
+                match receiver.try_recv() {
+                    Ok(result) => Some(result),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        log::warn!("AI task channel disconnected unexpectedly");
+                        Some(Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "AI task disconnected",
+                        )))
+                    }
+                }
+            } else {
+                None
+            };
+            if let Some(result) = ai_result {
+                match result {
+                    Ok(output) => {
+                        self.buffer.replace_buffer(&output);
+                        self.on_possible_buffer_change();
+                    }
+                    Err(e) => {
+                        log::error!("AI command failed: {}", e);
+                    }
+                }
+                self.content_mode = ContentMode::Normal;
+                redraw = true;
+            }
+
             if redraw {
                 let frame_area = terminal.get_frame().area();
 
@@ -566,6 +597,7 @@ impl<'a> App<'a> {
                             self.buffer.insert_newline();
                         }
                     }
+                    ContentMode::AiMode(_) => {}
                 }
             }
             // Shift+Tab or BackTab - cycle suggestions backward
@@ -595,13 +627,16 @@ impl<'a> App<'a> {
                 ContentMode::Normal => {
                     self.start_tab_complete();
                 }
+                ContentMode::AiMode(_) => {}
             },
 
             // Escape - clear suggestions or toggle mouse
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => match self.content_mode {
-                ContentMode::TabCompletion(_) | ContentMode::FuzzyHistorySearch => {
+                ContentMode::TabCompletion(_)
+                | ContentMode::FuzzyHistorySearch
+                | ContentMode::AiMode(_) => {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
@@ -644,7 +679,38 @@ impl<'a> App<'a> {
                             .history_manager
                             .get_fuzzy_search_results(self.buffer.buffer());
                     }
+                    ContentMode::AiMode(_) => {}
                 }
+            }
+            // Ctrl+I - activate AI mode (requires --ai-command to be configured)
+            KeyEvent {
+                code: KeyCode::Char('i'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } if !self.settings.ai_command.is_empty() => {
+                let cmd_args = self.settings.ai_command.clone();
+                let buffer_str = self.buffer.buffer().to_string();
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    // Safety: the guard `!ai_command.is_empty()` at the call site ensures
+                    // cmd_args is non-empty, so split_first() always returns Some.
+                    let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
+                    let result = std::process::Command::new(prog)
+                        .args(args)
+                        .arg(&buffer_str)
+                        .output()
+                        .map(|output| {
+                            if !output.status.success() {
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                log::warn!("AI command exited with {}: {}", output.status, stderr.trim());
+                            }
+                            String::from_utf8_lossy(&output.stdout).trim().to_string()
+                        });
+                    if let Err(e) = tx.send(result) {
+                        log::warn!("AI task: failed to send result (receiver dropped): {}", e);
+                    }
+                });
+                self.content_mode = ContentMode::AiMode(rx);
             }
             KeyEvent {
                 code: KeyCode::Char('l'),
@@ -1173,6 +1239,13 @@ impl<'a> App<'a> {
                 }
             }
             ContentMode::Normal if self.mode.is_running() => {}
+            ContentMode::AiMode(_) if self.mode.is_running() => {
+                content.newline();
+                content.write_span(
+                    &Span::styled("Running ai mode...", Palette::secondary_text()),
+                    Tag::Blank,
+                );
+            }
             _ => {}
         }
         if self.mode.is_running() {

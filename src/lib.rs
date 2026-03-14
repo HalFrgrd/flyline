@@ -89,6 +89,10 @@ struct FlylineArgs {
     /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
     #[arg(long = "disable-auto-closing-char")]
     disable_auto_closing_char: bool,
+    /// Command (and arguments) used for AI mode. The current buffer is appended as the final
+    /// argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
+    #[arg(long = "ai-command", num_args = 1.., allow_hyphen_values = true)]
+    ai_command: Vec<String>,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
@@ -225,6 +229,11 @@ impl Flyline {
                 if parsed.disable_auto_closing_char {
                     log::info!("Auto closing char disabled");
                     self.settings.disable_auto_closing_char = true;
+                }
+
+                if !parsed.ai_command.is_empty() {
+                    log::info!("AI command set: {:?}", parsed.ai_command);
+                    self.settings.ai_command = parsed.ai_command;
                 }
 
                 #[cfg(feature = "integration-tests")]
