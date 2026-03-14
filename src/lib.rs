@@ -89,6 +89,9 @@ struct FlylineArgs {
     /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
     #[arg(long = "disable-auto-closing-char")]
     disable_auto_closing_char: bool,
+    /// Mouse capture mode (none, simple, smart). Default is smart.
+    #[arg(long = "mouse-mode", value_name = "MODE")]
+    mouse_mode: Option<settings::MouseMode>,
     /// Command (and arguments) used for AI mode. The current buffer is appended as the final
     /// argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
     #[arg(long = "ai-command", num_args = 1.., allow_hyphen_values = true)]
@@ -229,6 +232,11 @@ impl Flyline {
                 if parsed.disable_auto_closing_char {
                     log::info!("Auto closing char disabled");
                     self.settings.disable_auto_closing_char = true;
+                }
+
+                if let Some(mode) = parsed.mouse_mode {
+                    log::info!("Mouse mode set to {:?}", mode);
+                    self.settings.mouse_mode = mode;
                 }
 
                 if !parsed.ai_command.is_empty() {
