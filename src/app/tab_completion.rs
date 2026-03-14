@@ -153,9 +153,12 @@ impl App<'_> {
         path_to_use: Option<&Path>,
         comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Suggestion {
-        let quoted = if comp_resultflags.filename_quoting_desired
-            && comp_resultflags.filename_completion_desired
-        {
+        // When an actual filesystem path is provided (e.g. from glob expansion),
+        // treat it as filename completion so that spaces are escaped and directories
+        // get a trailing slash, regardless of the filename_completion_desired flag.
+        let is_path_completion = comp_resultflags.filename_completion_desired || path_to_use.is_some();
+
+        let quoted = if comp_resultflags.filename_quoting_desired && is_path_completion {
             bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
         } else {
             sug.to_string()
@@ -171,7 +174,7 @@ impl App<'_> {
             }
         };
 
-        let (appended, suffix, ls_style) = if comp_resultflags.filename_completion_desired {
+        let (appended, suffix, ls_style) = if is_path_completion {
             let owned_path;
             let path = match path_to_use {
                 Some(p) => p,
@@ -327,10 +330,13 @@ impl App<'_> {
                         word_under_cursor
                     );
                 } else {
+                    // If the last completion is a directory (ends with '/'), don't
+                    // append a trailing space so the cursor stays right after the slash.
+                    let suffix = if completions_as_string.ends_with('/') { "" } else { " " };
                     return Some(Suggestion::from_string_vec(
                         vec![completions_as_string],
                         "",
-                        " ",
+                        suffix,
                     ));
                 }
             }
