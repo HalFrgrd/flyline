@@ -525,81 +525,23 @@ pub fn get_env_variable(var_name: &str) -> Option<String> {
 
 /// Expand a filename using bash's own expansion logic (tilde, `$VAR`, `${VAR}`, etc.).
 ///
-/// Mirrors `bash_expand_filename` in `bashline.c`: if the `bash_expand_filename`
-/// symbol is present in the host binary it is called directly; otherwise the same
-/// sequence of operations is reproduced using `expand_prompt_string`.
-///
+/// Calls `bash_expand_filename` from `bashline.c` directly.
 /// Returns the expanded string, or the original `filename` unchanged on failure.
 pub fn expand_filename(filename: &str) -> String {
-    // W_NOCOMSUB | W_NOPROCSUB | W_COMPLETE from command.h
-    const W_NOCOMSUB: c_int = 1 << 10;
-    const W_NOPROCSUB: c_int = 1 << 20;
-    const W_COMPLETE: c_int = 1 << 27;
-    const WFLAGS: c_int = W_NOCOMSUB | W_NOPROCSUB | W_COMPLETE;
-
     let Ok(c_filename) = std::ffi::CString::new(filename) else {
         return filename.to_string();
     };
 
-    // Try the symbol directly exported by bash (present in some builds).
-    type BashExpandFilenameFn = unsafe extern "C" fn(*mut c_char) -> *mut c_char;
-    let direct_fn: Option<BashExpandFilenameFn> = unsafe {
-        let sym = libc::dlsym(
-            libc::RTLD_DEFAULT,
-            c"bash_expand_filename".as_ptr(),
-        );
-        if sym.is_null() {
-            None
-        } else {
-            Some(std::mem::transmute(sym))
-        }
-    };
+    // bash_expand_filename returns either the original pointer (no change) or a new
+    // malloc'd string. Free the result only if it is a different pointer.
+    let raw = unsafe { bash_symbols::bash_expand_filename(c_filename.as_ptr() as *mut c_char) };
 
-    if let Some(func) = direct_fn {
-        // bash_expand_filename takes ownership / may free the pointer, so we pass
-        // a freshly malloc-ed copy.
-        let copy = unsafe { libc::strdup(c_filename.as_ptr()) };
-        if copy.is_null() {
-            return filename.to_string();
-        }
-        let raw = unsafe { func(copy) };
-        if raw.is_null() {
-            return filename.to_string();
-        }
-        let result = unsafe {
-            std::ffi::CStr::from_ptr(raw)
-                .to_string_lossy()
-                .into_owned()
-        };
-        // bash_expand_filename returns the original pointer unchanged when
-        // there is no expansion; only free the result if it is a new allocation.
-        if raw != copy {
-            unsafe { libc::free(raw as *mut libc::c_void) };
-        }
-        return result;
+    if raw.is_null() || raw == c_filename.as_ptr() as *mut c_char {
+        return filename.to_string();
     }
 
-    // Fallback: replicate bash_expand_filename via expand_prompt_string.
     unsafe {
-        let prev_unbound = bash_symbols::unbound_vars_is_error;
-        bash_symbols::unbound_vars_is_error = 0;
-        let wl = bash_symbols::expand_prompt_string(c_filename.as_ptr(), 0, WFLAGS);
-        bash_symbols::unbound_vars_is_error = prev_unbound;
-
-        if wl.is_null() {
-            return filename.to_string();
-        }
-
-        let raw = bash_symbols::string_list(wl);
-        bash_symbols::dispose_words(wl);
-
-        if raw.is_null() {
-            return filename.to_string();
-        }
-
-        let result = std::ffi::CStr::from_ptr(raw)
-            .to_string_lossy()
-            .into_owned();
+        let result = std::ffi::CStr::from_ptr(raw).to_string_lossy().into_owned();
         libc::free(raw as *mut libc::c_void);
         result
     }
