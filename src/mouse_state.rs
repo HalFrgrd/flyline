@@ -3,14 +3,21 @@ pub struct MouseState {
 }
 
 impl MouseState {
-    pub fn new() -> Self {
-        MouseState { enabled: true }
+    pub fn new(initially_enabled: bool) -> Self {
+        MouseState {
+            enabled: initially_enabled,
+        }
     }
 
-    fn enable(&mut self) {
+    /// Enable mouse capture, logging `reason` to explain why.
+    /// Does nothing (and logs nothing) if mouse capture is already enabled.
+    pub fn enable(&mut self, reason: &str) {
+        if self.enabled {
+            return;
+        }
         match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
             Ok(_) => {
-                log::debug!("Enabled mouse capture");
+                log::info!("Mouse capture enabled: {}", reason);
                 self.enabled = true;
             }
             Err(e) => {
@@ -18,10 +25,16 @@ impl MouseState {
             }
         }
     }
-    fn disable(&mut self) {
+
+    /// Disable mouse capture, logging `reason` to explain why.
+    /// Does nothing (and logs nothing) if mouse capture is already disabled.
+    pub fn disable(&mut self, reason: &str) {
+        if !self.enabled {
+            return;
+        }
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
-                log::debug!("Disabled mouse capture");
+                log::info!("Mouse capture disabled: {}", reason);
                 self.enabled = false;
             }
             Err(e) => {
@@ -30,11 +43,12 @@ impl MouseState {
         }
     }
 
-    pub fn toggle(&mut self) {
+    /// Toggle mouse capture, logging `reason` to explain why.
+    pub fn toggle(&mut self, reason: &str) {
         if self.enabled {
-            self.disable();
+            self.disable(reason);
         } else {
-            self.enable();
+            self.enable(reason);
         }
     }
 
