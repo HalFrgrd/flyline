@@ -22,10 +22,10 @@ pub enum SecondaryCompType {
 
 impl SecondaryCompType {
     fn from(word: &str) -> Option<Self> {
-        // TOOD test these
+        // TODO test these
         if word.starts_with('$') {
             Some(Self::EnvVariable)
-        } else if false && word.starts_with('~') && !word.contains("/") {
+        } else if word.starts_with('~') && !word.contains("/") {
             Some(Self::TildeExpansion)
         } else if word.contains('*') || word.contains('?') || word.contains('[') {
             // TODO "*.md will match this. need some better logic here
@@ -1105,6 +1105,59 @@ mod tests {
         assert_eq!(
             ctx.comp_type_secondary,
             Some(SecondaryCompType::EnvVariable)
+        );
+    }
+
+    #[test]
+    fn test_tilde_expansion_completion() {
+        let ctx = run_inline("cd ~ro█");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "~ro");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::TildeExpansion)
+        );
+    }
+
+    #[test]
+    fn test_tilde_alone_is_tilde_expansion() {
+        let ctx = run_inline("cd ~█");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+                assert_eq!(ctx.word_under_cursor, "~");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::TildeExpansion)
+        );
+    }
+
+    #[test]
+    fn test_tilde_with_slash_is_filename_expansion() {
+        let ctx = run_inline("cd ~/█");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "cd");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::FilenameExpansion)
         );
     }
 }

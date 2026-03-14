@@ -395,12 +395,76 @@ impl App<'_> {
         Suggestion::from_string_vec(res, "", " ")
     }
 
+    /// Looks up the home directory for a given username by reading `/etc/passwd`.
+    /// Returns `None` if the user is not found or the file cannot be read.
+    fn get_home_dir_for_user(username: &str) -> Option<String> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+
+        let file = File::open("/etc/passwd").ok()?;
+        let reader = BufReader::new(file);
+
+        for line in reader.lines().filter_map(|l| match l {
+            Ok(line) => Some(line),
+            Err(e) => {
+                log::warn!("Error reading /etc/passwd: {}", e);
+                None
+            }
+        }) {
+            let fields: Vec<&str> = line.splitn(7, ':').collect();
+            if fields.len() >= 6 && fields[0] == username {
+                return Some(fields[5].to_string());
+            }
+        }
+
+        None
+    }
+
+    /// Returns a list of `(username, home_dir)` pairs for all users in `/etc/passwd`
+    /// whose usernames start with `prefix`.
+    fn get_users_with_prefix(prefix: &str) -> Vec<(String, String)> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+
+        let Ok(file) = File::open("/etc/passwd") else {
+            return vec![];
+        };
+        let reader = BufReader::new(file);
+        let mut result = vec![];
+
+        for line in reader.lines().filter_map(|l| match l {
+            Ok(line) => Some(line),
+            Err(e) => {
+                log::warn!("Error reading /etc/passwd: {}", e);
+                None
+            }
+        }) {
+            let fields: Vec<&str> = line.splitn(7, ':').collect();
+            if fields.len() >= 6 {
+                let username = fields[0];
+                let home_dir = fields[5];
+                if username.starts_with(prefix) {
+                    result.push((username.to_string(), home_dir.to_string()));
+                }
+            }
+        }
+
+        result
+    }
+
     fn tilde_expand_pattern(&self, pattern: &str) -> String {
         if pattern.starts_with("~/") {
             pattern.replacen("~", &self.home_path, 1)
-        } else if pattern.starts_with('~') {
-            // This is a naive tilde expansion for other users, it just replaces ~ with /home/ which works in most cases but not all (e.g. if someone has a custom home directory or if it's a different OS). For a more robust solution, we would need to read /etc/passwd or use a crate that can do this for us.
-            pattern.replacen("~", "/home/", 1)
+        } else if let Some(rest) = pattern.strip_prefix('~') {
+            let (username, suffix) = match rest.find('/') {
+                Some(slash_pos) => (&rest[..slash_pos], &rest[slash_pos..]),
+                None => (rest, ""),
+            };
+            if let Some(home_dir) = Self::get_home_dir_for_user(username) {
+                format!("{}{}", home_dir, suffix)
+            } else {
+                pattern.to_string()
+            }
         } else {
             pattern.to_string()
         }
@@ -413,6 +477,17 @@ impl App<'_> {
         if pattern.starts_with("~/") {
             prefixes_swaps.push((self.home_path.to_string() + "/", "~/".to_string()));
             pattern = pattern.replace(&prefixes_swaps[0].1, &prefixes_swaps[0].0);
+        } else if let Some(rest) = pattern.strip_prefix('~') {
+            // Handle ~username/ patterns by looking up the home directory in /etc/passwd
+            if let Some(slash_pos) = rest.find('/') {
+                let username = &rest[..slash_pos];
+                if let Some(home_dir) = Self::get_home_dir_for_user(username) {
+                    let tilde_prefix = format!("~{}/", username);
+                    let home_prefix = format!("{}/", home_dir);
+                    prefixes_swaps.push((home_prefix.clone(), tilde_prefix.clone()));
+                    pattern = pattern.replacen(&tilde_prefix, &home_prefix, 1);
+                }
+            }
         }
 
         // Resolve the pattern relative to cwd if it's not absolute
@@ -490,16 +565,27 @@ impl App<'_> {
     }
 
     fn tab_complete_tilde_expansion(&self, pattern: &str) -> Vec<Suggestion> {
-        let user_pattern = if pattern.starts_with('~') {
-            &pattern[1..]
+        let user_prefix = if let Some(rest) = pattern.strip_prefix('~') {
+            rest
         } else {
             return vec![];
         };
 
-        self.tab_complete_glob_expansion(
-            &("/home/".to_string() + user_pattern + "*"),
-            bash_funcs::CompletionFlags::default(),
-        )
+        let users = Self::get_users_with_prefix(user_prefix);
+        let mut results: Vec<Suggestion> = users
+            .iter()
+            .map(|(username, home_dir)| {
+                let tilde_path = format!("~{}", username);
+                let path = Path::new(home_dir);
+                self.post_process_single_completion(
+                    &tilde_path,
+                    Some(path),
+                    bash_funcs::CompletionFlags::default(),
+                )
+            })
+            .collect();
+        results.sort();
+        results
     }
 
     #[cfg(feature = "integration-tests")]
