@@ -28,7 +28,7 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::vec;
 use timeago;
 
@@ -91,7 +91,8 @@ pub fn get_command(settings: &Settings) -> ExitState {
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
 
-    // Enable mouse capture for Simple and Smart modes; skip for Disabled.
+    // Set up terminal features. Mouse capture is handled separately inside
+    // MouseState::initialize (called in App::new) based on the configured mode.
     crossterm::execute!(
         std::io::stdout(),
         crossterm::event::EnableBracketedPaste,
@@ -104,9 +105,6 @@ pub fn get_command(settings: &Settings) -> ExitState {
         )
     )
     .unwrap();
-    if settings.mouse_mode != MouseMode::Disabled {
-        crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture).unwrap();
-    }
 
     let runtime = build_runtime();
 
@@ -145,8 +143,6 @@ struct App<'a> {
     settings: &'a Settings,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     last_viewport_top: u16,
-    /// When set, smart mouse mode will re-enable capture at this instant.
-    smart_mouse_reenable_after: Option<Instant>,
 }
 
 impl<'a> App<'a> {
@@ -162,9 +158,6 @@ impl<'a> App<'a> {
         let buffer = TextBuffer::new("");
         let formatted_buffer_cache = FormattedBuffer::default();
 
-        // Mouse capture is initially enabled for Simple and Smart modes only.
-        let mouse_initially_enabled = settings.mouse_mode != MouseMode::Disabled;
-
         App {
             mode: AppRunningState::Running,
             buffer,
@@ -178,14 +171,13 @@ impl<'a> App<'a> {
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
-            mouse_state: MouseState::new(mouse_initially_enabled),
+            mouse_state: MouseState::initialize(&settings.mouse_mode),
             content_mode: ContentMode::Normal,
             last_contents: None,
             last_mouse_over_cell: None,
             tooltip: None,
             settings,
             last_viewport_top: 0,
-            smart_mouse_reenable_after: None,
         }
     }
 
@@ -314,13 +306,7 @@ impl<'a> App<'a> {
             } else {
                 // Poll timeout — check smart-mode periodic re-enable timer.
                 if self.settings.mouse_mode == MouseMode::Smart {
-                    if let Some(reenable_at) = self.smart_mouse_reenable_after {
-                        if Instant::now() >= reenable_at {
-                            self.mouse_state
-                                .enable("smart mode: 500 ms periodic re-enable");
-                            self.smart_mouse_reenable_after = None;
-                        }
-                    }
+                    self.mouse_state.check_reenable_timer();
                 }
                 true
             }
@@ -353,8 +339,7 @@ impl<'a> App<'a> {
                 self.mouse_state
                     .disable("smart mode: mouse is above the viewport");
                 self.last_mouse_over_cell = None;
-                self.smart_mouse_reenable_after =
-                    Some(Instant::now() + Duration::from_millis(500));
+                self.mouse_state.schedule_reenable();
                 return false;
             }
             match mouse.kind {
@@ -365,8 +350,7 @@ impl<'a> App<'a> {
                     self.mouse_state
                         .disable("smart mode: scroll event detected");
                     self.last_mouse_over_cell = None;
-                    self.smart_mouse_reenable_after =
-                        Some(Instant::now() + Duration::from_millis(500));
+                    self.mouse_state.schedule_reenable();
                     return false;
                 }
                 _ => {}
@@ -473,7 +457,7 @@ impl<'a> App<'a> {
         // Smart mode: any keypress re-enables mouse capture.
         if self.settings.mouse_mode == MouseMode::Smart {
             self.mouse_state.enable("smart mode: keypress detected");
-            self.smart_mouse_reenable_after = None;
+            self.mouse_state.cancel_reenable();
         }
 
         match key {
