@@ -13,7 +13,7 @@ use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
-use crate::settings::Settings;
+use crate::settings::{MouseMode, Settings};
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
@@ -28,8 +28,7 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
-
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::vec;
 use timeago;
 
@@ -91,11 +90,12 @@ pub fn get_command(settings: &Settings) -> ExitState {
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
+
+    // Enable mouse capture for Simple and Smart modes; skip for Disabled.
     crossterm::execute!(
         std::io::stdout(),
         crossterm::event::EnableBracketedPaste,
         crossterm::event::EnableFocusChange,
-        crossterm::event::EnableMouseCapture,
         crossterm::event::PushKeyboardEnhancementFlags(
             crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
                 | crossterm::event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
@@ -104,6 +104,9 @@ pub fn get_command(settings: &Settings) -> ExitState {
         )
     )
     .unwrap();
+    if settings.mouse_mode != MouseMode::Disabled {
+        crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture).unwrap();
+    }
 
     let runtime = build_runtime();
 
@@ -140,6 +143,10 @@ struct App<'a> {
     last_mouse_over_cell: Option<Tag>,
     tooltip: Option<String>,
     settings: &'a Settings,
+    /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
+    last_viewport_top: u16,
+    /// When set, smart mouse mode will re-enable capture at this instant.
+    smart_mouse_reenable_after: Option<Instant>,
 }
 
 impl<'a> App<'a> {
@@ -154,6 +161,10 @@ impl<'a> App<'a> {
 
         let buffer = TextBuffer::new("");
         let formatted_buffer_cache = FormattedBuffer::default();
+
+        // Mouse capture is initially enabled for Simple and Smart modes only.
+        let mouse_initially_enabled = settings.mouse_mode != MouseMode::Disabled;
+
         App {
             mode: AppRunningState::Running,
             buffer,
@@ -167,12 +178,14 @@ impl<'a> App<'a> {
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
-            mouse_state: MouseState::new(),
+            mouse_state: MouseState::new(mouse_initially_enabled),
             content_mode: ContentMode::Normal,
             last_contents: None,
             last_mouse_over_cell: None,
             tooltip: None,
             settings,
+            last_viewport_top: 0,
+            smart_mouse_reenable_after: None,
         }
     }
 
@@ -299,6 +312,16 @@ impl<'a> App<'a> {
                     }
                 }
             } else {
+                // Poll timeout — check smart-mode periodic re-enable timer.
+                if self.settings.mouse_mode == MouseMode::Smart {
+                    if let Some(reenable_at) = self.smart_mouse_reenable_after {
+                        if Instant::now() >= reenable_at {
+                            self.mouse_state
+                                .enable("smart mode: 500 ms periodic re-enable");
+                            self.smart_mouse_reenable_after = None;
+                        }
+                    }
+                }
                 true
             }
         }
@@ -314,8 +337,8 @@ impl<'a> App<'a> {
         }
     }
 
-    fn toggle_mouse_state(&mut self) {
-        self.mouse_state.toggle();
+    fn toggle_mouse_state(&mut self, reason: &str) {
+        self.mouse_state.toggle(reason);
         if !self.mouse_state.enabled() {
             self.last_mouse_over_cell = None;
         }
@@ -323,6 +346,32 @@ impl<'a> App<'a> {
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
+
+        // Smart mode: check if the mouse is above the viewport or a scroll event occurred.
+        if self.settings.mouse_mode == MouseMode::Smart {
+            if mouse.row < self.last_viewport_top {
+                self.mouse_state
+                    .disable("smart mode: mouse is above the viewport");
+                self.last_mouse_over_cell = None;
+                self.smart_mouse_reenable_after =
+                    Some(Instant::now() + Duration::from_millis(500));
+                return false;
+            }
+            match mouse.kind {
+                MouseEventKind::ScrollUp
+                | MouseEventKind::ScrollDown
+                | MouseEventKind::ScrollLeft
+                | MouseEventKind::ScrollRight => {
+                    self.mouse_state
+                        .disable("smart mode: scroll event detected");
+                    self.last_mouse_over_cell = None;
+                    self.smart_mouse_reenable_after =
+                        Some(Instant::now() + Duration::from_millis(500));
+                    return false;
+                }
+                _ => {}
+            }
+        }
 
         let mut cursor_directly_on_cell = true;
 
@@ -420,6 +469,12 @@ impl<'a> App<'a> {
     /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
     fn on_keypress(&mut self, key: KeyEvent) -> bool {
         log::trace!("Key event: {:?}", key);
+
+        // Smart mode: any keypress re-enables mouse capture.
+        if self.settings.mouse_mode == MouseMode::Smart {
+            self.mouse_state.enable("smart mode: keypress detected");
+            self.smart_mouse_reenable_after = None;
+        }
 
         match key {
             KeyEvent {
@@ -597,7 +652,7 @@ impl<'a> App<'a> {
                 }
             },
 
-            // Escape - clear suggestions or toggle mouse
+            // Escape - clear suggestions or toggle mouse (Simple mode only)
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => match self.content_mode {
@@ -605,7 +660,9 @@ impl<'a> App<'a> {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
-                    self.toggle_mouse_state();
+                    if self.settings.mouse_mode == MouseMode::Simple {
+                        self.toggle_mouse_state("simple mode: Escape pressed");
+                    }
                 }
             },
             // Ctrl+C - cancel
@@ -659,10 +716,13 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
-                // Idea is that when Alt/Meta is held down, mouse is toggled
-                // But not all terminals send key release events for Alt/Meta
-                // So we toggle on both press and release
-                self.toggle_mouse_state();
+                // In Simple mode: Alt press toggles mouse capture.
+                // (Alt release is handled in on_keyrelease.)
+                // Not all terminals send key release events for Alt/Meta,
+                // so we toggle on both press and release.
+                if self.settings.mouse_mode == MouseMode::Simple {
+                    self.toggle_mouse_state("simple mode: Alt pressed");
+                }
             }
             // Delegate basic text editing to TextBuffer
             KeyEvent {
@@ -715,7 +775,10 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
-                self.toggle_mouse_state();
+                // In Simple mode: Alt release toggles mouse capture.
+                if self.settings.mouse_mode == MouseMode::Simple {
+                    self.toggle_mouse_state("simple mode: Alt released");
+                }
             }
             _ => {}
         }
@@ -1216,6 +1279,9 @@ impl<'a> App<'a> {
     fn ui(&mut self, frame: &mut Frame, content: Contents) {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
+
+        // Record where the viewport starts for smart mouse-mode position checks.
+        self.last_viewport_top = frame_area.y;
 
         let (start_content_row, _end_content_row) =
             content.get_row_range_to_show(frame_area.height);
