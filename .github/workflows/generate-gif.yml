@@ -30,6 +30,7 @@ jobs:
           targets: |
             demo-main-extracted-gif
             demo-prompts-extracted-gif
+            demo-fuzzy-suggestions-extracted-gif
           set: |
             demo-main-extracted-gif.output=type=local,dest=assets/
             demo-prompts-extracted-gif.output=type=local,dest=assets/
