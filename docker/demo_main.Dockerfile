@@ -6,4 +6,4 @@ COPY docker/demo_main.tape .
 RUN faketime @1771881894 vhs demo_main.tape
 
 FROM scratch AS demo-main-extracted-gif
-COPY --from=demo-main-build /app/demo.gif /demo.gif
+COPY --from=demo-main-build /app/demo_main.gif /demo_main.gif
