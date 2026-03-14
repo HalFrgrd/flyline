@@ -55,7 +55,7 @@ Sleep 1000ms
 Type "# the left hand side is used for programmable completions but the entire word is used for fuzzy searching"
 Enter
 Sleep 500ms
-Type "grep --noname"
+Type "grep --filemtch"
 Sleep 500ms
 Left
 Left
