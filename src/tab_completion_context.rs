@@ -506,14 +506,14 @@ mod tests {
     #[test]
     fn test_cursor_in_middle_of_arith_subst() {
         let res = run_inline(r#"echo $((5 + 3█)) result"#);
-        assert_eq!(res.context, "5 + 3");
-        assert_eq!(res.context_until_cursor, "5 + 3");
+        assert_eq!(res.context, "echo $((5 + 3))");
+        assert_eq!(res.context_until_cursor, "echo $((5 + 3");
     }
 
     #[test]
     fn test_cursor_in_middle_of_arith_subst_2() {
         let res = run_inline(r#"echo $((5 + 3)█) result"#);
-        assert_eq!(res.context, "echo $((5 + 3)) result");
+        assert_eq!(res.context, "echo $((5 + 3))");
         assert_eq!(res.context_until_cursor, "echo $((5 + 3)");
     }
 

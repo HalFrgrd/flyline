@@ -261,22 +261,9 @@ impl DParser {
             let mut annotated_token = self.tokens[raw_idx].clone();
             raw_idx += 1;
 
-            // Compute cursor-containment flags using the current token's original byte range
-            // BEFORE any merging.  This preserves the invariant that a cursor positioned on
-            // the phantom second ) does not set stop_parsing_at_command_boundary — consistent
-            // with the original two-token behaviour where the phantom was consumed inside the
-            // match arm after the cursor flags had already been evaluated.
-            let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                annotated_token.token.byte_range().to_inclusive().contains(&pos)
-            });
-            let token_strictly_contains_cursor = cursor_byte_pos
-                .map_or(false, |pos| annotated_token.token.byte_range().contains(&pos));
-
             // When closing an ArithSubst, two consecutive ) tokens are required.
             // Merge them into a single DoubleRParen: update kind and value so the merged token
             // spans both characters, then skip the phantom second ) by advancing raw_idx.
-            // The cursor flags above already reflect the first ) only, so a cursor sitting on
-            // the phantom byte does not spuriously stop parsing.
             if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
                 && annotated_token.token.kind == TokenKind::RParen
                 && raw_idx < self.tokens.len()
@@ -286,6 +273,12 @@ impl DParser {
                 annotated_token.token.kind = TokenKind::DoubleRParen;
                 raw_idx += 1; // skip phantom
             }
+
+            let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
+                annotated_token.token.byte_range().to_inclusive().contains(&pos)
+            });
+            let token_strictly_contains_cursor = cursor_byte_pos
+                .map_or(false, |pos| annotated_token.token.byte_range().contains(&pos));
 
             let token = &annotated_token.token;
 
@@ -359,7 +352,9 @@ impl DParser {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
                     annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
 
-                    if token.kind == TokenKind::DoubleRBracket && token_strictly_contains_cursor {
+                    if (token.kind == TokenKind::DoubleRBracket
+                        || token.kind == TokenKind::DoubleRParen)
+                        && token_strictly_contains_cursor {
                         if let Some(prev_command_range) = command_start_stack.pop() {
                             self.current_command_range = prev_command_range;
                             if let Some(range) = &mut self.current_command_range {
