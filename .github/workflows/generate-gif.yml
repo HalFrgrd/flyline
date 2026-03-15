@@ -22,6 +22,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Clean up old GIFs
+        run: rm -f assets/*.gif
+
       - name: Build demo GIFs
         uses: docker/bake-action@v6
         with:

@@ -1,29 +1,14 @@
 # Where should we write the GIF?
 Output demo_fuzzy_suggestions.gif
 
-# Set up a 1560x780 terminal with 31px font (30% bigger than original 1200x600 / 24px).
-Set FontSize 31
-Set Width 1560
-Set Height 780
-Set Framerate 60
-
-Hide
-
-# vhs doesnt source our bashrc so lets run bash here so that it will source it
-Type "clear && bash"
-Enter
-
-Show
-
-Type "# demo of fuzzy completions"
-Enter
-Sleep 500ms
+Source demo_settings.tape
+Source demo_setup.tape
 
 Type "grep --"
 Sleep 500ms
 Tab
 Sleep 1000ms
-Type "file"
+Type "with"
 Sleep 1000ms
 Down
 Sleep 500ms
@@ -41,7 +26,7 @@ Type "grep --"
 Sleep 500ms
 Tab
 Sleep 1000ms
-Type "fiel"
+Type "wtih"
 Sleep 1000ms
 Down
 Sleep 500ms
@@ -70,5 +55,4 @@ Down
 Sleep 500ms
 Enter
 
-# Admire the output for a bit.
 Sleep 2s

@@ -23,7 +23,7 @@ RUN touch /home/john/.bashrc && \
     'alias ll="ls -alF"' \
     'export HISTTIMEFORMAT="%F %T  "' \
     'export PS1="\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]~\[\033[00m\]\$ "' \
-    'export RPS1="\[\033[01;32m\]\t\[\033[0m\]"' \
+    'export RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
     'flyline --disable-auto-closing-char' \
     >> /home/john/.bashrc
@@ -136,3 +136,5 @@ RUN touch /home/john/.bash_history && \
 
 USER john
 
+COPY assets/tapes/demo_settings.tape .
+COPY assets/tapes/demo_setup.tape .

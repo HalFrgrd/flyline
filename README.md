@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/blob/main/LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/releases)
 
-![Demo](assets/demo.gif)
+![Demo](assets/demo_overview.gif)
 
 </div>
 
@@ -51,20 +51,30 @@ Two possible fixes are:
 
 Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
-## Setting your prompt
-- The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html) for more information or [starship integration](#starship-integration).
-- `RPS1` / `RPROMPT` sets the right prompt similarly to zsh.
-- `PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
-
-For instance:
-![Prompt demo](assets/demo_prompts.gif)
+## PS1
+The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html) for more information or [starship integration](#starship-integration).
+![PS1 demo](assets/demo_prompts_ps1.gif)
 ```bash
 export PS1='\u@\h:\w$ '
-export RPS1='\t'
 export PS1='\u@\h:\w\n$ '
-export PS1_FILL='-'
 export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '
+```
+
+## RPS1 / RPROMPT
+The `RPS1` / `RPROMPT` variable sets the right prompt similarly to zsh.
+![RPS1 demo](assets/demo_prompts_rps1.gif)
+```bash
+export RPS1='\t'
+export RPS1='\t\n<'
+```
+
+## PS1_FILL
+- `PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
+![PS1_FILL demo](assets/demo_prompts_ps1_fill.gif)
+```bash
+export PS1_FILL='-'
 export PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
+export PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 ```
 
 ## Starship integration
