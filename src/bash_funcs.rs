@@ -523,27 +523,23 @@ pub fn get_env_variable(var_name: &str) -> Option<String> {
     }
 }
 
-/// Expand a filename using bash's own expansion logic (tilde, `$VAR`, `${VAR}`, etc.).
-///
-/// Calls `bash_expand_filename` from `bashline.c` directly.
-/// Returns the expanded string, or the original `filename` unchanged on failure.
 pub fn expand_filename(filename: &str) -> String {
-    let Ok(c_filename) = std::ffi::CString::new(filename) else {
-        return filename.to_string();
-    };
-
-    // bash_expand_filename returns either the original pointer (no change) or a new
-    // malloc'd string. Free the result only if it is a different pointer.
-    let raw = unsafe { bash_symbols::bash_expand_filename(c_filename.as_ptr() as *mut c_char) };
-
-    if raw.is_null() || raw == c_filename.as_ptr() as *mut c_char {
-        return filename.to_string();
-    }
-
     unsafe {
-        let result = std::ffi::CStr::from_ptr(raw).to_string_lossy().into_owned();
-        libc::free(raw as *mut libc::c_void);
-        result
+        let expanded_string = bash_symbols::expand_string_to_string(
+            std::ffi::CString::new(filename).unwrap().as_ptr(),
+            0,
+        );
+
+        if expanded_string.is_null() {
+            return filename.to_string();
+        }
+
+        let c_str = std::ffi::CStr::from_ptr(expanded_string);
+        c_str
+            .to_str()
+            .ok()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| filename.to_string())
     }
 }
 

@@ -342,11 +342,8 @@ unsafe extern "C" {
     // char * decode_prompt_string (char *string, int is_prompt)
     pub fn decode_prompt_string(string: *const c_char, is_prompt: c_int) -> *mut c_char;
 
-    // bashline.c
-    // static char *bash_expand_filename (char *filename)
-    // Expands tilde, $VAR, ${VAR}, etc. in a filename string.
-    // Returns either the original pointer (no expansion needed) or a new malloc'd string.
-    pub fn bash_expand_filename(filename: *mut c_char) -> *mut c_char;
+    // char *expand_string_to_string (string, quoted)
+    pub fn expand_string_to_string(string: *const c_char, quoted: c_int) -> *mut c_char;
 }
 
 // history.h

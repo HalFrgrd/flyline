@@ -5,6 +5,7 @@ use crate::tab_completion_context;
 use glob::glob;
 use std::path::Path;
 
+#[derive(Debug)]
 struct PathPatternExpansion {
     /// The part of the pattern before the last `/`, kept in its original form
     /// (e.g. `~/foo` or `relative/dir`).
@@ -470,8 +471,8 @@ impl App<'_> {
         pattern: &str,
         comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Vec<Suggestion> {
-        log::debug!("Performing glob expansion for pattern: {}", pattern);
         let expanded = self.expand_path_pattern(pattern);
+        log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
         let resolved_pattern = if expanded.expanded_prefix.is_empty() {
             expanded.rhs_pattern.clone()
         } else {

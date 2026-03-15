@@ -23,7 +23,7 @@ pub enum SecondaryCompType {
 impl SecondaryCompType {
     fn from(word: &str) -> Option<Self> {
         // TOOD test these
-        if word.starts_with('$') {
+        if false && word.starts_with('$') {
             Some(Self::EnvVariable)
         } else if false && word.starts_with('~') && !word.contains("/") {
             Some(Self::TildeExpansion)
