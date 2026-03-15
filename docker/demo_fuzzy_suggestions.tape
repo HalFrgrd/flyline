@@ -3,16 +3,11 @@ Output demo_fuzzy_suggestions.gif
 
 Source demo_base.tape
 
-
-Type "# demo of fuzzy completions"
-Enter
-Sleep 500ms
-
 Type "grep --"
 Sleep 500ms
 Tab
 Sleep 1000ms
-Type "file"
+Type "with"
 Sleep 1000ms
 Down
 Sleep 500ms
@@ -30,7 +25,7 @@ Type "grep --"
 Sleep 500ms
 Tab
 Sleep 1000ms
-Type "fiel"
+Type "wtih"
 Sleep 1000ms
 Down
 Sleep 500ms
@@ -59,5 +54,4 @@ Down
 Sleep 500ms
 Enter
 
-# Admire the output for a bit.
 Sleep 2s

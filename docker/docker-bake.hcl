@@ -61,10 +61,6 @@ target "vhs-base" {
 
 target "_demo-base" {
     context = "."
-    contexts = {
-        vhs-base = "target:vhs-base"
-    }
-    output = ["type=local,dest=assets/"]
     # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
     args = {
         BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
@@ -77,6 +73,7 @@ target "demo-main-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     dockerfile = "docker/demo_main.Dockerfile"
+    output = ["type=local,dest=assets/"]
     target = "demo-main-extracted-gif"
 }
 
@@ -86,6 +83,7 @@ target "demo-prompts-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     dockerfile = "docker/demo_prompts.Dockerfile"
+    output = ["type=local,dest=assets/"]
     target = "demo-prompts-extracted-gif"
 }
 
@@ -95,6 +93,7 @@ target "demo-fuzzy-suggestions-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
+    output = ["type=local,dest=assets/"]
     target = "demo-fuzzy-suggestions-extracted-gif"
 }
 

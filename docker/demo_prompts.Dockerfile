@@ -14,4 +14,4 @@ COPY docker/demo_prompts.tape .
 RUN faketime @1771881894 vhs demo_prompts.tape
 
 FROM scratch AS demo-prompts-extracted-gif
-COPY --from=demo-prompts-build /app/demo_prompts.gif /demo_prompts.gif
+COPY --from=demo-prompts-build /app/*.gif /
