@@ -52,7 +52,7 @@ target "tab-completion-tests" {
 
 target "vhs-base" {
     context = "."
-    dockerfile = "docker/vhs_base.Dockerfile"
+    dockerfile = "docker/demo_base.Dockerfile"
     contexts = {
         flyline-extracted-library = "target:built-artifact"
     }
