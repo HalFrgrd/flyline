@@ -25,7 +25,7 @@ Enter
 Sleep 1500ms
 
 
-Type "# PS1_FILL can be multiple chars"
+Type "# PS1_FILL can be multiple characters"
 Enter
 Sleep 1000ms
 
@@ -33,7 +33,7 @@ Type "export PS1_FILL='🯁🯂🯃🮲🮳'"
 Enter
 Sleep 1000ms
 
-Type "# PS1_FILL can also support time formats"
+Type "# If you so desire, PS1_FILL can support time formats"
 Enter
 Sleep 1000ms
 
