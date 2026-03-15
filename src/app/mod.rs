@@ -894,7 +894,10 @@ impl<'a> App<'a> {
             .parts
             .iter_mut()
             .for_each(|part| {
-                if self.mode.is_running() && !self.settings.disable_animations && part.normal_span().content.starts_with("python") {
+                if self.mode.is_running()
+                    && !self.settings.disable_animations
+                    && part.normal_span().content.starts_with("python")
+                {
                     self.snake_animation.update_anim();
                     let snake_str = self
                         .snake_animation
