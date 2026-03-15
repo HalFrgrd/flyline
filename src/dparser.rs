@@ -1,8 +1,8 @@
 use flash::lexer::{Lexer, Position, Token, TokenKind};
 use itertools::Itertools;
+use log::debug;
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
-use log::debug;
 
 fn split_token_into_lines(token: Token) -> Vec<Token> {
     match &token.kind {
@@ -188,11 +188,7 @@ impl DParser {
         }
     }
 
-    fn nested_closing_satisfied(
-        token: &Token,
-        current_nesting: Option<&TokenKind>,
-        next_token: Option<&&Token>,
-    ) -> bool {
+    fn nested_closing_satisfied(token: &Token, current_nesting: Option<&TokenKind>) -> bool {
         let current_nesting = match current_nesting {
             Some(v) => v,
             None => return false,
@@ -205,11 +201,7 @@ impl DParser {
             (TokenKind::RParen, TokenKind::ExtGlob(_)) => true,
             (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
             (TokenKind::RBrace, TokenKind::LBrace) => true,
-            (TokenKind::RParen, TokenKind::ArithSubst) // it needs two ))
-                if next_token.map_or(false, |t| t.kind == TokenKind::RParen) =>
-            {
-                true
-            }
+            (TokenKind::DoubleRParen, TokenKind::ArithSubst) => true,
             (TokenKind::Backtick, TokenKind::Backtick) => true,
             (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
             (TokenKind::Quote, TokenKind::Quote) => true,
@@ -243,19 +235,29 @@ impl DParser {
         // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
         let mut heredocs: VecDeque<(usize, String)> = VecDeque::new();
 
-        let mut annotated_tokens = self.tokens.iter_mut().enumerate().peekable();
         let mut stop_parsing_at_command_boundary = false;
 
         let mut command_start_stack = Vec::new();
 
         let mut previous_token: Option<AnnotatedToken> = None;
 
-        loop {
-            let (mut idx, mut annotated_token) = match annotated_tokens.next() {
-                Some(t) => t,
-                None => break,
-            };
-            let mut token = &annotated_token.token;
+        let mut idx = 0;
+        while idx < self.tokens.len() {
+            // When closing an ArithSubst, two consecutive ) tokens are required.
+            // Merge them into a single DoubleRParen by modifying self.tokens[idx] in place
+            // and removing the second ) from the vector.
+            if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
+                && self.tokens[idx].token.kind == TokenKind::RParen
+                && idx + 1 < self.tokens.len()
+                && self.tokens[idx + 1].token.kind == TokenKind::RParen
+            {
+                let second = self.tokens.remove(idx + 1);
+                self.tokens[idx].token.value.push_str(&second.token.value);
+                self.tokens[idx].token.kind = TokenKind::DoubleRParen;
+            }
+
+            // Clone the token so we can match on it while still mutating self.tokens[idx].annotation.
+            let token = self.tokens[idx].token.clone();
 
             let word_is_part_of_assignment = if token.kind.is_word() {
                 previous_token.as_ref().map_or(false, |token| {
@@ -266,11 +268,21 @@ impl DParser {
             };
 
             let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                token.byte_range().to_inclusive().contains(&pos)
+                self.tokens[idx]
+                    .token
+                    .byte_range()
+                    .to_inclusive()
+                    .contains(&pos)
+            });
+            let token_strictly_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
+                self.tokens[idx].token.byte_range().contains(&pos)
+            });
+            let cursor_at_start_of_token = cursor_byte_pos.map_or(false, |pos| {
+                pos == self.tokens[idx].token.byte_range().start
             });
 
-            let token_strictly_contains_cursor =
-                cursor_byte_pos.map_or(false, |pos| token.byte_range().contains(&pos));
+            let cursor_part_way_through_token =
+                token_inclusively_contains_cursor && !cursor_at_start_of_token;
 
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
@@ -300,7 +312,7 @@ impl DParser {
                         cursor_byte_pos.is_some(),
                     ) =>
                 {
-                    annotated_token.annotation = TokenAnnotation::IsOpening(None);
+                    self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
 
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
@@ -310,11 +322,12 @@ impl DParser {
                     self.current_command_range = None; // set for next word after this
                 }
                 TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
-                    annotated_token.annotation = TokenAnnotation::IsOpening(None);
+                    self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
 
                     heredocs.push_back((idx, delim.to_string()));
                 }
                 TokenKind::RParen
+                | TokenKind::DoubleRParen
                 | TokenKind::Quote
                 | TokenKind::SingleQuote
                 | TokenKind::RBrace
@@ -323,34 +336,31 @@ impl DParser {
                 | TokenKind::Esac
                 | TokenKind::Done
                 | TokenKind::Fi
-                    if Self::nested_closing_satisfied(
-                        &token,
-                        nestings.last().map(|(_, k)| k),
-                        annotated_tokens.peek().map(|(_, t)| &t.token).as_ref(),
-                    ) =>
+                    if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
-                    let (opening_idx, kind) = nestings.pop().unwrap();
-                    annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
-                    if kind == TokenKind::ArithSubst {
-                        assert!(
-                            annotated_tokens.peek().unwrap().1.token.kind == TokenKind::RParen,
-                            "expected two RParen tokens"
-                        );
-                        (idx, annotated_token) = annotated_tokens.next().unwrap(); // consume the extra RParen
-                        token = &annotated_token.token;
-                    }
+                    let (opening_idx, _kind) = nestings.pop().unwrap();
+                    self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
 
-                    if token.kind == TokenKind::DoubleRBracket && token_strictly_contains_cursor {
-                        if let Some(prev_command_range) = command_start_stack.pop() {
-                            self.current_command_range = prev_command_range;
-                            if let Some(range) = &mut self.current_command_range {
-                                *range = *range.start()..=idx;
-                            }
-                        }
-                        break;
-                    }
+                    let current_command_range_contains_cursor =
+                        cursor_byte_pos.is_some_and(|pos| {
+                            self.current_command_range.as_ref().is_some_and(|r| {
+                                r.clone().any(|idx| {
+                                    self.tokens[idx]
+                                        .token
+                                        .byte_range()
+                                        .to_inclusive()
+                                        .contains(&pos)
+                                })
+                            })
+                        });
 
-                    if stop_parsing_at_command_boundary {
+                    if stop_parsing_at_command_boundary
+                        && !cursor_part_way_through_token
+                        && current_command_range_contains_cursor
+                    {
+                        // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
+                        // echo $((10 * 2█))      -> cursor context is: 10 * 2
+                        // echo $((10 * 2)█)      -> cursor context is: echo $((10 * 2))
                         debug!("Stopping parsing at command boundary");
                         break;
                     }
@@ -376,7 +386,7 @@ impl DParser {
                     if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
                 {
                     let (opening_idx, _) = heredocs.pop_front().unwrap();
-                    annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
+                    self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
                 }
 
                 TokenKind::And
@@ -417,7 +427,7 @@ impl DParser {
                                 TokenKind::Quote | TokenKind::SingleQuote
                             )
                         {
-                            annotated_token.annotation = TokenAnnotation::IsPartOfQuotedString;
+                            self.tokens[idx].annotation = TokenAnnotation::IsPartOfQuotedString;
                         }
                     }
 
@@ -426,7 +436,7 @@ impl DParser {
                         if let Some(prev_token) = &previous_token {
                             match prev_token.token.kind {
                                 TokenKind::Quote | TokenKind::SingleQuote => {
-                                    annotated_token.annotation =
+                                    self.tokens[idx].annotation =
                                         TokenAnnotation::IsPartOfQuotedString;
                                 }
                                 TokenKind::Newline
@@ -435,18 +445,18 @@ impl DParser {
                                         TokenAnnotation::IsPartOfQuotedString
                                     ) =>
                                 {
-                                    annotated_token.annotation =
+                                    self.tokens[idx].annotation =
                                         TokenAnnotation::IsPartOfQuotedString;
                                 }
                                 _ if self.current_command_range.is_none() => {
-                                    annotated_token.annotation = TokenAnnotation::IsCommandWord;
+                                    self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
                                 }
                                 _ => {
                                     // leave as None
                                 }
                             }
                         } else {
-                            annotated_token.annotation = TokenAnnotation::IsCommandWord;
+                            self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
                         }
                     }
                     if self.current_command_range.is_none() {
@@ -457,7 +467,8 @@ impl DParser {
                 }
             }
 
-            previous_token = Some(annotated_token.clone());
+            previous_token = Some(self.tokens[idx].clone());
+            idx += 1;
         }
 
         if cfg!(test) {
@@ -693,6 +704,34 @@ mod tests {
         assert_eq!(tokens[5].token.value, "line2");
         assert_eq!(tokens[5].annotation, TokenAnnotation::IsPartOfQuotedString);
         assert_eq!(tokens[6].token.value, "'");
+        assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
+    }
+
+    #[test]
+    fn test_arith_subst_annotations() {
+        // The two consecutive ) tokens that close an ArithSubst are merged into a single
+        // DoubleRParen token with value "))" covering both characters.  The phantom second )
+        // is removed from the token list entirely, so subsequent tokens have the correct index
+        // as if the second ) never existed.
+        let input = r#"echo $(( bar ))"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        // After merging: echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), )) (6)
+        // The phantom second ) is gone; total token count is 7.
+        assert_eq!(tokens.len(), 7);
+
+        assert_eq!(tokens[2].token.kind, TokenKind::ArithSubst);
+        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
+
+        assert_eq!(tokens[6].token.kind, TokenKind::DoubleRParen);
+        assert_eq!(tokens[6].token.value, "))");
         assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
     }
 }

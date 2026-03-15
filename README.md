@@ -19,7 +19,7 @@ A bash plugin for modern command line editing. Flyline replaces readline to prov
 - Mouse support:
     - Click to move cursor
     - Hover over words for tooltips
-- [Tab completion improvements](#tab-completion-improvements)
+- [Improvements on bash's tab completion](#tab-completion-improvements)
 - Tooltips
 - Auto close brackets and quotes
 - Syntax highlighting

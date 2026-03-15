@@ -62,6 +62,14 @@ target "vhs-base" {
     }
 }
 
+group "demos" {
+    targets = [
+        "demo-main-extracted-gif",
+        "demo-prompts-extracted-gif",
+        "demo-fuzzy-suggestions-extracted-gif",
+    ]
+}
+
 target "demo-main-extracted-gif" {
     context = "."
     dockerfile = "docker/demo_main.Dockerfile"
@@ -69,6 +77,7 @@ target "demo-main-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     target = "demo-main-extracted-gif"
+    output = ["type=local,dest=assets/"]
     # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
     args = {
         BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
@@ -82,6 +91,21 @@ target "demo-prompts-extracted-gif" {
         vhs-base = "target:vhs-base"
     }
     target = "demo-prompts-extracted-gif"
+    output = ["type=local,dest=assets/"]
+    # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
+    args = {
+        BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
+    }
+}
+
+target "demo-fuzzy-suggestions-extracted-gif" {
+    context = "."
+    dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
+    contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    target = "demo-fuzzy-suggestions-extracted-gif"
+    output = ["type=local,dest=assets/"]
     # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
     args = {
         BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"

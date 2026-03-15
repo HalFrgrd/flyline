@@ -1,9 +1,108 @@
 use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::app::{App, ContentMode};
-use crate::bash_funcs;
+use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
 use glob::glob;
 use std::path::Path;
+
+#[derive(Debug)]
+struct PathPatternExpansion {
+    /// The part of the pattern before the last `/`, kept in its original form
+    /// (e.g. `~/foo` or `relative/dir`).
+    raw_prefix: String,
+    /// `raw_prefix` after tilde expansion, conversion to an absolute path, and
+    /// environment-variable expansion (e.g. `/home/user/foo` or `/cwd/relative/dir`).
+    expanded_prefix: String,
+    /// The part of the pattern after the last `/` — the glob portion
+    /// (e.g. `ba*` or `*.txt`).
+    rhs_pattern: String,
+}
+
+impl PathPatternExpansion {
+    fn new(pattern: &str) -> Self {
+        // Split the pattern at the last '/'.
+        let (raw_prefix, rhs_pattern) = if let Some(pos) = pattern.rfind('/') {
+            (pattern[..pos].to_string(), pattern[pos + 1..].to_string())
+        } else {
+            (String::new(), pattern.to_string())
+        };
+
+        let rhs_pattern = bash_funcs::dequoting_function_rust(&rhs_pattern);
+
+        // Use bash's own filename expansion (tilde + $VAR + ${VAR} + more).
+        let after_expand = if raw_prefix.is_empty() {
+            String::new()
+        } else {
+            bash_funcs::expand_filename(&bash_funcs::dequoting_function_rust(&raw_prefix))
+        };
+
+        // Make the path absolute (prepend cwd when relative or empty).
+        let expanded_prefix = if after_expand.is_empty() {
+            match std::env::current_dir() {
+                Ok(p) => p.to_string_lossy().to_string(),
+                Err(e) => {
+                    log::warn!("Failed to get current directory: {}", e);
+                    String::new()
+                }
+            }
+        } else if !Path::new(&after_expand).is_absolute() {
+            match std::env::current_dir() {
+                Ok(p) => format!("{}/{}", p.display(), after_expand),
+                Err(e) => {
+                    log::warn!("Failed to get current directory: {}", e);
+                    after_expand
+                }
+            }
+        } else {
+            after_expand
+        };
+
+        PathPatternExpansion {
+            raw_prefix,
+            expanded_prefix,
+            rhs_pattern,
+        }
+    }
+
+    fn expanded_pattern(&self) -> String {
+        if self.expanded_prefix.is_empty() {
+            self.rhs_pattern.clone()
+        } else {
+            format!("{}/{}", self.expanded_prefix, self.rhs_pattern)
+        }
+    }
+
+    fn convert_expanded_match_to_unexpanded(
+        &self,
+        expanded_match: &str,
+        quote_type: Option<QuoteType>,
+    ) -> String {
+        // Compute the relative path of the result compared to
+        // expanded_prefix, then reconstruct using raw_prefix so the
+        // suggestion preserves the user's original prefix spelling
+        // (e.g. `~/`, `$HOME/`, or a relative path segment).
+        if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
+            let suffix = suffix.trim_start_matches('/');
+
+            let quoted_suffix = match quote_type {
+                Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
+                _ => bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default()),
+            };
+            if self.raw_prefix.is_empty() {
+                quoted_suffix
+            } else {
+                format!("{}/{}", self.raw_prefix, quoted_suffix)
+            }
+        } else {
+            log::warn!(
+                "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
+                expanded_match,
+                self.expanded_prefix
+            );
+            expanded_match.to_string()
+        }
+    }
+}
 
 /// bash programmable completions:
 ///
@@ -91,9 +190,7 @@ fn expand_alias_for_completion(
     };
 
     // cursor position relative to the start of the completion context
-    let cursor_byte_pos = context_until_cursor
-        .len()
-        .saturating_add_signed(len_delta);
+    let cursor_byte_pos = context_until_cursor.len().saturating_add_signed(len_delta);
 
     let full_command = alias.to_string() + &context[command_word_len..];
     // `alias` is guaranteed non-empty: it is either a non-empty alias string
@@ -176,6 +273,8 @@ impl App<'_> {
             let path = match path_to_use {
                 Some(p) => p,
                 None => {
+                    // TODO fully expand this if we ever get here
+                    log::warn!("Do we ever get here?");
                     owned_path = std::path::PathBuf::from(self.tilde_expand_pattern(&sug));
                     &owned_path
                 }
@@ -215,7 +314,7 @@ impl App<'_> {
         &self,
         completion_context: &tab_completion_context::CompletionContext,
     ) -> Option<Vec<Suggestion>> {
-        log::debug!("Completion context: {:?}", completion_context);
+        log::debug!("Completion context: {:#?}", completion_context);
 
         let word_under_cursor = completion_context.word_under_cursor;
 
@@ -327,10 +426,17 @@ impl App<'_> {
                         word_under_cursor
                     );
                 } else {
+                    // If the last completion is a directory (ends with '/'), don't
+                    // append a trailing space so the cursor stays right after the slash.
+                    let suffix = if completions_as_string.ends_with('/') {
+                        ""
+                    } else {
+                        " "
+                    };
                     return Some(Suggestion::from_string_vec(
                         vec![completions_as_string],
                         "",
-                        " ",
+                        suffix,
                     ));
                 }
             }
@@ -400,48 +506,31 @@ impl App<'_> {
         }
     }
 
-    fn expand_path_pattern(&self, pattern: &str) -> (String, Vec<(String, String)>) {
-        // TODO expand other variables?
-        let mut prefixes_swaps = vec![];
-        let mut pattern = pattern.to_string();
-        if pattern.starts_with("~/") {
-            prefixes_swaps.push((self.home_path.to_string() + "/", "~/".to_string()));
-            pattern = pattern.replace(&prefixes_swaps[0].1, &prefixes_swaps[0].0);
-        }
-
-        // Resolve the pattern relative to cwd if it's not absolute
-        if !Path::new(&pattern).is_absolute() {
-            // Get the current working directory for relative paths
-            if let Ok(cwd) = std::env::current_dir() {
-                if let Some(cwd_str) = cwd.to_str() {
-                    prefixes_swaps.push((format!("{}/", cwd_str), "".to_string()));
-                    pattern = format!("{}/{}", cwd_str, pattern);
-                }
-            }
-        }
-
-        (pattern, prefixes_swaps)
-    }
-
     fn tab_complete_glob_expansion(
         &self,
         pattern: &str,
-        comp_resultflags: bash_funcs::CompletionFlags,
+        mut comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Vec<Suggestion> {
-        log::debug!("Performing glob expansion for pattern: {}", pattern);
-        let (resolved_pattern, prefixes_swaps) = self.expand_path_pattern(pattern);
-        log::debug!(
-            "resolved_pattern: {} {:?}",
-            resolved_pattern,
-            prefixes_swaps
-        );
+        // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
+        // e.g. my_command $PWD/fi<TAB> should expand to:
+        // my_command $PWD/file\ with\ spaces.txt
+        // not
+        // my_command \$PWD/file\ with\ spaces.txt
+        comp_resultflags.filename_quoting_desired = false;
+        comp_resultflags.filename_completion_desired = true;
+
+        comp_resultflags.quote_type = bash_funcs::find_quote_type(pattern);
+        log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
+
+        let expanded = PathPatternExpansion::new(pattern);
+        log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
 
         // Use glob to find matching paths
         let mut results = Vec::new();
 
         const MAX_GLOB_RESULTS: usize = 1_000;
 
-        if let Ok(paths) = glob(&resolved_pattern) {
+        if let Ok(paths) = glob(&expanded.expanded_pattern()) {
             for (idx, path_result) in paths.enumerate() {
                 if idx >= MAX_GLOB_RESULTS {
                     log::debug!(
@@ -451,24 +540,10 @@ impl App<'_> {
                     break;
                 }
                 if let Ok(path) = path_result {
-                    // Convert the path to a string relative to cwd (or absolute if pattern was absolute)
-                    let unexpanded = {
-                        let mut p = path.to_string_lossy().to_string();
-
-                        for (prefix_to_remove, prefix_to_replace) in &prefixes_swaps {
-                            if p.starts_with(prefix_to_remove) {
-                                p = p.replacen(prefix_to_remove, prefix_to_replace, 1);
-                            } else {
-                                log::warn!(
-                                    "Expected path '{}' to start with prefix '{}', but it did not.",
-                                    p,
-                                    prefix_to_remove
-                                );
-                                break;
-                            }
-                        }
-                        p
-                    };
+                    let unexpanded = expanded.convert_expanded_match_to_unexpanded(
+                        &path.to_string_lossy(),
+                        comp_resultflags.quote_type,
+                    );
 
                     results.push(self.post_process_single_completion(
                         &unexpanded,
@@ -669,6 +744,22 @@ impl App<'_> {
                 &Suggestion::new(r#"banana"#, "", " "),
                 &Suggestion::new(r#"cherry"#, "", " "),
             ],
+        );
+
+        // Test that we don't quote the prefix but do quote the part of the path filled in by tab completion
+        run_test_on(
+            "fl_comp_util --fallback-to-default $PWD/man",
+            &[&Suggestion::new(r#"$PWD/many\ spaces\ here/"#, "", "")],
+        );
+
+        run_test_on(
+            r#"fl_comp_util --fallback-to-default $PWD/many\ spac"#,
+            &[&Suggestion::new(r#"$PWD/many\ spaces\ here/"#, "", "")],
+        );
+
+        run_test_on(
+            r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
+            &[&Suggestion::new(r#""$PWD/many spaces here/"#, "", "")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");

@@ -1,4 +1,4 @@
-use flash::lexer::TokenKind;
+use flash::lexer::{Token, TokenKind};
 
 use crate::dparser::{DParser, ToInclusiveRange};
 
@@ -22,8 +22,8 @@ pub enum SecondaryCompType {
 
 impl SecondaryCompType {
     fn from(word: &str) -> Option<Self> {
-        // TOOD test these
-        if word.starts_with('$') {
+        // TODO test these
+        if (word.starts_with('$') || word.starts_with("\"$")) && !word.contains("/") {
             Some(Self::EnvVariable)
         } else if false && word.starts_with('~') && !word.contains("/") {
             Some(Self::TildeExpansion)
@@ -128,51 +128,53 @@ pub fn get_completion_context<'a>(
             let byte_range = cursor_node.byte_range();
 
             // try grow to the left if there are single or double quotes or $
-            match context_tokens.get(node_idx.wrapping_sub(1)) {
-                Some(prev_node) if matches!(prev_node.kind, TokenKind::SingleQuote) => {
-                    prev_node.byte_range().start..byte_range.end
-                }
-                Some(prev_node) if matches!(prev_node.kind, TokenKind::Quote) => {
-                    // See if there is a $ inside this token preceding the cursor with no whitespace in between.
-                    // If so, we want to include the $ in the completion.
-                    // Scan backwards from cursor_byte_pos to prev_node.byte_range().start,
-                    // looking for a '$' not separated by whitespace.
-                    let mut dollar_pos = None;
-                    for (idx, ch) in buffer[prev_node.byte_range().start..cursor_byte_pos]
-                        .char_indices()
-                        .rev()
-                    {
-                        if ch.is_whitespace() {
-                            break;
-                        }
-                        if ch == '$' {
-                            // Found a $ with no whitespace between it and the cursor
-                            dollar_pos = Some(prev_node.byte_range().start + idx);
-                            break;
+            let mut start = byte_range.start;
+            let mut end = byte_range.end;
+            let mut i = node_idx;
+
+            loop {
+                let range_contains_dollar =
+                    buffer.get(start..end).map_or(false, |s| s.contains('$'));
+
+                i = i.saturating_sub(1);
+                match context_tokens.get(i) {
+                    Some(
+                        t @ Token {
+                            kind: TokenKind::Dollar,
+                            ..
+                        },
+                    ) => {
+                        start = t.byte_range().start;
+                        while buffer.get(end.saturating_sub(1)..end) == Some(" ") {
+                            end = end.saturating_sub(1);
                         }
                     }
-                    if let Some(pos) = dollar_pos {
-                        pos..cursor_byte_pos
-                    } else {
-                        prev_node.byte_range().start..byte_range.end
+                    Some(
+                        t @ Token {
+                            kind: TokenKind::SingleQuote | TokenKind::Quote,
+                            ..
+                        },
+                    ) if !range_contains_dollar || cursor_node.value.contains('/') => {
+                        start = t.byte_range().start;
                     }
+                    _ => break,
                 }
-                Some(prev_node) if prev_node.kind == TokenKind::Dollar => {
-                    prev_node.byte_range().start..byte_range.end
-                }
-                _ => byte_range,
             }
+
+            start..end
         }
         Some((_, cursor_node)) => cursor_node.byte_range(),
         None if context_tokens.is_empty() => {
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
         None => {
+            log::error!(
+                "cursor_byte_pos={cursor_byte_pos} is outside all context tokens; returning empty context"
+            );
             for t in context_tokens.iter() {
-                log::error!("Token: {:?} byte_range={:?}", t, t.byte_range());
+                log::error!("  Token: {:?} byte_range={:?}", t, t.byte_range());
             }
-
-            todo!("Cursor is outside of all context tokens");
+            return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
     };
 
@@ -504,14 +506,14 @@ mod tests {
     }
 
     #[test]
-    fn test_cursor_in_middle_of_arith_subst() {
+    fn test_cursor_near_end_of_arith_subst() {
         let res = run_inline(r#"echo $((5 + 3█)) result"#);
         assert_eq!(res.context, "5 + 3");
         assert_eq!(res.context_until_cursor, "5 + 3");
     }
 
     #[test]
-    fn test_cursor_in_middle_of_arith_subst_2() {
+    fn test_cursor_in_middle_of_arith_subst_end() {
         let res = run_inline(r#"echo $((5 + 3)█) result"#);
         assert_eq!(res.context, "echo $((5 + 3)) result");
         assert_eq!(res.context_until_cursor, "echo $((5 + 3)");
@@ -601,6 +603,73 @@ mod tests {
             res.context_until_cursor,
             r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
         );
+    }
+
+    #[test]
+    fn test_cursor_before_proc_subst_in() {
+        // The original failing case: cursor is in the word before a process substitution.
+        let res = run_inline(r#"x█ <( echo too )"#);
+        assert_eq!(res.context, "x <( echo too )");
+        assert_eq!(res.context_until_cursor, "x");
+        assert_eq!(res.word_under_cursor, "x");
+        match res.comp_type {
+            CompType::FirstWord => {}
+            _ => panic!("Expected FirstWord"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_before_proc_subst_in_multi() {
+        // Cursor before two consecutive process substitutions.
+        let res = run_inline(r#"diff█ <(cat a) <(cat b)"#);
+        assert_eq!(res.context, "diff <(cat a) <(cat b)");
+        assert_eq!(res.context_until_cursor, "diff");
+        assert_eq!(res.word_under_cursor, "diff");
+        match res.comp_type {
+            CompType::FirstWord => {}
+            _ => panic!("Expected FirstWord"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_before_cmd_subst() {
+        // Cursor before a command substitution $(...).
+        let res = run_inline(r#"echo█ $(git rev-parse HEAD)"#);
+        assert_eq!(res.context, "echo $(git rev-parse HEAD)");
+        assert_eq!(res.context_until_cursor, "echo");
+        assert_eq!(res.word_under_cursor, "echo");
+        match res.comp_type {
+            CompType::FirstWord => {}
+            _ => panic!("Expected FirstWord"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_in_word_before_proc_subst_out() {
+        // Cursor in the command word before a process substitution out >(...)
+        let res = run_inline(r#"tee█ >(gzip > file.gz)"#);
+        assert_eq!(res.context, "tee >(gzip > file.gz)");
+        assert_eq!(res.context_until_cursor, "tee");
+        assert_eq!(res.word_under_cursor, "tee");
+        match res.comp_type {
+            CompType::FirstWord => {}
+            _ => panic!("Expected FirstWord"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_in_arg_before_proc_subst() {
+        // Cursor is in an argument (not first word) that precedes a process substitution.
+        let res = run_inline(r#"diff file█ <(echo too)"#);
+        assert_eq!(res.context, "diff file <(echo too)");
+        assert_eq!(res.context_until_cursor, "diff file");
+        assert_eq!(res.word_under_cursor, "file");
+        match res.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "diff");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
     }
 
     #[test]
@@ -1091,8 +1160,44 @@ mod tests {
     }
 
     #[test]
+    fn test_env_var_path_completion_in_double_quotes() {
+        let ctx = run_inline("echo \"$HOME/abc█\"");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "\"$HOME/abc");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::FilenameExpansion)
+        );
+    }
+
+    #[test]
     fn test_second_env_var_completion_in_double_quotes() {
         let ctx = run_inline("echo \"$FOO$HOM█\"");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "$HOM");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::EnvVariable)
+        );
+    }
+
+    #[test]
+    fn test_env_var_completion_in_double_quotes_trailingspace() {
+        let ctx = run_inline("echo \"asdf $HOM█ \"");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {

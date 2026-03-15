@@ -27,8 +27,8 @@ impl BashEnvManager {
             Vec::new()
         };
 
-        let ls_colors = bash_funcs::get_env_variable("LS_COLORS")
-            .map(|s| LsColors::from_string(&s));
+        let ls_colors =
+            bash_funcs::get_env_variable("LS_COLORS").map(|s| LsColors::from_string(&s));
 
         Self {
             call_type_cache: HashMap::new(),
