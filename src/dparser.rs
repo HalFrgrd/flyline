@@ -340,7 +340,13 @@ impl DParser {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
                     self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
 
-                    if stop_parsing_at_command_boundary && !cursor_part_way_through_token {
+                    let current_command_range_contains_cursor = self.current_command_range.as_ref().map_or(false, |r| {
+                        cursor_byte_pos.map_or(false, |pos| {
+                            r.clone().any(|idx| self.tokens[idx].token.byte_range().to_inclusive().contains(&pos))
+                        })
+                    });
+
+                    if stop_parsing_at_command_boundary && !cursor_part_way_through_token && current_command_range_contains_cursor {
                         // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
                         // echo $((10 * 2█))      -> cursor context is: 10 * 2
                         // echo $((10 * 2)█)      -> cursor context is: echo $((10 * 2))

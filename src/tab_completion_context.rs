@@ -168,11 +168,13 @@ pub fn get_completion_context<'a>(
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
         None => {
+            log::error!(
+                "cursor_byte_pos={cursor_byte_pos} is outside all context tokens; returning empty context"
+            );
             for t in context_tokens.iter() {
-                log::error!("Token: {:?} byte_range={:?}", t, t.byte_range());
+                log::error!("  Token: {:?} byte_range={:?}", t, t.byte_range());
             }
-
-            todo!("Cursor is outside of all context tokens");
+            return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
     };
 
@@ -602,6 +604,74 @@ mod tests {
             r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
         );
     }
+
+       #[test]
+    fn test_cursor_before_proc_subst_in() {
+        // The original failing case: cursor is in the word before a process substitution.
+        let res = run_inline(r#"x█ <( echo too )"#);
+        assert_eq!(res.context, "x <( echo too )");
+        assert_eq!(res.context_until_cursor, "x");
+        assert_eq!(res.word_under_cursor, "x");
+        match res.comp_type {
+            CompType::FirstWord => {}
+            _ => panic!("Expected FirstWord"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_before_proc_subst_in_multi() {
+        // Cursor before two consecutive process substitutions.
+        let res = run_inline(r#"diff█ <(cat a) <(cat b)"#);
+        assert_eq!(res.context, "diff <(cat a) <(cat b)");
+        assert_eq!(res.context_until_cursor, "diff");
+        assert_eq!(res.word_under_cursor, "diff");
+        match res.comp_type {
+            CompType::FirstWord => {}
+            _ => panic!("Expected FirstWord"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_before_cmd_subst() {
+        // Cursor before a command substitution $(...).
+        let res = run_inline(r#"echo█ $(git rev-parse HEAD)"#);
+        assert_eq!(res.context, "echo $(git rev-parse HEAD)");
+        assert_eq!(res.context_until_cursor, "echo");
+        assert_eq!(res.word_under_cursor, "echo");
+        match res.comp_type {
+            CompType::FirstWord => {}
+            _ => panic!("Expected FirstWord"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_in_word_before_proc_subst_out() {
+        // Cursor in the command word before a process substitution out >(...)
+        let res = run_inline(r#"tee█ >(gzip > file.gz)"#);
+        assert_eq!(res.context, "tee >(gzip > file.gz)");
+        assert_eq!(res.context_until_cursor, "tee");
+        assert_eq!(res.word_under_cursor, "tee");
+        match res.comp_type {
+            CompType::FirstWord => {}
+            _ => panic!("Expected FirstWord"),
+        }
+    }
+
+    #[test]
+    fn test_cursor_in_arg_before_proc_subst() {
+        // Cursor is in an argument (not first word) that precedes a process substitution.
+        let res = run_inline(r#"diff file█ <(echo too)"#);
+        assert_eq!(res.context, "diff file <(echo too)");
+        assert_eq!(res.context_until_cursor, "diff file");
+        assert_eq!(res.word_under_cursor, "file");
+        match res.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "diff");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
+
 
     #[test]
     fn test_cursor_in_middle_of_proc_subst_out() {
