@@ -124,6 +124,7 @@ pub enum TokenAnnotation {
     IsOpening(Option<usize>), // index of the closing token in the tokens vector
     IsClosing(usize),         // index of the opening token in the tokens vector
     IsCommandWord, // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
+    IsEnvVar,
 }
 
 #[derive(Debug, Clone)]
@@ -448,6 +449,9 @@ impl DParser {
                                     self.tokens[idx].annotation =
                                         TokenAnnotation::IsPartOfQuotedString;
                                 }
+                                TokenKind::Dollar => {
+                                    self.tokens[idx].annotation = TokenAnnotation::IsEnvVar;
+                                }
                                 _ if self.current_command_range.is_none() => {
                                     self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
                                 }
@@ -733,5 +737,23 @@ mod tests {
         assert_eq!(tokens[6].token.kind, TokenKind::DoubleRParen);
         assert_eq!(tokens[6].token.value, "))");
         assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
+    }
+
+    #[test]
+    fn test_env_var_annotations() {
+        let input = r#"echo $HOME"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "$");
+        assert_eq!(tokens[2].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[3].token.value, "HOME");
+        assert_eq!(tokens[3].annotation, TokenAnnotation::IsEnvVar);
     }
 }
