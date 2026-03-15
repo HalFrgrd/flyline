@@ -7,7 +7,7 @@ use crate::bash_env_manager::BashEnvManager;
 use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
-use crate::dparser::AnnotatedToken;
+use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
@@ -764,7 +764,11 @@ impl<'a> App<'a> {
                         .map(|output| {
                             if !output.status.success() {
                                 let stderr = String::from_utf8_lossy(&output.stderr);
-                                log::warn!("AI command exited with {}: {}", output.status, stderr.trim());
+                                log::warn!(
+                                    "AI command exited with {}: {}",
+                                    output.status,
+                                    stderr.trim()
+                                );
                             }
                             String::from_utf8_lossy(&output.stdout).trim().to_string()
                         });
@@ -887,13 +891,23 @@ impl<'a> App<'a> {
         }
 
         let wordinfo_fn = |token: &AnnotatedToken| -> Option<buffer_format::WordInfo> {
-            if token.annotation == dparser::TokenAnnotation::IsCommandWord {
-                let (command_type, description) =
-                    self.bash_env.get_command_info(&token.token.value);
-                return Some(buffer_format::WordInfo {
-                    tooltip: Some(description.to_string()),
-                    is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
-                });
+            match token.annotation {
+                dparser::TokenAnnotation::IsCommandWord => {
+                    let (command_type, description) =
+                        self.bash_env.get_command_info(&token.token.value);
+                    return Some(buffer_format::WordInfo {
+                        tooltip: Some(description.to_string()),
+                        is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+                    });
+                }
+                dparser::TokenAnnotation::IsEnvVar => {
+                    let env_var_value = bash_funcs::get_env_variable(&token.token.value);
+                    return Some(buffer_format::WordInfo {
+                        tooltip: env_var_value,
+                        is_recognised_command: false,
+                    });
+                }
+                _ => {}
             }
 
             None
@@ -910,6 +924,27 @@ impl<'a> App<'a> {
             self.mode.is_running(),
             Some(Box::new(wordinfo_fn)),
         );
+
+        self.tooltip = None;
+        for part in self.formatted_buffer_cache.parts.iter() {
+            if part
+                .token
+                .token
+                .byte_range()
+                .to_inclusive()
+                .contains(&self.buffer.cursor_byte_pos())
+            {
+                if let Some(tooltip) = part.tooltip.as_ref() {
+                    log::debug!(
+                        "Setting tooltip for token at byte position {}: {}",
+                        part.token.token.byte_range().start,
+                        tooltip
+                    );
+                    self.tooltip = Some(tooltip.clone());
+                }
+            }
+        }
+
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
     }
 
