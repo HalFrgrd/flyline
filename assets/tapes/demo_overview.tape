@@ -49,6 +49,6 @@ Sleep 2000ms
 Enter
 
 Sleep 1000ms
-Type `Check out the rest of this README to learn about flyline's other features`
+Type `# Check out the rest of this README to learn about flyline's other features`
 
 Sleep 2s
