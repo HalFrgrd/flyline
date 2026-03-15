@@ -331,9 +331,9 @@ impl HistoryManager {
 
         for i in indices {
             let entry = &self.entries[i];
-            if entry.command.starts_with(prefix) {
+            self.index = i;
+            if entry.command.starts_with(prefix) && entry.command != current_cmd {
                 self.last_buffered_command = Some(entry.command.clone());
-                self.index = i;
                 return Some(entry.clone());
             }
         }
@@ -405,8 +405,11 @@ impl HistoryEntryFormatted {
             return;
         }
 
-        let command_spans =
-            Palette::highlight_maching_indices(&self.entry.command, &self.match_indices, Palette::normal_text());
+        let command_spans = Palette::highlight_maching_indices(
+            &self.entry.command,
+            &self.match_indices,
+            Palette::normal_text(),
+        );
 
         self.command_spans = Some(command_spans);
     }

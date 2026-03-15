@@ -91,9 +91,7 @@ fn expand_alias_for_completion(
     };
 
     // cursor position relative to the start of the completion context
-    let cursor_byte_pos = context_until_cursor
-        .len()
-        .saturating_add_signed(len_delta);
+    let cursor_byte_pos = context_until_cursor.len().saturating_add_signed(len_delta);
 
     let full_command = alias.to_string() + &context[command_word_len..];
     // `alias` is guaranteed non-empty: it is either a non-empty alias string
@@ -156,7 +154,8 @@ impl App<'_> {
         // When an actual filesystem path is provided (e.g. from glob expansion),
         // treat it as filename completion so that spaces are escaped and directories
         // get a trailing slash, regardless of the filename_completion_desired flag.
-        let is_path_completion = comp_resultflags.filename_completion_desired || path_to_use.is_some();
+        let is_path_completion =
+            comp_resultflags.filename_completion_desired || path_to_use.is_some();
 
         let quoted = if comp_resultflags.filename_quoting_desired && is_path_completion {
             bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
@@ -179,6 +178,7 @@ impl App<'_> {
             let path = match path_to_use {
                 Some(p) => p,
                 None => {
+                    // TODO fully expand this
                     owned_path = std::path::PathBuf::from(self.tilde_expand_pattern(&sug));
                     &owned_path
                 }
@@ -332,7 +332,11 @@ impl App<'_> {
                 } else {
                     // If the last completion is a directory (ends with '/'), don't
                     // append a trailing space so the cursor stays right after the slash.
-                    let suffix = if completions_as_string.ends_with('/') { "" } else { " " };
+                    let suffix = if completions_as_string.ends_with('/') {
+                        ""
+                    } else {
+                        " "
+                    };
                     return Some(Suggestion::from_string_vec(
                         vec![completions_as_string],
                         "",

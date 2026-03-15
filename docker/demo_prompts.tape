@@ -47,11 +47,15 @@ Type "export PS1_FILL='-'"
 Enter
 Sleep 1500ms
 
-Type "# let's add some colour"
+Type "# let's add some colour using ascii escape codes"
 Enter
 Sleep 1000ms
 
-Type "PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
+Type "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
+Enter
+Sleep 500ms
+
+Type "export RPS1='\[\033[01;32m\]\t\[\033[0m\]'"
 Enter
 Sleep 1500ms
 
@@ -61,7 +65,15 @@ Sleep 1000ms
 
 Type "export PS1_FILL='🯁🯂🯃🮲🮳'"
 Enter
+Sleep 1000ms
+
+Type "# PS1_FILL can also support time formats"
+Enter
+Sleep 1000ms
+
+Type "export PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'"
+Enter
+Sleep 1000ms
 
 Type "# wonderful. look at our beautiful prompt"
-# Admire the output for a bit.
 Sleep 2s

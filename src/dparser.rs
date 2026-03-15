@@ -1,8 +1,8 @@
 use flash::lexer::{Lexer, Position, Token, TokenKind};
 use itertools::Itertools;
+use log::debug;
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
-use log::debug;
 
 fn split_token_into_lines(token: Token) -> Vec<Token> {
     match &token.kind {
