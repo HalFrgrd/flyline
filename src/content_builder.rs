@@ -372,7 +372,10 @@ impl Contents {
 
 /// Split a single logical line's spans into display rows, each fitting within `available_cols`
 /// terminal columns. Returns at least one row (which may be empty if the input line is empty).
-pub fn split_line_to_terminal_rows(line: &Line<'static>, available_cols: u16) -> Vec<Line<'static>> {
+pub fn split_line_to_terminal_rows(
+    line: &Line<'static>,
+    available_cols: u16,
+) -> Vec<Line<'static>> {
     if available_cols == 0 {
         return vec![Line::from(vec![])];
     }
@@ -504,7 +507,8 @@ mod tests {
     #[test]
     fn test_split_line_long_command() {
         // Simulate a long command that should wrap into multiple rows
-        let cmd = "git commit -m \"This is a very long commit message that exceeds the terminal width\"";
+        let cmd =
+            "git commit -m \"This is a very long commit message that exceeds the terminal width\"";
         let line = Line::from(vec![Span::raw(cmd)]);
         let available_cols = 40u16;
         let rows = split_line_to_terminal_rows(&line, available_cols);
@@ -515,7 +519,10 @@ mod tests {
                 .iter()
                 .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
                 .sum();
-            assert!(row_width <= available_cols as usize, "Row too wide: {row_width}");
+            assert!(
+                row_width <= available_cols as usize,
+                "Row too wide: {row_width}"
+            );
         }
         // All content should be preserved
         let all_text: String = rows

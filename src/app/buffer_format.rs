@@ -66,7 +66,11 @@ impl FormattedBuffer {
                 && matches!(p.token.annotation, TokenAnnotation::IsOpening(None))
         });
 
-        if has_unmatched_opener { None } else { Some(closing) }
+        if has_unmatched_opener {
+            None
+        } else {
+            Some(closing)
+        }
     }
 }
 
@@ -317,8 +321,14 @@ mod tests {
         let fb = FormattedBuffer::from(input, cursor);
         let quotes = parts_with_value(&fb, "\"");
         assert_eq!(quotes.len(), 2);
-        assert!(matches!(quotes[0].token.annotation, TokenAnnotation::IsOpening(_)));
-        assert!(matches!(quotes[1].token.annotation, TokenAnnotation::IsClosing(_)));
+        assert!(matches!(
+            quotes[0].token.annotation,
+            TokenAnnotation::IsOpening(_)
+        ));
+        assert!(matches!(
+            quotes[1].token.annotation,
+            TokenAnnotation::IsClosing(_)
+        ));
     }
 
     #[test]
@@ -327,7 +337,10 @@ mod tests {
         let fb = FormattedBuffer::from(input, input.len());
         let sq = parts_with_value(&fb, "'");
         assert_eq!(sq.len(), 1);
-        assert!(matches!(sq[0].token.annotation, TokenAnnotation::IsOpening(_)));
+        assert!(matches!(
+            sq[0].token.annotation,
+            TokenAnnotation::IsOpening(_)
+        ));
     }
 
     #[test]
@@ -336,7 +349,10 @@ mod tests {
         let fb = FormattedBuffer::from(input, input.len());
         let braces = parts_with_value(&fb, "{");
         assert_eq!(braces.len(), 1);
-        assert!(matches!(braces[0].token.annotation, TokenAnnotation::IsOpening(_)));
+        assert!(matches!(
+            braces[0].token.annotation,
+            TokenAnnotation::IsOpening(_)
+        ));
     }
 
     // ── closing_char_to_insert ───────────────────────────────────────────────
@@ -366,7 +382,10 @@ mod tests {
         let stale = "echo ";
         let just_inserted_pos = stale.len();
         let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('\'', just_inserted_pos), Some('\''));
+        assert_eq!(
+            fb.closing_char_to_insert('\'', just_inserted_pos),
+            Some('\'')
+        );
     }
 
     #[test]
