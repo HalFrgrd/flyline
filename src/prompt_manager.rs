@@ -188,7 +188,19 @@ impl PromptStringBuilder {
             decoded
         };
 
-        let lines = decoded.into_text().ok()?.lines;
+        let mut lines = decoded.into_text().ok()?.lines;
+        for line in &mut lines {
+            for span in &mut line.spans {
+                let raw = span.content.as_ref();
+                let stripped = raw.trim_end_matches(&['\n', '\r'][..]);
+                if stripped.len() != raw.len() {
+                    // `Span<'static>` can't hold a borrowed slice with a shorter lifetime, so
+                    // store an owned String.
+                    log::debug!("Stripping trailing newline/carriage return from prompt line span");
+                    span.content = stripped.to_owned().into();
+                }
+            }
+        }
         Some(lines)
     }
 
