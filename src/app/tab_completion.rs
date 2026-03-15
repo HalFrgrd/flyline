@@ -1,6 +1,6 @@
 use crate::active_suggestions::{ActiveSuggestions, Suggestion};
 use crate::app::{App, ContentMode};
-use crate::bash_funcs;
+use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
 use glob::glob;
 use std::path::Path;
@@ -70,17 +70,23 @@ impl PathPatternExpansion {
         }
     }
 
-    fn convert_expanded_match_to_unexpanded(&self, expanded_match: &str) -> String {
+    fn convert_expanded_match_to_unexpanded(
+        &self,
+        expanded_match: &str,
+        quote_type: Option<QuoteType>,
+    ) -> String {
         // Compute the relative path of the result compared to
         // expanded_prefix, then reconstruct using raw_prefix so the
         // suggestion preserves the user's original prefix spelling
         // (e.g. `~/`, `$HOME/`, or a relative path segment).
         if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
             let suffix = suffix.trim_start_matches('/');
+            let quoted_suffix =
+                bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default());
             if self.raw_prefix.is_empty() {
-                suffix.to_string()
+                quoted_suffix
             } else {
-                format!("{}/{}", self.raw_prefix, suffix)
+                format!("{}/{}", self.raw_prefix, quoted_suffix)
             }
         } else {
             log::warn!(
@@ -242,8 +248,7 @@ impl App<'_> {
         // When an actual filesystem path is provided (e.g. from glob expansion),
         // treat it as filename completion so that spaces are escaped and directories
         // get a trailing slash, regardless of the filename_completion_desired flag.
-        let is_path_completion =
-            comp_resultflags.filename_completion_desired || path_to_use.is_some();
+        let is_path_completion = comp_resultflags.filename_completion_desired;
 
         let quoted = if comp_resultflags.filename_quoting_desired && is_path_completion {
             bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
@@ -501,7 +506,7 @@ impl App<'_> {
     fn tab_complete_glob_expansion(
         &self,
         pattern: &str,
-        comp_resultflags: bash_funcs::CompletionFlags,
+        mut comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Vec<Suggestion> {
         let expanded = PathPatternExpansion::new(pattern);
         log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
@@ -510,6 +515,14 @@ impl App<'_> {
         let mut results = Vec::new();
 
         const MAX_GLOB_RESULTS: usize = 1_000;
+
+        // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
+        // e.g. my_command $PWD/fi<TAB> should expand to:
+        // my_command $PWD/file\ with\ spaces.txt
+        // not
+        // my_command \$PWD/file\ with\ spaces.txt
+        comp_resultflags.filename_quoting_desired = false;
+        comp_resultflags.filename_completion_desired = true;
 
         if let Ok(paths) = glob(&expanded.expanded_pattern()) {
             for (idx, path_result) in paths.enumerate() {
@@ -521,8 +534,10 @@ impl App<'_> {
                     break;
                 }
                 if let Ok(path) = path_result {
-                    let unexpanded =
-                        expanded.convert_expanded_match_to_unexpanded(&path.to_string_lossy());
+                    let unexpanded = expanded.convert_expanded_match_to_unexpanded(
+                        &path.to_string_lossy(),
+                        comp_resultflags.quote_type,
+                    );
 
                     results.push(self.post_process_single_completion(
                         &unexpanded,
@@ -723,6 +738,12 @@ impl App<'_> {
                 &Suggestion::new(r#"banana"#, "", " "),
                 &Suggestion::new(r#"cherry"#, "", " "),
             ],
+        );
+
+        // Test that we don't quote the prefix but do quote the part of the path filled in by tab completion
+        run_test_on(
+            "fl_comp_util --fallback-to-default $PWD/man",
+            &[&Suggestion::new(r#"$PWD/many\ spaces\ here/"#, "", "")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
