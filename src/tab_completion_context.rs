@@ -1,4 +1,4 @@
-use flash::lexer::TokenKind;
+use flash::lexer::{Token, TokenKind};
 
 use crate::dparser::{DParser, ToInclusiveRange};
 
@@ -22,7 +22,7 @@ pub enum SecondaryCompType {
 
 impl SecondaryCompType {
     fn from(word: &str) -> Option<Self> {
-        // TOOD test these
+        // TODO test these
         if (word.starts_with('$') || word.starts_with("\"$")) && !word.contains("/") {
             Some(Self::EnvVariable)
         } else if false && word.starts_with('~') && !word.contains("/") {
@@ -129,25 +129,39 @@ pub fn get_completion_context<'a>(
 
             // try grow to the left if there are single or double quotes or $
             let mut start = byte_range.start;
+            let mut end = byte_range.end;
             let mut i = node_idx;
 
             loop {
-                let Some(prev_node) = i.checked_sub(1).and_then(|j| context_tokens.get(j)) else {
-                    break;
-                };
+                let range_contains_dollar =
+                    buffer.get(start..end).map_or(false, |s| s.contains('$'));
 
-                if matches!(
-                    prev_node.kind,
-                    TokenKind::SingleQuote | TokenKind::Quote | TokenKind::Dollar
-                ) {
-                    start = prev_node.byte_range().start;
-                    i -= 1;
-                } else {
-                    break;
+                i = i.saturating_sub(1);
+                match context_tokens.get(i) {
+                    Some(
+                        t @ Token {
+                            kind: TokenKind::Dollar,
+                            ..
+                        },
+                    ) => {
+                        start = t.byte_range().start;
+                        while buffer.get(end.saturating_sub(1)..end) == Some(" ") {
+                            end = end.saturating_sub(1);
+                        }
+                    }
+                    Some(
+                        t @ Token {
+                            kind: TokenKind::SingleQuote | TokenKind::Quote,
+                            ..
+                        },
+                    ) if !range_contains_dollar || cursor_node.value.contains('/') => {
+                        start = t.byte_range().start;
+                    }
+                    _ => break,
                 }
             }
 
-            start..byte_range.end
+            start..end
         }
         Some((_, cursor_node)) => cursor_node.byte_range(),
         None if context_tokens.is_empty() => {
@@ -1065,7 +1079,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "\"$HOM");
+                assert_eq!(ctx.word_under_cursor, "$HOM");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1077,8 +1091,44 @@ mod tests {
     }
 
     #[test]
+    fn test_env_var_path_completion_in_double_quotes() {
+        let ctx = run_inline("echo \"$HOME/abc█\"");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "\"$HOME/abc");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::FilenameExpansion)
+        );
+    }
+
+    #[test]
     fn test_second_env_var_completion_in_double_quotes() {
         let ctx = run_inline("echo \"$FOO$HOM█\"");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "echo");
+                assert_eq!(ctx.word_under_cursor, "$HOM");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::EnvVariable)
+        );
+    }
+
+    #[test]
+    fn test_env_var_completion_in_double_quotes_trailingspace() {
+        let ctx = run_inline("echo \"asdf $HOM█ \"");
 
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
