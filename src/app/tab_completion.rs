@@ -250,12 +250,9 @@ impl App<'_> {
         path_to_use: Option<&Path>,
         comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Suggestion {
-        // When an actual filesystem path is provided (e.g. from glob expansion),
-        // treat it as filename completion so that spaces are escaped and directories
-        // get a trailing slash, regardless of the filename_completion_desired flag.
-        let is_path_completion = comp_resultflags.filename_completion_desired;
-
-        let quoted = if comp_resultflags.filename_quoting_desired && is_path_completion {
+        let quoted = if comp_resultflags.filename_quoting_desired
+            && comp_resultflags.filename_completion_desired
+        {
             bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
         } else {
             sug.to_string()
@@ -271,12 +268,13 @@ impl App<'_> {
             }
         };
 
-        let (appended, suffix, ls_style) = if is_path_completion {
+        let (appended, suffix, ls_style) = if comp_resultflags.filename_completion_desired {
             let owned_path;
             let path = match path_to_use {
                 Some(p) => p,
                 None => {
-                    // TODO fully expand this
+                    // TODO fully expand this if we ever get here
+                    log::warn!("Do we ever get here?");
                     owned_path = std::path::PathBuf::from(self.tilde_expand_pattern(&sug));
                     &owned_path
                 }
