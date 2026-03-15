@@ -66,6 +66,7 @@ The `RPS1` / `RPROMPT` variable sets the right prompt similarly to zsh.
 ```bash
 export RPS1='\t'
 export RPS1='\t\n<'
+export RPS1='\[\033[01;33m\]\t\n<\[\033[00m\]'
 ```
 
 ## PS1_FILL
