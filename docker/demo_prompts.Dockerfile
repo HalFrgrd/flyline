@@ -8,10 +8,12 @@ RUN printf '%s\n' \
     'export PS1_FILL=" "' \
     >> /home/john/.bashrc
 
-COPY docker/demo_base.tape .
-COPY docker/demo_prompts.tape .
 
-RUN faketime @1771881894 vhs demo_prompts.tape
+COPY docker/demo_prompts*.tape .
+
+RUN faketime @1771881894 vhs demo_prompts_ps1.tape
+RUN faketime @1771881894 vhs demo_prompts_rps1.tape
+RUN faketime @1771881894 vhs demo_prompts_ps1_fill.tape
 
 FROM scratch AS demo-prompts-extracted-gif
 COPY --from=demo-prompts-build /app/*.gif /

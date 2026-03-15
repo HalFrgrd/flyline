@@ -1,7 +1,7 @@
 # Where should we write the GIF?
 Output demo_fuzzy_suggestions.gif
 
-Source demo_base.tape
+Source demo_settings.tape
 
 Type "grep --"
 Sleep 500ms

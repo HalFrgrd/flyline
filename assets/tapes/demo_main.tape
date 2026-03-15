@@ -1,7 +1,7 @@
 # Where should we write the GIF?
 Output demo_main.gif
 
-Source demo_base.tape
+Source demo_settings.tape
 
 Type "# bash is great but the command line editing user experience can feel"
 Sleep 300ms
