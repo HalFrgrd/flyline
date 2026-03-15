@@ -50,16 +50,52 @@ target "tab-completion-tests" {
     dockerfile = "docker/tab_completions.Dockerfile"
 }
 
+
 target "vhs-base" {
     context = "."
     dockerfile = "docker/demo_base.Dockerfile"
     contexts = {
         flyline-extracted-library = "target:built-artifact"
     }
+}
+
+target "_demo-base" {
+    context = "."
+    contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    output = ["type=local,dest=assets/"]
     # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
     args = {
         BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
     }
+}
+
+target "demo-main-extracted-gif" {
+    inherit = ["_demo-base"]
+        contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    dockerfile = "docker/demo_main.Dockerfile"
+    target = "demo-main-extracted-gif"
+}
+
+target "demo-prompts-extracted-gif" {
+    inherit = ["_demo-base"]
+        contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    dockerfile = "docker/demo_prompts.Dockerfile"
+    target = "demo-prompts-extracted-gif"
+}
+
+target "demo-fuzzy-suggestions-extracted-gif" {
+    inherit = ["_demo-base"]
+    contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
+    target = "demo-fuzzy-suggestions-extracted-gif"
 }
 
 group "demos" {
@@ -68,46 +104,4 @@ group "demos" {
         "demo-prompts-extracted-gif",
         "demo-fuzzy-suggestions-extracted-gif",
     ]
-}
-
-target "demo-main-extracted-gif" {
-    context = "."
-    dockerfile = "docker/demo_main.Dockerfile"
-    contexts = {
-        vhs-base = "target:vhs-base"
-    }
-    target = "demo-main-extracted-gif"
-    output = ["type=local,dest=assets/"]
-    # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
-    args = {
-        BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
-    }
-}
-
-target "demo-prompts-extracted-gif" {
-    context = "."
-    dockerfile = "docker/demo_prompts.Dockerfile"
-    contexts = {
-        vhs-base = "target:vhs-base"
-    }
-    target = "demo-prompts-extracted-gif"
-    output = ["type=local,dest=assets/"]
-    # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
-    args = {
-        BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
-    }
-}
-
-target "demo-fuzzy-suggestions-extracted-gif" {
-    context = "."
-    dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
-    contexts = {
-        vhs-base = "target:vhs-base"
-    }
-    target = "demo-fuzzy-suggestions-extracted-gif"
-    output = ["type=local,dest=assets/"]
-    # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
-    args = {
-        BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
-    }
 }
