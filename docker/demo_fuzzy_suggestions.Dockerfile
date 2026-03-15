@@ -9,7 +9,7 @@ RUN printf '%s\n' \
     >> /home/john/.bashrc
 
 
-COPY docker/demo_fuzzy_suggestions.tape .
+COPY assets/tapes/demo_fuzzy_suggestions.tape .
 
 RUN faketime @1771881894 vhs demo_fuzzy_suggestions.tape
 

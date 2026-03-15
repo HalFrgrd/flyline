@@ -1,11 +1,14 @@
 # Where should we write the GIF?
 Output demo_prompts_rps1.gif
 
+Source demo_settings.tape
+Set Height 400
+
+Hide
 Type "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
 Enter
+Show
 
-Source demo_settings.tape
-Set Height 200
 Source demo_setup.tape
 
 Type `export RPS1="I'm on the right"`

@@ -3,7 +3,7 @@ Output demo_prompts_ps1.gif
 
 Source demo_settings.tape
 
-Set Height 200
+Set Height 400
 
 Source demo_setup.tape
 

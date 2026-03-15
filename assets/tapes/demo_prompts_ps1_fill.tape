@@ -1,12 +1,17 @@
 # Where should we write the GIF?
 Output demo_prompts_ps1_fill.gif
 
-Type "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
-Type "export RPS1='\t\n<'"
 
 Source demo_settings.tape
+Set Height 400
 
-Set Height 200
+Hide
+Type "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
+Enter
+Type "export RPS1='\t\n<'"
+Enter
+Show
+
 Source demo_setup.tape
 
 

@@ -136,5 +136,5 @@ RUN touch /home/john/.bash_history && \
 
 USER john
 
-COPY docker/demo_settings.tape .
-COPY docker/demo_setup.tape .
+COPY assets/tapes/demo_settings.tape .
+COPY assets/tapes/demo_setup.tape .

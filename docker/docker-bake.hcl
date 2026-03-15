@@ -67,14 +67,15 @@ target "_demo-base" {
     }
 }
 
-target "demo-main-extracted-gif" {
+
+target "demo-overview-extracted-gif" {
     inherit = ["_demo-base"]
         contexts = {
         vhs-base = "target:vhs-base"
     }
-    dockerfile = "docker/demo_main.Dockerfile"
+    dockerfile = "docker/demo_overview.Dockerfile"
     output = ["type=local,dest=assets/"]
-    target = "demo-main-extracted-gif"
+    target = "demo-overview-extracted-gif"
 }
 
 target "demo-prompts-extracted-gif" {
@@ -99,7 +100,7 @@ target "demo-fuzzy-suggestions-extracted-gif" {
 
 group "demos" {
     targets = [
-        "demo-main-extracted-gif",
+        "demo-overviewp-extracted-gif",
         "demo-prompts-extracted-gif",
         "demo-fuzzy-suggestions-extracted-gif",
     ]
