@@ -92,6 +92,10 @@ struct FlylineArgs {
     /// Mouse capture mode (none, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
+    /// Command (and arguments) used for AI mode. The current buffer is appended as the final
+    /// argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
+    #[arg(long = "ai-command", num_args = 1.., allow_hyphen_values = true)]
+    ai_command: Vec<String>,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
@@ -233,6 +237,11 @@ impl Flyline {
                 if let Some(mode) = parsed.mouse_mode {
                     log::info!("Mouse mode set to {:?}", mode);
                     self.settings.mouse_mode = mode;
+                }
+
+                if !parsed.ai_command.is_empty() {
+                    log::info!("AI command set: {:?}", parsed.ai_command);
+                    self.settings.ai_command = parsed.ai_command;
                 }
 
                 #[cfg(feature = "integration-tests")]

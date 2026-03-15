@@ -23,6 +23,9 @@ pub struct Settings {
     pub disable_auto_closing_char: bool,
     /// Mouse capture mode.
     pub mouse_mode: MouseMode,
+    /// Command (and arguments) to invoke for AI mode. The current buffer is appended as the
+    /// final argument. Empty means AI mode is not configured.
+    pub ai_command: Vec<String>,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
