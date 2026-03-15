@@ -188,10 +188,7 @@ impl DParser {
         }
     }
 
-    fn nested_closing_satisfied(
-        token: &Token,
-        current_nesting: Option<&TokenKind>,
-    ) -> bool {
+    fn nested_closing_satisfied(token: &Token, current_nesting: Option<&TokenKind>) -> bool {
         let current_nesting = match current_nesting {
             Some(v) => v,
             None => return false,
@@ -246,7 +243,6 @@ impl DParser {
 
         let mut idx = 0;
         while idx < self.tokens.len() {
-
             // When closing an ArithSubst, two consecutive ) tokens are required.
             // Merge them into a single DoubleRParen by modifying self.tokens[idx] in place
             // and removing the second ) from the vector.
@@ -272,13 +268,21 @@ impl DParser {
             };
 
             let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                self.tokens[idx].token.byte_range().to_inclusive().contains(&pos)
+                self.tokens[idx]
+                    .token
+                    .byte_range()
+                    .to_inclusive()
+                    .contains(&pos)
             });
-            let token_strictly_contains_cursor = cursor_byte_pos
-                .map_or(false, |pos| self.tokens[idx].token.byte_range().contains(&pos));
-            let cursor_at_start_of_token = cursor_byte_pos.map_or(false, |pos| pos == self.tokens[idx].token.byte_range().start);
+            let token_strictly_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
+                self.tokens[idx].token.byte_range().contains(&pos)
+            });
+            let cursor_at_start_of_token = cursor_byte_pos.map_or(false, |pos| {
+                pos == self.tokens[idx].token.byte_range().start
+            });
 
-            let cursor_part_way_through_token = token_inclusively_contains_cursor && !cursor_at_start_of_token;
+            let cursor_part_way_through_token =
+                token_inclusively_contains_cursor && !cursor_at_start_of_token;
 
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
@@ -332,15 +336,28 @@ impl DParser {
                 | TokenKind::Esac
                 | TokenKind::Done
                 | TokenKind::Fi
-                    if Self::nested_closing_satisfied(
-                        &token,
-                        nestings.last().map(|(_, k)| k),
-                    ) =>
+                    if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
                     self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
 
-                    if stop_parsing_at_command_boundary && !cursor_part_way_through_token {
+                    let current_command_range_contains_cursor =
+                        cursor_byte_pos.is_some_and(|pos| {
+                            self.current_command_range.as_ref().is_some_and(|r| {
+                                r.clone().any(|idx| {
+                                    self.tokens[idx]
+                                        .token
+                                        .byte_range()
+                                        .to_inclusive()
+                                        .contains(&pos)
+                                })
+                            })
+                        });
+
+                    if stop_parsing_at_command_boundary
+                        && !cursor_part_way_through_token
+                        && current_command_range_contains_cursor
+                    {
                         // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
                         // echo $((10 * 2█))      -> cursor context is: 10 * 2
                         // echo $((10 * 2)█)      -> cursor context is: echo $((10 * 2))
@@ -354,7 +371,6 @@ impl DParser {
                             *range = *range.start()..=idx;
                         }
                     }
-                    
                 }
                 TokenKind::Word(_) if word_is_part_of_assignment => {
                     if let Some(range) = &mut self.current_command_range {
@@ -381,7 +397,7 @@ impl DParser {
                 | TokenKind::DoubleSemicolon => {
                     if stop_parsing_at_command_boundary {
                         break;
-                    } 
+                    }
                     self.current_command_range = None;
                 }
                 TokenKind::Whitespace(_) => {
@@ -471,8 +487,7 @@ impl DParser {
 
         for (opening_idx, closing_idx) in updates {
             if let TokenAnnotation::IsOpening(None) = self.tokens[opening_idx].annotation {
-                self.tokens[opening_idx].annotation =
-                    TokenAnnotation::IsOpening(Some(closing_idx));
+                self.tokens[opening_idx].annotation = TokenAnnotation::IsOpening(Some(closing_idx));
             }
         }
     }
