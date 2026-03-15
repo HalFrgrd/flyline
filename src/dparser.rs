@@ -276,6 +276,7 @@ impl DParser {
             });
             let token_strictly_contains_cursor = cursor_byte_pos
                 .map_or(false, |pos| self.tokens[idx].token.byte_range().contains(&pos));
+            let cursor_at_start_of_token = cursor_byte_pos.map_or(false, |pos| pos == self.tokens[idx].token.byte_range().start);
 
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
@@ -337,22 +338,23 @@ impl DParser {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
                     self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
 
-                    if matches!(token.kind, TokenKind::DoubleRBracket | TokenKind::DoubleRParen)
-                        && token_strictly_contains_cursor
-                    {
-                        if let Some(prev_command_range) = command_start_stack.pop() {
-                            self.current_command_range = prev_command_range;
-                            if let Some(range) = &mut self.current_command_range {
-                                *range = *range.start()..=idx;
-                            }
+                    if matches!(token.kind, TokenKind::DoubleRBracket | TokenKind::DoubleRParen) {
+
+                        if stop_parsing_at_command_boundary && !token_inclusively_contains_cursor {
+                            debug!("Stopping parsing at command boundary");
+                            break;
                         }
-                        break;
-                    } 
+
+                        if stop_parsing_at_command_boundary && cursor_at_start_of_token {
+                            break;
+                        } 
                     
-                    if stop_parsing_at_command_boundary {
-                        debug!("Stopping parsing at command boundary");
-                        break;
-                    } 
+                    } else {
+                        if stop_parsing_at_command_boundary {
+                            debug!("Stopping parsing at command boundary");
+                            break;
+                        }
+                    }
 
                     if let Some(prev_command_range) = command_start_stack.pop() {
                         self.current_command_range = prev_command_range;
@@ -360,7 +362,7 @@ impl DParser {
                             *range = *range.start()..=idx;
                         }
                     }
-                
+                    
                 }
                 TokenKind::Word(_) if word_is_part_of_assignment => {
                     if let Some(range) = &mut self.current_command_range {
