@@ -132,6 +132,7 @@ struct App<'a> {
     home_path: String,
     /// Parsed bash history available at startup.
     history_manager: HistoryManager,
+    buffer_before_history_navigation: Option<String>,
     bash_env: BashEnvManager,
     snake_animation: SnakeAnimation,
     history_suggestion: Option<(HistoryEntry, String)>,
@@ -163,11 +164,10 @@ impl<'a> App<'a> {
             buffer,
             formatted_buffer_cache,
             cursor_animation: CursorAnimation::new(),
-            prompt_manager: PromptManager::new(
-                unfinished_from_prev_command,
-            ),
+            prompt_manager: PromptManager::new(unfinished_from_prev_command),
             home_path: home_path,
             history_manager: HistoryManager::new(settings),
+            buffer_before_history_navigation: None,
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
@@ -506,12 +506,13 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Up, ..
             } if self.buffer.cursor_row() == 0 => {
+                self.buffer_before_history_navigation
+                    .get_or_insert_with(|| self.buffer.buffer().to_string());
                 if let Some(entry) = self
                     .history_manager
                     .search_in_history(self.buffer.buffer(), HistorySearchDirection::Backward)
                 {
-                    let new_command = entry.command.clone();
-                    self.buffer.replace_buffer(new_command.as_str());
+                    self.buffer.replace_buffer(&entry.command);
                 }
             }
             KeyEvent {
@@ -559,12 +560,13 @@ impl<'a> App<'a> {
                     .search_in_history(self.buffer.buffer(), HistorySearchDirection::Forward)
                 {
                     Some(entry) => {
-                        let new_command = entry.command.clone();
-                        self.buffer.replace_buffer(new_command.as_str());
+                        self.buffer.replace_buffer(&entry.command);
                     }
                     None => {
-                        // If no forward match, clear the buffer (like bash behavior)
-                        self.buffer.replace_buffer("");
+                        if let Some(original_buffer) = self.buffer_before_history_navigation.take()
+                        {
+                            self.buffer.replace_buffer(&original_buffer);
+                        }
                     }
                 }
             }
@@ -744,7 +746,10 @@ impl<'a> App<'a> {
     fn insert_closing_char(&mut self, c: char) {
         let cursor_pos = self.buffer.cursor_byte_pos();
         let just_inserted_pos = cursor_pos.saturating_sub(c.len_utf8());
-        if let Some(closing) = self.formatted_buffer_cache.closing_char_to_insert(c, just_inserted_pos) {
+        if let Some(closing) = self
+            .formatted_buffer_cache
+            .closing_char_to_insert(c, just_inserted_pos)
+        {
             self.buffer.insert_char(closing);
             self.buffer.move_left();
         }
@@ -855,7 +860,9 @@ impl<'a> App<'a> {
         let mut content = Contents::new(width);
         let empty_line = Line::from(vec![]);
 
-        let (lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines(self.settings.disable_animations);
+        let (lprompt, rprompt, fill_span) = self
+            .prompt_manager
+            .get_ps1_lines(self.settings.disable_animations);
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
@@ -927,13 +934,14 @@ impl<'a> App<'a> {
             cursor_pos_maybe = Some(content.cursor_position());
         }
 
-        if matches!(self.mode, AppRunningState::Exiting(ExitState::WithoutCommand)) {
+        if matches!(
+            self.mode,
+            AppRunningState::Exiting(ExitState::WithoutCommand)
+        ) {
             content.write_span(
                 &Span::styled(
                     "^C",
-                    Style::default()
-                        .fg(Color::Red)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
                 Tag::Blank,
             );
@@ -1115,8 +1123,7 @@ impl<'a> App<'a> {
 
                     // Width available for command content on each terminal row
                     // (the header/indent prefix always occupies header_prefix_width columns)
-                    let available_cols =
-                        content.width.saturating_sub(header_prefix_width as u16);
+                    let available_cols = content.width.saturating_sub(header_prefix_width as u16);
 
                     // Pre-process all logical lines into terminal display rows.
                     // Each element is: (is_start_of_logical_line, logical_line_idx, row_spans)
@@ -1136,7 +1143,10 @@ impl<'a> App<'a> {
                     let rows_to_show = total_display_rows.min(max_display_rows);
 
                     for (display_idx, (is_start_of_logical, logical_idx, display_line)) in
-                        all_display_rows.into_iter().take(max_display_rows).enumerate()
+                        all_display_rows
+                            .into_iter()
+                            .take(max_display_rows)
+                            .enumerate()
                     {
                         if display_idx > 0 {
                             content.fill_line(Tag::HistoryResult(row_idx));
