@@ -341,6 +341,9 @@ unsafe extern "C" {
     // y.tab.c
     // char * decode_prompt_string (char *string, int is_prompt)
     pub fn decode_prompt_string(string: *const c_char, is_prompt: c_int) -> *mut c_char;
+
+    // char *expand_string_to_string (string, quoted)
+    pub fn expand_string_to_string(string: *const c_char, quoted: c_int) -> *mut c_char;
 }
 
 // history.h
