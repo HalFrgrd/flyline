@@ -478,7 +478,9 @@ pub fn run_programmable_completions(
         if res.completions.is_empty() && res.flags.bash_default_fallback_desired {
             // Flyline used to support bash default completions as a fallback, but has deprecated
             // this in favor of flyline's own secondary completions.
-            log::warn!("Bash default completions requested by compspec, but flyline will try its own secondary completions instead.");
+            log::warn!(
+                "Bash default completions requested by compspec, but flyline will try its own secondary completions instead."
+            );
         } else {
             log::debug!(
                 "Bash default fallback not desired or completions found. Returning programmable completions."
