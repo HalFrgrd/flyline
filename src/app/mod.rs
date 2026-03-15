@@ -3,7 +3,7 @@ mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
-use crate::bash_env_manager::{self, BashEnvManager};
+use crate::bash_env_manager::BashEnvManager;
 use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;

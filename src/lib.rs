@@ -1,6 +1,5 @@
 use clap::{CommandFactory, Parser, ValueEnum};
 use clap_complete::{Shell, generate};
-use core::panic;
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
