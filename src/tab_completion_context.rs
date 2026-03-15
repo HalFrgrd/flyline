@@ -605,7 +605,7 @@ mod tests {
         );
     }
 
-       #[test]
+    #[test]
     fn test_cursor_before_proc_subst_in() {
         // The original failing case: cursor is in the word before a process substitution.
         let res = run_inline(r#"x█ <( echo too )"#);
@@ -671,7 +671,6 @@ mod tests {
             _ => panic!("Expected CommandComp"),
         }
     }
-
 
     #[test]
     fn test_cursor_in_middle_of_proc_subst_out() {
