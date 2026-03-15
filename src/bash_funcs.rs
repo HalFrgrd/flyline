@@ -647,7 +647,7 @@ extern "C" fn dequoting_function_c(s: *const c_char, _quote_char: c_int) -> *mut
     std::ffi::CString::new(dequoted).unwrap().into_raw()
 }
 
-fn dequoting_function_rust(s: &str) -> String {
+pub fn dequoting_function_rust(s: &str) -> String {
     let mut res = String::new();
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
@@ -694,7 +694,7 @@ fn dequoting_function_rust(s: &str) -> String {
 // It sets fp to  a bitfield  but no one ever reads that bitfield so we can ignore it for now
 // char _rl_find_completion_word (int *fp, int *dp)
 
-fn find_quote_type(s: &str) -> Option<QuoteType> {
+pub fn find_quote_type(s: &str) -> Option<QuoteType> {
     if s.starts_with("\"") {
         return Some(QuoteType::DoubleQuote);
     } else if s.starts_with('\'') {

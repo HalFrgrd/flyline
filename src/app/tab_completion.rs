@@ -27,11 +27,13 @@ impl PathPatternExpansion {
             (String::new(), pattern.to_string())
         };
 
+        let rhs_pattern = bash_funcs::dequoting_function_rust(&rhs_pattern);
+
         // Use bash's own filename expansion (tilde + $VAR + ${VAR} + more).
         let after_expand = if raw_prefix.is_empty() {
             String::new()
         } else {
-            bash_funcs::expand_filename(&raw_prefix)
+            bash_funcs::expand_filename(&bash_funcs::dequoting_function_rust(&raw_prefix))
         };
 
         // Make the path absolute (prepend cwd when relative or empty).
@@ -81,8 +83,11 @@ impl PathPatternExpansion {
         // (e.g. `~/`, `$HOME/`, or a relative path segment).
         if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
             let suffix = suffix.trim_start_matches('/');
-            let quoted_suffix =
-                bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default());
+
+            let quoted_suffix = match quote_type {
+                Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
+                _ => bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default()),
+            };
             if self.raw_prefix.is_empty() {
                 quoted_suffix
             } else {
@@ -311,7 +316,7 @@ impl App<'_> {
         &self,
         completion_context: &tab_completion_context::CompletionContext,
     ) -> Option<Vec<Suggestion>> {
-        log::debug!("Completion context: {:?}", completion_context);
+        log::debug!("Completion context: {:#?}", completion_context);
 
         let word_under_cursor = completion_context.word_under_cursor;
 
@@ -508,14 +513,6 @@ impl App<'_> {
         pattern: &str,
         mut comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Vec<Suggestion> {
-        let expanded = PathPatternExpansion::new(pattern);
-        log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
-
-        // Use glob to find matching paths
-        let mut results = Vec::new();
-
-        const MAX_GLOB_RESULTS: usize = 1_000;
-
         // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
         // e.g. my_command $PWD/fi<TAB> should expand to:
         // my_command $PWD/file\ with\ spaces.txt
@@ -523,6 +520,17 @@ impl App<'_> {
         // my_command \$PWD/file\ with\ spaces.txt
         comp_resultflags.filename_quoting_desired = false;
         comp_resultflags.filename_completion_desired = true;
+
+        comp_resultflags.quote_type = bash_funcs::find_quote_type(pattern);
+        log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
+
+        let expanded = PathPatternExpansion::new(pattern);
+        log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
+
+        // Use glob to find matching paths
+        let mut results = Vec::new();
+
+        const MAX_GLOB_RESULTS: usize = 1_000;
 
         if let Ok(paths) = glob(&expanded.expanded_pattern()) {
             for (idx, path_result) in paths.enumerate() {
@@ -744,6 +752,16 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util --fallback-to-default $PWD/man",
             &[&Suggestion::new(r#"$PWD/many\ spaces\ here/"#, "", "")],
+        );
+
+        run_test_on(
+            r#"fl_comp_util --fallback-to-default $PWD/many\ spac"#,
+            &[&Suggestion::new(r#"$PWD/many\ spaces\ here/"#, "", "")],
+        );
+
+        run_test_on(
+            r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
+            &[&Suggestion::new(r#""$PWD/many spaces here/"#, "", "")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
