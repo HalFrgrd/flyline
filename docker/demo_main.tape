@@ -1,14 +1,7 @@
 # Where should we write the GIF?
 Output demo_main.gif
 
-
-# Set up a 1560x780 terminal with 31px font (30% bigger than original 1200x600 / 24px).
-Set FontSize 31
-Set Width 1560
-Set Height 780
-Set Framerate 60
-
-Hide
+Source demo_base.tape
 
 # vhs doesnt source our bashrc so lets run bash here so that it will source it
 Type "clear && bash"

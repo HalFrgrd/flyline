@@ -8,6 +8,7 @@ RUN printf '%s\n' \
     'export PS1_FILL=" "' \
     >> /home/john/.bashrc
 
+COPY docker/demo_base.tape .
 COPY docker/demo_prompts.tape .
 
 RUN faketime @1771881894 vhs demo_prompts.tape
