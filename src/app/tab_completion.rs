@@ -179,6 +179,7 @@ impl App<'_> {
             let path = match path_to_use {
                 Some(p) => p,
                 None => {
+                    // TODO fully expand this
                     owned_path = std::path::PathBuf::from(self.tilde_expand_pattern(&sug));
                     &owned_path
                 }

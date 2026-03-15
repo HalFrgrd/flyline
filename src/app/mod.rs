@@ -554,12 +554,18 @@ impl<'a> App<'a> {
                 code: KeyCode::Down,
                 ..
             } if self.buffer.is_cursor_on_final_line() => {
-                if let Some(entry) = self
+                match self
                     .history_manager
                     .search_in_history(self.buffer.buffer(), HistorySearchDirection::Forward)
                 {
-                    let new_command = entry.command.clone();
-                    self.buffer.replace_buffer(new_command.as_str());
+                    Some(entry) => {
+                        let new_command = entry.command.clone();
+                        self.buffer.replace_buffer(new_command.as_str());
+                    }
+                    None => {
+                        // If no forward match, clear the buffer (like bash behavior)
+                        self.buffer.replace_buffer("");
+                    }
                 }
             }
             // Shift+Enter in fuzzy search - accept without running (move to buffer only)
@@ -961,7 +967,7 @@ impl<'a> App<'a> {
         {
             content.write_span_dont_overwrite(
                 &Span::styled(
-                    "💡 Start typing or search history with Ctrl+R",
+                    " 💡 Start typing or search history with Ctrl+R",
                     Palette::tutorial_hint(),
                 ),
                 Tag::HistorySuggestion,
