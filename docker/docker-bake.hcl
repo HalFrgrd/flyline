@@ -61,6 +61,10 @@ target "vhs-base" {
 
 target "_demo-base" {
     context = "."
+    contexts = {
+        vhs-base = "target:vhs-base"
+    }
+    output = ["type=local,dest=assets/"]
     # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
     args = {
         BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
@@ -69,38 +73,26 @@ target "_demo-base" {
 
 
 target "demo-overview-extracted-gif" {
-    inherit = ["_demo-base"]
-        contexts = {
-        vhs-base = "target:vhs-base"
-    }
+    inherits = ["_demo-base"]
     dockerfile = "docker/demo_overview.Dockerfile"
-    output = ["type=local,dest=assets/"]
     target = "demo-overview-extracted-gif"
 }
 
 target "demo-prompts-extracted-gif" {
-    inherit = ["_demo-base"]
-        contexts = {
-        vhs-base = "target:vhs-base"
-    }
+    inherits = ["_demo-base"]
     dockerfile = "docker/demo_prompts.Dockerfile"
-    output = ["type=local,dest=assets/"]
     target = "demo-prompts-extracted-gif"
 }
 
 target "demo-fuzzy-suggestions-extracted-gif" {
-    inherit = ["_demo-base"]
-    contexts = {
-        vhs-base = "target:vhs-base"
-    }
+    inherits = ["_demo-base"]
     dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
-    output = ["type=local,dest=assets/"]
     target = "demo-fuzzy-suggestions-extracted-gif"
 }
 
 group "demos" {
     targets = [
-        "demo-overviewp-extracted-gif",
+        "demo-overview-extracted-gif",
         "demo-prompts-extracted-gif",
         "demo-fuzzy-suggestions-extracted-gif",
     ]
