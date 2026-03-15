@@ -75,19 +75,16 @@ target "_demo-base" {
 target "demo-overview-extracted-gif" {
     inherits = ["_demo-base"]
     dockerfile = "docker/demo_overview.Dockerfile"
-    target = "demo-overview-extracted-gif"
 }
 
 target "demo-prompts-extracted-gif" {
     inherits = ["_demo-base"]
     dockerfile = "docker/demo_prompts.Dockerfile"
-    target = "demo-prompts-extracted-gif"
 }
 
 target "demo-fuzzy-suggestions-extracted-gif" {
     inherits = ["_demo-base"]
     dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
-    target = "demo-fuzzy-suggestions-extracted-gif"
 }
 
 group "demos" {

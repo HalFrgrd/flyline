@@ -2,6 +2,7 @@
 Output demo_fuzzy_suggestions.gif
 
 Source demo_settings.tape
+Source demo_setup.tape
 
 Type "grep --"
 Sleep 500ms

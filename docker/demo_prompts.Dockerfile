@@ -1,4 +1,4 @@
-FROM vhs-base AS demo-prompts-build
+FROM vhs-base AS gif-builder
 
 # Override PS1 with a minimal prompt – the demo will set prompts interactively
 RUN printf '%s\n' \
@@ -15,5 +15,5 @@ RUN faketime @1771881894 vhs demo_prompts_ps1.tape
 RUN faketime @1771881894 vhs demo_prompts_rps1.tape
 RUN faketime @1771881894 vhs demo_prompts_ps1_fill.tape
 
-FROM scratch AS demo-prompts-extracted-gif
-COPY --from=demo-prompts-build /app/*.gif /
+FROM scratch
+COPY --from=gif-builder /app/*.gif /

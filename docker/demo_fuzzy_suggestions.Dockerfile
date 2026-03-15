@@ -1,4 +1,4 @@
-FROM vhs-base AS demo-fuzzy-suggestions-build
+FROM vhs-base AS gif-builder
 
 # Override PS1 with a minimal prompt for the demo
 RUN printf '%s\n' \
@@ -13,5 +13,5 @@ COPY assets/tapes/demo_fuzzy_suggestions.tape .
 
 RUN faketime @1771881894 vhs demo_fuzzy_suggestions.tape
 
-FROM scratch AS demo-fuzzy-suggestions-extracted-gif
-COPY --from=demo-fuzzy-suggestions-build /app/*.gif /
+FROM scratch
+COPY --from=gif-builder /app/*.gif /

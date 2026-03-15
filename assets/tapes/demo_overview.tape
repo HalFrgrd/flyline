@@ -2,6 +2,7 @@
 Output demo_overview.gif
 
 Source demo_settings.tape
+Source demo_setup.tape
 
 Type "# bash is great but the command line editing user experience can feel"
 Sleep 300ms

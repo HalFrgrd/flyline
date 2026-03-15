@@ -4,15 +4,16 @@ Output demo_prompts_ps1_fill.gif
 
 Source demo_settings.tape
 Set Height 400
+Source demo_setup.tape
 
 Hide
-Type "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
+Type@1ms "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
 Enter
-Type "export RPS1='\t\n<'"
+Type@1ms "export RPS1='\t\n<'"
+Enter
+Type@1ms "clear"
 Enter
 Show
-
-Source demo_setup.tape
 
 
 Type "# let's fill in the gap by setting PS1_FILL"
