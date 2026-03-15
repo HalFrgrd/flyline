@@ -523,6 +523,26 @@ pub fn get_env_variable(var_name: &str) -> Option<String> {
     }
 }
 
+pub fn expand_filename(filename: &str) -> String {
+    unsafe {
+        let expanded_string = bash_symbols::expand_string_to_string(
+            std::ffi::CString::new(filename).unwrap().as_ptr(),
+            0,
+        );
+
+        if expanded_string.is_null() {
+            return filename.to_string();
+        }
+
+        let c_str = std::ffi::CStr::from_ptr(expanded_string);
+        c_str
+            .to_str()
+            .ok()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| filename.to_string())
+    }
+}
+
 // QuoteType can be  in the middle  of a word (i.e.  backslash)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum QuoteType {

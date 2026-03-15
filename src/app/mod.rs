@@ -150,6 +150,11 @@ impl<'a> App<'a> {
     fn new(settings: &'a Settings) -> Self {
         let user = bash_funcs::get_env_variable("USER").unwrap_or("user".into());
 
+        // log::trace!("expand_filename test:");
+        // log::trace!("expand_filename(\"$PWD\") = {}", bash_funcs::expand_filename("$PWD"));
+        // log::trace!("expand_filename($(pwd)) = {}", bash_funcs::expand_filename("$(pwd)"));
+        // log::trace!("expand_filename($(pwd)$HOME) = {}", bash_funcs::expand_filename("$(pwd)$HOME"));
+
         let home_path =
             bash_funcs::get_env_variable("HOME").unwrap_or("/home/".to_string() + &user);
 
@@ -889,7 +894,10 @@ impl<'a> App<'a> {
             .parts
             .iter_mut()
             .for_each(|part| {
-                if self.mode.is_running() && !self.settings.disable_animations && part.normal_span().content.starts_with("python") {
+                if self.mode.is_running()
+                    && !self.settings.disable_animations
+                    && part.normal_span().content.starts_with("python")
+                {
                     self.snake_animation.update_anim();
                     let snake_str = self
                         .snake_animation

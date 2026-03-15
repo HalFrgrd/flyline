@@ -5,6 +5,94 @@ use crate::tab_completion_context;
 use glob::glob;
 use std::path::Path;
 
+#[derive(Debug)]
+struct PathPatternExpansion {
+    /// The part of the pattern before the last `/`, kept in its original form
+    /// (e.g. `~/foo` or `relative/dir`).
+    raw_prefix: String,
+    /// `raw_prefix` after tilde expansion, conversion to an absolute path, and
+    /// environment-variable expansion (e.g. `/home/user/foo` or `/cwd/relative/dir`).
+    expanded_prefix: String,
+    /// The part of the pattern after the last `/` — the glob portion
+    /// (e.g. `ba*` or `*.txt`).
+    rhs_pattern: String,
+}
+
+impl PathPatternExpansion {
+    fn new(pattern: &str) -> Self {
+        // Split the pattern at the last '/'.
+        let (raw_prefix, rhs_pattern) = if let Some(pos) = pattern.rfind('/') {
+            (pattern[..pos].to_string(), pattern[pos + 1..].to_string())
+        } else {
+            (String::new(), pattern.to_string())
+        };
+
+        // Use bash's own filename expansion (tilde + $VAR + ${VAR} + more).
+        let after_expand = if raw_prefix.is_empty() {
+            String::new()
+        } else {
+            bash_funcs::expand_filename(&raw_prefix)
+        };
+
+        // Make the path absolute (prepend cwd when relative or empty).
+        let expanded_prefix = if after_expand.is_empty() {
+            match std::env::current_dir() {
+                Ok(p) => p.to_string_lossy().to_string(),
+                Err(e) => {
+                    log::warn!("Failed to get current directory: {}", e);
+                    String::new()
+                }
+            }
+        } else if !Path::new(&after_expand).is_absolute() {
+            match std::env::current_dir() {
+                Ok(p) => format!("{}/{}", p.display(), after_expand),
+                Err(e) => {
+                    log::warn!("Failed to get current directory: {}", e);
+                    after_expand
+                }
+            }
+        } else {
+            after_expand
+        };
+
+        PathPatternExpansion {
+            raw_prefix,
+            expanded_prefix,
+            rhs_pattern,
+        }
+    }
+
+    fn expanded_pattern(&self) -> String {
+        if self.expanded_prefix.is_empty() {
+            self.rhs_pattern.clone()
+        } else {
+            format!("{}/{}", self.expanded_prefix, self.rhs_pattern)
+        }
+    }
+
+    fn convert_expanded_match_to_unexpanded(&self, expanded_match: &str) -> String {
+        // Compute the relative path of the result compared to
+        // expanded_prefix, then reconstruct using raw_prefix so the
+        // suggestion preserves the user's original prefix spelling
+        // (e.g. `~/`, `$HOME/`, or a relative path segment).
+        if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
+            let suffix = suffix.trim_start_matches('/');
+            if self.raw_prefix.is_empty() {
+                suffix.to_string()
+            } else {
+                format!("{}/{}", self.raw_prefix, suffix)
+            }
+        } else {
+            log::warn!(
+                "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
+                expanded_match,
+                self.expanded_prefix
+            );
+            expanded_match.to_string()
+        }
+    }
+}
+
 /// bash programmable completions:
 ///
 /// - bashline.c: initialize_readline:
@@ -410,48 +498,20 @@ impl App<'_> {
         }
     }
 
-    fn expand_path_pattern(&self, pattern: &str) -> (String, Vec<(String, String)>) {
-        // TODO expand other variables?
-        let mut prefixes_swaps = vec![];
-        let mut pattern = pattern.to_string();
-        if pattern.starts_with("~/") {
-            prefixes_swaps.push((self.home_path.to_string() + "/", "~/".to_string()));
-            pattern = pattern.replace(&prefixes_swaps[0].1, &prefixes_swaps[0].0);
-        }
-
-        // Resolve the pattern relative to cwd if it's not absolute
-        if !Path::new(&pattern).is_absolute() {
-            // Get the current working directory for relative paths
-            if let Ok(cwd) = std::env::current_dir() {
-                if let Some(cwd_str) = cwd.to_str() {
-                    prefixes_swaps.push((format!("{}/", cwd_str), "".to_string()));
-                    pattern = format!("{}/{}", cwd_str, pattern);
-                }
-            }
-        }
-
-        (pattern, prefixes_swaps)
-    }
-
     fn tab_complete_glob_expansion(
         &self,
         pattern: &str,
         comp_resultflags: bash_funcs::CompletionFlags,
     ) -> Vec<Suggestion> {
-        log::debug!("Performing glob expansion for pattern: {}", pattern);
-        let (resolved_pattern, prefixes_swaps) = self.expand_path_pattern(pattern);
-        log::debug!(
-            "resolved_pattern: {} {:?}",
-            resolved_pattern,
-            prefixes_swaps
-        );
+        let expanded = PathPatternExpansion::new(pattern);
+        log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
 
         // Use glob to find matching paths
         let mut results = Vec::new();
 
         const MAX_GLOB_RESULTS: usize = 1_000;
 
-        if let Ok(paths) = glob(&resolved_pattern) {
+        if let Ok(paths) = glob(&expanded.expanded_pattern()) {
             for (idx, path_result) in paths.enumerate() {
                 if idx >= MAX_GLOB_RESULTS {
                     log::debug!(
@@ -461,24 +521,8 @@ impl App<'_> {
                     break;
                 }
                 if let Ok(path) = path_result {
-                    // Convert the path to a string relative to cwd (or absolute if pattern was absolute)
-                    let unexpanded = {
-                        let mut p = path.to_string_lossy().to_string();
-
-                        for (prefix_to_remove, prefix_to_replace) in &prefixes_swaps {
-                            if p.starts_with(prefix_to_remove) {
-                                p = p.replacen(prefix_to_remove, prefix_to_replace, 1);
-                            } else {
-                                log::warn!(
-                                    "Expected path '{}' to start with prefix '{}', but it did not.",
-                                    p,
-                                    prefix_to_remove
-                                );
-                                break;
-                            }
-                        }
-                        p
-                    };
+                    let unexpanded =
+                        expanded.convert_expanded_match_to_unexpanded(&path.to_string_lossy());
 
                     results.push(self.post_process_single_completion(
                         &unexpanded,
