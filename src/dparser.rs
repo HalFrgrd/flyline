@@ -369,9 +369,8 @@ impl DParser {
 
                     if stop_parsing_at_command_boundary || token_inclusively_contains_cursor {
                         break;
-                    } else {
-                        self.current_command_range = None;
                     }
+                    self.current_command_range = None;
                 }
                 TokenKind::Word(word)
                     if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
@@ -387,7 +386,7 @@ impl DParser {
                 | TokenKind::Background
                 | TokenKind::DoubleSemicolon => {
                     if stop_parsing_at_command_boundary {
-                        idx += 1;
+                        break;
                     } 
                     self.current_command_range = None;
                 }
