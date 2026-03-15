@@ -1,4 +1,4 @@
-FROM vhs-base AS demo-prompts-build
+FROM vhs-base AS gif-builder
 
 # Override PS1 with a minimal prompt – the demo will set prompts interactively
 RUN printf '%s\n' \
@@ -8,9 +8,12 @@ RUN printf '%s\n' \
     'export PS1_FILL=" "' \
     >> /home/john/.bashrc
 
-COPY docker/demo_prompts.tape .
 
-RUN faketime @1771881894 vhs demo_prompts.tape
+COPY assets/tapes/demo_prompts*.tape .
 
-FROM scratch AS demo-prompts-extracted-gif
-COPY --from=demo-prompts-build /app/demo_prompts.gif /demo_prompts.gif
+RUN faketime @1771881894 vhs demo_prompts_ps1.tape
+RUN faketime @1771881894 vhs demo_prompts_rps1.tape
+RUN faketime @1771881894 vhs demo_prompts_ps1_fill.tape
+
+FROM scratch
+COPY --from=gif-builder /app/*.gif /

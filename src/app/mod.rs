@@ -982,6 +982,7 @@ impl<'a> App<'a> {
                     true,
                 );
             } else {
+                // log::debug!("Writing PS1 line:  right='{}'", r_line);
                 content.write_line_lrjustified(l_line, &fill_span, r_line, Tag::Ps1Prompt, false);
             }
             if !is_last {
