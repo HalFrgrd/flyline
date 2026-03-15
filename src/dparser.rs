@@ -340,8 +340,8 @@ impl DParser {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
                     self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
 
-                    let current_command_range_contains_cursor = self.current_command_range.as_ref().map_or(false, |r| {
-                        cursor_byte_pos.map_or(false, |pos| {
+                    let current_command_range_contains_cursor = cursor_byte_pos.is_some_and(|pos| {
+                        self.current_command_range.as_ref().is_some_and(|r| {
                             r.clone().any(|idx| self.tokens[idx].token.byte_range().to_inclusive().contains(&pos))
                         })
                     });
