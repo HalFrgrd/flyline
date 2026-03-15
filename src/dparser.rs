@@ -278,6 +278,8 @@ impl DParser {
                 .map_or(false, |pos| self.tokens[idx].token.byte_range().contains(&pos));
             let cursor_at_start_of_token = cursor_byte_pos.map_or(false, |pos| pos == self.tokens[idx].token.byte_range().start);
 
+            let cursor_part_way_through_token = token_inclusively_contains_cursor && !cursor_at_start_of_token;
+
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
             }
@@ -338,22 +340,12 @@ impl DParser {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
                     self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
 
-                    if matches!(token.kind, TokenKind::DoubleRBracket | TokenKind::DoubleRParen) {
-
-                        if stop_parsing_at_command_boundary && !token_inclusively_contains_cursor {
-                            debug!("Stopping parsing at command boundary");
-                            break;
-                        }
-
-                        if stop_parsing_at_command_boundary && cursor_at_start_of_token {
-                            break;
-                        } 
-                    
-                    } else {
-                        if stop_parsing_at_command_boundary {
-                            debug!("Stopping parsing at command boundary");
-                            break;
-                        }
+                    if stop_parsing_at_command_boundary && !cursor_part_way_through_token {
+                        // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
+                        // echo $((10 * 2█))      -> cursor context is: 10 * 2
+                        // echo $((10 * 2)█)      -> cursor context is: echo $((10 * 2))
+                        debug!("Stopping parsing at command boundary");
+                        break;
                     }
 
                     if let Some(prev_command_range) = command_start_stack.pop() {
