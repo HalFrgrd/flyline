@@ -9,7 +9,7 @@ Source demo_setup.tape
 Hide
 Type@1ms "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
 Enter
-Type@1ms "export RPS1='\t\n<'"
+Type@1ms "export RPS1='\[\033[01;33m\]\t\n<\[\033[00m\]'"
 Enter
 Type@1ms "clear"
 Enter
@@ -37,7 +37,7 @@ Type "# If you so desire, PS1_FILL can support time formats"
 Enter
 Sleep 1000ms
 
-Type "export PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'"
+Type "export PS1_FILL='🯁🯂🯃🮲🮳 \D{%S}'"
 Enter
 Sleep 1000ms
 
