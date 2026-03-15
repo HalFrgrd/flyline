@@ -23,7 +23,7 @@ pub enum SecondaryCompType {
 impl SecondaryCompType {
     fn from(word: &str) -> Option<Self> {
         // TOOD test these
-        if false && word.starts_with('$') {
+        if (word.starts_with('$') || word.starts_with("\"$")) && !word.contains("/") {
             Some(Self::EnvVariable)
         } else if false && word.starts_with('~') && !word.contains("/") {
             Some(Self::TildeExpansion)
@@ -128,40 +128,26 @@ pub fn get_completion_context<'a>(
             let byte_range = cursor_node.byte_range();
 
             // try grow to the left if there are single or double quotes or $
-            match context_tokens.get(node_idx.wrapping_sub(1)) {
-                Some(prev_node) if matches!(prev_node.kind, TokenKind::SingleQuote) => {
-                    prev_node.byte_range().start..byte_range.end
+            let mut start = byte_range.start;
+            let mut i = node_idx;
+
+            loop {
+                let Some(prev_node) = i.checked_sub(1).and_then(|j| context_tokens.get(j)) else {
+                    break;
+                };
+
+                if matches!(
+                    prev_node.kind,
+                    TokenKind::SingleQuote | TokenKind::Quote | TokenKind::Dollar
+                ) {
+                    start = prev_node.byte_range().start;
+                    i -= 1;
+                } else {
+                    break;
                 }
-                Some(prev_node) if matches!(prev_node.kind, TokenKind::Quote) => {
-                    // See if there is a $ inside this token preceding the cursor with no whitespace in between.
-                    // If so, we want to include the $ in the completion.
-                    // Scan backwards from cursor_byte_pos to prev_node.byte_range().start,
-                    // looking for a '$' not separated by whitespace.
-                    let mut dollar_pos = None;
-                    for (idx, ch) in buffer[prev_node.byte_range().start..cursor_byte_pos]
-                        .char_indices()
-                        .rev()
-                    {
-                        if ch.is_whitespace() {
-                            break;
-                        }
-                        if ch == '$' {
-                            // Found a $ with no whitespace between it and the cursor
-                            dollar_pos = Some(prev_node.byte_range().start + idx);
-                            break;
-                        }
-                    }
-                    if let Some(pos) = dollar_pos {
-                        pos..cursor_byte_pos
-                    } else {
-                        prev_node.byte_range().start..byte_range.end
-                    }
-                }
-                Some(prev_node) if prev_node.kind == TokenKind::Dollar => {
-                    prev_node.byte_range().start..byte_range.end
-                }
-                _ => byte_range,
             }
+
+            start..byte_range.end
         }
         Some((_, cursor_node)) => cursor_node.byte_range(),
         None if context_tokens.is_empty() => {
@@ -1079,7 +1065,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "$HOM");
+                assert_eq!(ctx.word_under_cursor, "\"$HOM");
             }
             _ => panic!("Expected CommandComp"),
         }
