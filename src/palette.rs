@@ -11,6 +11,12 @@ impl Palette {
     pub fn unrecognised_word() -> Style {
         Style::default().fg(Color::Red)
     }
+    pub fn single_quoted_word() -> Style {
+        Style::default().fg(Color::Yellow)
+    }
+    pub fn double_quoted_word() -> Style {
+        Style::default().fg(Color::Red)
+    }
     pub fn secondary_text() -> Style {
         Style::default().add_modifier(Modifier::DIM)
     }
