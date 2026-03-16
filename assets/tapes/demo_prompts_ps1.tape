@@ -19,11 +19,11 @@ Type@100ms "export PS1='\u@\h:\w\n$ '"
 Enter
 Sleep 1500ms
 
-Type "# and let's add some colour using ascii escape codes"
+Type "# and let's add some colour using ANSI escape codes"
 Enter
 Sleep 1500ms
 
-Type@100ms "export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '"
+Type@100ms "export PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '"
 Enter
 Sleep 1500ms
 

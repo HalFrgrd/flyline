@@ -6,7 +6,7 @@ Set Height 400
 Source demo_setup.tape
 
 Hide
-Type@1ms `export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ ' && clear`
+Type@1ms `export PS1='\[\e[01;32m\]\u@\h\[\e[00m\]:\[\e[01;34m\]\w\[\e[00m\]\n$ ' && clear`
 Enter
 Show
 
@@ -34,7 +34,7 @@ Type `# let's make it coloured`
 Enter
 Sleep 1500ms
 
-Type@100ms "export RPS1='\[\033[01;33m\]\t\n<\[\033[00m\]'"
+Type@100ms "export RPS1='\e[01;33m\t\n<\e[00m'"
 Enter
 Sleep 1500ms
 

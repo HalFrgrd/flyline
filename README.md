@@ -6,11 +6,14 @@
 [![License](https://img.shields.io/github/license/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/blob/main/LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/releases)
 
+**A bash plugin for modern command line editing.**
+
+
 ![Demo](assets/demo_overview.gif)
 
 </div>
 
-A bash plugin for modern command line editing. Flyline replaces readline to provide a code-editor-like experience and other features:
+Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) to provide a code-editor-like experience and other features:
 - Undo and redo support
 - Cursor animations
 - Fuzzy history suggestions
@@ -52,12 +55,12 @@ Two possible fixes are:
 Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
 ## PS1
-The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html) for more information or [starship integration](#starship-integration).
+The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization) or [Starship integration](#starship-integration) for more information.
 ![PS1 demo](assets/demo_prompts_ps1.gif)
 ```bash
 export PS1='\u@\h:\w$ '
 export PS1='\u@\h:\w\n$ '
-export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\n$ '
+export PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
 ```
 
 ## RPS1 / RPROMPT
@@ -66,7 +69,7 @@ The `RPS1` / `RPROMPT` variable sets the right prompt similarly to zsh.
 ```bash
 export RPS1='\t'
 export RPS1='\t\n<'
-export RPS1='\[\033[01;33m\]\t\n<\[\033[00m\]'
+export RPS1='\e[01;33m\t\n<\e[00m'
 ```
 
 ## PS1_FILL
@@ -98,10 +101,10 @@ These can be placed in any of the supported prompt variables:
 
 ```bash
 # Right prompt showing 24-hour time in green
-export RPS1='\[\033[01;32m\]\t\[\033[0m\]'
+export RPS1='\e[01;32m\t\e[0m'
 
 # Right prompt showing 12-hour am/pm time
-export RPS1='\[\033[01;34m\]\@\[\033[0m\]'
+export RPS1='\e[01;34m\@\e[0m'
 ```
 
 ### Custom time format with `\D{format}`
@@ -110,7 +113,7 @@ Use `\D{format}` with any [Chrono format string](https://docs.rs/chrono/latest/c
 
 ```bash
 # Show date and time
-export RPS1='\[\033[01;32m\]\D{%Y-%m-%d %H:%M:%S}\[\033[0m\]'
+export RPS1='\e[01;32m\D{%Y-%m-%d %H:%M:%S}\e[0m'
 
 # Show only hours and minutes
 export RPS1='\D{%H:%M}'
