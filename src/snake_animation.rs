@@ -155,6 +155,7 @@ impl SnakeAnimation {
         }
         res
     }
+    
 
     fn unicode_char(
         pos_0_0: bool,
