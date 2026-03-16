@@ -25,7 +25,7 @@ RUN touch /home/john/.bashrc && \
     'alias ll="ls -alF"' \
     'export HISTTIMEFORMAT="%F %T  "' \
     'export HISTCONTROL=ignoreboth' \
-    'export PS1="\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]~\[\033[00m\]\$ "' \
+    'export PS1="\e[01;32m\u@\h\e[00m:\e[01;34m~\e[00m\$ "' \
     'export RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
     'flyline --disable-auto-closing-char' \
