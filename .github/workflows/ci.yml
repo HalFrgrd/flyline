@@ -10,6 +10,10 @@ concurrency:
   group: ci
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-ubuntu-1604:
     name: Build and test on Ubuntu 16.04
@@ -54,34 +58,17 @@ jobs:
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
-  
-  bash-integration-tests-matrix:
-    name: Create bash integration tests matrix
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
-    steps:
-      -
-        name: Checkout
-        uses: actions/checkout@v4
-      - name: Generate matrix
-        id: generate
-        uses: docker/bake-action/subaction/matrix@v6
-        with:
-          files: docker/docker-bake.hcl
-          target: bash-integration-tests
-          fields: args
 
   bash-integration-tests:
     name: Bash integration tests using built library
     runs-on: ubuntu-latest
     needs:
-      - bash-integration-tests-matrix
       - build-ubuntu-1604
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.bash-integration-tests-matrix.outputs.matrix) }}
+        bash_version: ["4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
+        bash_version_slug: ["4_4_rc1", "4_4_18", "5_0", "5_1_16", "5_2", "5_3"]
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -93,34 +80,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute version slug
-        id: slug
-        run: echo "value=${DOCKER_BASH_VERSION//./_}" >> $GITHUB_OUTPUT
-        env:
-          DOCKER_BASH_VERSION: ${{ matrix.args.DOCKER_BASH_VERSION }}
-
-      - name: set lower case owner name
+      - name: Set lower case owner name
         run: |
           echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
         env:
           OWNER: '${{ github.repository_owner }}'
 
-      - name: Build and cache Bash ${{ matrix.args.DOCKER_BASH_VERSION }} image
+      - name: Build and cache Bash ${{ matrix.bash_version }} image
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
-          targets: specific-bash-version-${{ steps.slug.outputs.value }}
+          targets: specific-bash-version-${{ matrix.bash_version_slug }}
           set: |
-            *.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.args.DOCKER_BASH_VERSION }}:cache
-            *.cache-to=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.args.DOCKER_BASH_VERSION }}:cache,mode=max
+            *.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache
+            *.cache-to=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache,mode=max
 
       - name: Run integration tests
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
-          targets: ${{ matrix.target }}
+          targets: bash-integration-test-${{ matrix.bash_version_slug }}
           set: |
-            specific-bash-version-${{ steps.slug.outputs.value }}.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.args.DOCKER_BASH_VERSION }}:cache
+            specific-bash-version-${{ matrix.bash_version_slug }}.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
