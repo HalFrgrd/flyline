@@ -7,9 +7,9 @@ Set Height 400
 Source demo_setup.tape
 
 Hide
-Type@1ms "export PS1='\[\e[01;32m\]\u@\h\[\e[00m\]:\[\e[01;34m\]\w\[\e[00m\]\n$ '"
+Type@1ms "export PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '"
 Enter
-Type@1ms "export RPS1=' \[\e[01;33m\]\t\n<\[\e[00m\]'"
+Type@1ms "export RPS1=' \e[01;33m\t\n<\e[00m'"
 Enter
 Type@1ms "clear"
 Enter

@@ -278,8 +278,8 @@ impl PromptManager {
                 });
 
             // Examples:
-            // export RPS1='\[\e[01;32m\]\t\[\e[0m\]'
-            // export RPROMPT='\[\e[01;32m\]\D{%H:%M:%S}\[\e[0m\]'
+            // export RPS1='\e[01;32m\t\e[0m'
+            // export RPROMPT='\e[01;32m\D{%H:%M:%S}\e[0m'
             let rps1 = bash_funcs::get_env_variable("RPS1")
                 .or_else(|| bash_funcs::get_env_variable("RPROMPT"))
                 .and_then(|raw| builder.expand_prompt_string(raw))
