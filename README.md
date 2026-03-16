@@ -70,7 +70,7 @@ export RPS1='\[\033[01;33m\]\t\n<\[\033[00m\]'
 ```
 
 ## PS1_FILL
-- `PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
+`PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
 ![PS1_FILL demo](assets/demo_prompts_ps1_fill.gif)
 ```bash
 export PS1_FILL='-'
