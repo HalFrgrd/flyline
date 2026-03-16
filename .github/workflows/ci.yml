@@ -70,6 +70,7 @@ jobs:
         with:
           files: docker/docker-bake.hcl
           target: bash-integration-tests
+          fields: docker_bash_version
 
   bash-integration-tests:
     name: Bash integration tests using built library
