@@ -67,13 +67,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { bash_version: "4.4-rc1",  bash_version_slug: "4_4-rc1"  }
-          - { bash_version: "4.4.18",   bash_version_slug: "4_4_18"   }
-          - { bash_version: "5.0",      bash_version_slug: "5_0"      }
-          - { bash_version: "5.1.16",   bash_version_slug: "5_1_16"   }
-          - { bash_version: "5.2",      bash_version_slug: "5_2"      }
-          - { bash_version: "5.3",      bash_version_slug: "5_3"      }
+        bash_version_slug: [ "4_4-rc1", "4_4_18", "5_0", "5_1_16", "5_2", "5_3" ]
+
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -97,8 +92,8 @@ jobs:
           files: docker/docker-bake.hcl
           targets: bash-integration-test-${{ matrix.bash_version_slug }}
           set: |
-            specific-bash-version-${{ matrix.bash_version_slug }}.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache
-            specific-bash-version-${{ matrix.bash_version_slug }}.cache-to=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache,mode=min
+            specific-bash-version-${{ matrix.bash_version_slug }}.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version_slug }}:cache
+            specific-bash-version-${{ matrix.bash_version_slug }}.cache-to=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version_slug }}:cache,mode=min
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
