@@ -94,18 +94,18 @@ jobs:
 
       - name: Compute version slug
         id: slug
-        run: echo "value=${BASH_VERSION//./_}" >> $GITHUB_OUTPUT
+        run: echo "value=${DOCKER_BASH_VERSION//./_}" >> $GITHUB_OUTPUT
         env:
-          BASH_VERSION: ${{ matrix.bash_version }}
+          DOCKER_BASH_VERSION: ${{ matrix.docker_bash_version }}
 
-      - name: Build and cache Bash ${{ matrix.bash_version }} image
+      - name: Build and cache Bash ${{ matrix.docker_bash_version }} image
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
           targets: specific-bash-version-${{ steps.slug.outputs.value }}
           set: |
-            *.cache-from=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.bash_version }}:cache
-            *.cache-to=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.bash_version }}:cache,mode=max
+            *.cache-from=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.docker_bash_version }}:cache
+            *.cache-to=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.docker_bash_version }}:cache,mode=max
 
       - name: Run integration tests
         uses: docker/bake-action@v6
@@ -113,7 +113,7 @@ jobs:
           files: docker/docker-bake.hcl
           targets: ${{ matrix.target }}
           set: |
-            specific-bash-version-${{ steps.slug.outputs.value }}.cache-from=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.bash_version }}:cache
+            specific-bash-version-${{ steps.slug.outputs.value }}.cache-from=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.docker_bash_version }}:cache
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 

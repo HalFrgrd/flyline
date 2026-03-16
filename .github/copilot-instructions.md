@@ -52,7 +52,7 @@ Don't run these unless specified.
 docker buildx bake -f docker/docker-bake.hcl bash-integration-tests
 ```
 
-Supported `BASH_VERSION` values: `4.4-rc1`, `4.4.18`, `5.0`, `5.1.16`, `5.2`, `5.3`.
+Supported `DOCKER_BASH_VERSION` values: `4.4-rc1`, `4.4.18`, `5.0`, `5.1.16`, `5.2`, `5.3`.
 
 CI runs both test suites via `.github/workflows/ci.yml`.
 
