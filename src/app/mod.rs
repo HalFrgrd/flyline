@@ -901,9 +901,13 @@ impl<'a> App<'a> {
                     });
                 }
                 dparser::TokenAnnotation::IsEnvVar => {
-                    let env_var_value = bash_funcs::get_env_variable(&token.token.value);
+                    let env_var_name = &token.token.value;
+                    let tooltip = match bash_funcs::get_env_variable(env_var_name) {
+                        Some(value) => format!("${}={}", env_var_name, value),
+                        None => format!("${}", env_var_name),
+                    };
                     return Some(buffer_format::WordInfo {
-                        tooltip: env_var_value,
+                        tooltip: Some(tooltip),
                         is_recognised_command: false,
                     });
                 }
