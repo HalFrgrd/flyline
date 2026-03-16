@@ -424,12 +424,14 @@ impl DParser {
                         matches!(nestings.last(), Some((_, TokenKind::SingleQuote)));
                     let in_double_quote = matches!(nestings.last(), Some((_, TokenKind::Quote)));
 
-                    if token.kind == TokenKind::Newline && (in_single_quote || in_double_quote) {
-                        self.tokens[idx].annotation = if in_single_quote {
-                            TokenAnnotation::IsPartOfSingleQuotedString
-                        } else {
-                            TokenAnnotation::IsPartOfDoubleQuotedString
-                        };
+                    if token.kind == TokenKind::Newline {
+                        if in_single_quote {
+                            self.tokens[idx].annotation =
+                                TokenAnnotation::IsPartOfSingleQuotedString;
+                        } else if in_double_quote {
+                            self.tokens[idx].annotation =
+                                TokenAnnotation::IsPartOfDoubleQuotedString;
+                        }
                     }
 
                     if token.kind.is_word() {
@@ -603,7 +605,10 @@ mod tests {
         assert_eq!(tokens[8].token.value, "'");
         assert_eq!(tokens[8].annotation, TokenAnnotation::IsOpening(Some(10)));
         assert_eq!(tokens[9].token.value, "wörld");
-        assert_eq!(tokens[9].annotation, TokenAnnotation::IsPartOfSingleQuotedString);
+        assert_eq!(
+            tokens[9].annotation,
+            TokenAnnotation::IsPartOfSingleQuotedString
+        );
         assert_eq!(tokens[10].token.value, "'");
         assert_eq!(tokens[10].annotation, TokenAnnotation::IsClosing(8));
     }
@@ -626,7 +631,10 @@ mod tests {
         assert_eq!(tokens[2].token.value, "\"");
         assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(4)));
         assert_eq!(tokens[3].token.value, "wörld");
-        assert_eq!(tokens[3].annotation, TokenAnnotation::IsPartOfDoubleQuotedString);
+        assert_eq!(
+            tokens[3].annotation,
+            TokenAnnotation::IsPartOfDoubleQuotedString
+        );
         assert_eq!(tokens[4].token.value, "\"");
         assert_eq!(tokens[4].annotation, TokenAnnotation::IsClosing(2));
     }
@@ -717,11 +725,20 @@ mod tests {
         assert_eq!(tokens[2].token.value, "'");
         assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
         assert_eq!(tokens[3].token.value, "line1");
-        assert_eq!(tokens[3].annotation, TokenAnnotation::IsPartOfSingleQuotedString);
+        assert_eq!(
+            tokens[3].annotation,
+            TokenAnnotation::IsPartOfSingleQuotedString
+        );
         assert_eq!(tokens[4].token.kind, TokenKind::Newline);
-        assert_eq!(tokens[4].annotation, TokenAnnotation::IsPartOfSingleQuotedString);
+        assert_eq!(
+            tokens[4].annotation,
+            TokenAnnotation::IsPartOfSingleQuotedString
+        );
         assert_eq!(tokens[5].token.value, "line2");
-        assert_eq!(tokens[5].annotation, TokenAnnotation::IsPartOfSingleQuotedString);
+        assert_eq!(
+            tokens[5].annotation,
+            TokenAnnotation::IsPartOfSingleQuotedString
+        );
         assert_eq!(tokens[6].token.value, "'");
         assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
     }

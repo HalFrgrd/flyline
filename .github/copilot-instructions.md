@@ -68,3 +68,4 @@ CI runs both test suites via `.github/workflows/ci.yml`.
 - Prefer `anyhow::Result` for fallible functions.
 - Keep `unsafe` blocks as small as possible and document why each one is necessary.
 - Do not introduce new dependencies without a clear justification; check the advisory database for known vulnerabilities before adding any.
+- Always run `cargo fmt` before committing code.
