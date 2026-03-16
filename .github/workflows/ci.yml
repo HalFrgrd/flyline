@@ -67,8 +67,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bash_version: ["4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
-        bash_version_slug: ["4_4_rc1", "4_4_18", "5_0", "5_1_16", "5_2", "5_3"]
+        include:
+          - { bash_version: "4.4-rc1",  bash_version_slug: "4_4-rc1"  }
+          - { bash_version: "4.4.18",   bash_version_slug: "4_4_18"   }
+          - { bash_version: "5.0",      bash_version_slug: "5_0"      }
+          - { bash_version: "5.1.16",   bash_version_slug: "5_1_16"   }
+          - { bash_version: "5.2",      bash_version_slug: "5_2"      }
+          - { bash_version: "5.3",      bash_version_slug: "5_3"      }
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
