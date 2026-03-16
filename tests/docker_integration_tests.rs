@@ -1,14 +1,14 @@
 mod common;
 
-fn run_bash_version_test(bash_version: &str) {
-    println!("Testing Bash version: {}", bash_version);
+fn run_bash_version_test(docker_bash_version: &str) {
+    println!("Testing Bash version: {}", docker_bash_version);
 
-    let target = format!("bash-integration-test-{}", bash_version.replace('.', "_"));
+    let target = format!("bash-integration-test-{}", docker_bash_version.replace('.', "_"));
 
     common::run_bake_target(&target)
-        .expect(&format!("Test failed for Bash version: {}", bash_version));
+        .expect(&format!("Test failed for Bash version: {}", docker_bash_version));
 
-    println!("Successfully tested Bash {} with flyline", bash_version);
+    println!("Successfully tested Bash {} with flyline", docker_bash_version);
 }
 
 macro_rules! bash_integration_test {

@@ -1,4 +1,4 @@
-variable "BASH_VERSIONS" {
+variable "BASH_VERSION_MATRIX" {
     default = ["4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
 }
 
@@ -32,29 +32,29 @@ target "lib-tests" {
 target "specific-bash-version" {
     context = "."
     dockerfile = "docker/specific_bash_version.Dockerfile"
-    name = "specific-bash-version-${replace(bash_version, ".", "_")}"
+    name = "specific-bash-version-${replace(docker_bash_version, ".", "_")}"
     matrix = {
-        bash_version = BASH_VERSIONS
+        docker_bash_version = BASH_VERSION_MATRIX
     }
     args = {
-        BASH_VERSION = bash_version
+        DOCKER_BASH_VERSION = docker_bash_version
     }
-    tags = ["bash-${bash_version}"]
+    tags = ["bash-${docker_bash_version}"]
 }
 
 target "bash-integration-tests" {
     context = "."
     contexts = {
         built-artifact = "target:built-artifact",
-        specific-bash-version = "target:specific-bash-version-${replace(bash_version, ".", "_")}"
+        specific-bash-version = "target:specific-bash-version-${replace(docker_bash_version, ".", "_")}"
     }
-    name = "bash-integration-test-${replace(bash_version, ".", "_")}"
+    name = "bash-integration-test-${replace(docker_bash_version, ".", "_")}"
     matrix = {
-        bash_version = BASH_VERSIONS
+        docker_bash_version = BASH_VERSION_MATRIX
     }
     dockerfile = "docker/bash_integration_test.Dockerfile"
     args = {
-        BASH_VERSION = bash_version
+        DOCKER_BASH_VERSION = docker_bash_version
     }
 }
 
