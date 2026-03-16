@@ -110,10 +110,16 @@ fn token_to_style(
         return Palette::recognised_word();
     }
 
-    if token.annotation == TokenAnnotation::IsPartOfQuotedString
-        || matches!(token.token.kind, TokenKind::SingleQuote | TokenKind::Quote)
+    if token.annotation == TokenAnnotation::IsPartOfSingleQuotedString
+        || token.token.kind == TokenKind::SingleQuote
     {
-        return Palette::unrecognised_word();
+        return Palette::single_quoted_word();
+    }
+
+    if token.annotation == TokenAnnotation::IsPartOfDoubleQuotedString
+        || token.token.kind == TokenKind::Quote
+    {
+        return Palette::double_quoted_word();
     }
     Palette::normal_text()
 }
