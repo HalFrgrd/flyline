@@ -1362,10 +1362,33 @@ impl<'a> App<'a> {
         if self.mode.is_running() {
             if let Some(tooltip) = &self.tooltip {
                 content.newline();
-                content.write_span(
-                    &Span::styled(tooltip, Palette::secondary_text()),
-                    Tag::Tooltip,
-                );
+                let tooltip_line = Line::from(Span::styled(
+                    tooltip.clone(),
+                    Palette::secondary_text(),
+                ));
+                // Limit the tooltip to at most 3 terminal display rows so it
+                // doesn't push other UI elements too far down the screen.
+                const MAX_TOOLTIP_ROWS: usize = 3;
+                let rows = split_line_to_terminal_rows(&tooltip_line, content.width);
+                let truncated = rows.len() > MAX_TOOLTIP_ROWS;
+                for (i, row) in rows.into_iter().take(MAX_TOOLTIP_ROWS).enumerate() {
+                    if i > 0 {
+                        content.newline();
+                    }
+                    for span in &row.spans {
+                        content.write_span(span, Tag::Tooltip);
+                    }
+                }
+                if truncated {
+                    let last_col = content.width.saturating_sub(1);
+                    if content.cursor_position().col >= last_col {
+                        content.set_cursor_col(last_col);
+                    }
+                    content.write_span(
+                        &Span::styled("…", Palette::secondary_text()),
+                        Tag::Tooltip,
+                    );
+                }
             }
 
             // if let Some(tag) = &self.last_mouse_over_cell {
