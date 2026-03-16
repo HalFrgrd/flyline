@@ -85,12 +85,35 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute version slug
+        id: slug
+        run: echo "value=${BASH_VERSION//./_}" >> $GITHUB_OUTPUT
+        env:
+          BASH_VERSION: ${{ matrix.bash_version }}
+
+      - name: Build and cache Bash ${{ matrix.bash_version }} image
+        uses: docker/bake-action@v6
+        with:
+          files: docker/docker-bake.hcl
+          targets: specific-bash-version-${{ steps.slug.outputs.value }}
+          set: |
+            *.cache-from=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.bash_version }}:cache
+            *.cache-to=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.bash_version }}:cache,mode=max
+
       - name: Run integration tests
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
           targets: ${{ matrix.target }}
           set: |
+            specific-bash-version-${{ steps.slug.outputs.value }}.cache-from=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.bash_version }}:cache
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
