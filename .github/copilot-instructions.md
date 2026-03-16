@@ -15,8 +15,9 @@ src/            Rust library source (cdylib crate)
   *.rs          Individual feature modules
 tests/          Rust integration tests (run inside Docker)
 docker/         Dockerfiles and helper scripts used by CI
-  release_builder.Dockerfile   Multi-stage build; produces libflyline.so
-  bash_integration_test.Dockerfile  Loads the .so into various Bash versions
+  docker-bake.hcl              Bake file defining all build targets
+  integration_test_build.Dockerfile  Multi-stage build; produces libflyline.so
+  bash_integration_test.Dockerfile   Loads the .so into various Bash versions
 Cargo.toml      Rust manifest (edition 2024, cdylib crate type)
 ```
 
@@ -25,8 +26,8 @@ Cargo.toml      Rust manifest (edition 2024, cdylib crate type)
 The library is built with Cargo inside Docker to target glibc 2.23 (Ubuntu 16.04), ensuring broad host compatibility:
 
 ```bash
-docker build -f docker/release_builder.Dockerfile --target flyline-extracted-library --output type=local,dest=/tmp/flyline-build .
-# Produces /tmp/flyline-build/libflyline.so
+docker buildx bake -f docker/docker-bake.hcl extract-artifact
+# Produces docker/build/libflyline.so
 ```
 
 For a quick local (host-native) build during development:
@@ -40,7 +41,7 @@ cargo build --release
 **Unit/library tests** (run inside the Ubuntu 16.04 Docker build):
 
 ```bash
-docker build -f docker/release_builder.Dockerfile --target flyline-tests .
+docker buildx bake -f docker/docker-bake.hcl lib-tests
 ```
 
 **Bash integration tests** (load `libflyline.so` into real Bash builds):
@@ -48,11 +49,7 @@ docker build -f docker/release_builder.Dockerfile --target flyline-tests .
 Don't run these unless specified.
 
 ```bash
-# Build the library first (see above), then:
-docker build \
-  -f docker/bash_integration_test.Dockerfile \
-  --build-arg BASH_VERSION=5.2 \
-  /tmp/flyline-build
+docker buildx bake -f docker/docker-bake.hcl bash-integration-tests
 ```
 
 Supported `BASH_VERSION` values: `4.4-rc1`, `4.4.18`, `5.0`, `5.1.16`, `5.2`, `5.3`.
