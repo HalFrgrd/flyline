@@ -97,16 +97,16 @@ jobs:
         id: slug
         run: echo "value=${DOCKER_BASH_VERSION//./_}" >> $GITHUB_OUTPUT
         env:
-          DOCKER_BASH_VERSION: ${{ matrix.docker_bash_version }}
+          DOCKER_BASH_VERSION: ${{ matrix.args.DOCKER_BASH_VERSION }}
 
-      - name: Build and cache Bash ${{ matrix.docker_bash_version }} image
+      - name: Build and cache Bash ${{ matrix.args.DOCKER_BASH_VERSION }} image
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
           targets: specific-bash-version-${{ steps.slug.outputs.value }}
           set: |
-            *.cache-from=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.docker_bash_version }}:cache
-            *.cache-to=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.docker_bash_version }}:cache,mode=max
+            *.cache-from=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.args.DOCKER_BASH_VERSION }}:cache
+            *.cache-to=type=registry,ref=ghcr.io/${{ github.repository }}/bash-${{ matrix.args.DOCKER_BASH_VERSION }}:cache,mode=max
 
       - name: Run integration tests
         uses: docker/bake-action@v6
