@@ -36,7 +36,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 # Stage 3: Run final Build
 FROM chef AS flyline-builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --features integration-tests --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN cargo build --release --features integration-tests

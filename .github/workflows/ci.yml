@@ -91,15 +91,6 @@ jobs:
         env:
           OWNER: '${{ github.repository_owner }}'
 
-      # - name: Build and cache Bash ${{ matrix.bash_version }} image
-      #   uses: docker/bake-action@v6
-      #   with:
-      #     files: docker/docker-bake.hcl
-      #     targets: specific-bash-version-${{ matrix.bash_version_slug }}
-      #     set: |
-      #       *.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache
-      #       *.cache-to=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache,mode=max
-
       - name: Run integration tests
         uses: docker/bake-action@v6
         with:
@@ -107,7 +98,7 @@ jobs:
           targets: bash-integration-test-${{ matrix.bash_version_slug }}
           set: |
             specific-bash-version-${{ matrix.bash_version_slug }}.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache
-            specific-bash-version-${{ matrix.bash_version_slug }}.cache-to=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache,mode=max
+            specific-bash-version-${{ matrix.bash_version_slug }}.cache-to=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version }}:cache,mode=min
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
