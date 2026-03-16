@@ -627,27 +627,14 @@ impl<'a> App<'a> {
                 match &mut self.content_mode {
                     ContentMode::FuzzyHistorySearch => {
                         self.accept_fuzzy_history_search();
-                        self.mode = AppRunningState::Exiting(ExitState::WithCommand(
-                            self.buffer.buffer().to_string(),
-                        ));
+                        self.try_submit_current_buffer();
                     }
                     ContentMode::TabCompletion(active_suggestions) => {
                         active_suggestions.accept_currently_selected(&mut self.buffer);
                         self.content_mode = ContentMode::Normal;
                     }
                     ContentMode::Normal => {
-                        // If it's a single line complete command, exit
-                        // If it's a multi-line complete command, cursor needs to be at end to exit
-                        if ((self.buffer.lines_with_cursor().iter().count() == 1)
-                            || self.buffer.is_cursor_at_trimmed_end())
-                            && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
-                        {
-                            self.mode = AppRunningState::Exiting(ExitState::WithCommand(
-                                self.buffer.buffer().to_string(),
-                            ));
-                        } else {
-                            self.buffer.insert_newline();
-                        }
+                        self.try_submit_current_buffer();
                     }
                     ContentMode::AiMode(_) => {}
                 }
@@ -836,6 +823,22 @@ impl<'a> App<'a> {
             self.buffer.replace_buffer(new_command.as_str());
         }
         self.content_mode = ContentMode::Normal;
+    }
+
+    /// Submit the current buffer if bash would accept it, otherwise insert a newline.
+    /// If it's a single line complete command, exit.
+    /// If it's a multi-line complete command, cursor needs to be at end to exit.
+    fn try_submit_current_buffer(&mut self) {
+        if ((self.buffer.lines_with_cursor().iter().count() == 1)
+            || self.buffer.is_cursor_at_trimmed_end())
+            && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
+        {
+            self.mode = AppRunningState::Exiting(ExitState::WithCommand(
+                self.buffer.buffer().to_string(),
+            ));
+        } else {
+            self.buffer.insert_newline();
+        }
     }
 
     fn on_keyrelease(&mut self, key: KeyEvent) {
