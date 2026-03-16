@@ -490,9 +490,12 @@ impl<'a> App<'a> {
     fn on_keypress(&mut self, key: KeyEvent) -> bool {
         log::trace!("Key event: {:?}", key);
 
-        // Smart mode: any keypress re-enables mouse capture.
+        // Smart mode: any keypress re-enables mouse capture, unless the user has
+        // explicitly disabled it via a toggle action.
         if self.settings.mouse_mode == MouseMode::Smart {
-            self.mouse_state.enable("smart mode: keypress detected");
+            if !self.mouse_state.is_explicitly_disabled_by_user() {
+                self.mouse_state.enable("smart mode: keypress detected");
+            }
             self.mouse_state.cancel_reenable();
         }
 
@@ -667,7 +670,7 @@ impl<'a> App<'a> {
                 ContentMode::AiMode(_) => {}
             },
 
-            // Escape - clear suggestions or toggle mouse (Simple mode only)
+            // Escape - clear suggestions or toggle mouse (Simple and Smart modes)
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => match self.content_mode {
@@ -677,8 +680,11 @@ impl<'a> App<'a> {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
-                    if self.settings.mouse_mode == MouseMode::Simple {
-                        self.toggle_mouse_state("simple mode: Escape pressed");
+                    if matches!(
+                        self.settings.mouse_mode,
+                        MouseMode::Simple | MouseMode::Smart
+                    ) {
+                        self.toggle_mouse_state("Escape pressed");
                     }
                 }
             },
