@@ -623,22 +623,20 @@ impl<'a> App<'a> {
                 code: KeyCode::Char('j'), // Without this, when I hold enter, sometimes 'j' is read as input
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } => {
-                match &mut self.content_mode {
-                    ContentMode::FuzzyHistorySearch => {
-                        self.accept_fuzzy_history_search();
-                        self.try_submit_current_buffer();
-                    }
-                    ContentMode::TabCompletion(active_suggestions) => {
-                        active_suggestions.accept_currently_selected(&mut self.buffer);
-                        self.content_mode = ContentMode::Normal;
-                    }
-                    ContentMode::Normal => {
-                        self.try_submit_current_buffer();
-                    }
-                    ContentMode::AiMode(_) => {}
+            } => match &mut self.content_mode {
+                ContentMode::FuzzyHistorySearch => {
+                    self.accept_fuzzy_history_search();
+                    self.try_submit_current_buffer();
                 }
-            }
+                ContentMode::TabCompletion(active_suggestions) => {
+                    active_suggestions.accept_currently_selected(&mut self.buffer);
+                    self.content_mode = ContentMode::Normal;
+                }
+                ContentMode::Normal => {
+                    self.try_submit_current_buffer();
+                }
+                ContentMode::AiMode(_) => {}
+            },
             // Shift+Tab or BackTab - cycle suggestions backward
             KeyEvent {
                 code: KeyCode::Tab,
@@ -833,9 +831,8 @@ impl<'a> App<'a> {
             || self.buffer.is_cursor_at_trimmed_end())
             && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
         {
-            self.mode = AppRunningState::Exiting(ExitState::WithCommand(
-                self.buffer.buffer().to_string(),
-            ));
+            self.mode =
+                AppRunningState::Exiting(ExitState::WithCommand(self.buffer.buffer().to_string()));
         } else {
             self.buffer.insert_newline();
         }
@@ -1365,10 +1362,8 @@ impl<'a> App<'a> {
         if self.mode.is_running() {
             if let Some(tooltip) = &self.tooltip {
                 content.newline();
-                let tooltip_line = Line::from(Span::styled(
-                    tooltip.clone(),
-                    Palette::secondary_text(),
-                ));
+                let tooltip_line =
+                    Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
                 // Limit the tooltip to at most 3 terminal display rows so it
                 // doesn't push other UI elements too far down the screen.
                 const MAX_TOOLTIP_ROWS: usize = 3;
@@ -1387,10 +1382,7 @@ impl<'a> App<'a> {
                     if content.cursor_position().col >= last_col {
                         content.set_cursor_col(last_col);
                     }
-                    content.write_span(
-                        &Span::styled("…", Palette::secondary_text()),
-                        Tag::Tooltip,
-                    );
+                    content.write_span(&Span::styled("…", Palette::secondary_text()), Tag::Tooltip);
                 }
             }
 

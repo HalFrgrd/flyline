@@ -153,20 +153,17 @@ impl FormattedBufferPart {
                 token.token.value
             );
 
-            let mut grapheme_byte_start = 0;
-            span.styled_graphemes(Style::default())
-                .enumerate()
-                .find_map(|(grapheme_idx, grapheme)| {
-                    let grapheme_byte_len = grapheme.symbol.width();
-                    let start = grapheme_byte_start;
-                    grapheme_byte_start += grapheme_byte_len;
-                    if start <= byte_pos && byte_pos < grapheme_byte_start {
-                        Some(grapheme_idx)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(0) // if byte_pos is out of bounds, just put the cursor on the first grapheme
+            let mut graph_idx = 0;
+            let mut byte_count = 0;
+            for g in token.token.value.graphemes(true) {
+                let g_byte_len = g.len();
+                if byte_count + g_byte_len > byte_pos {
+                    break;
+                }
+                byte_count += g_byte_len;
+                graph_idx += 1;
+            }
+            graph_idx
         });
 
         if let Some(idx) = cursor_grapheme_idx {
