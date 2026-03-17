@@ -82,9 +82,10 @@ struct FlylineArgs {
     /// Load zsh history in addition to bash history
     #[arg(long = "load-zsh-history")]
     load_zsh_history: bool,
-    /// Enable tutorial mode with hints for first-time users
-    #[arg(long = "tutorial-mode")]
-    tutorial_mode: bool,
+    /// Enable or disable tutorial mode with hints for first-time users.
+    /// Use `--tutorial-mode=false` to disable.
+    #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1, require_equals = true)]
+    tutorial_mode: Option<bool>,
     /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
     #[arg(long = "disable-auto-closing-char")]
     disable_auto_closing_char: bool,
@@ -224,8 +225,9 @@ impl Flyline {
                     self.settings.load_zsh_history = true;
                 }
 
-                if parsed.tutorial_mode {
-                    self.settings.tutorial_mode = true;
+                if let Some(enabled) = parsed.tutorial_mode {
+                    log::info!("Tutorial mode set to {}", enabled);
+                    self.settings.tutorial_mode = enabled;
                 }
 
                 if parsed.disable_auto_closing_char {
