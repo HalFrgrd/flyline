@@ -329,6 +329,11 @@ impl<'a> App<'a> {
                     CrosstermEvent::FocusGained => {
                         // log::debug!("Terminal focus gained");
                         self.cursor_animation.term_has_focus = true;
+                        if self.settings.mouse_mode == MouseMode::Smart
+                            && !self.mouse_state.is_explicitly_disabled_by_user()
+                        {
+                            self.mouse_state.enable("smart mode: focus gained");
+                        }
                         false
                     }
                     CrosstermEvent::Paste(pasted) => {
@@ -340,10 +345,6 @@ impl<'a> App<'a> {
                     }
                 }
             } else {
-                // Poll timeout — check smart-mode periodic re-enable timer.
-                if self.settings.mouse_mode == MouseMode::Smart {
-                    self.mouse_state.check_reenable_timer();
-                }
                 true
             }
         }
@@ -375,7 +376,6 @@ impl<'a> App<'a> {
                 self.mouse_state
                     .disable("smart mode: mouse is above the viewport");
                 self.last_mouse_over_cell = None;
-                self.mouse_state.schedule_reenable();
                 return false;
             }
             match mouse.kind {
@@ -386,7 +386,6 @@ impl<'a> App<'a> {
                     self.mouse_state
                         .disable("smart mode: scroll event detected");
                     self.last_mouse_over_cell = None;
-                    self.mouse_state.schedule_reenable();
                     return false;
                 }
                 _ => {}
@@ -496,7 +495,6 @@ impl<'a> App<'a> {
             if !self.mouse_state.is_explicitly_disabled_by_user() {
                 self.mouse_state.enable("smart mode: keypress detected");
             }
-            self.mouse_state.cancel_reenable();
         }
 
         match key {
