@@ -25,7 +25,7 @@ impl SecondaryCompType {
         // TODO test these
         if (word.starts_with('$') || word.starts_with("\"$")) && !word.contains("/") {
             Some(Self::EnvVariable)
-        } else if false && word.starts_with('~') && !word.contains("/") {
+        } else if word.starts_with('~') && !word.contains("/") {
             Some(Self::TildeExpansion)
         } else if word.contains('*') || word.contains('?') || word.contains('[') {
             // TODO "*.md will match this. need some better logic here
