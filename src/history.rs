@@ -86,7 +86,7 @@ impl HistoryManager {
                         let timestamp_cstr = std::ffi::CStr::from_ptr(hist_entry.timestamp);
                         if let Ok(timestamp_str) = timestamp_cstr.to_str() {
                             let ts_str = timestamp_str.trim_start_matches('#').trim();
-                            ts_str.parse::<u64>().ok()
+                            ts_str.parse::<u64>().ok().filter(|&ts| ts != 0)
                         } else {
                             None
                         }
@@ -212,7 +212,7 @@ impl HistoryManager {
     fn parse_timestamp(line: &str) -> Option<u64> {
         if line.starts_with('#') {
             if let Ok(ts) = line[1..].trim().parse::<u64>() {
-                Some(ts)
+                if ts == 0 { None } else { Some(ts) }
             } else {
                 None
             }
@@ -267,7 +267,8 @@ impl HistoryManager {
                         let timestamp = ts_dur
                             .split(':')
                             .next()
-                            .and_then(|ts| ts.parse::<u64>().ok());
+                            .and_then(|ts| ts.parse::<u64>().ok())
+                            .filter(|&ts| ts != 0);
                         (timestamp, cmd.to_string())
                     } else {
                         // Malformed extended format, treat as simple
@@ -640,6 +641,7 @@ mod tests {
         assert_eq!(HistoryManager::parse_timestamp("#12345"), Some(12345));
         assert_eq!(HistoryManager::parse_timestamp("12345"), None);
         assert_eq!(HistoryManager::parse_timestamp("#not_a_number"), None);
+        assert_eq!(HistoryManager::parse_timestamp("#0"), None);
     }
 
     #[test]
@@ -709,6 +711,13 @@ git status
         assert_eq!(entries[1].timestamp, Some(1625078460));
         assert_eq!(entries[2].command, "cd /tmp");
         assert_eq!(entries[2].timestamp, Some(1625078520));
+
+        // Test that a zero timestamp is treated as None (no real timestamp)
+        const ZERO_TIMESTAMP_HISTORY: &str = ": 0:0;old command\n";
+        let entries = HistoryManager::parse_zsh_history_str(ZERO_TIMESTAMP_HISTORY);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].command, "old command");
+        assert_eq!(entries[0].timestamp, None);
     }
 
     #[test]
