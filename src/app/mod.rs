@@ -99,7 +99,6 @@ pub fn get_command(settings: &Settings) -> ExitState {
         crossterm::event::EnableFocusChange,
         crossterm::event::PushKeyboardEnhancementFlags(
             crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                | crossterm::event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
                 | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
                 | crossterm::event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
         )
@@ -300,17 +299,10 @@ impl<'a> App<'a> {
 
             redraw = if event::poll(Duration::from_millis(30)).unwrap() {
                 match event::read().unwrap() {
-                    CrosstermEvent::Key(key) => match key.kind {
-                        crossterm::event::KeyEventKind::Press
-                        | crossterm::event::KeyEventKind::Repeat => {
-                            needs_screen_cleared = self.on_keypress(key);
-                            true
-                        }
-                        crossterm::event::KeyEventKind::Release => {
-                            self.on_keyrelease(key);
-                            false
-                        }
-                    },
+                    CrosstermEvent::Key(key) => {
+                        needs_screen_cleared = self.on_keypress(key);
+                        true
+                    }
                     CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
                     CrosstermEvent::Resize(new_cols, new_rows) => {
                         log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
@@ -775,9 +767,6 @@ impl<'a> App<'a> {
                 ..
             } => {
                 // In Simple mode: Alt press toggles mouse capture.
-                // (Alt release is handled in on_keyrelease.)
-                // Not all terminals send key release events for Alt/Meta,
-                // so we toggle on both press and release.
                 if self.settings.mouse_mode == MouseMode::Simple {
                     self.toggle_mouse_state("simple mode: Alt pressed");
                 }
@@ -841,22 +830,6 @@ impl<'a> App<'a> {
                 AppRunningState::Exiting(ExitState::WithCommand(self.buffer.buffer().to_string()));
         } else {
             self.buffer.insert_newline();
-        }
-    }
-
-    fn on_keyrelease(&mut self, key: KeyEvent) {
-        match key {
-            KeyEvent {
-                code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                // In Simple mode: Alt release toggles mouse capture.
-                if self.settings.mouse_mode == MouseMode::Simple {
-                    self.toggle_mouse_state("simple mode: Alt released");
-                }
-            }
-            _ => {}
         }
     }
 
