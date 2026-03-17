@@ -1228,7 +1228,7 @@ impl<'a> App<'a> {
                     let timeago_str = entry
                         .timestamp
                         .map(|ts| Self::ts_to_timeago_string_5chars(ts))
-                        .unwrap_or("     ".to_string());
+                        .unwrap_or("  NaT".to_string());
 
                     spans.push(Span::styled(timeago_str, Palette::secondary_text()));
 
