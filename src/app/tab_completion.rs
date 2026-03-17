@@ -565,10 +565,36 @@ impl App<'_> {
             return vec![];
         };
 
-        self.tab_complete_glob_expansion(
-            &("/home/".to_string() + user_pattern + "*"),
-            bash_funcs::CompletionFlags::default(),
-        )
+        // `~` alone — suggest the current user's home directory as `~/`
+        if user_pattern.is_empty() {
+            return vec![Suggestion::new("~/", "", "")];
+        }
+
+        // `~username` — find matching users by listing /home/ and checking /root
+        let mut suggestions = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir("/home") {
+            for entry in entries.flatten() {
+                if entry.file_type().map_or(false, |ft| ft.is_dir()) {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.starts_with(user_pattern) {
+                        suggestions.push(Suggestion::new(format!("~{}/", name_str), "", ""));
+                    }
+                }
+            }
+        }
+
+        // Also check root (whose home is /root, not under /home/)
+        if "root".starts_with(user_pattern)
+            && Path::new("/root").is_dir()
+            && !suggestions.iter().any(|s| s.s == "~root/")
+        {
+            suggestions.push(Suggestion::new("~root/", "", ""));
+        }
+
+        suggestions.sort();
+        suggestions
     }
 
     #[cfg(feature = "integration-tests")]

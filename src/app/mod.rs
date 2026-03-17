@@ -917,6 +917,15 @@ impl<'a> App<'a> {
                         is_recognised_command: false,
                     });
                 }
+                dparser::TokenAnnotation::None if token.token.value.starts_with('~') => {
+                    let expanded = bash_funcs::expand_filename(&token.token.value);
+                    if expanded != token.token.value {
+                        return Some(buffer_format::WordInfo {
+                            tooltip: Some(format!("{}={}", token.token.value, expanded)),
+                            is_recognised_command: false,
+                        });
+                    }
+                }
                 _ => {}
             }
 
