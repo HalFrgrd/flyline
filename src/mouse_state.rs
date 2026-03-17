@@ -1,10 +1,7 @@
 use crate::settings::MouseMode;
-use std::time::{Duration, Instant};
 
 pub struct MouseState {
     enabled: bool,
-    /// When set (Smart mode only), re-enable mouse capture at this instant.
-    reenable_after: Option<Instant>,
     /// True when the user has explicitly disabled mouse capture via a toggle action.
     /// Smart mode will not automatically re-enable while this flag is set.
     explicitly_disabled_by_user: bool,
@@ -31,7 +28,6 @@ impl MouseState {
         };
         MouseState {
             enabled,
-            reenable_after: None,
             explicitly_disabled_by_user: false,
         }
     }
@@ -91,32 +87,5 @@ impl MouseState {
     /// When true, Smart mode will not automatically re-enable mouse capture.
     pub fn is_explicitly_disabled_by_user(&self) -> bool {
         self.explicitly_disabled_by_user
-    }
-
-    /// Schedule a re-enable after 500 ms (used by Smart mode).
-    pub fn schedule_reenable(&mut self) {
-        self.reenable_after = Some(Instant::now() + Duration::from_millis(500));
-    }
-
-    /// Cancel any pending re-enable timer.
-    pub fn cancel_reenable(&mut self) {
-        self.reenable_after = None;
-    }
-
-    /// If a re-enable is scheduled and the deadline has passed, enable capture.
-    /// Returns true if the timer was consumed (either fired or cleared).
-    /// Does not re-enable if the user has explicitly disabled mouse capture.
-    pub fn check_reenable_timer(&mut self) -> bool {
-        if let Some(at) = self.reenable_after {
-            if Instant::now() >= at {
-                // Always consume the timer so it does not fire repeatedly.
-                self.reenable_after = None;
-                if !self.explicitly_disabled_by_user {
-                    self.enable("smart mode: 500 ms periodic re-enable");
-                }
-                return true;
-            }
-        }
-        false
     }
 }
