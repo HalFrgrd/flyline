@@ -241,7 +241,10 @@ pub fn format_buffer<'a>(
                                 .get(corresponding_idx)
                                 .is_some_and(range_check)
                     }
-                    TokenAnnotation::IsClosing(corresponding_idx) => {
+                    TokenAnnotation::IsClosing {
+                        opening_idx: corresponding_idx,
+                        ..
+                    } => {
                         range_check(tok)
                             || annotated_tokens
                                 .get(corresponding_idx)
@@ -330,7 +333,7 @@ mod tests {
         ));
         assert!(matches!(
             quotes[1].token.annotation,
-            TokenAnnotation::IsClosing(_)
+            TokenAnnotation::IsClosing { .. }
         ));
     }
 
