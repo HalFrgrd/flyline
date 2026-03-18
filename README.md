@@ -38,6 +38,47 @@ flyline --tutorial-mode
 ```
 
 
+# Settings
+
+Flyline is configured by calling it as a bash builtin with options in your `.bashrc`.
+Run `flyline` or `flyline --help` to see all available options.
+
+The block below is auto-generated from `flyline --help`:
+
+<!-- FLYLINE_HELP_START -->
+```
+Usage: flyline [OPTIONS]
+
+Options:
+      --version
+          Show version information
+      --disable-animations
+          Disable animations
+      --dump-logs
+          Dump in-memory logs to file
+      --stream-logs <PATH>
+          Dump current logs to PATH and append new logs
+      --log-level <LEVEL>
+          Set the logging level [possible values: error, warn, info, debug, trace]
+      --load-zsh-history
+          Load zsh history in addition to bash history
+      --tutorial-mode[=<BOOL>]
+          Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode=false` to disable.
+      --disable-auto-closing-char
+          Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
+      --mouse-mode <MODE>
+          Mouse capture mode (none, simple, smart). Default is smart.
+      --ai-command <AI_COMMAND>...
+          Command (and arguments) used for AI mode. The current buffer is appended as the final argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
+  -h, --help
+          Print help
+```
+<!-- FLYLINE_HELP_END -->
+
+When flyline loads it automatically registers tab completion for its own options,
+so you can type `flyline --<Tab>` in your shell to interactively browse and configure settings.
+
+
 # Integrations
 ## VS Code:
 - I'd recommend setting `terminal.integrated.minimumContrastRatio = 1` to prevent the cell's foreground colour changing when it's under the cursor.
