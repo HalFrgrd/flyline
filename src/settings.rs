@@ -1,3 +1,14 @@
+/// A single custom prompt animation registered with `flyline create-anim`.
+#[derive(Debug, Clone)]
+pub struct PromptAnimation {
+    /// Name used as placeholder in prompt strings (e.g., `COOL_SPINNER`).
+    pub name: String,
+    /// Playback speed in frames per second.
+    pub fps: f64,
+    /// Animation frames.  May contain actual ANSI escape sequences (ESC byte, i.e. `\x1b`).
+    pub frames: Vec<String>,
+}
+
 /// Controls how flyline manages mouse capture.
 #[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
 pub enum MouseMode {
@@ -26,6 +37,8 @@ pub struct Settings {
     /// Command (and arguments) to invoke for AI mode. The current buffer is appended as the
     /// final argument. Empty means AI mode is not configured.
     pub ai_command: Vec<String>,
+    /// Custom prompt animations registered with `flyline create-anim`.
+    pub custom_animations: Vec<PromptAnimation>,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,

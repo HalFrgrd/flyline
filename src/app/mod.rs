@@ -182,7 +182,10 @@ impl<'a> App<'a> {
             formatted_buffer_cache,
             dparser_tokens_cache: Vec::new(),
             cursor_animation: CursorAnimation::new(),
-            prompt_manager: PromptManager::new(unfinished_from_prev_command),
+            prompt_manager: PromptManager::new(
+                unfinished_from_prev_command,
+                &settings.custom_animations,
+            ),
             home_path: home_path,
             history_manager: HistoryManager::new(settings),
             buffer_before_history_navigation: None,
