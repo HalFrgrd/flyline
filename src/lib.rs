@@ -4,6 +4,7 @@ use libc::{c_char, c_int};
 use std::sync::Mutex;
 
 mod active_suggestions;
+mod ai_command;
 mod app;
 mod bash_env_manager;
 mod bash_funcs;
