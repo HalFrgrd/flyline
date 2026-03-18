@@ -137,6 +137,8 @@ struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
     formatted_buffer_cache: FormattedBuffer,
+    /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
+    dparser_tokens_cache: Vec<AnnotatedToken>,
     cursor_animation: CursorAnimation,
     prompt_manager: PromptManager,
     home_path: String,
@@ -178,6 +180,7 @@ impl<'a> App<'a> {
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
+            dparser_tokens_cache: Vec::new(),
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(unfinished_from_prev_command),
             home_path: home_path,
@@ -846,9 +849,26 @@ impl<'a> App<'a> {
                 ..
             } => {
                 self.buffer.on_keypress(key);
-                if !self.settings.disable_auto_closing_char {
-                    self.insert_closing_char(c);
+                let auto_close_pos = if !self.settings.disable_auto_closing_char {
+                    self.insert_closing_char(c)
+                } else {
+                    None
+                };
+                self.on_possible_buffer_change();
+                if let Some(pos) = auto_close_pos {
+                    self.mark_auto_inserted_closing(pos);
                 }
+                return false;
+            }
+            // Backspace: if the char to the right of the cursor is an auto-inserted closing token
+            // paired with the char about to be deleted, remove it as well.
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } if !self.settings.disable_auto_closing_char => {
+                self.delete_auto_inserted_closing_if_present();
+                self.buffer.on_keypress(key);
             }
             _ => {
                 self.buffer.on_keypress(key);
@@ -866,7 +886,10 @@ impl<'a> App<'a> {
     /// *before* `c` was typed (one character out of date).  The cache is passed to
     /// [`buffer_format::FormattedBuffer::closing_char_to_insert`] which uses the stale token
     /// annotations to determine whether `c` opens a new pair or closes an existing one.
-    fn insert_closing_char(&mut self, c: char) {
+    ///
+    /// Returns the byte position of the auto-inserted closing character, or `None` if no
+    /// closing character was inserted.
+    fn insert_closing_char(&mut self, c: char) -> Option<usize> {
         let cursor_pos = self.buffer.cursor_byte_pos();
         let just_inserted_pos = cursor_pos.saturating_sub(c.len_utf8());
         if let Some(closing) = self
@@ -875,6 +898,73 @@ impl<'a> App<'a> {
         {
             self.buffer.insert_char(closing);
             self.buffer.move_left();
+            // After move_left, cursor is at the start of the auto-inserted closing char.
+            Some(self.buffer.cursor_byte_pos())
+        } else {
+            None
+        }
+    }
+
+    /// Mark the dparser token at `byte_pos` as auto-inserted in the cache.
+    fn mark_auto_inserted_closing(&mut self, byte_pos: usize) {
+        for token in &mut self.dparser_tokens_cache {
+            if token.token.byte_range().start == byte_pos {
+                if let dparser::TokenAnnotation::IsClosing {
+                    is_auto_inserted, ..
+                } = &mut token.annotation
+                {
+                    *is_auto_inserted = true;
+                    log::debug!(
+                        "Marked token '{}' at byte {} as auto-inserted",
+                        token.token.value,
+                        byte_pos
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
+    /// If the token immediately to the right of the cursor is an auto-inserted closing token
+    /// that is paired with the token the cursor is right after, delete it.
+    /// This is called before a simple Backspace so that deleting an auto-paired opener also
+    /// removes the auto-inserted closer.
+    fn delete_auto_inserted_closing_if_present(&mut self) {
+        let cursor_pos = self.buffer.cursor_byte_pos();
+        if cursor_pos == 0 {
+            return;
+        }
+
+        // Find the token that ends at cursor_pos (the one about to be deleted by Backspace).
+        let opening_annotation = self
+            .dparser_tokens_cache
+            .iter()
+            .find(|t| {
+                t.token
+                    .byte_range()
+                    .to_inclusive()
+                    .contains(&(cursor_pos - 1))
+            })
+            .map(|t| t.annotation);
+
+        if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
+            // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
+            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx) {
+                if closing_token.token.byte_range().start == cursor_pos {
+                    if let dparser::TokenAnnotation::IsClosing {
+                        is_auto_inserted: true,
+                        ..
+                    } = closing_token.annotation
+                    {
+                        log::debug!(
+                            "Deleting auto-inserted closing token '{}' at byte {}",
+                            closing_token.token.value,
+                            cursor_pos
+                        );
+                        self.buffer.delete_forwards();
+                    }
+                }
+            }
         }
     }
 
@@ -975,10 +1065,44 @@ impl<'a> App<'a> {
 
         let mut parser = dparser::DParser::from(self.buffer.buffer());
         parser.walk_to_end();
-        let annotated_tokens = parser.tokens();
+        let mut new_tokens = parser.into_tokens();
+
+        // Transfer is_auto_inserted flags from the old cache to the new tokens.
+        // We match by byte start position (best-effort; not perfect when chars are inserted inside a pair).
+        // Collect auto-inserted positions into a HashSet first to keep the transfer O(n).
+        let auto_inserted_positions: std::collections::HashSet<usize> = self
+            .dparser_tokens_cache
+            .iter()
+            .filter_map(|t| {
+                if let dparser::TokenAnnotation::IsClosing {
+                    is_auto_inserted: true,
+                    ..
+                } = t.annotation
+                {
+                    Some(t.token.byte_range().start)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !auto_inserted_positions.is_empty() {
+            for new_token in &mut new_tokens {
+                if auto_inserted_positions.contains(&new_token.token.byte_range().start) {
+                    if let dparser::TokenAnnotation::IsClosing {
+                        is_auto_inserted, ..
+                    } = &mut new_token.annotation
+                    {
+                        *is_auto_inserted = true;
+                    }
+                }
+            }
+        }
+
+        self.dparser_tokens_cache = new_tokens;
 
         self.formatted_buffer_cache = format_buffer(
-            &annotated_tokens,
+            &self.dparser_tokens_cache,
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
