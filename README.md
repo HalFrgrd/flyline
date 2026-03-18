@@ -47,7 +47,11 @@ The block below is auto-generated from `flyline --help`:
 
 <!-- FLYLINE_HELP_START -->
 ```
-Usage: flyline [OPTIONS]
+Usage: flyline [OPTIONS] [COMMAND]
+
+Commands:
+  create-anim  Create a custom prompt animation
+  help         Print this message or the help of the given subcommand(s)
 
 Options:
       --version
@@ -62,16 +66,18 @@ Options:
           Set the logging level [possible values: error, warn, info, debug, trace]
       --load-zsh-history
           Load zsh history in addition to bash history
-      --tutorial-mode[=<BOOL>]
-          Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode=false` to disable.
+      --tutorial-mode[=<TUTORIAL_MODE>]
+          Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode=false` to disable [possible values: true, false]
       --disable-auto-closing-char
           Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
       --mouse-mode <MODE>
-          Mouse capture mode (none, simple, smart). Default is smart.
+          Mouse capture mode (none, simple, smart). Default is smart [possible values: disabled, simple, smart]
       --ai-command <AI_COMMAND>...
           Command (and arguments) used for AI mode. The current buffer is appended as the final argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
+      --run-tab-completion-tests
+          
   -h, --help
-          Print help
+          Print help (see more with '--help')
 ```
 <!-- FLYLINE_HELP_END -->
 
