@@ -67,6 +67,18 @@ target "tab-completion-tests" {
     dockerfile = "docker/tab_completions.Dockerfile"
 }
 
+# Runs `flyline --help` inside an interactive bash session, strips ANSI codes,
+# and outputs flyline_help.txt to the project root.
+target "extract-help-text" {
+    context = "."
+    contexts = {
+        built-artifact = "target:built-artifact"
+    }
+    output = ["type=local,dest=./"]
+    dockerfile = "docker/flyline_help.Dockerfile"
+    target = "flyline-help-output"
+}
+
 
 target "vhs-base" {
     context = "."

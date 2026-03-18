@@ -1,0 +1,72 @@
+name: Update Settings Documentation
+
+on:
+  push:
+    branches: [ master ]
+
+concurrency:
+  group: update-settings-docs
+  cancel-in-progress: true
+
+jobs:
+  update-settings-docs:
+    name: Regenerate flyline --help text and update README
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build flyline library and extract help text
+        uses: docker/bake-action@v6
+        with:
+          files: docker/docker-bake.hcl
+          targets: extract-help-text
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
+
+      # flyline_help.txt is now in the project root (output of extract-help-text)
+      - name: Update README between marker comments
+        run: |
+          python3 - <<'EOF'
+          import re, pathlib
+
+          help_text = pathlib.Path("flyline_help.txt").read_text().rstrip("\n")
+          readme = pathlib.Path("README.md").read_text()
+
+          new_block = f"<!-- FLYLINE_HELP_START -->\n```\n{help_text}\n```\n<!-- FLYLINE_HELP_END -->"
+          updated = re.sub(
+              r"<!-- FLYLINE_HELP_START -->.*?<!-- FLYLINE_HELP_END -->",
+              new_block,
+              readme,
+              flags=re.DOTALL,
+          )
+          pathlib.Path("README.md").write_text(updated)
+          print("README.md updated")
+          EOF
+
+      - name: Create or update pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B update-settings-docs
+          git add flyline_help.txt README.md
+          git diff --cached --quiet && echo "No changes to settings docs" && exit 0
+          git commit -m "chore: update settings documentation from flyline --help"
+          git push --force origin update-settings-docs
+          gh pr create \
+            --title "chore: update settings documentation" \
+            --body "Automated PR to update \`flyline_help.txt\` and the Settings section of the README from \`flyline --help\`." \
+            --base master \
+            --head update-settings-docs \
+          || gh pr edit update-settings-docs \
+            --title "chore: update settings documentation" \
+            --body "Automated PR to update \`flyline_help.txt\` and the Settings section of the README from \`flyline --help\`."
