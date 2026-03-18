@@ -1058,6 +1058,7 @@ impl<'a> App<'a> {
             .for_each(|part| {
                 if self.mode.is_running()
                     && !self.settings.disable_animations
+                    && part.token.annotation == dparser::TokenAnnotation::IsCommandWord
                     && part.normal_span().content.starts_with("python")
                 {
                     self.snake_animation.update_anim();
