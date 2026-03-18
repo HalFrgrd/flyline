@@ -40,6 +40,7 @@ pub enum Tag {
     FuzzySearch,
     HistoryResult(usize),
     Tooltip,
+    AiResult(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -353,7 +354,7 @@ impl Contents {
         if direct_contact.is_some_and(|cell| {
             matches!(
                 cell.tag,
-                Tag::Command(_) | Tag::Suggestion(_) | Tag::HistoryResult(_)
+                Tag::Command(_) | Tag::Suggestion(_) | Tag::HistoryResult(_) | Tag::AiResult(_)
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
