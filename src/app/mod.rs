@@ -126,11 +126,17 @@ enum ContentMode {
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
     AiMode {
-        receiver: std::sync::mpsc::Receiver<std::io::Result<String>>,
+        receiver: std::sync::mpsc::Receiver<Result<String, (String, String)>>,
         command_display: String,
+        start_time: std::time::Instant,
     },
     /// AI output has been parsed; user is selecting a suggestion from the list.
     AiOutputSelection(AiOutputSelection),
+    /// AI command or JSON parsing failed; stores the error message and any raw output.
+    AiError {
+        message: String,
+        raw_output: String,
+    },
 }
 
 struct App<'a> {
@@ -241,10 +247,7 @@ impl<'a> App<'a> {
                     Err(std::sync::mpsc::TryRecvError::Empty) => None,
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         log::warn!("AI task channel disconnected unexpectedly");
-                        Some(Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "AI task disconnected",
-                        )))
+                        Some(Err(("AI task disconnected".to_string(), String::new())))
                     }
                 }
             } else {
@@ -256,15 +259,21 @@ impl<'a> App<'a> {
                         let suggestions = parse_ai_output(&raw_output);
                         if suggestions.is_empty() {
                             log::warn!("AI command returned no suggestions");
-                            self.content_mode = ContentMode::Normal;
+                            self.content_mode = ContentMode::AiError {
+                                message: "Failed to parse AI output as valid JSON".to_string(),
+                                raw_output,
+                            };
                         } else {
                             self.content_mode =
                                 ContentMode::AiOutputSelection(AiOutputSelection::new(suggestions));
                         }
                     }
-                    Err(e) => {
-                        log::error!("AI command failed: {}", e);
-                        self.content_mode = ContentMode::Normal;
+                    Err((msg, raw_output)) => {
+                        log::error!("AI command failed: {}", msg);
+                        self.content_mode = ContentMode::AiError {
+                            message: msg,
+                            raw_output,
+                        };
                     }
                 }
                 redraw = true;
@@ -663,6 +672,16 @@ impl<'a> App<'a> {
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.accept_fuzzy_history_search();
             }
+            // Shift+Enter - activate AI mode like Ctrl+I (requires --ai-command to be configured)
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } if !self.settings.ai_command.is_empty()
+                && !matches!(self.content_mode, ContentMode::AiMode { .. }) =>
+            {
+                self.start_ai_mode();
+            }
             // Enter key - accept suggestions or submit command
             KeyEvent {
                 code: KeyCode::Enter,
@@ -685,6 +704,9 @@ impl<'a> App<'a> {
                     self.try_submit_current_buffer();
                 }
                 ContentMode::AiMode { .. } => {}
+                ContentMode::AiError { .. } => {
+                    self.content_mode = ContentMode::Normal;
+                }
                 ContentMode::AiOutputSelection(selection) => {
                     if let Some(cmd) = selection.selected_command() {
                         let cmd = cmd.to_string();
@@ -723,6 +745,7 @@ impl<'a> App<'a> {
                 }
                 ContentMode::AiMode { .. } => {}
                 ContentMode::AiOutputSelection(_) => {}
+                ContentMode::AiError { .. } => {}
             },
 
             // Escape - clear suggestions or toggle mouse (Simple and Smart modes)
@@ -732,7 +755,8 @@ impl<'a> App<'a> {
                 ContentMode::TabCompletion(_)
                 | ContentMode::FuzzyHistorySearch
                 | ContentMode::AiMode { .. }
-                | ContentMode::AiOutputSelection(_) => {
+                | ContentMode::AiOutputSelection(_)
+                | ContentMode::AiError { .. } => {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
@@ -780,7 +804,9 @@ impl<'a> App<'a> {
                             .history_manager
                             .get_fuzzy_search_results(self.buffer.buffer());
                     }
-                    ContentMode::AiMode { .. } | ContentMode::AiOutputSelection(_) => {}
+                    ContentMode::AiMode { .. }
+                    | ContentMode::AiOutputSelection(_)
+                    | ContentMode::AiError { .. } => {}
                 }
             }
             KeyEvent {
@@ -797,43 +823,7 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } if !self.settings.ai_command.is_empty() => {
-                let cmd_args = self.settings.ai_command.clone();
-                let buffer_str = self.buffer.buffer().to_string();
-                let (tx, rx) = std::sync::mpsc::channel();
-                // Build a human-readable representation of the full command being run.
-                let command_display = {
-                    let mut parts = cmd_args.clone();
-                    parts.push(buffer_str.clone());
-                    parts.join(" ")
-                };
-                log::info!("Running AI command: {}", command_display);
-                std::thread::spawn(move || {
-                    // Safety: the guard `!ai_command.is_empty()` at the call site ensures
-                    // cmd_args is non-empty, so split_first() always returns Some.
-                    let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
-                    let result = std::process::Command::new(prog)
-                        .args(args)
-                        .arg(&buffer_str)
-                        .output()
-                        .map(|output| {
-                            if !output.status.success() {
-                                let stderr = String::from_utf8_lossy(&output.stderr);
-                                log::warn!(
-                                    "AI command exited with {}: {}",
-                                    output.status,
-                                    stderr.trim()
-                                );
-                            }
-                            String::from_utf8_lossy(&output.stdout).trim().to_string()
-                        });
-                    if let Err(e) = tx.send(result) {
-                        log::warn!("AI task: failed to send result (receiver dropped): {}", e);
-                    }
-                });
-                self.content_mode = ContentMode::AiMode {
-                    receiver: rx,
-                    command_display,
-                };
+                self.start_ai_mode();
             }
             KeyEvent {
                 code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
@@ -977,6 +967,64 @@ impl<'a> App<'a> {
             self.buffer.replace_buffer(new_command.as_str());
         }
         self.content_mode = ContentMode::Normal;
+    }
+
+    /// Spawn the configured AI command in a background thread and transition to `AiMode`.
+    /// Words that contain a space are quoted with single quotes in the display string.
+    fn start_ai_mode(&mut self) {
+        let cmd_args = self.settings.ai_command.clone();
+        let buffer_str = self.buffer.buffer().to_string();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<String, (String, String)>>();
+        // Build a human-readable representation of the full command being run.
+        // Any word that contains a space is wrapped in single quotes, with any
+        // embedded single quotes escaped using the shell '\'' idiom.
+        let command_display = {
+            let mut parts = cmd_args.clone();
+            parts.push(buffer_str.clone());
+            parts
+                .iter()
+                .map(|p| {
+                    if p.contains(' ') {
+                        format!("'{}'", p.replace('\'', "'\\''"))
+                    } else {
+                        p.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        log::info!("Running AI command: {}", command_display);
+        std::thread::spawn(move || {
+            // Safety: the guard `!ai_command.is_empty()` at the call site ensures
+            // cmd_args is non-empty, so split_first() always returns Some.
+            let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
+            let result: Result<String, (String, String)> = std::process::Command::new(prog)
+                .args(args)
+                .arg(&buffer_str)
+                .output()
+                .map_err(|e| (format!("Failed to run AI command: {}", e), String::new()))
+                .and_then(|output| {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !output.status.success() {
+                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        log::warn!("AI command exited with {}: {}", output.status, stderr);
+                        Err((
+                            format!("AI command exited with {}", output.status),
+                            format!("stdout: {}\nstderr: {}", stdout, stderr),
+                        ))
+                    } else {
+                        Ok(stdout)
+                    }
+                });
+            if let Err(e) = tx.send(result) {
+                log::warn!("AI task: failed to send result (receiver dropped): {}", e);
+            }
+        });
+        self.content_mode = ContentMode::AiMode {
+            receiver: rx,
+            command_display,
+            start_time: std::time::Instant::now(),
+        };
     }
 
     /// Submit the current buffer if bash would accept it, otherwise insert a newline.
@@ -1541,12 +1589,15 @@ impl<'a> App<'a> {
             }
             ContentMode::Normal if self.mode.is_running() => {}
             ContentMode::AiMode {
-                command_display, ..
+                command_display,
+                start_time,
+                ..
             } if self.mode.is_running() => {
                 content.newline();
+                let elapsed_secs = start_time.elapsed().as_secs();
                 content.write_span(
                     &Span::styled(
-                        format!("Running: {}", command_display),
+                        format!("Running: {} [{}s]", command_display, elapsed_secs),
                         Palette::secondary_text(),
                     ),
                     Tag::Blank,
@@ -1578,22 +1629,57 @@ impl<'a> App<'a> {
                     );
                     content.fill_line(Tag::AiResult(row_idx));
                     content.newline();
-                    // Command line (indented)
+                    // Command line: gutter char + syntax-highlighted command via dparser
                     content.write_span(
-                        &Span::styled(" ", Palette::secondary_text()),
+                        &Span::styled(indicator, indicator_style),
                         Tag::AiResult(row_idx),
                     );
-                    let cmd_style = if is_selected {
-                        Palette::convert_to_selected(Style::default())
-                    } else {
-                        Style::default()
-                    };
-                    content.write_span(
-                        &Span::styled(suggestion.command.clone(), cmd_style),
-                        Tag::AiResult(row_idx),
-                    );
+                    let cmd = &suggestion.command;
+                    let mut parser = dparser::DParser::from(cmd.as_str());
+                    parser.walk_to_end();
+                    let tokens = parser.tokens().to_vec();
+                    // cursor_byte_pos=cmd.len() (past end), buffer_byte_length=cmd.len(),
+                    // app_is_running=false (no cursor/pair highlighting), wordinfo_fn=None.
+                    let formatted_cmd = format_buffer(&tokens, cmd.len(), cmd.len(), false, None);
+                    for part in &formatted_cmd.parts {
+                        if matches!(part.token.token.kind, TokenKind::Newline) {
+                            continue;
+                        }
+                        let span = part.span_to_use();
+                        let styled_span = if is_selected {
+                            Span::styled(
+                                span.content.clone(),
+                                Palette::convert_to_selected(span.style),
+                            )
+                        } else {
+                            span.clone()
+                        };
+                        content.write_span(&styled_span, Tag::AiResult(row_idx));
+                    }
                     content.fill_line(Tag::AiResult(row_idx));
                     content.newline();
+                }
+            }
+            ContentMode::AiError {
+                message,
+                raw_output,
+            } if self.mode.is_running() => {
+                content.newline();
+                content.write_span(
+                    &Span::styled(
+                        format!("AI failed: {}", message),
+                        Style::default().fg(Color::Red),
+                    ),
+                    Tag::Blank,
+                );
+                if !raw_output.is_empty() {
+                    for line in raw_output.lines().take(5) {
+                        content.newline();
+                        content.write_span(
+                            &Span::styled(line.to_string(), Palette::secondary_text()),
+                            Tag::Blank,
+                        );
+                    }
                 }
             }
             _ => {}
