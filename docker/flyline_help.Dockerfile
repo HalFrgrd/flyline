@@ -1,0 +1,22 @@
+FROM ubuntu:20.04 AS help-runner
+
+# ubuntu:20.04 ships with bash 5.0; no extra install needed.
+# Prevent interactive prompts during any potential package installation
+ENV DEBIAN_FRONTEND=noninteractive
+# Disable color output from clap so the saved text is plain ASCII
+ENV NO_COLOR=1
+
+COPY --from=built-artifact /libflyline.so /libflyline.so
+
+# Enable flyline on interactive bash startup
+RUN touch /root/.bashrc && \
+    printf 'enable -f /libflyline.so flyline\n' >> /root/.bashrc
+
+# Run flyline --help in an interactive bash session and strip any residual
+# ANSI escape sequences before saving the output.
+RUN /bin/bash -i -c 'flyline --help' 2>/dev/null | \
+    sed 's/\x1B\[[0-9;]*[A-Za-z]//g' > /flyline_help.txt
+
+
+FROM scratch AS flyline-help-output
+COPY --from=help-runner /flyline_help.txt /flyline_help.txt
