@@ -2,6 +2,7 @@ mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
+use crate::ai_command::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::command_acceptance;
@@ -122,7 +123,14 @@ enum ContentMode {
     Normal,
     FuzzyHistorySearch,
     TabCompletion(ActiveSuggestions),
-    AiMode(std::sync::mpsc::Receiver<std::io::Result<String>>),
+    /// AI command is running in the background. Stores the channel receiver and the
+    /// human-readable representation of the command being executed.
+    AiMode {
+        receiver: std::sync::mpsc::Receiver<std::io::Result<String>>,
+        command_display: String,
+    },
+    /// AI output has been parsed; user is selecting a suggestion from the list.
+    AiOutputSelection(AiOutputSelection),
 }
 
 struct App<'a> {
@@ -221,7 +229,7 @@ impl<'a> App<'a> {
 
         loop {
             // Poll AI background task: check if a result has arrived without blocking.
-            let ai_result = if let ContentMode::AiMode(ref receiver) = self.content_mode {
+            let ai_result = if let ContentMode::AiMode { ref receiver, .. } = self.content_mode {
                 match receiver.try_recv() {
                     Ok(result) => Some(result),
                     Err(std::sync::mpsc::TryRecvError::Empty) => None,
@@ -238,15 +246,21 @@ impl<'a> App<'a> {
             };
             if let Some(result) = ai_result {
                 match result {
-                    Ok(output) => {
-                        self.buffer.replace_buffer(&output);
-                        self.on_possible_buffer_change();
+                    Ok(raw_output) => {
+                        let suggestions = parse_ai_output(&raw_output);
+                        if suggestions.is_empty() {
+                            log::warn!("AI command returned no suggestions");
+                            self.content_mode = ContentMode::Normal;
+                        } else {
+                            self.content_mode =
+                                ContentMode::AiOutputSelection(AiOutputSelection::new(suggestions));
+                        }
                     }
                     Err(e) => {
                         log::error!("AI command failed: {}", e);
+                        self.content_mode = ContentMode::Normal;
                     }
                 }
-                self.content_mode = ContentMode::Normal;
                 redraw = true;
             }
 
@@ -403,6 +417,12 @@ impl<'a> App<'a> {
                     self.history_manager.fuzzy_search_set_by_visual_idx(idx);
                 }
             }
+            Some((tag @ Tag::AiResult(idx), true)) => {
+                self.last_mouse_over_cell = Some(tag.clone());
+                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                    selection.set_selected_by_idx(idx);
+                }
+            }
             Some((tag @ Tag::Command(byte_pos), direct)) => {
                 cursor_directly_on_cell = direct;
                 self.last_mouse_over_cell = Some(tag.clone());
@@ -439,6 +459,19 @@ impl<'a> App<'a> {
                         self.history_manager.fuzzy_search_set_by_visual_idx(idx);
                         self.accept_fuzzy_history_search();
                         update_buffer = true;
+                    }
+                }
+            }
+            Some(Tag::AiResult(idx)) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                        selection.set_selected_by_idx(idx);
+                        if let Some(cmd) = selection.selected_command() {
+                            let cmd = cmd.to_string();
+                            self.buffer.replace_buffer(&cmd);
+                            update_buffer = true;
+                        }
+                        self.content_mode = ContentMode::Normal;
                     }
                 }
             }
@@ -525,6 +558,21 @@ impl<'a> App<'a> {
             } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     active_suggestions.on_up_arrow();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Up, ..
+            } if matches!(self.content_mode, ContentMode::AiOutputSelection(_)) => {
+                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                    selection.move_up();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } if matches!(self.content_mode, ContentMode::AiOutputSelection(_)) => {
+                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                    selection.move_down();
                 }
             }
             KeyEvent {
@@ -630,7 +678,15 @@ impl<'a> App<'a> {
                 ContentMode::Normal => {
                     self.try_submit_current_buffer();
                 }
-                ContentMode::AiMode(_) => {}
+                ContentMode::AiMode { .. } => {}
+                ContentMode::AiOutputSelection(selection) => {
+                    if let Some(cmd) = selection.selected_command() {
+                        let cmd = cmd.to_string();
+                        self.buffer.replace_buffer(&cmd);
+                        self.on_possible_buffer_change();
+                    }
+                    self.content_mode = ContentMode::Normal;
+                }
             },
             // Shift+Tab or BackTab - cycle suggestions backward
             KeyEvent {
@@ -659,7 +715,8 @@ impl<'a> App<'a> {
                 ContentMode::Normal => {
                     self.start_tab_complete();
                 }
-                ContentMode::AiMode(_) => {}
+                ContentMode::AiMode { .. } => {}
+                ContentMode::AiOutputSelection(_) => {}
             },
 
             // Escape - clear suggestions or toggle mouse (Simple and Smart modes)
@@ -668,7 +725,8 @@ impl<'a> App<'a> {
             } => match self.content_mode {
                 ContentMode::TabCompletion(_)
                 | ContentMode::FuzzyHistorySearch
-                | ContentMode::AiMode(_) => {
+                | ContentMode::AiMode { .. }
+                | ContentMode::AiOutputSelection(_) => {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
@@ -716,7 +774,7 @@ impl<'a> App<'a> {
                             .history_manager
                             .get_fuzzy_search_results(self.buffer.buffer());
                     }
-                    ContentMode::AiMode(_) => {}
+                    ContentMode::AiMode { .. } | ContentMode::AiOutputSelection(_) => {}
                 }
             }
             KeyEvent {
@@ -736,6 +794,13 @@ impl<'a> App<'a> {
                 let cmd_args = self.settings.ai_command.clone();
                 let buffer_str = self.buffer.buffer().to_string();
                 let (tx, rx) = std::sync::mpsc::channel();
+                // Build a human-readable representation of the full command being run.
+                let command_display = {
+                    let mut parts = cmd_args.clone();
+                    parts.push(buffer_str.clone());
+                    parts.join(" ")
+                };
+                log::info!("Running AI command: {}", command_display);
                 std::thread::spawn(move || {
                     // Safety: the guard `!ai_command.is_empty()` at the call site ensures
                     // cmd_args is non-empty, so split_first() always returns Some.
@@ -759,7 +824,10 @@ impl<'a> App<'a> {
                         log::warn!("AI task: failed to send result (receiver dropped): {}", e);
                     }
                 });
-                self.content_mode = ContentMode::AiMode(rx);
+                self.content_mode = ContentMode::AiMode {
+                    receiver: rx,
+                    command_display,
+                };
             }
             KeyEvent {
                 code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
@@ -1344,12 +1412,61 @@ impl<'a> App<'a> {
                 }
             }
             ContentMode::Normal if self.mode.is_running() => {}
-            ContentMode::AiMode(_) if self.mode.is_running() => {
+            ContentMode::AiMode {
+                command_display, ..
+            } if self.mode.is_running() => {
                 content.newline();
                 content.write_span(
-                    &Span::styled("Running ai mode...", Palette::secondary_text()),
+                    &Span::styled(
+                        format!("Running: {}", command_display),
+                        Palette::secondary_text(),
+                    ),
                     Tag::Blank,
                 );
+            }
+            ContentMode::AiOutputSelection(selection) if self.mode.is_running() => {
+                content.newline();
+                for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
+                    let is_selected = selection.selected_idx == row_idx;
+                    let indicator = if is_selected { "▐" } else { " " };
+                    let indicator_style = if is_selected {
+                        Palette::matched_character()
+                    } else {
+                        Palette::secondary_text()
+                    };
+                    content.write_span(
+                        &Span::styled(indicator, indicator_style),
+                        Tag::AiResult(row_idx),
+                    );
+                    // Description line
+                    let desc_style = if is_selected {
+                        Palette::convert_to_selected(Palette::secondary_text())
+                    } else {
+                        Palette::secondary_text()
+                    };
+                    content.write_span(
+                        &Span::styled(suggestion.description.clone(), desc_style),
+                        Tag::AiResult(row_idx),
+                    );
+                    content.fill_line(Tag::AiResult(row_idx));
+                    content.newline();
+                    // Command line (indented)
+                    content.write_span(
+                        &Span::styled(" ", Palette::secondary_text()),
+                        Tag::AiResult(row_idx),
+                    );
+                    let cmd_style = if is_selected {
+                        Palette::convert_to_selected(Style::default())
+                    } else {
+                        Style::default()
+                    };
+                    content.write_span(
+                        &Span::styled(suggestion.command.clone(), cmd_style),
+                        Tag::AiResult(row_idx),
+                    );
+                    content.fill_line(Tag::AiResult(row_idx));
+                    content.newline();
+                }
             }
             _ => {}
         }
