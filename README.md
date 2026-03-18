@@ -40,7 +40,7 @@ flyline --tutorial-mode
 
 # Settings
 
-Flyline is configured by calling it as a bash builtin with options in your `.bashrc`.
+Configure flyline by calling it with options in your `.bashrc` (after the `enable` call).
 Run `flyline` or `flyline --help` to see all available options.
 
 The block below is auto-generated from `flyline --help`:
@@ -75,7 +75,7 @@ Options:
 ```
 <!-- FLYLINE_HELP_END -->
 
-When flyline loads it automatically registers tab completion for its own options,
+When flyline loads, it automatically sets up its own tab completion
 so you can type `flyline --<Tab>` in your shell to interactively browse and configure settings.
 
 
