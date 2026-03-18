@@ -1,4 +1,4 @@
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
 use libc::{c_char, c_int};
 use std::sync::Mutex;
@@ -101,6 +101,31 @@ struct FlylineArgs {
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
     run_tab_completion_tests: bool,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Create a custom prompt animation.
+    ///
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// with the current animation frame on every render.  Frames may include
+    /// ANSI colour sequences written as `\e` (e.g. `\e[33m`).
+    ///
+    /// Example:
+    ///   flyline create-anim --name COOL_SPINNER --fps 10 '\e[33m|' '/' '-' '\\'
+    #[command(name = "create-anim")]
+    CreateAnim {
+        /// Name to embed in prompt strings as the animation placeholder.
+        #[arg(long)]
+        name: String,
+        /// Playback speed in frames per second (default: 10).
+        #[arg(long, default_value = "10")]
+        fps: f64,
+        /// One or more animation frames (positional).  Use `\e` for the ESC character.
+        frames: Vec<String>,
+    },
 }
 
 // Global state for our custom input stream
@@ -244,6 +269,34 @@ impl Flyline {
                 if !parsed.ai_command.is_empty() {
                     log::info!("AI command set: {:?}", parsed.ai_command);
                     self.settings.ai_command = parsed.ai_command;
+                }
+
+                if let Some(Commands::CreateAnim { name, fps, frames }) = parsed.command {
+                    if fps <= 0.0 {
+                        eprintln!(
+                            "flyline create-anim: --fps must be greater than 0 (got {}); animation '{}' not registered",
+                            fps, name
+                        );
+                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                    }
+                    // Convert `\e` (literal backslash-e written in shell single-quotes) to
+                    // an actual ESC byte so that ANSI colour sequences in frames are rendered
+                    // correctly by the terminal.
+                    let processed_frames =
+                        frames.iter().map(|f| f.replace("\\e", "\x1b")).collect();
+                    log::info!(
+                        "Registering animation '{}' at {} fps with {} frame(s)",
+                        name,
+                        fps,
+                        frames.len()
+                    );
+                    self.settings
+                        .custom_animations
+                        .push(settings::PromptAnimation {
+                            name,
+                            fps,
+                            frames: processed_frames,
+                        });
                 }
 
                 #[cfg(feature = "integration-tests")]
