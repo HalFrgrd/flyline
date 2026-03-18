@@ -8,7 +8,7 @@ use crate::bash_env_manager::BashEnvManager;
 use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
-use crate::dparser::{AnnotatedToken, ToInclusiveRange};
+use crate::dparser::{AnnotatedToken, ToInclusiveRange, TokenAnnotation};
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
@@ -1059,6 +1059,11 @@ impl<'a> App<'a> {
                 if self.mode.is_running()
                     && !self.settings.disable_animations
                     && part.normal_span().content.starts_with("python")
+                    && !matches!(
+                        part.token.annotation,
+                        TokenAnnotation::IsPartOfSingleQuotedString
+                            | TokenAnnotation::IsPartOfDoubleQuotedString
+                    )
                 {
                     self.snake_animation.update_anim();
                     let snake_str = self
