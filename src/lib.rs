@@ -279,11 +279,6 @@ impl Flyline {
                         );
                         return bash_symbols::BuiltinExitCode::Usage as c_int;
                     }
-                    // Convert `\e` (literal backslash-e written in shell single-quotes) to
-                    // an actual ESC byte so that ANSI colour sequences in frames are rendered
-                    // correctly by the terminal.
-                    let processed_frames =
-                        frames.iter().map(|f| f.replace("\\e", "\x1b")).collect();
                     log::info!(
                         "Registering animation '{}' at {} fps with {} frame(s)",
                         name,
@@ -292,11 +287,7 @@ impl Flyline {
                     );
                     self.settings
                         .custom_animations
-                        .push(settings::PromptAnimation {
-                            name,
-                            fps,
-                            frames: processed_frames,
-                        });
+                        .push(settings::PromptAnimation { name, fps, frames });
                 }
 
                 #[cfg(feature = "integration-tests")]
