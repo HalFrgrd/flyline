@@ -117,13 +117,16 @@ impl ToInclusiveRange for Range<usize> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenAnnotation {
     None,
     IsPartOfSingleQuotedString,
     IsPartOfDoubleQuotedString,
     IsOpening(Option<usize>), // index of the closing token in the tokens vector
-    IsClosing(usize),         // index of the opening token in the tokens vector
+    IsClosing {
+        opening_idx: usize,     // index of the opening token in the tokens vector
+        is_auto_inserted: bool, // true if this closing token was automatically inserted by the editor
+    },
     IsCommandWord, // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
     IsEnvVar,
 }
@@ -167,6 +170,10 @@ impl DParser {
     #[allow(dead_code)]
     pub fn tokens(&self) -> &[AnnotatedToken] {
         &self.tokens
+    }
+
+    pub fn into_tokens(self) -> Vec<AnnotatedToken> {
+        self.tokens
     }
 
     fn nested_opening_satisfied(
@@ -341,7 +348,10 @@ impl DParser {
                     if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
-                    self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
+                    self.tokens[idx].annotation = TokenAnnotation::IsClosing {
+                        opening_idx,
+                        is_auto_inserted: false,
+                    };
 
                     let current_command_range_contains_cursor =
                         cursor_byte_pos.is_some_and(|pos| {
@@ -388,7 +398,10 @@ impl DParser {
                     if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
                 {
                     let (opening_idx, _) = heredocs.pop_front().unwrap();
-                    self.tokens[idx].annotation = TokenAnnotation::IsClosing(opening_idx);
+                    self.tokens[idx].annotation = TokenAnnotation::IsClosing {
+                        opening_idx,
+                        is_auto_inserted: false,
+                    };
                 }
 
                 TokenKind::And
@@ -478,7 +491,7 @@ impl DParser {
         // We need to collect the updates first to avoid mutable borrow issues
         let mut updates = Vec::new();
         for (idx, annotated_token) in self.tokens.iter().enumerate() {
-            if let TokenAnnotation::IsClosing(opening_idx) = annotated_token.annotation {
+            if let TokenAnnotation::IsClosing { opening_idx, .. } = annotated_token.annotation {
                 updates.push((opening_idx, idx));
             }
         }
@@ -610,7 +623,13 @@ mod tests {
             TokenAnnotation::IsPartOfSingleQuotedString
         );
         assert_eq!(tokens[10].token.value, "'");
-        assert_eq!(tokens[10].annotation, TokenAnnotation::IsClosing(8));
+        assert_eq!(
+            tokens[10].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 8,
+                is_auto_inserted: false
+            }
+        );
     }
 
     #[test]
@@ -636,7 +655,13 @@ mod tests {
             TokenAnnotation::IsPartOfDoubleQuotedString
         );
         assert_eq!(tokens[4].token.value, "\"");
-        assert_eq!(tokens[4].annotation, TokenAnnotation::IsClosing(2));
+        assert_eq!(
+            tokens[4].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false
+            }
+        );
     }
 
     #[test]
@@ -665,7 +690,13 @@ mod tests {
         assert_eq!(tokens[7].token.value, "\n");
         assert_eq!(tokens[7].annotation, TokenAnnotation::None);
         assert_eq!(tokens[8].token.value, "A");
-        assert_eq!(tokens[8].annotation, TokenAnnotation::IsClosing(2));
+        assert_eq!(
+            tokens[8].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false
+            }
+        );
         assert_eq!(tokens[9].token.value, "\n");
         assert_eq!(tokens[9].annotation, TokenAnnotation::None);
         assert_eq!(tokens[10].token.value, "line2");
@@ -673,7 +704,13 @@ mod tests {
         assert_eq!(tokens[11].token.value, "\n");
         assert_eq!(tokens[11].annotation, TokenAnnotation::None);
         assert_eq!(tokens[12].token.value, "B");
-        assert_eq!(tokens[12].annotation, TokenAnnotation::IsClosing(4));
+        assert_eq!(
+            tokens[12].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 4,
+                is_auto_inserted: false
+            }
+        );
     }
 
     #[test]
@@ -740,7 +777,13 @@ mod tests {
             TokenAnnotation::IsPartOfSingleQuotedString
         );
         assert_eq!(tokens[6].token.value, "'");
-        assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
+        assert_eq!(
+            tokens[6].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false
+            }
+        );
     }
 
     #[test]
@@ -768,7 +811,13 @@ mod tests {
 
         assert_eq!(tokens[6].token.kind, TokenKind::DoubleRParen);
         assert_eq!(tokens[6].token.value, "))");
-        assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
+        assert_eq!(
+            tokens[6].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false
+            }
+        );
     }
 
     #[test]
