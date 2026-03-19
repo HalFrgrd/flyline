@@ -531,14 +531,6 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
-    fn make_anim(name: &str, fps: f64, frames: &[&str]) -> PromptAnimation {
-        PromptAnimation {
-            name: name.to_string(),
-            fps,
-            frames: frames.iter().map(|s| s.to_string()).collect(),
-        }
-    }
-
     fn fixed_time(ms: i64) -> chrono::DateTime<chrono::Local> {
         chrono::Local.timestamp_millis_opt(ms).unwrap()
     }
