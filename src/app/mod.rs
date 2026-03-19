@@ -157,6 +157,7 @@ struct App<'a> {
     /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
     dparser_tokens_cache: Vec<AnnotatedToken>,
     cursor_animation: CursorAnimation,
+    unfinished_from_prev_command: bool,
     prompt_manager: PromptManager,
     home_path: String,
     /// Parsed bash history available at startup.
@@ -199,6 +200,7 @@ impl<'a> App<'a> {
             formatted_buffer_cache,
             dparser_tokens_cache: Vec::new(),
             cursor_animation: CursorAnimation::new(),
+            unfinished_from_prev_command,
             prompt_manager: PromptManager::new(
                 unfinished_from_prev_command,
                 &settings
@@ -1126,10 +1128,10 @@ impl<'a> App<'a> {
     /// If it's a single line complete command, exit.
     /// If it's a multi-line complete command, cursor needs to be at end to exit.
     fn try_submit_current_buffer(&mut self) {
-        if ((self.buffer.lines_with_cursor().iter().count() == 1)
+        let should_submit_normally = ((self.buffer.lines_with_cursor().iter().count() == 1)
             || self.buffer.is_cursor_at_trimmed_end())
-            && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
-        {
+            && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer());
+        if self.unfinished_from_prev_command || should_submit_normally {
             self.mode =
                 AppRunningState::Exiting(ExitState::WithCommand(self.buffer.buffer().to_string()));
         } else {
