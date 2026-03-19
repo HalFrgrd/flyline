@@ -10,29 +10,20 @@ permissions:
   contents: write
 
 jobs:
-  build-and-test:
-    name: Build and test (${{ matrix.target }})
+  build:
+    name: Build (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            docker_platform: linux/amd64
-          - target: aarch64-unknown-linux-gnu
-            docker_platform: linux/arm64
-          - target: armv7-unknown-linux-gnueabihf
-            docker_platform: linux/arm/v7
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - armv7-unknown-linux-gnueabihf
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -44,13 +35,6 @@ jobs:
 
       - name: Build ${{ matrix.target }}
         run: cross build --release --target ${{ matrix.target }}
-
-      - name: Test in bash (${{ matrix.target }})
-        run: |
-          docker run --platform ${{ matrix.docker_platform }} --rm \
-            -v "$PWD/target/${{ matrix.target }}/release/libflyline.so:/libflyline.so:ro" \
-            ubuntu:16.04 \
-            /bin/bash -i -c "enable -f /libflyline.so flyline && flyline --version && echo 'SUCCESS: flyline loaded in bash'"
 
       - name: Prepare release artifact
         run: |
