@@ -98,7 +98,7 @@ fn get_command_type_uncached(cmd: &str) -> (CommandType, String) {
     let (_, command_type_output) = with_redirected_stdout(|| unsafe {
         bash_symbols::describe_command(cmd_c_str.as_ptr(), bash_symbols::CDescFlag::Type as c_int)
     });
-    let command_type = CommandType::from_str(&command_type_output.trim());
+    let command_type = CommandType::from_str(command_type_output.trim());
 
     let (_, short_desc) = match command_type {
         CommandType::Alias => {
@@ -201,13 +201,13 @@ pub fn get_all_aliases() -> Vec<String> {
 }
 
 pub fn get_all_reserved_words() -> Vec<String> {
-    return vec![
+    vec![
         "if", "then", "else", "elif", "fi", "case", "esac", "for", "select", "while", "until",
         "do", "done", "in", "function", "time", "{", "}", "!", "[[", "]]", "coproc",
     ]
     .iter()
     .map(|s| s.to_string())
-    .collect();
+    .collect()
 }
 
 pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
@@ -402,11 +402,10 @@ fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
                 break;
             }
             let c_str = std::ffi::CStr::from_ptr(c_str_ptr);
-            if let Ok(str_slice) = c_str.to_str() {
-                if seen.insert(str_slice) {
+            if let Ok(str_slice) = c_str.to_str()
+                && seen.insert(str_slice) {
                     strings.push(str_slice.to_string());
                 }
-            }
         }
     }
     strings
@@ -564,17 +563,14 @@ pub fn expand_filename(filename: &str) -> String {
 
 // QuoteType can be  in the middle  of a word (i.e.  backslash)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Default)]
 pub enum QuoteType {
     SingleQuote,
     DoubleQuote,
+    #[default]
     Backslash,
 }
 
-impl Default for QuoteType {
-    fn default() -> Self {
-        QuoteType::Backslash
-    }
-}
 
 impl QuoteType {
     pub fn from_char(c: char) -> Option<QuoteType> {
@@ -588,9 +584,9 @@ impl QuoteType {
 
     pub fn into_byte(&self) -> u8 {
         match self {
-            QuoteType::SingleQuote => '\'' as u8,
-            QuoteType::DoubleQuote => '"' as u8,
-            QuoteType::Backslash => '\\' as u8,
+            QuoteType::SingleQuote => b'\'',
+            QuoteType::DoubleQuote => b'"',
+            QuoteType::Backslash => b'\\',
         }
     }
 }
@@ -677,7 +673,7 @@ pub fn dequoting_function_rust(s: &str) -> String {
                 }
             }
             '\'' => {
-                while let Some(next_char) = chars.next() {
+                for next_char in chars.by_ref() {
                     if next_char == '\'' {
                         break;
                     }
@@ -726,11 +722,9 @@ pub fn find_quote_type(s: &str) -> Option<QuoteType> {
         for c in s.chars() {
             if c == '\\' {
                 backslash_count += 1;
-            } else {
-                if backslash_count > 0 {
-                    max_consecutive_backslashes = max_consecutive_backslashes.max(backslash_count);
-                    backslash_count = 0;
-                }
+            } else if backslash_count > 0 {
+                max_consecutive_backslashes = max_consecutive_backslashes.max(backslash_count);
+                backslash_count = 0;
             }
         }
         // Handle case where string ends with backslashes

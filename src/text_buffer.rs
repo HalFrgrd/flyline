@@ -1209,7 +1209,7 @@ impl SnapshotManager {
         if merge_with_recent
             && !cfg!(test)
             && duration_since_last < std::time::Duration::from_millis(1000)
-            && self.undos.len() > 0
+            && !self.undos.is_empty()
         {
             // log::debug!("Reusing recent snapshot: age {:?} ", duration_since_last);
         } else {

@@ -133,7 +133,7 @@ pub fn get_completion_context<'a>(
 
             for i in (0..node_idx).rev() {
                 let range_contains_dollar =
-                    buffer.get(start..end).map_or(false, |s| s.contains('$'));
+                    buffer.get(start..end).is_some_and(|s| s.contains('$'));
 
                 match context_tokens.get(i) {
                     Some(

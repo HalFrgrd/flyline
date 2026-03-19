@@ -25,14 +25,12 @@ use crossterm::event::{
 };
 use flash::lexer::TokenKind;
 use itertools::Itertools;
-use libc;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::time::Duration;
 use std::vec;
-use timeago;
 
 const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Shift+Enter to accept the command for editing";
 const TUTORIAL_HISTORY_PREFIX_HINT: &str =
@@ -450,32 +448,31 @@ impl<'a> App<'a> {
             contents.get_tagged_cell(mouse.column, mouse.row, *offset)
         }) {
             Some((tag @ Tag::Suggestion(idx), true)) => {
-                self.last_mouse_over_cell = Some(tag.clone());
+                self.last_mouse_over_cell = Some(tag);
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     active_suggestions.set_selected_by_idx(idx);
                 }
             }
             Some((tag @ Tag::HistoryResult(idx), true)) => {
-                self.last_mouse_over_cell = Some(tag.clone());
+                self.last_mouse_over_cell = Some(tag);
                 if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
                     self.history_manager.fuzzy_search_set_by_visual_idx(idx);
                 }
             }
             Some((tag @ Tag::AiResult(idx), true)) => {
-                self.last_mouse_over_cell = Some(tag.clone());
+                self.last_mouse_over_cell = Some(tag);
                 if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
                     selection.set_selected_by_idx(idx);
                 }
             }
             Some((tag @ Tag::Command(byte_pos), direct)) => {
                 cursor_directly_on_cell = direct;
-                self.last_mouse_over_cell = Some(tag.clone());
+                self.last_mouse_over_cell = Some(tag);
                 log::trace!("Mouse over command at byte position {}", byte_pos);
-                if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos) {
-                    if let Some(tooltip) = part.tooltip.as_ref() {
+                if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
+                    && let Some(tooltip) = part.tooltip.as_ref() {
                         self.tooltip = Some(tooltip.clone());
                     }
-                }
             }
 
             t => {
@@ -488,27 +485,25 @@ impl<'a> App<'a> {
 
         match self.last_mouse_over_cell {
             Some(Tag::Suggestion(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                    if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                if matches!(mouse.kind, MouseEventKind::Up(_))
+                    && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                         active_suggestions.set_selected_by_idx(idx);
                         active_suggestions.accept_currently_selected(&mut self.buffer);
                         self.content_mode = ContentMode::Normal;
                         update_buffer = true;
                     }
-                }
             }
             Some(Tag::HistoryResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                    if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
+                if matches!(mouse.kind, MouseEventKind::Up(_))
+                    && matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
                         self.history_manager.fuzzy_search_set_by_visual_idx(idx);
                         self.accept_fuzzy_history_search();
                         update_buffer = true;
                     }
-                }
             }
             Some(Tag::AiResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                    if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                if matches!(mouse.kind, MouseEventKind::Up(_))
+                    && let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
                         selection.set_selected_by_idx(idx);
                         if let Some(cmd) = selection.selected_command() {
                             let cmd = cmd.to_string();
@@ -517,7 +512,6 @@ impl<'a> App<'a> {
                         }
                         self.content_mode = ContentMode::Normal;
                     }
-                }
             }
             Some(Tag::Command(byte_pos)) => {
                 if matches!(
@@ -564,11 +558,10 @@ impl<'a> App<'a> {
 
         // Smart mode: any keypress re-enables mouse capture, unless the user has
         // explicitly disabled it via a toggle action.
-        if self.settings.mouse_mode == MouseMode::Smart {
-            if !self.mouse_state.is_explicitly_disabled_by_user() {
+        if self.settings.mouse_mode == MouseMode::Smart
+            && !self.mouse_state.is_explicitly_disabled_by_user() {
                 self.mouse_state.enable("smart mode: keypress detected");
             }
-        }
 
         match key {
             KeyEvent {
@@ -907,7 +900,7 @@ impl<'a> App<'a> {
         }
 
         self.on_possible_buffer_change(keypress_action);
-        return KeyPressReturnType::None;
+        KeyPressReturnType::None
     }
 
     fn would_overwrite_auto_inserted_closing(&self, c: char) -> bool {
@@ -930,7 +923,7 @@ impl<'a> App<'a> {
                 ..
             } = dparser_token.annotation
             {
-                return dparser_token.token.value.chars().next() == Some(c);
+                return dparser_token.token.value.starts_with(c);
             }
         }
         false
@@ -974,9 +967,8 @@ impl<'a> App<'a> {
     ) {
         for token in dparser_tokens {
             if token.token.byte_range().start == byte_pos
-                && token.token.value.chars().next() == Some(c)
-            {
-                if let dparser::TokenAnnotation::IsClosing {
+                && token.token.value.starts_with(c)
+                && let dparser::TokenAnnotation::IsClosing {
                     is_auto_inserted, ..
                 } = &mut token.annotation
                 {
@@ -988,7 +980,6 @@ impl<'a> App<'a> {
                     );
                     return;
                 }
-            }
         }
         log::warn!(
             "Failed to mark auto-inserted closing char '{}' at byte position {}: no matching token found in cache",
@@ -1155,9 +1146,9 @@ impl<'a> App<'a> {
     /// If it's a single line complete command, exit.
     /// If it's a multi-line complete command, cursor needs to be at end to exit.
     fn try_submit_current_buffer(&mut self) {
-        let should_submit_normally = ((self.buffer.lines_with_cursor().iter().count() == 1)
+        let should_submit_normally = ((self.buffer.lines_with_cursor().len() == 1)
             || self.buffer.is_cursor_at_trimmed_end())
-            && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer());
+            && command_acceptance::will_bash_accept_buffer(self.buffer.buffer());
         if self.unfinished_from_prev_command || should_submit_normally {
             self.mode =
                 AppRunningState::Exiting(ExitState::WithCommand(self.buffer.buffer().to_string()));
@@ -1182,7 +1173,7 @@ impl<'a> App<'a> {
                 self.buffer.cursor_byte_pos(),
             );
             let word_under_cursor_str = completion_context.word_under_cursor;
-            if let Some(word_under_cursor) = SubString::new(buffer, word_under_cursor_str).ok() {
+            if let Ok(word_under_cursor) = SubString::new(buffer, word_under_cursor_str) {
                 if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
                     log::debug!(
                         "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
@@ -1224,7 +1215,7 @@ impl<'a> App<'a> {
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
-            Some(Box::new(|token| Self::wordinfo_fn(token))),
+            Some(Box::new(Self::wordinfo_fn)),
         );
 
         self.tooltip = None;
@@ -1235,8 +1226,7 @@ impl<'a> App<'a> {
                 .byte_range()
                 .to_inclusive()
                 .contains(&self.buffer.cursor_byte_pos())
-            {
-                if let Some(tooltip) = part.tooltip.as_ref() {
+                && let Some(tooltip) = part.tooltip.as_ref() {
                     log::debug!(
                         "Setting tooltip for token at byte position {}: {}",
                         part.token.token.byte_range().start,
@@ -1244,7 +1234,6 @@ impl<'a> App<'a> {
                     );
                     self.tooltip = Some(tooltip.clone());
                 }
-            }
         }
 
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
@@ -1296,7 +1285,7 @@ impl<'a> App<'a> {
         format!("{:>5}", s.trim_start_matches('0'))
     }
 
-    fn create_content(self: &mut Self, width: u16) -> Contents {
+    fn create_content(&mut self, width: u16) -> Contents {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
@@ -1360,7 +1349,7 @@ impl<'a> App<'a> {
             };
 
             let poss_cursor_anim_pos = content.write_span_dont_overwrite(
-                &span_to_draw,
+                span_to_draw,
                 Tag::Command(part.token.token.byte_range().start),
                 part.cursor_grapheme_idx,
             );
@@ -1559,7 +1548,7 @@ impl<'a> App<'a> {
 
                     let timeago_str = entry
                         .timestamp
-                        .map(|ts| Self::ts_to_timeago_string_5chars(ts))
+                        .map(Self::ts_to_timeago_string_5chars)
                         .unwrap_or("     ".to_string());
 
                     spans.push(Span::styled(timeago_str, Palette::secondary_text()));
@@ -1754,7 +1743,7 @@ impl<'a> App<'a> {
                         cmd.len(),
                         cmd.len(),
                         false,
-                        Some(Box::new(|t| Self::wordinfo_fn(t))),
+                        Some(Box::new(Self::wordinfo_fn)),
                     );
                     for part in &formatted_cmd.parts {
                         if matches!(part.token.token.kind, TokenKind::Newline) {
@@ -1799,8 +1788,8 @@ impl<'a> App<'a> {
             }
             _ => {}
         }
-        if self.mode.is_running() {
-            if let Some(tooltip) = &self.tooltip {
+        if self.mode.is_running()
+            && let Some(tooltip) = &self.tooltip {
                 content.newline();
                 let tooltip_line =
                     Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
@@ -1851,7 +1840,6 @@ impl<'a> App<'a> {
             //         }
             //     }
             // }
-        }
         content
     }
 
@@ -1887,7 +1875,7 @@ impl<'a> App<'a> {
             if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
                 frame.set_cursor_position(Position {
                     x: cursor_pos.col,
-                    y: screen_row + frame_area.y as u16,
+                    y: screen_row + frame_area.y,
                 });
             }
         }

@@ -102,8 +102,8 @@ impl BashEnvManager {
         for path_dir in path_str.split(':') {
             if let Ok(entries) = std::fs::read_dir(path_dir) {
                 for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata() {
-                        if metadata.is_file() {
+                    if let Ok(metadata) = entry.metadata()
+                        && metadata.is_file() {
                             let permissions = metadata.permissions();
                             if permissions.mode() & 0o111 != 0 {
                                 // File is executable
@@ -112,7 +112,6 @@ impl BashEnvManager {
                                 }
                             }
                         }
-                    }
                 }
             }
         }
