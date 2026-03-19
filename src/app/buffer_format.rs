@@ -31,7 +31,6 @@ impl FormattedBuffer {
         let tokens = parser.tokens().to_vec();
         format_buffer(&tokens, cursor_pos, input.len(), false, None)
     }
-
 }
 
 impl Default for FormattedBuffer {

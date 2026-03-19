@@ -522,7 +522,7 @@ impl<'a> App<'a> {
         } else {
             false
         }
-    }    
+    }
 
     /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
     /// MacOs command keyboard shortcuts are not sent to terminal apps by default.
@@ -863,14 +863,16 @@ impl<'a> App<'a> {
                     );
                     self.buffer.move_right();
                 } else {
+                    let initial_cursor_pos = self.buffer.cursor_byte_pos();
                     self.buffer.on_keypress(key);
-                    let auto_close_pos =  self.insert_closing_char(c);  
-          
-                    log::info!("auto_close_pos for char '{}': {:?}", c, auto_close_pos);
-                    if let Some(pos) = auto_close_pos {
-                        keypress_action = Some(LastKeyPressAction::InsertedAutoClosing { char: c, byte_pos: pos });
+                    if let Some((auto_char, auto_pos)) =
+                        self.insert_closing_char(c, initial_cursor_pos)
+                    {
+                        keypress_action = Some(LastKeyPressAction::InsertedAutoClosing {
+                            char: auto_char,
+                            byte_pos: auto_pos,
+                        });
                     }
-                    return KeyPressReturnType::None;
                 }
             }
             // Backspace: if the char to the right of the cursor is an auto-inserted closing token
@@ -928,10 +930,12 @@ impl<'a> App<'a> {
     ///
     /// Returns the byte position of the auto-inserted closing character, or `None` if no
     /// closing character was inserted.
-    fn insert_closing_char(&mut self, c: char) -> Option<usize> {
-        let cursor_pos = self.buffer.cursor_byte_pos();
-        let just_inserted_pos = cursor_pos.saturating_sub(c.len_utf8());
-        if let Some(closing) = dparser::DParser::closing_char_to_insert(&self.dparser_tokens_cache, c, just_inserted_pos) {
+    fn insert_closing_char(&mut self, c: char, initial_cursor_pos: usize) -> Option<(char, usize)> {
+        if let Some(closing) = dparser::DParser::closing_char_to_insert(
+            &self.dparser_tokens_cache,
+            c,
+            initial_cursor_pos,
+        ) {
             self.buffer.insert_char(closing);
             self.buffer.move_left();
             // After move_left, cursor is at the start of the auto-inserted closing char.
@@ -940,16 +944,22 @@ impl<'a> App<'a> {
                 closing,
                 self.buffer.cursor_byte_pos()
             );
-            Some(self.buffer.cursor_byte_pos())
+            Some((closing, self.buffer.cursor_byte_pos()))
         } else {
             None
         }
     }
 
     /// Mark the dparser token at `byte_pos` as auto-inserted in the cache.
-    fn mark_auto_inserted_closing(dparser_tokens: &mut [dparser::AnnotatedToken], c: char, byte_pos: usize) {
+    fn mark_auto_inserted_closing(
+        dparser_tokens: &mut [dparser::AnnotatedToken],
+        c: char,
+        byte_pos: usize,
+    ) {
         for token in dparser_tokens {
-            if token.token.byte_range().start == byte_pos && token.token.value.chars().next() == Some(c) {
+            if token.token.byte_range().start == byte_pos
+                && token.token.value.chars().next() == Some(c)
+            {
                 if let dparser::TokenAnnotation::IsClosing {
                     is_auto_inserted, ..
                 } = &mut token.annotation
@@ -964,6 +974,11 @@ impl<'a> App<'a> {
                 }
             }
         }
+        log::warn!(
+            "Failed to mark auto-inserted closing char '{}' at byte position {}: no matching token found in cache",
+            c,
+            byte_pos
+        );
     }
 
     /// If the token immediately to the right of the cursor is an auto-inserted closing token
@@ -1116,7 +1131,7 @@ impl<'a> App<'a> {
         }
     }
 
-    fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction> ) {
+    fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction>) {
         self.history_suggestion = if self.buffer.buffer().is_empty() {
             None
         } else {
@@ -1191,42 +1206,16 @@ impl<'a> App<'a> {
         let mut parser = dparser::DParser::from(self.buffer.buffer());
         parser.walk_to_end();
         let mut new_tokens = parser.into_tokens();
-
-        if let Some(LastKeyPressAction::InsertedAutoClosing { char, byte_pos }) = last_keypress_action {
+        if let Some(LastKeyPressAction::InsertedAutoClosing { char, byte_pos }) =
+            last_keypress_action
+        {
             // If the last keypress inserted an auto-closing char, mark the corresponding token in the new cache as auto-inserted.
             Self::mark_auto_inserted_closing(&mut new_tokens, char, byte_pos);
         }
 
-        // Transfer is_auto_inserted flags from the old cache to the new tokens.
-        // We match by byte start position (best-effort; not perfect when chars are inserted inside a pair).
-        // Collect auto-inserted positions into a HashSet first to keep the transfer O(n).
-        let auto_inserted_positions: std::collections::HashSet<usize> = self
-            .dparser_tokens_cache
-            .iter()
-            .filter_map(|t| {
-                if let dparser::TokenAnnotation::IsClosing {
-                    is_auto_inserted: true,
-                    ..
-                } = t.annotation
-                {
-                    Some(t.token.byte_range().start)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if !auto_inserted_positions.is_empty() {
-            for new_token in &mut new_tokens {
-                if auto_inserted_positions.contains(&new_token.token.byte_range().start) {
-                    if let dparser::TokenAnnotation::IsClosing {
-                        is_auto_inserted, ..
-                    } = &mut new_token.annotation
-                    {
-                        *is_auto_inserted = true;
-                    }
-                }
-            }
+        dparser::DParser::transfer_auto_inserted_flags(&self.dparser_tokens_cache, &mut new_tokens);
+        for token in &new_tokens {
+            log::info!("Parsed token '{:#?}", token);
         }
 
         self.dparser_tokens_cache = new_tokens;

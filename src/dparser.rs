@@ -539,7 +539,11 @@ impl DParser {
     /// - `{`, `[`, `(` are unambiguously openers and always produce a closing counterpart.
     /// - `"`, `'`, `` ` `` are ambiguous: they close when there is already an unmatched opener of
     ///   the same kind before `just_inserted_pos` in the stale buffer; otherwise they open.
-    pub fn closing_char_to_insert(tokens: &[AnnotatedToken], c: char, just_inserted_pos: usize) -> Option<char> {
+    pub fn closing_char_to_insert(
+        tokens: &[AnnotatedToken],
+        c: char,
+        just_inserted_pos: usize,
+    ) -> Option<char> {
         // Unambiguously opening characters – always auto-close.
         match c {
             '{' => return Some('}'),
@@ -571,6 +575,60 @@ impl DParser {
         }
     }
 
+    pub fn transfer_auto_inserted_flags(
+        old_tokens: &[AnnotatedToken],
+        new_tokens: &mut [AnnotatedToken],
+    ) {
+        // Go from the left while we see identical tokens and mark any closing tokens in new_tokens as auto-inserted if the corresponding token in old_tokens was auto-inserted.
+        for (old, new) in old_tokens.iter().zip(new_tokens.iter_mut()) {
+            if old.token.kind != new.token.kind || old.token.value != new.token.value {
+                break;
+            }
+            if let TokenAnnotation::IsClosing {
+                opening_idx: old_opening_idx,
+                is_auto_inserted: true,
+            } = old.annotation
+            {
+                if let TokenAnnotation::IsClosing {
+                    opening_idx: new_opening_idx,
+                    ..
+                } = new.annotation
+                {
+                    if old_opening_idx == new_opening_idx {
+                        new.annotation = TokenAnnotation::IsClosing {
+                            opening_idx: new_opening_idx,
+                            is_auto_inserted: true,
+                        };
+                    }
+                }
+            }
+        }
+
+        // Go from the right while we see identical tokens and do the same.
+        for (old, new) in old_tokens.iter().rev().zip(new_tokens.iter_mut().rev()) {
+            if old.token.kind != new.token.kind || old.token.value != new.token.value {
+                break;
+            }
+            if let TokenAnnotation::IsClosing {
+                opening_idx: _,
+                is_auto_inserted: true,
+            } = old.annotation
+            {
+                if let TokenAnnotation::IsClosing {
+                    opening_idx: new_opening_idx,
+                    ..
+                } = new.annotation
+                {
+                    // if old_opening_idx == new_opening_idx {
+                    new.annotation = TokenAnnotation::IsClosing {
+                        opening_idx: new_opening_idx,
+                        is_auto_inserted: true,
+                    };
+                    // }
+                }
+            }
+        }
+    }
 }
 
 // Implicitly tested by command acceptance and tab_completion_context
@@ -891,7 +949,10 @@ mod tests {
         let mut parser = DParser::from(stale);
         parser.walk_to_end();
         let just_inserted_pos = stale.len();
-        assert_eq!(DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos), Some('"'));
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            Some('"')
+        );
     }
 
     #[test]
@@ -901,7 +962,10 @@ mod tests {
         let mut parser = DParser::from(stale);
         parser.walk_to_end();
         let just_inserted_pos = stale.len();
-        assert_eq!(DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos), None);
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            None
+        );
     }
 
     #[test]
@@ -922,7 +986,10 @@ mod tests {
         let mut parser = DParser::from(stale);
         parser.walk_to_end();
         let just_inserted_pos = stale.len();
-        assert_eq!(DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos), None);
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            None
+        );
     }
 
     #[test]
@@ -932,7 +999,10 @@ mod tests {
         let mut parser = DParser::from(stale);
         parser.walk_to_end();
         let just_inserted_pos = stale.len();
-        assert_eq!(DParser::closing_char_to_insert(&parser.tokens(), '{', just_inserted_pos), Some('}'));
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '{', just_inserted_pos),
+            Some('}')
+        );
     }
 
     #[test]
@@ -941,7 +1011,10 @@ mod tests {
         let mut parser = DParser::from(stale);
         parser.walk_to_end();
         let just_inserted_pos = stale.len();
-        assert_eq!(DParser::closing_char_to_insert(&parser.tokens(), '`', just_inserted_pos), Some('`'));
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '`', just_inserted_pos),
+            Some('`')
+        );
     }
 
     #[test]
@@ -951,7 +1024,10 @@ mod tests {
         let mut parser = DParser::from(stale);
         parser.walk_to_end();
         let just_inserted_pos = stale.len();
-        assert_eq!(DParser::closing_char_to_insert(&parser.tokens(), '`', just_inserted_pos), None);
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '`', just_inserted_pos),
+            None
+        );
     }
 
     #[test]
@@ -960,7 +1036,10 @@ mod tests {
         let mut parser = DParser::from(stale);
         parser.walk_to_end();
         let just_inserted_pos = stale.len();
-        assert_eq!(DParser::closing_char_to_insert(&parser.tokens(), 'a', just_inserted_pos), None);
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), 'a', just_inserted_pos),
+            None
+        );
     }
 
     #[test]
@@ -970,6 +1049,9 @@ mod tests {
         let mut parser = DParser::from(stale);
         parser.walk_to_end();
         let just_inserted_pos = stale.len();
-        assert_eq!(DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos), Some('"'));
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            Some('"')
+        );
     }
 }
