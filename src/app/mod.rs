@@ -1071,13 +1071,17 @@ impl<'a> App<'a> {
     fn start_ai_mode(&mut self) {
         let cmd_args = self.settings.ai_command.clone();
         let buffer_str = self.buffer.buffer().to_string();
+        let final_arg = match self.settings.ai_system_prompt.as_deref() {
+            Some(prompt) => format!("{}\n{}", prompt, buffer_str),
+            None => buffer_str,
+        };
         let (tx, rx) = std::sync::mpsc::channel::<Result<String, (String, String)>>();
         // Build a human-readable representation of the full command being run.
         // Any word that contains a space is wrapped in single quotes, with any
         // embedded single quotes escaped using the shell '\'' idiom.
         let command_display = {
             let mut parts = cmd_args.clone();
-            parts.push(buffer_str.clone());
+            parts.push(final_arg.clone());
             parts
                 .iter()
                 .map(|p| {
@@ -1097,7 +1101,7 @@ impl<'a> App<'a> {
             let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
             let result: Result<String, (String, String)> = std::process::Command::new(prog)
                 .args(args)
-                .arg(&buffer_str)
+                .arg(&final_arg)
                 .output()
                 .map_err(|e| (format!("Failed to run AI command: {}", e), String::new()))
                 .and_then(|output| {

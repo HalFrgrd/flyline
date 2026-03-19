@@ -46,6 +46,9 @@ pub struct Settings {
     /// Command (and arguments) to invoke for AI mode. The current buffer is appended as the
     /// final argument. Empty means AI mode is not configured.
     pub ai_command: Vec<String>,
+    /// Optional system prompt prepended to the buffer when invoking AI mode.
+    /// When set, the subprocess receives `"<system_prompt>\n<buffer>"` as its final argument.
+    pub ai_system_prompt: Option<String>,
     /// Custom prompt animations registered with `flyline create-anim`.
     pub custom_animations: HashMap<String, PromptAnimation>,
     /// Whether to run tab completion tests (used for integration testing).
