@@ -16,8 +16,14 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Checkout
+      - name: Checkout master branch
         uses: actions/checkout@v4
+
+      - name: Checkout assets branch
+        uses: actions/checkout@v4
+        with:
+          ref: assets
+          path: assets_checkout
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -32,13 +38,14 @@ jobs:
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
-      - name: Checkout assets branch
+      - name: Copy demo GIFs into assets checkout
+        shell: bash
+        working-directory: assets_checkout
         run: |
-          git stash
-          git checkout assets
-          git stash pop || true
+          mv ../*.gif ./
 
       - name: Create Pull Request
+        working-directory: assets_checkout
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
