@@ -81,9 +81,10 @@ struct FlylineArgs {
     /// Set the logging level
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<LogLevel>,
-    /// Load zsh history in addition to bash history
-    #[arg(long = "load-zsh-history")]
-    load_zsh_history: bool,
+    /// Load zsh history in addition to bash history. Optionally specify a PATH to the zsh history
+    /// file; if omitted, defaults to $HOME/.zsh_history
+    #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
+    load_zsh_history: Option<String>,
     /// Enable or disable tutorial mode with hints for first-time users.
     /// Use `--tutorial-mode false` to disable.
     #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1)]
@@ -259,8 +260,8 @@ impl Flyline {
                     log::set_max_level(filter);
                 }
 
-                if parsed.load_zsh_history {
-                    self.settings.load_zsh_history = true;
+                if let Some(path) = parsed.load_zsh_history {
+                    self.settings.zsh_history_path = Some(path);
                 }
 
                 if let Some(enabled) = parsed.tutorial_mode {
