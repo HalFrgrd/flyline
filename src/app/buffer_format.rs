@@ -67,6 +67,8 @@ fn token_to_style(
 
     if recognised_command == Some(true) {
         return Palette::recognised_word();
+    } else if recognised_command == Some(false) {
+        return Palette::unrecognised_word();
     }
 
     if token.annotation == TokenAnnotation::IsPartOfSingleQuotedString

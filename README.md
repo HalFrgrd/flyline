@@ -116,7 +116,7 @@ This allows you to write a command in plain English and your agent will convert 
 
 ![Agen mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
 
-[See the examples on how to set this up.](examples/ai_command.sh)
+[See the examples on how to set this up.](examples/agent_mode.sh)
 The agent should return a simple json array of possible results as described by the example system prompt.
 
 # Tab completion improvements

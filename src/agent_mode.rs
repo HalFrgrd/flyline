@@ -41,7 +41,7 @@ impl AiOutputSelection {
         }
     }
 
-    /// Return the currently selected command string, if any.
+    /// Return the currently selected command string, if any.w
     pub fn selected_command(&self) -> Option<&str> {
         self.suggestions
             .get(self.selected_idx)

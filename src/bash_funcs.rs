@@ -3,9 +3,12 @@ use crate::bash_symbols;
 use anyhow::Result;
 
 use libc::{c_char, c_int};
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
+use std::sync::Mutex;
+use std::sync::OnceLock;
 
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)
 where
@@ -88,7 +91,7 @@ pub fn find_alias(cmd: &str) -> Option<String> {
     None
 }
 
-pub fn call_type(cmd: &str) -> (CommandType, String) {
+fn get_command_type_uncached(cmd: &str) -> (CommandType, String) {
     // Call the `type` builtin to check if the command exists
     let cmd_c_str = std::ffi::CString::new(cmd).unwrap();
 
@@ -149,6 +152,22 @@ pub fn call_type(cmd: &str) -> (CommandType, String) {
     };
 
     (command_type, short_desc)
+}
+
+pub fn get_command_info(cmd: &str) -> (CommandType, String) {
+    static CALL_TYPE_CACHE: OnceLock<Mutex<HashMap<String, (CommandType, String)>>> =
+        OnceLock::new();
+    CALL_TYPE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+    let mut cache = CALL_TYPE_CACHE.get().unwrap().lock().unwrap();
+
+    if let Some(res) = cache.get(cmd) {
+        res.clone()
+    } else {
+        let result = get_command_type_uncached(cmd);
+        cache.insert(cmd.to_string(), result.clone());
+        result
+    }
 }
 
 pub fn get_all_aliases() -> Vec<String> {

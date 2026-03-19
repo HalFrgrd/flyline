@@ -3,14 +3,13 @@ use lscolors::LsColors;
 use ratatui::style::{Color, Modifier, Style};
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
-use std::collections::HashMap;
+
 use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 /// Manages bash environment state including caches for command types, aliases, and other bash constructs
 pub struct BashEnvManager {
-    call_type_cache: HashMap<String, (bash_funcs::CommandType, String)>,
     defined_aliases: Vec<String>,
     defined_reserved_words: Vec<String>,
     defined_shell_functions: Vec<String>,
@@ -31,23 +30,12 @@ impl BashEnvManager {
             bash_funcs::get_env_variable("LS_COLORS").map(|s| LsColors::from_string(&s));
 
         Self {
-            call_type_cache: HashMap::new(),
             defined_aliases: bash_funcs::get_all_aliases(),
             defined_reserved_words: bash_funcs::get_all_reserved_words(),
             defined_shell_functions: bash_funcs::get_all_shell_functions(),
             defined_builtins: bash_funcs::get_all_shell_builtins(),
             defined_executables: executables,
             ls_colors,
-        }
-    }
-
-    pub fn get_command_info(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
-        if let Some(res) = self.call_type_cache.get(cmd) {
-            res.clone()
-        } else {
-            let result = bash_funcs::call_type(cmd);
-            self.call_type_cache.insert(cmd.to_string(), result.clone());
-            result
         }
     }
 
