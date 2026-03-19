@@ -39,3 +39,14 @@ default-features = false
 
 [features]
 integration-tests = []
+
+# cross-rs configuration: use Ubuntu 16.04-based images to link against glibc 2.23,
+# ensuring broad compatibility across Linux distributions.
+[package.metadata.cross.target.x86_64-unknown-linux-gnu]
+dockerfile = { file = "docker/cross-x86_64-linux-gnu.Dockerfile" }
+
+[package.metadata.cross.target.aarch64-unknown-linux-gnu]
+dockerfile = { file = "docker/cross-aarch64-linux-gnu.Dockerfile" }
+
+[package.metadata.cross.target.armv7-unknown-linux-gnueabihf]
+dockerfile = { file = "docker/cross-armv7-linux-gnueabihf.Dockerfile" }
