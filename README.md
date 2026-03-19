@@ -9,7 +9,7 @@
 **A bash plugin for modern command line editing.**
 
 
-![Demo](assets/demo_overview.gif)
+![Demo](../assets/demo_overview.gif)
 
 </div>
 
