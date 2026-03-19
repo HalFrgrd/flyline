@@ -607,14 +607,11 @@ impl FuzzyHistorySearch {
             }
 
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
-                && score >= score_threshold {
-                    // Before inserting, check if any of the 50 latest cache entries match after trimming
-                    new_cache_entries.push(HistoryEntryFormatted::new(
-                        entry.clone(),
-                        score,
-                        indices,
-                    ));
-                }
+                && score >= score_threshold
+            {
+                // Before inserting, check if any of the 50 latest cache entries match after trimming
+                new_cache_entries.push(HistoryEntryFormatted::new(entry.clone(), score, indices));
+            }
             self.global_index += 1;
         }
 

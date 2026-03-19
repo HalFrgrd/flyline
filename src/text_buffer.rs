@@ -1162,19 +1162,19 @@ impl TextBuffer {
     fn undo(&mut self) {
         let current_state = self.create_snapshot();
 
-        self.undo_redo.prev_snapshot(current_state).map(|snapshot| {
+        if let Some(snapshot) = self.undo_redo.prev_snapshot(current_state) {
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
-        });
+        }
     }
 
     fn redo(&mut self) {
         let current_state = self.create_snapshot();
 
-        self.undo_redo.next_snapshot(current_state).map(|snapshot| {
+        if let Some(snapshot) = self.undo_redo.next_snapshot(current_state) {
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
-        });
+        }
     }
 
     #[allow(dead_code)]

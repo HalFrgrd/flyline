@@ -176,7 +176,6 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(settings: &'a Settings) -> Self {
-
         // log::info!("fully_expand_path test:");
         // log::info!(
         //     "fully_expand_path(\"$PWD\") = {}",
@@ -470,9 +469,10 @@ impl<'a> App<'a> {
                 self.last_mouse_over_cell = Some(tag);
                 log::trace!("Mouse over command at byte position {}", byte_pos);
                 if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
-                    && let Some(tooltip) = part.tooltip.as_ref() {
-                        self.tooltip = Some(tooltip.clone());
-                    }
+                    && let Some(tooltip) = part.tooltip.as_ref()
+                {
+                    self.tooltip = Some(tooltip.clone());
+                }
             }
 
             t => {
@@ -486,32 +486,35 @@ impl<'a> App<'a> {
         match self.last_mouse_over_cell {
             Some(Tag::Suggestion(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
-                    && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                        active_suggestions.set_selected_by_idx(idx);
-                        active_suggestions.accept_currently_selected(&mut self.buffer);
-                        self.content_mode = ContentMode::Normal;
-                        update_buffer = true;
-                    }
+                    && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
+                {
+                    active_suggestions.set_selected_by_idx(idx);
+                    active_suggestions.accept_currently_selected(&mut self.buffer);
+                    self.content_mode = ContentMode::Normal;
+                    update_buffer = true;
+                }
             }
             Some(Tag::HistoryResult(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
-                    && matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
-                        self.history_manager.fuzzy_search_set_by_visual_idx(idx);
-                        self.accept_fuzzy_history_search();
-                        update_buffer = true;
-                    }
+                    && matches!(self.content_mode, ContentMode::FuzzyHistorySearch)
+                {
+                    self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                    self.accept_fuzzy_history_search();
+                    update_buffer = true;
+                }
             }
             Some(Tag::AiResult(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
-                    && let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
-                        selection.set_selected_by_idx(idx);
-                        if let Some(cmd) = selection.selected_command() {
-                            let cmd = cmd.to_string();
-                            self.buffer.replace_buffer(&cmd);
-                            update_buffer = true;
-                        }
-                        self.content_mode = ContentMode::Normal;
+                    && let ContentMode::AiOutputSelection(selection) = &mut self.content_mode
+                {
+                    selection.set_selected_by_idx(idx);
+                    if let Some(cmd) = selection.selected_command() {
+                        let cmd = cmd.to_string();
+                        self.buffer.replace_buffer(&cmd);
+                        update_buffer = true;
                     }
+                    self.content_mode = ContentMode::Normal;
+                }
             }
             Some(Tag::Command(byte_pos)) => {
                 if matches!(
@@ -559,9 +562,10 @@ impl<'a> App<'a> {
         // Smart mode: any keypress re-enables mouse capture, unless the user has
         // explicitly disabled it via a toggle action.
         if self.settings.mouse_mode == MouseMode::Smart
-            && !self.mouse_state.is_explicitly_disabled_by_user() {
-                self.mouse_state.enable("smart mode: keypress detected");
-            }
+            && !self.mouse_state.is_explicitly_disabled_by_user()
+        {
+            self.mouse_state.enable("smart mode: keypress detected");
+        }
 
         match key {
             KeyEvent {
@@ -971,15 +975,15 @@ impl<'a> App<'a> {
                 && let dparser::TokenAnnotation::IsClosing {
                     is_auto_inserted, ..
                 } = &mut token.annotation
-                {
-                    *is_auto_inserted = true;
-                    log::info!(
-                        "Marked token '{}' at byte {} as auto-inserted",
-                        token.token.value,
-                        byte_pos
-                    );
-                    return;
-                }
+            {
+                *is_auto_inserted = true;
+                log::info!(
+                    "Marked token '{}' at byte {} as auto-inserted",
+                    token.token.value,
+                    byte_pos
+                );
+                return;
+            }
         }
         log::warn!(
             "Failed to mark auto-inserted closing char '{}' at byte position {}: no matching token found in cache",
@@ -1226,14 +1230,15 @@ impl<'a> App<'a> {
                 .byte_range()
                 .to_inclusive()
                 .contains(&self.buffer.cursor_byte_pos())
-                && let Some(tooltip) = part.tooltip.as_ref() {
-                    log::debug!(
-                        "Setting tooltip for token at byte position {}: {}",
-                        part.token.token.byte_range().start,
-                        tooltip
-                    );
-                    self.tooltip = Some(tooltip.clone());
-                }
+                && let Some(tooltip) = part.tooltip.as_ref()
+            {
+                log::debug!(
+                    "Setting tooltip for token at byte position {}: {}",
+                    part.token.token.byte_range().start,
+                    tooltip
+                );
+                self.tooltip = Some(tooltip.clone());
+            }
         }
 
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
@@ -1789,57 +1794,57 @@ impl<'a> App<'a> {
             _ => {}
         }
         if self.mode.is_running()
-            && let Some(tooltip) = &self.tooltip {
-                content.newline();
-                let tooltip_line =
-                    Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
-                // Limit the tooltip to at most 3 terminal display rows so it
-                // doesn't push other UI elements too far down the screen.
-                const MAX_TOOLTIP_ROWS: usize = 3;
-                let rows = split_line_to_terminal_rows(&tooltip_line, content.width);
-                let truncated = rows.len() > MAX_TOOLTIP_ROWS;
-                for (i, row) in rows.into_iter().take(MAX_TOOLTIP_ROWS).enumerate() {
-                    if i > 0 {
-                        content.newline();
-                    }
-                    for span in &row.spans {
-                        content.write_span(span, Tag::Tooltip);
-                    }
+            && let Some(tooltip) = &self.tooltip
+        {
+            content.newline();
+            let tooltip_line = Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
+            // Limit the tooltip to at most 3 terminal display rows so it
+            // doesn't push other UI elements too far down the screen.
+            const MAX_TOOLTIP_ROWS: usize = 3;
+            let rows = split_line_to_terminal_rows(&tooltip_line, content.width);
+            let truncated = rows.len() > MAX_TOOLTIP_ROWS;
+            for (i, row) in rows.into_iter().take(MAX_TOOLTIP_ROWS).enumerate() {
+                if i > 0 {
+                    content.newline();
                 }
-                if truncated {
-                    let last_col = content.width.saturating_sub(1);
-                    if content.cursor_position().col >= last_col {
-                        content.set_cursor_col(last_col);
-                    }
-                    content.write_span(&Span::styled("…", Palette::secondary_text()), Tag::Tooltip);
+                for span in &row.spans {
+                    content.write_span(span, Tag::Tooltip);
                 }
             }
+            if truncated {
+                let last_col = content.width.saturating_sub(1);
+                if content.cursor_position().col >= last_col {
+                    content.set_cursor_col(last_col);
+                }
+                content.write_span(&Span::styled("…", Palette::secondary_text()), Tag::Tooltip);
+            }
+        }
 
-            // if let Some(tag) = &self.last_mouse_over_cell {
-            //     match tag {
-            //         Tag::Command(0) if matches!(self.content_mode, ContentMode::Normal) => {
-            //             content.newline();
-            //             content.write_span(
-            //                 &Span::styled(
-            //                     format!("# {}", self.command_description),
-            //                     Palette::secondary_text(),
-            //                 ),
-            //                 Tag::Tooltip,
-            //             );
-            //         }
-            //         _ => {
-            //             content.newline();
+        // if let Some(tag) = &self.last_mouse_over_cell {
+        //     match tag {
+        //         Tag::Command(0) if matches!(self.content_mode, ContentMode::Normal) => {
+        //             content.newline();
+        //             content.write_span(
+        //                 &Span::styled(
+        //                     format!("# {}", self.command_description),
+        //                     Palette::secondary_text(),
+        //                 ),
+        //                 Tag::Tooltip,
+        //             );
+        //         }
+        //         _ => {
+        //             content.newline();
 
-            //             content.write_span(
-            //                 &Span::styled(
-            //                     format!("# Mouse over: {:?}", tag),
-            //                     Palette::secondary_text(),
-            //                 ),
-            //                 Tag::Tooltip,
-            //             );
-            //         }
-            //     }
-            // }
+        //             content.write_span(
+        //                 &Span::styled(
+        //                     format!("# Mouse over: {:?}", tag),
+        //                     Palette::secondary_text(),
+        //                 ),
+        //                 Tag::Tooltip,
+        //             );
+        //         }
+        //     }
+        // }
         content
     }
 

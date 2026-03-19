@@ -403,9 +403,10 @@ fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
             }
             let c_str = std::ffi::CStr::from_ptr(c_str_ptr);
             if let Ok(str_slice) = c_str.to_str()
-                && seen.insert(str_slice) {
-                    strings.push(str_slice.to_string());
-                }
+                && seen.insert(str_slice)
+            {
+                strings.push(str_slice.to_string());
+            }
         }
     }
     strings
@@ -562,15 +563,13 @@ pub fn expand_filename(filename: &str) -> String {
 }
 
 // QuoteType can be  in the middle  of a word (i.e.  backslash)
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[derive(Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub enum QuoteType {
     SingleQuote,
     DoubleQuote,
     #[default]
     Backslash,
 }
-
 
 impl QuoteType {
     pub fn from_char(c: char) -> Option<QuoteType> {

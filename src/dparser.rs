@@ -182,9 +182,7 @@ impl DParser {
         is_command_extraction: bool,
     ) -> bool {
         match token.kind {
-            TokenKind::Quote | TokenKind::SingleQuote if is_command_extraction => {
-                false
-            }
+            TokenKind::Quote | TokenKind::SingleQuote if is_command_extraction => false,
             TokenKind::Backtick | TokenKind::Quote | TokenKind::SingleQuote => {
                 if Some(&token.kind) == current_nesting {
                     // backtick or quote is acting as closer
@@ -269,9 +267,9 @@ impl DParser {
             let token = self.tokens[idx].token.clone();
 
             let word_is_part_of_assignment = if token.kind.is_word() {
-                previous_token.as_ref().is_some_and(|token| {
-                    matches!(token.token.kind, TokenKind::Assignment)
-                })
+                previous_token
+                    .as_ref()
+                    .is_some_and(|token| matches!(token.token.kind, TokenKind::Assignment))
             } else {
                 false
             };
@@ -283,12 +281,10 @@ impl DParser {
                     .to_inclusive()
                     .contains(&pos)
             });
-            let token_strictly_contains_cursor = cursor_byte_pos.is_some_and(|pos| {
-                self.tokens[idx].token.byte_range().contains(&pos)
-            });
-            let cursor_at_start_of_token = cursor_byte_pos.is_some_and(|pos| {
-                pos == self.tokens[idx].token.byte_range().start
-            });
+            let token_strictly_contains_cursor = cursor_byte_pos
+                .is_some_and(|pos| self.tokens[idx].token.byte_range().contains(&pos));
+            let cursor_at_start_of_token =
+                cursor_byte_pos.is_some_and(|pos| pos == self.tokens[idx].token.byte_range().start);
 
             let cursor_part_way_through_token =
                 token_inclusively_contains_cursor && !cursor_at_start_of_token;
@@ -417,9 +413,10 @@ impl DParser {
                 }
                 TokenKind::Whitespace(_) => {
                     if token_inclusively_contains_cursor
-                        && let Some(range) = &mut self.current_command_range {
-                            *range = *range.start()..=idx;
-                        }
+                        && let Some(range) = &mut self.current_command_range
+                    {
+                        *range = *range.start()..=idx;
+                    }
 
                     if token_strictly_contains_cursor
                         && stop_parsing_at_command_boundary
@@ -510,12 +507,10 @@ impl DParser {
 
     pub fn get_current_command_tokens(&self) -> Vec<&Token> {
         match &self.current_command_range {
-            Some(range) => {
-                self.tokens[range.clone()]
-                    .iter()
-                    .map(|t| &t.token)
-                    .collect::<Vec<_>>()
-            }
+            Some(range) => self.tokens[range.clone()]
+                .iter()
+                .map(|t| &t.token)
+                .collect::<Vec<_>>(),
             None => Vec::new(),
         }
     }
@@ -591,12 +586,13 @@ impl DParser {
                     opening_idx: new_opening_idx,
                     ..
                 } = new.annotation
-                    && old_opening_idx == new_opening_idx {
-                        new.annotation = TokenAnnotation::IsClosing {
-                            opening_idx: new_opening_idx,
-                            is_auto_inserted: true,
-                        };
-                    }
+                && old_opening_idx == new_opening_idx
+            {
+                new.annotation = TokenAnnotation::IsClosing {
+                    opening_idx: new_opening_idx,
+                    is_auto_inserted: true,
+                };
+            }
         }
 
         // Go from the right while we see identical tokens and do the same.
@@ -612,14 +608,14 @@ impl DParser {
                     opening_idx: new_opening_idx,
                     ..
                 } = new.annotation
-                {
-                    // if old_opening_idx == new_opening_idx {
-                    new.annotation = TokenAnnotation::IsClosing {
-                        opening_idx: new_opening_idx,
-                        is_auto_inserted: true,
-                    };
-                    // }
-                }
+            {
+                // if old_opening_idx == new_opening_idx {
+                new.annotation = TokenAnnotation::IsClosing {
+                    opening_idx: new_opening_idx,
+                    is_auto_inserted: true,
+                };
+                // }
+            }
         }
     }
 }

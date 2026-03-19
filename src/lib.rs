@@ -422,7 +422,7 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
         c"Refer to `flyline --help` for more help.".as_ptr() as *const c_char,
         ::std::ptr::null(),
     ]
-        .as_ptr(),
+    .as_ptr(),
     short_doc: c"advanced command line editing for bash.".as_ptr() as *const c_char,
     handle: std::ptr::null(),
 };

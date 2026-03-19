@@ -252,14 +252,8 @@ impl PromptManager {
             PromptManager {
                 prompt: vec![
                     Line::from(vec![
-                        Span::styled(
-                            "Bash needs more input to finish the command. ",
-                            style,
-                        ),
-                        Span::styled(
-                            "Flyline thought the previous command was complete. ",
-                            style,
-                        ),
+                        Span::styled("Bash needs more input to finish the command. ", style),
+                        Span::styled("Flyline thought the previous command was complete. ", style),
                         Span::styled(
                             "Please open an issue on GitHub with the command that caused this message. ",
                             style,

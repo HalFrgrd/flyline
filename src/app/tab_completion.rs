@@ -31,7 +31,6 @@ pub fn fully_expand_path(p: &str) -> String {
     // log::info!("Expanded path pattern: {}", bash_expanded);
 
     // Make the path absolute (prepend cwd when relative or empty).
-    
 
     if bash_expanded.is_empty() {
         match std::env::current_dir() {

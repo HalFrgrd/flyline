@@ -301,9 +301,10 @@ impl Contents {
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
                 if let Some(row) = self.buf.get_mut(y as usize)
-                    && let Some(tagged_cell) = row.get_mut(x as usize) {
-                        tagged_cell.cell.set_style(style);
-                    }
+                    && let Some(tagged_cell) = row.get_mut(x as usize)
+                {
+                    tagged_cell.cell.set_style(style);
+                }
             }
         }
     }
