@@ -369,7 +369,7 @@ impl DParser {
                         // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
                         // echo $((10 * 2█))      -> cursor context is: 10 * 2
                         // echo $((10 * 2)█)      -> cursor context is: echo $((10 * 2))
-                        debug!("Stopping parsing at command boundary");
+                        // debug!("Stopping parsing at command boundary");
                         break;
                     }
 

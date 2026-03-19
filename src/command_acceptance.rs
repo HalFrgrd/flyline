@@ -264,4 +264,10 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("echo ("), true);
         assert_eq!(will_bash_accept_buffer("echo )"), true);
     }
+
+    #[test]
+    fn test_double_quoted_opener() {
+        assert_eq!(will_bash_accept_buffer(r#"printf ""[""#), false);
+    }
+
 }
