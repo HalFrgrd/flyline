@@ -252,17 +252,11 @@ impl PromptManager {
             PromptManager {
                 prompt: vec![
                     Line::from(vec![
-                        Span::styled(
-                            "Bash needs more input to finish the command. ",
-                            style.clone(),
-                        ),
-                        Span::styled(
-                            "Flyline thought the previous command was complete. ",
-                            style.clone(),
-                        ),
+                        Span::styled("Bash needs more input to finish the command. ", style),
+                        Span::styled("Flyline thought the previous command was complete. ", style),
                         Span::styled(
                             "Please open an issue on GitHub with the command that caused this message. ",
-                            style.clone(),
+                            style,
                         ),
                     ]),
                     Line::from("> "),
@@ -450,7 +444,7 @@ impl PromptManager {
             };
 
             let anim = &self.processed_animations[anim_idx];
-            let frame_spans = Self::get_frame_spans(anim, now).into_iter().map(|s| Span {
+            let frame_spans = Self::get_frame_spans(anim, now).iter().map(|s| Span {
                 content: s.content.clone(),
                 style: style.patch(s.style),
             });

@@ -8,6 +8,13 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
 
     let tokens: Vec<Token> = collect_tokens_include_whitespace(buffer);
 
+    if cfg!(test) {
+        println!("Tokens:");
+        for token in &tokens {
+            println!("{:?}", token);
+        }
+    }
+
     if let Some(last_token) = tokens
         .iter()
         .rev()
@@ -263,5 +270,15 @@ mod tests {
     fn test_syntax_errors() {
         assert_eq!(will_bash_accept_buffer("echo ("), true);
         assert_eq!(will_bash_accept_buffer("echo )"), true);
+        assert_eq!(will_bash_accept_buffer("echo [("), true);
     }
+
+
+    #[test]
+    #[ignore = "waiting on flash lexer support"]
+    fn test_quote_start_mid_word() {
+        assert_eq!(will_bash_accept_buffer(r#"a ['"#), false);
+        assert_eq!(will_bash_accept_buffer(r#"a [""#), false);
+    }
+    
 }

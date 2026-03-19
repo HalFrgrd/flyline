@@ -60,7 +60,7 @@ impl Default for TaggedCell {
 
 impl TaggedCell {
     pub fn update(&mut self, graph: &StyledGrapheme, tag: Tag) {
-        self.cell.set_symbol(&graph.symbol).set_style(graph.style);
+        self.cell.set_symbol(graph.symbol).set_style(graph.style);
         self.tag = tag;
     }
 }
@@ -179,7 +179,7 @@ impl Contents {
                 tag = Tag::Command(byte_start + graph.symbol.len());
             }
         }
-        return marked_graph_coord;
+        marked_graph_coord
     }
 
     pub fn write_span_dont_overwrite(
@@ -300,10 +300,10 @@ impl Contents {
 
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
-                if let Some(row) = self.buf.get_mut(y as usize) {
-                    if let Some(tagged_cell) = row.get_mut(x as usize) {
-                        tagged_cell.cell.set_style(style);
-                    }
+                if let Some(row) = self.buf.get_mut(y as usize)
+                    && let Some(tagged_cell) = row.get_mut(x as usize)
+                {
+                    tagged_cell.cell.set_style(style);
                 }
             }
         }

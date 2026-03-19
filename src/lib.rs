@@ -218,7 +218,7 @@ impl Flyline {
         // args contains words from WordList; first word is not the command name unlike argv
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
         match FlylineArgs::try_parse_from(args_with_prog) {
-            Ok(parsed) if args.len() > 0 => {
+            Ok(parsed) if !args.is_empty() => {
                 log::debug!("Parsed flyline arguments: {:?}", parsed);
 
                 if parsed.version {
@@ -418,11 +418,11 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     name: c"flyline".as_ptr() as *const c_char,
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
-    long_doc: (&[
+    long_doc: [
         c"Refer to `flyline --help` for more help.".as_ptr() as *const c_char,
         ::std::ptr::null(),
-    ])
-        .as_ptr(),
+    ]
+    .as_ptr(),
     short_doc: c"advanced command line editing for bash.".as_ptr() as *const c_char,
     handle: std::ptr::null(),
 };

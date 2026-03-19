@@ -105,7 +105,7 @@ impl FormattedBufferPart {
         let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
         let recognised_command = word_info.as_ref().map(|info| info.is_recognised_command);
 
-        let style = token_to_style(&token, recognised_command, cursor_on_this_or_closing_token);
+        let style = token_to_style(token, recognised_command, cursor_on_this_or_closing_token);
         let span = Span::styled(token.token.value.clone(), style);
 
         let cursor_grapheme_idx = cursor_byte_pos_in_token.map(|byte_pos| {
@@ -141,7 +141,7 @@ impl FormattedBufferPart {
             token: token.clone(),
             span,
             alternative_span: None,
-            cursor_grapheme_idx: cursor_grapheme_idx,
+            cursor_grapheme_idx,
             tooltip,
         }
     }

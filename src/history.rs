@@ -214,11 +214,7 @@ impl HistoryManager {
 
     fn parse_timestamp(line: &str) -> Option<u64> {
         if line.starts_with('#') {
-            if let Ok(ts) = line[1..].trim().parse::<u64>() {
-                Some(ts)
-            } else {
-                None
-            }
+            line[1..].trim().parse::<u64>().ok()
         } else {
             None
         }
@@ -315,7 +311,7 @@ impl HistoryManager {
         let is_command_different_to_last_buffered = self
             .last_buffered_command
             .as_ref()
-            .map_or(true, |c| c != current_cmd);
+            .is_none_or(|c| c != current_cmd);
 
         if self.last_search_prefix.is_none() || is_command_different_to_last_buffered {
             self.last_search_prefix = Some(current_cmd.to_string());
@@ -349,7 +345,7 @@ impl HistoryManager {
         current_cmd: &str,
     ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
         self.fuzzy_search
-            .get_fuzzy_search_results(&mut self.entries, current_cmd)
+            .get_fuzzy_search_results(&self.entries, current_cmd)
     }
 
     pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
@@ -460,7 +456,7 @@ impl FuzzyHistorySearch {
         let old_cache = std::mem::take(&mut self.cache);
         self.cache = old_cache
             .into_iter()
-            .merge(sorted_new_cache_entries.into_iter())
+            .merge(sorted_new_cache_entries)
             .collect();
 
         let mut deduped: Vec<HistoryEntryFormatted> = Vec::with_capacity(self.cache.len());
@@ -611,15 +607,10 @@ impl FuzzyHistorySearch {
             }
 
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
+                && score >= score_threshold
             {
-                if score >= score_threshold {
-                    // Before inserting, check if any of the 50 latest cache entries match after trimming
-                    new_cache_entries.push(HistoryEntryFormatted::new(
-                        entry.clone(),
-                        score,
-                        indices,
-                    ));
-                }
+                // Before inserting, check if any of the 50 latest cache entries match after trimming
+                new_cache_entries.push(HistoryEntryFormatted::new(entry.clone(), score, indices));
             }
             self.global_index += 1;
         }

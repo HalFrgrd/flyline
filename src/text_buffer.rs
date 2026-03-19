@@ -1162,19 +1162,19 @@ impl TextBuffer {
     fn undo(&mut self) {
         let current_state = self.create_snapshot();
 
-        self.undo_redo.prev_snapshot(current_state).map(|snapshot| {
+        if let Some(snapshot) = self.undo_redo.prev_snapshot(current_state) {
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
-        });
+        }
     }
 
     fn redo(&mut self) {
         let current_state = self.create_snapshot();
 
-        self.undo_redo.next_snapshot(current_state).map(|snapshot| {
+        if let Some(snapshot) = self.undo_redo.next_snapshot(current_state) {
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
-        });
+        }
     }
 
     #[allow(dead_code)]
@@ -1209,7 +1209,7 @@ impl SnapshotManager {
         if merge_with_recent
             && !cfg!(test)
             && duration_since_last < std::time::Duration::from_millis(1000)
-            && self.undos.len() > 0
+            && !self.undos.is_empty()
         {
             // log::debug!("Reusing recent snapshot: age {:?} ", duration_since_last);
         } else {

@@ -49,8 +49,8 @@ impl CursorAnimation {
             // using time_of_change means the intensity is full right after movement
             let elapsed = self.time_of_change.elapsed().as_secs_f32();
             let intensity_f32 = (elapsed * 4.0).sin() * 0.4 + 0.6;
-            let intensity = (intensity_f32 * 255.0) as u8;
-            intensity
+
+            (intensity_f32 * 255.0) as u8
         } else {
             80
         }

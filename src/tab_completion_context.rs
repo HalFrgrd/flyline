@@ -60,9 +60,9 @@ impl<'a> CompletionContext<'a> {
             dbg!(&word_under_cursor);
         }
 
-        let comp_type = if context.trim().is_empty() {
-            CompType::FirstWord
-        } else if !context_until_cursor.chars().any(|c| c.is_whitespace()) {
+        let comp_type = if context.trim().is_empty()
+            || !context_until_cursor.chars().any(|c| c.is_whitespace())
+        {
             CompType::FirstWord
         } else {
             CompType::CommandComp {
@@ -132,8 +132,7 @@ pub fn get_completion_context<'a>(
             let mut end = byte_range.end;
 
             for i in (0..node_idx).rev() {
-                let range_contains_dollar =
-                    buffer.get(start..end).map_or(false, |s| s.contains('$'));
+                let range_contains_dollar = buffer.get(start..end).is_some_and(|s| s.contains('$'));
 
                 match context_tokens.get(i) {
                     Some(

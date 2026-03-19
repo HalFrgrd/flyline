@@ -31,7 +31,8 @@ pub fn fully_expand_path(p: &str) -> String {
     // log::info!("Expanded path pattern: {}", bash_expanded);
 
     // Make the path absolute (prepend cwd when relative or empty).
-    let absolute_expansion = if bash_expanded.is_empty() {
+
+    if bash_expanded.is_empty() {
         match std::env::current_dir() {
             Ok(p) => p.to_string_lossy().to_string(),
             Err(e) => {
@@ -49,9 +50,7 @@ pub fn fully_expand_path(p: &str) -> String {
         }
     } else {
         bash_expanded
-    };
-
-    absolute_expansion
+    }
 }
 
 impl PathPatternExpansion {
@@ -269,12 +268,10 @@ impl App<'_> {
 
         let suffix = if comp_resultflags.no_suffix_desired {
             None
+        } else if comp_resultflags.suffix_character == ' ' {
+            if sug.ends_with(" ") { None } else { Some(' ') }
         } else {
-            if comp_resultflags.suffix_character == ' ' {
-                if sug.ends_with(" ") { None } else { Some(' ') }
-            } else {
-                Some(comp_resultflags.suffix_character)
-            }
+            Some(comp_resultflags.suffix_character)
         };
 
         let (appended, suffix, ls_style) = if comp_resultflags.filename_completion_desired {
@@ -285,7 +282,7 @@ impl App<'_> {
                     // We get here when programmable completion returns a filename
                     // Without fully_expanded_path call here
                     // We wouldn't get the trailing / for something like ~/Documents which is dir
-                    owned_path = std::path::PathBuf::from(fully_expand_path(&sug));
+                    owned_path = std::path::PathBuf::from(fully_expand_path(sug));
                     &owned_path
                 }
             };
@@ -316,7 +313,7 @@ impl App<'_> {
     ) -> Vec<Suggestion> {
         completions
             .iter()
-            .map(|sug| self.post_process_single_completion(&sug, None, comp_resultflags))
+            .map(|sug| self.post_process_single_completion(sug, None, comp_resultflags))
             .collect::<Vec<_>>()
     }
 
@@ -332,7 +329,7 @@ impl App<'_> {
             tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
                 log::debug!("Primary completions for first word: {:?}", completions);
-                if completions.len() > 0 {
+                if !completions.is_empty() {
                     return Some(completions);
                 }
             }
@@ -361,7 +358,7 @@ impl App<'_> {
                 let poss_completions = bash_funcs::run_programmable_completions(
                     &full_command,
                     &command_word,
-                    &word_under_cursor,
+                    word_under_cursor,
                     cursor_byte_pos,
                     word_under_cursor_end,
                 );
@@ -411,13 +408,13 @@ impl App<'_> {
             }
             Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
-                let completions = self.tab_complete_tilde_expansion(&word_under_cursor);
+                let completions = self.tab_complete_tilde_expansion(word_under_cursor);
                 return Some(completions);
             }
             Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
                 let completions =
-                    self.tab_complete_glob_expansion(&word_under_cursor, comp_resultflags);
+                    self.tab_complete_glob_expansion(word_under_cursor, comp_resultflags);
 
                 // Unlike other completions, if there are multiple glob completions,
                 // we join them with spaces and insert them all at once.
@@ -492,12 +489,12 @@ impl App<'_> {
             );
         }
 
-        let mut res = self.bash_env.get_first_word_completions(&command);
+        let mut res = self.bash_env.get_first_word_completions(command);
 
         if res.is_empty() {
             // No prefix matches found, fall back to fuzzy search
             log::debug!("No prefix matches for '{}', trying fuzzy search", command);
-            res = self.bash_env.get_fuzzy_first_word_completions(&command);
+            res = self.bash_env.get_fuzzy_first_word_completions(command);
             return Suggestion::from_string_vec(res, "", " ");
         }
 
@@ -576,7 +573,7 @@ impl App<'_> {
 
         if let Ok(entries) = std::fs::read_dir("/home") {
             for entry in entries.flatten() {
-                if entry.file_type().map_or(false, |ft| ft.is_dir()) {
+                if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
                     let name = entry.file_name();
                     let name_str = name.to_string_lossy();
                     if name_str.starts_with(user_pattern) {
