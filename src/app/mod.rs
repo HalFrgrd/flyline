@@ -848,6 +848,7 @@ impl<'a> App<'a> {
                     None
                 };
                 self.on_possible_buffer_change();
+                log::info!("auto_close_pos for char '{}': {:?}", c, auto_close_pos);
                 if let Some(pos) = auto_close_pos {
                     self.mark_auto_inserted_closing(pos);
                 }
@@ -892,6 +893,11 @@ impl<'a> App<'a> {
             self.buffer.insert_char(closing);
             self.buffer.move_left();
             // After move_left, cursor is at the start of the auto-inserted closing char.
+            log::info!(
+                "Inserted auto-closing char '{}' at byte position {}",
+                closing,
+                self.buffer.cursor_byte_pos()
+            );
             Some(self.buffer.cursor_byte_pos())
         } else {
             None
@@ -907,7 +913,7 @@ impl<'a> App<'a> {
                 } = &mut token.annotation
                 {
                     *is_auto_inserted = true;
-                    log::debug!(
+                    log::info!(
                         "Marked token '{}' at byte {} as auto-inserted",
                         token.token.value,
                         byte_pos
@@ -927,6 +933,7 @@ impl<'a> App<'a> {
         if cursor_pos == 0 {
             return;
         }
+        log::info!("Checking for auto-inserted closing token to delete at byte position {}", cursor_pos);
 
         // Find the token that ends at cursor_pos (the one about to be deleted by Backspace).
         let opening_annotation = self
@@ -935,21 +942,46 @@ impl<'a> App<'a> {
             .find(|t| {
                 t.token
                     .byte_range()
-                    .to_inclusive()
                     .contains(&(cursor_pos - 1))
+            })
+            .inspect(|t| {
+                log::info!(
+                    "Token ending at cursor position: '{}', with annotation {:?}",
+                    t.token.value,
+                    t.annotation
+                );
             })
             .map(|t| t.annotation);
 
+        log::info!(
+            "Token annotation for token ending at cursor position: {:?}",
+            opening_annotation
+        );
+
         if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
             // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
+            log::info!(
+                "Found opening token with closing_idx {}. Checking for auto-inserted closing token at byte position {}",
+                closing_idx, cursor_pos
+            );
             if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx) {
+                log::info!(
+                    "Token at closing_idx {} is '{}', with annotation {:?}",
+                    closing_idx,
+                    closing_token.token.value,
+                    closing_token.annotation
+                );
                 if closing_token.token.byte_range().start == cursor_pos {
+                    log::info!(
+                        "Found token starting at cursor position: '{}'",
+                        closing_token.token.value
+                    );
                     if let dparser::TokenAnnotation::IsClosing {
                         is_auto_inserted: true,
                         ..
                     } = closing_token.annotation
                     {
-                        log::debug!(
+                        log::info!(
                             "Deleting auto-inserted closing token '{}' at byte {}",
                             closing_token.token.value,
                             cursor_pos
