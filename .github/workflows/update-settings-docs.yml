@@ -58,15 +58,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B update-settings-docs
-          git add flyline_help.txt README.md
+          git add README.md
           git diff --cached --quiet && echo "No changes to settings docs" && exit 0
           git commit -m "chore: update settings documentation from flyline --help"
           git push --force origin update-settings-docs
           gh pr create \
             --title "chore: update settings documentation" \
-            --body "Automated PR to update \`flyline_help.txt\` and the Settings section of the README from \`flyline --help\`." \
+            --body "Automated PR to update the Settings section of the README from \`flyline --help\`." \
             --base master \
             --head update-settings-docs \
           || gh pr edit update-settings-docs \
             --title "chore: update settings documentation" \
-            --body "Automated PR to update \`flyline_help.txt\` and the Settings section of the README from \`flyline --help\`."
+            --body "Automated PR to update the Settings section of the README from \`flyline --help\`."
