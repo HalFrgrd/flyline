@@ -1179,42 +1179,6 @@ impl<'a> App<'a> {
             }
         }
 
-        let wordinfo_fn = |token: &AnnotatedToken| -> Option<buffer_format::WordInfo> {
-            match token.annotation {
-                dparser::TokenAnnotation::IsCommandWord => {
-                    let (command_type, description) =
-                        self.bash_env.get_command_info(&token.token.value);
-                    return Some(buffer_format::WordInfo {
-                        tooltip: Some(description.to_string()),
-                        is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
-                    });
-                }
-                dparser::TokenAnnotation::IsEnvVar => {
-                    let env_var_name = &token.token.value;
-                    let tooltip = match bash_funcs::get_env_variable(env_var_name) {
-                        Some(value) => format!("${}={}", env_var_name, value),
-                        None => format!("${}", env_var_name),
-                    };
-                    return Some(buffer_format::WordInfo {
-                        tooltip: Some(tooltip),
-                        is_recognised_command: false,
-                    });
-                }
-                dparser::TokenAnnotation::None if token.token.value.starts_with('~') => {
-                    let expanded = bash_funcs::expand_filename(&token.token.value);
-                    if expanded != token.token.value {
-                        return Some(buffer_format::WordInfo {
-                            tooltip: Some(format!("{}={}", token.token.value, expanded)),
-                            is_recognised_command: false,
-                        });
-                    }
-                }
-                _ => {}
-            }
-
-            None
-        };
-
         let mut parser = dparser::DParser::from(self.buffer.buffer());
         parser.walk_to_end();
         let mut new_tokens = parser.into_tokens();
@@ -1237,7 +1201,7 @@ impl<'a> App<'a> {
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
-            Some(Box::new(wordinfo_fn)),
+            Some(Box::new(|token| self.wordinfo_fn(token))),
         );
 
         self.tooltip = None;
@@ -1261,6 +1225,41 @@ impl<'a> App<'a> {
         }
 
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
+    }
+
+    fn wordinfo_fn(&self, token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
+        match token.annotation {
+            dparser::TokenAnnotation::IsCommandWord => {
+                let (command_type, description) =
+                    self.bash_env.get_command_info(&token.token.value);
+                Some(buffer_format::WordInfo {
+                    tooltip: Some(description.to_string()),
+                    is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+                })
+            }
+            dparser::TokenAnnotation::IsEnvVar => {
+                let env_var_name = &token.token.value;
+                let tooltip = match bash_funcs::get_env_variable(env_var_name) {
+                    Some(value) => format!("${}={}", env_var_name, value),
+                    None => format!("${}", env_var_name),
+                };
+                Some(buffer_format::WordInfo {
+                    tooltip: Some(tooltip),
+                    is_recognised_command: false,
+                })
+            }
+            dparser::TokenAnnotation::None if token.token.value.starts_with('~') => {
+                let expanded = bash_funcs::expand_filename(&token.token.value);
+                if expanded != token.token.value {
+                    return Some(buffer_format::WordInfo {
+                        tooltip: Some(format!("{}={}", token.token.value, expanded)),
+                        is_recognised_command: false,
+                    });
+                }
+                None
+            }
+            _ => None,
+        }
     }
 
     fn ts_to_timeago_string_5chars(ts: u64) -> String {

@@ -7,10 +7,11 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::OnceLock;
 
 /// Manages bash environment state including caches for command types, aliases, and other bash constructs
 pub struct BashEnvManager {
-    call_type_cache: HashMap<String, (bash_funcs::CommandType, String)>,
     defined_aliases: Vec<String>,
     defined_reserved_words: Vec<String>,
     defined_shell_functions: Vec<String>,
@@ -31,7 +32,6 @@ impl BashEnvManager {
             bash_funcs::get_env_variable("LS_COLORS").map(|s| LsColors::from_string(&s));
 
         Self {
-            call_type_cache: HashMap::new(),
             defined_aliases: bash_funcs::get_all_aliases(),
             defined_reserved_words: bash_funcs::get_all_reserved_words(),
             defined_shell_functions: bash_funcs::get_all_shell_functions(),
@@ -41,12 +41,17 @@ impl BashEnvManager {
         }
     }
 
-    pub fn get_command_info(&mut self, cmd: &str) -> (bash_funcs::CommandType, String) {
-        if let Some(res) = self.call_type_cache.get(cmd) {
+    pub fn get_command_info(& self, cmd: &str) -> (bash_funcs::CommandType, String) {
+        static CALL_TYPE_CACHE: OnceLock<Mutex<HashMap<String, (bash_funcs::CommandType, String)>>> = OnceLock::new();
+        CALL_TYPE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+        let mut cache = CALL_TYPE_CACHE.get().unwrap().lock().unwrap();
+
+        if let Some(res) = cache.get(cmd) {
             res.clone()
         } else {
             let result = bash_funcs::call_type(cmd);
-            self.call_type_cache.insert(cmd.to_string(), result.clone());
+            cache.insert(cmd.to_string(), result.clone());
             result
         }
     }
