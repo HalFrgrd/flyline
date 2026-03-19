@@ -1820,31 +1820,6 @@ impl<'a> App<'a> {
             }
         }
 
-        // if let Some(tag) = &self.last_mouse_over_cell {
-        //     match tag {
-        //         Tag::Command(0) if matches!(self.content_mode, ContentMode::Normal) => {
-        //             content.newline();
-        //             content.write_span(
-        //                 &Span::styled(
-        //                     format!("# {}", self.command_description),
-        //                     Palette::secondary_text(),
-        //                 ),
-        //                 Tag::Tooltip,
-        //             );
-        //         }
-        //         _ => {
-        //             content.newline();
-
-        //             content.write_span(
-        //                 &Span::styled(
-        //                     format!("# Mouse over: {:?}", tag),
-        //                     Palette::secondary_text(),
-        //                 ),
-        //                 Tag::Tooltip,
-        //             );
-        //         }
-        //     }
-        // }
         content
     }
 
