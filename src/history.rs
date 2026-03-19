@@ -117,12 +117,15 @@ impl HistoryManager {
         res
     }
 
-    fn parse_zsh_history() -> Vec<HistoryEntry> {
+    fn parse_zsh_history(custom_path: Option<&str>) -> Vec<HistoryEntry> {
         let start_time = std::time::Instant::now();
 
-        let hist_path = {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            format!("{}/.zsh_history", home)
+        let hist_path = match custom_path {
+            Some(p) if !p.is_empty() => p.to_string(),
+            _ => {
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                format!("{}/.zsh_history", home)
+            }
         };
 
         log::debug!("Reading zsh history from: {}", hist_path);
@@ -173,9 +176,9 @@ impl HistoryManager {
         // Alternative is to do it ourselves
         // let bash_entries = Self::parse_bash_history_from_file();
 
-        let mut entries: Vec<_> = if settings.load_zsh_history {
+        let mut entries: Vec<_> = if let Some(ref zsh_path) = settings.zsh_history_path {
             // As a zsh user migrating to bash, I want to have my zsh history available too
-            let zsh_entries = Self::parse_zsh_history();
+            let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
             log::debug!("Loaded {} zsh history entries", zsh_entries.len());
             for entry in zsh_entries.iter().rev().take(5) {
                 log::debug!("zsh_entries => {:?}", entry);
