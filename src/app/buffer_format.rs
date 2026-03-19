@@ -65,9 +65,10 @@ fn token_to_style(
         return Palette::opening_and_closing_pair();
     }
 
-    if recognised_command == Some(true) {
-        return Palette::recognised_word();
-    } else if recognised_command == Some(false) {
+    if token.annotation == TokenAnnotation::IsCommandWord {
+        if recognised_command == Some(true) {
+            return Palette::recognised_word();
+        }
         return Palette::unrecognised_word();
     }
 

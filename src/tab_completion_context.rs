@@ -130,13 +130,11 @@ pub fn get_completion_context<'a>(
             // try grow to the left if there are single or double quotes or $
             let mut start = byte_range.start;
             let mut end = byte_range.end;
-            let mut i = node_idx;
 
-            loop {
+            for i in (0..node_idx).rev() {
                 let range_contains_dollar =
                     buffer.get(start..end).map_or(false, |s| s.contains('$'));
 
-                i = i.saturating_sub(1);
                 match context_tokens.get(i) {
                     Some(
                         t @ Token {
@@ -1210,6 +1208,23 @@ mod tests {
         assert_eq!(
             ctx.comp_type_secondary,
             Some(SecondaryCompType::EnvVariable)
+        );
+    }
+
+    #[test]
+    fn test_start_with_env_var() {
+        let ctx = run_inline("$HOME/█");
+
+        match ctx.comp_type {
+            CompType::FirstWord => {
+                assert_eq!(ctx.word_under_cursor, "$HOME/");
+            }
+            _ => panic!("Expected FirstWord"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::FilenameExpansion)
         );
     }
 }

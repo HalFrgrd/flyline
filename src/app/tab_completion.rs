@@ -18,6 +18,42 @@ struct PathPatternExpansion {
     rhs_pattern: String,
 }
 
+pub fn fully_expand_path(p: &str) -> String {
+    // p might have a tilde, env vars, and be relative
+    // Use bash's own filename expansion ($VAR + ${VAR} + more).
+    let bash_expanded = if p.is_empty() {
+        String::new()
+    } else {
+        // TOOD: maybe dont call this if there are no $ or ~ in the string?
+        // log::info!("Expanding path pattern: {}", p);
+        bash_funcs::expand_filename(&bash_funcs::dequoting_function_rust(p))
+    };
+    // log::info!("Expanded path pattern: {}", bash_expanded);
+
+    // Make the path absolute (prepend cwd when relative or empty).
+    let absolute_expansion = if bash_expanded.is_empty() {
+        match std::env::current_dir() {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(e) => {
+                log::warn!("Failed to get current directory: {}", e);
+                String::new()
+            }
+        }
+    } else if !Path::new(&bash_expanded).is_absolute() {
+        match std::env::current_dir() {
+            Ok(p) => format!("{}/{}", p.display(), bash_expanded),
+            Err(e) => {
+                log::warn!("Failed to get current directory: {}", e);
+                bash_expanded
+            }
+        }
+    } else {
+        bash_expanded
+    };
+
+    absolute_expansion
+}
+
 impl PathPatternExpansion {
     fn new(pattern: &str) -> Self {
         // Split the pattern at the last '/'.
@@ -26,40 +62,13 @@ impl PathPatternExpansion {
         } else {
             (String::new(), pattern.to_string())
         };
+        let fully_expanded_prefix = fully_expand_path(&raw_prefix);
 
         let rhs_pattern = bash_funcs::dequoting_function_rust(&rhs_pattern);
 
-        // Use bash's own filename expansion (tilde + $VAR + ${VAR} + more).
-        let after_expand = if raw_prefix.is_empty() {
-            String::new()
-        } else {
-            bash_funcs::expand_filename(&bash_funcs::dequoting_function_rust(&raw_prefix))
-        };
-
-        // Make the path absolute (prepend cwd when relative or empty).
-        let expanded_prefix = if after_expand.is_empty() {
-            match std::env::current_dir() {
-                Ok(p) => p.to_string_lossy().to_string(),
-                Err(e) => {
-                    log::warn!("Failed to get current directory: {}", e);
-                    String::new()
-                }
-            }
-        } else if !Path::new(&after_expand).is_absolute() {
-            match std::env::current_dir() {
-                Ok(p) => format!("{}/{}", p.display(), after_expand),
-                Err(e) => {
-                    log::warn!("Failed to get current directory: {}", e);
-                    after_expand
-                }
-            }
-        } else {
-            after_expand
-        };
-
         PathPatternExpansion {
             raw_prefix,
-            expanded_prefix,
+            expanded_prefix: fully_expanded_prefix,
             rhs_pattern,
         }
     }
@@ -273,9 +282,10 @@ impl App<'_> {
             let path = match path_to_use {
                 Some(p) => p,
                 None => {
-                    // TODO fully expand this if we ever get here
-                    log::warn!("Do we ever get here?");
-                    owned_path = std::path::PathBuf::from(self.tilde_expand_pattern(&sug));
+                    // We get here when programmable completion returns a filename
+                    // Without fully_expanded_path call here
+                    // We wouldn't get the trailing / for something like ~/Documents which is dir
+                    owned_path = std::path::PathBuf::from(fully_expand_path(&sug));
                     &owned_path
                 }
             };
@@ -321,8 +331,10 @@ impl App<'_> {
         match &completion_context.comp_type {
             tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
-                log::debug!("First word completions: {:?}", completions);
-                return Some(completions);
+                log::debug!("Primary completions for first word: {:?}", completions);
+                if completions.len() > 0 {
+                    return Some(completions);
+                }
             }
             tab_completion_context::CompType::CommandComp {
                 command_word: initial_command_word,
@@ -369,21 +381,20 @@ impl App<'_> {
                     Ok(comp_result) => {
                         // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
                         // Always try to produce secondary completions
-                        self.gen_secondary_completions(completion_context, comp_result.flags)
+                        return self
+                            .gen_secondary_completions(completion_context, comp_result.flags);
                     }
-                    _ => {
-                        log::debug!(
-                            "No programmable completions found for command: {}. Falling back to secondary completions.",
-                            full_command
-                        );
-                        self.gen_secondary_completions(
-                            completion_context,
-                            bash_funcs::CompletionFlags::default(),
-                        )
-                    }
+                    _ => {}
                 }
             }
         }
+
+        log::debug!(
+            "No programmable completions found completion_context: {:#?}. Falling back to secondary completions.",
+            completion_context
+        );
+
+        self.gen_secondary_completions(completion_context, bash_funcs::CompletionFlags::default())
     }
 
     fn gen_secondary_completions(
@@ -468,11 +479,12 @@ impl App<'_> {
     }
 
     fn tab_complete_first_word(&self, command: &str) -> Vec<Suggestion> {
+        log::debug!("Generating first word completions for: '{}'", command);
         if command.is_empty() {
             return vec![];
         }
 
-        if command.starts_with('.') || command.starts_with('/') {
+        if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
             // Path to executable
             return self.tab_complete_glob_expansion(
                 &(command.to_string() + "*"),
@@ -493,17 +505,6 @@ impl App<'_> {
         res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
         res.dedup();
         Suggestion::from_string_vec(res, "", " ")
-    }
-
-    fn tilde_expand_pattern(&self, pattern: &str) -> String {
-        if pattern.starts_with("~/") {
-            pattern.replacen("~", &self.home_path, 1)
-        } else if pattern.starts_with('~') {
-            // This is a naive tilde expansion for other users, it just replaces ~ with /home/ which works in most cases but not all (e.g. if someone has a custom home directory or if it's a different OS). For a more robust solution, we would need to read /etc/passwd or use a crate that can do this for us.
-            pattern.replacen("~", "/home/", 1)
-        } else {
-            pattern.to_string()
-        }
     }
 
     fn tab_complete_glob_expansion(

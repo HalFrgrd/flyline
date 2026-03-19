@@ -160,7 +160,6 @@ struct App<'a> {
     cursor_animation: CursorAnimation,
     unfinished_from_prev_command: bool,
     prompt_manager: PromptManager,
-    home_path: String,
     /// Parsed bash history available at startup.
     history_manager: HistoryManager,
     buffer_before_history_navigation: Option<String>,
@@ -179,15 +178,24 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(settings: &'a Settings) -> Self {
-        let user = bash_funcs::get_env_variable("USER").unwrap_or("user".into());
 
-        // log::trace!("expand_filename test:");
-        // log::trace!("expand_filename(\"$PWD\") = {}", bash_funcs::expand_filename("$PWD"));
-        // log::trace!("expand_filename($(pwd)) = {}", bash_funcs::expand_filename("$(pwd)"));
-        // log::trace!("expand_filename($(pwd)$HOME) = {}", bash_funcs::expand_filename("$(pwd)$HOME"));
-
-        let home_path =
-            bash_funcs::get_env_variable("HOME").unwrap_or("/home/".to_string() + &user);
+        // log::info!("fully_expand_path test:");
+        // log::info!(
+        //     "fully_expand_path(\"$PWD\") = {}",
+        //     tab_completion::fully_expand_path("$PWD")
+        // );
+        // log::info!(
+        //     "fully_expand_path($(pwd)) = {}",
+        //     tab_completion::fully_expand_path("$(pwd)")
+        // );
+        // log::info!(
+        //     "fully_expand_path($(pwd)$HOME) = {}",
+        //     tab_completion::fully_expand_path("$(pwd)$HOME")
+        // );
+        // log::info!(
+        //     "fully_expand_path(\"~/Doc\") = {}",
+        //     tab_completion::fully_expand_path("~/Doc")
+        // );
 
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
@@ -210,7 +218,6 @@ impl<'a> App<'a> {
                     .cloned()
                     .collect::<Vec<_>>(),
             ),
-            home_path: home_path,
             history_manager: HistoryManager::new(settings),
             buffer_before_history_navigation: None,
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
