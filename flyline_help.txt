@@ -1,0 +1,34 @@
+Usage: flyline [OPTIONS] [COMMAND]
+
+Commands:
+  create-anim  Create a custom prompt animation
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --version
+          Show version information
+      --disable-animations
+          Disable animations
+      --dump-logs [<PATH>]
+          Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is created in the current directory
+      --stream-logs <PATH>
+          Dump current logs to PATH and append new logs. Use `stderr` to stream to standard error
+      --log-level <LEVEL>
+          Set the logging level [possible values: error, warn, info, debug, trace]
+      --load-zsh-history
+          Load zsh history in addition to bash history
+      --tutorial-mode [<TUTORIAL_MODE>]
+          Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode false` to disable [possible values: true, false]
+      --disable-auto-closing-char
+          Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
+      --use-term-emulator-cursor
+          Use the terminal emulator's cursor instead of rendering a custom cursor
+      --mouse-mode <MODE>
+          Mouse capture mode (none, simple, smart). Default is smart [possible values: disabled, simple, smart]
+      --ai-command <AI_COMMAND>...
+          Command (and arguments) used for AI mode. The current buffer is appended as the final argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
+      --run-tab-completion-tests
+          
+  -h, --help
+          Print help (see more with '--help')
+
