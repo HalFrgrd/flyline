@@ -181,10 +181,23 @@ impl<'a> App<'a> {
     fn new(settings: &'a Settings) -> Self {
         let user = bash_funcs::get_env_variable("USER").unwrap_or("user".into());
 
-        // log::trace!("expand_filename test:");
-        // log::trace!("expand_filename(\"$PWD\") = {}", bash_funcs::expand_filename("$PWD"));
-        // log::trace!("expand_filename($(pwd)) = {}", bash_funcs::expand_filename("$(pwd)"));
-        // log::trace!("expand_filename($(pwd)$HOME) = {}", bash_funcs::expand_filename("$(pwd)$HOME"));
+        log::info!("fully_expand_path test:");
+        log::info!(
+            "fully_expand_path(\"$PWD\") = {}",
+            tab_completion::fully_expand_path("$PWD")
+        );
+        log::info!(
+            "fully_expand_path($(pwd)) = {}",
+            tab_completion::fully_expand_path("$(pwd)")
+        );
+        log::info!(
+            "fully_expand_path($(pwd)$HOME) = {}",
+            tab_completion::fully_expand_path("$(pwd)$HOME")
+        );
+        log::info!(
+            "fully_expand_path(\"~/Doc\") = {}",
+            tab_completion::fully_expand_path("~/Doc")
+        );
 
         let home_path =
             bash_funcs::get_env_variable("HOME").unwrap_or("/home/".to_string() + &user);
