@@ -103,7 +103,7 @@ Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
 ## PS1
 The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization) or [Starship integration](#starship-integration) for more information.
-![PS1 demo](assets/demo_prompts_ps1.gif)
+![PS1 demo](../assets/demo_prompts_ps1.gif)
 ```bash
 export PS1='\u@\h:\w$ '
 export PS1='\u@\h:\w\n$ '
@@ -112,7 +112,7 @@ export PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
 
 ## RPS1 / RPROMPT
 The `RPS1` / `RPROMPT` variable sets the right prompt similarly to zsh.
-![RPS1 demo](assets/demo_prompts_rps1.gif)
+![RPS1 demo](../assets/demo_prompts_rps1.gif)
 ```bash
 export RPS1='\t'
 export RPS1='\t\n<'
@@ -121,7 +121,7 @@ export RPS1='\e[01;33m\t\n<\e[00m'
 
 ## PS1_FILL
 `PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
-![PS1_FILL demo](assets/demo_prompts_ps1_fill.gif)
+![PS1_FILL demo](../assets/demo_prompts_ps1_fill.gif)
 ```bash
 export PS1_FILL='-'
 export PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
@@ -171,7 +171,7 @@ Flyline extends bash's tab completion feature in many ways:
 
 Fuzzy tab completions: when you're presented with suggestions, you can type to fuzzily search through the list:
 
-![Fuzzy suggestions demo](assets/demo_fuzzy_suggestions.gif)
+![Fuzzy suggestions demo](../assets/demo_fuzzy_suggestions.gif)
 
 Alias commands: e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected
 

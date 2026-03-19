@@ -138,5 +138,5 @@ RUN touch /home/john/.bash_history && \
     >> /home/john/.bash_history
 
 
-COPY assets/tapes/demo_settings.tape .
-COPY assets/tapes/demo_setup.tape .
+COPY tapes/demo_settings.tape .
+COPY tapes/demo_setup.tape .
