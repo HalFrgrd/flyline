@@ -329,12 +329,11 @@ impl PromptManager {
             let processed_animations: Vec<ProcessedAnimation> = animations
                 .iter()
                 .map(|anim| {
-                    let mut anim_builder = PromptStringBuilder::new();
                     let frames: Vec<Vec<Span<'static>>> = anim
                         .frames
                         .iter()
                         .map(|raw_frame| {
-                            anim_builder
+                            builder
                                 .expand_prompt_string(raw_frame.clone())
                                 .unwrap_or_default()
                                 .into_iter()
@@ -451,13 +450,16 @@ impl PromptManager {
             };
 
             let anim = &self.processed_animations[anim_idx];
-            let frame_spans = Self::get_frame_spans(anim, now);
+            let frame_spans = Self::get_frame_spans(anim, now).into_iter().map(|s| Span {
+                content: s.content.clone(),
+                style: style.patch(s.style),
+            });
 
             if pos > 0 {
                 result.push(Span::styled(remaining[..pos].to_owned(), style));
             }
 
-            result.extend(frame_spans.iter().cloned());
+            result.extend(frame_spans);
 
             remaining = remaining[pos + name_len..].to_owned();
         }

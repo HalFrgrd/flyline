@@ -1,4 +1,4 @@
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
 use clap_complete::{Shell, generate};
 use libc::{c_char, c_int};
 use std::sync::Mutex;
@@ -200,17 +200,10 @@ impl Flyline {
         }
         log::debug!("flyline called with args: {:?}", args);
 
-        // If no args were provided, or --help/-h was requested, print help
-        if args.is_empty() || args.iter().any(|a| *a == "--help" || *a == "-h") {
-            FlylineArgs::command().print_help().ok();
-            println!();
-            return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int;
-        }
-
         // args contains words from WordList; first word is not the command name unlike argv
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
         match FlylineArgs::try_parse_from(args_with_prog) {
-            Ok(parsed) => {
+            Ok(parsed) if args.len() > 0 => {
                 log::debug!("Parsed flyline arguments: {:?}", parsed);
 
                 if parsed.version {
@@ -310,14 +303,15 @@ impl Flyline {
                         frames.len(),
                         ping_pong
                     );
-                    self.settings
-                        .custom_animations
-                        .push(settings::PromptAnimation {
+                    self.settings.custom_animations.insert(
+                        name.clone(),
+                        settings::PromptAnimation {
                             name,
                             fps,
                             frames,
                             ping_pong,
-                        });
+                        },
+                    );
                 }
 
                 #[cfg(feature = "integration-tests")]
@@ -330,9 +324,35 @@ impl Flyline {
 
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
             }
-            Err(e) => {
-                eprintln!("Error parsing arguments: {}", e);
-                return bash_symbols::BuiltinExitCode::Usage as c_int;
+            Ok(_) => {
+                log::debug!("No arguments provided to flyline");
+                FlylineArgs::command().print_help().ok();
+                bash_symbols::BuiltinExitCode::Usage as c_int
+            }
+            Err(err) => {
+                match err.kind() {
+                    ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+                        // user asked for --help / --version
+                        err.print().unwrap();
+                        bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
+                    }
+                    ErrorKind::UnknownArgument
+                    | ErrorKind::InvalidValue
+                    | ErrorKind::InvalidSubcommand
+                    | ErrorKind::MissingRequiredArgument
+                    | ErrorKind::TooManyValues
+                    | ErrorKind::TooFewValues
+                    | ErrorKind::ValueValidation => {
+                        // user mistake → show error + usage
+                        err.print().unwrap();
+                        bash_symbols::BuiltinExitCode::Usage as c_int
+                    }
+                    _ => {
+                        // unexpected / internal error
+                        eprintln!("{err}");
+                        bash_symbols::BuiltinExitCode::Usage as c_int
+                    }
+                }
             }
         }
     }
@@ -383,7 +403,7 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
         ::std::ptr::null(),
     ])
         .as_ptr(),
-    short_doc: c"flyline: advanced command line editing for bash.".as_ptr() as *const c_char,
+    short_doc: c"advanced command line editing for bash.".as_ptr() as *const c_char,
     handle: std::ptr::null(),
 };
 

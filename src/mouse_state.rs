@@ -16,7 +16,7 @@ impl MouseState {
             MouseMode::Simple | MouseMode::Smart => {
                 match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
                     Ok(_) => {
-                        log::info!("Mouse capture enabled: initial setup for {:?} mode", mode);
+                        log::trace!("Mouse capture enabled: initial setup for {:?} mode", mode);
                         true
                     }
                     Err(e) => {
@@ -40,7 +40,7 @@ impl MouseState {
         }
         match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
             Ok(_) => {
-                log::info!("Mouse capture enabled: {}", reason);
+                log::trace!("Mouse capture enabled: {}", reason);
                 self.enabled = true;
             }
             Err(e) => {
@@ -57,7 +57,7 @@ impl MouseState {
         }
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
-                log::info!("Mouse capture disabled: {}", reason);
+                log::trace!("Mouse capture disabled: {}", reason);
                 self.enabled = false;
             }
             Err(e) => {

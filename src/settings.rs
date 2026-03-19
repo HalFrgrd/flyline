@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 /// A single custom prompt animation registered with `flyline create-anim`.
 #[derive(Debug, Clone)]
 pub struct PromptAnimation {
@@ -45,7 +47,7 @@ pub struct Settings {
     /// final argument. Empty means AI mode is not configured.
     pub ai_command: Vec<String>,
     /// Custom prompt animations registered with `flyline create-anim`.
-    pub custom_animations: Vec<PromptAnimation>,
+    pub custom_animations: HashMap<String, PromptAnimation>,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
