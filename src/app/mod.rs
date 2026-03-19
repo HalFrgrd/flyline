@@ -890,25 +890,27 @@ impl<'a> App<'a> {
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor_animation.update_position(cursor_pos);
-            if self.settings.use_term_emulator_cursor {
-                content.set_term_cursor_pos(cursor_pos);
+            let cursor_anim_pos = if self.settings.disable_animations {
+                cursor_pos
             } else {
-                let cursor_anim_pos = if self.settings.disable_animations {
-                    cursor_pos
+                self.cursor_animation.get_position()
+            };
+            let cursor_style = {
+                if self.settings.use_term_emulator_cursor {
+                    None
                 } else {
-                    self.cursor_animation.get_position()
-                };
-                let cursor_style = {
+
                     let cursor_intensity = if self.settings.disable_animations {
                         255
                     } else {
                         self.cursor_animation.get_intensity()
                     };
-                    Palette::cursor_style(cursor_intensity)
-                };
+                    Some(Palette::cursor_style(cursor_intensity))
+                }
+            };
 
-                content.set_edit_cursor_style(cursor_anim_pos, cursor_style);
-            }
+            content.set_term_cursor_pos(cursor_anim_pos, cursor_style, self.settings.use_term_emulator_cursor);
+            
         }
 
         if self.mode.is_running()
@@ -1226,12 +1228,13 @@ impl<'a> App<'a> {
             };
         }
 
-        if let Some(cursor_pos) = content.term_cursor_pos {
+
+        if content.use_term_emulator_cursor && let Some(cursor_pos) = content.term_cursor_pos {
             let screen_row = cursor_pos.row.saturating_sub(start_content_row);
             if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
                 frame.set_cursor_position(Position {
                     x: cursor_pos.col,
-                    y: screen_row,
+                    y: screen_row + frame_area.y as u16,
                 });
             }
         }

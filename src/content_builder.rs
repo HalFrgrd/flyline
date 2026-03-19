@@ -68,9 +68,10 @@ pub struct Contents {
     pub buf: Vec<Vec<TaggedCell>>, // each inner Vec is a row of Cells of width `width`
     pub width: u16,
     cursor_pos: Coord, // visual cursor position with line wrapping
-    pub edit_cursor_pos: Option<Coord>,
-    /// Cursor position to hand off to the terminal emulator (used with --use-term-emulator-cursor).
+    /// Where the terminal emulator thinks the cursor is.
     pub term_cursor_pos: Option<Coord>,
+    /// Whether to tell the term emulator to move the cursor here
+    pub use_term_emulator_cursor: bool, 
 }
 
 impl Contents {
@@ -83,8 +84,8 @@ impl Contents {
             buf: vec![],
             width,
             cursor_pos: Coord::new(0, 0),
-            edit_cursor_pos: None,
             term_cursor_pos: None,
+            use_term_emulator_cursor: false,
         }
     }
 
@@ -307,14 +308,12 @@ impl Contents {
         }
     }
 
-    pub fn set_edit_cursor_style(&mut self, cursor: Coord, style: ratatui::style::Style) {
-        self.edit_cursor_pos = Some(cursor);
-        self.set_style(Rect::new(cursor.col, cursor.row, 1, 1), style);
-    }
-
-    pub fn set_term_cursor_pos(&mut self, cursor: Coord) {
-        self.edit_cursor_pos = Some(cursor);
+    pub fn set_term_cursor_pos(&mut self, cursor: Coord, style: Option<ratatui::style::Style>, use_term_emulator_cursor: bool) {
         self.term_cursor_pos = Some(cursor);
+        self.use_term_emulator_cursor = use_term_emulator_cursor;
+        if let Some(style) = style {
+            self.set_style(Rect::new(cursor.col, cursor.row, 1, 1), style);
+        }
     }
 
     pub fn get_row_range_to_show(&self, height: u16) -> (u16, u16) {
@@ -322,7 +321,7 @@ impl Contents {
         let total_rows = self.height();
         if total_rows <= height {
             (0, total_rows)
-        } else if let Some(cursor) = self.edit_cursor_pos {
+        } else if let Some(cursor) = self.term_cursor_pos {
             let bottom = std::cmp::min(cursor.row.saturating_add(1), total_rows);
             let top = bottom.saturating_sub(height);
             (top, bottom)
