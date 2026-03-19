@@ -105,13 +105,18 @@ pub fn print_logs() {
     }
 }
 
-pub fn dump_logs() -> Result<PathBuf> {
+pub fn dump_logs(path: Option<PathBuf>) -> Result<PathBuf> {
     let logger = LOGGER
         .get()
         .ok_or_else(|| anyhow!("Logger not initialized"))?;
-    let pid = unsafe { libc::getpid() };
-    let filename = format!("flyline_logs_{}.txt", pid);
-    let path = std::env::current_dir()?.join(filename);
+    let path = match path {
+        Some(p) => p,
+        None => {
+            let pid = unsafe { libc::getpid() };
+            let filename = format!("flyline_logs_{}.txt", pid);
+            std::env::current_dir()?.join(filename)
+        }
+    };
 
     let entries = logger.snapshot();
     let mut file = File::create(&path)?;

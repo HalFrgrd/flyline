@@ -37,7 +37,7 @@ const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys 
 const TUTORIAL_HISTORY_PREFIX_HINT: &str =
     "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
 const TUTORIAL_DISABLE_HINT: &str =
-    "💡 Run `flyline --tutorial-mode=false` to disable tutorial mode";
+    "💡 Run `flyline --tutorial-mode false` to disable tutorial mode";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
