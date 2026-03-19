@@ -25,10 +25,10 @@ pub fn fully_expand_path(p: &str) -> String {
         String::new()
     } else {
         // TOOD: maybe dont call this if there are no $ or ~ in the string?
-        log::info!("Expanding path pattern: {}", p);
+        // log::info!("Expanding path pattern: {}", p);
         bash_funcs::expand_filename(&bash_funcs::dequoting_function_rust(p))
     };
-    log::info!("Expanded path pattern: {}", bash_expanded);
+    // log::info!("Expanded path pattern: {}", bash_expanded);
 
     // Make the path absolute (prepend cwd when relative or empty).
     let absolute_expansion = if bash_expanded.is_empty() {
@@ -478,17 +478,30 @@ impl App<'_> {
     }
 
     fn tab_complete_first_word(&self, command: &str) -> Vec<Suggestion> {
+        log::debug!("Generating first word completions for: '{}'", command);
         if command.is_empty() {
             return vec![];
         }
 
         if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
-            // Path to executable
-            return self.tab_complete_glob_expansion(
-                &(command.to_string() + "*"),
-                bash_funcs::CompletionFlags::default(),
+            log::debug!(
+                "First word '{}' looks like a path. Attempting glob expansion.",
+                command
             );
+            // Path to executable
+            // return self.tab_complete_glob_expansion(
+            //     &(command.to_string() + "*"),
+            //     bash_funcs::CompletionFlags::default(),
+            // );
+            return vec![Suggestion::new(command.to_string(), "", " ")];
         }
+
+        log::debug!(
+            "First word '{}' does not look like a path. Attempting command completions.",
+            command
+        );
+
+        return vec![Suggestion::new(command.to_string(), "", " ")];
 
         let mut res = self.bash_env.get_first_word_completions(&command);
 
