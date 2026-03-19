@@ -97,10 +97,6 @@ struct FlylineArgs {
     /// Mouse capture mode (none, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
-    /// Command (and arguments) used for AI mode. The current buffer is appended as the final
-    /// argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
-    #[arg(long = "ai-command", num_args = 1.., allow_hyphen_values = true)]
-    ai_command: Vec<String>,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
@@ -111,6 +107,25 @@ struct FlylineArgs {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Configure AI agent mode.
+    ///
+    /// When Ctrl+I is pressed, flyline invokes COMMAND with the current buffer
+    /// (optionally prepended by SYSTEM_PROMPT) as the final argument.
+    ///
+    /// Example:
+    ///   flyline agent-mode --command llm prompt
+    ///   flyline agent-mode --system-prompt "You are a bash expert" --command llm prompt
+    #[command(name = "agent-mode")]
+    AgentMode {
+        /// Optional system prompt prepended to the buffer.
+        /// The subprocess receives "<system-prompt>\n<buffer>" as its final argument.
+        #[arg(long = "system-prompt")]
+        system_prompt: Option<String>,
+        /// Command (and arguments) to invoke. The current buffer is appended as the
+        /// final argument when Ctrl+I is pressed.
+        #[arg(long = "command", num_args = 1.., allow_hyphen_values = true, required = true)]
+        command: Vec<String>,
+    },
     /// Create a custom prompt animation.
     ///
     /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
@@ -283,9 +298,14 @@ impl Flyline {
                     self.settings.mouse_mode = mode;
                 }
 
-                if !parsed.ai_command.is_empty() {
-                    log::info!("AI command set: {:?}", parsed.ai_command);
-                    self.settings.ai_command = parsed.ai_command;
+                if let Some(Commands::AgentMode {
+                    system_prompt,
+                    command,
+                }) = parsed.command.as_ref()
+                {
+                    log::info!("AI command set: {:?}", command);
+                    self.settings.ai_command = command.clone();
+                    self.settings.ai_system_prompt = system_prompt.clone();
                 }
 
                 if let Some(Commands::CreateAnim {

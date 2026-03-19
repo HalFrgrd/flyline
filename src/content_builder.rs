@@ -72,7 +72,7 @@ pub struct Contents {
     /// Where the terminal emulator thinks the cursor is.
     pub term_cursor_pos: Option<Coord>,
     /// Whether to tell the term emulator to move the cursor here
-    pub use_term_emulator_cursor: bool, 
+    pub use_term_emulator_cursor: bool,
 }
 
 impl Contents {
@@ -309,7 +309,12 @@ impl Contents {
         }
     }
 
-    pub fn set_term_cursor_pos(&mut self, cursor: Coord, style: Option<ratatui::style::Style>, use_term_emulator_cursor: bool) {
+    pub fn set_term_cursor_pos(
+        &mut self,
+        cursor: Coord,
+        style: Option<ratatui::style::Style>,
+        use_term_emulator_cursor: bool,
+    ) {
         self.term_cursor_pos = Some(cursor);
         self.use_term_emulator_cursor = use_term_emulator_cursor;
         if let Some(style) = style {
