@@ -40,8 +40,11 @@ flyline --tutorial-mode
 
 # Integrations
 ## VS Code:
-- I'd recommend setting `terminal.integrated.minimumContrastRatio = 1` to prevent the cell's foreground colour changing when it's under the cursor.
-- You may want to set `terminal.integrated.macOptionIsMeta` so `Option+<KEY>` shortcuts are properly recognised.
+Recommended settings
+- [`terminal.integrated.minimumContrastRatio = 1`](vscode://settings/terminal.integrated.minimumContrastRatio) to prevent the cell's foreground colour changing when it's under the cursor.
+- You may want to set [`terminal.integrated.macOptionIsMeta`](vscode://settings/terminal.integrated.macOptionIsMeta) so `Option+<KEY>` shortcuts are properly recognised.
+- Enable [`terminal.integrated.enableKittyKeyboardProtocol`](vscode://settings/terminal.integrated.enableKittyKeyboardProtocol) so that the integrated terminal [correctly forwards keystrokes to flyline](https://code.visualstudio.com/updates/v1_109#_new-vt-features). You will need to set [`workbench.settings.alwaysShowAdvancedSettings = 1`](vscode://settings/workbench.settings.alwaysShowAdvancedSettings)to find this setting.
+
 - Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
 
 ## macOS
@@ -152,7 +155,7 @@ Optionally read zsh history entries to make migrating to bash easier.
 Configure flyline by calling it with options in your `.bashrc` (after the `enable` call).
 Run `flyline --help` to see all available options.
 You can also set these options in your current session but they won't persist between sessions.
-See 
+[Examples can be found here.](examples/settings.sh)
 
 The block below is auto-generated from `flyline --help`:
 

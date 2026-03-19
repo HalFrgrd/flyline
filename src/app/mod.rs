@@ -201,7 +201,11 @@ impl<'a> App<'a> {
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(
                 unfinished_from_prev_command,
-                &settings.custom_animations.values().cloned().collect::<Vec<_>>(),
+                &settings
+                    .custom_animations
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>(),
             ),
             home_path: home_path,
             history_manager: HistoryManager::new(settings),
@@ -1376,7 +1380,6 @@ impl<'a> App<'a> {
                 if self.settings.use_term_emulator_cursor {
                     None
                 } else {
-
                     let cursor_intensity = if self.settings.disable_animations {
                         255
                     } else {
@@ -1386,8 +1389,11 @@ impl<'a> App<'a> {
                 }
             };
 
-            content.set_term_cursor_pos(cursor_anim_pos, cursor_style, self.settings.use_term_emulator_cursor);
-            
+            content.set_term_cursor_pos(
+                cursor_anim_pos,
+                cursor_style,
+                self.settings.use_term_emulator_cursor,
+            );
         }
 
         if self.mode.is_running()
@@ -1841,8 +1847,9 @@ impl<'a> App<'a> {
             };
         }
 
-
-        if content.use_term_emulator_cursor && let Some(cursor_pos) = content.term_cursor_pos {
+        if content.use_term_emulator_cursor
+            && let Some(cursor_pos) = content.term_cursor_pos
+        {
             let screen_row = cursor_pos.row.saturating_sub(start_content_row);
             if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
                 frame.set_cursor_position(Position {

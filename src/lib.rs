@@ -302,14 +302,15 @@ impl Flyline {
                         frames.len(),
                         ping_pong
                     );
-                    self.settings
-                        .custom_animations.insert(name.clone(),
+                    self.settings.custom_animations.insert(
+                        name.clone(),
                         settings::PromptAnimation {
                             name,
                             fps,
                             frames,
                             ping_pong,
-                        });
+                        },
+                    );
                 }
 
                 #[cfg(feature = "integration-tests")]
