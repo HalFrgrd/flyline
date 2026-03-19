@@ -279,7 +279,7 @@ impl<'a> App<'a> {
                         if suggestions.is_empty() {
                             log::warn!("AI command returned no suggestions");
                             self.content_mode = ContentMode::AiError {
-                                message: "Failed to parse AI output as valid JSON".to_string(),
+                                message: "Failed to parse AI output as valid JSON:".to_string(),
                                 raw_output,
                             };
                         } else {

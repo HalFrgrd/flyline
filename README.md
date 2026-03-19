@@ -19,9 +19,7 @@ Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/C
 - Fuzzy history suggestions
 - Fuzzy autocompletions
 - Integration with bash autocomplete
-- Mouse support:
-    - Click to move cursor
-    - Hover over words for tooltips
+- [Mouse support](#mouse-support)
 - [Improvements on bash's tab completion](#tab-completion-improvements)
 - Tooltips
 - Auto close brackets and quotes
@@ -36,22 +34,6 @@ In your `.bashrc` (or in your current bash session):
 enable -f /path/to/libflyline.so flyline
 flyline --tutorial-mode
 ```
-
-
-# Integrations
-## VS Code:
-Recommended settings
-- [`terminal.integrated.minimumContrastRatio = 1`](vscode://settings/terminal.integrated.minimumContrastRatio) to prevent the cell's foreground colour changing when it's under the cursor.
-- You may want to set [`terminal.integrated.macOptionIsMeta`](vscode://settings/terminal.integrated.macOptionIsMeta) so `Option+<KEY>` shortcuts are properly recognised.
-- Enable [`terminal.integrated.enableKittyKeyboardProtocol`](vscode://settings/terminal.integrated.enableKittyKeyboardProtocol) so that the integrated terminal [correctly forwards keystrokes to flyline](https://code.visualstudio.com/updates/v1_109#_new-vt-features). You will need to set [`workbench.settings.alwaysShowAdvancedSettings = 1`](vscode://settings/workbench.settings.alwaysShowAdvancedSettings)to find this setting.
-
-- Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
-
-## macOS
-`Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
-Two possible fixes are:
-- Map `Command+<KEY>` to`Control+<KEY>` in your terminal emulator settings.
-- Use a terminal emulator that supports [Kitty's exteneded keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
 # Rich prompts
 
@@ -122,18 +104,48 @@ export RPS1='\e[01;32m\D{%Y-%m-%d %H:%M:%S}\e[0m'
 export RPS1='\D{%H:%M}'
 ```
 
-# Tab completion improvements
-Flyline extends bash's tab completion feature in many ways: 
+## Custom animations
 
-Fuzzy tab completions: when you're presented with suggestions, you can type to fuzzily search through the list:
+Create your own animations with `flyline create-anim`.
+Prompt substrings matching the animation name will be replaced with the animation:
+![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
+
+# Agent mode
+Flyline can call an agent of your choice with the current command buffer as a prompt.
+This allows you to write a command in plain English and your agent will convert it into a bash command:
+
+![Agen mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
+
+[See the examples on how to set this up.](examples/ai_command.sh)
+The agent should return a simple json array of possible results as described by the example system prompt.
+
+# Tab completion improvements
+Flyline extends bash's tab completion feature in many ways.
+
+### Fuzzy tab completions
+When you're presented with suggestions, you can type to fuzzily search through the list:
 
 ![Fuzzy suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_suggestions.gif)
 
-Alias commands: e.g. if `gc` aliases to `git commit`, `gc --verbo<TAB>` works as expected
+### Alias expansion
+Aliases are expanded before tab completion so that bash calls the desired completion function.
+For instance, if `gc` aliases to `git commit`, `gc --verbo<Tab>` will work as expected.
 
-Tab completions inside subshell, command substitution, and process substitution expressions: TODO: check this doesn't work in bash normally
+### Nested command
+Tab completions inside subshell, command substitution, and process substitution expressions.
+For instance, `ls $(grep --<Tab>)` call `grep`'s tab completion logic if it's setup.
 
-Mid-word tab completions: when your cursor is mid way through a word and you press tab (e.g. `grep --i<TAB>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
+### Mid-word tab completions
+When your cursor is mid way through a word and you press tab (e.g. `grep --i<Tab>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
+
+### `LS_COLORS` styling
+Flyline styles your filename tab completion results according to `$LS_COLORS`:
+
+![LS_COLORS demo demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_ls_colors.gif)
+
+# Mouse support
+
+
 
 # Command history
 
@@ -148,6 +160,21 @@ Pressing `Up` will scroll through history entries that are a prefix match with t
 
 ## Zsh history entries
 Optionally read zsh history entries to make migrating to bash easier. 
+
+# Integrations
+## VS Code:
+Recommended settings
+- [`terminal.integrated.minimumContrastRatio = 1`](vscode://settings/terminal.integrated.minimumContrastRatio) to prevent the cell's foreground colour changing when it's under the cursor.
+- You may want to set [`terminal.integrated.macOptionIsMeta`](vscode://settings/terminal.integrated.macOptionIsMeta) so `Option+<KEY>` shortcuts are properly recognised.
+- Enable [`terminal.integrated.enableKittyKeyboardProtocol`](vscode://settings/terminal.integrated.enableKittyKeyboardProtocol) so that the integrated terminal [correctly forwards keystrokes to flyline](https://code.visualstudio.com/updates/v1_109#_new-vt-features). You will need to set [`workbench.settings.alwaysShowAdvancedSettings = 1`](vscode://settings/workbench.settings.alwaysShowAdvancedSettings)to find this setting.
+
+- Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
+
+## macOS
+`Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
+Two possible fixes are:
+- Map `Command+<KEY>` to`Control+<KEY>` in your terminal emulator settings.
+- Use a terminal emulator that supports [Kitty's exteneded keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
 
 # Settings
