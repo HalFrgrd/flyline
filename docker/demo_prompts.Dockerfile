@@ -9,7 +9,7 @@ RUN printf '%s\n' \
     >> /home/john/.bashrc
 
 
-COPY assets/tapes/demo_prompts*.tape .
+COPY tapes/demo_prompts*.tape .
 
 RUN faketime @1771881894 vhs demo_prompts_ps1.tape
 RUN faketime @1771881894 vhs demo_prompts_rps1.tape

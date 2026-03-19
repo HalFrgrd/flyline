@@ -93,7 +93,7 @@ target "_demo-base" {
     contexts = {
         vhs-base = "target:vhs-base"
     }
-    output = ["type=local,dest=assets/"]
+    output = ["type=local,dest=/"]
     # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
     args = {
         BUILDKIT_SANDBOX_HOSTNAME = "my-hostname"
