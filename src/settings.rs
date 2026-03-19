@@ -7,6 +7,9 @@ pub struct PromptAnimation {
     pub fps: f64,
     /// Animation frames.  May contain actual ANSI escape sequences (ESC byte, i.e. `\x1b`).
     pub frames: Vec<String>,
+    /// When true the animation reverses direction at each end instead of
+    /// wrapping around (ping-pong / bounce mode).
+    pub ping_pong: bool,
 }
 
 /// Controls how flyline manages mouse capture.
