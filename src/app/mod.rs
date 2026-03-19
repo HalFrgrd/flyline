@@ -234,7 +234,9 @@ impl<'a> App<'a> {
         };
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
-        terminal.hide_cursor().unwrap();
+        if !self.settings.use_term_emulator_cursor {
+            terminal.hide_cursor().unwrap();
+        }
 
         // Set up event stream and timers directly
         // let mut time_since_last_input = Instant::now();
@@ -1371,15 +1373,21 @@ impl<'a> App<'a> {
                 self.cursor_animation.get_position()
             };
             let cursor_style = {
-                let cursor_intensity = if self.settings.disable_animations {
-                    255
+                if self.settings.use_term_emulator_cursor {
+                    None
                 } else {
-                    self.cursor_animation.get_intensity()
-                };
-                Palette::cursor_style(cursor_intensity)
+
+                    let cursor_intensity = if self.settings.disable_animations {
+                        255
+                    } else {
+                        self.cursor_animation.get_intensity()
+                    };
+                    Some(Palette::cursor_style(cursor_intensity))
+                }
             };
 
-            content.set_edit_cursor_style(cursor_anim_pos, cursor_style);
+            content.set_term_cursor_pos(cursor_anim_pos, cursor_style, self.settings.use_term_emulator_cursor);
+            
         }
 
         if self.mode.is_running()
@@ -1831,6 +1839,17 @@ impl<'a> App<'a> {
                 }
                 None => break,
             };
+        }
+
+
+        if content.use_term_emulator_cursor && let Some(cursor_pos) = content.term_cursor_pos {
+            let screen_row = cursor_pos.row.saturating_sub(start_content_row);
+            if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
+                frame.set_cursor_position(Position {
+                    x: cursor_pos.col,
+                    y: screen_row + frame_area.y as u16,
+                });
+            }
         }
 
         self.last_contents = Some((content, (frame_area.y as i16) - start_content_row as i16));

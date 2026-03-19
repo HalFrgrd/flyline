@@ -35,6 +35,8 @@ pub struct Settings {
     pub disable_animations: bool,
     /// Whether to disable automatic closing character insertion.
     pub disable_auto_closing_char: bool,
+    /// Whether to use the terminal emulator's cursor instead of rendering a custom cursor.
+    pub use_term_emulator_cursor: bool,
     /// Mouse capture mode.
     pub mouse_mode: MouseMode,
     /// Command (and arguments) to invoke for AI mode. The current buffer is appended as the

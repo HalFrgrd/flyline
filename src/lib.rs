@@ -91,6 +91,9 @@ struct FlylineArgs {
     /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
     #[arg(long = "disable-auto-closing-char")]
     disable_auto_closing_char: bool,
+    /// Use the terminal emulator's cursor instead of rendering a custom cursor
+    #[arg(long = "use-term-emulator-cursor")]
+    use_term_emulator_cursor: bool,
     /// Mouse capture mode (none, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
@@ -268,6 +271,11 @@ impl Flyline {
                 if parsed.disable_auto_closing_char {
                     log::info!("Auto closing char disabled");
                     self.settings.disable_auto_closing_char = true;
+                }
+
+                if parsed.use_term_emulator_cursor {
+                    log::info!("Using terminal emulator cursor");
+                    self.settings.use_term_emulator_cursor = true;
                 }
 
                 if let Some(mode) = parsed.mouse_mode {
