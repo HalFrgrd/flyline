@@ -1,10 +1,10 @@
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate};
-use core::panic;
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
 mod active_suggestions;
+mod ai_command;
 mod app;
 mod bash_env_manager;
 mod bash_funcs;
@@ -71,10 +71,11 @@ struct FlylineArgs {
     /// Disable animations
     #[arg(long = "disable-animations")]
     disable_animations: bool,
-    /// Dump in-memory logs to file
-    #[arg(long = "dump-logs")]
-    dump_logs: bool,
-    /// Dump current logs to PATH and append new logs
+    /// Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is
+    /// created in the current directory
+    #[arg(long = "dump-logs", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
+    dump_logs: Option<String>,
+    /// Dump current logs to PATH and append new logs. Use `stderr` to stream to standard error
     #[arg(long = "stream-logs", value_name = "PATH")]
     stream_logs: Option<String>,
     /// Set the logging level
@@ -83,19 +84,55 @@ struct FlylineArgs {
     /// Load zsh history in addition to bash history
     #[arg(long = "load-zsh-history")]
     load_zsh_history: bool,
-    /// Enable tutorial mode with hints for first-time users
-    #[arg(long = "tutorial-mode")]
-    tutorial_mode: bool,
+    /// Enable or disable tutorial mode with hints for first-time users.
+    /// Use `--tutorial-mode false` to disable.
+    #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1)]
+    tutorial_mode: Option<bool>,
     /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
     #[arg(long = "disable-auto-closing-char")]
     disable_auto_closing_char: bool,
     /// Use the terminal emulator's cursor instead of rendering a custom cursor
     #[arg(long = "use-term-emulator-cursor")]
     use_term_emulator_cursor: bool,
+    /// Mouse capture mode (none, simple, smart). Default is smart.
+    #[arg(long = "mouse-mode", value_name = "MODE")]
+    mouse_mode: Option<settings::MouseMode>,
+    /// Command (and arguments) used for AI mode. The current buffer is appended as the final
+    /// argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
+    #[arg(long = "ai-command", num_args = 1.., allow_hyphen_values = true)]
+    ai_command: Vec<String>,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
     run_tab_completion_tests: bool,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Create a custom prompt animation.
+    ///
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// with the current animation frame on every render.  Frames may include
+    /// ANSI colour sequences written as `\e` (e.g. `\e[33m`).
+    ///
+    /// Example:
+    ///   flyline create-anim --name COOL_SPINNER --fps 10 '\e[33m|' '/' '-' '\\'
+    #[command(name = "create-anim")]
+    CreateAnim {
+        /// Name to embed in prompt strings as the animation placeholder.
+        #[arg(long)]
+        name: String,
+        /// Playback speed in frames per second (default: 10).
+        #[arg(long, default_value = "10")]
+        fps: f64,
+        /// Reverse direction at each end instead of wrapping (ping-pong / bounce mode).
+        #[arg(long)]
+        ping_pong: bool,
+        /// One or more animation frames (positional).  Use `\e` for the ESC character.
+        frames: Vec<String>,
+    },
 }
 
 // Global state for our custom input stream
@@ -192,8 +229,13 @@ impl Flyline {
                     self.settings.disable_animations = true;
                 }
 
-                if parsed.dump_logs {
-                    match logging::dump_logs() {
+                if let Some(ref path) = parsed.dump_logs {
+                    let path_opt = if path.is_empty() {
+                        None
+                    } else {
+                        Some(std::path::PathBuf::from(path))
+                    };
+                    match logging::dump_logs(path_opt) {
                         Ok(path) => println!("Flyline logs dumped to {}", path.display()),
                         Err(e) => eprintln!("Failed to dump logs: {}", e),
                     }
@@ -221,8 +263,9 @@ impl Flyline {
                     self.settings.load_zsh_history = true;
                 }
 
-                if parsed.tutorial_mode {
-                    self.settings.tutorial_mode = true;
+                if let Some(enabled) = parsed.tutorial_mode {
+                    log::info!("Tutorial mode set to {}", enabled);
+                    self.settings.tutorial_mode = enabled;
                 }
 
                 if parsed.disable_auto_closing_char {
@@ -233,6 +276,47 @@ impl Flyline {
                 if parsed.use_term_emulator_cursor {
                     log::info!("Using terminal emulator cursor");
                     self.settings.use_term_emulator_cursor = true;
+                }
+
+                if let Some(mode) = parsed.mouse_mode {
+                    log::info!("Mouse mode set to {:?}", mode);
+                    self.settings.mouse_mode = mode;
+                }
+
+                if !parsed.ai_command.is_empty() {
+                    log::info!("AI command set: {:?}", parsed.ai_command);
+                    self.settings.ai_command = parsed.ai_command;
+                }
+
+                if let Some(Commands::CreateAnim {
+                    name,
+                    fps,
+                    frames,
+                    ping_pong,
+                }) = parsed.command
+                {
+                    if fps <= 0.0 {
+                        eprintln!(
+                            "flyline create-anim: --fps must be greater than 0 (got {}); animation '{}' not registered",
+                            fps, name
+                        );
+                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                    }
+                    log::info!(
+                        "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
+                        name,
+                        fps,
+                        frames.len(),
+                        ping_pong
+                    );
+                    self.settings
+                        .custom_animations
+                        .push(settings::PromptAnimation {
+                            name,
+                            fps,
+                            frames,
+                            ping_pong,
+                        });
                 }
 
                 #[cfg(feature = "integration-tests")]

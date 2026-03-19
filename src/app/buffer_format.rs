@@ -31,43 +31,6 @@ impl FormattedBuffer {
         let tokens = parser.tokens().to_vec();
         format_buffer(&tokens, cursor_pos, input.len(), false, None)
     }
-
-    /// Returns the closing character that should be automatically inserted after the character `c`
-    /// was typed at byte position `just_inserted_pos`.
-    ///
-    /// `self` is the **stale** (pre-insertion) formatted buffer — i.e. the state of the buffer
-    /// *before* `c` was typed.  This is `self.formatted_buffer_cache` in `App`.
-    ///
-    /// - `{`, `[`, `(` are unambiguously openers and always produce a closing counterpart.
-    /// - `"`, `'`, `` ` `` are ambiguous: they close when there is already an unmatched opener of
-    ///   the same kind before `just_inserted_pos` in the stale buffer; otherwise they open.
-    pub fn closing_char_to_insert(&self, c: char, just_inserted_pos: usize) -> Option<char> {
-        // Unambiguously opening characters – always auto-close.
-        match c {
-            '{' => return Some('}'),
-            '[' => return Some(']'),
-            '(' => return Some(')'),
-            _ => {}
-        }
-
-        // Ambiguous characters: consult the stale token annotations.
-        let (closing, opener_kind) = match c {
-            '"' => ('"', TokenKind::Quote),
-            '\'' => ('\'', TokenKind::SingleQuote),
-            '`' => ('`', TokenKind::Backtick),
-            _ => return None,
-        };
-
-        // If there is already an unmatched opener of the same kind strictly before the
-        // insertion point, the character just typed is closing it – don't auto-insert.
-        let has_unmatched_opener = self.parts.iter().any(|p| {
-            p.token.token.byte_range().start < just_inserted_pos
-                && p.token.token.kind == opener_kind
-                && matches!(p.token.annotation, TokenAnnotation::IsOpening(None))
-        });
-
-        if has_unmatched_opener { None } else { Some(closing) }
-    }
 }
 
 impl Default for FormattedBuffer {
@@ -106,10 +69,16 @@ fn token_to_style(
         return Palette::recognised_word();
     }
 
-    if token.annotation == TokenAnnotation::IsPartOfQuotedString
-        || matches!(token.token.kind, TokenKind::SingleQuote | TokenKind::Quote)
+    if token.annotation == TokenAnnotation::IsPartOfSingleQuotedString
+        || token.token.kind == TokenKind::SingleQuote
     {
-        return Palette::unrecognised_word();
+        return Palette::single_quoted_word();
+    }
+
+    if token.annotation == TokenAnnotation::IsPartOfDoubleQuotedString
+        || token.token.kind == TokenKind::Quote
+    {
+        return Palette::double_quoted_word();
     }
     Palette::normal_text()
 }
@@ -143,20 +112,17 @@ impl FormattedBufferPart {
                 token.token.value
             );
 
-            let mut grapheme_byte_start = 0;
-            span.styled_graphemes(Style::default())
-                .enumerate()
-                .find_map(|(grapheme_idx, grapheme)| {
-                    let grapheme_byte_len = grapheme.symbol.width();
-                    let start = grapheme_byte_start;
-                    grapheme_byte_start += grapheme_byte_len;
-                    if start <= byte_pos && byte_pos < grapheme_byte_start {
-                        Some(grapheme_idx)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(0) // if byte_pos is out of bounds, just put the cursor on the first grapheme
+            let mut graph_idx = 0;
+            let mut byte_count = 0;
+            for g in token.token.value.graphemes(true) {
+                let g_byte_len = g.len();
+                if byte_count + g_byte_len > byte_pos {
+                    break;
+                }
+                byte_count += g_byte_len;
+                graph_idx += 1;
+            }
+            graph_idx
         });
 
         if let Some(idx) = cursor_grapheme_idx {
@@ -234,7 +200,10 @@ pub fn format_buffer<'a>(
                                 .get(corresponding_idx)
                                 .is_some_and(range_check)
                     }
-                    TokenAnnotation::IsClosing(corresponding_idx) => {
+                    TokenAnnotation::IsClosing {
+                        opening_idx: corresponding_idx,
+                        ..
+                    } => {
                         range_check(tok)
                             || annotated_tokens
                                 .get(corresponding_idx)
@@ -317,8 +286,14 @@ mod tests {
         let fb = FormattedBuffer::from(input, cursor);
         let quotes = parts_with_value(&fb, "\"");
         assert_eq!(quotes.len(), 2);
-        assert!(matches!(quotes[0].token.annotation, TokenAnnotation::IsOpening(_)));
-        assert!(matches!(quotes[1].token.annotation, TokenAnnotation::IsClosing(_)));
+        assert!(matches!(
+            quotes[0].token.annotation,
+            TokenAnnotation::IsOpening(_)
+        ));
+        assert!(matches!(
+            quotes[1].token.annotation,
+            TokenAnnotation::IsClosing { .. }
+        ));
     }
 
     #[test]
@@ -327,7 +302,10 @@ mod tests {
         let fb = FormattedBuffer::from(input, input.len());
         let sq = parts_with_value(&fb, "'");
         assert_eq!(sq.len(), 1);
-        assert!(matches!(sq[0].token.annotation, TokenAnnotation::IsOpening(_)));
+        assert!(matches!(
+            sq[0].token.annotation,
+            TokenAnnotation::IsOpening(_)
+        ));
     }
 
     #[test]
@@ -336,87 +314,9 @@ mod tests {
         let fb = FormattedBuffer::from(input, input.len());
         let braces = parts_with_value(&fb, "{");
         assert_eq!(braces.len(), 1);
-        assert!(matches!(braces[0].token.annotation, TokenAnnotation::IsOpening(_)));
-    }
-
-    // ── closing_char_to_insert ───────────────────────────────────────────────
-    // These tests pass a *stale* (pre-insertion) FormattedBuffer to
-    // closing_char_to_insert, mirroring how App uses formatted_buffer_cache.
-
-    #[test]
-    fn closing_char_for_opening_double_quote() {
-        // Stale buffer is "echo " (before the " was typed).
-        let stale = "echo ";
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('"', just_inserted_pos), Some('"'));
-    }
-
-    #[test]
-    fn no_closing_char_for_closing_double_quote() {
-        // Stale buffer is `echo "hello` (before the closing " was typed).
-        let stale = r#"echo "hello"#;
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('"', just_inserted_pos), None);
-    }
-
-    #[test]
-    fn closing_char_for_opening_single_quote() {
-        let stale = "echo ";
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('\'', just_inserted_pos), Some('\''));
-    }
-
-    #[test]
-    fn no_closing_char_for_closing_single_quote() {
-        let stale = "echo 'hello";
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('\'', just_inserted_pos), None);
-    }
-
-    #[test]
-    fn closing_char_for_opening_brace() {
-        // { is never ambiguous; always produces a closing }.
-        let stale = "echo ";
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('{', just_inserted_pos), Some('}'));
-    }
-
-    #[test]
-    fn closing_char_for_opening_backtick() {
-        let stale = "echo ";
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('`', just_inserted_pos), Some('`'));
-    }
-
-    #[test]
-    fn no_closing_char_for_closing_backtick() {
-        // Stale buffer is `echo `ls` (before the closing backtick was typed).
-        let stale = "echo `ls";
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('`', just_inserted_pos), None);
-    }
-
-    #[test]
-    fn no_closing_char_for_unrecognised_character() {
-        let stale = "echo ";
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('a', just_inserted_pos), None);
-    }
-
-    #[test]
-    fn closing_char_second_quote_pair_after_first_closed() {
-        // `echo "a" ` – the first pair is closed; the next " opens a new pair.
-        let stale = r#"echo "a" "#;
-        let just_inserted_pos = stale.len();
-        let fb = FormattedBuffer::from(stale, stale.len());
-        assert_eq!(fb.closing_char_to_insert('"', just_inserted_pos), Some('"'));
+        assert!(matches!(
+            braces[0].token.annotation,
+            TokenAnnotation::IsOpening(_)
+        ));
     }
 }

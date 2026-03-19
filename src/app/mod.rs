@@ -2,18 +2,19 @@ mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
+use crate::ai_command::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
-use crate::dparser::AnnotatedToken;
+use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
-use crate::settings::Settings;
+use crate::settings::{MouseMode, Settings};
 use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
@@ -28,12 +29,15 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
-
 use std::time::Duration;
 use std::vec;
 use timeago;
 
-const TUTORIAL_FUZZY_SEARCH_HINT: &str = "type to search, press arrow keys / page up/down to browse, enter to run the command, shift+enter to accept command for editing";
+const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Shift+Enter to accept the command for editing";
+const TUTORIAL_HISTORY_PREFIX_HINT: &str =
+    "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
+const TUTORIAL_DISABLE_HINT: &str =
+    "💡 Run `flyline --tutorial-mode false` to disable tutorial mode";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -79,6 +83,17 @@ impl AppRunningState {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum KeyPressReturnType {
+    None,
+    NeedScreenClear,
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum LastKeyPressAction {
+    InsertedAutoClosing { char: char, byte_pos: usize },
+}
+
 pub fn get_command(settings: &Settings) -> ExitState {
     // if let Err(e) = color_eyre::install() {
     //     log::error!("Failed to install color_eyre panic handler: {}", e);
@@ -89,14 +104,15 @@ pub fn get_command(settings: &Settings) -> ExitState {
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
+
+    // Set up terminal features. Mouse capture is handled separately inside
+    // MouseState::initialize (called in App::new) based on the configured mode.
     crossterm::execute!(
         std::io::stdout(),
         crossterm::event::EnableBracketedPaste,
         crossterm::event::EnableFocusChange,
-        crossterm::event::EnableMouseCapture,
         crossterm::event::PushKeyboardEnhancementFlags(
             crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                | crossterm::event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
                 | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
                 | crossterm::event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
         )
@@ -118,17 +134,34 @@ enum ContentMode {
     Normal,
     FuzzyHistorySearch,
     TabCompletion(ActiveSuggestions),
+    /// AI command is running in the background. Stores the channel receiver and the
+    /// human-readable representation of the command being executed.
+    AiMode {
+        receiver: std::sync::mpsc::Receiver<Result<String, (String, String)>>,
+        command_display: String,
+        start_time: std::time::Instant,
+    },
+    /// AI output has been parsed; user is selecting a suggestion from the list.
+    AiOutputSelection(AiOutputSelection),
+    /// AI command or JSON parsing failed; stores the error message and any raw output.
+    AiError {
+        message: String,
+        raw_output: String,
+    },
 }
 
 struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
     formatted_buffer_cache: FormattedBuffer,
+    /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
+    dparser_tokens_cache: Vec<AnnotatedToken>,
     cursor_animation: CursorAnimation,
     prompt_manager: PromptManager,
     home_path: String,
     /// Parsed bash history available at startup.
     history_manager: HistoryManager,
+    buffer_before_history_navigation: Option<String>,
     bash_env: BashEnvManager,
     snake_animation: SnakeAnimation,
     history_suggestion: Option<(HistoryEntry, String)>,
@@ -138,11 +171,18 @@ struct App<'a> {
     last_mouse_over_cell: Option<Tag>,
     tooltip: Option<String>,
     settings: &'a Settings,
+    /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
+    last_viewport_top: u16,
 }
 
 impl<'a> App<'a> {
     fn new(settings: &'a Settings) -> Self {
         let user = bash_funcs::get_env_variable("USER").unwrap_or("user".into());
+
+        // log::trace!("expand_filename test:");
+        // log::trace!("expand_filename(\"$PWD\") = {}", bash_funcs::expand_filename("$PWD"));
+        // log::trace!("expand_filename($(pwd)) = {}", bash_funcs::expand_filename("$(pwd)"));
+        // log::trace!("expand_filename($(pwd)$HOME) = {}", bash_funcs::expand_filename("$(pwd)$HOME"));
 
         let home_path =
             bash_funcs::get_env_variable("HOME").unwrap_or("/home/".to_string() + &user);
@@ -152,25 +192,30 @@ impl<'a> App<'a> {
 
         let buffer = TextBuffer::new("");
         let formatted_buffer_cache = FormattedBuffer::default();
+
         App {
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
+            dparser_tokens_cache: Vec::new(),
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(
                 unfinished_from_prev_command,
+                &settings.custom_animations,
             ),
             home_path: home_path,
             history_manager: HistoryManager::new(settings),
+            buffer_before_history_navigation: None,
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
-            mouse_state: MouseState::new(),
+            mouse_state: MouseState::initialize(&settings.mouse_mode),
             content_mode: ContentMode::Normal,
             last_contents: None,
             last_mouse_over_cell: None,
             tooltip: None,
             settings,
+            last_viewport_top: 0,
         }
     }
 
@@ -208,6 +253,45 @@ impl<'a> App<'a> {
         let mut last_terminal_area = terminal.size().unwrap();
 
         loop {
+            // Poll AI background task: check if a result has arrived without blocking.
+            let ai_result = if let ContentMode::AiMode { ref receiver, .. } = self.content_mode {
+                match receiver.try_recv() {
+                    Ok(result) => Some(result),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        log::warn!("AI task channel disconnected unexpectedly");
+                        Some(Err(("AI task disconnected".to_string(), String::new())))
+                    }
+                }
+            } else {
+                None
+            };
+            if let Some(result) = ai_result {
+                match result {
+                    Ok(raw_output) => {
+                        let suggestions = parse_ai_output(&raw_output);
+                        if suggestions.is_empty() {
+                            log::warn!("AI command returned no suggestions");
+                            self.content_mode = ContentMode::AiError {
+                                message: "Failed to parse AI output as valid JSON".to_string(),
+                                raw_output,
+                            };
+                        } else {
+                            self.content_mode =
+                                ContentMode::AiOutputSelection(AiOutputSelection::new(suggestions));
+                        }
+                    }
+                    Err((msg, raw_output)) => {
+                        log::error!("AI command failed: {}", msg);
+                        self.content_mode = ContentMode::AiError {
+                            message: msg,
+                            raw_output,
+                        };
+                    }
+                }
+                redraw = true;
+            }
+
             if redraw {
                 let frame_area = terminal.get_frame().area();
 
@@ -259,17 +343,12 @@ impl<'a> App<'a> {
 
             redraw = if event::poll(Duration::from_millis(30)).unwrap() {
                 match event::read().unwrap() {
-                    CrosstermEvent::Key(key) => match key.kind {
-                        crossterm::event::KeyEventKind::Press
-                        | crossterm::event::KeyEventKind::Repeat => {
-                            needs_screen_cleared = self.on_keypress(key);
-                            true
+                    CrosstermEvent::Key(key) => {
+                        if let KeyPressReturnType::NeedScreenClear = self.on_keypress(key) {
+                            needs_screen_cleared = true;
                         }
-                        crossterm::event::KeyEventKind::Release => {
-                            self.on_keyrelease(key);
-                            false
-                        }
-                    },
+                        true
+                    }
                     CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
                     CrosstermEvent::Resize(new_cols, new_rows) => {
                         log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
@@ -288,13 +367,18 @@ impl<'a> App<'a> {
                     CrosstermEvent::FocusGained => {
                         // log::debug!("Terminal focus gained");
                         self.cursor_animation.term_has_focus = true;
+                        if self.settings.mouse_mode == MouseMode::Smart
+                            && !self.mouse_state.is_explicitly_disabled_by_user()
+                        {
+                            self.mouse_state.enable("smart mode: focus gained");
+                        }
                         false
                     }
                     CrosstermEvent::Paste(pasted) => {
                         log::debug!("Pasted content: {}", pasted);
                         log::debug!("Pasted content as bytes: {:?}", pasted.as_bytes());
                         self.buffer.insert_str(&pasted);
-                        self.on_possible_buffer_change();
+                        self.on_possible_buffer_change(None);
                         true
                     }
                 }
@@ -314,8 +398,8 @@ impl<'a> App<'a> {
         }
     }
 
-    fn toggle_mouse_state(&mut self) {
-        self.mouse_state.toggle();
+    fn toggle_mouse_state(&mut self, reason: &str) {
+        self.mouse_state.toggle(reason);
         if !self.mouse_state.enabled() {
             self.last_mouse_over_cell = None;
         }
@@ -323,6 +407,28 @@ impl<'a> App<'a> {
 
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
+
+        // Smart mode: check if the mouse is above the viewport or a scroll event occurred.
+        if self.settings.mouse_mode == MouseMode::Smart {
+            if mouse.row < self.last_viewport_top {
+                self.mouse_state
+                    .disable("smart mode: mouse is above the viewport");
+                self.last_mouse_over_cell = None;
+                return false;
+            }
+            match mouse.kind {
+                MouseEventKind::ScrollUp
+                | MouseEventKind::ScrollDown
+                | MouseEventKind::ScrollLeft
+                | MouseEventKind::ScrollRight => {
+                    self.mouse_state
+                        .disable("smart mode: scroll event detected");
+                    self.last_mouse_over_cell = None;
+                    return false;
+                }
+                _ => {}
+            }
+        }
 
         let mut cursor_directly_on_cell = true;
 
@@ -339,6 +445,12 @@ impl<'a> App<'a> {
                 self.last_mouse_over_cell = Some(tag.clone());
                 if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
                     self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                }
+            }
+            Some((tag @ Tag::AiResult(idx), true)) => {
+                self.last_mouse_over_cell = Some(tag.clone());
+                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                    selection.set_selected_by_idx(idx);
                 }
             }
             Some((tag @ Tag::Command(byte_pos), direct)) => {
@@ -380,6 +492,19 @@ impl<'a> App<'a> {
                     }
                 }
             }
+            Some(Tag::AiResult(idx)) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                        selection.set_selected_by_idx(idx);
+                        if let Some(cmd) = selection.selected_command() {
+                            let cmd = cmd.to_string();
+                            self.buffer.replace_buffer(&cmd);
+                            update_buffer = true;
+                        }
+                        self.content_mode = ContentMode::Normal;
+                    }
+                }
+            }
             Some(Tag::Command(byte_pos)) => {
                 if matches!(
                     mouse.kind,
@@ -394,7 +519,7 @@ impl<'a> App<'a> {
         }
 
         if update_buffer {
-            self.on_possible_buffer_change();
+            self.on_possible_buffer_change(None);
             true
         } else {
             false
@@ -418,8 +543,18 @@ impl<'a> App<'a> {
     /// Set high bit gives you a warning: "You have chosen to have an option key as Meta. This is
     /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
     /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
-    fn on_keypress(&mut self, key: KeyEvent) -> bool {
+    fn on_keypress(&mut self, key: KeyEvent) -> KeyPressReturnType {
         log::trace!("Key event: {:?}", key);
+
+        let mut keypress_action: Option<LastKeyPressAction> = None;
+
+        // Smart mode: any keypress re-enables mouse capture, unless the user has
+        // explicitly disabled it via a toggle action.
+        if self.settings.mouse_mode == MouseMode::Smart {
+            if !self.mouse_state.is_explicitly_disabled_by_user() {
+                self.mouse_state.enable("smart mode: keypress detected");
+            }
+        }
 
         match key {
             KeyEvent {
@@ -459,6 +594,21 @@ impl<'a> App<'a> {
             }
             KeyEvent {
                 code: KeyCode::Up, ..
+            } if matches!(self.content_mode, ContentMode::AiOutputSelection(_)) => {
+                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                    selection.move_up();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } if matches!(self.content_mode, ContentMode::AiOutputSelection(_)) => {
+                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                    selection.move_down();
+                }
+            }
+            KeyEvent {
+                code: KeyCode::Up, ..
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.history_manager
                     .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
@@ -467,12 +617,13 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Up, ..
             } if self.buffer.cursor_row() == 0 => {
+                self.buffer_before_history_navigation
+                    .get_or_insert_with(|| self.buffer.buffer().to_string());
                 if let Some(entry) = self
                     .history_manager
                     .search_in_history(self.buffer.buffer(), HistorySearchDirection::Backward)
                 {
-                    let new_command = entry.command.clone();
-                    self.buffer.replace_buffer(new_command.as_str());
+                    self.buffer.replace_buffer(&entry.command);
                 }
             }
             KeyEvent {
@@ -515,12 +666,19 @@ impl<'a> App<'a> {
                 code: KeyCode::Down,
                 ..
             } if self.buffer.is_cursor_on_final_line() => {
-                if let Some(entry) = self
+                match self
                     .history_manager
                     .search_in_history(self.buffer.buffer(), HistorySearchDirection::Forward)
                 {
-                    let new_command = entry.command.clone();
-                    self.buffer.replace_buffer(new_command.as_str());
+                    Some(entry) => {
+                        self.buffer.replace_buffer(&entry.command);
+                    }
+                    None => {
+                        if let Some(original_buffer) = self.buffer_before_history_navigation.take()
+                        {
+                            self.buffer.replace_buffer(&original_buffer);
+                        }
+                    }
                 }
             }
             // Shift+Enter in fuzzy search - accept without running (move to buffer only)
@@ -531,6 +689,16 @@ impl<'a> App<'a> {
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.accept_fuzzy_history_search();
             }
+            // Shift+Enter - activate AI mode like Ctrl+I (requires --ai-command to be configured)
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } if !self.settings.ai_command.is_empty()
+                && !matches!(self.content_mode, ContentMode::AiMode { .. }) =>
+            {
+                self.start_ai_mode();
+            }
             // Enter key - accept suggestions or submit command
             KeyEvent {
                 code: KeyCode::Enter,
@@ -540,34 +708,31 @@ impl<'a> App<'a> {
                 code: KeyCode::Char('j'), // Without this, when I hold enter, sometimes 'j' is read as input
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } => {
-                match &mut self.content_mode {
-                    ContentMode::FuzzyHistorySearch => {
-                        self.accept_fuzzy_history_search();
-                        self.mode = AppRunningState::Exiting(ExitState::WithCommand(
-                            self.buffer.buffer().to_string(),
-                        ));
-                    }
-                    ContentMode::TabCompletion(active_suggestions) => {
-                        active_suggestions.accept_currently_selected(&mut self.buffer);
-                        self.content_mode = ContentMode::Normal;
-                    }
-                    ContentMode::Normal => {
-                        // If it's a single line complete command, exit
-                        // If it's a multi-line complete command, cursor needs to be at end to exit
-                        if ((self.buffer.lines_with_cursor().iter().count() == 1)
-                            || self.buffer.is_cursor_at_trimmed_end())
-                            && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
-                        {
-                            self.mode = AppRunningState::Exiting(ExitState::WithCommand(
-                                self.buffer.buffer().to_string(),
-                            ));
-                        } else {
-                            self.buffer.insert_newline();
-                        }
-                    }
+            } => match &mut self.content_mode {
+                ContentMode::FuzzyHistorySearch => {
+                    self.accept_fuzzy_history_search();
+                    self.try_submit_current_buffer();
                 }
-            }
+                ContentMode::TabCompletion(active_suggestions) => {
+                    active_suggestions.accept_currently_selected(&mut self.buffer);
+                    self.content_mode = ContentMode::Normal;
+                }
+                ContentMode::Normal => {
+                    self.try_submit_current_buffer();
+                }
+                ContentMode::AiMode { .. } => {}
+                ContentMode::AiError { .. } => {
+                    self.content_mode = ContentMode::Normal;
+                }
+                ContentMode::AiOutputSelection(selection) => {
+                    if let Some(cmd) = selection.selected_command() {
+                        let cmd = cmd.to_string();
+                        self.buffer.replace_buffer(&cmd);
+                        self.on_possible_buffer_change(None);
+                    }
+                    self.content_mode = ContentMode::Normal;
+                }
+            },
             // Shift+Tab or BackTab - cycle suggestions backward
             KeyEvent {
                 code: KeyCode::Tab,
@@ -595,17 +760,29 @@ impl<'a> App<'a> {
                 ContentMode::Normal => {
                     self.start_tab_complete();
                 }
+                ContentMode::AiMode { .. } => {}
+                ContentMode::AiOutputSelection(_) => {}
+                ContentMode::AiError { .. } => {}
             },
 
-            // Escape - clear suggestions or toggle mouse
+            // Escape - clear suggestions or toggle mouse (Simple and Smart modes)
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => match self.content_mode {
-                ContentMode::TabCompletion(_) | ContentMode::FuzzyHistorySearch => {
+                ContentMode::TabCompletion(_)
+                | ContentMode::FuzzyHistorySearch
+                | ContentMode::AiMode { .. }
+                | ContentMode::AiOutputSelection(_)
+                | ContentMode::AiError { .. } => {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
-                    self.toggle_mouse_state();
+                    if matches!(
+                        self.settings.mouse_mode,
+                        MouseMode::Simple | MouseMode::Smart
+                    ) {
+                        self.toggle_mouse_state("Escape pressed");
+                    }
                 }
             },
             // Ctrl+C - cancel
@@ -644,6 +821,9 @@ impl<'a> App<'a> {
                             .history_manager
                             .get_fuzzy_search_results(self.buffer.buffer());
                     }
+                    ContentMode::AiMode { .. }
+                    | ContentMode::AiOutputSelection(_)
+                    | ContentMode::AiError { .. } => {}
                 }
             }
             KeyEvent {
@@ -652,51 +832,223 @@ impl<'a> App<'a> {
                 ..
             } => {
                 // Clear screen
-                return true;
+                return KeyPressReturnType::NeedScreenClear;
+            }
+            // Ctrl+I - activate AI mode (requires --ai-command to be configured)
+            KeyEvent {
+                code: KeyCode::Char('i'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } if !self.settings.ai_command.is_empty() => {
+                self.start_ai_mode();
             }
             KeyEvent {
                 code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
                 modifiers: KeyModifiers::ALT | KeyModifiers::META,
                 ..
             } => {
-                // Idea is that when Alt/Meta is held down, mouse is toggled
-                // But not all terminals send key release events for Alt/Meta
-                // So we toggle on both press and release
-                self.toggle_mouse_state();
+                // In Simple mode: Alt press toggles mouse capture.
+                if self.settings.mouse_mode == MouseMode::Simple {
+                    self.toggle_mouse_state("simple mode: Alt pressed");
+                }
             }
             // Delegate basic text editing to TextBuffer
             KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
-            } => {
-                self.buffer.on_keypress(key);
-                if !self.settings.disable_auto_closing_char {
-                    self.insert_closing_char(c);
+            } if !self.settings.disable_auto_closing_char => {
+                if self.would_overwrite_auto_inserted_closing(c) {
+                    log::info!(
+                        "Not inserting char '{}' to avoid overwriting auto-inserted closing token",
+                        c
+                    );
+                    self.buffer.move_right();
+                } else {
+                    let initial_cursor_pos = self.buffer.cursor_byte_pos();
+                    self.buffer.on_keypress(key);
+                    if let Some((auto_char, auto_pos)) =
+                        self.insert_closing_char(c, initial_cursor_pos)
+                    {
+                        keypress_action = Some(LastKeyPressAction::InsertedAutoClosing {
+                            char: auto_char,
+                            byte_pos: auto_pos,
+                        });
+                    }
                 }
+            }
+            // Backspace: if the char to the right of the cursor is an auto-inserted closing token
+            // paired with the char about to be deleted, remove it as well.
+            KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } if !self.settings.disable_auto_closing_char => {
+                self.delete_auto_inserted_closing_if_present();
+                self.buffer.on_keypress(key);
             }
             _ => {
                 self.buffer.on_keypress(key);
             }
         }
 
-        self.on_possible_buffer_change();
-        return false;
+        self.on_possible_buffer_change(keypress_action);
+        return KeyPressReturnType::None;
+    }
+
+    fn would_overwrite_auto_inserted_closing(&self, c: char) -> bool {
+        let cursor_pos = self.buffer.cursor_byte_pos();
+        if cursor_pos == 0 {
+            return false;
+        }
+        if let Some(dparser_token) = self
+            .dparser_tokens_cache
+            .iter()
+            .find(|t| t.token.byte_range().contains(&cursor_pos))
+        {
+            log::info!(
+                "Token at cursor position: '{}', with annotation {:?}",
+                dparser_token.token.value,
+                dparser_token.annotation
+            );
+            if let dparser::TokenAnnotation::IsClosing {
+                is_auto_inserted: true,
+                ..
+            } = dparser_token.annotation
+            {
+                return dparser_token.token.value.chars().next() == Some(c);
+            }
+        }
+        false
     }
 
     /// After a character `c` has been inserted into the buffer, insert the corresponding
     /// closing character when `c` is an unmatched opening delimiter.
     ///
-    /// The decision is made using `formatted_buffer_cache`, which represents the buffer state
+    /// The decision is made using `dparser_tokens_cache`, which represents the buffer state
     /// *before* `c` was typed (one character out of date).  The cache is passed to
     /// [`buffer_format::FormattedBuffer::closing_char_to_insert`] which uses the stale token
     /// annotations to determine whether `c` opens a new pair or closes an existing one.
-    fn insert_closing_char(&mut self, c: char) {
-        let cursor_pos = self.buffer.cursor_byte_pos();
-        let just_inserted_pos = cursor_pos.saturating_sub(c.len_utf8());
-        if let Some(closing) = self.formatted_buffer_cache.closing_char_to_insert(c, just_inserted_pos) {
+    ///
+    /// Returns the byte position of the auto-inserted closing character, or `None` if no
+    /// closing character was inserted.
+    fn insert_closing_char(&mut self, c: char, initial_cursor_pos: usize) -> Option<(char, usize)> {
+        if let Some(closing) = dparser::DParser::closing_char_to_insert(
+            &self.dparser_tokens_cache,
+            c,
+            initial_cursor_pos,
+        ) {
             self.buffer.insert_char(closing);
             self.buffer.move_left();
+            // After move_left, cursor is at the start of the auto-inserted closing char.
+            log::info!(
+                "Inserted auto-closing char '{}' at byte position {}",
+                closing,
+                self.buffer.cursor_byte_pos()
+            );
+            Some((closing, self.buffer.cursor_byte_pos()))
+        } else {
+            None
+        }
+    }
+
+    /// Mark the dparser token at `byte_pos` as auto-inserted in the cache.
+    fn mark_auto_inserted_closing(
+        dparser_tokens: &mut [dparser::AnnotatedToken],
+        c: char,
+        byte_pos: usize,
+    ) {
+        for token in dparser_tokens {
+            if token.token.byte_range().start == byte_pos
+                && token.token.value.chars().next() == Some(c)
+            {
+                if let dparser::TokenAnnotation::IsClosing {
+                    is_auto_inserted, ..
+                } = &mut token.annotation
+                {
+                    *is_auto_inserted = true;
+                    log::info!(
+                        "Marked token '{}' at byte {} as auto-inserted",
+                        token.token.value,
+                        byte_pos
+                    );
+                    return;
+                }
+            }
+        }
+        log::warn!(
+            "Failed to mark auto-inserted closing char '{}' at byte position {}: no matching token found in cache",
+            c,
+            byte_pos
+        );
+    }
+
+    /// If the token immediately to the right of the cursor is an auto-inserted closing token
+    /// that is paired with the token the cursor is right after, delete it.
+    /// This is called before a simple Backspace so that deleting an auto-paired opener also
+    /// removes the auto-inserted closer.
+    fn delete_auto_inserted_closing_if_present(&mut self) {
+        let cursor_pos = self.buffer.cursor_byte_pos();
+        if cursor_pos == 0 {
+            return;
+        }
+        log::info!(
+            "Checking for auto-inserted closing token to delete at byte position {}",
+            cursor_pos
+        );
+
+        // Find the token that ends at cursor_pos (the one about to be deleted by Backspace).
+        let opening_annotation = self
+            .dparser_tokens_cache
+            .iter()
+            .find(|t| t.token.byte_range().contains(&(cursor_pos - 1)))
+            .inspect(|t| {
+                log::info!(
+                    "Token ending at cursor position: '{}', with annotation {:?}",
+                    t.token.value,
+                    t.annotation
+                );
+            })
+            .map(|t| t.annotation);
+
+        log::info!(
+            "Token annotation for token ending at cursor position: {:?}",
+            opening_annotation
+        );
+
+        if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
+            // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
+            log::info!(
+                "Found opening token with closing_idx {}. Checking for auto-inserted closing token at byte position {}",
+                closing_idx,
+                cursor_pos
+            );
+            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx) {
+                log::info!(
+                    "Token at closing_idx {} is '{}', with annotation {:?}",
+                    closing_idx,
+                    closing_token.token.value,
+                    closing_token.annotation
+                );
+                if closing_token.token.byte_range().start == cursor_pos {
+                    log::info!(
+                        "Found token starting at cursor position: '{}'",
+                        closing_token.token.value
+                    );
+                    if let dparser::TokenAnnotation::IsClosing {
+                        is_auto_inserted: true,
+                        ..
+                    } = closing_token.annotation
+                    {
+                        log::info!(
+                            "Deleting auto-inserted closing token '{}' at byte {}",
+                            closing_token.token.value,
+                            cursor_pos
+                        );
+                        self.buffer.delete_forwards();
+                    }
+                }
+            }
         }
     }
 
@@ -708,20 +1060,80 @@ impl<'a> App<'a> {
         self.content_mode = ContentMode::Normal;
     }
 
-    fn on_keyrelease(&mut self, key: KeyEvent) {
-        match key {
-            KeyEvent {
-                code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                self.toggle_mouse_state();
+    /// Spawn the configured AI command in a background thread and transition to `AiMode`.
+    /// Words that contain a space are quoted with single quotes in the display string.
+    fn start_ai_mode(&mut self) {
+        let cmd_args = self.settings.ai_command.clone();
+        let buffer_str = self.buffer.buffer().to_string();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<String, (String, String)>>();
+        // Build a human-readable representation of the full command being run.
+        // Any word that contains a space is wrapped in single quotes, with any
+        // embedded single quotes escaped using the shell '\'' idiom.
+        let command_display = {
+            let mut parts = cmd_args.clone();
+            parts.push(buffer_str.clone());
+            parts
+                .iter()
+                .map(|p| {
+                    if p.contains(' ') {
+                        format!("'{}'", p.replace('\'', "'\\''"))
+                    } else {
+                        p.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        log::info!("Running AI command: {}", command_display);
+        std::thread::spawn(move || {
+            // Safety: the guard `!ai_command.is_empty()` at the call site ensures
+            // cmd_args is non-empty, so split_first() always returns Some.
+            let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
+            let result: Result<String, (String, String)> = std::process::Command::new(prog)
+                .args(args)
+                .arg(&buffer_str)
+                .output()
+                .map_err(|e| (format!("Failed to run AI command: {}", e), String::new()))
+                .and_then(|output| {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !output.status.success() {
+                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        log::warn!("AI command exited with {}: {}", output.status, stderr);
+                        Err((
+                            format!("AI command exited with {}", output.status),
+                            format!("stdout: {}\nstderr: {}", stdout, stderr),
+                        ))
+                    } else {
+                        Ok(stdout)
+                    }
+                });
+            if let Err(e) = tx.send(result) {
+                log::warn!("AI task: failed to send result (receiver dropped): {}", e);
             }
-            _ => {}
+        });
+        self.content_mode = ContentMode::AiMode {
+            receiver: rx,
+            command_display,
+            start_time: std::time::Instant::now(),
+        };
+    }
+
+    /// Submit the current buffer if bash would accept it, otherwise insert a newline.
+    /// If it's a single line complete command, exit.
+    /// If it's a multi-line complete command, cursor needs to be at end to exit.
+    fn try_submit_current_buffer(&mut self) {
+        if ((self.buffer.lines_with_cursor().iter().count() == 1)
+            || self.buffer.is_cursor_at_trimmed_end())
+            && command_acceptance::will_bash_accept_buffer(&self.buffer.buffer())
+        {
+            self.mode =
+                AppRunningState::Exiting(ExitState::WithCommand(self.buffer.buffer().to_string()));
+        } else {
+            self.buffer.insert_newline();
         }
     }
 
-    fn on_possible_buffer_change(&mut self) {
+    fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction>) {
         self.history_suggestion = if self.buffer.buffer().is_empty() {
             None
         } else {
@@ -758,13 +1170,36 @@ impl<'a> App<'a> {
         }
 
         let wordinfo_fn = |token: &AnnotatedToken| -> Option<buffer_format::WordInfo> {
-            if token.annotation == dparser::TokenAnnotation::IsCommandWord {
-                let (command_type, description) =
-                    self.bash_env.get_command_info(&token.token.value);
-                return Some(buffer_format::WordInfo {
-                    tooltip: Some(description.to_string()),
-                    is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
-                });
+            match token.annotation {
+                dparser::TokenAnnotation::IsCommandWord => {
+                    let (command_type, description) =
+                        self.bash_env.get_command_info(&token.token.value);
+                    return Some(buffer_format::WordInfo {
+                        tooltip: Some(description.to_string()),
+                        is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+                    });
+                }
+                dparser::TokenAnnotation::IsEnvVar => {
+                    let env_var_name = &token.token.value;
+                    let tooltip = match bash_funcs::get_env_variable(env_var_name) {
+                        Some(value) => format!("${}={}", env_var_name, value),
+                        None => format!("${}", env_var_name),
+                    };
+                    return Some(buffer_format::WordInfo {
+                        tooltip: Some(tooltip),
+                        is_recognised_command: false,
+                    });
+                }
+                dparser::TokenAnnotation::None if token.token.value.starts_with('~') => {
+                    let expanded = bash_funcs::expand_filename(&token.token.value);
+                    if expanded != token.token.value {
+                        return Some(buffer_format::WordInfo {
+                            tooltip: Some(format!("{}={}", token.token.value, expanded)),
+                            is_recognised_command: false,
+                        });
+                    }
+                }
+                _ => {}
             }
 
             None
@@ -772,15 +1207,49 @@ impl<'a> App<'a> {
 
         let mut parser = dparser::DParser::from(self.buffer.buffer());
         parser.walk_to_end();
-        let annotated_tokens = parser.tokens();
+        let mut new_tokens = parser.into_tokens();
+        if let Some(LastKeyPressAction::InsertedAutoClosing { char, byte_pos }) =
+            last_keypress_action
+        {
+            // If the last keypress inserted an auto-closing char, mark the corresponding token in the new cache as auto-inserted.
+            Self::mark_auto_inserted_closing(&mut new_tokens, char, byte_pos);
+        }
+
+        dparser::DParser::transfer_auto_inserted_flags(&self.dparser_tokens_cache, &mut new_tokens);
+        for token in &new_tokens {
+            log::info!("Parsed token '{:#?}", token);
+        }
+
+        self.dparser_tokens_cache = new_tokens;
 
         self.formatted_buffer_cache = format_buffer(
-            &annotated_tokens,
+            &self.dparser_tokens_cache,
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
             Some(Box::new(wordinfo_fn)),
         );
+
+        self.tooltip = None;
+        for part in self.formatted_buffer_cache.parts.iter() {
+            if part
+                .token
+                .token
+                .byte_range()
+                .to_inclusive()
+                .contains(&self.buffer.cursor_byte_pos())
+            {
+                if let Some(tooltip) = part.tooltip.as_ref() {
+                    log::debug!(
+                        "Setting tooltip for token at byte position {}: {}",
+                        part.token.token.byte_range().start,
+                        tooltip
+                    );
+                    self.tooltip = Some(tooltip.clone());
+                }
+            }
+        }
+
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
     }
 
@@ -802,7 +1271,9 @@ impl<'a> App<'a> {
         let mut content = Contents::new(width);
         let empty_line = Line::from(vec![]);
 
-        let (lprompt, rprompt, fill_span) = self.prompt_manager.get_ps1_lines(self.settings.disable_animations);
+        let (lprompt, rprompt, fill_span) = self
+            .prompt_manager
+            .get_ps1_lines(self.settings.disable_animations);
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
@@ -816,6 +1287,7 @@ impl<'a> App<'a> {
                     true,
                 );
             } else {
+                // log::debug!("Writing PS1 line:  right='{}'", r_line);
                 content.write_line_lrjustified(l_line, &fill_span, r_line, Tag::Ps1Prompt, false);
             }
             if !is_last {
@@ -829,7 +1301,11 @@ impl<'a> App<'a> {
             .parts
             .iter_mut()
             .for_each(|part| {
-                if self.mode.is_running() && part.normal_span().content.starts_with("python") {
+                if self.mode.is_running()
+                    && !self.settings.disable_animations
+                    && part.token.annotation == dparser::TokenAnnotation::IsCommandWord
+                    && part.normal_span().content.starts_with("python")
+                {
                     self.snake_animation.update_anim();
                     let snake_str = self
                         .snake_animation
@@ -874,13 +1350,14 @@ impl<'a> App<'a> {
             cursor_pos_maybe = Some(content.cursor_position());
         }
 
-        if matches!(self.mode, AppRunningState::Exiting(ExitState::WithoutCommand)) {
+        if matches!(
+            self.mode,
+            AppRunningState::Exiting(ExitState::WithoutCommand)
+        ) {
             content.write_span(
                 &Span::styled(
                     "^C",
-                    Style::default()
-                        .fg(Color::Red)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
                 Tag::Blank,
             );
@@ -920,9 +1397,21 @@ impl<'a> App<'a> {
         {
             content.write_span_dont_overwrite(
                 &Span::styled(
-                    " Start typing or search history with Ctrl+R",
-                    Palette::secondary_text(),
+                    " 💡 Start typing or search history with Ctrl+R",
+                    Palette::tutorial_hint(),
                 ),
+                Tag::HistorySuggestion,
+                None,
+            );
+            content.newline();
+            content.write_span_dont_overwrite(
+                &Span::styled(TUTORIAL_HISTORY_PREFIX_HINT, Palette::tutorial_hint()),
+                Tag::HistorySuggestion,
+                None,
+            );
+            content.newline();
+            content.write_span_dont_overwrite(
+                &Span::styled(TUTORIAL_DISABLE_HINT, Palette::tutorial_hint()),
                 Tag::HistorySuggestion,
                 None,
             );
@@ -953,15 +1442,22 @@ impl<'a> App<'a> {
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
-                        if self.settings.tutorial_mode {
-                            extra_info_text.push_str(" [→ or End to accept]");
-                        }
-
                         content.write_span_dont_overwrite(
                             &Span::from(extra_info_text).style(Palette::secondary_text()),
                             Tag::HistorySuggestion,
                             None,
                         );
+
+                        if self.settings.tutorial_mode {
+                            content.write_span_dont_overwrite(
+                                &Span::styled(
+                                    " 💡 Press → or End to accept",
+                                    Palette::tutorial_hint(),
+                                ),
+                                Tag::HistorySuggestion,
+                                None,
+                            );
+                        }
                     }
                 });
         }
@@ -1055,8 +1551,7 @@ impl<'a> App<'a> {
 
                     // Width available for command content on each terminal row
                     // (the header/indent prefix always occupies header_prefix_width columns)
-                    let available_cols =
-                        content.width.saturating_sub(header_prefix_width as u16);
+                    let available_cols = content.width.saturating_sub(header_prefix_width as u16);
 
                     // Pre-process all logical lines into terminal display rows.
                     // Each element is: (is_start_of_logical_line, logical_line_idx, row_spans)
@@ -1076,7 +1571,10 @@ impl<'a> App<'a> {
                     let rows_to_show = total_display_rows.min(max_display_rows);
 
                     for (display_idx, (is_start_of_logical, logical_idx, display_line)) in
-                        all_display_rows.into_iter().take(max_display_rows).enumerate()
+                        all_display_rows
+                            .into_iter()
+                            .take(max_display_rows)
+                            .enumerate()
                     {
                         if display_idx > 0 {
                             content.fill_line(Tag::HistoryResult(row_idx));
@@ -1160,21 +1658,133 @@ impl<'a> App<'a> {
                 if self.settings.tutorial_mode {
                     content.newline();
                     content.write_span(
-                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::secondary_text()),
+                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::tutorial_hint()),
                         Tag::FuzzySearch,
                     );
                 }
             }
             ContentMode::Normal if self.mode.is_running() => {}
+            ContentMode::AiMode {
+                command_display,
+                start_time,
+                ..
+            } if self.mode.is_running() => {
+                content.newline();
+                let elapsed_secs = start_time.elapsed().as_secs();
+                content.write_span(
+                    &Span::styled(
+                        format!("Running: {} [{}s]", command_display, elapsed_secs),
+                        Palette::secondary_text(),
+                    ),
+                    Tag::Blank,
+                );
+            }
+            ContentMode::AiOutputSelection(selection) if self.mode.is_running() => {
+                content.newline();
+                for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
+                    let is_selected = selection.selected_idx == row_idx;
+                    let indicator = if is_selected { "▐" } else { " " };
+                    let indicator_style = if is_selected {
+                        Palette::matched_character()
+                    } else {
+                        Palette::secondary_text()
+                    };
+                    content.write_span(
+                        &Span::styled(indicator, indicator_style),
+                        Tag::AiResult(row_idx),
+                    );
+                    // Description line
+                    let desc_style = if is_selected {
+                        Palette::convert_to_selected(Palette::secondary_text())
+                    } else {
+                        Palette::secondary_text()
+                    };
+                    content.write_span(
+                        &Span::styled(suggestion.description.clone(), desc_style),
+                        Tag::AiResult(row_idx),
+                    );
+                    content.fill_line(Tag::AiResult(row_idx));
+                    content.newline();
+                    // Command line: gutter char + syntax-highlighted command via dparser
+                    content.write_span(
+                        &Span::styled(indicator, indicator_style),
+                        Tag::AiResult(row_idx),
+                    );
+                    let cmd = &suggestion.command;
+                    let mut parser = dparser::DParser::from(cmd.as_str());
+                    parser.walk_to_end();
+                    let tokens = parser.tokens().to_vec();
+                    // cursor_byte_pos=cmd.len() (past end), buffer_byte_length=cmd.len(),
+                    // app_is_running=false (no cursor/pair highlighting), wordinfo_fn=None.
+                    let formatted_cmd = format_buffer(&tokens, cmd.len(), cmd.len(), false, None);
+                    for part in &formatted_cmd.parts {
+                        if matches!(part.token.token.kind, TokenKind::Newline) {
+                            continue;
+                        }
+                        let span = part.span_to_use();
+                        let styled_span = if is_selected {
+                            Span::styled(
+                                span.content.clone(),
+                                Palette::convert_to_selected(span.style),
+                            )
+                        } else {
+                            span.clone()
+                        };
+                        content.write_span(&styled_span, Tag::AiResult(row_idx));
+                    }
+                    content.fill_line(Tag::AiResult(row_idx));
+                    content.newline();
+                }
+            }
+            ContentMode::AiError {
+                message,
+                raw_output,
+            } if self.mode.is_running() => {
+                content.newline();
+                content.write_span(
+                    &Span::styled(
+                        format!("AI failed: {}", message),
+                        Style::default().fg(Color::Red),
+                    ),
+                    Tag::Blank,
+                );
+                if !raw_output.is_empty() {
+                    for line in raw_output.lines().take(5) {
+                        content.newline();
+                        content.write_span(
+                            &Span::styled(line.to_string(), Palette::secondary_text()),
+                            Tag::Blank,
+                        );
+                    }
+                }
+            }
             _ => {}
         }
         if self.mode.is_running() {
             if let Some(tooltip) = &self.tooltip {
                 content.newline();
-                content.write_span(
-                    &Span::styled(tooltip, Palette::secondary_text()),
-                    Tag::Tooltip,
-                );
+                let tooltip_line =
+                    Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
+                // Limit the tooltip to at most 3 terminal display rows so it
+                // doesn't push other UI elements too far down the screen.
+                const MAX_TOOLTIP_ROWS: usize = 3;
+                let rows = split_line_to_terminal_rows(&tooltip_line, content.width);
+                let truncated = rows.len() > MAX_TOOLTIP_ROWS;
+                for (i, row) in rows.into_iter().take(MAX_TOOLTIP_ROWS).enumerate() {
+                    if i > 0 {
+                        content.newline();
+                    }
+                    for span in &row.spans {
+                        content.write_span(span, Tag::Tooltip);
+                    }
+                }
+                if truncated {
+                    let last_col = content.width.saturating_sub(1);
+                    if content.cursor_position().col >= last_col {
+                        content.set_cursor_col(last_col);
+                    }
+                    content.write_span(&Span::styled("…", Palette::secondary_text()), Tag::Tooltip);
+                }
             }
 
             // if let Some(tag) = &self.last_mouse_over_cell {
@@ -1209,6 +1819,9 @@ impl<'a> App<'a> {
     fn ui(&mut self, frame: &mut Frame, content: Contents) {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
+
+        // Record where the viewport starts for smart mouse-mode position checks.
+        self.last_viewport_top = frame_area.y;
 
         let (start_content_row, _end_content_row) =
             content.get_row_range_to_show(frame_area.height);

@@ -1,3 +1,4 @@
 target/
 *.so
+*.gif
 docker_build/

@@ -478,7 +478,9 @@ pub fn run_programmable_completions(
         if res.completions.is_empty() && res.flags.bash_default_fallback_desired {
             // Flyline used to support bash default completions as a fallback, but has deprecated
             // this in favor of flyline's own secondary completions.
-            log::warn!("Bash default completions requested by compspec, but flyline will try its own secondary completions instead.");
+            log::warn!(
+                "Bash default completions requested by compspec, but flyline will try its own secondary completions instead."
+            );
         } else {
             log::debug!(
                 "Bash default fallback not desired or completions found. Returning programmable completions."
@@ -518,6 +520,26 @@ pub fn get_env_variable(var_name: &str) -> Option<String> {
         }
         let c_str = std::ffi::CStr::from_ptr(value_ptr);
         c_str.to_str().ok().map(|s| s.to_string())
+    }
+}
+
+pub fn expand_filename(filename: &str) -> String {
+    unsafe {
+        let expanded_string = bash_symbols::expand_string_to_string(
+            std::ffi::CString::new(filename).unwrap().as_ptr(),
+            0,
+        );
+
+        if expanded_string.is_null() {
+            return filename.to_string();
+        }
+
+        let c_str = std::ffi::CStr::from_ptr(expanded_string);
+        c_str
+            .to_str()
+            .ok()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| filename.to_string())
     }
 }
 
@@ -625,7 +647,7 @@ extern "C" fn dequoting_function_c(s: *const c_char, _quote_char: c_int) -> *mut
     std::ffi::CString::new(dequoted).unwrap().into_raw()
 }
 
-fn dequoting_function_rust(s: &str) -> String {
+pub fn dequoting_function_rust(s: &str) -> String {
     let mut res = String::new();
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
@@ -672,7 +694,7 @@ fn dequoting_function_rust(s: &str) -> String {
 // It sets fp to  a bitfield  but no one ever reads that bitfield so we can ignore it for now
 // char _rl_find_completion_word (int *fp, int *dp)
 
-fn find_quote_type(s: &str) -> Option<QuoteType> {
+pub fn find_quote_type(s: &str) -> Option<QuoteType> {
     if s.starts_with("\"") {
         return Some(QuoteType::DoubleQuote);
     } else if s.starts_with('\'') {

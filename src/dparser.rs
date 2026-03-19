@@ -1,8 +1,8 @@
 use flash::lexer::{Lexer, Position, Token, TokenKind};
 use itertools::Itertools;
+use log::debug;
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
-use log::debug;
 
 fn split_token_into_lines(token: Token) -> Vec<Token> {
     match &token.kind {
@@ -117,13 +117,18 @@ impl ToInclusiveRange for Range<usize> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenAnnotation {
     None,
-    IsPartOfQuotedString,
+    IsPartOfSingleQuotedString,
+    IsPartOfDoubleQuotedString,
     IsOpening(Option<usize>), // index of the closing token in the tokens vector
-    IsClosing(usize),         // index of the opening token in the tokens vector
+    IsClosing {
+        opening_idx: usize,     // index of the opening token in the tokens vector
+        is_auto_inserted: bool, // true if this closing token was automatically inserted by the editor
+    },
     IsCommandWord, // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
+    IsEnvVar,
 }
 
 #[derive(Debug, Clone)]
@@ -167,6 +172,10 @@ impl DParser {
         &self.tokens
     }
 
+    pub fn into_tokens(self) -> Vec<AnnotatedToken> {
+        self.tokens
+    }
+
     fn nested_opening_satisfied(
         token: &Token,
         current_nesting: Option<&TokenKind>,
@@ -188,11 +197,7 @@ impl DParser {
         }
     }
 
-    fn nested_closing_satisfied(
-        token: &Token,
-        current_nesting: Option<&TokenKind>,
-        next_token: Option<&&Token>,
-    ) -> bool {
+    fn nested_closing_satisfied(token: &Token, current_nesting: Option<&TokenKind>) -> bool {
         let current_nesting = match current_nesting {
             Some(v) => v,
             None => return false,
@@ -205,11 +210,7 @@ impl DParser {
             (TokenKind::RParen, TokenKind::ExtGlob(_)) => true,
             (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
             (TokenKind::RBrace, TokenKind::LBrace) => true,
-            (TokenKind::RParen, TokenKind::ArithSubst) // it needs two ))
-                if next_token.map_or(false, |t| t.kind == TokenKind::RParen) =>
-            {
-                true
-            }
+            (TokenKind::DoubleRParen, TokenKind::ArithSubst) => true,
             (TokenKind::Backtick, TokenKind::Backtick) => true,
             (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
             (TokenKind::Quote, TokenKind::Quote) => true,
@@ -243,19 +244,29 @@ impl DParser {
         // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
         let mut heredocs: VecDeque<(usize, String)> = VecDeque::new();
 
-        let mut annotated_tokens = self.tokens.iter_mut().enumerate().peekable();
         let mut stop_parsing_at_command_boundary = false;
 
         let mut command_start_stack = Vec::new();
 
         let mut previous_token: Option<AnnotatedToken> = None;
 
-        loop {
-            let (mut idx, mut annotated_token) = match annotated_tokens.next() {
-                Some(t) => t,
-                None => break,
-            };
-            let mut token = &annotated_token.token;
+        let mut idx = 0;
+        while idx < self.tokens.len() {
+            // When closing an ArithSubst, two consecutive ) tokens are required.
+            // Merge them into a single DoubleRParen by modifying self.tokens[idx] in place
+            // and removing the second ) from the vector.
+            if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
+                && self.tokens[idx].token.kind == TokenKind::RParen
+                && idx + 1 < self.tokens.len()
+                && self.tokens[idx + 1].token.kind == TokenKind::RParen
+            {
+                let second = self.tokens.remove(idx + 1);
+                self.tokens[idx].token.value.push_str(&second.token.value);
+                self.tokens[idx].token.kind = TokenKind::DoubleRParen;
+            }
+
+            // Clone the token so we can match on it while still mutating self.tokens[idx].annotation.
+            let token = self.tokens[idx].token.clone();
 
             let word_is_part_of_assignment = if token.kind.is_word() {
                 previous_token.as_ref().map_or(false, |token| {
@@ -266,11 +277,21 @@ impl DParser {
             };
 
             let token_inclusively_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
-                token.byte_range().to_inclusive().contains(&pos)
+                self.tokens[idx]
+                    .token
+                    .byte_range()
+                    .to_inclusive()
+                    .contains(&pos)
+            });
+            let token_strictly_contains_cursor = cursor_byte_pos.map_or(false, |pos| {
+                self.tokens[idx].token.byte_range().contains(&pos)
+            });
+            let cursor_at_start_of_token = cursor_byte_pos.map_or(false, |pos| {
+                pos == self.tokens[idx].token.byte_range().start
             });
 
-            let token_strictly_contains_cursor =
-                cursor_byte_pos.map_or(false, |pos| token.byte_range().contains(&pos));
+            let cursor_part_way_through_token =
+                token_inclusively_contains_cursor && !cursor_at_start_of_token;
 
             if token_strictly_contains_cursor {
                 stop_parsing_at_command_boundary = true;
@@ -300,7 +321,7 @@ impl DParser {
                         cursor_byte_pos.is_some(),
                     ) =>
                 {
-                    annotated_token.annotation = TokenAnnotation::IsOpening(None);
+                    self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
 
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
@@ -310,11 +331,12 @@ impl DParser {
                     self.current_command_range = None; // set for next word after this
                 }
                 TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
-                    annotated_token.annotation = TokenAnnotation::IsOpening(None);
+                    self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
 
                     heredocs.push_back((idx, delim.to_string()));
                 }
                 TokenKind::RParen
+                | TokenKind::DoubleRParen
                 | TokenKind::Quote
                 | TokenKind::SingleQuote
                 | TokenKind::RBrace
@@ -323,34 +345,34 @@ impl DParser {
                 | TokenKind::Esac
                 | TokenKind::Done
                 | TokenKind::Fi
-                    if Self::nested_closing_satisfied(
-                        &token,
-                        nestings.last().map(|(_, k)| k),
-                        annotated_tokens.peek().map(|(_, t)| &t.token).as_ref(),
-                    ) =>
+                    if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
-                    let (opening_idx, kind) = nestings.pop().unwrap();
-                    annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
-                    if kind == TokenKind::ArithSubst {
-                        assert!(
-                            annotated_tokens.peek().unwrap().1.token.kind == TokenKind::RParen,
-                            "expected two RParen tokens"
-                        );
-                        (idx, annotated_token) = annotated_tokens.next().unwrap(); // consume the extra RParen
-                        token = &annotated_token.token;
-                    }
+                    let (opening_idx, _kind) = nestings.pop().unwrap();
+                    self.tokens[idx].annotation = TokenAnnotation::IsClosing {
+                        opening_idx,
+                        is_auto_inserted: false,
+                    };
 
-                    if token.kind == TokenKind::DoubleRBracket && token_strictly_contains_cursor {
-                        if let Some(prev_command_range) = command_start_stack.pop() {
-                            self.current_command_range = prev_command_range;
-                            if let Some(range) = &mut self.current_command_range {
-                                *range = *range.start()..=idx;
-                            }
-                        }
-                        break;
-                    }
+                    let current_command_range_contains_cursor =
+                        cursor_byte_pos.is_some_and(|pos| {
+                            self.current_command_range.as_ref().is_some_and(|r| {
+                                r.clone().any(|idx| {
+                                    self.tokens[idx]
+                                        .token
+                                        .byte_range()
+                                        .to_inclusive()
+                                        .contains(&pos)
+                                })
+                            })
+                        });
 
-                    if stop_parsing_at_command_boundary {
+                    if stop_parsing_at_command_boundary
+                        && !cursor_part_way_through_token
+                        && current_command_range_contains_cursor
+                    {
+                        // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
+                        // echo $((10 * 2█))      -> cursor context is: 10 * 2
+                        // echo $((10 * 2)█)      -> cursor context is: echo $((10 * 2))
                         debug!("Stopping parsing at command boundary");
                         break;
                     }
@@ -376,7 +398,10 @@ impl DParser {
                     if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
                 {
                     let (opening_idx, _) = heredocs.pop_front().unwrap();
-                    annotated_token.annotation = TokenAnnotation::IsClosing(opening_idx);
+                    self.tokens[idx].annotation = TokenAnnotation::IsClosing {
+                        opening_idx,
+                        is_auto_inserted: false,
+                    };
                 }
 
                 TokenKind::And
@@ -408,45 +433,41 @@ impl DParser {
                 }
 
                 _ => {
-                    if token.kind == TokenKind::Newline
-                        && let Some(prev_token) = &previous_token
-                    {
-                        if prev_token.annotation == TokenAnnotation::IsPartOfQuotedString
-                            || matches!(
-                                prev_token.token.kind,
-                                TokenKind::Quote | TokenKind::SingleQuote
-                            )
-                        {
-                            annotated_token.annotation = TokenAnnotation::IsPartOfQuotedString;
+                    let in_single_quote =
+                        matches!(nestings.last(), Some((_, TokenKind::SingleQuote)));
+                    let in_double_quote = matches!(nestings.last(), Some((_, TokenKind::Quote)));
+
+                    if token.kind == TokenKind::Newline {
+                        if in_single_quote {
+                            self.tokens[idx].annotation =
+                                TokenAnnotation::IsPartOfSingleQuotedString;
+                        } else if in_double_quote {
+                            self.tokens[idx].annotation =
+                                TokenAnnotation::IsPartOfDoubleQuotedString;
                         }
                     }
 
                     if token.kind.is_word() {
-                        // println!("prev token: {:?}", previous_token.as_ref().map(|t| &t.token));
-                        if let Some(prev_token) = &previous_token {
+                        if in_single_quote {
+                            self.tokens[idx].annotation =
+                                TokenAnnotation::IsPartOfSingleQuotedString;
+                        } else if in_double_quote {
+                            self.tokens[idx].annotation =
+                                TokenAnnotation::IsPartOfDoubleQuotedString;
+                        } else if let Some(prev_token) = &previous_token {
                             match prev_token.token.kind {
-                                TokenKind::Quote | TokenKind::SingleQuote => {
-                                    annotated_token.annotation =
-                                        TokenAnnotation::IsPartOfQuotedString;
-                                }
-                                TokenKind::Newline
-                                    if matches!(
-                                        prev_token.annotation,
-                                        TokenAnnotation::IsPartOfQuotedString
-                                    ) =>
-                                {
-                                    annotated_token.annotation =
-                                        TokenAnnotation::IsPartOfQuotedString;
+                                TokenKind::Dollar => {
+                                    self.tokens[idx].annotation = TokenAnnotation::IsEnvVar;
                                 }
                                 _ if self.current_command_range.is_none() => {
-                                    annotated_token.annotation = TokenAnnotation::IsCommandWord;
+                                    self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
                                 }
                                 _ => {
                                     // leave as None
                                 }
                             }
                         } else {
-                            annotated_token.annotation = TokenAnnotation::IsCommandWord;
+                            self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
                         }
                     }
                     if self.current_command_range.is_none() {
@@ -457,7 +478,8 @@ impl DParser {
                 }
             }
 
-            previous_token = Some(annotated_token.clone());
+            previous_token = Some(self.tokens[idx].clone());
+            idx += 1;
         }
 
         if cfg!(test) {
@@ -469,7 +491,7 @@ impl DParser {
         // We need to collect the updates first to avoid mutable borrow issues
         let mut updates = Vec::new();
         for (idx, annotated_token) in self.tokens.iter().enumerate() {
-            if let TokenAnnotation::IsClosing(opening_idx) = annotated_token.annotation {
+            if let TokenAnnotation::IsClosing { opening_idx, .. } = annotated_token.annotation {
                 updates.push((opening_idx, idx));
             }
         }
@@ -506,6 +528,106 @@ impl DParser {
             .map(|t| t.value.to_string())
             .collect::<Vec<_>>()
             .join("")
+    }
+
+    /// Returns the closing character that should be automatically inserted after the character `c`
+    /// was typed at byte position `just_inserted_pos`.
+    ///
+    /// `self` is the **stale** (pre-insertion) formatted buffer — i.e. the state of the buffer
+    /// *before* `c` was typed.  This is `self.formatted_buffer_cache` in `App`.
+    ///
+    /// - `{`, `[`, `(` are unambiguously openers and always produce a closing counterpart.
+    /// - `"`, `'`, `` ` `` are ambiguous: they close when there is already an unmatched opener of
+    ///   the same kind before `just_inserted_pos` in the stale buffer; otherwise they open.
+    pub fn closing_char_to_insert(
+        tokens: &[AnnotatedToken],
+        c: char,
+        just_inserted_pos: usize,
+    ) -> Option<char> {
+        // Unambiguously opening characters – always auto-close.
+        match c {
+            '{' => return Some('}'),
+            '[' => return Some(']'),
+            '(' => return Some(')'),
+            _ => {}
+        }
+
+        // Ambiguous characters: consult the stale token annotations.
+        let (closing, opener_kind) = match c {
+            '"' => ('"', TokenKind::Quote),
+            '\'' => ('\'', TokenKind::SingleQuote),
+            '`' => ('`', TokenKind::Backtick),
+            _ => return None,
+        };
+
+        // If there is already an unmatched opener of the same kind strictly before the
+        // insertion point, the character just typed is closing it – don't auto-insert.
+        let has_unmatched_opener = tokens.iter().any(|p| {
+            p.token.byte_range().start < just_inserted_pos
+                && p.token.kind == opener_kind
+                && matches!(p.annotation, TokenAnnotation::IsOpening(None))
+        });
+
+        if has_unmatched_opener {
+            None
+        } else {
+            Some(closing)
+        }
+    }
+
+    pub fn transfer_auto_inserted_flags(
+        old_tokens: &[AnnotatedToken],
+        new_tokens: &mut [AnnotatedToken],
+    ) {
+        // Go from the left while we see identical tokens and mark any closing tokens in new_tokens as auto-inserted if the corresponding token in old_tokens was auto-inserted.
+        for (old, new) in old_tokens.iter().zip(new_tokens.iter_mut()) {
+            if old.token.kind != new.token.kind || old.token.value != new.token.value {
+                break;
+            }
+            if let TokenAnnotation::IsClosing {
+                opening_idx: old_opening_idx,
+                is_auto_inserted: true,
+            } = old.annotation
+            {
+                if let TokenAnnotation::IsClosing {
+                    opening_idx: new_opening_idx,
+                    ..
+                } = new.annotation
+                {
+                    if old_opening_idx == new_opening_idx {
+                        new.annotation = TokenAnnotation::IsClosing {
+                            opening_idx: new_opening_idx,
+                            is_auto_inserted: true,
+                        };
+                    }
+                }
+            }
+        }
+
+        // Go from the right while we see identical tokens and do the same.
+        for (old, new) in old_tokens.iter().rev().zip(new_tokens.iter_mut().rev()) {
+            if old.token.kind != new.token.kind || old.token.value != new.token.value {
+                break;
+            }
+            if let TokenAnnotation::IsClosing {
+                opening_idx: _,
+                is_auto_inserted: true,
+            } = old.annotation
+            {
+                if let TokenAnnotation::IsClosing {
+                    opening_idx: new_opening_idx,
+                    ..
+                } = new.annotation
+                {
+                    // if old_opening_idx == new_opening_idx {
+                    new.annotation = TokenAnnotation::IsClosing {
+                        opening_idx: new_opening_idx,
+                        is_auto_inserted: true,
+                    };
+                    // }
+                }
+            }
+        }
     }
 }
 
@@ -596,9 +718,50 @@ mod tests {
         assert_eq!(tokens[8].token.value, "'");
         assert_eq!(tokens[8].annotation, TokenAnnotation::IsOpening(Some(10)));
         assert_eq!(tokens[9].token.value, "wörld");
-        assert_eq!(tokens[9].annotation, TokenAnnotation::IsPartOfQuotedString);
+        assert_eq!(
+            tokens[9].annotation,
+            TokenAnnotation::IsPartOfSingleQuotedString
+        );
         assert_eq!(tokens[10].token.value, "'");
-        assert_eq!(tokens[10].annotation, TokenAnnotation::IsClosing(8));
+        assert_eq!(
+            tokens[10].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 8,
+                is_auto_inserted: false
+            }
+        );
+    }
+
+    #[test]
+    fn test_double_quote_annotations() {
+        let input = r#"echo "wörld""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "\"");
+        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(4)));
+        assert_eq!(tokens[3].token.value, "wörld");
+        assert_eq!(
+            tokens[3].annotation,
+            TokenAnnotation::IsPartOfDoubleQuotedString
+        );
+        assert_eq!(tokens[4].token.value, "\"");
+        assert_eq!(
+            tokens[4].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false
+            }
+        );
     }
 
     #[test]
@@ -627,7 +790,13 @@ mod tests {
         assert_eq!(tokens[7].token.value, "\n");
         assert_eq!(tokens[7].annotation, TokenAnnotation::None);
         assert_eq!(tokens[8].token.value, "A");
-        assert_eq!(tokens[8].annotation, TokenAnnotation::IsClosing(2));
+        assert_eq!(
+            tokens[8].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false
+            }
+        );
         assert_eq!(tokens[9].token.value, "\n");
         assert_eq!(tokens[9].annotation, TokenAnnotation::None);
         assert_eq!(tokens[10].token.value, "line2");
@@ -635,7 +804,13 @@ mod tests {
         assert_eq!(tokens[11].token.value, "\n");
         assert_eq!(tokens[11].annotation, TokenAnnotation::None);
         assert_eq!(tokens[12].token.value, "B");
-        assert_eq!(tokens[12].annotation, TokenAnnotation::IsClosing(4));
+        assert_eq!(
+            tokens[12].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 4,
+                is_auto_inserted: false
+            }
+        );
     }
 
     #[test]
@@ -687,12 +862,196 @@ mod tests {
         assert_eq!(tokens[2].token.value, "'");
         assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
         assert_eq!(tokens[3].token.value, "line1");
-        assert_eq!(tokens[3].annotation, TokenAnnotation::IsPartOfQuotedString);
+        assert_eq!(
+            tokens[3].annotation,
+            TokenAnnotation::IsPartOfSingleQuotedString
+        );
         assert_eq!(tokens[4].token.kind, TokenKind::Newline);
-        assert_eq!(tokens[4].annotation, TokenAnnotation::IsPartOfQuotedString);
+        assert_eq!(
+            tokens[4].annotation,
+            TokenAnnotation::IsPartOfSingleQuotedString
+        );
         assert_eq!(tokens[5].token.value, "line2");
-        assert_eq!(tokens[5].annotation, TokenAnnotation::IsPartOfQuotedString);
+        assert_eq!(
+            tokens[5].annotation,
+            TokenAnnotation::IsPartOfSingleQuotedString
+        );
         assert_eq!(tokens[6].token.value, "'");
-        assert_eq!(tokens[6].annotation, TokenAnnotation::IsClosing(2));
+        assert_eq!(
+            tokens[6].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false
+            }
+        );
+    }
+
+    #[test]
+    fn test_arith_subst_annotations() {
+        // The two consecutive ) tokens that close an ArithSubst are merged into a single
+        // DoubleRParen token with value "))" covering both characters.  The phantom second )
+        // is removed from the token list entirely, so subsequent tokens have the correct index
+        // as if the second ) never existed.
+        let input = r#"echo $(( bar ))"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        // After merging: echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), )) (6)
+        // The phantom second ) is gone; total token count is 7.
+        assert_eq!(tokens.len(), 7);
+
+        assert_eq!(tokens[2].token.kind, TokenKind::ArithSubst);
+        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
+
+        assert_eq!(tokens[6].token.kind, TokenKind::DoubleRParen);
+        assert_eq!(tokens[6].token.value, "))");
+        assert_eq!(
+            tokens[6].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false
+            }
+        );
+    }
+
+    #[test]
+    fn test_env_var_annotations() {
+        let input = r#"echo $HOME"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "$");
+        assert_eq!(tokens[2].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[3].token.value, "HOME");
+        assert_eq!(tokens[3].annotation, TokenAnnotation::IsEnvVar);
+    }
+
+    // ── closing_char_to_insert ───────────────────────────────────────────────
+    // These tests pass a *stale* (pre-insertion) FormattedBuffer to
+    // closing_char_to_insert, mirroring how App uses formatted_buffer_cache.
+
+    #[test]
+    fn closing_char_for_opening_double_quote() {
+        // Stale buffer is "echo " (before the " was typed).
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            Some('"')
+        );
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_double_quote() {
+        // Stale buffer is `echo "hello` (before the closing " was typed).
+        let stale = r#"echo "hello"#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn closing_char_for_opening_single_quote() {
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            Some('\'')
+        );
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_single_quote() {
+        let stale = "echo 'hello";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn closing_char_for_opening_brace() {
+        // { is never ambiguous; always produces a closing }.
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '{', just_inserted_pos),
+            Some('}')
+        );
+    }
+
+    #[test]
+    fn closing_char_for_opening_backtick() {
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '`', just_inserted_pos),
+            Some('`')
+        );
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_backtick() {
+        // Stale buffer is `echo `ls` (before the closing backtick was typed).
+        let stale = "echo `ls";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '`', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn no_closing_char_for_unrecognised_character() {
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), 'a', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn closing_char_second_quote_pair_after_first_closed() {
+        // `echo "a" ` – the first pair is closed; the next " opens a new pair.
+        let stale = r#"echo "a" "#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            Some('"')
+        );
     }
 }
