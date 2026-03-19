@@ -3,12 +3,10 @@ use lscolors::LsColors;
 use ratatui::style::{Color, Modifier, Style};
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
-use std::collections::HashMap;
+
 use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::OnceLock;
 
 /// Manages bash environment state including caches for command types, aliases, and other bash constructs
 pub struct BashEnvManager {
@@ -38,21 +36,6 @@ impl BashEnvManager {
             defined_builtins: bash_funcs::get_all_shell_builtins(),
             defined_executables: executables,
             ls_colors,
-        }
-    }
-
-    pub fn get_command_info(& self, cmd: &str) -> (bash_funcs::CommandType, String) {
-        static CALL_TYPE_CACHE: OnceLock<Mutex<HashMap<String, (bash_funcs::CommandType, String)>>> = OnceLock::new();
-        CALL_TYPE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-
-        let mut cache = CALL_TYPE_CACHE.get().unwrap().lock().unwrap();
-
-        if let Some(res) = cache.get(cmd) {
-            res.clone()
-        } else {
-            let result = bash_funcs::call_type(cmd);
-            cache.insert(cmd.to_string(), result.clone());
-            result
         }
     }
 

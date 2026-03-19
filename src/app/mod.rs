@@ -1201,7 +1201,7 @@ impl<'a> App<'a> {
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
-            Some(Box::new(|token| self.wordinfo_fn(token))),
+            Some(Box::new(|token| Self::wordinfo_fn(token))),
         );
 
         self.tooltip = None;
@@ -1227,11 +1227,10 @@ impl<'a> App<'a> {
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
     }
 
-    fn wordinfo_fn(&self, token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
+    fn wordinfo_fn(token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
         match token.annotation {
             dparser::TokenAnnotation::IsCommandWord => {
-                let (command_type, description) =
-                    self.bash_env.get_command_info(&token.token.value);
+                let (command_type, description) = bash_funcs::get_command_info(&token.token.value);
                 Some(buffer_format::WordInfo {
                     tooltip: Some(description.to_string()),
                     is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
@@ -1727,7 +1726,13 @@ impl<'a> App<'a> {
                     let tokens = parser.tokens().to_vec();
                     // cursor_byte_pos=cmd.len() (past end), buffer_byte_length=cmd.len(),
                     // app_is_running=false (no cursor/pair highlighting), wordinfo_fn=None.
-                    let formatted_cmd = format_buffer(&tokens, cmd.len(), cmd.len(), false, None);
+                    let formatted_cmd = format_buffer(
+                        &tokens,
+                        cmd.len(),
+                        cmd.len(),
+                        false,
+                        Some(Box::new(|t| Self::wordinfo_fn(t))),
+                    );
                     for part in &formatted_cmd.parts {
                         if matches!(part.token.token.kind, TokenKind::Newline) {
                             continue;
