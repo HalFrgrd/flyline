@@ -1216,9 +1216,9 @@ impl<'a> App<'a> {
         }
 
         dparser::DParser::transfer_auto_inserted_flags(&self.dparser_tokens_cache, &mut new_tokens);
-        for token in &new_tokens {
-            log::info!("Parsed token '{:#?}", token);
-        }
+        // for token in &new_tokens {
+        //     log::trace!("Parsed token '{:#?}", token);
+        // }
 
         self.dparser_tokens_cache = new_tokens;
 
