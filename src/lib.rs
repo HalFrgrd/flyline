@@ -71,10 +71,11 @@ struct FlylineArgs {
     /// Disable animations
     #[arg(long = "disable-animations")]
     disable_animations: bool,
-    /// Dump in-memory logs to file
-    #[arg(long = "dump-logs")]
-    dump_logs: bool,
-    /// Dump current logs to PATH and append new logs
+    /// Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is
+    /// created in the current directory
+    #[arg(long = "dump-logs", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
+    dump_logs: Option<String>,
+    /// Dump current logs to PATH and append new logs. Use `stderr` to stream to standard error
     #[arg(long = "stream-logs", value_name = "PATH")]
     stream_logs: Option<String>,
     /// Set the logging level
@@ -84,8 +85,8 @@ struct FlylineArgs {
     #[arg(long = "load-zsh-history")]
     load_zsh_history: bool,
     /// Enable or disable tutorial mode with hints for first-time users.
-    /// Use `--tutorial-mode=false` to disable.
-    #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1, require_equals = true)]
+    /// Use `--tutorial-mode false` to disable.
+    #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1)]
     tutorial_mode: Option<bool>,
     /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
     #[arg(long = "disable-auto-closing-char")]
@@ -222,8 +223,13 @@ impl Flyline {
                     self.settings.disable_animations = true;
                 }
 
-                if parsed.dump_logs {
-                    match logging::dump_logs() {
+                if let Some(ref path) = parsed.dump_logs {
+                    let path_opt = if path.is_empty() {
+                        None
+                    } else {
+                        Some(std::path::PathBuf::from(path))
+                    };
+                    match logging::dump_logs(path_opt) {
                         Ok(path) => println!("Flyline logs dumped to {}", path.display()),
                         Err(e) => eprintln!("Failed to dump logs: {}", e),
                     }
