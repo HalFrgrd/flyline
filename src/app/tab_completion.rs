@@ -331,8 +331,10 @@ impl App<'_> {
         match &completion_context.comp_type {
             tab_completion_context::CompType::FirstWord => {
                 let completions = self.tab_complete_first_word(word_under_cursor);
-                log::debug!("First word completions: {:?}", completions);
-                return Some(completions);
+                log::debug!("Primary completions for first word: {:?}", completions);
+                if completions.len() > 0 {
+                    return Some(completions);
+                }
             }
             tab_completion_context::CompType::CommandComp {
                 command_word: initial_command_word,
@@ -379,21 +381,20 @@ impl App<'_> {
                     Ok(comp_result) => {
                         // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
                         // Always try to produce secondary completions
-                        self.gen_secondary_completions(completion_context, comp_result.flags)
+                        return self
+                            .gen_secondary_completions(completion_context, comp_result.flags);
                     }
-                    _ => {
-                        log::debug!(
-                            "No programmable completions found for command: {}. Falling back to secondary completions.",
-                            full_command
-                        );
-                        self.gen_secondary_completions(
-                            completion_context,
-                            bash_funcs::CompletionFlags::default(),
-                        )
-                    }
+                    _ => {}
                 }
             }
         }
+
+        log::debug!(
+            "No programmable completions found completion_context: {:#?}. Falling back to secondary completions.",
+            completion_context
+        );
+
+        self.gen_secondary_completions(completion_context, bash_funcs::CompletionFlags::default())
     }
 
     fn gen_secondary_completions(
@@ -484,24 +485,12 @@ impl App<'_> {
         }
 
         if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
-            log::debug!(
-                "First word '{}' looks like a path. Attempting glob expansion.",
-                command
-            );
             // Path to executable
-            // return self.tab_complete_glob_expansion(
-            //     &(command.to_string() + "*"),
-            //     bash_funcs::CompletionFlags::default(),
-            // );
-            return vec![Suggestion::new(command.to_string(), "", " ")];
+            return self.tab_complete_glob_expansion(
+                &(command.to_string() + "*"),
+                bash_funcs::CompletionFlags::default(),
+            );
         }
-
-        log::debug!(
-            "First word '{}' does not look like a path. Attempting command completions.",
-            command
-        );
-
-        return vec![Suggestion::new(command.to_string(), "", " ")];
 
         let mut res = self.bash_env.get_first_word_completions(&command);
 

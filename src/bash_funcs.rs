@@ -482,7 +482,6 @@ pub fn run_programmable_completions(
         let completion_strings = vec_of_strings_from_char_char_ptr(list_of_strs);
         // Readline also deduplicates the results
         let res = ProgrammableCompleteReturn::from(
-            // vec!["$HOME/qwe asd".to_string()],
             completion_strings,
             quote_type,
             foundcs,

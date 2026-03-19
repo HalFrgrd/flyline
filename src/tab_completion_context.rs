@@ -146,9 +146,6 @@ pub fn get_completion_context<'a>(
                         while buffer.get(end.saturating_sub(1)..end) == Some(" ") {
                             end = end.saturating_sub(1);
                         }
-                        println!(
-                            "Found Dollar token at index {i}, expanding word under cursor to include it. New range: {start}..{end}"
-                        );
                     }
                     Some(
                         t @ Token {
