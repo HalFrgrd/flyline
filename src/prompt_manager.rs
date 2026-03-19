@@ -19,6 +19,9 @@ struct ProcessedAnimation {
     /// `expand_prompt_string` so bash prompt escapes (e.g. `\u`, `\w`) and
     /// ANSI colour codes are already resolved into ratatui [`Span`]s.
     frames: Vec<Vec<Span<'static>>>,
+    /// When true the animation reverses direction at each end instead of
+    /// wrapping around (ping-pong / bounce mode).
+    ping_pong: bool,
 }
 
 pub struct PromptManager {
@@ -343,6 +346,7 @@ impl PromptManager {
                         name: anim.name.clone(),
                         fps: anim.fps,
                         frames,
+                        ping_pong: anim.ping_pong,
                     }
                 })
                 .collect();
@@ -475,6 +479,10 @@ impl PromptManager {
     /// so it automatically respects the `disable_animations` flag: when
     /// animations are disabled `get_ps1_lines` passes `construction_time` as
     /// `now`, keeping the index frozen at the value it had at startup.
+    ///
+    /// When `ping_pong` is enabled the animation bounces: it plays forward to
+    /// the last frame and then reverses back to the first, rather than
+    /// wrapping around.
     fn get_frame_spans<'a>(
         anim: &'a ProcessedAnimation,
         now: &chrono::DateTime<chrono::Local>,
@@ -487,10 +495,19 @@ impl PromptManager {
         }
         let ms = now.timestamp_millis();
         let frame_duration_ms = (1000.0 / anim.fps) as i64;
-        let frame_index = if frame_duration_ms > 0 {
-            (ms / frame_duration_ms) as usize % anim.frames.len()
+        let tick = if frame_duration_ms > 0 {
+            (ms / frame_duration_ms) as usize
         } else {
             0
+        };
+        let n = anim.frames.len();
+        let frame_index = if anim.ping_pong && n > 1 {
+            // Period: forward (n frames) + reverse (n-2 inner frames) = 2*(n-1)
+            let period = 2 * (n - 1);
+            let pos = tick % period;
+            if pos < n { pos } else { period - pos }
+        } else {
+            tick % n
         };
         &anim.frames[frame_index]
     }
@@ -545,6 +562,20 @@ mod tests {
                 .iter()
                 .map(|s| vec![Span::raw(s.to_string())])
                 .collect(),
+            ping_pong: false,
+        }
+    }
+
+    /// Build a ping-pong `ProcessedAnimation` for unit-testing.
+    fn make_ping_pong_anim(name: &str, fps: f64, frames: &[&str]) -> ProcessedAnimation {
+        ProcessedAnimation {
+            name: name.to_string(),
+            fps,
+            frames: frames
+                .iter()
+                .map(|s| vec![Span::raw(s.to_string())])
+                .collect(),
+            ping_pong: true,
         }
     }
 
@@ -582,6 +613,50 @@ mod tests {
         assert_eq!(frame_content(100), "f1");
         assert_eq!(frame_content(200), "f2");
         assert_eq!(frame_content(300), "f0"); // wraps
+    }
+
+    #[test]
+    fn test_get_frame_spans_ping_pong_three_frames() {
+        // fps=10 → 100 ms per frame; frames: f0, f1, f2
+        // ping-pong sequence: f0, f1, f2, f1, f0, f1, f2, ...  (period = 4)
+        let anim = make_ping_pong_anim("A", 10.0, &["f0", "f1", "f2"]);
+        let frame_content = |ms| {
+            let spans = PromptManager::get_frame_spans(&anim, &fixed_time(ms));
+            assert!(!spans.is_empty(), "expected at least one span at {}ms", ms);
+            spans[0].content.clone()
+        };
+        assert_eq!(frame_content(0), "f0"); // tick 0
+        assert_eq!(frame_content(100), "f1"); // tick 1
+        assert_eq!(frame_content(200), "f2"); // tick 2 – last frame
+        assert_eq!(frame_content(300), "f1"); // tick 3 – reversed
+        assert_eq!(frame_content(400), "f0"); // tick 4 – wraps back to start
+        assert_eq!(frame_content(500), "f1"); // tick 5 – forward again
+    }
+
+    #[test]
+    fn test_get_frame_spans_ping_pong_two_frames() {
+        // fps=10 → 100 ms per frame; frames: f0, f1
+        // period = 2*(2-1) = 2 → same as normal cycling for two frames
+        let anim = make_ping_pong_anim("A", 10.0, &["f0", "f1"]);
+        let frame_content = |ms| {
+            let spans = PromptManager::get_frame_spans(&anim, &fixed_time(ms));
+            assert!(!spans.is_empty(), "expected at least one span at {}ms", ms);
+            spans[0].content.clone()
+        };
+        assert_eq!(frame_content(0), "f0");
+        assert_eq!(frame_content(100), "f1");
+        assert_eq!(frame_content(200), "f0"); // wraps
+    }
+
+    #[test]
+    fn test_get_frame_spans_ping_pong_single_frame() {
+        // A single-frame ping-pong animation should always return that frame.
+        let anim = make_ping_pong_anim("A", 10.0, &["only"]);
+        for ms in [0, 100, 200, 999] {
+            let spans = PromptManager::get_frame_spans(&anim, &fixed_time(ms));
+            assert!(!spans.is_empty(), "expected at least one span");
+            assert_eq!(spans[0].content, "only");
+        }
     }
 
     #[test]

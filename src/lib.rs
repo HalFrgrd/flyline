@@ -124,6 +124,9 @@ enum Commands {
         /// Playback speed in frames per second (default: 10).
         #[arg(long, default_value = "10")]
         fps: f64,
+        /// Reverse direction at each end instead of wrapping (ping-pong / bounce mode).
+        #[arg(long)]
+        ping_pong: bool,
         /// One or more animation frames (positional).  Use `\e` for the ESC character.
         frames: Vec<String>,
     },
@@ -277,7 +280,13 @@ impl Flyline {
                     self.settings.ai_command = parsed.ai_command;
                 }
 
-                if let Some(Commands::CreateAnim { name, fps, frames }) = parsed.command {
+                if let Some(Commands::CreateAnim {
+                    name,
+                    fps,
+                    frames,
+                    ping_pong,
+                }) = parsed.command
+                {
                     if fps <= 0.0 {
                         eprintln!(
                             "flyline create-anim: --fps must be greater than 0 (got {}); animation '{}' not registered",
@@ -286,14 +295,20 @@ impl Flyline {
                         return bash_symbols::BuiltinExitCode::Usage as c_int;
                     }
                     log::info!(
-                        "Registering animation '{}' at {} fps with {} frame(s)",
+                        "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
                         name,
                         fps,
-                        frames.len()
+                        frames.len(),
+                        ping_pong
                     );
                     self.settings
                         .custom_animations
-                        .push(settings::PromptAnimation { name, fps, frames });
+                        .push(settings::PromptAnimation {
+                            name,
+                            fps,
+                            frames,
+                            ping_pong,
+                        });
                 }
 
                 #[cfg(feature = "integration-tests")]
