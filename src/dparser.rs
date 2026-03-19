@@ -529,6 +529,106 @@ impl DParser {
             .collect::<Vec<_>>()
             .join("")
     }
+
+    /// Returns the closing character that should be automatically inserted after the character `c`
+    /// was typed at byte position `just_inserted_pos`.
+    ///
+    /// `self` is the **stale** (pre-insertion) formatted buffer — i.e. the state of the buffer
+    /// *before* `c` was typed.  This is `self.formatted_buffer_cache` in `App`.
+    ///
+    /// - `{`, `[`, `(` are unambiguously openers and always produce a closing counterpart.
+    /// - `"`, `'`, `` ` `` are ambiguous: they close when there is already an unmatched opener of
+    ///   the same kind before `just_inserted_pos` in the stale buffer; otherwise they open.
+    pub fn closing_char_to_insert(
+        tokens: &[AnnotatedToken],
+        c: char,
+        just_inserted_pos: usize,
+    ) -> Option<char> {
+        // Unambiguously opening characters – always auto-close.
+        match c {
+            '{' => return Some('}'),
+            '[' => return Some(']'),
+            '(' => return Some(')'),
+            _ => {}
+        }
+
+        // Ambiguous characters: consult the stale token annotations.
+        let (closing, opener_kind) = match c {
+            '"' => ('"', TokenKind::Quote),
+            '\'' => ('\'', TokenKind::SingleQuote),
+            '`' => ('`', TokenKind::Backtick),
+            _ => return None,
+        };
+
+        // If there is already an unmatched opener of the same kind strictly before the
+        // insertion point, the character just typed is closing it – don't auto-insert.
+        let has_unmatched_opener = tokens.iter().any(|p| {
+            p.token.byte_range().start < just_inserted_pos
+                && p.token.kind == opener_kind
+                && matches!(p.annotation, TokenAnnotation::IsOpening(None))
+        });
+
+        if has_unmatched_opener {
+            None
+        } else {
+            Some(closing)
+        }
+    }
+
+    pub fn transfer_auto_inserted_flags(
+        old_tokens: &[AnnotatedToken],
+        new_tokens: &mut [AnnotatedToken],
+    ) {
+        // Go from the left while we see identical tokens and mark any closing tokens in new_tokens as auto-inserted if the corresponding token in old_tokens was auto-inserted.
+        for (old, new) in old_tokens.iter().zip(new_tokens.iter_mut()) {
+            if old.token.kind != new.token.kind || old.token.value != new.token.value {
+                break;
+            }
+            if let TokenAnnotation::IsClosing {
+                opening_idx: old_opening_idx,
+                is_auto_inserted: true,
+            } = old.annotation
+            {
+                if let TokenAnnotation::IsClosing {
+                    opening_idx: new_opening_idx,
+                    ..
+                } = new.annotation
+                {
+                    if old_opening_idx == new_opening_idx {
+                        new.annotation = TokenAnnotation::IsClosing {
+                            opening_idx: new_opening_idx,
+                            is_auto_inserted: true,
+                        };
+                    }
+                }
+            }
+        }
+
+        // Go from the right while we see identical tokens and do the same.
+        for (old, new) in old_tokens.iter().rev().zip(new_tokens.iter_mut().rev()) {
+            if old.token.kind != new.token.kind || old.token.value != new.token.value {
+                break;
+            }
+            if let TokenAnnotation::IsClosing {
+                opening_idx: _,
+                is_auto_inserted: true,
+            } = old.annotation
+            {
+                if let TokenAnnotation::IsClosing {
+                    opening_idx: new_opening_idx,
+                    ..
+                } = new.annotation
+                {
+                    // if old_opening_idx == new_opening_idx {
+                    new.annotation = TokenAnnotation::IsClosing {
+                        opening_idx: new_opening_idx,
+                        is_auto_inserted: true,
+                    };
+                    // }
+                }
+            }
+        }
+    }
 }
 
 // Implicitly tested by command acceptance and tab_completion_context
@@ -836,5 +936,122 @@ mod tests {
         assert_eq!(tokens[2].annotation, TokenAnnotation::None);
         assert_eq!(tokens[3].token.value, "HOME");
         assert_eq!(tokens[3].annotation, TokenAnnotation::IsEnvVar);
+    }
+
+    // ── closing_char_to_insert ───────────────────────────────────────────────
+    // These tests pass a *stale* (pre-insertion) FormattedBuffer to
+    // closing_char_to_insert, mirroring how App uses formatted_buffer_cache.
+
+    #[test]
+    fn closing_char_for_opening_double_quote() {
+        // Stale buffer is "echo " (before the " was typed).
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            Some('"')
+        );
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_double_quote() {
+        // Stale buffer is `echo "hello` (before the closing " was typed).
+        let stale = r#"echo "hello"#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn closing_char_for_opening_single_quote() {
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            Some('\'')
+        );
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_single_quote() {
+        let stale = "echo 'hello";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn closing_char_for_opening_brace() {
+        // { is never ambiguous; always produces a closing }.
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '{', just_inserted_pos),
+            Some('}')
+        );
+    }
+
+    #[test]
+    fn closing_char_for_opening_backtick() {
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '`', just_inserted_pos),
+            Some('`')
+        );
+    }
+
+    #[test]
+    fn no_closing_char_for_closing_backtick() {
+        // Stale buffer is `echo `ls` (before the closing backtick was typed).
+        let stale = "echo `ls";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '`', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn no_closing_char_for_unrecognised_character() {
+        let stale = "echo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), 'a', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn closing_char_second_quote_pair_after_first_closed() {
+        // `echo "a" ` – the first pair is closed; the next " opens a new pair.
+        let stale = r#"echo "a" "#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            Some('"')
+        );
     }
 }
