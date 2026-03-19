@@ -293,6 +293,11 @@ impl DParser {
                 stop_parsing_at_command_boundary = true;
             }
 
+            if cfg!(test) {
+                debug!("Token: {:?}, Nestings: {:?}, Heredocs: {:?}, Current command range: {:?}",
+                    token, nestings, heredocs, self.current_command_range);
+            }
+
             match &token.kind {
                 TokenKind::LBrace
                 | TokenKind::Quote
