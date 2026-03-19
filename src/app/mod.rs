@@ -2,7 +2,7 @@ mod buffer_format;
 mod tab_completion;
 
 use crate::active_suggestions::ActiveSuggestions;
-use crate::ai_command::{AiOutputSelection, parse_ai_output};
+use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
 use crate::command_acceptance;
@@ -25,6 +25,7 @@ use crossterm::event::{
 };
 use flash::lexer::TokenKind;
 use itertools::Itertools;
+use libc;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
@@ -1099,10 +1100,25 @@ impl<'a> App<'a> {
             // Safety: the guard `!ai_command.is_empty()` at the call site ensures
             // cmd_args is non-empty, so split_first() always returns Some.
             let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
+
+            // Bash sets SIGCHLD to SIG_IGN, causing the kernel to auto-reap child
+            // processes. This makes output()'s internal wait() fail with ECHILD
+            // (os error 10). Temporarily restore SIG_DFL so we can wait on our
+            // child, then put the original disposition back.
+            // SAFETY: signal(2) only modifies signal disposition. No other thread
+            // in this process depends on SIGCHLD being SIG_IGN at this instant.
+            let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+
             let result: Result<String, (String, String)> = std::process::Command::new(prog)
                 .args(args)
                 .arg(&final_arg)
                 .output()
+                .inspect(|_| unsafe {
+                    libc::signal(libc::SIGCHLD, prev_sigchld);
+                })
+                .inspect_err(|_| unsafe {
+                    libc::signal(libc::SIGCHLD, prev_sigchld);
+                })
                 .map_err(|e| (format!("Failed to run AI command: {}", e), String::new()))
                 .and_then(|output| {
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -1725,7 +1741,7 @@ impl<'a> App<'a> {
                     parser.walk_to_end();
                     let tokens = parser.tokens().to_vec();
                     // cursor_byte_pos=cmd.len() (past end), buffer_byte_length=cmd.len(),
-                    // app_is_running=false (no cursor/pair highlighting), wordinfo_fn=None.
+                    // app_is_running=false (no cursor/pair highlighting).
                     let formatted_cmd = format_buffer(
                         &tokens,
                         cmd.len(),
