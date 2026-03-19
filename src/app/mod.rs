@@ -201,7 +201,7 @@ impl<'a> App<'a> {
             cursor_animation: CursorAnimation::new(),
             prompt_manager: PromptManager::new(
                 unfinished_from_prev_command,
-                &settings.custom_animations,
+                &settings.custom_animations.values().cloned().collect::<Vec<_>>(),
             ),
             home_path: home_path,
             history_manager: HistoryManager::new(settings),

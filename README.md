@@ -38,54 +38,6 @@ flyline --tutorial-mode
 ```
 
 
-# Settings
-
-Configure flyline by calling it with options in your `.bashrc` (after the `enable` call).
-Run `flyline` or `flyline --help` to see all available options.
-
-The block below is auto-generated from `flyline --help`:
-
-<!-- FLYLINE_HELP_START -->
-```
-Usage: flyline [OPTIONS] [COMMAND]
-
-Commands:
-  create-anim  Create a custom prompt animation
-  help         Print this message or the help of the given subcommand(s)
-
-Options:
-      --version
-          Show version information
-      --disable-animations
-          Disable animations
-      --dump-logs[=<PATH>]
-          Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is
-          created in the current directory
-      --stream-logs <PATH>
-          Dump current logs to PATH and append new logs. Use `stderr` to stream to standard error
-      --log-level <LEVEL>
-          Set the logging level [possible values: error, warn, info, debug, trace]
-      --load-zsh-history
-          Load zsh history in addition to bash history
-      --tutorial-mode[=<TUTORIAL_MODE>]
-          Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode=false` to disable [possible values: true, false]
-      --disable-auto-closing-char
-          Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
-      --mouse-mode <MODE>
-          Mouse capture mode (none, simple, smart). Default is smart [possible values: disabled, simple, smart]
-      --ai-command <AI_COMMAND>...
-          Command (and arguments) used for AI mode. The current buffer is appended as the final argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
-      --run-tab-completion-tests
-          
-  -h, --help
-          Print help (see more with '--help')
-```
-<!-- FLYLINE_HELP_END -->
-
-When flyline loads, it automatically sets up its own tab completion
-so you can type `flyline --<Tab>` in your shell to interactively browse and configure settings.
-
-
 # Integrations
 ## VS Code:
 - I'd recommend setting `terminal.integrated.minimumContrastRatio = 1` to prevent the cell's foreground colour changing when it's under the cursor.
@@ -193,3 +145,54 @@ Pressing `Up` will scroll through history entries that are a prefix match with t
 
 ## Zsh history entries
 Optionally read zsh history entries to make migrating to bash easier. 
+
+
+# Settings
+
+Configure flyline by calling it with options in your `.bashrc` (after the `enable` call).
+Run `flyline --help` to see all available options.
+You can also set these options in your current session but they won't persist between sessions.
+See 
+
+The block below is auto-generated from `flyline --help`:
+
+<!-- FLYLINE_HELP_START -->
+```
+Usage: flyline [OPTIONS] [COMMAND]
+
+Commands:
+  create-anim  Create a custom prompt animation
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --version
+          Show version information
+      --disable-animations
+          Disable animations
+      --dump-logs[=<PATH>]
+          Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is
+          created in the current directory
+      --stream-logs <PATH>
+          Dump current logs to PATH and append new logs. Use `stderr` to stream to standard error
+      --log-level <LEVEL>
+          Set the logging level [possible values: error, warn, info, debug, trace]
+      --load-zsh-history
+          Load zsh history in addition to bash history
+      --tutorial-mode[=<TUTORIAL_MODE>]
+          Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode=false` to disable [possible values: true, false]
+      --disable-auto-closing-char
+          Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
+      --mouse-mode <MODE>
+          Mouse capture mode (none, simple, smart). Default is smart [possible values: disabled, simple, smart]
+      --ai-command <AI_COMMAND>...
+          Command (and arguments) used for AI mode. The current buffer is appended as the final argument when Ctrl+I is pressed. Example: `flyline --ai-command llm prompt`
+      --run-tab-completion-tests
+          
+  -h, --help
+          Print help (see more with '--help')
+```
+<!-- FLYLINE_HELP_END -->
+
+When flyline loads, it automatically sets up its own tab completion
+so you can type `flyline --<Tab>` in your shell to interactively browse and configure settings.
+

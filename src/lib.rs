@@ -303,8 +303,8 @@ impl Flyline {
                         ping_pong
                     );
                     self.settings
-                        .custom_animations
-                        .push(settings::PromptAnimation {
+                        .custom_animations.insert(name.clone(),
+                        settings::PromptAnimation {
                             name,
                             fps,
                             frames,
