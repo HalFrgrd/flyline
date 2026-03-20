@@ -363,6 +363,62 @@ impl HistoryManager {
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 
+/// In-session history manager for transient lists such as cancelled commands and
+/// agent-mode prompts.  Unlike [`HistoryManager`] it does not load entries from
+/// disk; entries are pushed at runtime and are lost when the shell session ends.
+#[derive(Debug)]
+pub struct SessionHistoryManager {
+    entries: Vec<HistoryEntry>,
+    fuzzy_search: FuzzyHistorySearch,
+}
+
+impl SessionHistoryManager {
+    pub fn new() -> Self {
+        SessionHistoryManager {
+            entries: Vec::new(),
+            fuzzy_search: FuzzyHistorySearch::new(),
+        }
+    }
+
+    /// Add a command to the session history.  Empty/whitespace-only strings
+    /// are silently ignored so callers don't need to guard every push site.
+    pub fn push(&mut self, command: String) {
+        if command.trim().is_empty() {
+            return;
+        }
+        let index = self.entries.len();
+        self.entries.push(HistoryEntry {
+            timestamp: None,
+            index,
+            command,
+        });
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn get_fuzzy_search_results(
+        &mut self,
+        current_cmd: &str,
+    ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
+        self.fuzzy_search
+            .get_fuzzy_search_results(&self.entries, current_cmd)
+    }
+
+    pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
+        self.fuzzy_search.accept_fuzzy_search_result()
+    }
+
+    pub fn fuzzy_search_set_by_visual_idx(&mut self, visual_idx: usize) {
+        self.fuzzy_search.set_fuzzy_search_by_visual_idx(visual_idx);
+    }
+
+    pub fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
+        self.fuzzy_search.fuzzy_search_onkeypress(direction);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct HistoryEntryFormatted {
     pub entry: HistoryEntry,
@@ -773,5 +829,54 @@ git status
             .count();
 
         assert_eq!(echo_hi_count, 2);
+    }
+
+    #[test]
+    fn test_session_history_manager_push_and_search() {
+        let mut mgr = SessionHistoryManager::new();
+        assert!(mgr.is_empty());
+
+        mgr.push("git status".to_string());
+        mgr.push("cargo build".to_string());
+        mgr.push("ls -la".to_string());
+        // Empty strings should be ignored
+        mgr.push("   ".to_string());
+        mgr.push(String::new());
+
+        assert!(!mgr.is_empty());
+        assert_eq!(mgr.entries.len(), 3);
+        assert_eq!(mgr.entries[0].command, "git status");
+        assert_eq!(mgr.entries[0].index, 0);
+        assert_eq!(mgr.entries[0].timestamp, None);
+        assert_eq!(mgr.entries[2].command, "ls -la");
+        assert_eq!(mgr.entries[2].index, 2);
+    }
+
+    #[test]
+    fn test_session_history_manager_fuzzy_search() {
+        let mut mgr = SessionHistoryManager::new();
+        mgr.push("git status".to_string());
+        mgr.push("git log".to_string());
+        mgr.push("cargo test".to_string());
+
+        let (results, _idx, num_results, _num_searched) = mgr.get_fuzzy_search_results("git");
+        assert!(num_results >= 2);
+        // Both "git status" and "git log" should match "git"
+        let commands: Vec<&str> = results.iter().map(|e| e.entry.command.as_str()).collect();
+        assert!(
+            commands.contains(&"git status") || commands.contains(&"git log"),
+            "Expected git entries in results"
+        );
+    }
+
+    #[test]
+    fn test_session_history_manager_accept() {
+        let mut mgr = SessionHistoryManager::new();
+        mgr.push("echo hello".to_string());
+        mgr.push("echo world".to_string());
+
+        let _ = mgr.get_fuzzy_search_results("echo");
+        let accepted = mgr.accept_fuzzy_search_result();
+        assert!(accepted.is_some());
     }
 }

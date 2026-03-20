@@ -294,8 +294,10 @@ impl DParser {
             }
 
             if cfg!(test) {
-                debug!("Token: {:?}, Nestings: {:?}, Heredocs: {:?}, Current command range: {:?}",
-                    token, nestings, heredocs, self.current_command_range);
+                debug!(
+                    "Token: {:?}, Nestings: {:?}, Heredocs: {:?}, Current command range: {:?}",
+                    token, nestings, heredocs, self.current_command_range
+                );
             }
 
             match &token.kind {
