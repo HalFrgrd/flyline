@@ -6,7 +6,6 @@ COPY docker/claude /home/john/bin/claude
 USER root
 RUN chmod +x /home/john/bin/claude
 USER john
-RUN echo 'export PATH="/home/john/bin:$PATH"' >> /home/john/.bashrc
 
 COPY tapes/demo_agent_mode.tape .
 

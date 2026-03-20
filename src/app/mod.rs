@@ -850,7 +850,11 @@ impl<'a> App<'a> {
                 code: KeyCode::Char('i'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } if !self.settings.ai_command.is_empty() => {
+            } | KeyEvent {  // This shortcut is just so it can work in the vhs demo.
+                code: KeyCode::Char('i'),
+                modifiers: KeyModifiers::ALT,
+                ..
+            }  if !self.settings.ai_command.is_empty() => {
                 self.start_ai_mode();
             }
             KeyEvent {

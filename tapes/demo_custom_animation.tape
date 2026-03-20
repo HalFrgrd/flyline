@@ -13,25 +13,7 @@ Type `export PS1="${PS1::-2}MY_ANIMATION "`
 Enter
 Sleep 1500ms
 
-Type `flyline create-anim --name "john" --ping-pong --fps 8 \`
-Enter
-Type  "john \"
-Enter
-Type  "john \"
-Enter
-Type  "john \"
-Enter
-Type  "John \"
-Enter
-Type  "jOhn \"
-Enter
-Type  "joHn \"
-Enter
-Type  "johN \"
-Enter
-Type  "john \"
-Enter
-Type  "john"
+Type `flyline create-anim --name "john" --ping-pong --fps 8 john john john John jOhn joHn johN john john`
 Enter
 
 Sleep 3000ms
