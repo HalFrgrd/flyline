@@ -789,7 +789,7 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 [[package]]
 name = "flash"
 version = "0.0.6"
-source = "git+https://github.com/HalFrgrd/flash.git?rev=58f0b81970dc13ff3e1bf13959768c4f90260259#58f0b81970dc13ff3e1bf13959768c4f90260259"
+source = "git+https://github.com/HalFrgrd/flash.git?rev=30fdd4b7a6e7d5cd0ac0d24b2fb819bf34cd62d6#30fdd4b7a6e7d5cd0ac0d24b2fb819bf34cd62d6"
 dependencies = [
  "atty",
  "libc",
