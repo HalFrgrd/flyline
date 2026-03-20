@@ -9,7 +9,10 @@ use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
-use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
+use crate::history::{
+    HistoryEntry, HistoryEntryFormatted, HistoryManager, HistorySearchDirection,
+    SessionHistoryManager,
+};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
@@ -147,6 +150,10 @@ enum ContentMode {
         message: String,
         raw_output: String,
     },
+    /// Fuzzy search through commands that were cancelled with Ctrl+C in this session.
+    FuzzyCancelledCommandSearch,
+    /// Fuzzy search through prompts that were submitted to agent mode in this session.
+    FuzzyAgentPromptSearch,
 }
 
 struct App<'a> {
@@ -172,6 +179,10 @@ struct App<'a> {
     settings: &'a Settings,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     last_viewport_top: u16,
+    /// Commands that were cancelled (Ctrl+C) during this session.
+    cancelled_command_history: SessionHistoryManager,
+    /// Prompts that were submitted to agent mode during this session.
+    agent_prompt_history: SessionHistoryManager,
 }
 
 impl<'a> App<'a> {
@@ -227,6 +238,8 @@ impl<'a> App<'a> {
             tooltip: None,
             settings,
             last_viewport_top: 0,
+            cancelled_command_history: SessionHistoryManager::new(),
+            agent_prompt_history: SessionHistoryManager::new(),
         }
     }
 
@@ -454,8 +467,19 @@ impl<'a> App<'a> {
             }
             Some((tag @ Tag::HistoryResult(idx), true)) => {
                 self.last_mouse_over_cell = Some(tag);
-                if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
-                    self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                match self.content_mode {
+                    ContentMode::FuzzyHistorySearch => {
+                        self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                    }
+                    ContentMode::FuzzyCancelledCommandSearch => {
+                        self.cancelled_command_history
+                            .fuzzy_search_set_by_visual_idx(idx);
+                    }
+                    ContentMode::FuzzyAgentPromptSearch => {
+                        self.agent_prompt_history
+                            .fuzzy_search_set_by_visual_idx(idx);
+                    }
+                    _ => {}
                 }
             }
             Some((tag @ Tag::AiResult(idx), true)) => {
@@ -495,12 +519,27 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::HistoryResult(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Up(_))
-                    && matches!(self.content_mode, ContentMode::FuzzyHistorySearch)
-                {
-                    self.history_manager.fuzzy_search_set_by_visual_idx(idx);
-                    self.accept_fuzzy_history_search();
-                    update_buffer = true;
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    match self.content_mode {
+                        ContentMode::FuzzyHistorySearch => {
+                            self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                            self.accept_fuzzy_history_search();
+                            update_buffer = true;
+                        }
+                        ContentMode::FuzzyCancelledCommandSearch => {
+                            self.cancelled_command_history
+                                .fuzzy_search_set_by_visual_idx(idx);
+                            self.accept_session_history_search(false);
+                            update_buffer = true;
+                        }
+                        ContentMode::FuzzyAgentPromptSearch => {
+                            self.agent_prompt_history
+                                .fuzzy_search_set_by_visual_idx(idx);
+                            self.accept_session_history_search(true);
+                            update_buffer = true;
+                        }
+                        _ => {}
+                    }
                 }
             }
             Some(Tag::AiResult(idx)) => {
@@ -624,6 +663,18 @@ impl<'a> App<'a> {
                 self.history_manager
                     .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
             }
+            KeyEvent {
+                code: KeyCode::Up, ..
+            } if matches!(self.content_mode, ContentMode::FuzzyCancelledCommandSearch) => {
+                self.cancelled_command_history
+                    .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
+            }
+            KeyEvent {
+                code: KeyCode::Up, ..
+            } if matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch) => {
+                self.agent_prompt_history
+                    .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
+            }
             // Handle Up with history navigation when at first line
             KeyEvent {
                 code: KeyCode::Up, ..
@@ -657,6 +708,20 @@ impl<'a> App<'a> {
                 self.history_manager
                     .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
             }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyCancelledCommandSearch) => {
+                self.cancelled_command_history
+                    .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
+            }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch) => {
+                self.agent_prompt_history
+                    .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
+            }
             // Page Up/Down - scroll by a full page in fuzzy history search
             KeyEvent {
                 code: KeyCode::PageUp,
@@ -666,10 +731,38 @@ impl<'a> App<'a> {
                     .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
             }
             KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyCancelledCommandSearch) => {
+                self.cancelled_command_history
+                    .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
+            }
+            KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch) => {
+                self.agent_prompt_history
+                    .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
+            }
+            KeyEvent {
                 code: KeyCode::PageDown,
                 ..
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.history_manager
+                    .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
+            }
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyCancelledCommandSearch) => {
+                self.cancelled_command_history
+                    .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
+            }
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            } if matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch) => {
+                self.agent_prompt_history
                     .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
             }
             // Handle Down with history navigation when at last line
@@ -700,6 +793,34 @@ impl<'a> App<'a> {
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.accept_fuzzy_history_search();
             }
+            // Shift+Enter in session history search - accept without running
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } if matches!(
+                self.content_mode,
+                ContentMode::FuzzyCancelledCommandSearch | ContentMode::FuzzyAgentPromptSearch
+            ) =>
+            {
+                let is_agent = matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch);
+                self.accept_session_history_search(is_agent);
+            }
+            // Shift+Enter on an empty buffer - open fuzzy search for agent prompts
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } if !self.settings.ai_command.is_empty()
+                && self.buffer.buffer().is_empty()
+                && !self.agent_prompt_history.is_empty()
+                && !matches!(self.content_mode, ContentMode::AiMode { .. }) =>
+            {
+                self.content_mode = ContentMode::FuzzyAgentPromptSearch;
+                let _ = self
+                    .agent_prompt_history
+                    .get_fuzzy_search_results(self.buffer.buffer());
+            }
             // Shift+Enter - activate AI mode like Ctrl+I (requires --ai-command to be configured)
             KeyEvent {
                 code: KeyCode::Enter,
@@ -723,6 +844,14 @@ impl<'a> App<'a> {
                 ContentMode::FuzzyHistorySearch => {
                     self.accept_fuzzy_history_search();
                     self.try_submit_current_buffer();
+                }
+                ContentMode::FuzzyCancelledCommandSearch => {
+                    self.accept_session_history_search(false);
+                    self.try_submit_current_buffer();
+                }
+                ContentMode::FuzzyAgentPromptSearch => {
+                    self.accept_session_history_search(true);
+                    self.start_ai_mode();
                 }
                 ContentMode::TabCompletion(active_suggestions) => {
                     active_suggestions.accept_currently_selected(&mut self.buffer);
@@ -765,6 +894,12 @@ impl<'a> App<'a> {
                 ContentMode::FuzzyHistorySearch => {
                     self.accept_fuzzy_history_search();
                 }
+                ContentMode::FuzzyCancelledCommandSearch => {
+                    self.accept_session_history_search(false);
+                }
+                ContentMode::FuzzyAgentPromptSearch => {
+                    self.accept_session_history_search(true);
+                }
                 ContentMode::TabCompletion(active_suggestions) => {
                     active_suggestions.on_tab(false);
                 }
@@ -782,6 +917,8 @@ impl<'a> App<'a> {
             } => match self.content_mode {
                 ContentMode::TabCompletion(_)
                 | ContentMode::FuzzyHistorySearch
+                | ContentMode::FuzzyCancelledCommandSearch
+                | ContentMode::FuzzyAgentPromptSearch
                 | ContentMode::AiMode { .. }
                 | ContentMode::AiOutputSelection(_)
                 | ContentMode::AiError { .. } => {
@@ -796,13 +933,25 @@ impl<'a> App<'a> {
                     }
                 }
             },
-            // Ctrl+C - cancel
+            // Ctrl+C - cancel; if the buffer is empty and there are cancelled commands,
+            // open fuzzy search for them instead of exiting.
             KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
-                self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                let buffer = self.buffer.buffer().to_string();
+                if buffer.is_empty() && !self.cancelled_command_history.is_empty() {
+                    self.content_mode = ContentMode::FuzzyCancelledCommandSearch;
+                    let _ = self
+                        .cancelled_command_history
+                        .get_fuzzy_search_results(&buffer);
+                } else {
+                    if !buffer.is_empty() {
+                        self.cancelled_command_history.push(buffer);
+                    }
+                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                }
             }
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             KeyEvent {
@@ -820,23 +969,23 @@ impl<'a> App<'a> {
                 code: KeyCode::Char('r'),
                 modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
-            } => {
-                match self.content_mode {
-                    ContentMode::FuzzyHistorySearch => {
-                        self.content_mode = ContentMode::Normal;
-                        // self.fuzzy_history_search_results.clear();
-                    }
-                    ContentMode::Normal | ContentMode::TabCompletion(_) => {
-                        self.content_mode = ContentMode::FuzzyHistorySearch;
-                        let _ = self
-                            .history_manager
-                            .get_fuzzy_search_results(self.buffer.buffer());
-                    }
-                    ContentMode::AiMode { .. }
-                    | ContentMode::AiOutputSelection(_)
-                    | ContentMode::AiError { .. } => {}
+            } => match self.content_mode {
+                ContentMode::FuzzyHistorySearch => {
+                    self.content_mode = ContentMode::Normal;
                 }
-            }
+                ContentMode::Normal
+                | ContentMode::TabCompletion(_)
+                | ContentMode::FuzzyCancelledCommandSearch
+                | ContentMode::FuzzyAgentPromptSearch => {
+                    self.content_mode = ContentMode::FuzzyHistorySearch;
+                    let _ = self
+                        .history_manager
+                        .get_fuzzy_search_results(self.buffer.buffer());
+                }
+                ContentMode::AiMode { .. }
+                | ContentMode::AiOutputSelection(_)
+                | ContentMode::AiError { .. } => {}
+            },
             KeyEvent {
                 code: KeyCode::Char('l'),
                 modifiers: KeyModifiers::CONTROL,
@@ -850,11 +999,13 @@ impl<'a> App<'a> {
                 code: KeyCode::Char('i'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } | KeyEvent {  // This shortcut is just so it can work in the vhs demo.
+            }
+            | KeyEvent {
+                // This shortcut is just so it can work in the vhs demo.
                 code: KeyCode::Char('i'),
                 modifiers: KeyModifiers::ALT,
                 ..
-            }  if !self.settings.ai_command.is_empty() => {
+            } if !self.settings.ai_command.is_empty() => {
                 self.start_ai_mode();
             }
             KeyEvent {
@@ -1073,11 +1224,33 @@ impl<'a> App<'a> {
         self.content_mode = ContentMode::Normal;
     }
 
+    /// Accept the currently selected entry from a session history fuzzy search
+    /// (`FuzzyCancelledCommandSearch` when `is_agent` is `false`,
+    /// `FuzzyAgentPromptSearch` when `is_agent` is `true`) and load it into the
+    /// buffer.  The content mode is reset to `Normal`.
+    fn accept_session_history_search(&mut self, is_agent: bool) {
+        let command = if is_agent {
+            self.agent_prompt_history
+                .accept_fuzzy_search_result()
+                .map(|e| e.command.clone())
+        } else {
+            self.cancelled_command_history
+                .accept_fuzzy_search_result()
+                .map(|e| e.command.clone())
+        };
+        if let Some(cmd) = command {
+            self.buffer.replace_buffer(&cmd);
+        }
+        self.content_mode = ContentMode::Normal;
+    }
+
     /// Spawn the configured AI command in a background thread and transition to `AiMode`.
     /// Words that contain a space are quoted with single quotes in the display string.
     fn start_ai_mode(&mut self) {
         let cmd_args = self.settings.ai_command.clone();
         let buffer_str = self.buffer.buffer().to_string();
+        // Record the prompt in the agent mode session history before launching.
+        self.agent_prompt_history.push(buffer_str.clone());
         let final_arg = match self.settings.ai_system_prompt.as_deref() {
             Some(prompt) => format!("{}\n{}", prompt, buffer_str),
             None => buffer_str,
@@ -1281,19 +1454,190 @@ impl<'a> App<'a> {
             _ => None,
         }
     }
+}
 
-    fn ts_to_timeago_string_5chars(ts: u64) -> String {
-        let duration = std::time::Duration::from_secs(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                .saturating_sub(ts),
-        );
-        let s = timeago::format_5chars(duration);
-        format!("{:>5}", s.trim_start_matches('0'))
+fn ts_to_timeago_string_5chars(ts: u64) -> String {
+    let duration = std::time::Duration::from_secs(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .saturating_sub(ts),
+    );
+    let s = timeago::format_5chars(duration);
+    format!("{:>5}", s.trim_start_matches('0'))
+}
+
+/// Render fuzzy search results from any history source into `content`.
+/// `label` is shown in the footer line (e.g. "Fuzzy search" or "Cancelled commands").
+fn render_fuzzy_history_results(
+    content: &mut Contents,
+    fuzzy_results: &mut [HistoryEntryFormatted],
+    fuzzy_search_index: usize,
+    num_results: usize,
+    num_searched: usize,
+    label: &str,
+    tutorial_mode: bool,
+) {
+    let num_digits_for_index = num_searched.to_string().len();
+    let num_digits_for_score = 3;
+    let timeago_width = 5; // ts_to_timeago_string_5chars always returns 5 chars
+    let indicator_width = 1; // "▐" or " "
+    // Width of the header prefix: "{index} {score} {timeago}{indicator}"
+    let header_prefix_width =
+        (num_digits_for_index + 1) + (num_digits_for_score + 1) + timeago_width + indicator_width;
+    for (row_idx, formatted_entry) in fuzzy_results.iter_mut().enumerate() {
+        let entry = &formatted_entry.entry;
+        let mut spans = vec![];
+
+        spans.push(Span::styled(
+            format!("{:>num_digits_for_index$} ", entry.index + 1),
+            Palette::secondary_text(),
+        ));
+
+        spans.push(Span::styled(
+            format!("{:>num_digits_for_score$} ", formatted_entry.score),
+            Palette::secondary_text(),
+        ));
+
+        let timeago_str = entry
+            .timestamp
+            .map(ts_to_timeago_string_5chars)
+            .unwrap_or("     ".to_string());
+
+        spans.push(Span::styled(timeago_str, Palette::secondary_text()));
+
+        let is_selected = fuzzy_search_index == row_idx;
+        if is_selected {
+            spans.push(Span::styled("▐", Palette::matched_character()));
+        } else {
+            spans.push(Span::styled(" ", Palette::secondary_text()));
+        }
+
+        let line = Line::from(spans);
+        content.write_line(&line, false, Tag::HistoryResult(row_idx));
+
+        let formatted_text = {
+            if formatted_entry.command_spans.is_none() {
+                // Lazily generate the formatted command with highlights
+                formatted_entry.gen_formatted_command();
+            }
+            formatted_entry.command_spans.as_ref().unwrap()
+        };
+
+        // Width available for command content on each terminal row
+        // (the header/indent prefix always occupies header_prefix_width columns)
+        let available_cols = content.width.saturating_sub(header_prefix_width as u16);
+
+        // Pre-process all logical lines into terminal display rows.
+        // Each element is: (is_start_of_logical_line, logical_line_idx, row_spans)
+        let total_logical_lines = formatted_text.len();
+        let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
+        for (logical_idx, logical_line) in formatted_text.iter().enumerate() {
+            let terminal_rows = split_line_to_terminal_rows(logical_line, available_cols);
+            for (sub_idx, terminal_row) in terminal_rows.into_iter().enumerate() {
+                all_display_rows.push((sub_idx == 0, logical_idx, terminal_row));
+            }
+        }
+
+        let total_display_rows = all_display_rows.len();
+        let max_display_rows = if is_selected { 4 } else { 1 };
+        let has_more = total_display_rows > max_display_rows;
+        let rows_to_show = total_display_rows.min(max_display_rows);
+
+        for (display_idx, (is_start_of_logical, logical_idx, display_line)) in all_display_rows
+            .into_iter()
+            .take(max_display_rows)
+            .enumerate()
+        {
+            if display_idx > 0 {
+                content.fill_line(Tag::HistoryResult(row_idx));
+                content.newline();
+                // Write indent prefix aligned to the header width.
+                // For the first terminal row of a new logical line, show "X/N"
+                // right-justified; for wrapped continuation rows, use blank padding.
+                // The last column of the prefix is the indicator column (▐ or space).
+                let indent_prefix = if is_start_of_logical {
+                    let line_num_str = format!("{}/{}", logical_idx + 1, total_logical_lines);
+                    format!(
+                        "{:>width$}",
+                        line_num_str,
+                        // header_prefix_width - 1: last column is the indicator
+                        width = header_prefix_width - 1
+                    )
+                } else {
+                    " ".repeat(header_prefix_width - 1)
+                };
+                content.write_span(
+                    &Span::styled(indent_prefix, Palette::secondary_text()),
+                    Tag::HistoryResult(row_idx),
+                );
+                // Write the indicator for every line of the selected entry
+                if is_selected {
+                    content.write_span(
+                        &Span::styled("▐", Palette::matched_character()),
+                        Tag::HistoryResult(row_idx),
+                    );
+                } else {
+                    content.write_span(
+                        &Span::styled(" ", Palette::secondary_text()),
+                        Tag::HistoryResult(row_idx),
+                    );
+                }
+            }
+
+            for span in &display_line.spans {
+                if is_selected {
+                    let selected_span = Span::styled(
+                        span.content.clone(),
+                        Palette::convert_to_selected(span.style),
+                    );
+                    content.write_span(&selected_span, Tag::HistoryResult(row_idx));
+                } else {
+                    content.write_span(span, Tag::HistoryResult(row_idx));
+                }
+            }
+
+            // Append ellipsis on the last displayed row when more content exists.
+            // If the row is full (cursor at the end), jump back one column to
+            // overwrite the last character; otherwise write the ellipsis right
+            // after the last character so it isn't pushed to the line's far end.
+            if display_idx + 1 == rows_to_show && has_more {
+                let ellipsis_style = if is_selected {
+                    Palette::convert_to_selected(Palette::secondary_text())
+                } else {
+                    Palette::secondary_text()
+                };
+                // "…" (U+2026) has a terminal display width of 1.
+                if content.cursor_position().col >= content.width.saturating_sub(1) {
+                    content.set_cursor_col(content.width.saturating_sub(1));
+                }
+                content.write_span(
+                    &Span::styled("…", ellipsis_style),
+                    Tag::HistoryResult(row_idx),
+                );
+            }
+        }
+        content.fill_line(Tag::HistoryResult(row_idx));
+        content.newline();
     }
+    content.write_span(
+        &Span::styled(
+            format!("# {}: {}/{}", label, num_results, num_searched),
+            Palette::secondary_text(),
+        ),
+        Tag::FuzzySearch,
+    );
+    if tutorial_mode {
+        content.newline();
+        content.write_span(
+            &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::tutorial_hint()),
+            Tag::FuzzySearch,
+        );
+    }
+}
 
+impl<'a> App<'a> {
     fn create_content(&mut self, width: u16) -> Contents {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
@@ -1469,7 +1813,7 @@ impl<'a> App<'a> {
                     if is_last {
                         let mut extra_info_text = format!(" #idx={}", sug.index);
                         if let Some(ts) = sug.timestamp {
-                            let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
+                            let time_ago_str = ts_to_timeago_string_5chars(ts);
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
@@ -1527,172 +1871,48 @@ impl<'a> App<'a> {
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
                 content.newline();
-
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
                     .get_fuzzy_search_results(self.buffer.buffer());
-
-                let num_digits_for_index = num_searched.to_string().len();
-                let num_digits_for_score = 3;
-                let timeago_width = 5; // ts_to_timeago_string_5chars always returns 5 chars
-                let indicator_width = 1; // "▐" or " "
-                // Width of the header prefix: "{index} {score} {timeago}{indicator}"
-                let header_prefix_width = (num_digits_for_index + 1)
-                    + (num_digits_for_score + 1)
-                    + timeago_width
-                    + indicator_width;
-                for (row_idx, formatted_entry) in fuzzy_results.iter_mut().enumerate() {
-                    let entry = &formatted_entry.entry;
-                    let mut spans = vec![];
-
-                    spans.push(Span::styled(
-                        format!("{:>num_digits_for_index$} ", entry.index + 1),
-                        Palette::secondary_text(),
-                    ));
-
-                    spans.push(Span::styled(
-                        format!("{:>num_digits_for_score$} ", formatted_entry.score),
-                        Palette::secondary_text(),
-                    ));
-
-                    let timeago_str = entry
-                        .timestamp
-                        .map(Self::ts_to_timeago_string_5chars)
-                        .unwrap_or("     ".to_string());
-
-                    spans.push(Span::styled(timeago_str, Palette::secondary_text()));
-
-                    let is_selected = fuzzy_search_index == row_idx;
-                    if is_selected {
-                        spans.push(Span::styled("▐", Palette::matched_character()));
-                    } else {
-                        spans.push(Span::styled(" ", Palette::secondary_text()));
-                    }
-
-                    let line = Line::from(spans);
-                    content.write_line(&line, false, Tag::HistoryResult(row_idx));
-
-                    let formatted_text = {
-                        if formatted_entry.command_spans.is_none() {
-                            // Lazily generate the formatted command with highlights
-                            formatted_entry.gen_formatted_command();
-                        }
-                        formatted_entry.command_spans.as_ref().unwrap()
-                    };
-
-                    // Width available for command content on each terminal row
-                    // (the header/indent prefix always occupies header_prefix_width columns)
-                    let available_cols = content.width.saturating_sub(header_prefix_width as u16);
-
-                    // Pre-process all logical lines into terminal display rows.
-                    // Each element is: (is_start_of_logical_line, logical_line_idx, row_spans)
-                    let total_logical_lines = formatted_text.len();
-                    let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
-                    for (logical_idx, logical_line) in formatted_text.iter().enumerate() {
-                        let terminal_rows =
-                            split_line_to_terminal_rows(logical_line, available_cols);
-                        for (sub_idx, terminal_row) in terminal_rows.into_iter().enumerate() {
-                            all_display_rows.push((sub_idx == 0, logical_idx, terminal_row));
-                        }
-                    }
-
-                    let total_display_rows = all_display_rows.len();
-                    let max_display_rows = if is_selected { 4 } else { 1 };
-                    let has_more = total_display_rows > max_display_rows;
-                    let rows_to_show = total_display_rows.min(max_display_rows);
-
-                    for (display_idx, (is_start_of_logical, logical_idx, display_line)) in
-                        all_display_rows
-                            .into_iter()
-                            .take(max_display_rows)
-                            .enumerate()
-                    {
-                        if display_idx > 0 {
-                            content.fill_line(Tag::HistoryResult(row_idx));
-                            content.newline();
-                            // Write indent prefix aligned to the header width.
-                            // For the first terminal row of a new logical line, show "X/N"
-                            // right-justified; for wrapped continuation rows, use blank padding.
-                            // The last column of the prefix is the indicator column (▐ or space).
-                            let indent_prefix = if is_start_of_logical {
-                                let line_num_str =
-                                    format!("{}/{}", logical_idx + 1, total_logical_lines);
-                                format!(
-                                    "{:>width$}",
-                                    line_num_str,
-                                    // header_prefix_width - 1: last column is the indicator
-                                    width = header_prefix_width - 1
-                                )
-                            } else {
-                                " ".repeat(header_prefix_width - 1)
-                            };
-                            content.write_span(
-                                &Span::styled(indent_prefix, Palette::secondary_text()),
-                                Tag::HistoryResult(row_idx),
-                            );
-                            // Write the indicator for every line of the selected entry
-                            if is_selected {
-                                content.write_span(
-                                    &Span::styled("▐", Palette::matched_character()),
-                                    Tag::HistoryResult(row_idx),
-                                );
-                            } else {
-                                content.write_span(
-                                    &Span::styled(" ", Palette::secondary_text()),
-                                    Tag::HistoryResult(row_idx),
-                                );
-                            }
-                        }
-
-                        for span in &display_line.spans {
-                            if is_selected {
-                                let selected_span = Span::styled(
-                                    span.content.clone(),
-                                    Palette::convert_to_selected(span.style),
-                                );
-                                content.write_span(&selected_span, Tag::HistoryResult(row_idx));
-                            } else {
-                                content.write_span(span, Tag::HistoryResult(row_idx));
-                            }
-                        }
-
-                        // Append ellipsis on the last displayed row when more content exists.
-                        // If the row is full (cursor at the end), jump back one column to
-                        // overwrite the last character; otherwise write the ellipsis right
-                        // after the last character so it isn't pushed to the line's far end.
-                        if display_idx + 1 == rows_to_show && has_more {
-                            let ellipsis_style = if is_selected {
-                                Palette::convert_to_selected(Palette::secondary_text())
-                            } else {
-                                Palette::secondary_text()
-                            };
-                            // "…" (U+2026) has a terminal display width of 1.
-                            if content.cursor_position().col >= content.width.saturating_sub(1) {
-                                content.set_cursor_col(content.width.saturating_sub(1));
-                            }
-                            content.write_span(
-                                &Span::styled("…", ellipsis_style),
-                                Tag::HistoryResult(row_idx),
-                            );
-                        }
-                    }
-                    content.fill_line(Tag::HistoryResult(row_idx));
-                    content.newline();
-                }
-                content.write_span(
-                    &Span::styled(
-                        format!("# Fuzzy search: {}/{}", num_results, num_searched),
-                        Palette::secondary_text(),
-                    ),
-                    Tag::FuzzySearch,
+                render_fuzzy_history_results(
+                    &mut content,
+                    fuzzy_results,
+                    fuzzy_search_index,
+                    num_results,
+                    num_searched,
+                    "Fuzzy search",
+                    self.settings.tutorial_mode,
                 );
-                if self.settings.tutorial_mode {
-                    content.newline();
-                    content.write_span(
-                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::tutorial_hint()),
-                        Tag::FuzzySearch,
-                    );
-                }
+            }
+            ContentMode::FuzzyCancelledCommandSearch if self.mode.is_running() => {
+                content.newline();
+                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
+                    .cancelled_command_history
+                    .get_fuzzy_search_results(self.buffer.buffer());
+                render_fuzzy_history_results(
+                    &mut content,
+                    fuzzy_results,
+                    fuzzy_search_index,
+                    num_results,
+                    num_searched,
+                    "Cancelled commands",
+                    self.settings.tutorial_mode,
+                );
+            }
+            ContentMode::FuzzyAgentPromptSearch if self.mode.is_running() => {
+                content.newline();
+                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
+                    .agent_prompt_history
+                    .get_fuzzy_search_results(self.buffer.buffer());
+                render_fuzzy_history_results(
+                    &mut content,
+                    fuzzy_results,
+                    fuzzy_search_index,
+                    num_results,
+                    num_searched,
+                    "Agent prompts",
+                    self.settings.tutorial_mode,
+                );
             }
             ContentMode::Normal if self.mode.is_running() => {}
             ContentMode::AiMode {
