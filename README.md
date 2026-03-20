@@ -108,6 +108,7 @@ export RPS1='\D{%H:%M}'
 
 Create your own animations with `flyline create-anim`.
 Prompt substrings matching the animation name will be replaced with the animation:
+
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
 
 # Agent mode

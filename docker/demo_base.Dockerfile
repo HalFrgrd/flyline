@@ -28,6 +28,7 @@ RUN touch /home/john/.bashrc && \
     'export PS1="\e[01;32m\u@\h\e[00m:\e[01;34m~\e[00m\$ "' \
     'export RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
+    'flyline --log-level trace' \
     'flyline --disable-auto-closing-char' \
     >> /home/john/.bashrc
 
