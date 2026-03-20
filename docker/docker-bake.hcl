@@ -116,10 +116,28 @@ target "demo-fuzzy-suggestions-extracted-gif" {
     dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
 }
 
+target "demo-custom-animation-extracted-gif" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_custom_animation.Dockerfile"
+}
+
+target "demo-agent-mode-extracted-gif" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_agent_mode.Dockerfile"
+}
+
+target "demo-ls-colors-extracted-gif" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_ls_colors.Dockerfile"
+}
+
 group "demos" {
     targets = [
         "demo-overview-extracted-gif",
         "demo-prompts-extracted-gif",
         "demo-fuzzy-suggestions-extracted-gif",
+        "demo-custom-animation-extracted-gif",
+        "demo-agent-mode-extracted-gif",
+        "demo-ls-colors-extracted-gif",
     ]
 }

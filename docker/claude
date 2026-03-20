@@ -1,0 +1,3 @@
+#!/bin/bash
+sleep 3
+echo '[{"command": "find . -mtime +3 -type f", "description": "Find regular files older than 3 days"}, {"command": "find $HOME -mtime +3", "description": "Find files in home directory older than 3 days"}, {"command": "ls -lt | tail -n +2", "description": "List files sorted by modification time"}]'
