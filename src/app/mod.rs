@@ -850,11 +850,13 @@ impl<'a> App<'a> {
                 code: KeyCode::Char('i'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } | KeyEvent {  // This shortcut is just so it can work in the vhs demo.
+            }
+            | KeyEvent {
+                // This shortcut is just so it can work in the vhs demo.
                 code: KeyCode::Char('i'),
                 modifiers: KeyModifiers::ALT,
                 ..
-            }  if !self.settings.ai_command.is_empty() => {
+            } if !self.settings.ai_command.is_empty() => {
                 self.start_ai_mode();
             }
             KeyEvent {
@@ -1166,12 +1168,13 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction>) {
-        self.history_suggestion = if self.buffer.buffer().is_empty() {
-            None
-        } else {
-            self.history_manager
-                .get_command_suggestion_suffix(self.buffer.buffer())
-        };
+        self.history_suggestion =
+            if self.settings.disable_inline_history || self.buffer.buffer().is_empty() {
+                None
+            } else {
+                self.history_manager
+                    .get_command_suggestion_suffix(self.buffer.buffer())
+            };
 
         // Apply fuzzy filtering to active tab completion suggestions
         if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {

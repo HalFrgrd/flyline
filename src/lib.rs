@@ -89,6 +89,9 @@ struct FlylineArgs {
     /// Use `--tutorial-mode false` to disable.
     #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1)]
     tutorial_mode: Option<bool>,
+    /// Disable inline history suggestions
+    #[arg(long = "disable-inline-history")]
+    disable_inline_history: bool,
     /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
     #[arg(long = "disable-auto-closing-char")]
     disable_auto_closing_char: bool,
@@ -275,6 +278,11 @@ impl Flyline {
                 if let Some(enabled) = parsed.tutorial_mode {
                     log::info!("Tutorial mode set to {}", enabled);
                     self.settings.tutorial_mode = enabled;
+                }
+
+                if parsed.disable_inline_history {
+                    log::info!("Inline history suggestions disabled");
+                    self.settings.disable_inline_history = true;
                 }
 
                 if parsed.disable_auto_closing_char {
