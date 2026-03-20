@@ -273,11 +273,9 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("echo [("), true);
     }
 
-
     #[test]
     fn test_quote_start_mid_word() {
         assert_eq!(will_bash_accept_buffer(r#"a ['"#), false);
         assert_eq!(will_bash_accept_buffer(r#"a [""#), false);
     }
-    
 }

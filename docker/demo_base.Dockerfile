@@ -30,6 +30,7 @@ RUN touch /home/john/.bashrc && \
     'enable -f /app/libflyline.so flyline' \
     'flyline --log-level trace' \
     'flyline --disable-auto-closing-char' \
+    'flyline --disable-inline-history' \
     >> /home/john/.bashrc
 
 RUN touch /home/john/.bash_history && \

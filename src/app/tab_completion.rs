@@ -293,7 +293,11 @@ impl App<'_> {
                 (quoted, suffix)
             };
             let ls_style = self.bash_env.style_for_path(path);
-            log::info!("For path '{}', determined ls style: {:?}", path.display(), ls_style);
+            log::info!(
+                "For path '{}', determined ls style: {:?}",
+                path.display(),
+                ls_style
+            );
             (appended.0, appended.1, ls_style)
         } else {
             (quoted, suffix, None)
