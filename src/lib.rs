@@ -134,7 +134,7 @@ enum Commands {
     /// ANSI colour sequences written as `\e` (e.g. `\e[33m`).
     ///
     /// Example:
-    ///   flyline create-anim --name COOL_SPINNER --fps 10 '\e[33m|' '/' '-' '\\'
+    ///   flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
     #[command(name = "create-anim")]
     CreateAnim {
         /// Name to embed in prompt strings as the animation placeholder.
