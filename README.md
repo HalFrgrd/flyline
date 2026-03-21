@@ -111,6 +111,8 @@ Prompt substrings matching the animation name will be replaced with the animatio
 
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
 
+[More examples can be found in [examples/animations.sh](examples/animation.sh).
+
 # Agent mode
 Flyline can call an agent of your choice with the current command buffer as a prompt.
 This allows you to write a command in plain English and your agent will convert it into a bash command:
@@ -119,6 +121,7 @@ This allows you to write a command in plain English and your agent will convert 
 
 [See the examples on how to set this up.](examples/agent_mode.sh)
 The agent should return a simple json array of possible results as described by the example system prompt.
+The agent can return more text than just the json array but flyline will only present dats from the array.
 
 # Tab completion improvements
 Flyline extends bash's tab completion feature in many ways.
