@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
+use std::path::Path;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
@@ -92,6 +93,17 @@ pub fn find_alias(cmd: &str) -> Option<String> {
 }
 
 fn get_command_type_uncached(cmd: &str) -> (CommandType, String) {
+    // If the command word looks like a filename (contains '/' or starts with
+    // '~'), expand it first so that tilde and variable expansion are resolved
+    // before the lookup.
+    let expanded;
+    let cmd = if cmd.starts_with('~') || cmd.contains('/') {
+        expanded = fully_expand_path(cmd);
+        if expanded.is_empty() { cmd } else { &expanded }
+    } else {
+        cmd
+    };
+
     // Call the `type` builtin to check if the command exists
     let cmd_c_str = std::ffi::CString::new(cmd).unwrap();
 
@@ -559,6 +571,37 @@ pub fn expand_filename(filename: &str) -> String {
             .ok()
             .map(|s| s.to_string())
             .unwrap_or_else(|| filename.to_string())
+    }
+}
+
+pub fn fully_expand_path(p: &str) -> String {
+    // p might have a tilde, env vars, and be relative
+    // Use bash's own filename expansion ($VAR + ${VAR} + more).
+    let bash_expanded = if p.is_empty() {
+        String::new()
+    } else {
+        expand_filename(&dequoting_function_rust(p))
+    };
+
+    // Make the path absolute (prepend cwd when relative or empty).
+    if bash_expanded.is_empty() {
+        match std::env::current_dir() {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(e) => {
+                log::warn!("Failed to get current directory: {}", e);
+                String::new()
+            }
+        }
+    } else if !Path::new(&bash_expanded).is_absolute() {
+        match std::env::current_dir() {
+            Ok(p) => format!("{}/{}", p.display(), bash_expanded),
+            Err(e) => {
+                log::warn!("Failed to get current directory: {}", e);
+                bash_expanded
+            }
+        }
+    } else {
+        bash_expanded
     }
 }
 
