@@ -92,6 +92,17 @@ pub fn find_alias(cmd: &str) -> Option<String> {
 }
 
 fn get_command_type_uncached(cmd: &str) -> (CommandType, String) {
+    // If the command word looks like a filename (contains '/' or starts with
+    // '~'), expand it first so that tilde and variable expansion are resolved
+    // before the lookup.
+    let expanded;
+    let cmd = if cmd.starts_with('~') || cmd.contains('/') {
+        expanded = expand_filename(cmd);
+        if expanded.is_empty() { cmd } else { &expanded }
+    } else {
+        cmd
+    };
+
     // Call the `type` builtin to check if the command exists
     let cmd_c_str = std::ffi::CString::new(cmd).unwrap();
 
