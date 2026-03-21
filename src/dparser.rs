@@ -4,6 +4,78 @@ use log::debug;
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
 
+/// Applies bash quote-removal to a heredoc delimiter word.
+///
+/// From the bash manual: "If any part of word is quoted, the delimiter is the
+/// result of quote removal on word."  Quote removal strips:
+///  - surrounding or partial single-quote pairs (`'…'`)
+///  - surrounding or partial double-quote pairs (`"…"`)
+///  - backslash escapes (`\X` → `X`)
+///
+/// Examples:
+///  `'EOF'`  → `EOF`
+///  `"EOF"`  → `EOF`
+///  `\EOF`   → `EOF`
+///  `E'O'F`  → `EOF`
+fn strip_heredoc_delimiter_quotes(delim: &str) -> String {
+    let mut result = String::new();
+    let chars: Vec<char> = delim.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => {
+                i += 1;
+                if i < chars.len() {
+                    result.push(chars[i]);
+                    i += 1;
+                } else {
+                    // Trailing backslash with no following character: keep it literally.
+                    result.push('\\');
+                }
+            }
+            '\'' => {
+                i += 1;
+                while i < chars.len() && chars[i] != '\'' {
+                    result.push(chars[i]);
+                    i += 1;
+                }
+                if i < chars.len() {
+                    i += 1;
+                }
+            }
+            '"' => {
+                i += 1;
+                while i < chars.len() && chars[i] != '"' {
+                    // Inside double quotes, backslash is special only before
+                    // $, `, ", \, or newline (POSIX quote removal rules).
+                    if chars[i] == '\\' && i + 1 < chars.len() {
+                        match chars[i + 1] {
+                            '$' | '`' | '"' | '\\' | '\n' => {
+                                i += 1;
+                                result.push(chars[i]);
+                            }
+                            _ => {
+                                result.push('\\');
+                            }
+                        }
+                    } else {
+                        result.push(chars[i]);
+                    }
+                    i += 1;
+                }
+                if i < chars.len() {
+                    i += 1;
+                }
+            }
+            c => {
+                result.push(c);
+                i += 1;
+            }
+        }
+    }
+    result
+}
+
 fn split_token_into_lines(token: Token) -> Vec<Token> {
     match &token.kind {
         TokenKind::Word(s) => {
@@ -336,7 +408,7 @@ impl DParser {
                 TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
                     self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
 
-                    heredocs.push_back((idx, delim.to_string()));
+                    heredocs.push_back((idx, strip_heredoc_delimiter_quotes(delim)));
                 }
                 TokenKind::RParen
                 | TokenKind::DoubleRParen
@@ -1048,6 +1120,137 @@ mod tests {
         assert_eq!(
             DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
             Some('"')
+        );
+    }
+
+    #[test]
+    fn test_strip_heredoc_delimiter_quotes() {
+        assert_eq!(strip_heredoc_delimiter_quotes("EOF"), "EOF");
+        assert_eq!(strip_heredoc_delimiter_quotes("'EOF'"), "EOF");
+        assert_eq!(strip_heredoc_delimiter_quotes("\"EOF\""), "EOF");
+        assert_eq!(strip_heredoc_delimiter_quotes("\\EOF"), "EOF");
+        assert_eq!(strip_heredoc_delimiter_quotes("E'O'F"), "EOF");
+        assert_eq!(strip_heredoc_delimiter_quotes("E\"O\"F"), "EOF");
+        assert_eq!(strip_heredoc_delimiter_quotes("'E'O'F'"), "EOF");
+        assert_eq!(strip_heredoc_delimiter_quotes("\\E\\O\\F"), "EOF");
+        // Trailing backslash is kept literally.
+        assert_eq!(strip_heredoc_delimiter_quotes("EOF\\"), "EOF\\");
+        // Backslash inside double quotes: only special before $`"\newline.
+        assert_eq!(strip_heredoc_delimiter_quotes("\"E\\\\F\""), "E\\F");
+        assert_eq!(strip_heredoc_delimiter_quotes("\"E\\xF\""), "E\\xF");
+    }
+
+    #[test]
+    fn test_heredoc_single_quoted_delimiter() {
+        // Single-quoted delimiter: closing line is the bare word without quotes.
+        let input = "cat <<'EOF'\nhello\nEOF\n";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        // <<'EOF' token should be an opening that is matched.
+        assert_eq!(tokens[2].token.value, "<<'EOF'");
+        assert!(matches!(
+            tokens[2].annotation,
+            TokenAnnotation::IsOpening(Some(_))
+        ));
+
+        // Find the "EOF" closing token.
+        let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
+        assert_eq!(
+            tokens[closing_idx].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_heredoc_double_quoted_delimiter() {
+        let input = "cat <<\"EOF\"\nhello\nEOF\n";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        // <<"EOF" token should be matched.
+        assert_eq!(tokens[2].token.value, "<<\"EOF\"");
+        assert!(matches!(
+            tokens[2].annotation,
+            TokenAnnotation::IsOpening(Some(_))
+        ));
+
+        let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
+        assert_eq!(
+            tokens[closing_idx].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_heredoc_backslash_quoted_delimiter() {
+        let input = "cat <<\\EOF\nhello\nEOF\n";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        // <<\EOF token should be matched.
+        assert_eq!(tokens[2].token.value, "<<\\EOF");
+        assert!(matches!(
+            tokens[2].annotation,
+            TokenAnnotation::IsOpening(Some(_))
+        ));
+
+        let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
+        assert_eq!(
+            tokens[closing_idx].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_heredoc_mixed_quoted_delimiter() {
+        // Partially-quoted delimiter: E'O'F is equivalent to EOF.
+        let input = "cat <<E'O'F\nhello\nEOF\n";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            debug!("{:?} - {:?}", t.token, t.annotation);
+        }
+
+        assert_eq!(tokens[2].token.value, "<<E'O'F");
+        assert!(matches!(
+            tokens[2].annotation,
+            TokenAnnotation::IsOpening(Some(_))
+        ));
+
+        let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
+        assert_eq!(
+            tokens[closing_idx].annotation,
+            TokenAnnotation::IsClosing {
+                opening_idx: 2,
+                is_auto_inserted: false,
+            }
         );
     }
 }
