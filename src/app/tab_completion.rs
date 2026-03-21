@@ -19,38 +19,7 @@ struct PathPatternExpansion {
 }
 
 pub fn fully_expand_path(p: &str) -> String {
-    // p might have a tilde, env vars, and be relative
-    // Use bash's own filename expansion ($VAR + ${VAR} + more).
-    let bash_expanded = if p.is_empty() {
-        String::new()
-    } else {
-        // TOOD: maybe dont call this if there are no $ or ~ in the string?
-        // log::info!("Expanding path pattern: {}", p);
-        bash_funcs::expand_filename(&bash_funcs::dequoting_function_rust(p))
-    };
-    // log::info!("Expanded path pattern: {}", bash_expanded);
-
-    // Make the path absolute (prepend cwd when relative or empty).
-
-    if bash_expanded.is_empty() {
-        match std::env::current_dir() {
-            Ok(p) => p.to_string_lossy().to_string(),
-            Err(e) => {
-                log::warn!("Failed to get current directory: {}", e);
-                String::new()
-            }
-        }
-    } else if !Path::new(&bash_expanded).is_absolute() {
-        match std::env::current_dir() {
-            Ok(p) => format!("{}/{}", p.display(), bash_expanded),
-            Err(e) => {
-                log::warn!("Failed to get current directory: {}", e);
-                bash_expanded
-            }
-        }
-    } else {
-        bash_expanded
-    }
+    bash_funcs::fully_expand_path(p)
 }
 
 impl PathPatternExpansion {
