@@ -710,6 +710,14 @@ impl<'a> App<'a> {
             {
                 self.start_ai_mode();
             }
+            // Shift+Enter - show error if agent mode is not configured
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } if self.settings.ai_command.is_empty() => {
+                self.show_agent_mode_not_configured_error();
+            }
             // Enter key - accept suggestions or submit command
             KeyEvent {
                 code: KeyCode::Enter,
@@ -858,6 +866,19 @@ impl<'a> App<'a> {
                 ..
             } if !self.settings.ai_command.is_empty() => {
                 self.start_ai_mode();
+            }
+            // Ctrl+I - show error if agent mode is not configured
+            KeyEvent {
+                code: KeyCode::Char('i'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('i'),
+                modifiers: KeyModifiers::ALT,
+                ..
+            } if self.settings.ai_command.is_empty() => {
+                self.show_agent_mode_not_configured_error();
             }
             KeyEvent {
                 code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
@@ -1073,6 +1094,14 @@ impl<'a> App<'a> {
             self.buffer.replace_buffer(new_command.as_str());
         }
         self.content_mode = ContentMode::Normal;
+    }
+
+    /// Show an error explaining that agent mode is not configured, with links to help resources.
+    fn show_agent_mode_not_configured_error(&mut self) {
+        self.content_mode = ContentMode::AiError {
+            message: "Agent mode is not configured. Run `flyline agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
+            raw_output: String::new(),
+        };
     }
 
     /// Spawn the configured AI command in a background thread and transition to `AiMode`.
