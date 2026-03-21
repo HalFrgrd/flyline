@@ -235,6 +235,9 @@ Options:
           
           [possible values: true, false]
 
+      --disable-inline-history
+          Disable inline history suggestions
+
       --disable-auto-closing-char
           Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
 
