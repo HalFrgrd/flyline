@@ -1857,7 +1857,7 @@ impl<'a> App<'a> {
             }
         }
 
-        if self.mode.is_running() {
+        if self.mode.is_running() && self.settings.matrix_animation {
             content.apply_matrix_anim(now);
         }
 

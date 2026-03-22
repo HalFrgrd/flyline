@@ -98,6 +98,9 @@ struct FlylineArgs {
     /// Use the terminal emulator's cursor instead of rendering a custom cursor
     #[arg(long = "use-term-emulator-cursor")]
     use_term_emulator_cursor: bool,
+    /// Run matrix animation in the terminal background
+    #[arg(long = "matrix-animation")]
+    matrix_animation: bool,
     /// Mouse capture mode (none, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
@@ -296,6 +299,11 @@ impl Flyline {
                 if parsed.use_term_emulator_cursor {
                     log::info!("Using terminal emulator cursor");
                     self.settings.use_term_emulator_cursor = true;
+                }
+
+                if parsed.matrix_animation {
+                    log::info!("Matrix animation enabled");
+                    self.settings.matrix_animation = true;
                 }
 
                 if let Some(mode) = parsed.mouse_mode {
