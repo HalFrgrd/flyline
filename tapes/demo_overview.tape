@@ -73,12 +73,13 @@ Sleep 800ms
 Backspace
 Backspace
 Backspace
-Sleep 300ms
+Sleep 800ms
 Backspace
 Sleep 1000ms
 Backspace
 Sleep 1000ms
 Backspace
+Sleep 800ms
 Ctrl+C
 Sleep 800ms
 

@@ -47,11 +47,11 @@ Enter
 Type `jkl"`
 Sleep 500ms
 Enter
-Sleep 2000ms
+Sleep 1000ms
 Ctrl+R
 Sleep 2000ms
 Down
-Sleep 1000ms
+Sleep 2000ms
 Up
 Sleep 2000ms
 

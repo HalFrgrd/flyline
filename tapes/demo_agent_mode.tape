@@ -6,12 +6,14 @@ Source demo_setup.tape
 
 Require claude
 
-Type `echo $PATH`
+Hide
+Type `export PATH="/home/john/bin:$PATH" && clear`
 Enter
+Show
 
-Type `flyline agent-mode --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing : command and description. Command will be a bash command." \`
+Type `flyline agent-mode --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a bash command." \`
 Enter
-Type `  --command claude --prompt --effort low`
+Type `  --command /home/john/bin/claude --prompt --effort low`
 Enter
 Sleep 500ms
 
