@@ -1,6 +1,7 @@
 use flash::lexer::TokenKind;
 use std::vec;
 
+use crate::snake_animation::SnakeAnimation;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -8,6 +9,10 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange, TokenAnnotation};
 use crate::palette::Palette;
 use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
+use std::sync::{Arc, Mutex, OnceLock};
+
+// Store it globally so that the animation looks smooth between calls
+static SNAKE_ANIMATION: OnceLock<Mutex<SnakeAnimation>> = OnceLock::new();
 
 #[derive(Debug)]
 pub struct FormattedBuffer {
@@ -42,18 +47,34 @@ impl Default for FormattedBuffer {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FormattedBufferPart {
     pub token: AnnotatedToken,
     span: Span<'static>,
-    /// Meant for animations. Should have the same grapheme widths as span,
+    /// We can replace the span with an animated version.
+    /// The animated span should have the same grapheme widths as span,
     /// but can have different content and style. If present, it will be used
     /// instead of span for display, but span will still be used for cursor
     /// positioning and other logic.
-    alternative_span: Option<Span<'static>>,
-    /// true means cursor is on first grapheme, (and we should draw the contents with the cursor style)
+    animated_span_fn: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>>,
+    /// Where to draw the cursor if it is on this token. This is a grapheme index, not a byte index.
     pub cursor_grapheme_idx: Option<usize>,
     pub tooltip: Option<String>,
+}
+
+impl std::fmt::Debug for FormattedBufferPart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FormattedBufferPart")
+            .field("token", &self.token)
+            .field("span", &self.span)
+            .field(
+                "animated_span_fn",
+                &self.animated_span_fn.as_ref().map(|_| "<fn>"),
+            )
+            .field("cursor_grapheme_idx", &self.cursor_grapheme_idx)
+            .field("tooltip", &self.tooltip)
+            .finish()
+    }
 }
 
 fn token_to_style(
@@ -137,10 +158,29 @@ impl FormattedBufferPart {
             );
         }
 
+        let animated_span_fn: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>> =
+            if token.annotation == TokenAnnotation::IsCommandWord
+                && token.token.value.starts_with("python")
+            {
+                let normal_string = token.token.value.clone();
+
+                Some(Arc::new(move |now| {
+                    let mut anim = SNAKE_ANIMATION
+                        .get_or_init(|| Mutex::new(SnakeAnimation::new()))
+                        .lock()
+                        .unwrap();
+                    anim.update_anim(now);
+                    let snake_str = anim.apply_to_string(&normal_string);
+                    Span::styled(snake_str, Palette::recognised_word())
+                }))
+            } else {
+                None
+            };
+
         Self {
             token: token.clone(),
             span,
-            alternative_span: None,
+            animated_span_fn,
             cursor_grapheme_idx,
             tooltip,
         }
@@ -150,16 +190,29 @@ impl FormattedBufferPart {
         &self.span
     }
 
-    pub fn span_to_use(&self) -> &Span<'static> {
-        self.alternative_span.as_ref().unwrap_or(&self.span)
+    pub fn get_possible_animated_span(&self, now: std::time::Instant) -> Span<'static> {
+        if let Some(anim_fn) = &self.animated_span_fn {
+            let anim_span = anim_fn(now);
+            if let Err(e) =
+                Self::check_anim_span_matches_graph_boundaries(&self.span, anim_span.clone())
+            {
+                log::error!(
+                    "Animation span for token '{}' does not match grapheme boundaries of normal span. Error: {}. Falling back to normal span.",
+                    self.token.token.value,
+                    e
+                );
+            } else {
+                return anim_span;
+            }
+        }
+        self.span.clone()
     }
 
-    pub fn clear_alternative_span(&mut self) {
-        self.alternative_span = None;
-    }
-
-    pub fn set_alternative_span(&mut self, new_alt: Span<'static>) -> Result<(), String> {
-        new_alt.content.graphemes(true).zip_longest(self.span.content.graphemes(true))
+    fn check_anim_span_matches_graph_boundaries<'a>(
+        normal_span: &Span<'a>,
+        new_alt: Span<'a>,
+    ) -> Result<(), String> {
+        new_alt.content.graphemes(true).zip_longest(normal_span.content.graphemes(true))
             .try_for_each(|g| match g {
                 EitherOrBoth::Both(new_g, old_g) => {
                     if new_g.width() != old_g.width() {
@@ -171,7 +224,6 @@ impl FormattedBufferPart {
                 _ => Err("New alternative span has different number of graphemes than the original span".to_string()),
             })?;
 
-        self.alternative_span = Some(new_alt);
         Ok(())
     }
 }

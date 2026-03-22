@@ -15,7 +15,6 @@ use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::settings::{MouseMode, Settings};
-use crate::snake_animation::SnakeAnimation;
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
@@ -162,7 +161,6 @@ struct App<'a> {
     history_manager: HistoryManager,
     buffer_before_history_navigation: Option<String>,
     bash_env: BashEnvManager,
-    snake_animation: SnakeAnimation,
     history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
     content_mode: ContentMode,
@@ -218,7 +216,6 @@ impl<'a> App<'a> {
             history_manager: HistoryManager::new(settings),
             buffer_before_history_navigation: None,
             bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
-            snake_animation: SnakeAnimation::new(),
             history_suggestion: None,
             mouse_state: MouseState::initialize(&settings.mouse_mode),
             content_mode: ContentMode::Normal,
@@ -1358,35 +1355,19 @@ impl<'a> App<'a> {
 
         let mut line_idx = 0;
         let mut cursor_pos_maybe = None;
-        self.formatted_buffer_cache
-            .parts
-            .iter_mut()
-            .for_each(|part| {
-                if self.mode.is_running()
-                    && !self.settings.disable_animations
-                    && part.token.annotation == dparser::TokenAnnotation::IsCommandWord
-                    && part.normal_span().content.starts_with("python")
-                {
-                    self.snake_animation.update_anim();
-                    let snake_str = self
-                        .snake_animation
-                        .apply_to_string(&part.normal_span().content);
-                    if let Err(e) =
-                        part.set_alternative_span(Span::styled(snake_str, part.normal_span().style))
-                    {
-                        log::warn!("Failed to set alternative span for snake animation: {}", e);
-                    }
-                } else {
-                    part.clear_alternative_span();
-                }
-            });
+
+        let now = std::time::Instant::now();
 
         for part in self.formatted_buffer_cache.parts.iter() {
             let span_to_draw = if part.token.token.kind == TokenKind::Newline {
                 // For newlines, draw a space instead so that we can have a place to put the cursor
                 &Span::from(" ")
             } else {
-                part.span_to_use()
+                if self.mode.is_running() && !self.settings.disable_animations {
+                    &part.get_possible_animated_span(now)
+                } else {
+                    part.normal_span()
+                }
             };
 
             let graph_idx_to_tag = part
@@ -1805,7 +1786,7 @@ impl<'a> App<'a> {
                         if matches!(part.token.token.kind, TokenKind::Newline) {
                             continue;
                         }
-                        let span = part.span_to_use();
+                        let span = part.normal_span();
                         let styled_span = if is_selected {
                             Span::styled(
                                 span.content.clone(),
