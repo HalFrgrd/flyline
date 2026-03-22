@@ -29,8 +29,8 @@ RUN touch /home/john/.bashrc && \
     'export RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
     'flyline --log-level trace' \
-    'flyline --disable-auto-closing-char' \
-    'flyline --disable-inline-history' \
+    'flyline --auto-close-chars false' \
+    'flyline --show-inline-history false' \
     >> /home/john/.bashrc
 
 RUN touch /home/john/.bash_history && \
