@@ -911,7 +911,7 @@ impl<'a> App<'a> {
                 code: KeyCode::Char(c),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
-            } if !self.settings.disable_auto_closing_char => {
+            } if self.settings.auto_close_chars => {
                 if self.would_overwrite_auto_inserted_closing(c) {
                     log::info!(
                         "Not inserting char '{}' to avoid overwriting auto-inserted closing token",
@@ -937,7 +937,7 @@ impl<'a> App<'a> {
                 code: KeyCode::Backspace,
                 modifiers: KeyModifiers::NONE,
                 ..
-            } if !self.settings.disable_auto_closing_char => {
+            } if self.settings.auto_close_chars => {
                 self.delete_auto_inserted_closing_if_present();
                 self.buffer.on_keypress(key);
             }
@@ -1178,7 +1178,7 @@ impl<'a> App<'a> {
 
     fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction>) {
         self.history_suggestion =
-            if self.settings.disable_inline_history || self.buffer.buffer().is_empty() {
+            if !self.settings.show_inline_history || self.buffer.buffer().is_empty() {
                 None
             } else {
                 self.history_manager
@@ -1314,7 +1314,7 @@ impl<'a> App<'a> {
 
         let (lprompt, rprompt, fill_span) = self
             .prompt_manager
-            .get_ps1_lines(self.settings.disable_animations);
+            .get_ps1_lines(self.settings.show_animations);
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
@@ -1346,7 +1346,7 @@ impl<'a> App<'a> {
                 // For newlines, draw a space instead so that we can have a place to put the cursor
                 &Span::from(" ")
             } else {
-                if self.mode.is_running() && !self.settings.disable_animations {
+                if self.mode.is_running() && self.settings.show_animations {
                     &part.get_possible_animated_span(now)
                 } else {
                     part.normal_span()
@@ -1407,19 +1407,19 @@ impl<'a> App<'a> {
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor_animation.update_position(cursor_pos);
-            let cursor_anim_pos = if self.settings.disable_animations {
-                cursor_pos
-            } else {
+            let cursor_anim_pos = if self.settings.show_animations {
                 self.cursor_animation.get_position()
+            } else {
+                cursor_pos
             };
             let cursor_style = {
                 if self.settings.use_term_emulator_cursor {
                     None
                 } else {
-                    let cursor_intensity = if self.settings.disable_animations {
-                        255
-                    } else {
+                    let cursor_intensity = if self.settings.show_animations {
                         self.cursor_animation.get_intensity()
+                    } else {
+                        255
                     };
                     Some(Palette::cursor_style(cursor_intensity))
                 }

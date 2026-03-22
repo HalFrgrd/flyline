@@ -510,13 +510,13 @@ impl PromptManager {
 
     pub fn get_ps1_lines(
         &mut self,
-        disable_animations: bool,
+        show_animations: bool,
     ) -> (Vec<Line<'static>>, Vec<Line<'static>>, Line<'static>) {
         use chrono::Local;
-        let now = if disable_animations {
-            self.construction_time
-        } else {
+        let now = if show_animations {
             Local::now()
+        } else {
+            self.construction_time
         };
 
         let formatted_prompt: Vec<Line<'static>> = self
