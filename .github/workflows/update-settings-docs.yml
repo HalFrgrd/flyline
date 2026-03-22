@@ -31,7 +31,7 @@ jobs:
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
-      # flyline_help.txt is now in the project root (output of extract-help-text)
+      # flyline_help.txt and flyline_create_anim_help.txt are now in the project root (output of extract-help-text)
       - name: Update README between marker comments
         run: |
           python3 - <<'EOF'
@@ -47,6 +47,16 @@ jobs:
               readme,
               flags=re.DOTALL,
           )
+
+          create_anim_help_text = pathlib.Path("flyline_create_anim_help.txt").read_text().rstrip("\n")
+          new_create_anim_block = f"<!-- FLYLINE_CREATE_ANIM_HELP_START -->\n```\n{create_anim_help_text}\n```\n<!-- FLYLINE_CREATE_ANIM_HELP_END -->"
+          updated = re.sub(
+              r"<!-- FLYLINE_CREATE_ANIM_HELP_START -->.*?<!-- FLYLINE_CREATE_ANIM_HELP_END -->",
+              new_create_anim_block,
+              updated,
+              flags=re.DOTALL,
+          )
+
           pathlib.Path("README.md").write_text(updated)
           print("README.md updated")
           EOF

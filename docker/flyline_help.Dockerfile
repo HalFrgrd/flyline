@@ -17,6 +17,11 @@ RUN touch /root/.bashrc && \
 RUN /bin/bash -i -c 'flyline --help' 2>/dev/null | \
     sed 's/\x1B\[[0-9;]*[A-Za-z]//g' > /flyline_help.txt
 
+# Run flyline create-anim --help and strip ANSI escape sequences.
+RUN /bin/bash -i -c 'flyline create-anim --help' 2>/dev/null | \
+    sed 's/\x1B\[[0-9;]*[A-Za-z]//g' > /flyline_create_anim_help.txt
+
 
 FROM scratch AS flyline-help-output
 COPY --from=help-runner /flyline_help.txt /flyline_help.txt
+COPY --from=help-runner /flyline_create_anim_help.txt /flyline_create_anim_help.txt
