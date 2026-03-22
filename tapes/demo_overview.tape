@@ -18,10 +18,10 @@ Enter
 Sleep 1000ms
 Type "# flyline is a bash plugin that aims to bring command line editing into the 21st century"
 Enter
-Sleep 1000ms
+Sleep 800ms
 Type "# flyline runs a full terminal user interface which means we can do some pretty interesting things:"
 Enter
-Sleep 1000ms
+Sleep 800ms
 Type `python3 -c 'print("like animating the command buffer")'`
 Sleep 1500ms
 Enter
@@ -48,7 +48,13 @@ Type `ls $HOME`
 Sleep 2000ms
 Enter
 
+Type `# flyline can control the entire terminal so we can easily do something like this:`
+Enter
+Sleep 800ms
+Type `flyline --matrix-animation`
+Enter
 Sleep 1000ms
+
 Type `# Check out the rest of this README to learn about flyline's other features`
 
-Sleep 2s
+Sleep 5s
