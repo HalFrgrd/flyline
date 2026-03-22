@@ -7,6 +7,7 @@ Source demo_setup.tape
 
 Hide
 Type `export PS1="${PS1::-2} " && clear`
+Enter
 Show
 
 

@@ -40,7 +40,7 @@ flyline --tutorial-mode
 Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
 ## PS1
-The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization) or [Starship integration](#starship-integration) for more information.
+The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship integration](#starship-integration) for more information.
 ![PS1 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps1.gif)
 ```bash
 export PS1='\u@\h:\w$ '
@@ -65,10 +65,6 @@ export PS1_FILL='-'
 export PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
 export PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 ```
-
-## Starship integration
-TODO:
-Starship provides customizable prompts for any shell. The git metrics prompt part is very useful but can slow down the time it takes to generate the prompt. Because Flyline can redraw the prompt, it can asynchronously load the slower widgets in the background to keep the shell feeling snappy 
 
 ## Dynamic time in prompts
 
@@ -106,12 +102,25 @@ export RPS1='\D{%H:%M}'
 
 ## Custom animations
 
-Create your own animations with `flyline create-anim`.
-Flyline will replace strings in the promp matching the animation name with the animation:
+Create your own animations with `flyline create-anim --name [your animation name here]`.
+Flyline will replace strings in the prompt matching the animation name with the animation:
 
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
 
 More examples can be found in [examples/animations.sh](examples/animations.sh).
+
+The block below is auto-generated from `flyline create-anim --help`:
+
+<!-- FLYLINE_CREATE_ANIM_HELP_START -->
+```
+asdf
+```
+<!-- FLYLINE_CREATE_ANIM_HELP_END -->
+
+## Starship integration
+TODO:
+Starship provides customizable prompts for any shell. The git metrics prompt part is very useful but can slow down the time it takes to generate the prompt. Because Flyline can redraw the prompt, it can asynchronously load the slower widgets in the background to keep the shell feeling snappy 
+
 
 # Agent mode
 Flyline can call an agent of your choice with the current command buffer as a prompt.
