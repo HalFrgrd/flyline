@@ -56,7 +56,9 @@ Up
 Sleep 500ms
 Up
 Sleep 500ms
-Enter
+Alt+I
+Sleep 500ms
+Ctrl+C
 Sleep 800ms
 
 Type `# Flyline can intelligently close opening quotes and brackets: `

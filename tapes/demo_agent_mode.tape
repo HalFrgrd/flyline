@@ -6,9 +6,7 @@ Source demo_setup.tape
 
 Require claude
 
-Type `flyline agent-mode \`
-Enter
-Type `  --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing 'command' and 'description'. Command will be a bash command." \`
+Type `flyline agent-mode --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing 'command' and 'description'. Command will be a bash command." \`
 Enter
 Type `  --command claude --prompt --effort low`
 Enter
