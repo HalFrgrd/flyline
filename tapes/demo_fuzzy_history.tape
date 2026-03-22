@@ -1,5 +1,5 @@
 # Where should we write the GIF?
-Output demo_fuzzy_suggestions.gif
+Output demo_fuzzy_history.gif
 
 Source demo_settings.tape
 Source demo_setup.tape
@@ -46,12 +46,13 @@ Type `ghi`
 Enter
 Type `jkl"`
 Enter
-Sleep 1000ms
+Sleep 2000ms
 Ctrl+R
-Sleep 1000ms
+Sleep 2000ms
 Down
-Sleep 500ms
-Up
 Sleep 1000ms
+Up
+Sleep 2000ms
 
 
+Sleep 1000ms

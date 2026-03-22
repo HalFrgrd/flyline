@@ -21,7 +21,7 @@ Sleep 800ms
 
 Type `flyline --matrix-animation`
 Enter
-Sleep 3000ms
+Sleep 4000ms
 
 Type `flyline --matrix-animation false`
 Enter
