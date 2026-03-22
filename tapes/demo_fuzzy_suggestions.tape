@@ -15,7 +15,7 @@ Sleep 500ms
 Down
 Sleep 500ms
 Enter
-Sleep 500ms
+Sleep 1000ms
 Ctrl+C
 Sleep 1000ms
 
@@ -33,7 +33,7 @@ Sleep 500ms
 Down
 Sleep 500ms
 Enter
-Sleep 500ms
+Sleep 1000ms
 Ctrl+C
 Sleep 1000ms
 

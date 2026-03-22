@@ -45,6 +45,7 @@ Enter
 Type `ghi`
 Enter
 Type `jkl"`
+Sleep 500ms
 Enter
 Sleep 2000ms
 Ctrl+R
