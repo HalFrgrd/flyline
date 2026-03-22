@@ -42,7 +42,7 @@ Type `/`
 Enter
 Sleep 800ms
 
-Type `# Or fuzzy history searching like fzf:`
+Type `# Or fuzzy history search like fzf:`
 Enter
 Sleep 800ms
 Type `hs`

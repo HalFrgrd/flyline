@@ -1,6 +1,5 @@
 FROM demo-base AS gif-builder
 
-# The base image already provides `vhs` as the entrypoint; no override needed.
 COPY tapes/demo_overview.tape .
 
 RUN faketime @1771881894 vhs demo_overview.tape

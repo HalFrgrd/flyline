@@ -122,7 +122,7 @@ enum Commands {
     /// Example:
     ///   flyline agent-mode --command llm prompt
     ///   flyline agent-mode \
-    ///     --system-prompt "Answer with a JSON array of at most 3 items with objects containing 'command' and 'description'. Command will be a bash command." \
+    ///     --system-prompt "Answer with a JSON array of at most 3 items with objects containing : command and description. Command will be a bash command." \
     ///     --command copilot --reasoning-effort low --prompt
     #[command(name = "agent-mode", verbatim_doc_comment)]
     AgentMode {

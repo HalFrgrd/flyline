@@ -31,13 +31,15 @@ RUN touch /home/john/.bashrc && \
     'flyline --log-level trace' \
     'flyline --auto-close-chars false' \
     'flyline --show-inline-history false' \
-    "flyline agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing 'command' and 'description'. Command will be a bash command.\" --command claude --prompt --effort low " \
+    "flyline agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing : command and description. Command will be a bash command.\" --command claude --prompt --effort low " \
     'export PATH="/home/john/bin:$PATH"' \
     >> /home/john/.bashrc
 
 # Install the mock claude executable: always sleeps 3 s then emits a fixed JSON array
 RUN mkdir -p /home/john/bin
 COPY docker/claude /home/john/bin/claude
+# just a dummy file so it shows up as being an available command in the demo
+COPY docker/claude /home/john/bin/cargo
 
 RUN touch /home/john/.bash_history && \
     printf '%s\n' \
@@ -155,11 +157,11 @@ RUN touch /home/john/.bash_history && \
  '#1771881634' \
  'cargo test --lib dparser::tests::closing_char_skip_nested_2' \
  '#1771881642' \
- 'cargo test --lib command_acceptance::tests::test_double_quoted_opener -- --no-capture' \
+ 'cargo test --lib foo::tests' \
  '#1771881650' \
- 'cargo test --lib command_acceptance::tests::test_double_quoted_opener' \
+ 'cargo test --lib foo::tests' \
  '#1771881658' \
- 'cargo test --lib command_acceptance::tests::' \
+ 'cargo test --lib foo::tests::' \
     >> /home/john/.bash_history
 
 

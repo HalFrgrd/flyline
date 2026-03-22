@@ -713,11 +713,12 @@ impl<'a> App<'a> {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::SHIFT,
                 ..
-            } | KeyEvent {
+            }
+            | KeyEvent {
                 code: KeyCode::Char('i'),
                 modifiers: KeyModifiers::ALT,
                 ..
-             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.accept_fuzzy_history_search();
             }
             // Shift+Enter - activate AI mode like Ctrl+I (requires --ai-command to be configured)
