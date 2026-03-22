@@ -25,5 +25,26 @@ Sleep 1000ms
 
 Type `flyline create-anim --name "john" --ping-pong --fps 8 john john john John jOhn joHn johN john john`
 Enter
+Sleep 2500ms
+
+Type `# add styles with ANSI escape codes:`
+Enter
+Sleep 1000ms
+Type `flyline create-anim --name "john" --ping-pong --fps 3 \`
+Enter
+Type `    "\e[33mjohn" \`
+Enter
+Type `    "\e[31mjohn" \`
+Enter
+Type `    "\e[35mjohn" \`
+Enter
+Type `    "\e[34mjohn" \`
+Enter
+Type `    "\e[36mjohn" \`
+Enter
+Type `    "\e[32mjohn" \`
+Enter
+Type `    "\e[37mjohn" \`
+Enter
 
 Sleep 3000ms
