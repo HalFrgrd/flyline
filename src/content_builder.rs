@@ -385,7 +385,7 @@ impl Contents {
 
     pub fn apply_matrix_anim(&mut self, now: std::time::Instant) {
         // TODO choose a better max height:
-        for _ in self.buf.len()..20 {
+        for _ in self.buf.len()..40 {
             self.increase_buf_single_row();
         }
 
@@ -429,7 +429,7 @@ impl MatrixAnimState {
         }
     }
 
-    const TENDRIL_MAX_LEN: usize = 5;
+    const TENDRIL_MAX_LEN: usize = 10;
 
     fn tendril_idx_to_graphemes(&self, idx: usize) -> Vec<StyledGrapheme<'static>> {
         // Some observations:
@@ -448,18 +448,33 @@ impl MatrixAnimState {
             "Y", "Z",
         ];
 
+        let blank_graph = StyledGrapheme::new(" ", ratatui::style::Style::default());
+
         if let Some(tendril_max_y) = self.tendrils.get(idx).and_then(|&t| t) {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(idx as u64);
+            let mut order: Vec<usize> = (0..CHAR_SET.len()).collect();
+            order.shuffle(&mut rng);
+
             let mut graphemes = vec![];
-            for y in 0..Self::TENDRIL_MAX_LEN {
-                let age_factor = y as f32 / Self::TENDRIL_MAX_LEN as f32;
-                // let symbol = CHAR_SET.choose(&mut rand::thread_rng()).unwrap_or(&' ');
-                // let symbol = CHAR_SET[(y + idx) % CHAR_SET.len()];
-                let symbol = CHAR_SET[(y + idx) % CHAR_SET.len()];
-                let style = if y == Self::TENDRIL_MAX_LEN - 1 {
+            for y in 0..=tendril_max_y {
+                if y <= tendril_max_y.saturating_sub(Self::TENDRIL_MAX_LEN) {
+                    graphemes.push(blank_graph.clone());
+                    continue;
+                }
+                // age_factor of 0 means the leading char, age_factor of 1 means the tail
+                let age_factor =
+                    tendril_max_y.saturating_sub(y) as f32 / Self::TENDRIL_MAX_LEN as f32;
+
+                let symbol = CHAR_SET[order[y % order.len()]];
+                let style = if age_factor == 0.0 {
                     ratatui::style::Style::default()
                         .fg(ratatui::style::Color::White)
                         .add_modifier(ratatui::style::Modifier::BOLD)
-                } else if age_factor > 0.5 {
+                } else if age_factor < 0.3 {
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::Green)
+                        .add_modifier(ratatui::style::Modifier::BOLD)
+                } else if age_factor < 0.6 {
                     ratatui::style::Style::default().fg(ratatui::style::Color::Green)
                 } else {
                     ratatui::style::Style::default()
@@ -469,18 +484,14 @@ impl MatrixAnimState {
                 graphemes.push(StyledGrapheme::new(symbol, style));
             }
 
-            iter::repeat(&StyledGrapheme::new(" ", ratatui::style::Style::default()))
-                .take(tendril_max_y.saturating_sub(Self::TENDRIL_MAX_LEN))
-                .chain(graphemes.iter().take(tendril_max_y + 1))
-                .cloned()
-                .collect()
+            graphemes
         } else {
             vec![]
         }
     }
 
     fn update(&mut self, now: std::time::Instant, num_cols: u16, num_rows: u16) {
-        const NUM_ROWS_PER_SECOND: f32 = 12.0;
+        const NUM_ROWS_PER_SECOND: f32 = 8.0;
         const MS_PER_ROW: f32 = 1000.0 / NUM_ROWS_PER_SECOND;
         let steps_elapsed =
             (now.duration_since(self.last_update_time).as_millis() as f32 / MS_PER_ROW) as usize;
@@ -512,7 +523,7 @@ impl MatrixAnimState {
             // Spawn new tendrils with some probability
             for tendril in &mut self.tendrils {
                 let rand = rand::random::<f32>();
-                if tendril.is_none() && rand < 0.1 {
+                if tendril.is_none() && rand < 0.02 {
                     *tendril = Some(0);
                 }
             }
