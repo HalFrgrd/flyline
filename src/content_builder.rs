@@ -2,8 +2,8 @@ use rand::prelude::*;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, StyledGrapheme};
-use std::iter;
-use std::sync::{Mutex, OnceLock};
+use std::collections::HashMap;
+use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -390,10 +390,8 @@ impl Contents {
             self.increase_buf_single_row();
         }
 
-        let mut state = MATRIX_ANIM_STATE
-            .get_or_init(|| Mutex::new(MatrixAnimState::new()))
-            .lock()
-            .unwrap();
+        let mut state_guard = MATRIX_ANIM_STATE.lock().unwrap();
+        let state = state_guard.get_or_insert_with(MatrixAnimState::new);
         state.update(now, self.width, self.height());
 
         for (col_idx, _tendril) in state.tendrils.iter().enumerate() {
@@ -412,14 +410,18 @@ impl Contents {
     }
 }
 
-static MATRIX_ANIM_STATE: OnceLock<Mutex<MatrixAnimState>> = OnceLock::new();
+static MATRIX_ANIM_STATE: Mutex<Option<MatrixAnimState>> = Mutex::new(None);
+
+pub fn reset_matrix_anim_state() {
+    *MATRIX_ANIM_STATE.lock().unwrap() = None;
+}
 
 #[derive(Debug, Clone)]
 struct MatrixAnimState {
     last_update_time: std::time::Instant,
     // tendrils[i] is the y position of the falling "tendril" in column i, or None if there is no tendril currently in that column
     // y might be off the screen but we still want to show the tail of the tendril until it fully disappears
-    tendrils: Vec<Option<usize>>,
+    tendrils: Vec<Option<(usize, HashMap<usize, usize>)>>, // (current max y of the tendril, offsets for each y in the tendril to determine which char to show)
 }
 
 impl MatrixAnimState {
@@ -440,7 +442,6 @@ impl MatrixAnimState {
         // Occasionally a character will change while the tendril is falling.
 
         static CHAR_SET: &[&str] = &[
-
             // For now, just use ASCII so that it renders on every terminal
             // "ｱ", "ｲ", "ｳ", "ｴ", "ｵ", "ｶ", "ｷ", "ｸ", "ｹ", "ｺ", "ｻ", "ｼ", "ｽ", "ｾ", "ｿ", "ﾀ", "ﾁ",
             // "ﾂ", "ﾃ", "ﾄ", "ﾅ", "ﾆ", "ﾇ", "ﾈ", "ﾉ", "ﾊ", "ﾋ", "ﾌ", "ﾍ", "ﾎ", "ﾏ", "ﾐ", "ﾑ", "ﾒ",
@@ -455,12 +456,10 @@ impl MatrixAnimState {
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(idx as u64);
 
-        if let Some(tendril_max_y) = self.tendrils.get(idx).and_then(|&t| t) {
-
+        if let Some(Some((tendril_max_y, offsets))) = self.tendrils.get(idx) {
             let mut graphemes = vec![];
-            for y in 0..=tendril_max_y {
-
-                let char_indx = rng.next_u32() as usize;
+            for y in 0..=*tendril_max_y {
+                let char_indx = (rng.next_u32() as usize) + offsets.get(&y).cloned().unwrap_or(0);
 
                 if y <= tendril_max_y.saturating_sub(Self::TENDRIL_MAX_LEN) {
                     graphemes.push(blank_graph.clone());
@@ -515,15 +514,21 @@ impl MatrixAnimState {
         for _ in 0..steps_elapsed {
             // Move existing tendrils down
             for tendril in &mut self.tendrils {
-                if let Some(y) = tendril {
+                if let Some((y, offsets)) = tendril {
                     *y += 1;
+                    // Randomly change an offset for some y in the tendril to create a flickering effect
+                    if rand::random::<f32>() < 0.9 {
+                        let rand_row = rand::random::<u64>() as usize % num_rows as usize;
+                        let rand_offset = rand::random::<u64>() as usize;
+                        offsets.insert(rand_row, rand_offset);
+                    }
                 }
             }
 
             // Remove tendrils that have moved off the bottom of the screen
             let max_possible_tendril_height = num_rows as usize + Self::TENDRIL_MAX_LEN;
             for tendril in &mut self.tendrils {
-                if let Some(y) = tendril {
+                if let Some((y, _)) = tendril {
                     if *y >= max_possible_tendril_height {
                         *tendril = None;
                     }
@@ -534,7 +539,7 @@ impl MatrixAnimState {
             for tendril in &mut self.tendrils {
                 let rand = rand::random::<f32>();
                 if tendril.is_none() && rand < 0.02 {
-                    *tendril = Some(0);
+                    *tendril = Some((0, HashMap::new()));
                 }
             }
         }

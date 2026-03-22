@@ -5,7 +5,6 @@ use crate::active_suggestions::ActiveSuggestions;
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
-use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -18,6 +17,7 @@ use crate::settings::{MouseMode, Settings};
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
+use crate::{command_acceptance, content_builder};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -197,6 +197,8 @@ impl<'a> App<'a> {
 
         let buffer = TextBuffer::new("");
         let formatted_buffer_cache = FormattedBuffer::default();
+
+        content_builder::reset_matrix_anim_state();
 
         App {
             mode: AppRunningState::Running,
