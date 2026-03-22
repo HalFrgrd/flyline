@@ -11,10 +11,6 @@ Type `flyline --auto-close-chars true && clear`
 Enter
 Show
 
-Type "# bash is great but the command line editing user experience feels outdated."
-Enter
-Sleep 800ms
-
 Type "# flyline is a full terminal app that replaces bash's line editing functionality."
 Enter
 Sleep 800ms
@@ -37,6 +33,7 @@ Sleep 800ms
 
 Type `# How about tooltips as you type:`
 Enter
+Sleep 800ms
 Type `ls`
 Sleep 1500ms
 Type ` $HOME`
@@ -47,28 +44,16 @@ Sleep 800ms
 
 Type `# Or fuzzy history searching like fzf:`
 Enter
-Type `ehco`
+Type `hs`
 Sleep 800ms
 Ctrl+R
 Down
 Sleep 500ms
 Down
 Sleep 500ms
-Down
+Up
 Sleep 500ms
-Down
-Sleep 500ms
-Down
-Sleep 500ms
-Down
-Sleep 500ms
-Down
-Sleep 500ms
-Down
-Sleep 500ms
-Down
-Sleep 500ms
-Down
+Up
 Sleep 500ms
 Enter
 Sleep 800ms
@@ -81,6 +66,7 @@ Sleep 1000ms
 Type `$(`
 Sleep 1000ms
 Type `foo`
+Sleep 800ms
 Backspace
 Backspace
 Backspace
@@ -108,6 +94,7 @@ Sleep 1000ms
 Up
 Sleep 1000ms
 Enter
+Sleep 800ms
 Enter
 
 Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
