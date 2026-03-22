@@ -68,9 +68,6 @@ struct FlylineArgs {
     /// Show version information
     #[arg(long)]
     version: bool,
-    /// Disable animations
-    #[arg(long = "disable-animations")]
-    disable_animations: bool,
     /// Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is
     /// created in the current directory
     #[arg(long = "dump-logs", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
@@ -89,18 +86,21 @@ struct FlylineArgs {
     /// Use `--tutorial-mode false` to disable.
     #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1)]
     tutorial_mode: Option<bool>,
-    /// Disable inline history suggestions
-    #[arg(long = "disable-inline-history")]
-    disable_inline_history: bool,
-    /// Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
-    #[arg(long = "disable-auto-closing-char")]
-    disable_auto_closing_char: bool,
+    /// Disable animations
+    #[arg(long = "disable-animations", default_missing_value = "true", num_args = 0..=1)]
+    show_animations: Option<bool>,
+    /// Show inline history suggestions
+    #[arg(long = "show-inline-history", default_missing_value = "true", num_args = 0..=1)]
+    show_inline_history: Option<bool>,
+    /// Enable automatic closing character insertion (e.g. insert `)` after `(`)
+    #[arg(long = "auto-close-chars", default_missing_value = "true", num_args = 0..=1)]
+    auto_close_chars: Option<bool>,
     /// Use the terminal emulator's cursor instead of rendering a custom cursor
-    #[arg(long = "use-term-emulator-cursor")]
-    use_term_emulator_cursor: bool,
+    #[arg(long = "use-term-emulator-cursor", default_missing_value = "true", num_args = 0..=1)]
+    use_term_emulator_cursor: Option<bool>,
     /// Run matrix animation in the terminal background
-    #[arg(long = "matrix-animation")]
-    matrix_animation: bool,
+    #[arg(long = "matrix-animation", default_missing_value = "true", num_args = 0..=1)]
+    matrix_animation: Option<bool>,
     /// Mouse capture mode (none, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
@@ -122,7 +122,7 @@ enum Commands {
     /// Example:
     ///   flyline agent-mode --command llm prompt
     ///   flyline agent-mode \
-    ///     --system-prompt "Answer with a JSON array of <=3 items with objects containing command and description. Command will be a bash command." \
+    ///     --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a bash command." \
     ///     --command copilot --reasoning-effort low --prompt
     #[command(name = "agent-mode", verbatim_doc_comment)]
     AgentMode {
@@ -242,11 +242,6 @@ impl Flyline {
                     );
                 }
 
-                if parsed.disable_animations {
-                    log::info!("Animations disabled");
-                    self.settings.disable_animations = true;
-                }
-
                 if let Some(ref path) = parsed.dump_logs {
                     let path_opt = if path.is_empty() {
                         None
@@ -286,19 +281,29 @@ impl Flyline {
                     self.settings.tutorial_mode = enabled;
                 }
 
-                if parsed.disable_inline_history {
-                    log::info!("Inline history suggestions disabled");
-                    self.settings.disable_inline_history = true;
+                if let Some(enabled) = parsed.show_animations {
+                    log::info!("Animations disabled: {}", enabled);
+                    self.settings.show_animations = enabled;
                 }
 
-                if parsed.disable_auto_closing_char {
-                    log::info!("Auto closing char disabled");
-                    self.settings.disable_auto_closing_char = true;
+                if let Some(enabled) = parsed.show_inline_history {
+                    log::info!("Inline history suggestions set to {}", enabled);
+                    self.settings.show_inline_history = enabled;
                 }
 
-                if parsed.use_term_emulator_cursor {
-                    log::info!("Using terminal emulator cursor");
-                    self.settings.use_term_emulator_cursor = true;
+                if let Some(enabled) = parsed.auto_close_chars {
+                    log::info!("Auto closing char set to {}", enabled);
+                    self.settings.auto_close_chars = enabled;
+                }
+
+                if let Some(enabled) = parsed.use_term_emulator_cursor {
+                    log::info!("Using terminal emulator cursor: {}", enabled);
+                    self.settings.use_term_emulator_cursor = enabled;
+                }
+
+                if let Some(enabled) = parsed.matrix_animation {
+                    log::info!("Matrix animation enabled: {}", enabled);
+                    self.settings.matrix_animation = enabled;
                 }
 
                 if parsed.matrix_animation {

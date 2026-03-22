@@ -35,29 +35,32 @@ jobs:
       - name: Update README between marker comments
         run: |
           python3 - <<'EOF'
-          import re, pathlib
+          import pathlib
+
+          def replace_between_markers(lines, start_marker, end_marker, replacement_lines):
+              start = next(i for i, l in enumerate(lines) if l.strip() == start_marker)
+              end = next(i for i, l in enumerate(lines) if l.strip() == end_marker)
+              return lines[:start] + replacement_lines + lines[end + 1:]
+
+          lines = pathlib.Path("README.md").read_text().splitlines(keepends=True)
 
           help_text = pathlib.Path("flyline_help.txt").read_text().rstrip("\n")
-          readme = pathlib.Path("README.md").read_text()
-
-          new_block = f"<!-- FLYLINE_HELP_START -->\n```\n{help_text}\n```\n<!-- FLYLINE_HELP_END -->"
-          updated = re.sub(
-              r"<!-- FLYLINE_HELP_START -->.*?<!-- FLYLINE_HELP_END -->",
-              new_block,
-              readme,
-              flags=re.DOTALL,
+          lines = replace_between_markers(
+              lines,
+              "<!-- FLYLINE_HELP_START -->",
+              "<!-- FLYLINE_HELP_END -->",
+              ["<!-- FLYLINE_HELP_START -->\n", "```\n", *[l + "\n" for l in help_text.splitlines()], "```\n", "<!-- FLYLINE_HELP_END -->\n"],
           )
 
           create_anim_help_text = pathlib.Path("flyline_create_anim_help.txt").read_text().rstrip("\n")
-          new_create_anim_block = f"<!-- FLYLINE_CREATE_ANIM_HELP_START -->\n```\n{create_anim_help_text}\n```\n<!-- FLYLINE_CREATE_ANIM_HELP_END -->"
-          updated = re.sub(
-              r"<!-- FLYLINE_CREATE_ANIM_HELP_START -->.*?<!-- FLYLINE_CREATE_ANIM_HELP_END -->",
-              new_create_anim_block,
-              updated,
-              flags=re.DOTALL,
+          lines = replace_between_markers(
+              lines,
+              "<!-- FLYLINE_CREATE_ANIM_HELP_START -->",
+              "<!-- FLYLINE_CREATE_ANIM_HELP_END -->",
+              ["<!-- FLYLINE_CREATE_ANIM_HELP_START -->\n", "```\n", *[l + "\n" for l in create_anim_help_text.splitlines()], "```\n", "<!-- FLYLINE_CREATE_ANIM_HELP_END -->\n"],
           )
 
-          pathlib.Path("README.md").write_text(updated)
+          pathlib.Path("README.md").write_text("".join(lines))
           print("README.md updated")
           EOF
 

@@ -18,10 +18,6 @@ struct PathPatternExpansion {
     rhs_pattern: String,
 }
 
-pub fn fully_expand_path(p: &str) -> String {
-    bash_funcs::fully_expand_path(p)
-}
-
 impl PathPatternExpansion {
     fn new(pattern: &str) -> Self {
         // Split the pattern at the last '/'.
@@ -30,7 +26,7 @@ impl PathPatternExpansion {
         } else {
             (String::new(), pattern.to_string())
         };
-        let fully_expanded_prefix = fully_expand_path(&raw_prefix);
+        let fully_expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
 
         let rhs_pattern = bash_funcs::dequoting_function_rust(&rhs_pattern);
 
@@ -251,7 +247,7 @@ impl App<'_> {
                     // We get here when programmable completion returns a filename
                     // Without fully_expanded_path call here
                     // We wouldn't get the trailing / for something like ~/Documents which is dir
-                    owned_path = std::path::PathBuf::from(fully_expand_path(sug));
+                    owned_path = std::path::PathBuf::from(bash_funcs::fully_expand_path(sug));
                     &owned_path
                 }
             };

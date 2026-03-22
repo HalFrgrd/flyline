@@ -9,9 +9,9 @@ RUN printf '%s\n' \
     >> /home/john/.bashrc
 
 
-COPY tapes/demo_fuzzy_suggestions.tape .
+COPY tapes/demo_fuzzy_history.tape .
 
-RUN faketime @1771881894 vhs demo_fuzzy_suggestions.tape
+RUN faketime @1771881894 vhs demo_fuzzy_history.tape
 
 FROM scratch
 COPY --from=gif-builder /app/*.gif /

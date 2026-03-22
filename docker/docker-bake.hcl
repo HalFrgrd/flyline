@@ -80,7 +80,7 @@ target "extract-help-text" {
 }
 
 
-target "vhs-base" {
+target "demo-base" {
     context = "."
     dockerfile = "docker/demo_base.Dockerfile"
     contexts = {
@@ -91,7 +91,7 @@ target "vhs-base" {
 target "_demo-base" {
     context = "."
     contexts = {
-        vhs-base = "target:vhs-base"
+        demo-base = "target:demo-base"
     }
     output = ["type=local,dest=./"]
     # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.
@@ -131,6 +131,11 @@ target "demo-ls-colors-extracted-gif" {
     dockerfile = "docker/demo_ls_colors.Dockerfile"
 }
 
+target "demo-fuzzy-history-extracted-gif" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_fuzzy_history.Dockerfile"
+}
+
 group "demos" {
     targets = [
         "demo-overview-extracted-gif",
@@ -139,5 +144,6 @@ group "demos" {
         "demo-custom-animation-extracted-gif",
         "demo-agent-mode-extracted-gif",
         "demo-ls-colors-extracted-gif",
+        "demo-fuzzy-history-extracted-gif"
     ]
 }

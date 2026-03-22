@@ -170,6 +170,8 @@ struct App<'a> {
     settings: &'a Settings,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     last_viewport_top: u16,
+    /// Timestamp of the last draw operation.
+    last_draw_time: std::time::Instant,
 }
 
 impl<'a> App<'a> {
@@ -226,6 +228,7 @@ impl<'a> App<'a> {
             tooltip: None,
             settings,
             last_viewport_top: 0,
+            last_draw_time: std::time::Instant::now(),
         }
     }
 
@@ -330,6 +333,7 @@ impl<'a> App<'a> {
                 if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
                     log::error!("Failed to draw terminal UI: {}", e);
                 }
+                self.last_draw_time = std::time::Instant::now();
 
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
@@ -351,7 +355,9 @@ impl<'a> App<'a> {
                 break;
             }
 
-            redraw = if event::poll(Duration::from_millis(30)).unwrap() {
+            const MIN_REFRESH_RATE: Duration = Duration::from_millis(30);
+
+            redraw = if event::poll(MIN_REFRESH_RATE).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
                         if let KeyPressReturnType::NeedScreenClear = self.on_keypress(key) {
@@ -394,6 +400,12 @@ impl<'a> App<'a> {
                 }
             } else {
                 true
+            };
+
+            if std::time::Instant::now().duration_since(self.last_draw_time) > MIN_REFRESH_RATE {
+                // redraw periodically to update animations even when no events are occurring
+                // (e.g. cursor blinking, matrix animation)
+                redraw = true;
             }
         }
 
@@ -701,6 +713,11 @@ impl<'a> App<'a> {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::SHIFT,
                 ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('i'),
+                modifiers: KeyModifiers::ALT,
+                ..
             } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
                 self.accept_fuzzy_history_search();
             }
@@ -894,12 +911,11 @@ impl<'a> App<'a> {
                     self.toggle_mouse_state("simple mode: Alt pressed");
                 }
             }
-            // Delegate basic text editing to TextBuffer
             KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
-            } if !self.settings.disable_auto_closing_char => {
+            } if self.settings.auto_close_chars => {
                 if self.would_overwrite_auto_inserted_closing(c) {
                     log::info!(
                         "Not inserting char '{}' to avoid overwriting auto-inserted closing token",
@@ -925,11 +941,12 @@ impl<'a> App<'a> {
                 code: KeyCode::Backspace,
                 modifiers: KeyModifiers::NONE,
                 ..
-            } if !self.settings.disable_auto_closing_char => {
+            } if self.settings.auto_close_chars => {
                 self.delete_auto_inserted_closing_if_present();
                 self.buffer.on_keypress(key);
             }
             _ => {
+                // Delegate basic text editing to TextBuffer
                 self.buffer.on_keypress(key);
             }
         }
@@ -1166,7 +1183,7 @@ impl<'a> App<'a> {
 
     fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction>) {
         self.history_suggestion =
-            if self.settings.disable_inline_history || self.buffer.buffer().is_empty() {
+            if !self.settings.show_inline_history || self.buffer.buffer().is_empty() {
                 None
             } else {
                 self.history_manager
@@ -1302,7 +1319,7 @@ impl<'a> App<'a> {
 
         let (lprompt, rprompt, fill_span) = self
             .prompt_manager
-            .get_ps1_lines(self.settings.disable_animations);
+            .get_ps1_lines(self.settings.show_animations);
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
@@ -1334,7 +1351,7 @@ impl<'a> App<'a> {
                 // For newlines, draw a space instead so that we can have a place to put the cursor
                 &Span::from(" ")
             } else {
-                if self.mode.is_running() && !self.settings.disable_animations {
+                if self.mode.is_running() && self.settings.show_animations {
                     &part.get_possible_animated_span(now)
                 } else {
                     part.normal_span()
@@ -1395,19 +1412,19 @@ impl<'a> App<'a> {
             && let Some(cursor_pos) = cursor_pos_maybe
         {
             self.cursor_animation.update_position(cursor_pos);
-            let cursor_anim_pos = if self.settings.disable_animations {
-                cursor_pos
-            } else {
+            let cursor_anim_pos = if self.settings.show_animations {
                 self.cursor_animation.get_position()
+            } else {
+                cursor_pos
             };
             let cursor_style = {
                 if self.settings.use_term_emulator_cursor {
                     None
                 } else {
-                    let cursor_intensity = if self.settings.disable_animations {
-                        255
-                    } else {
+                    let cursor_intensity = if self.settings.show_animations {
                         self.cursor_animation.get_intensity()
+                    } else {
+                        255
                     };
                     Some(Palette::cursor_style(cursor_intensity))
                 }

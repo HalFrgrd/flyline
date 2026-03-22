@@ -27,7 +27,7 @@ pub enum MouseMode {
     Smart,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Settings {
     /// Optional path to the zsh history file. When `None`, zsh history is not loaded.
     /// When `Some`, zsh history is loaded in addition to bash history; an empty string or no
@@ -35,12 +35,12 @@ pub struct Settings {
     pub zsh_history_path: Option<String>,
     /// Whether to show tutorial hints for first-time users.
     pub tutorial_mode: bool,
-    /// Whether to disable all animations (cursor movement, cursor fading, dynamic time).
-    pub disable_animations: bool,
-    /// Whether to disable inline history suggestions.
-    pub disable_inline_history: bool,
-    /// Whether to disable automatic closing character insertion.
-    pub disable_auto_closing_char: bool,
+    /// Whether to show all animations (cursor movement, cursor fading, dynamic time).
+    pub show_animations: bool,
+    /// Whether to show inline history suggestions.
+    pub show_inline_history: bool,
+    /// Whether to automatically close opening characters (e.g., parentheses, brackets, quotes).
+    pub auto_close_chars: bool,
     /// Whether to use the terminal emulator's cursor instead of rendering a custom cursor.
     pub use_term_emulator_cursor: bool,
     /// Mouse capture mode.
@@ -58,4 +58,24 @@ pub struct Settings {
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            zsh_history_path: None,
+            tutorial_mode: false,
+            show_animations: true,
+            show_inline_history: true,
+            auto_close_chars: true,
+            use_term_emulator_cursor: false,
+            mouse_mode: MouseMode::Smart,
+            ai_command: vec![],
+            ai_system_prompt: None,
+            custom_animations: HashMap::new(),
+            matrix_animation: false,
+            #[cfg(feature = "integration-tests")]
+            run_tab_completion_tests: false,
+        }
+    }
 }

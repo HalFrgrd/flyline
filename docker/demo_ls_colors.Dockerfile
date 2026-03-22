@@ -1,4 +1,4 @@
-FROM vhs-base AS gif-builder
+FROM demo-base AS gif-builder
 
 # Create a demo filesystem with directories, regular files, a valid symlink to a
 # directory, and a broken symlink (pointing to a non-existent target).

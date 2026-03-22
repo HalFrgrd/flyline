@@ -1,4 +1,4 @@
-FROM vhs-base AS gif-builder
+FROM demo-base AS gif-builder
 
 COPY tapes/demo_custom_animation.tape .
 

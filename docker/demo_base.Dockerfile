@@ -1,7 +1,7 @@
 # Base image for VHS demo GIFs
 
 # Use the published Charmbracelet VHS image by digest
-FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS vhs-base
+FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS demo-base
 
 # Create a non-root user for demos
 RUN useradd -m -s /bin/bash john
@@ -24,14 +24,22 @@ RUN touch /home/john/.bashrc && \
     'source /etc/bash_completion' \
     'alias ll="ls -alF"' \
     'export HISTTIMEFORMAT="%F %T  "' \
-    'export HISTCONTROL=ignoreboth' \
+    'export HISTIGNORE="#*"' \
     'export PS1="\e[01;32m\u@\h\e[00m:\e[01;34m~\e[00m\$ "' \
     'export RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
     'flyline --log-level trace' \
-    'flyline --disable-auto-closing-char' \
-    'flyline --disable-inline-history' \
+    'flyline --auto-close-chars false' \
+    'flyline --show-inline-history false' \
+    "flyline agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a bash command.\" --command claude --prompt --effort low " \
+    'export PATH="/home/john/bin:$PATH"' \
     >> /home/john/.bashrc
+
+# Install the mock claude executable: always sleeps 3 s then emits a fixed JSON array
+RUN mkdir -p /home/john/bin
+COPY docker/claude /home/john/bin/claude
+# just a dummy file so it shows up as being an available command in the demo
+COPY docker/claude /home/john/bin/cargo
 
 RUN touch /home/john/.bash_history && \
     printf '%s\n' \
@@ -137,6 +145,23 @@ RUN touch /home/john/.bash_history && \
  'bind -P' \
  '#1771881594' \
  'clear' \
+ 'cargo test --lib dparser::tests::closing_char_dont' \
+ '#1771881602' \
+ 'cargo test --lib dparser::tests::closing_char_dont_insert' \
+ '#1771881610' \
+ 'cargo fix' \
+ '#1771881618' \
+ 'cargo fmt' \
+ '#1771881626' \
+ 'cargo test --lib dparser::tests::closing_char_skip_nested' \
+ '#1771881634' \
+ 'cargo test --lib dparser::tests::closing_char_skip_nested_2' \
+ '#1771881642' \
+ 'cargo test --lib foo::tests' \
+ '#1771881650' \
+ 'cargo test --lib foo::tests' \
+ '#1771881658' \
+ 'cargo test --lib foo::tests::' \
     >> /home/john/.bash_history
 
 

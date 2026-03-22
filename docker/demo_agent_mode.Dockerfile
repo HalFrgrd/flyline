@@ -1,11 +1,4 @@
-FROM vhs-base AS gif-builder
-
-# Install the mock claude executable: always sleeps 3 s then emits a fixed JSON array
-RUN mkdir -p /home/john/bin
-COPY docker/claude /home/john/bin/claude
-USER root
-RUN chmod +x /home/john/bin/claude
-USER john
+FROM demo-base AS gif-builder
 
 COPY tapes/demo_agent_mode.tape .
 
