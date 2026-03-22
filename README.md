@@ -214,8 +214,8 @@ The block below is auto-generated from `flyline --help`:
 Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
-  agent-mode   Configure AI agent mode
-  create-anim  Create a custom prompt animation
+  agent-mode   Configure AI agent mode.
+  create-anim  Create a custom prompt animation.
   help         Print this message or the help of the given subcommand(s)
 
 Options:
