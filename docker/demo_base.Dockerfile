@@ -1,7 +1,7 @@
 # Base image for VHS demo GIFs
 
 # Use the published Charmbracelet VHS image by digest
-FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS vhs-base
+FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS demo-base
 
 # Create a non-root user for demos
 RUN useradd -m -s /bin/bash john
@@ -31,7 +31,7 @@ RUN touch /home/john/.bashrc && \
     'flyline --log-level trace' \
     'flyline --auto-close-chars false' \
     'flyline --show-inline-history false' \
-    'flyline agent-mode --system-prompt "Be concise. Answer with a JSON array of <=3 items with objects containing command and description. Command will be a bash command." --command claude --prompt --effort low ' \
+    'flyline agent-mode --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing command and description. Command will be a bash command." --command claude --prompt --effort low ' \
     'export PATH="/home/john/bin:$PATH"' \
     >> /home/john/.bashrc
 

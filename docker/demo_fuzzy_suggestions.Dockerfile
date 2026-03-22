@@ -1,4 +1,4 @@
-FROM vhs-base AS gif-builder
+FROM demo-base AS gif-builder
 
 # Override PS1 with a minimal prompt for the demo
 RUN printf '%s\n' \

@@ -80,7 +80,7 @@ target "extract-help-text" {
 }
 
 
-target "vhs-base" {
+target "demo-base" {
     context = "."
     dockerfile = "docker/demo_base.Dockerfile"
     contexts = {
@@ -91,7 +91,7 @@ target "vhs-base" {
 target "_demo-base" {
     context = "."
     contexts = {
-        vhs-base = "target:vhs-base"
+        demo-base = "target:demo-base"
     }
     output = ["type=local,dest=./"]
     # Sets the hostname for the build sandbox; used by \h in the PS1 prompt during VHS recording.

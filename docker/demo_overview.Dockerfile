@@ -1,4 +1,4 @@
-FROM vhs-base AS gif-builder
+FROM demo-base AS gif-builder
 
 # The base image already provides `vhs` as the entrypoint; no override needed.
 COPY tapes/demo_overview.tape .

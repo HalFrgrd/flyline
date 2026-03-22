@@ -6,7 +6,6 @@ Source demo_setup.tape
 
 Require claude
 
-
 Hide
 Type `flyline --auto-close-chars true && clear`
 Enter
@@ -16,7 +15,7 @@ Type "# bash is great but the command line editing user experience feels outdate
 Enter
 Sleep 800ms
 
-Type "# flyline is full terminal app that replaces bash's line editing functionality."
+Type "# flyline is a full terminal app that replaces bash's line editing functionality."
 Enter
 Sleep 800ms
 
@@ -48,7 +47,10 @@ Sleep 800ms
 
 Type `# Or fuzzy history searching like fzf:`
 Enter
+Sleep 800ms
 Ctrl+R
+Down
+Sleep 500ms
 Down
 Sleep 500ms
 Down
@@ -105,6 +107,7 @@ Down
 Sleep 1000ms
 Up
 Sleep 1000ms
+Enter
 Enter
 
 Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
