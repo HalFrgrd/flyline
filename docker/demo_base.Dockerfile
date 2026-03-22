@@ -31,7 +31,15 @@ RUN touch /home/john/.bashrc && \
     'flyline --log-level trace' \
     'flyline --auto-close-chars false' \
     'flyline --show-inline-history false' \
+    'flyline agent-mode \\' \
+    '  --system-prompt "Be concise. Answer with a JSON array of <=3 items with objects containing command and description. Command will be a bash command." \\' \
+    '  --command claude --prompt --effort low' \
+    'export PATH="/home/john/bin:$PATH"' \
     >> /home/john/.bashrc
+
+# Install the mock claude executable: always sleeps 3 s then emits a fixed JSON array
+RUN mkdir -p /home/john/bin
+COPY docker/claude /home/john/bin/claude
 
 RUN touch /home/john/.bash_history && \
     printf '%s\n' \

@@ -2,16 +2,9 @@
 Output demo_agent_mode.gif
 
 Source demo_settings.tape
-Set Height 800
 Source demo_setup.tape
 
-Hide
-Type `export PATH="/home/john/bin:$PATH" && clear`
-Enter
-Show
-
 Require claude
-
 
 Type `flyline agent-mode \`
 Enter

@@ -4,12 +4,15 @@ Output demo_overview.gif
 Source demo_settings.tape
 Source demo_setup.tape
 
+Require claude
+
+
 Hide
 Type `flyline --auto-close-chars true && clear`
 Enter
 Show
 
-Type "# bash is great but the command line editing user experience feels outdated."
+Type "# bash is great but the command line editing user  experience feels outdated."
 Enter
 Sleep 800ms
 
@@ -29,7 +32,7 @@ Type `flyline --matrix-animation false`
 Enter
 Sleep 500ms
 
-Type "# flyline integrates deeply with bash allowing it to extend bash's tab completions, history searching, and more."
+Type "# flyline integrates deeply with bash allowing it  to extend bash's tab completions, history searching, and more."
 Enter
 Sleep 800ms
 
@@ -39,12 +42,21 @@ Type `ls`
 Sleep 1500ms
 Type ` $HOME`
 Sleep 1500ms
+Type `/`
 Enter
 Sleep 800ms
 
 Type `# Or fuzzy history searching like fzf:`
 Enter
 Ctrl+R
+Down
+Sleep 500ms
+Down
+Sleep 500ms
+Down
+Sleep 500ms
+Down
+Sleep 500ms
 Down
 Sleep 500ms
 Down
