@@ -73,6 +73,29 @@ mod tests {
     }
 
     #[test]
+    fn test_here_documents_quoted_delimiter() {
+        // Single-quoted delimiter: closing line is the bare word.
+        assert_eq!(will_bash_accept_buffer("cat <<'EOF'\nhello"), false);
+        assert_eq!(will_bash_accept_buffer("cat <<'EOF'\nhello\nEOF"), true);
+
+        // Double-quoted delimiter: closing line is the bare word.
+        assert_eq!(will_bash_accept_buffer("cat <<\"EOF\"\nhello"), false);
+        assert_eq!(will_bash_accept_buffer("cat <<\"EOF\"\nhello\nEOF"), true);
+
+        // Backslash-escaped delimiter: closing line is the bare word.
+        assert_eq!(will_bash_accept_buffer("cat <<\\EOF\nhello"), false);
+        assert_eq!(will_bash_accept_buffer("cat <<\\EOF\nhello\nEOF"), true);
+
+        // Partially-quoted delimiter: E'O'F closes with EOF.
+        assert_eq!(will_bash_accept_buffer("cat <<E'O'F\nhello"), false);
+        assert_eq!(will_bash_accept_buffer("cat <<E'O'F\nhello\nEOF"), true);
+
+        // Heredoc-dash with quoted delimiter.
+        assert_eq!(will_bash_accept_buffer("cat <<-'EOF'\nhello"), false);
+        assert_eq!(will_bash_accept_buffer("cat <<-'EOF'\nhello\nEOF"), true);
+    }
+
+    #[test]
     fn test_interleaved_heredocs_fifo() {
         // Delimiters must close in the order they appear (FIFO), not nested.
         let interleaved = "cat <<A <<-B\nline1\nB\nline2\nA\n";
