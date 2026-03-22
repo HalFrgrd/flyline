@@ -15,7 +15,7 @@ Type "# flyline is a full terminal app that replaces bash's line editing functio
 Enter
 Sleep 800ms
 
-Type "# flyline can draw anywhere on the terminal meaning we can pretty much anything:"
+Type "# flyline can draw anywhere on the terminal meaning we can do pretty much anything:"
 Enter
 Sleep 800ms
 
@@ -44,6 +44,7 @@ Sleep 800ms
 
 Type `# Or fuzzy history searching like fzf:`
 Enter
+Sleep 800ms
 Type `hs`
 Sleep 800ms
 Ctrl+R
