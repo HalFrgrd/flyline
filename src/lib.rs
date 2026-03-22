@@ -306,6 +306,11 @@ impl Flyline {
                     self.settings.matrix_animation = enabled;
                 }
 
+                if parsed.matrix_animation {
+                    log::info!("Matrix animation enabled");
+                    self.settings.matrix_animation = true;
+                }
+
                 if let Some(mode) = parsed.mouse_mode {
                     log::info!("Mouse mode set to {:?}", mode);
                     self.settings.mouse_mode = mode;
