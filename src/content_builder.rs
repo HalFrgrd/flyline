@@ -3,6 +3,8 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, StyledGrapheme};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+use std::sync::{ Mutex, OnceLock};
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Coord {
@@ -378,6 +380,96 @@ impl Contents {
                 })
             })
             .map(|(_, cell)| (cell.tag, false))
+    }
+
+    pub fn apply_matrix_anim(&mut self, now: std::time::Instant) {
+        let mut state = MATRIX_ANIM_STATE
+                    .get_or_init(|| Mutex::new(MatrixAnimState::new()))
+                    .lock()
+                    .unwrap();
+        state.update(now);
+
+        for (col_idx, tendril) in state.tendrils.iter().enumerate() {
+            let chars = state.tendril_idx_to_chars(col_idx);
+            for (row_idx, ch) in chars.into_iter().enumerate() {
+                if let Some(row) = self.buf.get_mut(row_idx)
+                    && let Some(cell) = row.get_mut(col_idx)
+                {
+                    cell.cell.set_symbol(&ch.to_string());
+                }
+            }
+        }
+
+    }
+}
+
+static MATRIX_ANIM_STATE: OnceLock<Mutex<MatrixAnimState>> = OnceLock::new();
+
+#[derive(Debug, Clone)]
+struct MatrixAnimState {
+    last_update_time: std::time::Instant,
+    
+    // tendrils[i] is the y position of the falling "tendril" in column i, or None if there is no tendril currently in that column
+    tendrils: Vec<Option<usize>>,
+}
+
+impl MatrixAnimState {
+    fn new() -> Self {
+        MatrixAnimState {
+            last_update_time: std::time::Instant::now(),
+            tendrils: vec![],
+        }
+    }
+
+    fn tendril_idx_to_chars(&self, idx: usize) -> Vec<char> {
+        if let Some(y) = self.tendrils.get(idx).and_then(|&t| t) {
+            if y < 20 {
+                vec!['⠀'; y] // leading blank chars to position the head of the tendril
+                    .into_iter()
+                    .chain(std::iter::repeat('0').take(1)) // head of the tendril
+                    .chain(std::iter::repeat('1').take(5)) // body of the tendril
+                    .take(20) // max length of the tendril
+                    .collect()
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        }
+    }
+
+    fn update(&mut self, now: std::time::Instant) {
+        let steps_elapsed = (now.duration_since(self.last_update_time).as_millis() / 100) as usize;
+        if steps_elapsed == 0 {
+            return;
+        }
+        self.last_update_time = now;
+
+
+        // Move existing tendrils down
+        for tendril in &mut self.tendrils {
+            if let Some(y) = tendril {
+                *y += steps_elapsed;
+            }
+        }
+
+        // Remove tendrils that have moved off the bottom of the screen
+        let height = 20; // TODO: get actual height of content
+        for tendril in &mut self.tendrils {
+            if let Some(y) = tendril {
+                if *y >= height as usize {
+                    *tendril = None;
+                }
+            }
+        }
+
+        // Spawn new tendrils with some probability
+        for tendril in &mut self.tendrils {
+            if tendril.is_none() && rand::random::<f32>() < 0.1 {
+                log::info!("Spawning new tendril in column {}", tendril as *const _ as usize);
+                *tendril = Some(0);
+            }
+        }
     }
 }
 

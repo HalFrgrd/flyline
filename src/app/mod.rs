@@ -1857,6 +1857,10 @@ impl<'a> App<'a> {
             }
         }
 
+        if self.mode.is_running() {
+            content.apply_matrix_anim(now);
+        }
+
         content
     }
 
