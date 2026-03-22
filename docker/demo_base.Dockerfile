@@ -143,6 +143,23 @@ RUN touch /home/john/.bash_history && \
  'bind -P' \
  '#1771881594' \
  'clear' \
+ 'cargo test --lib dparser::tests::closing_char_dont' \
+ '#1771881602' \
+ 'cargo test --lib dparser::tests::closing_char_dont_insert' \
+ '#1771881610' \
+ 'cargo fix' \
+ '#1771881618' \
+ 'cargo fmt' \
+ '#1771881626' \
+ 'cargo test --lib dparser::tests::closing_char_skip_nested' \
+ '#1771881634' \
+ 'cargo test --lib dparser::tests::closing_char_skip_nested_2' \
+ '#1771881642' \
+ 'cargo test --lib command_acceptance::tests::test_double_quoted_opener -- --no-capture' \
+ '#1771881650' \
+ 'cargo test --lib command_acceptance::tests::test_double_quoted_opener' \
+ '#1771881658' \
+ 'cargo test --lib command_acceptance::tests::' \
     >> /home/john/.bash_history
 
 
