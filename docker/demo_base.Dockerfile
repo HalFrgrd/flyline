@@ -24,16 +24,14 @@ RUN touch /home/john/.bashrc && \
     'source /etc/bash_completion' \
     'alias ll="ls -alF"' \
     'export HISTTIMEFORMAT="%F %T  "' \
-    'export HISTCONTROL=ignoreboth' \
+    'export HISTIGNORE="#*"' \
     'export PS1="\e[01;32m\u@\h\e[00m:\e[01;34m~\e[00m\$ "' \
     'export RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
     'flyline --log-level trace' \
     'flyline --auto-close-chars false' \
     'flyline --show-inline-history false' \
-    'flyline agent-mode \\' \
-    '  --system-prompt "Be concise. Answer with a JSON array of <=3 items with objects containing command and description. Command will be a bash command." \\' \
-    '  --command claude --prompt --effort low' \
+    'flyline agent-mode --system-prompt "Be concise. Answer with a JSON array of <=3 items with objects containing command and description. Command will be a bash command." --command claude --prompt --effort low ' \
     'export PATH="/home/john/bin:$PATH"' \
     >> /home/john/.bashrc
 

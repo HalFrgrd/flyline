@@ -12,7 +12,7 @@ Type `flyline --auto-close-chars true && clear`
 Enter
 Show
 
-Type "# bash is great but the command line editing user  experience feels outdated."
+Type "# bash is great but the command line editing user experience feels outdated."
 Enter
 Sleep 800ms
 
@@ -32,7 +32,7 @@ Type `flyline --matrix-animation false`
 Enter
 Sleep 500ms
 
-Type "# flyline integrates deeply with bash allowing it  to extend bash's tab completions, history searching, and more."
+Type `# flyline integrates deeply with bash allowing it to extend bash's tab completions, history searching, and more.`
 Enter
 Sleep 800ms
 
@@ -75,38 +75,40 @@ Type `# Flyline can intelligently close opening quotes and brackets: `
 Enter
 Sleep 800ms
 Type `echo "`
-Sleep 300ms
+Sleep 1000ms
 Type `$(`
-Sleep 300ms
+Sleep 1000ms
 Type `foo`
 Backspace
 Backspace
 Backspace
 Sleep 300ms
 Backspace
-Sleep 300ms
+Sleep 1000ms
 Backspace
-Sleep 300ms
+Sleep 1000ms
 Backspace
 Ctrl+C
-
-
-
-# TODO: show agent mode
-
-
 Sleep 800ms
-Type `python3 -c 'print("like animating the command buffer")'`
-Sleep 1500ms
+
+Type `# Flyline can call your command line agent to help you write commands`
+Enter
+Sleep 800ms
+Type "list files older than three days"
+Sleep 500ms
+# special shortcut for agent mode
+Alt+I
+Sleep 4000ms
+Down
+Sleep 1000ms
+Down
+Sleep 1000ms
+Up
+Sleep 1000ms
 Enter
 
-Type `# How about dynamic prompts:`
+Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
 Enter
-Type `export RPS1="\t"`
-Enter
-
-
-
-Type `# Check out the rest of this README to learn about flyline's other features`
+Type `export RPS1='\t'`
 
 Sleep 5s
