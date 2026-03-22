@@ -4,9 +4,11 @@ Output demo_fuzzy_suggestions.gif
 Source demo_settings.tape
 Source demo_setup.tape
 
-Type "caro"
+Type "grep --"
 Sleep 500ms
-Ctrl+R
+Tab
+Sleep 1000ms
+Type "with"
 Sleep 1000ms
 Down
 Sleep 500ms
@@ -20,9 +22,11 @@ Sleep 1000ms
 Type "# Flyline uses skim-rs' `arinae` typo-resistant algorithm:"
 Enter
 Sleep 500ms
-Type "cagro"
+Type "grep --"
 Sleep 500ms
-Ctrl+R
+Tab
+Sleep 1000ms
+Type "wtih"
 Sleep 1000ms
 Down
 Sleep 500ms
@@ -33,25 +37,22 @@ Sleep 500ms
 Ctrl+C
 Sleep 1000ms
 
-
-Type "# Multiline commands are expanded when selected:"
+Type "# the left hand side is used for programmable completions but the entire word is used for fuzzy searching"
 Enter
 Sleep 500ms
-Type `echo "abc`
-Enter
-Type `def`
-Enter
-Type `ghi`
-Enter
-Type `jkl"`
-Enter
-Sleep 1000ms
-Ctrl+R
+Type "grep --filemtch"
+Sleep 500ms
+Left
+Left
+Left
+Left
+Sleep 500ms
+Tab
 Sleep 1000ms
 Down
 Sleep 500ms
-Up
-Sleep 1000ms
+Down
+Sleep 500ms
+Enter
 
-
-
+Sleep 2s
