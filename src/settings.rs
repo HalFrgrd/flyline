@@ -53,6 +53,8 @@ pub struct Settings {
     pub ai_system_prompt: Option<String>,
     /// Custom prompt animations registered with `flyline create-anim`.
     pub custom_animations: HashMap<String, PromptAnimation>,
+    /// Run matrix animation in the terminal background.
+    pub matrix_animation: bool,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,

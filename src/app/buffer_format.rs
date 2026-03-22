@@ -158,24 +158,25 @@ impl FormattedBufferPart {
             );
         }
 
-        let animated_span_fn: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>> =
-            if token.annotation == TokenAnnotation::IsCommandWord
-                && token.token.value.starts_with("python")
-            {
-                let normal_string = token.token.value.clone();
+        let animated_span_fn: Option<
+            Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>,
+        > = if token.annotation == TokenAnnotation::IsCommandWord
+            && token.token.value.starts_with("python")
+        {
+            let normal_string = token.token.value.clone();
 
-                Some(Arc::new(move |now| {
-                    let mut anim = SNAKE_ANIMATION
-                        .get_or_init(|| Mutex::new(SnakeAnimation::new()))
-                        .lock()
-                        .unwrap();
-                    anim.update_anim(now);
-                    let snake_str = anim.apply_to_string(&normal_string);
-                    Span::styled(snake_str, Palette::recognised_word())
-                }))
-            } else {
-                None
-            };
+            Some(Arc::new(move |now| {
+                let mut anim = SNAKE_ANIMATION
+                    .get_or_init(|| Mutex::new(SnakeAnimation::new()))
+                    .lock()
+                    .unwrap();
+                anim.update_anim(now);
+                let snake_str = anim.apply_to_string(&normal_string);
+                Span::styled(snake_str, Palette::recognised_word())
+            }))
+        } else {
+            None
+        };
 
         Self {
             token: token.clone(),

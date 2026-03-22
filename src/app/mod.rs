@@ -5,7 +5,6 @@ use crate::active_suggestions::ActiveSuggestions;
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
-use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -18,6 +17,7 @@ use crate::settings::{MouseMode, Settings};
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
+use crate::{command_acceptance, content_builder};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -197,6 +197,8 @@ impl<'a> App<'a> {
 
         let buffer = TextBuffer::new("");
         let formatted_buffer_cache = FormattedBuffer::default();
+
+        content_builder::reset_matrix_anim_state();
 
         App {
             mode: AppRunningState::Running,
@@ -1030,59 +1032,23 @@ impl<'a> App<'a> {
         if cursor_pos == 0 {
             return;
         }
-        log::info!(
-            "Checking for auto-inserted closing token to delete at byte position {}",
-            cursor_pos
-        );
 
         // Find the token that ends at cursor_pos (the one about to be deleted by Backspace).
         let opening_annotation = self
             .dparser_tokens_cache
             .iter()
             .find(|t| t.token.byte_range().contains(&(cursor_pos - 1)))
-            .inspect(|t| {
-                log::info!(
-                    "Token ending at cursor position: '{}', with annotation {:?}",
-                    t.token.value,
-                    t.annotation
-                );
-            })
             .map(|t| t.annotation);
-
-        log::info!(
-            "Token annotation for token ending at cursor position: {:?}",
-            opening_annotation
-        );
 
         if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
             // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
-            log::info!(
-                "Found opening token with closing_idx {}. Checking for auto-inserted closing token at byte position {}",
-                closing_idx,
-                cursor_pos
-            );
             if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx) {
-                log::info!(
-                    "Token at closing_idx {} is '{}', with annotation {:?}",
-                    closing_idx,
-                    closing_token.token.value,
-                    closing_token.annotation
-                );
                 if closing_token.token.byte_range().start == cursor_pos {
-                    log::info!(
-                        "Found token starting at cursor position: '{}'",
-                        closing_token.token.value
-                    );
                     if let dparser::TokenAnnotation::IsClosing {
                         is_auto_inserted: true,
                         ..
                     } = closing_token.annotation
                     {
-                        log::info!(
-                            "Deleting auto-inserted closing token '{}' at byte {}",
-                            closing_token.token.value,
-                            cursor_pos
-                        );
                         self.buffer.delete_forwards();
                     }
                 }
@@ -1855,6 +1821,10 @@ impl<'a> App<'a> {
                 }
                 content.write_span(&Span::styled("…", Palette::secondary_text()), Tag::Tooltip);
             }
+        }
+
+        if self.mode.is_running() && self.settings.matrix_animation {
+            content.apply_matrix_anim(now);
         }
 
         content

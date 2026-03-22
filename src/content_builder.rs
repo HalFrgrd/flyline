@@ -1,6 +1,9 @@
+use rand::prelude::*;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, StyledGrapheme};
+use std::collections::HashMap;
+use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -378,6 +381,168 @@ impl Contents {
                 })
             })
             .map(|(_, cell)| (cell.tag, false))
+    }
+
+    pub fn apply_matrix_anim(&mut self, now: std::time::Instant) {
+        // TODO choose a better max height:
+        // TOOD think about light mode
+        for _ in self.buf.len()..40 {
+            self.increase_buf_single_row();
+        }
+
+        let mut state_guard = MATRIX_ANIM_STATE.lock().unwrap();
+        let state = state_guard.get_or_insert_with(MatrixAnimState::new);
+        state.update(now, self.width, self.height());
+
+        for (col_idx, _tendril) in state.tendrils.iter().enumerate() {
+            let styled_graphs = state.tendril_idx_to_graphemes(col_idx);
+            for (row_idx, styled_graph) in styled_graphs.into_iter().enumerate() {
+                if let Some(row) = self.buf.get_mut(row_idx)
+                    && let Some(cell) = row.get_mut(col_idx)
+                    && cell.tag == Tag::Blank
+                {
+                    cell.cell
+                        .set_symbol(styled_graph.symbol)
+                        .set_style(styled_graph.style);
+                }
+            }
+        }
+    }
+}
+
+static MATRIX_ANIM_STATE: Mutex<Option<MatrixAnimState>> = Mutex::new(None);
+
+pub fn reset_matrix_anim_state() {
+    *MATRIX_ANIM_STATE.lock().unwrap() = None;
+}
+
+#[derive(Debug, Clone)]
+struct MatrixAnimState {
+    last_update_time: std::time::Instant,
+    // tendrils[i] is the y position of the falling "tendril" in column i, or None if there is no tendril currently in that column
+    // y might be off the screen but we still want to show the tail of the tendril until it fully disappears
+    tendrils: Vec<Option<(usize, HashMap<usize, usize>)>>, // (current max y of the tendril, offsets for each y in the tendril to determine which char to show)
+}
+
+impl MatrixAnimState {
+    fn new() -> Self {
+        MatrixAnimState {
+            last_update_time: std::time::Instant::now(),
+            tendrils: vec![],
+        }
+    }
+
+    const TENDRIL_MAX_LEN: usize = 25;
+
+    fn tendril_idx_to_graphemes(&self, idx: usize) -> Vec<StyledGrapheme<'static>> {
+        // Some observations:
+        // The leading char in the tendril should be bright, bold white
+        // Characters should fade with age down the tendril, with the tail being very dim (e.g. dark green)
+        // A mix of non-English chars looks good
+        // Occasionally a character will change while the tendril is falling.
+
+        static CHAR_SET: &[&str] = &[
+            // For now, just use ASCII so that it renders on every terminal
+            // "ｱ", "ｲ", "ｳ", "ｴ", "ｵ", "ｶ", "ｷ", "ｸ", "ｹ", "ｺ", "ｻ", "ｼ", "ｽ", "ｾ", "ｿ", "ﾀ", "ﾁ",
+            // "ﾂ", "ﾃ", "ﾄ", "ﾅ", "ﾆ", "ﾇ", "ﾈ", "ﾉ", "ﾊ", "ﾋ", "ﾌ", "ﾍ", "ﾎ", "ﾏ", "ﾐ", "ﾑ", "ﾒ",
+            // "ﾓ", "ﾔ", "ﾕ", "ﾖ", "ﾗ", "ﾘ", "ﾙ", "ﾚ", "ﾛ", "ﾜ", "ｦ",
+            // Some ASCII chars mixed in
+            "@", "#", "$", "%", "&", "*", "+", "-", "=", "?", "A", "B", "C", "D", "E", "F", "G",
+            "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X",
+            "Y", "Z",
+        ];
+
+        let blank_graph = StyledGrapheme::new(" ", ratatui::style::Style::default());
+
+        let mut rng = rand::rngs::StdRng::seed_from_u64(idx as u64);
+
+        if let Some(Some((tendril_max_y, offsets))) = self.tendrils.get(idx) {
+            let mut graphemes = vec![];
+            for y in 0..=*tendril_max_y {
+                let char_indx = (rng.next_u32() as usize) + offsets.get(&y).cloned().unwrap_or(0);
+
+                if y <= tendril_max_y.saturating_sub(Self::TENDRIL_MAX_LEN) {
+                    graphemes.push(blank_graph.clone());
+                    continue;
+                }
+                // age_factor of 0 means the leading char, age_factor of 1 means the tail
+                let age_factor =
+                    tendril_max_y.saturating_sub(y) as f32 / Self::TENDRIL_MAX_LEN as f32;
+
+                let symbol = CHAR_SET[char_indx % CHAR_SET.len()];
+                let style = match age_factor {
+                    0.0 => ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::White)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                    // _ if age_factor < 0.3 => ratatui::style::Style::default()
+                    //     .fg(ratatui::style::Color::Green)
+                    //     .add_modifier(ratatui::style::Modifier::BOLD),
+                    // _ if age_factor < 0.6 => ratatui::style::Style::default().fg(ratatui::style::Color::Green),
+                    // _ => ratatui::style::Style::default()
+                    //     .fg(ratatui::style::Color::Green)
+                    //     .add_modifier(ratatui::style::Modifier::DIM)
+                    _ => {
+                        let green_value = 255 - (age_factor.max(0.3) * 255.0) as u8;
+                        ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(
+                            0,
+                            green_value,
+                            0,
+                        ))
+                    }
+                };
+                graphemes.push(StyledGrapheme::new(symbol, style));
+            }
+
+            graphemes
+        } else {
+            vec![]
+        }
+    }
+
+    fn update(&mut self, now: std::time::Instant, num_cols: u16, num_rows: u16) {
+        const NUM_ROWS_PER_SECOND: f32 = 12.0;
+        const MS_PER_ROW: f32 = 1000.0 / NUM_ROWS_PER_SECOND;
+        let steps_elapsed =
+            (now.duration_since(self.last_update_time).as_millis() as f32 / MS_PER_ROW) as usize;
+        if steps_elapsed == 0 {
+            return;
+        }
+        self.last_update_time = now;
+
+        self.tendrils.resize(num_cols as usize, None);
+
+        for _ in 0..steps_elapsed {
+            // Move existing tendrils down
+            for tendril in &mut self.tendrils {
+                if let Some((y, offsets)) = tendril {
+                    *y += 1;
+                    // Randomly change an offset for some y in the tendril to create a flickering effect
+                    if rand::random::<f32>() < 0.9 {
+                        let rand_row = rand::random::<u64>() as usize % num_rows as usize;
+                        let rand_offset = rand::random::<u64>() as usize;
+                        offsets.insert(rand_row, rand_offset);
+                    }
+                }
+            }
+
+            // Remove tendrils that have moved off the bottom of the screen
+            let max_possible_tendril_height = num_rows as usize + Self::TENDRIL_MAX_LEN;
+            for tendril in &mut self.tendrils {
+                if let Some((y, _)) = tendril {
+                    if *y >= max_possible_tendril_height {
+                        *tendril = None;
+                    }
+                }
+            }
+
+            // Spawn new tendrils with some probability
+            for tendril in &mut self.tendrils {
+                let rand = rand::random::<f32>();
+                if tendril.is_none() && rand < 0.02 {
+                    *tendril = Some((0, HashMap::new()));
+                }
+            }
+        }
     }
 }
 
