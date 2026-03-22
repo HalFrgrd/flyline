@@ -422,8 +422,13 @@ impl<'a> App<'a> {
         // Smart mode: check if the mouse is above the viewport or a scroll event occurred.
         if self.settings.mouse_mode == MouseMode::Smart {
             if mouse.row < self.last_viewport_top {
-                self.mouse_state
-                    .disable("smart mode: mouse is above the viewport");
+                // Only disable mouse capture when the user clicks above the viewport,
+                // indicating intent to interact with terminal content above (e.g. select text).
+                // Mere mouse movement above the viewport does not disable capture.
+                if matches!(mouse.kind, MouseEventKind::Down(_)) {
+                    self.mouse_state
+                        .disable("smart mode: click above the viewport");
+                }
                 self.last_mouse_over_cell = None;
                 return false;
             }
