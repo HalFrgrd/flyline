@@ -328,7 +328,6 @@ impl HistoryManager {
             }
         };
 
-
         for i in indices {
             let entry = &self.entries[i];
             if entry.command.starts_with(prefix) && entry.command != current_cmd {

@@ -1389,9 +1389,24 @@ impl<'a> App<'a> {
                 part.span_to_use()
             };
 
+            let graph_idx_to_tag = part
+                .normal_span()
+                .styled_graphemes(Style::default())
+                .scan(part.token.token.byte_range().start, |acc, graph| {
+                    let tag = Tag::Command(*acc);
+                    *acc += graph.symbol.len();
+                    Some(tag)
+                })
+                .collect::<Vec<_>>();
+
             let poss_cursor_anim_pos = content.write_span_dont_overwrite(
                 span_to_draw,
-                Tag::Command(part.token.token.byte_range().start),
+                move |graph_idx| {
+                    graph_idx_to_tag
+                        .get(graph_idx)
+                        .copied()
+                        .unwrap_or(Tag::Command(0))
+                },
                 part.cursor_grapheme_idx,
             );
             if cursor_pos_maybe.is_none() {
@@ -1463,19 +1478,19 @@ impl<'a> App<'a> {
                     " 💡 Start typing or search history with Ctrl+R",
                     Palette::tutorial_hint(),
                 ),
-                Tag::HistorySuggestion,
+                |_| Tag::HistorySuggestion,
                 None,
             );
             content.newline();
             content.write_span_dont_overwrite(
                 &Span::styled(TUTORIAL_HISTORY_PREFIX_HINT, Palette::tutorial_hint()),
-                Tag::HistorySuggestion,
+                |_| Tag::HistorySuggestion,
                 None,
             );
             content.newline();
             content.write_span_dont_overwrite(
                 &Span::styled(TUTORIAL_DISABLE_HINT, Palette::tutorial_hint()),
-                Tag::HistorySuggestion,
+                |_| Tag::HistorySuggestion,
                 None,
             );
         }
@@ -1494,7 +1509,7 @@ impl<'a> App<'a> {
 
                     content.write_span_dont_overwrite(
                         &Span::from(line.to_owned()).style(Palette::secondary_text()),
-                        Tag::HistorySuggestion,
+                        |_| Tag::HistorySuggestion,
                         None,
                     );
 
@@ -1507,7 +1522,7 @@ impl<'a> App<'a> {
 
                         content.write_span_dont_overwrite(
                             &Span::from(extra_info_text).style(Palette::secondary_text()),
-                            Tag::HistorySuggestion,
+                            |_| Tag::HistorySuggestion,
                             None,
                         );
 
@@ -1517,7 +1532,7 @@ impl<'a> App<'a> {
                                     " 💡 Press → or End to accept",
                                     Palette::tutorial_hint(),
                                 ),
-                                Tag::HistorySuggestion,
+                                |_| Tag::HistorySuggestion,
                                 None,
                             );
                         }

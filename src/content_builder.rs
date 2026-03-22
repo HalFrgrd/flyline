@@ -133,7 +133,7 @@ impl Contents {
     fn write_span_internal(
         &mut self,
         span: &Span,
-        mut tag: Tag,
+        graph_idx_to_tag: impl Fn(usize) -> Tag,
         overwrite: bool,
         mark_nth_grapheme: Option<usize>,
     ) -> Option<Coord> {
@@ -165,18 +165,16 @@ impl Contents {
             }
 
             self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
-                .update(&graph, tag);
+                .update(&graph, graph_idx_to_tag(i));
             self.cursor_pos.col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
             while self.cursor_pos.col < next_graph_x {
                 self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
                     .cell
                     .reset();
-                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag = tag;
+                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag =
+                    graph_idx_to_tag(i);
                 self.cursor_pos.col += 1;
-            }
-            if let Tag::Command(byte_start) = tag {
-                tag = Tag::Command(byte_start + graph.symbol.len());
             }
         }
         marked_graph_coord
@@ -185,14 +183,14 @@ impl Contents {
     pub fn write_span_dont_overwrite(
         &mut self,
         span: &Span,
-        tag: Tag,
+        graph_idx_to_tag: impl Fn(usize) -> Tag,
         mark_nth_grapheme: Option<usize>,
     ) -> Option<Coord> {
-        self.write_span_internal(span, tag, false, mark_nth_grapheme)
+        self.write_span_internal(span, graph_idx_to_tag, false, mark_nth_grapheme)
     }
 
     pub fn write_span(&mut self, span: &Span, tag: Tag) {
-        self.write_span_internal(span, tag, true, None);
+        self.write_span_internal(span, |_| tag, true, None);
     }
 
     /// Write a line at the current cursor position
