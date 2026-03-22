@@ -4,36 +4,29 @@ Output demo_overview.gif
 Source demo_settings.tape
 Source demo_setup.tape
 
-Type "# bash is great but the command line editing user experience can feel"
-Sleep 300ms
+Hide
+
+Enter
+Show
+
+Type "# bash is great but the command line editing user experience feels"
+Sleep 200ms
 Type "."
-Sleep 300ms
+Sleep 200ms
 Type "."
-Sleep 300ms
+Sleep 200ms
 Type "."
-Sleep 300ms
-Type " clunky"
+Sleep 2000ms
+Type " outdated."
 Sleep 200ms
 Enter
+
 Sleep 1000ms
-Type "# flyline is a bash plugin that aims to bring command line editing into the 21st century"
-Enter
-Sleep 800ms
-Type "# flyline runs a full terminal user interface which means we can do some pretty interesting things:"
+Type "# flyline is full terminal app that replaces bash's line editing functionality"
 Enter
 Sleep 800ms
 Type `python3 -c 'print("like animating the command buffer")'`
 Sleep 1500ms
-Enter
-Type "echo 'or animating our cursor movements'"
-Ctrl+A
-Sleep 1000ms
-Ctrl+E
-Sleep 1000ms
-Ctrl+A
-Sleep 1000ms
-Ctrl+E
-Sleep 1000ms
 Enter
 
 Type `# How about dynamic prompts:`
