@@ -47,6 +47,7 @@ Sleep 800ms
 
 Type `# Or fuzzy history searching like fzf:`
 Enter
+Type `ehco`
 Sleep 800ms
 Ctrl+R
 Down
@@ -71,7 +72,6 @@ Down
 Sleep 500ms
 Enter
 Sleep 800ms
-
 
 Type `# Flyline can intelligently close opening quotes and brackets: `
 Enter
@@ -112,6 +112,7 @@ Enter
 
 Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
 Enter
-Type `export RPS1='\t'`
+Type `export RPS1='\t`
+Enter
 
 Sleep 5s

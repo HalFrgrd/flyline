@@ -18,7 +18,6 @@ struct PathPatternExpansion {
     rhs_pattern: String,
 }
 
-
 impl PathPatternExpansion {
     fn new(pattern: &str) -> Self {
         // Split the pattern at the last '/'.

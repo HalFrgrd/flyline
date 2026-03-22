@@ -906,7 +906,6 @@ impl<'a> App<'a> {
                     self.toggle_mouse_state("simple mode: Alt pressed");
                 }
             }
-            // Delegate basic text editing to TextBuffer
             KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
@@ -942,6 +941,7 @@ impl<'a> App<'a> {
                 self.buffer.on_keypress(key);
             }
             _ => {
+                // Delegate basic text editing to TextBuffer
                 self.buffer.on_keypress(key);
             }
         }

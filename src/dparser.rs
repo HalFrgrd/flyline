@@ -1,6 +1,5 @@
 use flash::lexer::{Lexer, Position, Token, TokenKind};
 use itertools::Itertools;
-use log::debug;
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
 
@@ -366,9 +365,12 @@ impl DParser {
             }
 
             if cfg!(test) {
-                debug!(
+                dbg!(
                     "Token: {:?}, Nestings: {:?}, Heredocs: {:?}, Current command range: {:?}",
-                    token, nestings, heredocs, self.current_command_range
+                    &token,
+                    &nestings,
+                    &heredocs,
+                    &self.current_command_range
                 );
             }
 
@@ -448,7 +450,7 @@ impl DParser {
                         // cursor_part_way_through_token is used to handle multi closing character tokens like )) and ]]
                         // echo $((10 * 2█))      -> cursor context is: 10 * 2
                         // echo $((10 * 2)█)      -> cursor context is: echo $((10 * 2))
-                        // debug!("Stopping parsing at command boundary");
+                        // dbg!("Stopping parsing at command boundary");
                         break;
                     }
 
@@ -617,6 +619,16 @@ impl DParser {
         c: char,
         just_inserted_pos: usize,
     ) -> Option<char> {
+        if tokens.iter().any(|t| {
+            t.token
+                .byte_range()
+                .to_inclusive()
+                .contains(&just_inserted_pos)
+                && matches!(t.token.kind, TokenKind::Comment)
+        }) {
+            return None;
+        }
+
         // Unambiguously opening characters – always auto-close.
         match c {
             '{' => return Some('}'),
@@ -768,7 +780,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
 
         assert_eq!(tokens[0].token.value, "echo");
@@ -809,7 +821,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
 
         assert_eq!(tokens[0].token.value, "echo");
@@ -841,7 +853,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
         assert_eq!(tokens[0].token.value, "cat");
         assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
@@ -922,7 +934,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
         assert_eq!(tokens[0].token.value, "echo");
         assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
@@ -967,7 +979,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
 
         // After merging: echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), )) (6)
@@ -995,7 +1007,7 @@ mod tests {
         parser.walk_to_end();
         let tokens = parser.tokens();
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
         assert_eq!(tokens[0].token.value, "echo");
         assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
@@ -1124,6 +1136,19 @@ mod tests {
     }
 
     #[test]
+    fn closing_char_dont_insert_in_comment() {
+        // `echo # comment ` – the # starts a comment, so the next " is just a literal character, not an opener.
+        let stale = "echo # comment ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len();
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
     fn test_strip_heredoc_delimiter_quotes() {
         assert_eq!(strip_heredoc_delimiter_quotes("EOF"), "EOF");
         assert_eq!(strip_heredoc_delimiter_quotes("'EOF'"), "EOF");
@@ -1149,7 +1174,7 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
 
         // <<'EOF' token should be an opening that is matched.
@@ -1178,7 +1203,7 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
 
         // <<"EOF" token should be matched.
@@ -1206,7 +1231,7 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
 
         // <<\EOF token should be matched.
@@ -1235,7 +1260,7 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            debug!("{:?} - {:?}", t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, t.annotation);
         }
 
         assert_eq!(tokens[2].token.value, "<<E'O'F");

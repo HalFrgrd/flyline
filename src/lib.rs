@@ -242,7 +242,6 @@ impl Flyline {
                     );
                 }
 
-
                 if let Some(ref path) = parsed.dump_logs {
                     let path_opt = if path.is_empty() {
                         None
