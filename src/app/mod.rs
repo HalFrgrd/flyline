@@ -170,6 +170,8 @@ struct App<'a> {
     settings: &'a Settings,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     last_viewport_top: u16,
+    /// Timestamp of the last draw operation.
+    last_draw_time: std::time::Instant,
 }
 
 impl<'a> App<'a> {
@@ -226,6 +228,7 @@ impl<'a> App<'a> {
             tooltip: None,
             settings,
             last_viewport_top: 0,
+            last_draw_time: std::time::Instant::now(),
         }
     }
 
@@ -330,6 +333,7 @@ impl<'a> App<'a> {
                 if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
                     log::error!("Failed to draw terminal UI: {}", e);
                 }
+                self.last_draw_time = std::time::Instant::now();
 
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
@@ -351,7 +355,9 @@ impl<'a> App<'a> {
                 break;
             }
 
-            redraw = if event::poll(Duration::from_millis(30)).unwrap() {
+            const MIN_REFRESH_RATE: Duration = Duration::from_millis(30);
+
+            redraw = if event::poll(MIN_REFRESH_RATE).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
                         if let KeyPressReturnType::NeedScreenClear = self.on_keypress(key) {
@@ -394,6 +400,12 @@ impl<'a> App<'a> {
                 }
             } else {
                 true
+            };
+
+            if std::time::Instant::now().duration_since(self.last_draw_time) > MIN_REFRESH_RATE {
+                // redraw periodically to update animations even when no events are occurring
+                // (e.g. cursor blinking, matrix animation)
+                redraw = true;
             }
         }
 
