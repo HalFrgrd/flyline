@@ -9,21 +9,54 @@ Hide
 Enter
 Show
 
-Type "# bash is great but the command line editing user experience feels"
-Sleep 200ms
-Type "."
-Sleep 200ms
-Type "."
-Sleep 200ms
-Type "."
-Sleep 2000ms
-Type " outdated."
-Sleep 200ms
+Type "# bash is great but the command line editing user experience feels outdated."
+Enter
+Sleep 800ms
+
+Type "# flyline is full terminal app that replaces bash's line editing functionality."
+Enter
+Sleep 800ms
+
+Type "# flyline can draw anywhere on the terminal meaning we can pretty much anything:"
+Enter
+Sleep 800ms
+
+Type `flyline --matrix-animation`
+Enter
+Sleep 3000ms
+
+Type `flyline --matrix-animation false`
+Enter
+Sleep 500ms
+
+Type "# flyline integrates deeply with bash allowing it to extend tab completions, history searching, and more."
+Enter
+Sleep 800ms
+
+Type `# How about tooltips as you type:`
+Enter
+Type `ls`
+Sleep 1500ms
+Type ` $HOME`
+Sleep 1500ms
+Enter
+Sleep 800ms
+
+Type `# Or fuzzy history searching like fzf:`
+Enter
+Ctrl+R
+Down
+Sleep 500ms
+Down
+Sleep 500ms
+Down
+Sleep 500ms
 Enter
 
-Sleep 1000ms
-Type "# flyline is full terminal app that replaces bash's line editing functionality"
-Enter
+
+# TODO: show agent mode
+
+
 Sleep 800ms
 Type `python3 -c 'print("like animating the command buffer")'`
 Sleep 1500ms
@@ -34,19 +67,7 @@ Enter
 Type `export RPS1="\t"`
 Enter
 
-Sleep 1000ms
-Type `# Or tooltips as you type:`
-Enter
-Type `ls $HOME`
-Sleep 2000ms
-Enter
 
-Type `# flyline can control the entire terminal so we can easily do something like this:`
-Enter
-Sleep 800ms
-Type `flyline --matrix-animation`
-Enter
-Sleep 1000ms
 
 Type `# Check out the rest of this README to learn about flyline's other features`
 
