@@ -14,12 +14,11 @@ RUN touch /root/.bashrc && \
 
 # Run flyline --help in an interactive bash session and strip any residual
 # ANSI escape sequences before saving the output.
-RUN /bin/bash -i -c 'flyline --help' 2>/dev/null | \
-    sed 's/\x1B\[[0-9;]*[A-Za-z]//g' > /flyline_help.txt
+RUN /bin/bash -i -c 'NO_COLOR=1 flyline --help' 2>/dev/null > /flyline_help.txt
+
 
 # Run flyline create-anim --help and strip ANSI escape sequences.
-RUN /bin/bash -i -c 'flyline create-anim --help' 2>/dev/null | \
-    sed 's/\x1B\[[0-9;]*[A-Za-z]//g' > /flyline_create_anim_help.txt
+RUN /bin/bash -i -c 'NO_COLOR=1 flyline create-anim --help' 2>/dev/null > /flyline_create_anim_help.txt
 
 
 FROM scratch AS flyline-help-output
