@@ -113,7 +113,36 @@ The block below is auto-generated from `flyline create-anim --help`:
 
 <!-- FLYLINE_CREATE_ANIM_HELP_START -->
 ```
-asdf
+Create a custom prompt animation.
+
+Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+with the current animation frame on every render.  Frames may include
+ANSI colour sequences written as `\e` (e.g. `\e[33m`).
+
+Examples:
+  flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
+  flyline create-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
+
+Usage: flyline create-anim [OPTIONS] --name <NAME> [FRAMES]...
+
+Arguments:
+  [FRAMES]...
+          One or more animation frames (positional).  Use `\e` for the ESC character
+
+Options:
+      --name <NAME>
+          Name to embed in prompt strings as the animation placeholder
+
+      --fps <FPS>
+          Playback speed in frames per second (default: 10)
+          
+          [default: 10]
+
+      --ping-pong
+          Reverse direction at each end instead of wrapping (ping-pong / bounce mode)
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 <!-- FLYLINE_CREATE_ANIM_HELP_END -->
 
@@ -217,16 +246,13 @@ The block below is auto-generated from `flyline --help`:
 Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
-  agent-mode   Configure AI agent mode
-  create-anim  Create a custom prompt animation
+  agent-mode   Configure AI agent mode.
+  create-anim  Create a custom prompt animation.
   help         Print this message or the help of the given subcommand(s)
 
 Options:
       --version
           Show version information
-
-      --disable-animations
-          Disable animations
 
       --dump-logs [<PATH>]
           Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is created in the current directory
@@ -247,14 +273,30 @@ Options:
           
           [possible values: true, false]
 
-      --disable-inline-history
-          Disable inline history suggestions
+      --disable-animations [<SHOW_ANIMATIONS>]
+          Disable animations
+          
+          [possible values: true, false]
 
-      --disable-auto-closing-char
-          Disable automatic closing character insertion (e.g. do not insert `)` after `(`)
+      --show-inline-history [<SHOW_INLINE_HISTORY>]
+          Show inline history suggestions
+          
+          [possible values: true, false]
 
-      --use-term-emulator-cursor
+      --auto-close-chars [<AUTO_CLOSE_CHARS>]
+          Enable automatic closing character insertion (e.g. insert `)` after `(`)
+          
+          [possible values: true, false]
+
+      --use-term-emulator-cursor [<USE_TERM_EMULATOR_CURSOR>]
           Use the terminal emulator's cursor instead of rendering a custom cursor
+          
+          [possible values: true, false]
+
+      --matrix-animation [<MATRIX_ANIMATION>]
+          Run matrix animation in the terminal background
+          
+          [possible values: true, false]
 
       --mouse-mode <MODE>
           Mouse capture mode (none, simple, smart). Default is smart
