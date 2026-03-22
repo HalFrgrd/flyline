@@ -439,7 +439,7 @@ impl MatrixAnimState {
         // A mix of non-English chars looks good
         // Occasionally a character will change while the tendril is falling.
 
-        const CHAR_SET: &[&str] = &[
+        static CHAR_SET: &[&str] = &[
             "ｱ", "ｲ", "ｳ", "ｴ", "ｵ", "ｶ", "ｷ", "ｸ", "ｹ", "ｺ", "ｻ", "ｼ", "ｽ", "ｾ", "ｿ", "ﾀ", "ﾁ",
             "ﾂ", "ﾃ", "ﾄ", "ﾅ", "ﾆ", "ﾇ", "ﾈ", "ﾉ", "ﾊ", "ﾋ", "ﾌ", "ﾍ", "ﾎ", "ﾏ", "ﾐ", "ﾑ", "ﾒ",
             "ﾓ", "ﾔ", "ﾕ", "ﾖ", "ﾗ", "ﾘ", "ﾙ", "ﾚ", "ﾛ", "ﾜ", "ｦ",
@@ -451,10 +451,9 @@ impl MatrixAnimState {
 
         let blank_graph = StyledGrapheme::new(" ", ratatui::style::Style::default());
 
+        let mut rng = rand::rngs::StdRng::seed_from_u64(idx as u64);
+
         if let Some(tendril_max_y) = self.tendrils.get(idx).and_then(|&t| t) {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(idx as u64);
-            let mut order: Vec<usize> = (0..CHAR_SET.len()).collect();
-            order.shuffle(&mut rng);
 
             let mut graphemes = vec![];
             for y in 0..=tendril_max_y {
@@ -466,7 +465,7 @@ impl MatrixAnimState {
                 let age_factor =
                     tendril_max_y.saturating_sub(y) as f32 / Self::TENDRIL_MAX_LEN as f32;
 
-                let symbol = CHAR_SET[order[y % order.len()]];
+                let symbol = CHAR_SET[rng.next_u32() as usize % CHAR_SET.len()];
                 let style = match age_factor {
                     0.0 => ratatui::style::Style::default()
                         .fg(ratatui::style::Color::White)
