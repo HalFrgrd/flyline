@@ -440,9 +440,11 @@ impl MatrixAnimState {
         // Occasionally a character will change while the tendril is falling.
 
         static CHAR_SET: &[&str] = &[
-            "ｱ", "ｲ", "ｳ", "ｴ", "ｵ", "ｶ", "ｷ", "ｸ", "ｹ", "ｺ", "ｻ", "ｼ", "ｽ", "ｾ", "ｿ", "ﾀ", "ﾁ",
-            "ﾂ", "ﾃ", "ﾄ", "ﾅ", "ﾆ", "ﾇ", "ﾈ", "ﾉ", "ﾊ", "ﾋ", "ﾌ", "ﾍ", "ﾎ", "ﾏ", "ﾐ", "ﾑ", "ﾒ",
-            "ﾓ", "ﾔ", "ﾕ", "ﾖ", "ﾗ", "ﾘ", "ﾙ", "ﾚ", "ﾛ", "ﾜ", "ｦ",
+
+            // For now, just use ASCII so that it renders on every terminal
+            // "ｱ", "ｲ", "ｳ", "ｴ", "ｵ", "ｶ", "ｷ", "ｸ", "ｹ", "ｺ", "ｻ", "ｼ", "ｽ", "ｾ", "ｿ", "ﾀ", "ﾁ",
+            // "ﾂ", "ﾃ", "ﾄ", "ﾅ", "ﾆ", "ﾇ", "ﾈ", "ﾉ", "ﾊ", "ﾋ", "ﾌ", "ﾍ", "ﾎ", "ﾏ", "ﾐ", "ﾑ", "ﾒ",
+            // "ﾓ", "ﾔ", "ﾕ", "ﾖ", "ﾗ", "ﾘ", "ﾙ", "ﾚ", "ﾛ", "ﾜ", "ｦ",
             // Some ASCII chars mixed in
             "@", "#", "$", "%", "&", "*", "+", "-", "=", "?", "A", "B", "C", "D", "E", "F", "G",
             "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X",
@@ -457,6 +459,9 @@ impl MatrixAnimState {
 
             let mut graphemes = vec![];
             for y in 0..=tendril_max_y {
+
+                let char_indx = rng.next_u32() as usize;
+
                 if y <= tendril_max_y.saturating_sub(Self::TENDRIL_MAX_LEN) {
                     graphemes.push(blank_graph.clone());
                     continue;
@@ -465,7 +470,7 @@ impl MatrixAnimState {
                 let age_factor =
                     tendril_max_y.saturating_sub(y) as f32 / Self::TENDRIL_MAX_LEN as f32;
 
-                let symbol = CHAR_SET[rng.next_u32() as usize % CHAR_SET.len()];
+                let symbol = CHAR_SET[char_indx % CHAR_SET.len()];
                 let style = match age_factor {
                     0.0 => ratatui::style::Style::default()
                         .fg(ratatui::style::Color::White)
@@ -478,7 +483,7 @@ impl MatrixAnimState {
                     //     .fg(ratatui::style::Color::Green)
                     //     .add_modifier(ratatui::style::Modifier::DIM)
                     _ => {
-                        let green_value = 255 - (age_factor.max(0.2) * 255.0) as u8;
+                        let green_value = 255 - (age_factor.max(0.3) * 255.0) as u8;
                         ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(
                             0,
                             green_value,
