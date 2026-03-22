@@ -39,41 +39,47 @@ impl SnakeAnimation {
             .collect()
     }
 
+    const MAX_X: usize = 12;
+    const MAX_Y: usize = 4;
+
+    fn num_steps_in_period() -> usize {
+        Self::MAX_X * Self::MAX_Y
+    }
+
     fn next_head_pos(&self) -> Coord {
-        const MAX_X: usize = 12;
         match self.body.last() {
             Some(head) => {
                 match (head.x % 2, head.y) {
                     (0, 0) => Coord {
-                        x: head.x % MAX_X,
+                        x: head.x % Self::MAX_X,
                         y: 1,
                     },
                     (0, 1) => Coord {
-                        x: head.x % MAX_X,
+                        x: head.x % Self::MAX_X,
                         y: 2,
                     },
                     (0, 2) => Coord {
-                        x: head.x % MAX_X,
+                        x: head.x % Self::MAX_X,
                         y: 3,
                     },
                     (0, 3) => Coord {
-                        x: (head.x + 1) % MAX_X,
+                        x: (head.x + 1) % Self::MAX_X,
                         y: 3,
                     },
                     (1, 3) => Coord {
-                        x: head.x % MAX_X,
+                        x: head.x % Self::MAX_X,
                         y: 2,
                     },
                     (1, 2) => Coord {
-                        x: head.x % MAX_X,
+                        x: head.x % Self::MAX_X,
                         y: 1,
                     },
                     (1, 1) => Coord {
-                        x: head.x % MAX_X,
+                        x: head.x % Self::MAX_X,
                         y: 0,
                     },
                     (1, 0) => Coord {
-                        x: (head.x + 1) % MAX_X,
+                        x: (head.x + 1) % Self::MAX_X,
                         y: 0,
                     },
                     _ => Coord { x: 0, y: 0 }, // should not happen
@@ -88,13 +94,7 @@ impl SnakeAnimation {
 
         // Calculate how many steps should have occurred (120ms per step)
         let steps_to_advance = (elapsed_since_last * 1000.0 / 120.0) as u64;
-
-        if steps_to_advance > 100 {
-            // probably been a while since our last update, reset to avoid huge jumps
-            log::warn!("SnakeAnimation: large jump in animation steps detected, resetting");
-            self.last_update_time = now;
-            return;
-        }
+        let steps_to_advance = steps_to_advance as usize % Self::num_steps_in_period();
 
         for _ in 0..steps_to_advance {
             let next_head = self.next_head_pos();

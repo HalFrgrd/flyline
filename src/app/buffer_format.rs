@@ -9,7 +9,9 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange, TokenAnnotation};
 use crate::palette::Palette;
 use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
+
+static SNAKE_ANIMATION: OnceLock<Mutex<SnakeAnimation>> = OnceLock::new();
 
 #[derive(Debug)]
 pub struct FormattedBuffer {
@@ -154,22 +156,24 @@ impl FormattedBufferPart {
             );
         }
 
-        let anim_span_fn: Option<
-            Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>,
-        > = if token.annotation == TokenAnnotation::IsCommandWord
-            && token.token.value.starts_with("python")
-        {
-            let normal_string = token.token.value.clone();
-            let snake_animation = SnakeAnimation::new();
-            
-            Some(Arc::new(move |now| {
-                snake_animation.update_anim(now);
-                let snake_str = snake_animation.apply_to_string(&normal_string);
-                Span::styled(snake_str.clone(), Palette::recognised_word())
-            }))
-        } else {
-            None
-        };
+        let anim_span_fn: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>> =
+            if token.annotation == TokenAnnotation::IsCommandWord
+                && token.token.value.starts_with("python")
+            {
+                let normal_string = token.token.value.clone();
+
+                Some(Arc::new(move |now| {
+                    let mut anim = SNAKE_ANIMATION
+                        .get_or_init(|| Mutex::new(SnakeAnimation::new()))
+                        .lock()
+                        .unwrap();
+                    anim.update_anim(now);
+                    let snake_str = anim.apply_to_string(&normal_string);
+                    Span::styled(snake_str, Palette::recognised_word())
+                }))
+            } else {
+                None
+            };
 
         Self {
             token: token.clone(),
