@@ -7,6 +7,7 @@ Source demo_setup.tape
 
 Hide
 Type `export PS1="${PS1::-2} " && clear`
+Enter
 Show
 
 
@@ -23,6 +24,19 @@ Enter
 Sleep 1000ms
 
 Type `flyline create-anim --name "john" --ping-pong --fps 8 john john john John jOhn joHn johN john john`
+Enter
+Sleep 2500ms
+
+Type `# add styles with ANSI escape codes:`
+Enter
+Sleep 500ms
+Type `flyline create-anim --name "john" --ping-pong --fps 3 \`
+Enter
+Type `    "\e[33mjohn" \`
+Enter
+Type `    "\e[31mjohn" \`
+Enter
+Type `    "\e[35mjohn" `
 Enter
 
 Sleep 3000ms

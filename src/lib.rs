@@ -113,20 +113,22 @@ struct FlylineArgs {
 enum Commands {
     /// Configure AI agent mode.
     ///
-    /// When Ctrl+I is pressed, flyline invokes COMMAND with the current buffer
+    /// When Shift+Enter is pressed, flyline invokes COMMAND with the current buffer
     /// (optionally prepended by SYSTEM_PROMPT) as the final argument.
     ///
     /// Example:
     ///   flyline agent-mode --command llm prompt
-    ///   flyline agent-mode --system-prompt "You are a bash expert" --command llm prompt
-    #[command(name = "agent-mode")]
+    ///   flyline agent-mode \
+    ///     --system-prompt "Answer with a JSON array of <=3 items with objects containing command and description. Command will be a bash command." \
+    ///     --command copilot --reasoning-effort low --prompt 
+    #[command(name = "agent-mode", verbatim_doc_comment)]
     AgentMode {
         /// Optional system prompt prepended to the buffer.
         /// The subprocess receives "<system-prompt>\n<buffer>" as its final argument.
         #[arg(long = "system-prompt")]
         system_prompt: Option<String>,
         /// Command (and arguments) to invoke. The current buffer is appended as the
-        /// final argument when Ctrl+I is pressed.
+        /// final argument when Shift+Enter is pressed.
         #[arg(long = "command", num_args = 1.., allow_hyphen_values = true, required = true)]
         command: Vec<String>,
     },
@@ -136,9 +138,10 @@ enum Commands {
     /// with the current animation frame on every render.  Frames may include
     /// ANSI colour sequences written as `\e` (e.g. `\e[33m`).
     ///
-    /// Example:
+    /// Examples:
     ///   flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
-    #[command(name = "create-anim")]
+    ///   flyline create-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
+    #[command(name = "create-anim", verbatim_doc_comment)]
     CreateAnim {
         /// Name to embed in prompt strings as the animation placeholder.
         #[arg(long)]
