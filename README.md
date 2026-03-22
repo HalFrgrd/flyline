@@ -172,16 +172,19 @@ Flyline offers three mouse modes:
 
 # Command history
 
-## Fuzzy history search
-Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl+R`. The fuzzy search algorithm is aeine from skim which is robust to letters-out-of-order typos.
+**Fuzzy history search:**
+Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl+R`:
 
-## Inline suggestion
+![Fuzzy history demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_history.gif)
+
+
+**Inline suggestions:**
 Inline suggestions appear as you type based on the most recent matching history entry. Accept them with `Right`/`End`.
 
-## Scroll through prefix matches
+**Scroll through prefix matches**
 Pressing `Up` will scroll through history entries that are a prefix match with the current command.
 
-## Zsh history entries
+**Zsh history entries:**
 Optionally read zsh history entries to make migrating to bash easier. 
 
 # Integrations

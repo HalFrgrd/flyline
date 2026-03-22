@@ -131,6 +131,11 @@ target "demo-ls-colors-extracted-gif" {
     dockerfile = "docker/demo_ls_colors.Dockerfile"
 }
 
+target "demo-fuzzy-history-extracted-gif" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_fuzzy_history.Dockerfile"
+}
+
 group "demos" {
     targets = [
         "demo-overview-extracted-gif",
@@ -139,5 +144,6 @@ group "demos" {
         "demo-custom-animation-extracted-gif",
         "demo-agent-mode-extracted-gif",
         "demo-ls-colors-extracted-gif",
+        "demo-fuzzy-history-extracted-gif"
     ]
 }

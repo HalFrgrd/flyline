@@ -31,7 +31,7 @@ RUN touch /home/john/.bashrc && \
     'flyline --log-level trace' \
     'flyline --auto-close-chars false' \
     'flyline --show-inline-history false' \
-    'flyline agent-mode --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing `command` and `description`. Command will be a bash command." --command claude --prompt --effort low ' \
+    "flyline agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing 'command' and 'description'. Command will be a bash command.\" --command claude --prompt --effort low " \
     'export PATH="/home/john/bin:$PATH"' \
     >> /home/john/.bashrc
 
