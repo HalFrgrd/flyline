@@ -107,11 +107,11 @@ export RPS1='\D{%H:%M}'
 ## Custom animations
 
 Create your own animations with `flyline create-anim`.
-Prompt substrings matching the animation name will be replaced with the animation:
+Flyline will replace strings in the promp matching the animation name with the animation:
 
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
 
-[More examples can be found in [examples/animations.sh](examples/animation.sh).
+More examples can be found in [examples/animations.sh](examples/animations.sh).
 
 # Agent mode
 Flyline can call an agent of your choice with the current command buffer as a prompt.
