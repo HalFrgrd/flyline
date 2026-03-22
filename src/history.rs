@@ -328,11 +328,13 @@ impl HistoryManager {
             }
         };
 
+
         for i in indices {
             let entry = &self.entries[i];
-            self.index = i;
             if entry.command.starts_with(prefix) && entry.command != current_cmd {
                 self.last_buffered_command = Some(entry.command.clone());
+                // Update the index only when found.
+                self.index = i;
                 return Some(entry.clone());
             }
         }
