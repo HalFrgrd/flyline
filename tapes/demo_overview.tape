@@ -5,7 +5,7 @@ Source demo_settings.tape
 Source demo_setup.tape
 
 Hide
-
+Type `flyline --auto-close-chars true && clear`
 Enter
 Show
 
@@ -29,7 +29,7 @@ Type `flyline --matrix-animation false`
 Enter
 Sleep 500ms
 
-Type "# flyline integrates deeply with bash allowing it to extend tab completions, history searching, and more."
+Type "# flyline integrates deeply with bash allowing it to extend bash's tab completions, history searching, and more."
 Enter
 Sleep 800ms
 
@@ -51,7 +51,33 @@ Down
 Sleep 500ms
 Down
 Sleep 500ms
+Down
+Sleep 500ms
+Down
+Sleep 500ms
 Enter
+Sleep 800ms
+
+
+Type `# Flyline can intelligently close opening quotes and brackets: `
+Enter
+Sleep 800ms
+Type `echo "`
+Sleep 300ms
+Type `$(`
+Sleep 300ms
+Type `foo`
+Backspace
+Backspace
+Backspace
+Sleep 300ms
+Backspace
+Sleep 300ms
+Backspace
+Sleep 300ms
+Backspace
+Ctrl+C
+
 
 
 # TODO: show agent mode
