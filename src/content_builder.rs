@@ -385,6 +385,7 @@ impl Contents {
 
     pub fn apply_matrix_anim(&mut self, now: std::time::Instant) {
         // TODO choose a better max height:
+        // TOOD think about light mode
         for _ in self.buf.len()..40 {
             self.increase_buf_single_row();
         }
@@ -429,7 +430,7 @@ impl MatrixAnimState {
         }
     }
 
-    const TENDRIL_MAX_LEN: usize = 10;
+    const TENDRIL_MAX_LEN: usize = 25;
 
     fn tendril_idx_to_graphemes(&self, idx: usize) -> Vec<StyledGrapheme<'static>> {
         // Some observations:
@@ -466,20 +467,25 @@ impl MatrixAnimState {
                     tendril_max_y.saturating_sub(y) as f32 / Self::TENDRIL_MAX_LEN as f32;
 
                 let symbol = CHAR_SET[order[y % order.len()]];
-                let style = if age_factor == 0.0 {
-                    ratatui::style::Style::default()
+                let style = match age_factor {
+                    0.0 => ratatui::style::Style::default()
                         .fg(ratatui::style::Color::White)
-                        .add_modifier(ratatui::style::Modifier::BOLD)
-                } else if age_factor < 0.3 {
-                    ratatui::style::Style::default()
-                        .fg(ratatui::style::Color::Green)
-                        .add_modifier(ratatui::style::Modifier::BOLD)
-                } else if age_factor < 0.6 {
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Green)
-                } else {
-                    ratatui::style::Style::default()
-                        .fg(ratatui::style::Color::Green)
-                        .add_modifier(ratatui::style::Modifier::DIM)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                    // _ if age_factor < 0.3 => ratatui::style::Style::default()
+                    //     .fg(ratatui::style::Color::Green)
+                    //     .add_modifier(ratatui::style::Modifier::BOLD),
+                    // _ if age_factor < 0.6 => ratatui::style::Style::default().fg(ratatui::style::Color::Green),
+                    // _ => ratatui::style::Style::default()
+                    //     .fg(ratatui::style::Color::Green)
+                    //     .add_modifier(ratatui::style::Modifier::DIM)
+                    _ => {
+                        let green_value = 255 - (age_factor.max(0.2) * 255.0) as u8;
+                        ratatui::style::Style::default().fg(ratatui::style::Color::Rgb(
+                            0,
+                            green_value,
+                            0,
+                        ))
+                    }
                 };
                 graphemes.push(StyledGrapheme::new(symbol, style));
             }
@@ -491,7 +497,7 @@ impl MatrixAnimState {
     }
 
     fn update(&mut self, now: std::time::Instant, num_cols: u16, num_rows: u16) {
-        const NUM_ROWS_PER_SECOND: f32 = 8.0;
+        const NUM_ROWS_PER_SECOND: f32 = 12.0;
         const MS_PER_ROW: f32 = 1000.0 / NUM_ROWS_PER_SECOND;
         let steps_elapsed =
             (now.duration_since(self.last_update_time).as_millis() as f32 / MS_PER_ROW) as usize;
