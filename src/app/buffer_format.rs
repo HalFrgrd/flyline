@@ -63,7 +63,10 @@ impl std::fmt::Debug for FormattedBufferPart {
         f.debug_struct("FormattedBufferPart")
             .field("token", &self.token)
             .field("span", &self.span)
-            .field("alternative_span", &self.alternative_span.as_ref().map(|_| "<fn>"))
+            .field(
+                "alternative_span",
+                &self.alternative_span.as_ref().map(|_| "<fn>"),
+            )
             .field("cursor_grapheme_idx", &self.cursor_grapheme_idx)
             .field("tooltip", &self.tooltip)
             .finish()
@@ -151,16 +154,17 @@ impl FormattedBufferPart {
             );
         }
 
-        let alternative_span: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>> = if token.annotation == TokenAnnotation::IsCommandWord
+        let anim_span_fn: Option<
+            Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>,
+        > = if token.annotation == TokenAnnotation::IsCommandWord
             && token.token.value.starts_with("python")
         {
             let normal_string = token.token.value.clone();
+            let snake_animation = SnakeAnimation::new();
             
-            Some(Arc::new(move |_now| {
-                let mut snake_animation = SnakeAnimation::new();
-                snake_animation.update_anim();
-                let snake_str = snake_animation
-                .apply_to_string(&normal_string);
+            Some(Arc::new(move |now| {
+                snake_animation.update_anim(now);
+                let snake_str = snake_animation.apply_to_string(&normal_string);
                 Span::styled(snake_str.clone(), Palette::recognised_word())
             }))
         } else {
@@ -170,7 +174,7 @@ impl FormattedBufferPart {
         Self {
             token: token.clone(),
             span,
-            alternative_span,
+            alternative_span: anim_span_fn,
             cursor_grapheme_idx,
             tooltip,
         }
@@ -181,29 +185,41 @@ impl FormattedBufferPart {
     }
 
     pub fn get_possible_animated_span(&self, now: std::time::Instant) -> Span<'static> {
-        if let Some(alt_fn) = &self.alternative_span {
-            return alt_fn(now);
+        if let Some(anim_fn) = &self.alternative_span {
+            let anim_span = anim_fn(now);
+            if let Err(e) =
+                Self::check_anim_span_matches_graph_boundaries(&self.span, anim_span.clone())
+            {
+                log::error!(
+                    "Animation span for token '{}' does not match grapheme boundaries of normal span. Error: {}. Falling back to normal span.",
+                    self.token.token.value,
+                    e
+                );
+            } else {
+                return anim_span;
+            }
         }
         self.span.clone()
     }
 
+    fn check_anim_span_matches_graph_boundaries<'a>(
+        normal_span: &Span<'a>,
+        new_alt: Span<'a>,
+    ) -> Result<(), String> {
+        new_alt.content.graphemes(true).zip_longest(normal_span.content.graphemes(true))
+            .try_for_each(|g| match g {
+                EitherOrBoth::Both(new_g, old_g) => {
+                    if new_g.width() != old_g.width() {
+                        Err(format!("New alternative span has different grapheme widths than the original span. Original grapheme: '{}' (width: {}), new grapheme: '{}' (width: {})", old_g, old_g.width(), new_g, new_g.width()))
+                    } else {
+                        Ok(())
+                    }
+                },
+                _ => Err("New alternative span has different number of graphemes than the original span".to_string()),
+            })?;
 
-    //     pub fn set_alternative_span(&mut self, new_alt: Span<'static>) -> Result<(), String> {
-    //         new_alt.content.graphemes(true).zip_longest(self.span.content.graphemes(true))
-    //             .try_for_each(|g| match g {
-    //                 EitherOrBoth::Both(new_g, old_g) => {
-    //                     if new_g.width() != old_g.width() {
-    //                         Err(format!("New alternative span has different grapheme widths than the original span. Original grapheme: '{}' (width: {}), new grapheme: '{}' (width: {})", old_g, old_g.width(), new_g, new_g.width()))
-    //                     } else {
-    //                         Ok(())
-    //                     }
-    //                 },
-    //                 _ => Err("New alternative span has different number of graphemes than the original span".to_string()),
-    //             })?;
-
-    //         self.alternative_span = Some(new_alt);
-    //         Ok(())
-    //     }
+        Ok(())
+    }
 }
 
 pub fn format_buffer<'a>(

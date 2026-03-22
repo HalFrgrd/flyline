@@ -83,8 +83,7 @@ impl SnakeAnimation {
         }
     }
 
-    pub fn update_anim(&mut self) {
-        let now = Instant::now();
+    pub fn update_anim(&mut self, now: Instant) {
         let elapsed_since_last = now.duration_since(self.last_update_time).as_secs_f32();
 
         // Calculate how many steps should have occurred (120ms per step)
