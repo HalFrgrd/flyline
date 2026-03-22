@@ -11,6 +11,7 @@ use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
 use std::sync::{Arc, Mutex, OnceLock};
 
+// Store it globally so that the animation looks smooth between calls
 static SNAKE_ANIMATION: OnceLock<Mutex<SnakeAnimation>> = OnceLock::new();
 
 #[derive(Debug)]
@@ -50,12 +51,13 @@ impl Default for FormattedBuffer {
 pub struct FormattedBufferPart {
     pub token: AnnotatedToken,
     span: Span<'static>,
-    /// Meant for animations. Should have the same grapheme widths as span,
+    /// We can replace the span with an animated version.
+    /// The animated span should have the same grapheme widths as span,
     /// but can have different content and style. If present, it will be used
     /// instead of span for display, but span will still be used for cursor
     /// positioning and other logic.
-    alternative_span: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>>,
-    /// true means cursor is on first grapheme, (and we should draw the contents with the cursor style)
+    animated_span_fn: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>>,
+    /// Where to draw the cursor if it is on this token. This is a grapheme index, not a byte index.
     pub cursor_grapheme_idx: Option<usize>,
     pub tooltip: Option<String>,
 }
@@ -66,8 +68,8 @@ impl std::fmt::Debug for FormattedBufferPart {
             .field("token", &self.token)
             .field("span", &self.span)
             .field(
-                "alternative_span",
-                &self.alternative_span.as_ref().map(|_| "<fn>"),
+                "animated_span_fn",
+                &self.animated_span_fn.as_ref().map(|_| "<fn>"),
             )
             .field("cursor_grapheme_idx", &self.cursor_grapheme_idx)
             .field("tooltip", &self.tooltip)
@@ -156,7 +158,7 @@ impl FormattedBufferPart {
             );
         }
 
-        let anim_span_fn: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>> =
+        let animated_span_fn: Option<Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>> =
             if token.annotation == TokenAnnotation::IsCommandWord
                 && token.token.value.starts_with("python")
             {
@@ -178,7 +180,7 @@ impl FormattedBufferPart {
         Self {
             token: token.clone(),
             span,
-            alternative_span: anim_span_fn,
+            animated_span_fn,
             cursor_grapheme_idx,
             tooltip,
         }
@@ -189,7 +191,7 @@ impl FormattedBufferPart {
     }
 
     pub fn get_possible_animated_span(&self, now: std::time::Instant) -> Span<'static> {
-        if let Some(anim_fn) = &self.alternative_span {
+        if let Some(anim_fn) = &self.animated_span_fn {
             let anim_span = anim_fn(now);
             if let Err(e) =
                 Self::check_anim_span_matches_graph_boundaries(&self.span, anim_span.clone())
