@@ -86,7 +86,7 @@ fn token_to_style(
         return Palette::opening_and_closing_pair();
     }
 
-    if token.annotation == TokenAnnotation::IsCommandWord {
+    if matches!(token.annotation, TokenAnnotation::IsCommandWord(_)) {
         if recognised_command == Some(true) {
             return Palette::recognised_word();
         }
@@ -160,7 +160,7 @@ impl FormattedBufferPart {
 
         let animated_span_fn: Option<
             Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>,
-        > = if token.annotation == TokenAnnotation::IsCommandWord
+        > = if matches!(token.annotation, TokenAnnotation::IsCommandWord(_))
             && token.token.value.starts_with("python")
         {
             let normal_string = token.token.value.clone();

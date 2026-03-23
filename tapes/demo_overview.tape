@@ -30,8 +30,9 @@ Enter
 Enter
 Type `No other process is drawing this; it is all happening inside of bash!`
 Sleep 2000ms
+Ctrl+C
 Enter
-Type `" && flyline --matrix-animation false`
+Type `flyline --matrix-animation false`
 Enter
 Sleep 800ms
 

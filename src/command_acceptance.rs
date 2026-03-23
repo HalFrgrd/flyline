@@ -18,7 +18,12 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     if let Some(last_token) = tokens
         .iter()
         .rev()
-        .skip_while(|t| matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Comment | TokenKind::Newline))
+        .skip_while(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Whitespace(_) | TokenKind::Comment | TokenKind::Newline
+            )
+        })
         .next()
     {
         match &last_token.kind {

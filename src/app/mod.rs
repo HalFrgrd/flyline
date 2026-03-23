@@ -1056,7 +1056,7 @@ impl<'a> App<'a> {
             .dparser_tokens_cache
             .iter()
             .find(|t| t.token.byte_range().contains(&(cursor_pos - 1)))
-            .map(|t| t.annotation);
+            .map(|t| t.annotation.clone());
 
         if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
             // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
@@ -1267,9 +1267,14 @@ impl<'a> App<'a> {
     }
 
     fn wordinfo_fn(token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
-        match token.annotation {
-            dparser::TokenAnnotation::IsCommandWord => {
-                let (command_type, description) = bash_funcs::get_command_info(&token.token.value);
+        log::debug!(
+            "Getting WordInfo for token '{}' with annotation {:?}",
+            token.token.value,
+            token.annotation
+        );
+        match &token.annotation {
+            dparser::TokenAnnotation::IsCommandWord(value) => {
+                let (command_type, description) = bash_funcs::get_command_info(&value);
                 Some(buffer_format::WordInfo {
                     tooltip: Some(description.to_string()),
                     is_recognised_command: command_type != bash_funcs::CommandType::Unknown,

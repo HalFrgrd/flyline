@@ -188,7 +188,7 @@ impl ToInclusiveRange for Range<usize> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenAnnotation {
     None,
     IsPartOfSingleQuotedString,
@@ -198,7 +198,7 @@ pub enum TokenAnnotation {
         opening_idx: usize,     // index of the opening token in the tokens vector
         is_auto_inserted: bool, // true if this closing token was automatically inserted by the editor
     },
-    IsCommandWord, // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
+    IsCommandWord(String), // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
     IsEnvVar,
 }
 
@@ -534,20 +534,40 @@ impl DParser {
                         } else if let Some(prev_token) = &previous_token {
                             match prev_token.token.kind {
                                 TokenKind::Dollar => {
-                                    self.tokens[idx].annotation = TokenAnnotation::IsEnvVar;
+                                    if let TokenAnnotation::IsCommandWord(start_of_command) =
+                                        &prev_token.annotation
+                                    {
+                                        self.tokens[idx].annotation =
+                                            TokenAnnotation::IsCommandWord(
+                                                start_of_command.clone()
+                                                    + &self.tokens[idx].token.value,
+                                            );
+                                    } else {
+                                        self.tokens[idx].annotation = TokenAnnotation::IsEnvVar;
+                                    }
                                 }
                                 _ if self.current_command_range.is_none() => {
-                                    self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
+                                    self.tokens[idx].annotation = TokenAnnotation::IsCommandWord(
+                                        self.tokens[idx].token.value.clone(),
+                                    );
                                 }
                                 _ => {
                                     // leave as None
                                 }
                             }
                         } else {
-                            self.tokens[idx].annotation = TokenAnnotation::IsCommandWord;
+                            self.tokens[idx].annotation = TokenAnnotation::IsCommandWord(
+                                self.tokens[idx].token.value.clone(),
+                            );
                         }
                     }
+
                     if self.current_command_range.is_none() {
+                        if self.tokens[idx].annotation == TokenAnnotation::None {
+                            self.tokens[idx].annotation = TokenAnnotation::IsCommandWord(
+                                self.tokens[idx].token.value.clone(),
+                            );
+                        }
                         self.current_command_range = Some(idx..=idx);
                     } else if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
@@ -780,11 +800,14 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
 
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(
+            tokens[0].annotation,
+            TokenAnnotation::IsCommandWord("echo".to_string())
+        );
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "héllo");
         assert_eq!(tokens[2].annotation, TokenAnnotation::None);
@@ -793,7 +816,10 @@ mod tests {
         assert_eq!(tokens[4].annotation, TokenAnnotation::None);
         assert_eq!(tokens[5].token.value, " ");
         assert_eq!(tokens[6].token.value, "echo");
-        assert_eq!(tokens[6].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(
+            tokens[6].annotation,
+            TokenAnnotation::IsCommandWord("echo".to_string())
+        );
         assert_eq!(tokens[7].token.value, " ");
         assert_eq!(tokens[8].token.value, "'");
         assert_eq!(tokens[8].annotation, TokenAnnotation::IsOpening(Some(10)));
@@ -821,11 +847,14 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
 
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(
+            tokens[0].annotation,
+            TokenAnnotation::IsCommandWord("echo".to_string())
+        );
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "\"");
         assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(4)));
@@ -853,10 +882,13 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
         assert_eq!(tokens[0].token.value, "cat");
-        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(
+            tokens[0].annotation,
+            TokenAnnotation::IsCommandWord("cat".to_string())
+        );
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "<<A");
         assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(8)));
@@ -934,10 +966,13 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(
+            tokens[0].annotation,
+            TokenAnnotation::IsCommandWord("echo".to_string())
+        );
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "'");
         assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
@@ -979,7 +1014,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
 
         // After merging: echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), )) (6)
@@ -1007,10 +1042,13 @@ mod tests {
         parser.walk_to_end();
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(tokens[0].annotation, TokenAnnotation::IsCommandWord);
+        assert_eq!(
+            tokens[0].annotation,
+            TokenAnnotation::IsCommandWord("echo".to_string())
+        );
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "$");
         assert_eq!(tokens[2].annotation, TokenAnnotation::None);
@@ -1174,7 +1212,7 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
 
         // <<'EOF' token should be an opening that is matched.
@@ -1203,7 +1241,7 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
 
         // <<"EOF" token should be matched.
@@ -1231,7 +1269,7 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
 
         // <<\EOF token should be matched.
@@ -1260,7 +1298,7 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
         }
 
         assert_eq!(tokens[2].token.value, "<<E'O'F");
@@ -1276,6 +1314,29 @@ mod tests {
                 opening_idx: 2,
                 is_auto_inserted: false,
             }
+        );
+    }
+
+    #[test]
+    fn test_env_var_starting_command() {
+        let input = "$HOME/bin/echo";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+        }
+
+        assert_eq!(tokens[0].token.value, "$");
+        assert_eq!(
+            tokens[0].annotation,
+            TokenAnnotation::IsCommandWord("$".to_string())
+        );
+        assert_eq!(tokens[1].token.value, "HOME/bin/echo");
+        assert_eq!(
+            tokens[1].annotation,
+            TokenAnnotation::IsCommandWord("$HOME/bin/echo".to_string())
         );
     }
 }
