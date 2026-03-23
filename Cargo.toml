@@ -41,3 +41,9 @@ default-features = false
 [features]
 integration-tests = []
 
+# cross-rs configurations
+[workspace.metadata.cross.target.x86_64-unknown-linux-gnu]
+# the centos version has an older glibc which helps with compatibility
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main-centos"
+[workspace.metadata.cross.target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main-centos"
