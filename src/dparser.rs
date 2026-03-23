@@ -537,11 +537,13 @@ impl DParser {
                                     if let TokenAnnotation::IsCommandWord(start_of_command) =
                                         &prev_token.annotation
                                     {
-                                        self.tokens[idx].annotation =
-                                            TokenAnnotation::IsCommandWord(
-                                                start_of_command.clone()
-                                                    + &self.tokens[idx].token.value,
-                                            );
+                                        let full_command = TokenAnnotation::IsCommandWord(
+                                            start_of_command.clone()
+                                                + &self.tokens[idx].token.value,
+                                        );
+                                        self.tokens[idx.saturating_sub(1)].annotation =
+                                            full_command.clone();
+                                        self.tokens[idx].annotation = full_command;
                                     } else {
                                         self.tokens[idx].annotation = TokenAnnotation::IsEnvVar;
                                     }
@@ -1331,7 +1333,7 @@ mod tests {
         assert_eq!(tokens[0].token.value, "$");
         assert_eq!(
             tokens[0].annotation,
-            TokenAnnotation::IsCommandWord("$".to_string())
+            TokenAnnotation::IsCommandWord("$HOME/bin/echo".to_string())
         );
         assert_eq!(tokens[1].token.value, "HOME/bin/echo");
         assert_eq!(
