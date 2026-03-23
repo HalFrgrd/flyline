@@ -302,8 +302,8 @@ Options:
           
           [possible values: true, false]
 
-      --disable-animations [<SHOW_ANIMATIONS>]
-          Disable animations
+      --show-animations [<SHOW_ANIMATIONS>]
+          Show animations
           
           [possible values: true, false]
 
@@ -326,6 +326,9 @@ Options:
           Run matrix animation in the terminal background
           
           [possible values: true, false]
+
+      --frame-rate <FPS>
+          Render frame rate in frames per second (1–120, default 60)
 
       --mouse-mode <MODE>
           Mouse capture mode (none, simple, smart). Default is smart
