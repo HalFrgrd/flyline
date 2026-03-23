@@ -30,7 +30,7 @@ pub enum MouseMode {
 #[derive(Debug)]
 pub struct Settings {
     /// Optional path to the zsh history file. When `None`, zsh history is not loaded.
-    /// When `Some`, zsh history is loaded in addition to bash history; an empty string or no
+    /// When `Some`, zsh history is loaded in addition to Bash history; an empty string or no
     /// value means use the default path (`$HOME/.zsh_history`).
     pub zsh_history_path: Option<String>,
     /// Whether to show tutorial hints for first-time users.

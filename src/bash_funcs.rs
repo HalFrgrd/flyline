@@ -165,8 +165,7 @@ fn get_command_type_uncached(cmd: &str) -> (CommandType, String) {
     (command_type, short_desc)
 }
 
-static CALL_TYPE_CACHE: Mutex<Option<HashMap<String, (CommandType, String)>>> =
-    Mutex::new(None);
+static CALL_TYPE_CACHE: Mutex<Option<HashMap<String, (CommandType, String)>>> = Mutex::new(None);
 
 pub fn reset_call_type_cache() {
     let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
@@ -174,7 +173,6 @@ pub fn reset_call_type_cache() {
 }
 
 pub fn get_command_info(cmd: &str) -> (CommandType, String) {
-
     let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
     let cache = cache_guard.get_or_insert_with(|| HashMap::new());
 

@@ -78,7 +78,7 @@ struct FlylineArgs {
     /// Set the logging level
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<LogLevel>,
-    /// Load zsh history in addition to bash history. Optionally specify a PATH to the zsh history
+    /// Load zsh history in addition to Bash history. Optionally specify a PATH to the zsh history
     /// file; if omitted, defaults to $HOME/.zsh_history
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
@@ -470,7 +470,11 @@ fn setup_autocompletion() {
     let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
     unsafe {
         // `evalstring` will free the string we pass to it, so we use `xmalloc` to allocate it on the heap.
-        bash_symbols::evalstring(bash_symbols::xmalloc_cstr(&completion_str), from_file.as_ptr(), flags);
+        bash_symbols::evalstring(
+            bash_symbols::xmalloc_cstr(&completion_str),
+            from_file.as_ptr(),
+            flags,
+        );
     }
 }
 
