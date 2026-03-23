@@ -30,7 +30,7 @@ pub enum MouseMode {
 #[derive(Debug)]
 pub struct Settings {
     /// Optional path to the zsh history file. When `None`, zsh history is not loaded.
-    /// When `Some`, zsh history is loaded in addition to bash history; an empty string or no
+    /// When `Some`, zsh history is loaded in addition to Bash history; an empty string or no
     /// value means use the default path (`$HOME/.zsh_history`).
     pub zsh_history_path: Option<String>,
     /// Whether to show tutorial hints for first-time users.
@@ -55,6 +55,8 @@ pub struct Settings {
     pub custom_animations: HashMap<String, PromptAnimation>,
     /// Run matrix animation in the terminal background.
     pub matrix_animation: bool,
+    /// Render frame rate in frames per second (1–120).
+    pub frame_rate: u8,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -74,6 +76,7 @@ impl Default for Settings {
             ai_system_prompt: None,
             custom_animations: HashMap::new(),
             matrix_animation: false,
+            frame_rate: 60,
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }

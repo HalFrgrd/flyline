@@ -21,11 +21,20 @@ Sleep 800ms
 
 Type `flyline --matrix-animation`
 Enter
-Sleep 4000ms
+Sleep 800ms
 
+Type `echo "`
+Delete
+Enter
+Enter
+Enter
+Type `No other process is drawing this; it is all happening inside of bash!`
+Sleep 2000ms
+Ctrl+C
+Enter
 Type `flyline --matrix-animation false`
 Enter
-Sleep 500ms
+Sleep 800ms
 
 Type `# flyline integrates deeply with bash allowing it to extend bash's tab completions, history searching, and more.`
 Enter

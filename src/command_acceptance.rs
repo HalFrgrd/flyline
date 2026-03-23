@@ -18,7 +18,12 @@ pub fn will_bash_accept_buffer(buffer: &str) -> bool {
     if let Some(last_token) = tokens
         .iter()
         .rev()
-        .skip_while(|t| matches!(t.kind, TokenKind::Whitespace(_) | TokenKind::Comment))
+        .skip_while(|t| {
+            matches!(
+                t.kind,
+                TokenKind::Whitespace(_) | TokenKind::Comment | TokenKind::Newline
+            )
+        })
         .next()
     {
         match &last_token.kind {
@@ -300,5 +305,10 @@ mod tests {
     fn test_quote_start_mid_word() {
         assert_eq!(will_bash_accept_buffer(r#"a ['"#), false);
         assert_eq!(will_bash_accept_buffer(r#"a [""#), false);
+    }
+
+    #[test]
+    fn test_multiline_ands() {
+        assert_eq!(will_bash_accept_buffer("echo && \n"), false);
     }
 }

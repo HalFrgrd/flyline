@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/blob/main/LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/releases)
 
-**A bash plugin for modern command line editing.**
+**A Bash plugin for modern command line editing.**
 
 
 ![Demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_overview.gif)
@@ -28,11 +28,40 @@ Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/C
 
 
 # Installation
-Download the latest `libflyline.so`.
-In your `.bashrc` (or in your current bash session):
+Download the latest `libflyline` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases).
+Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
 flyline --tutorial-mode
+```
+
+Disable flyline with `enable -d flyline`.
+
+<details>
+<summary><strong>On newer versions of bash</strong></summary>
+Taken from https://www.gnu.org/software/bash/manual/bash.html:
+
+> The -f option means to load the new builtin command name from shared object filename, on systems that support dynamic loading. If filename does not contain a slash, Bash will use the value of the BASH_LOADABLES_PATH variable as a colon-separated list of directories in which to search for filename. The default for BASH_LOADABLES_PATH is system-dependent, and may include "." to force a search of the current directory.
+
+Bash 4.4 introduced `BASH_LOADABLES_PATH`
+Bash 5.2-alpha added a default value for `BASH_LOADABLES_PATH`.
+Check your Bash version with: `bash --version`
+
+So on Bash at least as recent as 5.2, if you install flyline to one of:
+- /opt/local/lib/bash
+- /opt/pkg/lib/bash
+- /usr/lib/bash
+- /usr/local/lib/bash
+- /usr/pkg/lib/bash
+
+Then you can simply run `enable flyline`.
+
+</details>
+
+## Build from source
+```bash
+cargo build
+enable -f target/debug/libflyline.so flyline
 ```
 
 # Rich prompts
@@ -68,7 +97,7 @@ export PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 
 ## Dynamic time in prompts
 
-Flyline recognises the standard bash time escape sequences and re-evaluates them on every prompt draw, so the time shown is always current:
+Flyline recognises the standard Bash time escape sequences and re-evaluates them on every prompt draw, so the time shown is always current:
 
 | Sequence       | Output                          |
 |----------------|---------------------------------|
@@ -90,7 +119,7 @@ export RPS1='\e[01;34m\@\e[0m'
 
 ### Custom time format with `\D{format}`
 
-Use `\D{format}` with any [Chrono format string](https://docs.rs/chrono/latest/chrono/format/strftime/index.html) to display the time exactly how you want it. This is similar to `\D{format}` in the [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), but the format string is interpreted by Chrono rather than strftime.
+Use `\D{format}` with any [Chrono format string](https://docs.rs/chrono/latest/chrono/format/strftime/index.html) to display the time exactly how you want it. This is similar to `\D{format}` in the [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), but the format string is interpreted by Chrono rather than strftime.
 
 ```bash
 # Show date and time
@@ -153,7 +182,7 @@ Starship provides customizable prompts for any shell. The git metrics prompt par
 
 # Agent mode
 Flyline can call an agent of your choice with the current command buffer as a prompt.
-This allows you to write a command in plain English and your agent will convert it into a bash command:
+This allows you to write a command in plain English and your agent will convert it into a Bash command:
 
 ![Agen mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
 
@@ -162,8 +191,8 @@ The agent should return a simple json array of possible results as described by 
 The agent can return more text than just the json array but flyline will only present dats from the array.
 
 # Tab completion improvements
-Flyline extends bash's tab completion feature in many ways.
-Note that you will need to have [setup completions in normal bash first](https://github.com/scop/bash-completion).
+Flyline extends Bash's tab completion feature in many ways.
+Note that you will need to have [setup completions in normal Bash first](https://github.com/scop/bash-completion).
 
 ### Fuzzy tab completions
 When you're presented with suggestions, you can type to fuzzily search through the list:
@@ -171,7 +200,7 @@ When you're presented with suggestions, you can type to fuzzily search through t
 ![Fuzzy suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_suggestions.gif)
 
 ### Alias expansion
-Aliases are expanded before tab completion so that bash calls the desired completion function.
+Aliases are expanded before tab completion so that Bash calls the desired completion function.
 For instance, if `gc` aliases to `git commit`, `gc --verbo<Tab>` will work as expected.
 
 ### Nested command
@@ -214,7 +243,7 @@ Inline suggestions appear as you type based on the most recent matching history 
 Pressing `Up` will scroll through history entries that are a prefix match with the current command.
 
 **Zsh history entries:**
-Optionally read zsh history entries to make migrating to bash easier. 
+Optionally read zsh history entries to make migrating to Bash easier. 
 
 # Integrations
 ## VS Code:
@@ -266,7 +295,7 @@ Options:
           [possible values: error, warn, info, debug, trace]
 
       --load-zsh-history [<PATH>]
-          Load zsh history in addition to bash history. Optionally specify a PATH to the zsh history file; if omitted, defaults to $HOME/.zsh_history
+          Load zsh history in addition to Bash history. Optionally specify a PATH to the zsh history file; if omitted, defaults to $HOME/.zsh_history
 
       --tutorial-mode [<TUTORIAL_MODE>]
           Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode false` to disable
