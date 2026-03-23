@@ -76,7 +76,7 @@ impl Default for Settings {
             ai_system_prompt: None,
             custom_animations: HashMap::new(),
             matrix_animation: false,
-            frame_rate: 60,
+            frame_rate: 30,
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }

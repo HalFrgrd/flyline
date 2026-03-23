@@ -200,6 +200,7 @@ pub enum TokenAnnotation {
     },
     IsCommandWord(String), // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
     IsEnvVar,
+    IsComment,
 }
 
 #[derive(Debug, Clone)]
@@ -522,6 +523,10 @@ impl DParser {
                             self.tokens[idx].annotation =
                                 TokenAnnotation::IsPartOfDoubleQuotedString;
                         }
+                    }
+
+                    if token.kind == TokenKind::Comment {
+                        self.tokens[idx].annotation = TokenAnnotation::IsComment;
                     }
 
                     if token.kind.is_word() {
@@ -1340,5 +1345,29 @@ mod tests {
             tokens[1].annotation,
             TokenAnnotation::IsCommandWord("$HOME/bin/echo".to_string())
         );
+    }
+
+    #[test]
+    fn test_comment_annotation() {
+        let input = "echo hello # this is a comment";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+        }
+
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(
+            tokens[0].annotation,
+            TokenAnnotation::IsCommandWord("echo".to_string())
+        );
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "hello");
+        assert_eq!(tokens[2].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[3].token.value, " ");
+        assert_eq!(tokens[4].token.value, "# this is a comment");
+        assert_eq!(tokens[4].annotation, TokenAnnotation::IsComment);
     }
 }

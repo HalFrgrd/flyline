@@ -356,9 +356,10 @@ impl<'a> App<'a> {
                 break;
             }
 
-            const MIN_REFRESH_RATE: Duration = Duration::from_millis(30);
+            let min_refresh_rate: Duration =
+                Duration::from_millis((1000.0 / (self.settings.frame_rate as f64)) as u64);
 
-            redraw = if event::poll(MIN_REFRESH_RATE).unwrap() {
+            redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
                         if let KeyPressReturnType::NeedScreenClear = self.on_keypress(key) {
@@ -403,7 +404,7 @@ impl<'a> App<'a> {
                 true
             };
 
-            if std::time::Instant::now().duration_since(self.last_draw_time) > MIN_REFRESH_RATE {
+            if std::time::Instant::now().duration_since(self.last_draw_time) > min_refresh_rate {
                 // redraw periodically to update animations even when no events are occurring
                 // (e.g. cursor blinking, matrix animation)
                 redraw = true;

@@ -54,9 +54,10 @@ Sleep 800ms
 Type `# Or fuzzy history search like fzf:`
 Enter
 Sleep 800ms
+Ctrl+R
+Sleep 1500ms
 Type `hs`
 Sleep 800ms
-Ctrl+R
 Down
 Sleep 500ms
 Down
