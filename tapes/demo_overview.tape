@@ -36,10 +36,6 @@ Type `flyline --matrix-animation false`
 Enter
 Sleep 800ms
 
-Type `flyline --matrix-animation false`
-Enter
-Sleep 500ms
-
 Type `# flyline integrates deeply with bash allowing it to extend bash's tab completions, history searching, and more.`
 Enter
 Sleep 800ms

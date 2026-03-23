@@ -86,8 +86,8 @@ struct FlylineArgs {
     /// Use `--tutorial-mode false` to disable.
     #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1)]
     tutorial_mode: Option<bool>,
-    /// Disable animations
-    #[arg(long = "disable-animations", default_missing_value = "true", num_args = 0..=1)]
+    /// Show animations
+    #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
     /// Show inline history suggestions
     #[arg(long = "show-inline-history", default_missing_value = "true", num_args = 0..=1)]
@@ -101,6 +101,9 @@ struct FlylineArgs {
     /// Run matrix animation in the terminal background
     #[arg(long = "matrix-animation", default_missing_value = "true", num_args = 0..=1)]
     matrix_animation: Option<bool>,
+    /// Render frame rate in frames per second (1–120, default 60)
+    #[arg(long = "frame-rate", value_name = "FPS", value_parser = clap::value_parser!(u8).range(1..=120))]
+    frame_rate: Option<u8>,
     /// Mouse capture mode (none, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
@@ -306,9 +309,9 @@ impl Flyline {
                     self.settings.matrix_animation = enabled;
                 }
 
-                if let Some(enabled) = parsed.matrix_animation {
-                    log::info!("Matrix animation enabled: {}", enabled);
-                    self.settings.matrix_animation = enabled;
+                if let Some(fps) = parsed.frame_rate {
+                    log::info!("Frame rate set to {}", fps);
+                    self.settings.frame_rate = fps;
                 }
 
                 if let Some(mode) = parsed.mouse_mode {
