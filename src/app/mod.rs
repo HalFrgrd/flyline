@@ -201,6 +201,7 @@ impl<'a> App<'a> {
         let formatted_buffer_cache = FormattedBuffer::default();
 
         content_builder::reset_matrix_anim_state();
+        bash_funcs::reset_call_type_cache();
 
         App {
             mode: AppRunningState::Running,

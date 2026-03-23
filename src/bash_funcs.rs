@@ -9,7 +9,6 @@ use std::io::Read;
 use std::os::unix::io::FromRawFd;
 use std::path::Path;
 use std::sync::Mutex;
-use std::sync::OnceLock;
 
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)
 where
@@ -166,12 +165,18 @@ fn get_command_type_uncached(cmd: &str) -> (CommandType, String) {
     (command_type, short_desc)
 }
 
-pub fn get_command_info(cmd: &str) -> (CommandType, String) {
-    static CALL_TYPE_CACHE: OnceLock<Mutex<HashMap<String, (CommandType, String)>>> =
-        OnceLock::new();
-    CALL_TYPE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+static CALL_TYPE_CACHE: Mutex<Option<HashMap<String, (CommandType, String)>>> =
+    Mutex::new(None);
 
-    let mut cache = CALL_TYPE_CACHE.get().unwrap().lock().unwrap();
+pub fn reset_call_type_cache() {
+    let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
+    *cache_guard = None;
+}
+
+pub fn get_command_info(cmd: &str) -> (CommandType, String) {
+
+    let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
+    let cache = cache_guard.get_or_insert_with(|| HashMap::new());
 
     if let Some(res) = cache.get(cmd) {
         res.clone()
