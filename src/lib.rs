@@ -469,7 +469,8 @@ fn setup_autocompletion() {
     let from_file = c"flyline_setup_autocompletion";
     let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
     unsafe {
-        bash_symbols::evalstring(completion_str.into_raw(), from_file.as_ptr(), flags);
+        // `evalstring` will free the string we pass to it, so we use `xmalloc` to allocate it on the heap.
+        bash_symbols::evalstring(bash_symbols::xmalloc_cstr(&completion_str), from_file.as_ptr(), flags);
     }
 }
 
@@ -520,9 +521,8 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
 
     let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
         // Bash expects name to be heap allocated so it can free it later
-        // Default global allocator uses libc alloc which should be the same as what bash uses
-        let name = std::ffi::CString::new("flyline").unwrap();
-        let name_ptr = name.into_raw();
+        let name = c"flyline";
+        let name_ptr = unsafe { bash_symbols::xmalloc_cstr(&name) };
         unsafe {
             (*bash_input).stream_type = bash_symbols::StreamType::StStdin;
             (*bash_input).name = name_ptr;

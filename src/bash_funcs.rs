@@ -9,7 +9,6 @@ use std::io::Read;
 use std::os::unix::io::FromRawFd;
 use std::path::Path;
 use std::sync::Mutex;
-use std::sync::OnceLock;
 
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)
 where
@@ -166,12 +165,18 @@ fn get_command_type_uncached(cmd: &str) -> (CommandType, String) {
     (command_type, short_desc)
 }
 
-pub fn get_command_info(cmd: &str) -> (CommandType, String) {
-    static CALL_TYPE_CACHE: OnceLock<Mutex<HashMap<String, (CommandType, String)>>> =
-        OnceLock::new();
-    CALL_TYPE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+static CALL_TYPE_CACHE: Mutex<Option<HashMap<String, (CommandType, String)>>> =
+    Mutex::new(None);
 
-    let mut cache = CALL_TYPE_CACHE.get().unwrap().lock().unwrap();
+pub fn reset_call_type_cache() {
+    let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
+    *cache_guard = None;
+}
+
+pub fn get_command_info(cmd: &str) -> (CommandType, String) {
+
+    let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
+    let cache = cache_guard.get_or_insert_with(|| HashMap::new());
 
     if let Some(res) = cache.get(cmd) {
         res.clone()
@@ -454,7 +459,8 @@ pub fn run_programmable_completions(
     }
 
     unsafe {
-        bash_symbols::rl_line_buffer = std::ffi::CString::new(full_command).unwrap().into_raw(); // git commi asdf
+        let full_command_cstr = std::ffi::CString::new(full_command).unwrap();
+        bash_symbols::rl_line_buffer = bash_symbols::xmalloc_cstr(&full_command_cstr); // git commi asdf
         bash_symbols::rl_point = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
         bash_symbols::rl_readline_state |= 0x00004000; // RL_STATE_COMPLETING
 
@@ -654,7 +660,8 @@ extern "C" fn quoting_function_c(
         .and_then(QuoteType::from_char)
         .unwrap_or_default();
     let quoted = quote_function_rust(&s_str, quote_type);
-    std::ffi::CString::new(quoted).unwrap().into_raw()
+    let quoted_cstr = std::ffi::CString::new(quoted).unwrap();
+    unsafe { bash_symbols::xmalloc_cstr(&quoted_cstr) }
 }
 
 pub fn quote_function_rust(s: &str, quote_type: QuoteType) -> String {
@@ -701,7 +708,8 @@ within double quotes, and vice versa.  It should be smarter. */
 extern "C" fn dequoting_function_c(s: *const c_char, _quote_char: c_int) -> *mut c_char {
     let s_str = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().into_owned() };
     let dequoted = dequoting_function_rust(&s_str);
-    std::ffi::CString::new(dequoted).unwrap().into_raw()
+    let dequoted_cstr = std::ffi::CString::new(dequoted).unwrap();
+    unsafe { bash_symbols::xmalloc_cstr(&dequoted_cstr) }
 }
 
 pub fn dequoting_function_rust(s: &str) -> String {

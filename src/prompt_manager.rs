@@ -206,7 +206,7 @@ impl PromptStringBuilder {
                 .to_string();
 
             // `decode_prompt_string` returns an allocated buffer.
-            libc::free(decoded_prompt_cstr as *mut libc::c_void);
+            bash_symbols::xfree(decoded_prompt_cstr as *mut std::ffi::c_void);
 
             decoded
         };

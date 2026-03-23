@@ -416,6 +416,7 @@ pub fn reset_matrix_anim_state() {
     *MATRIX_ANIM_STATE.lock().unwrap() = None;
 }
 
+
 #[derive(Debug, Clone)]
 struct MatrixAnimState {
     last_update_time: std::time::Instant,
