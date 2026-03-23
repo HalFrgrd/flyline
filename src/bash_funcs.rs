@@ -454,7 +454,8 @@ pub fn run_programmable_completions(
     }
 
     unsafe {
-        bash_symbols::rl_line_buffer = std::ffi::CString::new(full_command).unwrap().into_raw(); // git commi asdf
+        let full_command_cstr = std::ffi::CString::new(full_command).unwrap();
+        bash_symbols::rl_line_buffer = bash_symbols::xmalloc_cstr(&full_command_cstr); // git commi asdf
         bash_symbols::rl_point = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
         bash_symbols::rl_readline_state |= 0x00004000; // RL_STATE_COMPLETING
 
@@ -654,7 +655,8 @@ extern "C" fn quoting_function_c(
         .and_then(QuoteType::from_char)
         .unwrap_or_default();
     let quoted = quote_function_rust(&s_str, quote_type);
-    std::ffi::CString::new(quoted).unwrap().into_raw()
+    let quoted_cstr = std::ffi::CString::new(quoted).unwrap();
+    unsafe { bash_symbols::xmalloc_cstr(&quoted_cstr) }
 }
 
 pub fn quote_function_rust(s: &str, quote_type: QuoteType) -> String {
@@ -701,7 +703,8 @@ within double quotes, and vice versa.  It should be smarter. */
 extern "C" fn dequoting_function_c(s: *const c_char, _quote_char: c_int) -> *mut c_char {
     let s_str = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().into_owned() };
     let dequoted = dequoting_function_rust(&s_str);
-    std::ffi::CString::new(dequoted).unwrap().into_raw()
+    let dequoted_cstr = std::ffi::CString::new(dequoted).unwrap();
+    unsafe { bash_symbols::xmalloc_cstr(&dequoted_cstr) }
 }
 
 pub fn dequoting_function_rust(s: &str) -> String {

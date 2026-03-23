@@ -344,6 +344,25 @@ unsafe extern "C" {
 
     // char *expand_string_to_string (string, quoted)
     pub fn expand_string_to_string(string: *const c_char, quoted: c_int) -> *mut c_char;
+
+    // xmalloc.h
+    pub fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
+    pub fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mut libc::c_void;
+    pub fn xfree(ptr: *mut libc::c_void);
+}
+
+/// Allocate a copy of `s` using bash's `xmalloc`.
+///
+/// # Safety
+/// Must be called while bash is loaded. The returned pointer must be freed with
+/// `xfree` or passed to bash (which will free it with `xfree`).
+pub unsafe fn xmalloc_cstr(s: &std::ffi::CStr) -> *mut c_char {
+    let bytes = s.to_bytes_with_nul();
+    unsafe {
+        let ptr = xmalloc(bytes.len()) as *mut c_char;
+        std::ptr::copy_nonoverlapping(bytes.as_ptr() as *const c_char, ptr, bytes.len());
+        ptr
+    }
 }
 
 // history.h
