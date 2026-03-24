@@ -5,6 +5,7 @@ use crate::active_suggestions::ActiveSuggestions;
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
+use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -17,7 +18,6 @@ use crate::settings::{MouseMode, Settings};
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
-use crate::{command_acceptance, content_builder};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -200,7 +200,6 @@ impl<'a> App<'a> {
         let buffer = TextBuffer::new("");
         let formatted_buffer_cache = FormattedBuffer::default();
 
-        content_builder::reset_matrix_anim_state();
         bash_funcs::reset_call_type_cache();
 
         App {
@@ -308,7 +307,8 @@ impl<'a> App<'a> {
             if redraw {
                 let frame_area = terminal.get_frame().area();
 
-                let mut content = self.create_content(frame_area.width);
+                let mut content =
+                    self.create_content(frame_area.width, frame_area.y, last_terminal_area.height);
 
                 if !self.mode.is_running() {
                     // so that we can put the terminal emulators cursor below the content
@@ -1317,7 +1317,7 @@ impl<'a> App<'a> {
         format!("{:>5}", s.trim_start_matches('0'))
     }
 
-    fn create_content(&mut self, width: u16) -> Contents {
+    fn create_content(&mut self, width: u16, viewport_top: u16, terminal_height: u16) -> Contents {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
@@ -1861,7 +1861,7 @@ impl<'a> App<'a> {
         }
 
         if self.mode.is_running() && self.settings.matrix_animation {
-            content.apply_matrix_anim(now);
+            content.apply_matrix_anim(now, viewport_top, terminal_height);
         }
 
         content
