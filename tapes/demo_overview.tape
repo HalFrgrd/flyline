@@ -11,7 +11,7 @@ Type `flyline --auto-close-chars true && clear`
 Enter
 Show
 
-Type "# flyline is a full terminal app that replaces bash's line editing functionality."
+Type "# flyline is a full terminal app that replaces Bash's line editing functionality."
 Enter
 Sleep 800ms
 
@@ -36,7 +36,7 @@ Type `flyline --matrix-animation false`
 Enter
 Sleep 800ms
 
-Type `# flyline integrates deeply with bash allowing it to extend bash's tab completions, history searching, and more.`
+Type `# flyline integrates deeply with Bash allowing it to extend Bash's tab completions, history searching, and more.`
 Enter
 Sleep 800ms
 
