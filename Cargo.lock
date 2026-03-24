@@ -306,7 +306,6 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
- "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -817,8 +816,6 @@ dependencies = [
  "lscolors",
  "rand 0.10.0",
  "ratatui 0.30.0-beta.0",
- "regex",
- "serde_json",
  "skim",
  "timeago",
  "tokio",
