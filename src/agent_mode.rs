@@ -52,8 +52,9 @@ impl AiOutputSelection {
 /// Parse AI command output into a list of [`AiSuggestion`]s.
 ///
 /// The output may contain prose before and/or after the JSON array.
-/// We use a regex to locate the start of the JSON array and then attempt to
-/// parse it with `serde_json`.  The raw output is always logged at DEBUG level.
+/// We use a regex to locate the start of the JSON array, bracket-match to
+/// find its end, then parse the extracted slice with the `json` crate.
+/// The raw output is always logged at DEBUG level.
 pub fn parse_ai_output(raw: &str) -> Vec<AiSuggestion> {
     log::debug!("AI raw output: {}", raw);
 
@@ -111,20 +112,12 @@ pub fn parse_ai_output(raw: &str) -> Vec<AiSuggestion> {
         }
     };
 
-    match serde_json::from_str::<serde_json::Value>(candidate) {
-        Ok(serde_json::Value::Array(arr)) => {
+    match json::parse(candidate) {
+        Ok(json::JsonValue::Array(arr)) => {
             let mut suggestions = Vec::with_capacity(arr.len());
             for item in arr {
-                let command = item
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let description = item
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let command = item["command"].as_str().unwrap_or("").to_string();
+                let description = item["description"].as_str().unwrap_or("").to_string();
                 if !command.is_empty() {
                     suggestions.push(AiSuggestion {
                         command,
