@@ -1734,14 +1734,12 @@ impl<'a> App<'a> {
             }
             ContentMode::AiOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
-                if !selection.header.is_empty() {
-                    for line in selection.header.lines() {
-                        content.write_span(
-                            &Span::styled(line.to_string(), Palette::secondary_text()),
-                            Tag::Blank,
-                        );
-                        content.newline();
-                    }
+                for line in selection.header.lines() {
+                    content.write_span(
+                        &Span::styled(line.to_string(), Palette::secondary_text()),
+                        Tag::Blank,
+                    );
+                    content.newline();
                 }
                 for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
                     let is_selected = selection.selected_idx == row_idx;
@@ -1803,14 +1801,12 @@ impl<'a> App<'a> {
                     content.fill_line(Tag::AiResult(row_idx));
                     content.newline();
                 }
-                if !selection.footer.is_empty() {
-                    for line in selection.footer.lines() {
-                        content.write_span(
-                            &Span::styled(line.to_string(), Palette::secondary_text()),
-                            Tag::Blank,
-                        );
-                        content.newline();
-                    }
+                for line in selection.footer.lines() {
+                    content.write_span(
+                        &Span::styled(line.to_string(), Palette::secondary_text()),
+                        Tag::Blank,
+                    );
+                    content.newline();
                 }
             }
             ContentMode::AiError {
