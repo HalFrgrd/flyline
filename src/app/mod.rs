@@ -858,9 +858,8 @@ impl<'a> App<'a> {
                     }
                     ContentMode::Normal | ContentMode::TabCompletion(_) => {
                         self.content_mode = ContentMode::FuzzyHistorySearch;
-                        let _ = self
-                            .history_manager
-                            .get_fuzzy_search_results(self.buffer.buffer());
+                        self.history_manager
+                            .warm_fuzzy_search_cache(self.buffer.buffer());
                     }
                     ContentMode::AiMode { .. }
                     | ContentMode::AiOutputSelection(_)
@@ -1517,13 +1516,22 @@ impl<'a> App<'a> {
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
+                // Compute the maximum number of rows available for the suggestions grid.
+                // Rows 0..cursor_row are already used; after the upcoming newline the grid
+                // starts at cursor_row+1.  Enforce a minimum of 2.
+                let rows_before = content.cursor_position().row + 1;
+                let max_num_rows = (terminal_height.saturating_sub(rows_before) as usize).max(2);
                 content.newline();
-                let max_num_rows = 10; // TODO
+                let grid_start_row = content.cursor_position().row;
                 let mut rows: Vec<Vec<(Vec<Span>, usize)>> = vec![vec![]; max_num_rows];
 
+                let mut selected_grid_row: Option<u16> = None;
                 for (col, col_width) in active_suggestions.into_grid(max_num_rows, width as usize) {
                     for (row_idx, (formatted, is_selected)) in col.iter().enumerate() {
                         let formatted_suggestion = formatted.render(col_width, *is_selected);
+                        if *is_selected {
+                            selected_grid_row = Some(row_idx as u16);
+                        }
                         rows[row_idx].push((formatted_suggestion, formatted.suggestion_idx));
                     }
                 }
@@ -1546,13 +1554,22 @@ impl<'a> App<'a> {
                     );
                 }
                 active_suggestions.update_grid_size(num_rows_used, num_logical_cols);
+
+                if let Some(sel_row) = selected_grid_row {
+                    content.set_focus_row(grid_start_row + sel_row);
+                }
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
+                // Compute the maximum number of visible result entries.
+                // After the newline the results start immediately, and one additional row
+                // is reserved for the trailing status line.  Enforce a minimum of 2.
+                let rows_before = content.cursor_position().row + 1;
+                let max_visible = (terminal_height.saturating_sub(rows_before + 1) as usize).max(2);
                 content.newline();
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
-                    .get_fuzzy_search_results(self.buffer.buffer());
+                    .get_fuzzy_search_results(self.buffer.buffer(), max_visible);
 
                 let num_digits_for_index = num_searched.to_string().len();
                 let num_digits_for_score = 3;
@@ -1586,6 +1603,7 @@ impl<'a> App<'a> {
 
                     let is_selected = fuzzy_search_index == row_idx;
                     if is_selected {
+                        content.set_focus_row(content.cursor_position().row);
                         spans.push(Span::styled("▐", Palette::matched_character()));
                     } else {
                         spans.push(Span::styled(" ", Palette::secondary_text()));
@@ -1743,6 +1761,9 @@ impl<'a> App<'a> {
                 }
                 for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
                     let is_selected = selection.selected_idx == row_idx;
+                    if is_selected {
+                        content.set_focus_row(content.cursor_position().row);
+                    }
                     let indicator = if is_selected { "▐" } else { " " };
                     let indicator_style = if is_selected {
                         Palette::matched_character()

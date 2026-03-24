@@ -76,6 +76,10 @@ pub struct Contents {
     pub term_cursor_pos: Option<Coord>,
     /// Whether to tell the term emulator to move the cursor here
     pub use_term_emulator_cursor: bool,
+    /// The row to keep visible when content exceeds the terminal height.
+    /// Falls back to the cursor row when `None`; set by fuzzy search, tab completions,
+    /// and AI selection mode to point at the currently selected item.
+    pub focus_row: Option<u16>,
 }
 
 impl Contents {
@@ -90,7 +94,13 @@ impl Contents {
             cursor_pos: Coord::new(0, 0),
             term_cursor_pos: None,
             use_term_emulator_cursor: false,
+            focus_row: None,
         }
+    }
+
+    /// Set the focus row – the row that `get_row_range_to_show` will try to keep visible.
+    pub fn set_focus_row(&mut self, row: u16) {
+        self.focus_row = Some(row);
     }
 
     /// Get the current cursor position (x, y)
@@ -324,17 +334,23 @@ impl Contents {
     }
 
     pub fn get_row_range_to_show(&self, height: u16) -> (u16, u16) {
-        // Returns the range of visual rows to show given the available height
+        // Returns the range of visual rows to show given the available height.
+        // Uses `focus_row` when set, otherwise falls back to the cursor row.
         let total_rows = self.height();
         if total_rows <= height {
             (0, total_rows)
-        } else if let Some(cursor) = self.term_cursor_pos {
-            let bottom = std::cmp::min(cursor.row.saturating_add(1), total_rows);
-            let top = bottom.saturating_sub(height);
-            (top, bottom)
         } else {
-            // Show the final rows
-            (total_rows.saturating_sub(height), total_rows)
+            let focus = self
+                .focus_row
+                .or_else(|| self.term_cursor_pos.map(|c| c.row));
+            if let Some(focus_row) = focus {
+                let bottom = std::cmp::min(focus_row.saturating_add(1), total_rows);
+                let top = bottom.saturating_sub(height);
+                (top, bottom)
+            } else {
+                // Show the final rows
+                (total_rows.saturating_sub(height), total_rows)
+            }
         }
     }
 
