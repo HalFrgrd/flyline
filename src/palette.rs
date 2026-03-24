@@ -20,6 +20,11 @@ impl Palette {
     pub fn secondary_text() -> Style {
         Style::default().add_modifier(Modifier::DIM)
     }
+    pub fn history_inline_meta() -> Style {
+        Style::default()
+            .add_modifier(Modifier::DIM)
+            .add_modifier(Modifier::ITALIC)
+    }
     pub fn tutorial_hint() -> Style {
         Style::default().add_modifier(Modifier::BOLD)
     }
