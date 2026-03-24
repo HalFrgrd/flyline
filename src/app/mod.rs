@@ -282,19 +282,18 @@ impl<'a> App<'a> {
             };
             if let Some(result) = ai_result {
                 match result {
-                    Ok(raw_output) => {
-                        let suggestions = parse_ai_output(&raw_output);
-                        if suggestions.is_empty() {
-                            log::warn!("AI command returned no suggestions");
+                    Ok(raw_output) => match parse_ai_output(&raw_output) {
+                        Ok(selection) => {
+                            self.content_mode = ContentMode::AiOutputSelection(selection);
+                        }
+                        Err(e) => {
+                            log::warn!("AI command returned no suggestions: {}", e);
                             self.content_mode = ContentMode::AiError {
-                                message: "Failed to parse AI output as valid JSON:".to_string(),
+                                message: format!("Failed to parse AI output: {}", e),
                                 raw_output,
                             };
-                        } else {
-                            self.content_mode =
-                                ContentMode::AiOutputSelection(AiOutputSelection::new(suggestions));
                         }
-                    }
+                    },
                     Err((msg, raw_output)) => {
                         log::error!("AI command failed: {}", msg);
                         self.content_mode = ContentMode::AiError {
@@ -1735,6 +1734,13 @@ impl<'a> App<'a> {
             }
             ContentMode::AiOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
+                for line in selection.header.lines() {
+                    content.write_span(
+                        &Span::styled(line.to_string(), Palette::secondary_text()),
+                        Tag::Blank,
+                    );
+                    content.newline();
+                }
                 for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
                     let is_selected = selection.selected_idx == row_idx;
                     let indicator = if is_selected { "▐" } else { " " };
@@ -1793,6 +1799,13 @@ impl<'a> App<'a> {
                         content.write_span(&styled_span, Tag::AiResult(row_idx));
                     }
                     content.fill_line(Tag::AiResult(row_idx));
+                    content.newline();
+                }
+                for line in selection.footer.lines() {
+                    content.write_span(
+                        &Span::styled(line.to_string(), Palette::secondary_text()),
+                        Tag::Blank,
+                    );
                     content.newline();
                 }
             }
