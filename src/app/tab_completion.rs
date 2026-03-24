@@ -775,6 +775,14 @@ impl App<'_> {
             &[&Suggestion::new(r#""$PWD/many spaces here/"#, "", "")],
         );
 
+        // Test that $HOME prefix is preserved (not backslash-escaped) while the
+        // dollar sign in the new filename part IS escaped.
+        // $HOME/foo/ should complete to $HOME/foo/\$baz.txt (not \$HOME/foo/\$baz.txt).
+        run_test_on(
+            "fl_comp_util --fallback-to-default $HOME/foo/",
+            &[&Suggestion::new(r#"$HOME/foo/\$baz.txt"#, "", " ")],
+        );
+
         // Test glob expansion with glob characters in directory components
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default foo*/ba*",
