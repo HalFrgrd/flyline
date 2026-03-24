@@ -33,24 +33,14 @@ impl PathPatternExpansion {
         // prefix never contains unresolved globs (which would prevent
         // `strip_prefix` from working later).  When there are no glob
         // characters, fall back to splitting at the last `/`.
-        let (raw_prefix, rhs_pattern) = match first_glob_pos {
-            Some(glob_pos) => {
-                if let Some(slash_pos) = pattern[..glob_pos].rfind('/') {
-                    (
-                        pattern[..slash_pos].to_string(),
-                        pattern[slash_pos + 1..].to_string(),
-                    )
-                } else {
-                    (String::new(), pattern.to_string())
-                }
-            }
-            None => {
-                if let Some(pos) = pattern.rfind('/') {
-                    (pattern[..pos].to_string(), pattern[pos + 1..].to_string())
-                } else {
-                    (String::new(), pattern.to_string())
-                }
-            }
+        let search_end = first_glob_pos.unwrap_or(pattern.len());
+        let (raw_prefix, rhs_pattern) = if let Some(slash_pos) = pattern[..search_end].rfind('/') {
+            (
+                pattern[..slash_pos].to_string(),
+                pattern[slash_pos + 1..].to_string(),
+            )
+        } else {
+            (String::new(), pattern.to_string())
         };
         let fully_expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
 
