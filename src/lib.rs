@@ -409,9 +409,19 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("---------------------- Starting app ------------------------");
 
-            self.content = match app::get_command(&self.settings) {
-                app::ExitState::WithCommand(cmd) => cmd.into_bytes(),
-                app::ExitState::WithoutCommand => vec![],
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                app::get_command(&self.settings)
+            }));
+
+            self.content = match result {
+                Ok(app::ExitState::WithCommand(cmd)) => cmd.into_bytes(),
+                Ok(app::ExitState::WithoutCommand) => vec![],
+                Err(_) => {
+                    eprintln!("flyline: app panicked; recovering with empty command");
+                    log::error!("app panicked; recovering with empty command");
+                    std::thread::sleep(std::time::Duration::from_millis(1000));
+                    vec![]
+                }
             };
             log::debug!("---------------------- App finished ------------------------");
             self.content.push(b'\n');
