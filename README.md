@@ -15,7 +15,7 @@
 
 Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) to provide a code-editor-like experience and other features:
 - Undo and redo support
-- Cursor animations
+- [Agent assisted command writing](#agent-mode)
 - Fuzzy history suggestions
 - Fuzzy autocompletions
 - Integration with Bash autocomplete
@@ -25,6 +25,7 @@ Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/C
 - Auto close brackets and quotes
 - Syntax highlighting
 - Runs in the same process as Bash
+- Cursor animations
 
 
 # Installation
@@ -263,7 +264,7 @@ Two possible fixes are:
 
 # Settings
 
-Configure flyline by calling it with options in your `.bashrc` (after the `enable` call).
+Configure flyline by running `flyline [OPTIONS]` in your `.bashrc` (after the `enable` call) or in Bash session.
 Run `flyline --help` to see all available options.
 You can also set these options in your current session but they won't persist between sessions.
 [Examples can be found here.](examples/settings.sh)
