@@ -73,14 +73,13 @@ jobs:
 
       - name: Prepare release artifact
         run: |
-          ARCHIVE="libflyline-${{ github.ref_name }}-${{ matrix.target }}.so"
-          cp "target/${{ matrix.target }}/release/libflyline.so" "$ARCHIVE"
+          ARCHIVE="libflyline-${{ github.ref_name }}-${{ matrix.target }}"
           echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
 
       - name: Build archive (Unix)
         shell: bash
         run: |
-          tar czf "$ARCHIVE.tar.gz" "$ARCHIVE"
+          tar czf "$ARCHIVE.tar.gz" -C "target/${{ matrix.target }}/release" libflyline.so
           shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
           echo "ASSET=$ARCHIVE.tar.gz" >> $GITHUB_ENV
           echo "ASSET_SUM=$ARCHIVE.tar.gz.sha256" >> $GITHUB_ENV
