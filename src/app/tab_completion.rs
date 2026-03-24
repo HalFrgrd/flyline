@@ -20,11 +20,37 @@ struct PathPatternExpansion {
 
 impl PathPatternExpansion {
     fn new(pattern: &str) -> Self {
-        // Split the pattern at the last '/'.
-        let (raw_prefix, rhs_pattern) = if let Some(pos) = pattern.rfind('/') {
-            (pattern[..pos].to_string(), pattern[pos + 1..].to_string())
-        } else {
-            (String::new(), pattern.to_string())
+        // Find the first unescaped glob metacharacter (* ? [).
+        let first_glob_pos = pattern
+            .char_indices()
+            .find(|&(i, c)| {
+                (c == '*' || c == '?' || c == '[') && (i == 0 || pattern.as_bytes()[i - 1] != b'\\')
+            })
+            .map(|(i, _)| i);
+
+        // When the pattern contains glob characters, split at the last `/`
+        // that comes *before* the first glob metacharacter so that the
+        // prefix never contains unresolved globs (which would prevent
+        // `strip_prefix` from working later).  When there are no glob
+        // characters, fall back to splitting at the last `/`.
+        let (raw_prefix, rhs_pattern) = match first_glob_pos {
+            Some(glob_pos) => {
+                if let Some(slash_pos) = pattern[..glob_pos].rfind('/') {
+                    (
+                        pattern[..slash_pos].to_string(),
+                        pattern[slash_pos + 1..].to_string(),
+                    )
+                } else {
+                    (String::new(), pattern.to_string())
+                }
+            }
+            None => {
+                if let Some(pos) = pattern.rfind('/') {
+                    (pattern[..pos].to_string(), pattern[pos + 1..].to_string())
+                } else {
+                    (String::new(), pattern.to_string())
+                }
+            }
         };
         let fully_expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
 
@@ -662,6 +688,7 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util --filenames ",
             &[
+                &Suggestion::new(r#"abc/"#, "", ""),
                 &Suggestion::new(r#"bar.txt"#, "", " "),
                 &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
                 &Suggestion::new(r#"foo/"#, "", ""),
@@ -713,6 +740,7 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util_dirnames --fallback-to-default-filenames ",
             &[
+                &Suggestion::new(r#"abc/"#, "", ""),
                 &Suggestion::new(r#"foo/"#, "", ""),
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
                 &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
@@ -722,6 +750,7 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util_plusdirs --quoting-desired ",
             &[
+                &Suggestion::new(r#"abc/"#, "", ""),
                 &Suggestion::new(r#"foo/"#, "", ""),
                 &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
                 &Suggestion::new(r#"multi\ word\ option"#, "", " "),
@@ -754,6 +783,17 @@ impl App<'_> {
         run_test_on(
             r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
             &[&Suggestion::new(r#""$PWD/many spaces here/"#, "", "")],
+        );
+
+        // Test glob expansion with glob characters in directory components
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default foo*/ba*",
+            &[&Suggestion::new(r#"foo/baz"#, "", " ")],
+        );
+
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default abc/foo*/ba*",
+            &[&Suggestion::new(r#"abc/foo/baz"#, "", " ")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
