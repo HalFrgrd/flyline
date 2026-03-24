@@ -1497,7 +1497,7 @@ impl<'a> App<'a> {
                         }
 
                         content.write_span_dont_overwrite(
-                            &Span::from(extra_info_text).style(Palette::secondary_text()),
+                            &Span::from(extra_info_text).style(Palette::history_inline_meta()),
                             |_| Tag::HistorySuggestion,
                             None,
                         );
