@@ -18,13 +18,13 @@ Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/C
 - Cursor animations
 - Fuzzy history suggestions
 - Fuzzy autocompletions
-- Integration with bash autocomplete
+- Integration with Bash autocomplete
 - [Mouse support](#mouse-support)
-- [Improvements on bash's tab completion](#tab-completion-improvements)
+- [Improvements on Bash's tab completion](#tab-completion-improvements)
 - Tooltips
 - Auto close brackets and quotes
 - Syntax highlighting
-- Runs in the same process as bash
+- Runs in the same process as Bash
 
 
 # Installation
@@ -38,7 +38,7 @@ flyline --tutorial-mode
 Disable flyline with `enable -d flyline`.
 
 <details>
-<summary><strong>On newer versions of bash</strong></summary>
+<summary><strong>On newer versions of Bash</strong></summary>
 Taken from https://www.gnu.org/software/bash/manual/bash.html:
 
 > The -f option means to load the new builtin command name from shared object filename, on systems that support dynamic loading. If filename does not contain a slash, Bash will use the value of the BASH_LOADABLES_PATH variable as a colon-separated list of directories in which to search for filename. The default for BASH_LOADABLES_PATH is system-dependent, and may include "." to force a search of the current directory.
@@ -69,7 +69,7 @@ enable -f target/debug/libflyline.so flyline
 Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
 ## PS1
-The `PS1` environment variable sets the left prompt just like normal. See [bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship integration](#starship-integration) for more information.
+The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship integration](#starship-integration) for more information.
 ![PS1 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps1.gif)
 ```bash
 export PS1='\u@\h:\w$ '
@@ -184,15 +184,15 @@ Starship provides customizable prompts for any shell. The git metrics prompt par
 Flyline can call an agent of your choice with the current command buffer as a prompt.
 This allows you to write a command in plain English and your agent will convert it into a Bash command:
 
-![Agen mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
+![Agent mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
 
 [See the examples on how to set this up.](examples/agent_mode.sh)
 The agent should return a simple json array of possible results as described by the example system prompt.
-The agent can return more text than just the json array but flyline will only present dats from the array.
+The agent can return more text than just the json array but flyline will only present data from the array.
 
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
-Note that you will need to have [setup completions in normal Bash first](https://github.com/scop/bash-completion).
+Note that you will need to have [set up completions in normal Bash first](https://github.com/scop/bash-completion).
 
 ### Fuzzy tab completions
 When you're presented with suggestions, you can type to fuzzily search through the list:
@@ -205,10 +205,10 @@ For instance, if `gc` aliases to `git commit`, `gc --verbo<Tab>` will work as ex
 
 ### Nested command
 Tab completions inside subshell, command substitution, and process substitution expressions.
-For instance, `ls $(grep --<Tab>)` call `grep`'s tab completion logic if it's setup.
+For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's set up.
 
 ### Mid-word tab completions
-When your cursor is mid way through a word and you press tab (e.g. `grep --i<Tab>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
+When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
 
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
@@ -250,15 +250,15 @@ Optionally read zsh history entries to make migrating to Bash easier.
 Recommended settings
 - [`terminal.integrated.minimumContrastRatio = 1`](vscode://settings/terminal.integrated.minimumContrastRatio) to prevent the cell's foreground colour changing when it's under the cursor.
 - You may want to set [`terminal.integrated.macOptionIsMeta`](vscode://settings/terminal.integrated.macOptionIsMeta) so `Option+<KEY>` shortcuts are properly recognised.
-- Enable [`terminal.integrated.enableKittyKeyboardProtocol`](vscode://settings/terminal.integrated.enableKittyKeyboardProtocol) so that the integrated terminal [correctly forwards keystrokes to flyline](https://code.visualstudio.com/updates/v1_109#_new-vt-features). You will need to set [`workbench.settings.alwaysShowAdvancedSettings = 1`](vscode://settings/workbench.settings.alwaysShowAdvancedSettings)to find this setting.
+- Enable [`terminal.integrated.enableKittyKeyboardProtocol`](vscode://settings/terminal.integrated.enableKittyKeyboardProtocol) so that the integrated terminal [correctly forwards keystrokes to flyline](https://code.visualstudio.com/updates/v1_109#_new-vt-features). You will need to set [`workbench.settings.alwaysShowAdvancedSettings = 1`](vscode://settings/workbench.settings.alwaysShowAdvancedSettings) to find this setting.
 - If keybindings are not working properly, you can debug by [Toggling Keyboard Shortcuts Troubleshooting](https://code.visualstudio.com/docs/configure/keybindings#_troubleshooting-keyboard-shortcuts).
 - Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
 
 ## macOS
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
 Two possible fixes are:
-- Map `Command+<KEY>` to`Control+<KEY>` in your terminal emulator settings.
-- Use a terminal emulator that supports [Kitty's exteneded keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
+- Map `Command+<KEY>` to `Control+<KEY>` in your terminal emulator settings.
+- Use a terminal emulator that supports [Kitty's extended keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
 
 # Settings
