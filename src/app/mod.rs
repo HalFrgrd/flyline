@@ -9,10 +9,7 @@ use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
-use crate::history::{
-    HistoryEntry, HistoryEntryFormatted, HistoryManager, HistorySearchDirection,
-    SessionHistoryManager,
-};
+use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
@@ -131,10 +128,27 @@ pub fn get_command(settings: &Settings) -> ExitState {
     end_state
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FuzzyHistorySource {
+    BashHistory,
+    CancelledCommands,
+    AgentPrompts,
+}
+
+impl FuzzyHistorySource {
+    fn label(self) -> &'static str {
+        match self {
+            FuzzyHistorySource::BashHistory => "Fuzzy search",
+            FuzzyHistorySource::CancelledCommands => "Cancelled commands",
+            FuzzyHistorySource::AgentPrompts => "Agent prompts",
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ContentMode {
     Normal,
-    FuzzyHistorySearch,
+    FuzzyHistorySearch(FuzzyHistorySource),
     TabCompletion(ActiveSuggestions),
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
@@ -150,10 +164,16 @@ enum ContentMode {
         message: String,
         raw_output: String,
     },
-    /// Fuzzy search through commands that were cancelled with Ctrl+C in this session.
-    FuzzyCancelledCommandSearch,
-    /// Fuzzy search through prompts that were submitted to agent mode in this session.
-    FuzzyAgentPromptSearch,
+}
+
+impl ContentMode {
+    /// Return the active `FuzzyHistorySource` if this mode is `FuzzyHistorySearch`, or `None`.
+    fn fuzzy_source(&self) -> Option<FuzzyHistorySource> {
+        match self {
+            ContentMode::FuzzyHistorySearch(s) => Some(*s),
+            _ => None,
+        }
+    }
 }
 
 struct App<'a> {
@@ -180,9 +200,9 @@ struct App<'a> {
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     last_viewport_top: u16,
     /// Commands that were cancelled (Ctrl+C) during this session.
-    cancelled_command_history: SessionHistoryManager,
+    cancelled_command_history: HistoryManager,
     /// Prompts that were submitted to agent mode during this session.
-    agent_prompt_history: SessionHistoryManager,
+    agent_prompt_history: HistoryManager,
 }
 
 impl<'a> App<'a> {
@@ -238,8 +258,8 @@ impl<'a> App<'a> {
             tooltip: None,
             settings,
             last_viewport_top: 0,
-            cancelled_command_history: SessionHistoryManager::new(),
-            agent_prompt_history: SessionHistoryManager::new(),
+            cancelled_command_history: HistoryManager::empty(),
+            agent_prompt_history: HistoryManager::empty(),
         }
     }
 
@@ -467,19 +487,9 @@ impl<'a> App<'a> {
             }
             Some((tag @ Tag::HistoryResult(idx), true)) => {
                 self.last_mouse_over_cell = Some(tag);
-                match self.content_mode {
-                    ContentMode::FuzzyHistorySearch => {
-                        self.history_manager.fuzzy_search_set_by_visual_idx(idx);
-                    }
-                    ContentMode::FuzzyCancelledCommandSearch => {
-                        self.cancelled_command_history
-                            .fuzzy_search_set_by_visual_idx(idx);
-                    }
-                    ContentMode::FuzzyAgentPromptSearch => {
-                        self.agent_prompt_history
-                            .fuzzy_search_set_by_visual_idx(idx);
-                    }
-                    _ => {}
+                if let Some(source) = self.content_mode.fuzzy_source() {
+                    self.history_manager_for(source)
+                        .fuzzy_search_set_by_visual_idx(idx);
                 }
             }
             Some((tag @ Tag::AiResult(idx), true)) => {
@@ -520,25 +530,15 @@ impl<'a> App<'a> {
             }
             Some(Tag::HistoryResult(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                    match self.content_mode {
-                        ContentMode::FuzzyHistorySearch => {
-                            self.history_manager.fuzzy_search_set_by_visual_idx(idx);
-                            self.accept_fuzzy_history_search();
-                            update_buffer = true;
+                    if let Some(source) = self.content_mode.fuzzy_source() {
+                        self.history_manager_for(source)
+                            .fuzzy_search_set_by_visual_idx(idx);
+                        let is_agent_prompt = source == FuzzyHistorySource::AgentPrompts;
+                        self.accept_fuzzy_history_search(source);
+                        if is_agent_prompt {
+                            self.start_ai_mode();
                         }
-                        ContentMode::FuzzyCancelledCommandSearch => {
-                            self.cancelled_command_history
-                                .fuzzy_search_set_by_visual_idx(idx);
-                            self.accept_session_history_search(false);
-                            update_buffer = true;
-                        }
-                        ContentMode::FuzzyAgentPromptSearch => {
-                            self.agent_prompt_history
-                                .fuzzy_search_set_by_visual_idx(idx);
-                            self.accept_session_history_search(true);
-                            update_buffer = true;
-                        }
-                        _ => {}
+                        update_buffer = true;
                     }
                 }
             }
@@ -659,20 +659,9 @@ impl<'a> App<'a> {
             }
             KeyEvent {
                 code: KeyCode::Up, ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.history_manager
-                    .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
-            }
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } if matches!(self.content_mode, ContentMode::FuzzyCancelledCommandSearch) => {
-                self.cancelled_command_history
-                    .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
-            }
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } if matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch) => {
-                self.agent_prompt_history
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_)) => {
+                let source = self.content_mode.fuzzy_source().unwrap();
+                self.history_manager_for(source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
             }
             // Handle Up with history navigation when at first line
@@ -704,65 +693,26 @@ impl<'a> App<'a> {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.history_manager
-                    .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyCancelledCommandSearch) => {
-                self.cancelled_command_history
-                    .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch) => {
-                self.agent_prompt_history
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_)) => {
+                let source = self.content_mode.fuzzy_source().unwrap();
+                self.history_manager_for(source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
             }
             // Page Up/Down - scroll by a full page in fuzzy history search
             KeyEvent {
                 code: KeyCode::PageUp,
                 ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.history_manager
-                    .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
-            }
-            KeyEvent {
-                code: KeyCode::PageUp,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyCancelledCommandSearch) => {
-                self.cancelled_command_history
-                    .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
-            }
-            KeyEvent {
-                code: KeyCode::PageUp,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch) => {
-                self.agent_prompt_history
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_)) => {
+                let source = self.content_mode.fuzzy_source().unwrap();
+                self.history_manager_for(source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
             }
             KeyEvent {
                 code: KeyCode::PageDown,
                 ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.history_manager
-                    .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
-            }
-            KeyEvent {
-                code: KeyCode::PageDown,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyCancelledCommandSearch) => {
-                self.cancelled_command_history
-                    .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
-            }
-            KeyEvent {
-                code: KeyCode::PageDown,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch) => {
-                self.agent_prompt_history
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_)) => {
+                let source = self.content_mode.fuzzy_source().unwrap();
+                self.history_manager_for(source)
                     .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
             }
             // Handle Down with history navigation when at last line
@@ -790,21 +740,13 @@ impl<'a> App<'a> {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::SHIFT,
                 ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.accept_fuzzy_history_search();
-            }
-            // Shift+Enter in session history search - accept without running
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            } if matches!(
-                self.content_mode,
-                ContentMode::FuzzyCancelledCommandSearch | ContentMode::FuzzyAgentPromptSearch
-            ) =>
-            {
-                let is_agent = matches!(self.content_mode, ContentMode::FuzzyAgentPromptSearch);
-                self.accept_session_history_search(is_agent);
+            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_)) => {
+                // Shift+Enter in any fuzzy history mode: accept to buffer only (no run/launch)
+                let source = match self.content_mode {
+                    ContentMode::FuzzyHistorySearch(s) => s,
+                    _ => unreachable!(),
+                };
+                self.accept_fuzzy_history_search(source);
             }
             // Shift+Enter on an empty buffer - open fuzzy search for agent prompts
             KeyEvent {
@@ -816,7 +758,8 @@ impl<'a> App<'a> {
                 && !self.agent_prompt_history.is_empty()
                 && !matches!(self.content_mode, ContentMode::AiMode { .. }) =>
             {
-                self.content_mode = ContentMode::FuzzyAgentPromptSearch;
+                self.content_mode =
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
                 let _ = self
                     .agent_prompt_history
                     .get_fuzzy_search_results(self.buffer.buffer());
@@ -840,39 +783,39 @@ impl<'a> App<'a> {
                 code: KeyCode::Char('j'), // Without this, when I hold enter, sometimes 'j' is read as input
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } => match &mut self.content_mode {
-                ContentMode::FuzzyHistorySearch => {
-                    self.accept_fuzzy_history_search();
-                    self.try_submit_current_buffer();
-                }
-                ContentMode::FuzzyCancelledCommandSearch => {
-                    self.accept_session_history_search(false);
-                    self.try_submit_current_buffer();
-                }
-                ContentMode::FuzzyAgentPromptSearch => {
-                    self.accept_session_history_search(true);
-                    self.start_ai_mode();
-                }
-                ContentMode::TabCompletion(active_suggestions) => {
-                    active_suggestions.accept_currently_selected(&mut self.buffer);
-                    self.content_mode = ContentMode::Normal;
-                }
-                ContentMode::Normal => {
-                    self.try_submit_current_buffer();
-                }
-                ContentMode::AiMode { .. } => {}
-                ContentMode::AiError { .. } => {
-                    self.content_mode = ContentMode::Normal;
-                }
-                ContentMode::AiOutputSelection(selection) => {
-                    if let Some(cmd) = selection.selected_command() {
-                        let cmd = cmd.to_string();
-                        self.buffer.replace_buffer(&cmd);
-                        self.on_possible_buffer_change(None);
+            } => {
+                if let ContentMode::FuzzyHistorySearch(source) = self.content_mode {
+                    self.accept_fuzzy_history_search(source);
+                    if source == FuzzyHistorySource::AgentPrompts {
+                        self.start_ai_mode();
+                    } else {
+                        self.try_submit_current_buffer();
                     }
-                    self.content_mode = ContentMode::Normal;
+                } else {
+                    match &mut self.content_mode {
+                        ContentMode::TabCompletion(active_suggestions) => {
+                            active_suggestions.accept_currently_selected(&mut self.buffer);
+                            self.content_mode = ContentMode::Normal;
+                        }
+                        ContentMode::Normal => {
+                            self.try_submit_current_buffer();
+                        }
+                        ContentMode::AiMode { .. } => {}
+                        ContentMode::AiError { .. } => {
+                            self.content_mode = ContentMode::Normal;
+                        }
+                        ContentMode::AiOutputSelection(selection) => {
+                            if let Some(cmd) = selection.selected_command() {
+                                let cmd = cmd.to_string();
+                                self.buffer.replace_buffer(&cmd);
+                                self.on_possible_buffer_change(None);
+                            }
+                            self.content_mode = ContentMode::Normal;
+                        }
+                        ContentMode::FuzzyHistorySearch(_) => unreachable!(),
+                    }
                 }
-            },
+            }
             // Shift+Tab or BackTab - cycle suggestions backward
             KeyEvent {
                 code: KeyCode::Tab,
@@ -890,35 +833,31 @@ impl<'a> App<'a> {
             // Tab - cycle suggestions or trigger completion
             KeyEvent {
                 code: KeyCode::Tab, ..
-            } => match &mut self.content_mode {
-                ContentMode::FuzzyHistorySearch => {
-                    self.accept_fuzzy_history_search();
+            } => {
+                if let ContentMode::FuzzyHistorySearch(source) = self.content_mode {
+                    self.accept_fuzzy_history_search(source);
+                } else {
+                    match &mut self.content_mode {
+                        ContentMode::TabCompletion(active_suggestions) => {
+                            active_suggestions.on_tab(false);
+                        }
+                        ContentMode::Normal => {
+                            self.start_tab_complete();
+                        }
+                        ContentMode::AiMode { .. } => {}
+                        ContentMode::AiOutputSelection(_) => {}
+                        ContentMode::AiError { .. } => {}
+                        ContentMode::FuzzyHistorySearch(_) => unreachable!(),
+                    }
                 }
-                ContentMode::FuzzyCancelledCommandSearch => {
-                    self.accept_session_history_search(false);
-                }
-                ContentMode::FuzzyAgentPromptSearch => {
-                    self.accept_session_history_search(true);
-                }
-                ContentMode::TabCompletion(active_suggestions) => {
-                    active_suggestions.on_tab(false);
-                }
-                ContentMode::Normal => {
-                    self.start_tab_complete();
-                }
-                ContentMode::AiMode { .. } => {}
-                ContentMode::AiOutputSelection(_) => {}
-                ContentMode::AiError { .. } => {}
-            },
+            }
 
             // Escape - clear suggestions or toggle mouse (Simple and Smart modes)
             KeyEvent {
                 code: KeyCode::Esc, ..
             } => match self.content_mode {
                 ContentMode::TabCompletion(_)
-                | ContentMode::FuzzyHistorySearch
-                | ContentMode::FuzzyCancelledCommandSearch
-                | ContentMode::FuzzyAgentPromptSearch
+                | ContentMode::FuzzyHistorySearch(_)
                 | ContentMode::AiMode { .. }
                 | ContentMode::AiOutputSelection(_)
                 | ContentMode::AiError { .. } => {
@@ -942,7 +881,8 @@ impl<'a> App<'a> {
             } => {
                 let buffer = self.buffer.buffer().to_string();
                 if buffer.is_empty() && !self.cancelled_command_history.is_empty() {
-                    self.content_mode = ContentMode::FuzzyCancelledCommandSearch;
+                    self.content_mode =
+                        ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
                     let _ = self
                         .cancelled_command_history
                         .get_fuzzy_search_results(&buffer);
@@ -970,14 +910,14 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => match self.content_mode {
-                ContentMode::FuzzyHistorySearch => {
+                ContentMode::FuzzyHistorySearch(FuzzyHistorySource::BashHistory) => {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal
                 | ContentMode::TabCompletion(_)
-                | ContentMode::FuzzyCancelledCommandSearch
-                | ContentMode::FuzzyAgentPromptSearch => {
-                    self.content_mode = ContentMode::FuzzyHistorySearch;
+                | ContentMode::FuzzyHistorySearch(_) => {
+                    self.content_mode =
+                        ContentMode::FuzzyHistorySearch(FuzzyHistorySource::BashHistory);
                     let _ = self
                         .history_manager
                         .get_fuzzy_search_results(self.buffer.buffer());
@@ -1216,28 +1156,22 @@ impl<'a> App<'a> {
         }
     }
 
-    fn accept_fuzzy_history_search(&mut self) {
-        if let Some(entry) = self.history_manager.accept_fuzzy_search_result() {
-            let new_command = entry.command.clone();
-            self.buffer.replace_buffer(new_command.as_str());
+    /// Return a mutable reference to the `HistoryManager` backing the given `source`.
+    fn history_manager_for(&mut self, source: FuzzyHistorySource) -> &mut HistoryManager {
+        match source {
+            FuzzyHistorySource::BashHistory => &mut self.history_manager,
+            FuzzyHistorySource::CancelledCommands => &mut self.cancelled_command_history,
+            FuzzyHistorySource::AgentPrompts => &mut self.agent_prompt_history,
         }
-        self.content_mode = ContentMode::Normal;
     }
 
-    /// Accept the currently selected entry from a session history fuzzy search
-    /// (`FuzzyCancelledCommandSearch` when `is_agent` is `false`,
-    /// `FuzzyAgentPromptSearch` when `is_agent` is `true`) and load it into the
-    /// buffer.  The content mode is reset to `Normal`.
-    fn accept_session_history_search(&mut self, is_agent: bool) {
-        let command = if is_agent {
-            self.agent_prompt_history
-                .accept_fuzzy_search_result()
-                .map(|e| e.command.clone())
-        } else {
-            self.cancelled_command_history
-                .accept_fuzzy_search_result()
-                .map(|e| e.command.clone())
-        };
+    /// Accept the currently selected entry from any fuzzy history search source and load
+    /// it into the buffer.  The content mode is reset to `Normal`.
+    fn accept_fuzzy_history_search(&mut self, source: FuzzyHistorySource) {
+        let command = self
+            .history_manager_for(source)
+            .accept_fuzzy_search_result()
+            .map(|e| e.command.clone());
         if let Some(cmd) = command {
             self.buffer.replace_buffer(&cmd);
         }
@@ -1869,49 +1803,30 @@ impl<'a> App<'a> {
                 }
                 active_suggestions.update_grid_size(num_rows_used, num_logical_cols);
             }
-            ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
+            ContentMode::FuzzyHistorySearch(source) if self.mode.is_running() => {
                 content.newline();
-                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
-                    .history_manager
-                    .get_fuzzy_search_results(self.buffer.buffer());
+                let buffer = self.buffer.buffer().to_string();
+                let label = source.label();
+                let tutorial_mode = self.settings.tutorial_mode;
+                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = match source {
+                    FuzzyHistorySource::BashHistory => {
+                        self.history_manager.get_fuzzy_search_results(&buffer)
+                    }
+                    FuzzyHistorySource::CancelledCommands => self
+                        .cancelled_command_history
+                        .get_fuzzy_search_results(&buffer),
+                    FuzzyHistorySource::AgentPrompts => {
+                        self.agent_prompt_history.get_fuzzy_search_results(&buffer)
+                    }
+                };
                 render_fuzzy_history_results(
                     &mut content,
                     fuzzy_results,
                     fuzzy_search_index,
                     num_results,
                     num_searched,
-                    "Fuzzy search",
-                    self.settings.tutorial_mode,
-                );
-            }
-            ContentMode::FuzzyCancelledCommandSearch if self.mode.is_running() => {
-                content.newline();
-                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
-                    .cancelled_command_history
-                    .get_fuzzy_search_results(self.buffer.buffer());
-                render_fuzzy_history_results(
-                    &mut content,
-                    fuzzy_results,
-                    fuzzy_search_index,
-                    num_results,
-                    num_searched,
-                    "Cancelled commands",
-                    self.settings.tutorial_mode,
-                );
-            }
-            ContentMode::FuzzyAgentPromptSearch if self.mode.is_running() => {
-                content.newline();
-                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
-                    .agent_prompt_history
-                    .get_fuzzy_search_results(self.buffer.buffer());
-                render_fuzzy_history_results(
-                    &mut content,
-                    fuzzy_results,
-                    fuzzy_search_index,
-                    num_results,
-                    num_searched,
-                    "Agent prompts",
-                    self.settings.tutorial_mode,
+                    label,
+                    tutorial_mode,
                 );
             }
             ContentMode::Normal if self.mode.is_running() => {}

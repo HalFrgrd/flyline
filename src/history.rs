@@ -159,6 +159,38 @@ impl HistoryManager {
         res
     }
 
+    /// Creates an empty `HistoryManager` with no history loaded.
+    /// Use [`HistoryManager::push`] to add entries at runtime.
+    pub fn empty() -> HistoryManager {
+        HistoryManager {
+            entries: Vec::new(),
+            index: 0,
+            last_search_prefix: None,
+            last_buffered_command: None,
+            fuzzy_search: FuzzyHistorySearch::new(),
+        }
+    }
+
+    /// Add a command to the history.  Empty/whitespace-only strings are silently ignored.
+    /// The new entry's index is set to the current length of the entries list.
+    pub fn push(&mut self, command: String) {
+        if command.trim().is_empty() {
+            return;
+        }
+        let index = self.entries.len();
+        self.entries.push(HistoryEntry {
+            timestamp: None,
+            index,
+            command,
+        });
+        self.index = self.entries.len();
+    }
+
+    /// Returns `true` if no entries have been added to this manager.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     pub fn new(settings: &Settings) -> HistoryManager {
         // Bash will load the history into memory, so we can read it from there
         // Bash parses it after bashrc is loaded.
@@ -361,62 +393,6 @@ impl HistoryManager {
     }
 
     // fuzzy search cache logic moved to FuzzyHistorySearch
-}
-
-/// In-session history manager for transient lists such as cancelled commands and
-/// agent-mode prompts.  Unlike [`HistoryManager`] it does not load entries from
-/// disk; entries are pushed at runtime and are lost when the shell session ends.
-#[derive(Debug)]
-pub struct SessionHistoryManager {
-    entries: Vec<HistoryEntry>,
-    fuzzy_search: FuzzyHistorySearch,
-}
-
-impl SessionHistoryManager {
-    pub fn new() -> Self {
-        SessionHistoryManager {
-            entries: Vec::new(),
-            fuzzy_search: FuzzyHistorySearch::new(),
-        }
-    }
-
-    /// Add a command to the session history.  Empty/whitespace-only strings
-    /// are silently ignored so callers don't need to guard every push site.
-    pub fn push(&mut self, command: String) {
-        if command.trim().is_empty() {
-            return;
-        }
-        let index = self.entries.len();
-        self.entries.push(HistoryEntry {
-            timestamp: None,
-            index,
-            command,
-        });
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    pub fn get_fuzzy_search_results(
-        &mut self,
-        current_cmd: &str,
-    ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
-        self.fuzzy_search
-            .get_fuzzy_search_results(&self.entries, current_cmd)
-    }
-
-    pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
-        self.fuzzy_search.accept_fuzzy_search_result()
-    }
-
-    pub fn fuzzy_search_set_by_visual_idx(&mut self, visual_idx: usize) {
-        self.fuzzy_search.set_fuzzy_search_by_visual_idx(visual_idx);
-    }
-
-    pub fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
-        self.fuzzy_search.fuzzy_search_onkeypress(direction);
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -832,8 +808,8 @@ git status
     }
 
     #[test]
-    fn test_session_history_manager_push_and_search() {
-        let mut mgr = SessionHistoryManager::new();
+    fn test_history_manager_empty_push_and_search() {
+        let mut mgr = HistoryManager::empty();
         assert!(mgr.is_empty());
 
         mgr.push("git status".to_string());
@@ -853,8 +829,8 @@ git status
     }
 
     #[test]
-    fn test_session_history_manager_fuzzy_search() {
-        let mut mgr = SessionHistoryManager::new();
+    fn test_history_manager_empty_fuzzy_search() {
+        let mut mgr = HistoryManager::empty();
         mgr.push("git status".to_string());
         mgr.push("git log".to_string());
         mgr.push("cargo test".to_string());
@@ -870,8 +846,8 @@ git status
     }
 
     #[test]
-    fn test_session_history_manager_accept() {
-        let mut mgr = SessionHistoryManager::new();
+    fn test_history_manager_empty_accept() {
+        let mut mgr = HistoryManager::empty();
         mgr.push("echo hello".to_string());
         mgr.push("echo world".to_string());
 
