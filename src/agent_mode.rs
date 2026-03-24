@@ -1,3 +1,6 @@
+use regex::Regex;
+use std::sync::OnceLock;
+
 /// A single AI-suggested command with a human-readable description.
 #[derive(Debug, Clone)]
 pub struct AiSuggestion {
@@ -46,233 +49,20 @@ impl AiOutputSelection {
     }
 }
 
-fn skip_whitespace(bytes: &[u8], pos: &mut usize) {
-    while *pos < bytes.len() && matches!(bytes[*pos], b' ' | b'\t' | b'\n' | b'\r') {
-        *pos += 1;
-    }
-}
-
-/// Parse a JSON string at `pos` (which must point at `"`).
-/// Advances `pos` past the closing `"` and returns the decoded string.
-fn parse_json_string(bytes: &[u8], pos: &mut usize) -> Option<String> {
-    skip_whitespace(bytes, pos);
-    if *pos >= bytes.len() || bytes[*pos] != b'"' {
-        return None;
-    }
-    *pos += 1;
-    let mut result = Vec::new();
-    loop {
-        if *pos >= bytes.len() {
-            return None;
-        }
-        match bytes[*pos] {
-            b'"' => {
-                *pos += 1;
-                return String::from_utf8(result).ok();
-            }
-            b'\\' => {
-                *pos += 1;
-                if *pos >= bytes.len() {
-                    return None;
-                }
-                match bytes[*pos] {
-                    b'"' => result.push(b'"'),
-                    b'\\' => result.push(b'\\'),
-                    b'/' => result.push(b'/'),
-                    b'n' => result.push(b'\n'),
-                    b'r' => result.push(b'\r'),
-                    b't' => result.push(b'\t'),
-                    b'b' => result.push(8u8),
-                    b'f' => result.push(12u8),
-                    b'u' => {
-                        // Decode \uXXXX escape.
-                        *pos += 1;
-                        if *pos + 4 > bytes.len() {
-                            return None;
-                        }
-                        let decoded = std::str::from_utf8(&bytes[*pos..*pos + 4])
-                            .ok()
-                            .and_then(|hex_str| u32::from_str_radix(hex_str, 16).ok())
-                            .and_then(char::from_u32);
-                        match decoded {
-                            Some(ch) => {
-                                let mut buf = [0u8; 4];
-                                result.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
-                            }
-                            None => {
-                                log::warn!("AI output contained invalid \\uXXXX escape");
-                                result.push(b'?');
-                            }
-                        }
-                        *pos += 3; // outer += 1 below advances past the 4th hex digit
-                    }
-                    // Unknown escape sequences: output the character without the backslash
-                    // (lenient behavior for AI-generated output).
-                    c => result.push(c),
-                }
-                *pos += 1;
-            }
-            b => {
-                result.push(b);
-                *pos += 1;
-            }
-        }
-    }
-}
-
-/// Skip over a complete JSON value at `pos`. Returns `false` on parse failure.
-fn skip_json_value(bytes: &[u8], pos: &mut usize) -> bool {
-    skip_whitespace(bytes, pos);
-    if *pos >= bytes.len() {
-        return false;
-    }
-    match bytes[*pos] {
-        b'"' => parse_json_string(bytes, pos).is_some(),
-        b'{' => skip_json_object(bytes, pos),
-        b'[' => {
-            *pos += 1;
-            skip_whitespace(bytes, pos);
-            if *pos < bytes.len() && bytes[*pos] == b']' {
-                *pos += 1;
-                return true;
-            }
-            loop {
-                if !skip_json_value(bytes, pos) {
-                    return false;
-                }
-                skip_whitespace(bytes, pos);
-                if *pos >= bytes.len() {
-                    return false;
-                }
-                match bytes[*pos] {
-                    b',' => *pos += 1,
-                    b']' => {
-                        *pos += 1;
-                        return true;
-                    }
-                    _ => return false,
-                }
-            }
-        }
-        _ => {
-            // number, true, false, null
-            while *pos < bytes.len()
-                && !matches!(
-                    bytes[*pos],
-                    b',' | b'}' | b']' | b' ' | b'\t' | b'\n' | b'\r'
-                )
-            {
-                *pos += 1;
-            }
-            true
-        }
-    }
-}
-
-fn skip_json_object(bytes: &[u8], pos: &mut usize) -> bool {
-    if *pos >= bytes.len() || bytes[*pos] != b'{' {
-        return false;
-    }
-    *pos += 1;
-    skip_whitespace(bytes, pos);
-    if *pos < bytes.len() && bytes[*pos] == b'}' {
-        *pos += 1;
-        return true;
-    }
-    loop {
-        skip_whitespace(bytes, pos);
-        if parse_json_string(bytes, pos).is_none() {
-            return false;
-        }
-        skip_whitespace(bytes, pos);
-        if *pos >= bytes.len() || bytes[*pos] != b':' {
-            return false;
-        }
-        *pos += 1;
-        if !skip_json_value(bytes, pos) {
-            return false;
-        }
-        skip_whitespace(bytes, pos);
-        if *pos >= bytes.len() {
-            return false;
-        }
-        match bytes[*pos] {
-            b',' => *pos += 1,
-            b'}' => {
-                *pos += 1;
-                return true;
-            }
-            _ => return false,
-        }
-    }
-}
-
-/// Parse a single JSON object `{…}` into an [`AiSuggestion`].
-/// Returns `None` if parsing fails or if the object has no non-empty `"command"`.
-fn parse_suggestion_object(bytes: &[u8], pos: &mut usize) -> Option<AiSuggestion> {
-    skip_whitespace(bytes, pos);
-    if *pos >= bytes.len() || bytes[*pos] != b'{' {
-        return None;
-    }
-    *pos += 1;
-    let mut command = String::new();
-    let mut description = String::new();
-    skip_whitespace(bytes, pos);
-    if *pos < bytes.len() && bytes[*pos] == b'}' {
-        *pos += 1;
-        return None;
-    }
-    loop {
-        skip_whitespace(bytes, pos);
-        let key = parse_json_string(bytes, pos)?;
-        skip_whitespace(bytes, pos);
-        if *pos >= bytes.len() || bytes[*pos] != b':' {
-            return None;
-        }
-        *pos += 1;
-        match key.as_str() {
-            "command" => command = parse_json_string(bytes, pos)?,
-            "description" => description = parse_json_string(bytes, pos)?,
-            _ => {
-                if !skip_json_value(bytes, pos) {
-                    return None;
-                }
-            }
-        }
-        skip_whitespace(bytes, pos);
-        if *pos >= bytes.len() {
-            return None;
-        }
-        match bytes[*pos] {
-            b',' => *pos += 1,
-            b'}' => {
-                *pos += 1;
-                break;
-            }
-            _ => return None,
-        }
-    }
-    if command.is_empty() {
-        return None;
-    }
-    Some(AiSuggestion {
-        command,
-        description,
-    })
-}
-
 /// Parse AI command output into a list of [`AiSuggestion`]s.
 ///
 /// The output may contain prose before and/or after the JSON array.
-/// We locate the first `[` and its matching `]`, then parse the contained
-/// objects without any external JSON library.  The raw output is always
-/// logged at DEBUG level.
+/// We use a regex to locate the start of the JSON array, bracket-match to
+/// find its end, then parse the extracted slice with the `json` crate.
+/// The raw output is always logged at DEBUG level.
 pub fn parse_ai_output(raw: &str) -> Vec<AiSuggestion> {
     log::debug!("AI raw output: {}", raw);
 
-    // Find the first `[` that begins a JSON array.
-    let start = match raw.find('[') {
-        Some(s) => s,
+    // Find the first `[` that begins a JSON array using a regex.
+    static JSON_ARRAY_RE: OnceLock<Regex> = OnceLock::new();
+    let re = JSON_ARRAY_RE.get_or_init(|| Regex::new(r"\[").expect("static regex is valid"));
+    let start = match re.find(raw) {
+        Some(m) => m.start(),
         None => {
             log::warn!("AI output contained no JSON array (no '[' found)");
             return vec![];
@@ -314,54 +104,38 @@ pub fn parse_ai_output(raw: &str) -> Vec<AiSuggestion> {
         }
     }
 
-    let end = match end {
-        Some(e) => e,
+    let candidate = match end {
+        Some(e) => &raw[start..e],
         None => {
             log::warn!("AI output JSON array is not terminated");
             return vec![];
         }
     };
 
-    // Parse the extracted array without any external JSON library.
-    let arr_bytes = &bytes[start..end];
-    let mut pos = 0usize;
-
-    // Consume the opening `[`.
-    skip_whitespace(arr_bytes, &mut pos);
-    if pos >= arr_bytes.len() || arr_bytes[pos] != b'[' {
-        return vec![];
-    }
-    pos += 1;
-
-    let mut suggestions = Vec::new();
-    loop {
-        skip_whitespace(arr_bytes, &mut pos);
-        if pos >= arr_bytes.len() || arr_bytes[pos] == b']' {
-            break;
-        }
-        if arr_bytes[pos] == b',' {
-            pos += 1;
-            continue;
-        }
-        let saved_pos = pos;
-        match parse_suggestion_object(arr_bytes, &mut pos) {
-            Some(s) => suggestions.push(s),
-            None => {
-                // On parse error, try to skip the malformed value structurally.
-                // We attempt skip_json_value from the saved position; if that
-                // also fails (truly malformed input), fall back to byte-scanning.
-                let mut skip_pos = saved_pos;
-                if skip_json_value(arr_bytes, &mut skip_pos) {
-                    pos = skip_pos;
-                } else {
-                    while pos < arr_bytes.len() && !matches!(arr_bytes[pos], b',' | b']') {
-                        pos += 1;
-                    }
+    match json::parse(candidate) {
+        Ok(json::JsonValue::Array(arr)) => {
+            let mut suggestions = Vec::with_capacity(arr.len());
+            for item in arr {
+                let command = item["command"].as_str().unwrap_or("").to_string();
+                let description = item["description"].as_str().unwrap_or("").to_string();
+                if !command.is_empty() {
+                    suggestions.push(AiSuggestion {
+                        command,
+                        description,
+                    });
                 }
             }
+            suggestions
+        }
+        Ok(_) => {
+            log::warn!("AI output JSON was not an array");
+            vec![]
+        }
+        Err(e) => {
+            log::warn!("Failed to parse AI output as JSON: {}", e);
+            vec![]
         }
     }
-    suggestions
 }
 
 #[cfg(test)]
