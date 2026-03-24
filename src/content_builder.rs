@@ -383,21 +383,38 @@ impl Contents {
             .map(|(_, cell)| (cell.tag, false))
     }
 
-    pub fn apply_matrix_anim(&mut self, now: std::time::Instant) {
-        // TODO choose a better max height:
-        // TOOD think about light mode
-        for _ in self.buf.len()..40 {
+    pub fn apply_matrix_anim(
+        &mut self,
+        now: std::time::Instant,
+        viewport_top: u16,
+        terminal_height: u16,
+    ) {
+        // Extend the buffer so it reaches the bottom of the terminal from the viewport top.
+        let rows_needed = terminal_height.saturating_sub(viewport_top) as usize;
+        if rows_needed == 0 {
+            return;
+        }
+        for _ in self.buf.len()..rows_needed {
             self.increase_buf_single_row();
         }
 
         let mut state_guard = MATRIX_ANIM_STATE.lock().unwrap();
         let state = state_guard.get_or_insert_with(MatrixAnimState::new);
-        state.update(now, self.width, self.height());
+        // State is updated using the full terminal height so tendril positions are
+        // terminal-absolute (row 0 = top of terminal, not top of viewport).
+        state.update(now, self.width, terminal_height);
 
         for (col_idx, _tendril) in state.tendrils.iter().enumerate() {
             let styled_graphs = state.tendril_idx_to_graphemes(col_idx);
-            for (row_idx, styled_graph) in styled_graphs.into_iter().enumerate() {
-                if let Some(row) = self.buf.get_mut(row_idx)
+            // styled_graphs[i] corresponds to terminal-absolute row i.
+            // Skip rows above the viewport; map the rest into the buffer.
+            for (term_row, styled_graph) in styled_graphs
+                .into_iter()
+                .enumerate()
+                .skip(viewport_top as usize)
+            {
+                let buf_row = term_row - viewport_top as usize;
+                if let Some(row) = self.buf.get_mut(buf_row)
                     && let Some(cell) = row.get_mut(col_idx)
                     && cell.tag == Tag::Blank
                 {
@@ -411,10 +428,6 @@ impl Contents {
 }
 
 static MATRIX_ANIM_STATE: Mutex<Option<MatrixAnimState>> = Mutex::new(None);
-
-pub fn reset_matrix_anim_state() {
-    *MATRIX_ANIM_STATE.lock().unwrap() = None;
-}
 
 #[derive(Debug, Clone)]
 struct MatrixAnimState {
