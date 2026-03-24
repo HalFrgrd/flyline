@@ -283,16 +283,17 @@ impl<'a> App<'a> {
             if let Some(result) = ai_result {
                 match result {
                     Ok(raw_output) => {
-                        let suggestions = parse_ai_output(&raw_output);
-                        if suggestions.is_empty() {
+                        let parse_result = parse_ai_output(&raw_output);
+                        if parse_result.suggestions.is_empty() {
                             log::warn!("AI command returned no suggestions");
                             self.content_mode = ContentMode::AiError {
                                 message: "Failed to parse AI output as valid JSON:".to_string(),
                                 raw_output,
                             };
                         } else {
-                            self.content_mode =
-                                ContentMode::AiOutputSelection(AiOutputSelection::new(suggestions));
+                            self.content_mode = ContentMode::AiOutputSelection(
+                                AiOutputSelection::new(parse_result),
+                            );
                         }
                     }
                     Err((msg, raw_output)) => {
@@ -1735,6 +1736,15 @@ impl<'a> App<'a> {
             }
             ContentMode::AiOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
+                if !selection.header.is_empty() {
+                    for line in selection.header.lines() {
+                        content.write_span(
+                            &Span::styled(line.to_string(), Palette::secondary_text()),
+                            Tag::Blank,
+                        );
+                        content.newline();
+                    }
+                }
                 for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
                     let is_selected = selection.selected_idx == row_idx;
                     let indicator = if is_selected { "▐" } else { " " };
@@ -1794,6 +1804,15 @@ impl<'a> App<'a> {
                     }
                     content.fill_line(Tag::AiResult(row_idx));
                     content.newline();
+                }
+                if !selection.footer.is_empty() {
+                    for line in selection.footer.lines() {
+                        content.write_span(
+                            &Span::styled(line.to_string(), Palette::secondary_text()),
+                            Tag::Blank,
+                        );
+                        content.newline();
+                    }
                 }
             }
             ContentMode::AiError {
