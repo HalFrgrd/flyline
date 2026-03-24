@@ -282,20 +282,18 @@ impl<'a> App<'a> {
             };
             if let Some(result) = ai_result {
                 match result {
-                    Ok(raw_output) => {
-                        let parse_result = parse_ai_output(&raw_output);
-                        if parse_result.suggestions.is_empty() {
-                            log::warn!("AI command returned no suggestions");
+                    Ok(raw_output) => match parse_ai_output(&raw_output) {
+                        Ok(selection) => {
+                            self.content_mode = ContentMode::AiOutputSelection(selection);
+                        }
+                        Err(e) => {
+                            log::warn!("AI command returned no suggestions: {}", e);
                             self.content_mode = ContentMode::AiError {
-                                message: "Failed to parse AI output as valid JSON:".to_string(),
+                                message: format!("Failed to parse AI output: {}", e),
                                 raw_output,
                             };
-                        } else {
-                            self.content_mode = ContentMode::AiOutputSelection(
-                                AiOutputSelection::new(parse_result),
-                            );
                         }
-                    }
+                    },
                     Err((msg, raw_output)) => {
                         log::error!("AI command failed: {}", msg);
                         self.content_mode = ContentMode::AiError {

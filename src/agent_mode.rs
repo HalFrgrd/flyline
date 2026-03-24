@@ -1,3 +1,4 @@
+use anyhow::{anyhow, bail};
 use regex::Regex;
 use std::sync::OnceLock;
 
@@ -6,17 +7,6 @@ use std::sync::OnceLock;
 pub struct AiSuggestion {
     pub command: String,
     pub description: String,
-}
-
-/// The result of parsing AI output, including the suggestions and any
-/// surrounding prose text.
-#[derive(Debug)]
-pub struct AiParseResult {
-    pub suggestions: Vec<AiSuggestion>,
-    /// Text appearing before the JSON array in the AI output.
-    pub header: String,
-    /// Text appearing after the JSON array in the AI output.
-    pub footer: String,
 }
 
 /// Tracks the currently selected index inside the AI output selection list.
@@ -31,12 +21,12 @@ pub struct AiOutputSelection {
 }
 
 impl AiOutputSelection {
-    pub fn new(result: AiParseResult) -> Self {
+    pub(crate) fn new(suggestions: Vec<AiSuggestion>, header: String, footer: String) -> Self {
         AiOutputSelection {
-            suggestions: result.suggestions,
+            suggestions,
             selected_idx: 0,
-            header: result.header,
-            footer: result.footer,
+            header,
+            footer,
         }
     }
 
@@ -66,14 +56,15 @@ impl AiOutputSelection {
     }
 }
 
-/// Parse AI command output into an [`AiParseResult`].
+/// Parse AI command output into an [`AiOutputSelection`].
 ///
 /// The output may contain prose before and/or after the JSON array.
 /// We use a regex to locate the start of the JSON array and then attempt to
 /// parse it with `serde_json`.  Text before the array is stored as the
 /// `header` and text after the array is stored as the `footer`.
-/// The raw output is always logged at DEBUG level.
-pub fn parse_ai_output(raw: &str) -> AiParseResult {
+/// Returns `Err` if no valid JSON array with at least one non-empty command
+/// can be found.  The raw output is always logged at DEBUG level.
+pub fn parse_ai_output(raw: &str) -> anyhow::Result<AiOutputSelection> {
     log::debug!("AI raw output: {}", raw);
 
     // Find the first `[` that begins a JSON array using a regex.
@@ -83,11 +74,7 @@ pub fn parse_ai_output(raw: &str) -> AiParseResult {
         Some(m) => m.start(),
         None => {
             log::warn!("AI output contained no JSON array (no '[' found)");
-            return AiParseResult {
-                suggestions: vec![],
-                header: String::new(),
-                footer: String::new(),
-            };
+            bail!("AI output contained no JSON array");
         }
     };
 
@@ -130,11 +117,7 @@ pub fn parse_ai_output(raw: &str) -> AiParseResult {
         Some(e) => e,
         None => {
             log::warn!("AI output JSON array is not terminated");
-            return AiParseResult {
-                suggestions: vec![],
-                header: raw[..start].trim().to_string(),
-                footer: String::new(),
-            };
+            bail!("AI output JSON array is not terminated");
         }
     };
 
@@ -163,27 +146,18 @@ pub fn parse_ai_output(raw: &str) -> AiParseResult {
                     });
                 }
             }
-            AiParseResult {
-                suggestions,
-                header,
-                footer,
+            if suggestions.is_empty() {
+                bail!("AI output JSON array contained no valid commands");
             }
+            Ok(AiOutputSelection::new(suggestions, header, footer))
         }
         Ok(_) => {
             log::warn!("AI output JSON was not an array");
-            AiParseResult {
-                suggestions: vec![],
-                header,
-                footer,
-            }
+            Err(anyhow!("AI output JSON was not an array"))
         }
         Err(e) => {
             log::warn!("Failed to parse AI output as JSON: {}", e);
-            AiParseResult {
-                suggestions: vec![],
-                header,
-                footer,
-            }
+            Err(anyhow!("Failed to parse AI output as JSON: {}", e))
         }
     }
 }
@@ -195,14 +169,14 @@ mod tests {
     #[test]
     fn test_parse_clean_json() {
         let raw = r#"[{"command": "ls -la", "description": "List all files"}, {"command": "pwd", "description": "Print working directory"}]"#;
-        let result = parse_ai_output(raw);
-        assert_eq!(result.suggestions.len(), 2);
-        assert_eq!(result.suggestions[0].command, "ls -la");
-        assert_eq!(result.suggestions[0].description, "List all files");
-        assert_eq!(result.suggestions[1].command, "pwd");
-        assert_eq!(result.suggestions[1].description, "Print working directory");
-        assert_eq!(result.header, "");
-        assert_eq!(result.footer, "");
+        let sel = parse_ai_output(raw).unwrap();
+        assert_eq!(sel.suggestions.len(), 2);
+        assert_eq!(sel.suggestions[0].command, "ls -la");
+        assert_eq!(sel.suggestions[0].description, "List all files");
+        assert_eq!(sel.suggestions[1].command, "pwd");
+        assert_eq!(sel.suggestions[1].description, "Print working directory");
+        assert_eq!(sel.header, "");
+        assert_eq!(sel.footer, "");
     }
 
     #[test]
@@ -210,35 +184,29 @@ mod tests {
         let raw = r#"Here are some suggestions:
 [{"command": "grep -r foo .", "description": "Search recursively"}]
 That should help!"#;
-        let result = parse_ai_output(raw);
-        assert_eq!(result.suggestions.len(), 1);
-        assert_eq!(result.suggestions[0].command, "grep -r foo .");
-        assert_eq!(result.header, "Here are some suggestions:");
-        assert_eq!(result.footer, "That should help!");
+        let sel = parse_ai_output(raw).unwrap();
+        assert_eq!(sel.suggestions.len(), 1);
+        assert_eq!(sel.suggestions[0].command, "grep -r foo .");
+        assert_eq!(sel.header, "Here are some suggestions:");
+        assert_eq!(sel.footer, "That should help!");
     }
 
     #[test]
     fn test_parse_no_json_array() {
-        let result = parse_ai_output("Sorry, I cannot help with that.");
-        assert!(result.suggestions.is_empty());
-        assert_eq!(result.header, "");
-        assert_eq!(result.footer, "");
+        assert!(parse_ai_output("Sorry, I cannot help with that.").is_err());
     }
 
     #[test]
     fn test_parse_invalid_json() {
-        let result = parse_ai_output("[{bad json}]");
-        assert!(result.suggestions.is_empty());
-        assert_eq!(result.header, "");
-        assert_eq!(result.footer, "");
+        assert!(parse_ai_output("[{bad json}]").is_err());
     }
 
     #[test]
     fn test_parse_empty_command_skipped() {
         let raw = r#"[{"command": "", "description": "empty"}, {"command": "echo hi", "description": "hello"}]"#;
-        let result = parse_ai_output(raw);
-        assert_eq!(result.suggestions.len(), 1);
-        assert_eq!(result.suggestions[0].command, "echo hi");
+        let sel = parse_ai_output(raw).unwrap();
+        assert_eq!(sel.suggestions.len(), 1);
+        assert_eq!(sel.suggestions[0].command, "echo hi");
     }
 
     #[test]
@@ -257,11 +225,7 @@ That should help!"#;
                 description: "desc3".to_string(),
             },
         ];
-        let mut sel = AiOutputSelection::new(AiParseResult {
-            suggestions,
-            header: String::new(),
-            footer: String::new(),
-        });
+        let mut sel = AiOutputSelection::new(suggestions, String::new(), String::new());
         assert_eq!(sel.selected_idx, 0);
         assert_eq!(sel.selected_command(), Some("cmd1"));
 
