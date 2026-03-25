@@ -22,7 +22,7 @@ unicode-segmentation = "1.12.0"
 itertools = "0.14.0"
 glob = "0.3.3"
 color-eyre = "0.6.5"
-flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "30fdd4b7a6e7d5cd0ac0d24b2fb819bf34cd62d6" }
+flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "4a38cb53accae3f6d01e5a39df39a38576119495" }
 skim = { version = "3.6.0", default-features =  false, features = []}
 lscolors = "0.21.0"
 serde_json = "1.0"

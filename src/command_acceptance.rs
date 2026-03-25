@@ -69,6 +69,11 @@ mod tests {
         // test backticks
         assert_eq!(will_bash_accept_buffer("echo `ls"), false);
         assert_eq!(will_bash_accept_buffer("echo `ls`"), true);
+        // parameter expansion with pattern replacement containing escaped special chars
+        assert_eq!(
+            will_bash_accept_buffer(r#"printf "${PWD/#$HOME/\~}""#),
+            true
+        );
     }
 
     #[test]
