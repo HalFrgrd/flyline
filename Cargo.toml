@@ -25,8 +25,7 @@ color-eyre = "0.6.5"
 flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "30fdd4b7a6e7d5cd0ac0d24b2fb819bf34cd62d6" }
 skim = { version = "3.6.0", default-features =  false, features = []}
 lscolors = "0.21.0"
-json = "0.12.4"
-regex = "1"
+picojson = "0.2.2"
 rand = "0.10.0"
 
 [dependencies.crossterm]

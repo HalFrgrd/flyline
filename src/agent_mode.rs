@@ -1,5 +1,4 @@
-use regex::Regex;
-use std::sync::OnceLock;
+use picojson::{SliceParser, Event, PullParser};
 
 /// A single AI-suggested command with a human-readable description.
 #[derive(Debug, Clone)]
@@ -41,7 +40,7 @@ impl AiOutputSelection {
         }
     }
 
-    /// Return the currently selected command string, if any.w
+    /// Return the currently selected command string, if any.
     pub fn selected_command(&self) -> Option<&str> {
         self.suggestions
             .get(self.selected_idx)
@@ -58,85 +57,63 @@ impl AiOutputSelection {
 pub fn parse_ai_output(raw: &str) -> Vec<AiSuggestion> {
     log::debug!("AI raw output: {}", raw);
 
-    // Find the first `[` that begins a JSON array using a regex.
-    static JSON_ARRAY_RE: OnceLock<Regex> = OnceLock::new();
-    let re = JSON_ARRAY_RE.get_or_init(|| Regex::new(r"\[").expect("static regex is valid"));
-    let start = match re.find(raw) {
-        Some(m) => m.start(),
+    // Find the first `[` that begins a JSON array.
+    let start = match raw.find('[') {
+        Some(idx) => idx,
         None => {
             log::warn!("AI output contained no JSON array (no '[' found)");
             return vec![];
         }
     };
 
-    // Walk forward from `start` to find the matching closing `]`, respecting
-    // nested array brackets and JSON string literals (so brackets inside strings
-    // are not counted).
-    let bytes = raw.as_bytes();
-    let mut depth: i32 = 0;
-    let mut in_string = false;
-    let mut escape_next = false;
-    let mut end = None;
-    for (i, &b) in bytes.iter().enumerate().skip(start) {
-        if escape_next {
-            escape_next = false;
-            continue;
-        }
-        if in_string {
-            match b {
-                b'\\' => escape_next = true,
-                b'"' => in_string = false,
-                _ => {}
-            }
-        } else {
-            match b {
-                b'"' => in_string = true,
-                b'[' => depth += 1,
-                b']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = Some(i + 1);
-                        break;
+    println!("AI output starts with JSON array at index {}", start);
+
+    let mut parser = SliceParser::new(&raw[start..]);
+
+    match parser.next_event() {
+        Ok(Event::StartArray) => {
+            let mut suggestions = Vec::new();
+            while let Ok(event) = parser.next_event() {
+                match event {
+                    Event::EndArray => break,
+                    Event::StartObject => {
+                        let mut command = String::new();
+                        let mut description = String::new();
+                        while let Ok(event) = parser.next_event().clone() {
+                            match event {
+                                Event::EndObject => break,
+                                Event::String(key) => {
+                                    if let Ok(Event::String(value)) = parser.next_event() {
+                                        match key.as_str() {
+                                            "command" => command = value.as_str().to_string(),
+                                            "description" => description = value.as_str().to_string(),
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if !command.is_empty() {
+                            suggestions.push(AiSuggestion { command, description });
+                        }
                     }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let candidate = match end {
-        Some(e) => &raw[start..e],
-        None => {
-            log::warn!("AI output JSON array is not terminated");
-            return vec![];
-        }
-    };
-
-    match json::parse(candidate) {
-        Ok(json::JsonValue::Array(arr)) => {
-            let mut suggestions = Vec::with_capacity(arr.len());
-            for item in arr {
-                let command = item["command"].as_str().unwrap_or("").to_string();
-                let description = item["description"].as_str().unwrap_or("").to_string();
-                if !command.is_empty() {
-                    suggestions.push(AiSuggestion {
-                        command,
-                        description,
-                    });
+                    _ => {}
                 }
             }
             suggestions
         }
         Ok(_) => {
-            log::warn!("AI output JSON was not an array");
+            println!("AI output JSON was not an array");
             vec![]
         }
         Err(e) => {
-            log::warn!("Failed to parse AI output as JSON: {}", e);
+            println!("Failed to parse AI output as JSON: {}", e);
             vec![]
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
