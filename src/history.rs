@@ -344,9 +344,22 @@ impl HistoryManager {
     pub(crate) fn get_fuzzy_search_results(
         &mut self,
         current_cmd: &str,
+        max_visible: usize,
     ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
         self.fuzzy_search
-            .get_fuzzy_search_results(&self.entries, current_cmd)
+            .get_fuzzy_search_results(&self.entries, current_cmd, max_visible)
+    }
+
+    /// Pre-warm the fuzzy search cache when entering fuzzy-search mode.
+    /// Uses the default visible window size as the actual terminal size is not yet
+    /// available at keypress time.  The render path will call `get_fuzzy_search_results`
+    /// with the correct dynamic size on the next frame.
+    pub(crate) fn warm_fuzzy_search_cache(&mut self, current_cmd: &str) {
+        let _ = self.fuzzy_search.get_fuzzy_search_results(
+            &self.entries,
+            current_cmd,
+            FuzzyHistorySearch::VISIBLE_CACHE_SIZE,
+        );
     }
 
     pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
@@ -422,6 +435,9 @@ struct FuzzyHistorySearch {
     global_index: usize,
     cache_index: usize,
     cache_visible_offset: usize,
+    /// The number of visible entries last used by `get_fuzzy_search_results`.
+    /// Used by page-navigation so the page size matches the displayed window.
+    visible_size: usize,
 }
 
 impl std::fmt::Debug for FuzzyHistorySearch {
@@ -431,6 +447,7 @@ impl std::fmt::Debug for FuzzyHistorySearch {
             .field("global_index", &self.global_index)
             .field("cache_index", &self.cache_index)
             .field("cache_visible_offset", &self.cache_visible_offset)
+            .field("visible_size", &self.visible_size)
             .field("cache_len", &self.cache.len())
             .finish()
     }
@@ -485,6 +502,7 @@ impl FuzzyHistorySearch {
             global_index: 0,
             cache_index: 0,
             cache_visible_offset: 0,
+            visible_size: Self::VISIBLE_CACHE_SIZE,
         }
     }
 
@@ -492,6 +510,7 @@ impl FuzzyHistorySearch {
         &mut self,
         entries: &[HistoryEntry],
         current_cmd: &str,
+        max_visible: usize,
     ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
         // when the command changes, reset the cache
         // but keep the current visual row if possible
@@ -514,7 +533,8 @@ impl FuzzyHistorySearch {
 
         self.cache_index = self.cache_index.min(self.cache.len().saturating_sub(1));
 
-        let visible_cache_size = Self::VISIBLE_CACHE_SIZE;
+        let visible_cache_size = max_visible.max(2);
+        self.visible_size = visible_cache_size;
 
         if self.cache_visible_offset + visible_cache_size <= self.cache_index + 2 {
             self.cache_visible_offset =
@@ -577,11 +597,10 @@ impl FuzzyHistorySearch {
                 }
             }
             HistorySearchDirection::PageBackward => {
-                self.cache_index =
-                    (self.cache_index + Self::VISIBLE_CACHE_SIZE).min(self.cache.len() - 1);
+                self.cache_index = (self.cache_index + self.visible_size).min(self.cache.len() - 1);
             }
             HistorySearchDirection::PageForward => {
-                self.cache_index = self.cache_index.saturating_sub(Self::VISIBLE_CACHE_SIZE);
+                self.cache_index = self.cache_index.saturating_sub(self.visible_size);
             }
         }
     }
