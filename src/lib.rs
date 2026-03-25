@@ -235,13 +235,15 @@ impl Flyline {
 
                 if parsed.version {
                     println!(
-                        "flyline version {} ({})",
+                        "flyline version {} ({}) git:{} built:{}",
                         env!("CARGO_PKG_VERSION"),
                         if cfg!(debug_assertions) {
                             "debug"
                         } else {
                             "release"
-                        }
+                        },
+                        env!("GIT_HASH"),
+                        env!("BUILD_TIME"),
                     );
                 }
 
