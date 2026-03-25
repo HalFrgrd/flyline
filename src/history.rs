@@ -120,6 +120,7 @@ impl HistoryManager {
     fn parse_zsh_history(custom_path: Option<&str>) -> Vec<HistoryEntry> {
         let start_time = std::time::Instant::now();
 
+        let is_custom_path = matches!(custom_path, Some(p) if !p.is_empty());
         let hist_path = match custom_path {
             Some(p) if !p.is_empty() => p.to_string(),
             _ => {
@@ -143,6 +144,11 @@ impl HistoryManager {
                     String::from_utf8_lossy(&bytes).into_owned()
                 }
             },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && is_custom_path => {
+                eprintln!("flyline: zsh history file not found: {}", hist_path);
+                log::warn!("Zsh history file not found: {}", hist_path);
+                String::new()
+            }
             Err(e) => {
                 log::error!("Failed to read zsh history from {}: {}", hist_path, e);
                 String::new()
