@@ -533,12 +533,11 @@ impl FuzzyHistorySearch {
 
         self.cache_index = self.cache_index.min(self.cache.len().saturating_sub(1));
 
-        let visible_cache_size = max_visible.max(2);
-        self.visible_size = visible_cache_size;
+        self.visible_size = max_visible.max(2);
 
-        if self.cache_visible_offset + visible_cache_size <= self.cache_index + 2 {
+        if self.cache_visible_offset + self.visible_size <= self.cache_index + 2 {
             self.cache_visible_offset =
-                (self.cache_index + 2).saturating_sub(visible_cache_size - 1);
+                (self.cache_index + 2).saturating_sub(self.visible_size - 1);
         } else if self.cache_index < self.cache_visible_offset + 2 {
             self.cache_visible_offset = self.cache_index.saturating_sub(2);
         }
@@ -548,21 +547,13 @@ impl FuzzyHistorySearch {
 
         let cache_len = self.cache.len();
 
-        let end = (self.cache_visible_offset + visible_cache_size).min(cache_len);
+        let end = self.cache_visible_offset + self.visible_size;
+        let entries_to_show = &mut self.cache[self.cache_visible_offset..end];
+        entries_to_show
+            .iter_mut()
+            .for_each(|e| e.gen_formatted_command());
 
-        {
-            let entries_to_show = &mut self.cache[self.cache_visible_offset..end];
-            entries_to_show
-                .iter_mut()
-                .for_each(|e| e.gen_formatted_command());
-        }
-
-        (
-            &mut self.cache[self.cache_visible_offset..end],
-            visible_index,
-            cache_len,
-            self.global_index,
-        )
+        (entries_to_show, visible_index, cache_len, self.global_index)
     }
 
     fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {

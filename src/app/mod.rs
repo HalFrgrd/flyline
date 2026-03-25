@@ -1514,19 +1514,29 @@ impl<'a> App<'a> {
                 });
         }
 
+        let rows_before = content.cursor_position().row;
+        let ideal_max_num_rows_for_below: u16;
+        if terminal_height.saturating_sub(rows_before) >= 20 {
+            ideal_max_num_rows_for_below = terminal_height.saturating_sub(rows_before);
+        } else {
+            ideal_max_num_rows_for_below = terminal_height.saturating_sub(rows_before).max(5);
+        }
+
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
-                // Compute the maximum number of rows available for the suggestions grid.
-                // Rows 0..cursor_row are already used; after the upcoming newline the grid
-                // starts at cursor_row+1.  Enforce a minimum of 2.
-                let rows_before = content.cursor_position().row + 1;
-                let max_num_rows = (terminal_height.saturating_sub(rows_before) as usize).max(2);
                 content.newline();
                 let grid_start_row = content.cursor_position().row;
-                let mut rows: Vec<Vec<(Vec<Span>, usize)>> = vec![vec![]; max_num_rows];
+                let num_rows_for_suggestions = ideal_max_num_rows_for_below
+                    .saturating_sub(2)
+                    .min(15)
+                    .max(2);
+                let mut rows: Vec<Vec<(Vec<Span>, usize)>> =
+                    vec![vec![]; num_rows_for_suggestions as usize];
 
                 let mut selected_grid_row: Option<u16> = None;
-                for (col, col_width) in active_suggestions.into_grid(max_num_rows, width as usize) {
+                for (col, col_width) in
+                    active_suggestions.into_grid(num_rows_for_suggestions as usize, width as usize)
+                {
                     for (row_idx, (formatted, is_selected)) in col.iter().enumerate() {
                         let formatted_suggestion = formatted.render(col_width, *is_selected);
                         if *is_selected {
@@ -1560,16 +1570,18 @@ impl<'a> App<'a> {
                 }
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
-                // Compute the maximum number of visible result entries.
-                // After the newline the results start immediately, and one additional row
-                // is reserved for the trailing status line.  Enforce a minimum of 2.
-                let rows_before = content.cursor_position().row + 1;
-                let max_visible = (terminal_height.saturating_sub(rows_before + 1) as usize).max(2);
                 content.newline();
+
+                let num_rows_for_results = ideal_max_num_rows_for_below
+                    .saturating_sub(2)
+                    .min(30)
+                    .max(2);
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
-                    .get_fuzzy_search_results(self.buffer.buffer(), max_visible);
+                    .get_fuzzy_search_results(self.buffer.buffer(), num_rows_for_results as usize);
+
+                let starting_row = content.cursor_position().row;
 
                 let num_digits_for_index = num_searched.to_string().len();
                 let num_digits_for_score = 3;
@@ -1718,6 +1730,11 @@ impl<'a> App<'a> {
                     }
                     content.fill_line(Tag::HistoryResult(row_idx));
                     content.newline();
+                    if content.cursor_position().row.saturating_sub(starting_row)
+                        >= num_rows_for_results.saturating_sub(2)
+                    {
+                        break;
+                    }
                 }
                 content.write_span(
                     &Span::styled(
@@ -1859,12 +1876,20 @@ impl<'a> App<'a> {
         {
             content.newline();
             let tooltip_line = Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
-            // Limit the tooltip to at most 3 terminal display rows so it
-            // doesn't push other UI elements too far down the screen.
-            const MAX_TOOLTIP_ROWS: usize = 3;
+
+            let rows_before = content.cursor_position().row;
+            let max_tool_tip_rows: u16 = (terminal_height
+                .saturating_sub(viewport_top)
+                .saturating_sub(rows_before) as u16)
+                .min(3);
+
             let rows = split_line_to_terminal_rows(&tooltip_line, content.width);
-            let truncated = rows.len() > MAX_TOOLTIP_ROWS;
-            for (i, row) in rows.into_iter().take(MAX_TOOLTIP_ROWS).enumerate() {
+            let truncated = rows.len() > max_tool_tip_rows as usize;
+            for (i, row) in rows
+                .into_iter()
+                .take(max_tool_tip_rows as usize)
+                .enumerate()
+            {
                 if i > 0 {
                     content.newline();
                 }
@@ -1872,7 +1897,7 @@ impl<'a> App<'a> {
                     content.write_span(span, Tag::Tooltip);
                 }
             }
-            if truncated {
+            if truncated && max_tool_tip_rows > 0 {
                 let last_col = content.width.saturating_sub(1);
                 if content.cursor_position().col >= last_col {
                     content.set_cursor_col(last_col);
