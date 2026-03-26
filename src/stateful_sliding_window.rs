@@ -7,14 +7,16 @@ pub struct StatefulSlidingWindow {
     start_index: usize,
     index_of_interest: usize,
     window_size: usize,
+    max_index: usize,
 }
 
 impl StatefulSlidingWindow {
-    pub fn new(index_of_interest: usize, window_size: usize) -> Self {
+    pub fn new(index_of_interest: usize, window_size: usize, max_index: usize) -> Self {
         let mut self_instance = Self {
             start_index: 0,
             index_of_interest,
             window_size,
+            max_index,
         };
         self_instance.fix_window();
         self_instance
@@ -41,6 +43,14 @@ impl StatefulSlidingWindow {
                 .index_of_interest
                 .saturating_sub(self.window_size - buffer - 1);
         }
+        if self.start_index + self.window_size > self.max_index {
+            self.start_index = self.max_index.saturating_sub(self.window_size);
+        }
+    }
+
+    pub fn update_max_index(&mut self, new_max_index: usize) {
+        self.max_index = new_max_index;
+        self.fix_window();
     }
 
     pub fn move_index_to(&mut self, new_index_of_interest: usize) {
@@ -54,7 +64,7 @@ impl StatefulSlidingWindow {
     }
 
     pub fn get_window_range(&self) -> std::ops::Range<usize> {
-        self.start_index..(self.start_index + self.window_size)
+        self.start_index..((self.start_index + self.window_size).min(self.max_index))
     }
 
     pub fn visual_index_of_interest(&self) -> usize {
@@ -73,13 +83,13 @@ mod tests {
 
     #[test]
     fn test_stateful_sliding_window() {
-        let mut window = StatefulSlidingWindow::new(0, 1);
+        let mut window = StatefulSlidingWindow::new(0, 1, 2);
         assert_eq!(window.get_window_range(), 0..1);
 
         window.move_index_to(1);
         assert_eq!(window.get_window_range(), 1..2);
 
-        let mut window = StatefulSlidingWindow::new(0, 5);
+        let mut window = StatefulSlidingWindow::new(0, 5, 10);
         assert_eq!(window.get_window_range(), 0..5);
 
         window.move_index_to(1);
@@ -107,5 +117,20 @@ mod tests {
         assert_eq!(window.get_window_range(), 0..5);
         window.move_index_to(0);
         assert_eq!(window.get_window_range(), 0..5);
+    }
+
+    #[test]
+    fn test_going_to_max_index() {
+        let mut window = StatefulSlidingWindow::new(0, 5, 10);
+        window.move_index_to(9);
+        assert_eq!(window.get_window_range(), 5..10);
+    }
+
+    #[test]
+    fn test_window_size_larger_than_max_index() {
+        let mut window = StatefulSlidingWindow::new(0, 15, 10);
+        assert_eq!(window.get_window_range(), 0..10);
+        window.move_index_to(5);
+        assert_eq!(window.get_window_range(), 0..10);
     }
 }
