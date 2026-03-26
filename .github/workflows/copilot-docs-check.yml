@@ -1,0 +1,86 @@
+name: Copilot Documentation Check
+
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: copilot-docs-check
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  copilot-docs-check:
+    name: Check documentation consistency with Copilot
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
+      # Requires a repository secret named COPILOT_PAT containing a personal
+      # access token with the "Copilot Requests" permission. See:
+      # https://docs.github.com/en/copilot/how-tos/copilot-cli/automate-copilot-cli/automate-with-actions#authenticate
+      - name: Run Copilot documentation check
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+        run: |
+          copilot -p "$(cat .github/prompts/docs-check.prompt.md)" \
+            --allow-tool='shell(grep:*)' \
+            --allow-tool='shell(find:*)' \
+            --allow-tool='shell(cat:*)' \
+            --allow-tool='shell(ls:*)' \
+            --allow-tool=read \
+            --allow-tool=write \
+            --allow-tool=edit \
+            --no-ask-user
+
+      - name: Create or update pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Read the summary for the PR body
+          if [ -f copilot_summary.md ]; then
+            SUMMARY=$(cat copilot_summary.md)
+          else
+            SUMMARY="Copilot documentation check completed with no summary file generated."
+          fi
+
+          # Clean up the summary file so it is not committed
+          rm -f copilot_summary.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B copilot/docs-check
+          git add -A
+          git diff --cached --quiet && echo "Documentation is consistent — no changes needed." && exit 0
+          git commit -m "docs: fix documentation inconsistencies found by Copilot"
+          git push --force origin copilot/docs-check
+
+          # Build the PR body in a temporary file for robustness with special characters
+          {
+            echo "## Copilot Documentation Check"
+            echo ""
+            echo "Automated PR created by the Copilot documentation-consistency workflow."
+            echo ""
+            echo "### Summary of changes"
+            echo ""
+            echo "$SUMMARY"
+          } > /tmp/pr_body.md
+
+          gh pr create \
+            --title "docs: fix documentation inconsistencies" \
+            --body-file /tmp/pr_body.md \
+            --base master \
+            --head copilot/docs-check \
+          || gh pr edit copilot/docs-check \
+            --title "docs: fix documentation inconsistencies" \
+            --body-file /tmp/pr_body.md
