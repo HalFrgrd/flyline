@@ -779,7 +779,7 @@ impl App<'_> {
         // dollar sign in the new filename part IS escaped.
         // $HOME/foo/ should complete to $HOME/foo/\$baz.txt (not \$HOME/foo/\$baz.txt).
         run_test_on(
-            "fl_comp_util --fallback-to-default $HOME/foo/",
+            "fl_comp_util --env-var-test $HOME/foo/",
             &[&Suggestion::new(r#"$HOME/foo/\$baz.txt"#, "", " ")],
         );
 

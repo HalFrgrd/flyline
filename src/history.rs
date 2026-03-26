@@ -120,7 +120,6 @@ impl HistoryManager {
     fn parse_zsh_history(custom_path: Option<&str>) -> Vec<HistoryEntry> {
         let start_time = std::time::Instant::now();
 
-        let is_custom_path = matches!(custom_path, Some(p) if !p.is_empty());
         let hist_path = match custom_path {
             Some(p) if !p.is_empty() => p.to_string(),
             _ => {
