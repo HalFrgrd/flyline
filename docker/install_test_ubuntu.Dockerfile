@@ -4,6 +4,8 @@ ARG FLYLINE_RELEASE_VERSION
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-RUN FLYLINE_RELEASE_VERSION=${FLYLINE_RELEASE_VERSION} curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/main/install.sh | sh
+ENV FLYLINE_RELEASE_VERSION=${FLYLINE_RELEASE_VERSION}
 
-RUN bash -i -c "flyline --version"
+RUN curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
+
+RUN /bin/bash -i -c "flyline --version"

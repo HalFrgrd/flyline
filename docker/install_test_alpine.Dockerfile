@@ -4,6 +4,8 @@ ARG FLYLINE_RELEASE_VERSION
 
 RUN apk add --no-cache gcc bash curl
 
-RUN FLYLINE_RELEASE_VERSION=${FLYLINE_RELEASE_VERSION} curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/main/install.sh | sh
+ENV FLYLINE_RELEASE_VERSION=${FLYLINE_RELEASE_VERSION}
+
+RUN curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 
 RUN bash -i -c "flyline --version"
