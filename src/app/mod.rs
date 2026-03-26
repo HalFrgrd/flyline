@@ -1710,7 +1710,7 @@ impl<'a> App<'a> {
                 let num_rows_for_results = rows_left_before_end_of_screen
                     .saturating_sub(num_rows_for_instructions)
                     .min(30)
-                    .max(2);
+                    .max(10);
                 log::debug!(
                     "Fuzzy history search: rows_left_before_end_of_screen={}, num_rows_for_instructions={}, num_rows_for_results={}",
                     rows_left_before_end_of_screen,
