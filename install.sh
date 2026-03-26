@@ -151,11 +151,11 @@ Please check https://github.com/${REPO}/releases for available assets."
     # shellcheck disable=SC2064
     trap "rm -rf '$TMP_DIR'" EXIT
 
-    say "Downloading ${ARCHIVE}..."
+    say "Downloading ${ARCHIVE} from ${DOWNLOAD_URL}..."
     download "$DOWNLOAD_URL" "${TMP_DIR}/${ARCHIVE}"
 
     if [ -n "$SHA256_URL" ]; then
-        say "Downloading checksum..."
+        say "Downloading checksum from ${SHA256_URL}..."
         download "$SHA256_URL" "${TMP_DIR}/${ARCHIVE_SHA256}"
 
         say "Verifying checksum..."
