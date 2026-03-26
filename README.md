@@ -29,12 +29,35 @@ Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/C
 
 
 # Installation
-Download the latest `libflyline` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases).
+
+To install flyline, you need to:
+1. Acquire `libflyline.so`
+2. Run `enable -f /path/to/libflyline.so flyline` (preferably in your `.bashrc`)
+
+From easiest to hardest:
+
+### `install.sh`
+
+Run `curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/main/install.sh | sh` to automatically download and  set your `.bashrc` to run the latest flyline version.
+
+
+### Download from releases
+
+Download the latest `libflyline` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant instead of `musl` unless you are running Alpine, Chimera, or another `musl` based distro.
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
 flyline --tutorial-mode
 ```
+
+
+### Build from source
+```bash
+cargo build
+enable -f target/debug/libflyline.so flyline
+```
+
+### Notes
 
 Disable flyline with `enable -d flyline`.
 
@@ -58,12 +81,6 @@ So on Bash at least as recent as 5.2, if you install flyline to one of:
 Then you can simply run `enable flyline`.
 
 </details>
-
-## Build from source
-```bash
-cargo build
-enable -f target/debug/libflyline.so flyline
-```
 
 # Rich prompts
 
