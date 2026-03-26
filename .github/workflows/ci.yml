@@ -26,9 +26,9 @@ jobs:
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
-          targets: extract-artifact
+          targets: extract-integration-test-build-artifact
           set: |
-            extract-artifact.output=type=local,dest=${{ runner.temp }}/docker/build
+            extract-integration-test-build-artifact.output=type=local,dest=${{ runner.temp }}/docker/build
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
