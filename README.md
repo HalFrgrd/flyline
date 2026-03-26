@@ -27,6 +27,7 @@ Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/C
 - Runs in the same process as Bash
 - Cursor animations
 
+Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is written in Rust and uses [ratatui.rs](https://ratatui.rs/) to more easily draw complex user interfaces.
 
 # Installation
 
