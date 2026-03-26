@@ -1,8 +1,8 @@
 name: Copilot Documentation Check
 
 on:
-  push:
-    branches: [master]
+  schedule:
+    - cron: '0 0 */3 * *'
 
 concurrency:
   group: copilot-docs-check
