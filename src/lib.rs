@@ -101,10 +101,10 @@ struct FlylineArgs {
     /// Run matrix animation in the terminal background
     #[arg(long = "matrix-animation", default_missing_value = "true", num_args = 0..=1)]
     matrix_animation: Option<bool>,
-    /// Render frame rate in frames per second (1–120, default 60)
+    /// Render frame rate in frames per second (1–120, default 30)
     #[arg(long = "frame-rate", value_name = "FPS", value_parser = clap::value_parser!(u8).range(1..=120))]
     frame_rate: Option<u8>,
-    /// Mouse capture mode (none, simple, smart). Default is smart.
+    /// Mouse capture mode (disabled, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
     // Only for integration tests

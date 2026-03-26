@@ -329,10 +329,10 @@ Options:
           [possible values: true, false]
 
       --frame-rate <FPS>
-          Render frame rate in frames per second (1–120, default 60)
+          Render frame rate in frames per second (1–120, default 30)
 
       --mouse-mode <MODE>
-          Mouse capture mode (none, simple, smart). Default is smart
+          Mouse capture mode (disabled, simple, smart). Default is smart
 
           Possible values:
           - disabled: Never capture mouse events
