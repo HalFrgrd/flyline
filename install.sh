@@ -1,6 +1,6 @@
 #!/bin/sh
 # Flyline installer
-# Usage: curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/main/install.sh | sh
+# Usage: curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 
 set -eu
 
@@ -169,10 +169,11 @@ Please check https://github.com/${REPO}/releases for available assets."
     LIB_PATH="${INSTALL_DIR}/libflyline.so"
     say "Installed: ${LIB_PATH}"
 
-    # Add 'enable -f ... flyline' to ~/.bashrc if not already present.
+    # Update or add 'enable -f ... flyline' in ~/.bashrc.
     ENABLE_CMD="enable -f ${LIB_PATH} flyline"
-    if [ -f "$BASHRC" ] && grep -qF "$ENABLE_CMD" "$BASHRC"; then
-        say "Flyline is already configured in ${BASHRC}"
+    if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
+        sed -i -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC"
+        say "Updated flyline configuration in ${BASHRC}"
     else
         printf '\n# Flyline - code-editor-like bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
         say "Added flyline to ${BASHRC}"

@@ -3,7 +3,7 @@
 <div align="center">
 
 [![CI](https://github.com/HalFrgrd/flyline/actions/workflows/ci.yml/badge.svg)](https://github.com/HalFrgrd/flyline/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/blob/master/LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/HalFrgrd/flyline)](https://github.com/HalFrgrd/flyline/releases)
 
 **A Bash plugin for modern command line editing.**
@@ -38,7 +38,7 @@ From easiest to hardest:
 
 ### `install.sh`
 
-Run `curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/main/install.sh | sh` to automatically download and  set your `.bashrc` to run the latest flyline version.
+Run `curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh` to automatically download and  set your `.bashrc` to run the latest flyline version.
 
 
 ### Download from releases
