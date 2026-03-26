@@ -144,7 +144,7 @@ impl HistoryManager {
                     String::from_utf8_lossy(&bytes).into_owned()
                 }
             },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound && is_custom_path => {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 eprintln!("flyline: zsh history file not found: {}", hist_path);
                 log::warn!("Zsh history file not found: {}", hist_path);
                 String::new()
