@@ -719,7 +719,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -789,7 +789,7 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 [[package]]
 name = "flash"
 version = "0.0.6"
-source = "git+https://github.com/HalFrgrd/flash.git?rev=30fdd4b7a6e7d5cd0ac0d24b2fb819bf34cd62d6#30fdd4b7a6e7d5cd0ac0d24b2fb819bf34cd62d6"
+source = "git+https://github.com/HalFrgrd/flash.git?rev=4a38cb53accae3f6d01e5a39df39a38576119495#4a38cb53accae3f6d01e5a39df39a38576119495"
 dependencies = [
  "atty",
  "libc",
@@ -1971,7 +1971,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2271,10 +2271,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0136791f7c95b1f6dd99f9cc786b91bb81c3800b639b3478e561ddb7be95e5f1"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.1",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
