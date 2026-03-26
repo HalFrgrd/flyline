@@ -5,7 +5,7 @@
 set -eu
 
 REPO="HalFrgrd/flyline"
-INSTALL_DIR="/usr/local/lib"
+INSTALL_DIR="${HOME}/.local/lib"
 BASHRC="${HOME}/.bashrc"
 
 # ---------------------------------------------------------------------------
@@ -65,19 +65,7 @@ detect_arch() {
 }
 
 detect_libc() {
-    # 1. Ask ldd directly — musl's ldd prints "musl libc" on --version.
-    if ldd --version 2>&1 | grep -qi musl; then
-        echo "musl"
-        return
-    fi
-
-    # 2. Look for the musl dynamic linker on disk.
-    if ls /lib/ld-musl-* >/dev/null 2>&1; then
-        echo "musl"
-        return
-    fi
-
-    # 3. Inspect the interpreter of the running shell executable.
+    # 1. Inspect the interpreter of the running shell executable — most reliable.
     shell_exe="/proc/$$/exe"
     if [ ! -e "$shell_exe" ]; then
         shell_exe="$(command -v sh || true)"
@@ -86,7 +74,20 @@ detect_libc() {
         interp="$(readelf -l "$shell_exe" 2>/dev/null | grep 'interpreter' | grep -o '\[.*\]' | tr -d '[]')" || true
         case "$interp" in
             *musl*) echo "musl"; return ;;
+            *) echo "gnu"; return ;;
         esac
+    fi
+
+    # 2. Ask ldd directly — musl's ldd prints "musl libc" on --version.
+    if ldd --version 2>&1 | grep -qi musl; then
+        echo "musl"
+        return
+    fi
+
+    # 3. Look for the musl dynamic linker on disk.
+    if ls /lib/ld-musl-* >/dev/null 2>&1; then
+        echo "musl"
+        return
     fi
 
     # 4. Fall back to GNU libc.
@@ -136,6 +137,8 @@ main() {
     [ -n "$DOWNLOAD_URL" ] || err "Could not find download URL for ${ARCHIVE} in the latest release.
 Please check https://github.com/${REPO}/releases for available assets."
 
+    mkdir -p "$INSTALL_DIR"
+
     TMP_DIR="$(mktemp -d)"
     # shellcheck disable=SC2064
     trap "rm -rf '$TMP_DIR'" EXIT
@@ -153,19 +156,7 @@ Please check https://github.com/${REPO}/releases for available assets."
             || err "Checksum verification failed for ${ARCHIVE}."
     fi
 
-    # Create install directory (may require sudo).
-    if [ -d "$INSTALL_DIR" ] && [ -w "$INSTALL_DIR" ]; then
-        SUDO=""
-    elif command -v sudo >/dev/null 2>&1; then
-        SUDO="sudo"
-        say "Installing to ${INSTALL_DIR} (requires sudo)..."
-    else
-        err "Cannot write to ${INSTALL_DIR} and sudo is not available.
-Re-run this script as root, or set INSTALL_DIR to a writable path."
-    fi
-
-    ${SUDO} mkdir -p "$INSTALL_DIR"
-    ${SUDO} tar xzf "${TMP_DIR}/${ARCHIVE}" -C "$INSTALL_DIR"
+    tar xzf "${TMP_DIR}/${ARCHIVE}" -C "$INSTALL_DIR"
 
     LIB_PATH="${INSTALL_DIR}/libflyline.so"
     say "Installed: ${LIB_PATH}"
