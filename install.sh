@@ -121,12 +121,20 @@ main() {
 
     say "Detected target: ${TARGET}"
 
-    say "Fetching latest release information..."
-    RELEASE_JSON="$(fetch_text "https://api.github.com/repos/${REPO}/releases/latest")"
-    VERSION="$(printf '%s' "$RELEASE_JSON" | grep '"tag_name"' | head -1 \
-        | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-    [ -n "$VERSION" ] || err "Could not determine latest release version from GitHub API."
-    say "Latest version: ${VERSION}"
+    if [ -n "${FLYLINE_RELEASE_VERSION:-}" ]; then
+        say "Using specified release version: ${FLYLINE_RELEASE_VERSION}"
+        VERSION="${FLYLINE_RELEASE_VERSION}"
+        RELEASE_JSON="$(fetch_text "https://api.github.com/repos/${REPO}/releases/tags/${VERSION}")"
+        printf '%s' "$RELEASE_JSON" | grep -q '"tag_name"' \
+            || err "Could not find release for version ${VERSION}. Please check https://github.com/${REPO}/releases for available versions."
+    else
+        say "Fetching latest release information..."
+        RELEASE_JSON="$(fetch_text "https://api.github.com/repos/${REPO}/releases/latest")"
+        VERSION="$(printf '%s' "$RELEASE_JSON" | grep '"tag_name"' | head -1 \
+            | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+        [ -n "$VERSION" ] || err "Could not determine latest release version from GitHub API."
+        say "Latest version: ${VERSION}"
+    fi
 
     ARCHIVE="libflyline-${VERSION}-${TARGET}.tar.gz"
     ARCHIVE_SHA256="${ARCHIVE}.sha256"
