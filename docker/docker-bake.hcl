@@ -2,6 +2,10 @@ variable "BASH_VERSION_MATRIX" {
     default = ["4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
 }
 
+variable "FLYLINE_RELEASE_VERSION" {
+    default = null
+}
+
 target "builder" {
     context = "."
     dockerfile = "docker/integration_test_build.Dockerfile"
@@ -146,4 +150,20 @@ group "demos" {
         "demo-ls-colors-extracted-gif",
         "demo-fuzzy-history-extracted-gif"
     ]
+}
+
+target "install-test-alpine" {
+    context = "."
+    dockerfile = "docker/install_test_alpine.Dockerfile"
+    args = {
+        FLYLINE_RELEASE_VERSION = FLYLINE_RELEASE_VERSION
+    }
+}
+
+target "install-test-ubuntu" {
+    context = "."
+    dockerfile = "docker/install_test_ubuntu.Dockerfile"
+    args = {
+        FLYLINE_RELEASE_VERSION = FLYLINE_RELEASE_VERSION
+    }
 }

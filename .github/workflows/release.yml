@@ -91,3 +91,28 @@ jobs:
         run: |
           version="${{ needs.create-release.outputs.version }}"
           gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
+
+  publish-release:
+    name: publish-release
+    needs: [create-release, build-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark release as prerelease
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ needs.create-release.outputs.version }}" --prerelease --draft=false --repo HalFrgrd/flyline
+
+  test-installation:
+    name: test-installation
+    needs: [create-release, publish-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Test installation on Alpine and Ubuntu
+        env:
+          FLYLINE_RELEASE_VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          docker buildx bake -f docker/docker-bake.hcl install-test-alpine install-test-ubuntu
