@@ -16,7 +16,9 @@ RUN set -eux; \
     printf '%s' content > "/tmp/example_fs/file with spaces.txt"; \
     printf '%s' content > /tmp/example_fs/foo/baz; \
     printf '%s' content > /tmp/example_fs/abc/foo/baz; \
-    ln -s foo /tmp/example_fs/sym_link_to_foo
+    ln -s foo /tmp/example_fs/sym_link_to_foo; \
+    mkdir -p /root/foo; \
+    printf '%s' content > '/root/foo/$baz.txt'
 
 RUN set -eux; \
     cat > /root/tab_completion_test_bashrc <<'EOF'

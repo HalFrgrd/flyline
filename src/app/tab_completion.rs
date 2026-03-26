@@ -238,11 +238,31 @@ impl App<'_> {
         sug: &str,
         path_to_use: Option<&Path>,
         comp_resultflags: bash_funcs::CompletionFlags,
+        word_under_cursor: &str,
     ) -> Suggestion {
         let quoted = if comp_resultflags.filename_quoting_desired
             && comp_resultflags.filename_completion_desired
         {
-            bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
+            // If the suggestion starts with the user's typed prefix, keep that
+            // prefix as-is (unquoted) and only quote the newly-discovered suffix.
+            // For example: word_under_cursor="$HOME/foo/", sug="$HOME/foo/$baz.txt"
+            // → "$HOME/foo/" + quote("$baz.txt") = "$HOME/foo/\$baz.txt"
+            // This prevents incorrectly escaping characters like $ that the user
+            // intentionally left unescaped in their prefix.
+            if !word_under_cursor.is_empty()
+                && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
+            {
+                let quoted_suffix = bash_funcs::quote_function_rust(
+                    new_suffix,
+                    comp_resultflags.quote_type.unwrap_or_default(),
+                );
+                format!("{}{}", word_under_cursor, quoted_suffix)
+            } else {
+                bash_funcs::quote_function_rust(
+                    sug,
+                    comp_resultflags.quote_type.unwrap_or_default(),
+                )
+            }
         } else {
             sug.to_string()
         };
@@ -296,10 +316,13 @@ impl App<'_> {
         &self,
         completions: Vec<String>,
         comp_resultflags: bash_funcs::CompletionFlags,
+        word_under_cursor: &str,
     ) -> Vec<Suggestion> {
         completions
             .iter()
-            .map(|sug| self.post_process_single_completion(sug, None, comp_resultflags))
+            .map(|sug| {
+                self.post_process_single_completion(sug, None, comp_resultflags, word_under_cursor)
+            })
             .collect::<Vec<_>>()
     }
 
@@ -357,8 +380,11 @@ impl App<'_> {
                         );
                         log::debug!("Completions: {:#?}", comp_result);
 
-                        let suggestions = self
-                            .post_process_completions(comp_result.completions, comp_result.flags);
+                        let suggestions = self.post_process_completions(
+                            comp_result.completions,
+                            comp_result.flags,
+                            word_under_cursor,
+                        );
                         return Some(suggestions);
                     }
                     Ok(comp_result) => {
@@ -533,6 +559,11 @@ impl App<'_> {
                         &unexpanded,
                         Some(&path),
                         comp_resultflags,
+                        // The glob expansion path already preserves the raw prefix in
+                        // `unexpanded` via PathPatternExpansion; pass "" here so
+                        // post_process_single_completion doesn't attempt a second
+                        // prefix split (filename_quoting_desired is false anyway).
+                        "",
                     ));
                 }
             }
@@ -773,6 +804,14 @@ impl App<'_> {
         run_test_on(
             r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
             &[&Suggestion::new(r#""$PWD/many spaces here/"#, "", "")],
+        );
+
+        // Test that $HOME prefix is preserved (not backslash-escaped) while the
+        // dollar sign in the new filename part IS escaped.
+        // $HOME/foo/ should complete to $HOME/foo/\$baz.txt (not \$HOME/foo/\$baz.txt).
+        run_test_on(
+            "fl_comp_util --env-var-test $HOME/foo/",
+            &[&Suggestion::new(r#"$HOME/foo/\$baz.txt"#, "", " ")],
         );
 
         // Test glob expansion with glob characters in directory components
