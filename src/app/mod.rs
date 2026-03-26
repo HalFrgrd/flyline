@@ -284,8 +284,9 @@ impl<'a> App<'a> {
             if let Some(result) = ai_result {
                 match result {
                     Ok(raw_output) => match parse_ai_output(&raw_output) {
-                        Ok(selection) => {
-                            self.content_mode = ContentMode::AiOutputSelection(selection);
+                        Ok(parsed) => {
+                            self.content_mode =
+                                ContentMode::AiOutputSelection(AiOutputSelection::new(parsed));
                         }
                         Err(e) => {
                             log::warn!("AI command returned no suggestions: {}", e);
@@ -1823,12 +1824,8 @@ impl<'a> App<'a> {
             }
             ContentMode::AiOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
-                for line in selection.header.lines() {
-                    content.write_span(
-                        &Span::styled(line.to_string(), Palette::secondary_text()),
-                        Tag::Blank,
-                    );
-                    content.newline();
+                for line in &selection.header_text {
+                    content.write_line(line, true, Tag::Blank);
                 }
                 for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
                     let is_selected = selection.selected_idx == row_idx;
@@ -1893,12 +1890,8 @@ impl<'a> App<'a> {
                     content.fill_line(Tag::AiResult(row_idx));
                     content.newline();
                 }
-                for line in selection.footer.lines() {
-                    content.write_span(
-                        &Span::styled(line.to_string(), Palette::secondary_text()),
-                        Tag::Blank,
-                    );
-                    content.newline();
+                for line in &selection.footer_text {
+                    content.write_line(line, true, Tag::Blank);
                 }
             }
             ContentMode::AiError {
