@@ -13,7 +13,7 @@
 
 </div>
 
-Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) to provide a code-editor-like experience and other features:
+Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) to provide an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
 - Fuzzy history suggestions
@@ -207,8 +207,7 @@ This allows you to write a command in plain English and your agent will convert 
 ![Agent mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
 
 [See the examples on how to set this up.](examples/agent_mode.sh)
-The agent should return a simple json array of possible results as described by the example system prompt.
-The agent can return more text than just the json array but flyline will only present data from the array.
+The agent should return a simple json array of commands as described by the example system prompt.
 
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
@@ -265,7 +264,7 @@ Pressing `Up` will scroll through history entries that are a prefix match with t
 **Zsh history entries:**
 Optionally read zsh history entries to make migrating to Bash easier. 
 
-# Integrations
+# Terminal emulator notes
 ## VS Code:
 Recommended settings
 - [`terminal.integrated.minimumContrastRatio = 1`](vscode://settings/terminal.integrated.minimumContrastRatio) to prevent the cell's foreground colour changing when it's under the cursor.
@@ -275,6 +274,8 @@ Recommended settings
 - Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
 
 ## macOS
+> These notes are for when the terminal emulator is running on macOS and flyline is running withing a remote Linux shell
+
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
 Two possible fixes are:
 - Map `Command+<KEY>` to `Control+<KEY>` in your terminal emulator settings.

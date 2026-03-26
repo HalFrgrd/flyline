@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Flyline is a Bash plugin written in Rust that replaces readline to provide a code-editor-like command-line experience. It is compiled as a shared library (`libflyline.so`) and loaded into Bash with `enable -f /path/to/libflyline.so flyline`.
+Flyline is a Bash plugin written in Rust that replaces readline to provide an enhanced line editing experience. It is compiled as a shared library (`libflyline.so`) and loaded into Bash with `enable -f /path/to/libflyline.so flyline`.
 
 Key features: undo/redo, cursor animations, fuzzy history suggestions, fuzzy autocompletions, bash autocomplete integration, mouse support, syntax highlighting, and tooltips.
 

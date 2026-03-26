@@ -1280,7 +1280,7 @@ impl<'a> App<'a> {
                 let env_var_name = &token.token.value;
                 let tooltip = match bash_funcs::get_env_variable(env_var_name) {
                     Some(value) => format!("${}={}", env_var_name, value),
-                    None => format!("${}", env_var_name),
+                    None => format!("${}=", env_var_name),
                 };
                 Some(buffer_format::WordInfo {
                     tooltip: Some(tooltip),
