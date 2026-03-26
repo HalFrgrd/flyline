@@ -1662,10 +1662,7 @@ impl<'a> App<'a> {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
                 let grid_start_row = content.cursor_position().row;
-                let num_rows_for_suggestions = rows_left_before_end_of_screen
-                    .saturating_sub(2)
-                    .min(15)
-                    .max(2);
+                let num_rows_for_suggestions = rows_left_before_end_of_screen.min(15).max(2);
                 let mut rows: Vec<Vec<(Vec<Span>, usize)>> =
                     vec![vec![]; num_rows_for_suggestions as usize];
 
@@ -1710,7 +1707,7 @@ impl<'a> App<'a> {
                 let num_rows_for_results = rows_left_before_end_of_screen
                     .saturating_sub(num_rows_for_instructions)
                     .min(30)
-                    .max(10);
+                    .max(2);
                 log::debug!(
                     "Fuzzy history search: rows_left_before_end_of_screen={}, num_rows_for_instructions={}, num_rows_for_results={}",
                     rows_left_before_end_of_screen,
