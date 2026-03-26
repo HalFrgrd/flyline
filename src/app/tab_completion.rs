@@ -239,7 +239,6 @@ impl App<'_> {
         path_to_use: Option<&Path>,
         comp_resultflags: bash_funcs::CompletionFlags,
         word_under_cursor: &str,
-        dequoted_word_prefix: &str,
     ) -> Suggestion {
         let quoted = if comp_resultflags.filename_quoting_desired
             && comp_resultflags.filename_completion_desired
@@ -250,8 +249,9 @@ impl App<'_> {
             // → "$HOME/foo/" + quote("$baz.txt") = "$HOME/foo/\$baz.txt"
             // This prevents incorrectly escaping characters like $ that the user
             // intentionally left unescaped in their prefix.
-            if !dequoted_word_prefix.is_empty() && sug.starts_with(dequoted_word_prefix) {
-                let new_suffix = &sug[dequoted_word_prefix.len()..];
+            if !word_under_cursor.is_empty()
+                && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
+            {
                 let quoted_suffix = bash_funcs::quote_function_rust(
                     new_suffix,
                     comp_resultflags.quote_type.unwrap_or_default(),
@@ -318,17 +318,10 @@ impl App<'_> {
         comp_resultflags: bash_funcs::CompletionFlags,
         word_under_cursor: &str,
     ) -> Vec<Suggestion> {
-        let dequoted_word_prefix = bash_funcs::dequoting_function_rust(word_under_cursor);
         completions
             .iter()
             .map(|sug| {
-                self.post_process_single_completion(
-                    sug,
-                    None,
-                    comp_resultflags,
-                    word_under_cursor,
-                    &dequoted_word_prefix,
-                )
+                self.post_process_single_completion(sug, None, comp_resultflags, word_under_cursor)
             })
             .collect::<Vec<_>>()
     }
@@ -570,7 +563,6 @@ impl App<'_> {
                         // `unexpanded` via PathPatternExpansion; pass "" here so
                         // post_process_single_completion doesn't attempt a second
                         // prefix split (filename_quoting_desired is false anyway).
-                        "",
                         "",
                     ));
                 }
