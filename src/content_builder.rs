@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use crate::stateful_sliding_window::StatefulSlidingWindow;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Coord {
     pub row: u16,
@@ -333,25 +335,18 @@ impl Contents {
         }
     }
 
-    pub fn get_row_range_to_show(&self, height: u16) -> (u16, u16) {
-        // Returns the range of visual rows to show given the available height.
-        // Uses `focus_row` when set, otherwise falls back to the cursor row.
-        let total_rows = self.height();
-        if total_rows <= height {
-            (0, total_rows)
-        } else {
-            let focus = self
-                .focus_row
-                .or_else(|| self.term_cursor_pos.map(|c| c.row));
-            if let Some(focus_row) = focus {
-                let bottom = std::cmp::min(focus_row.saturating_add(1), total_rows);
-                let top = bottom.saturating_sub(height);
-                (top, bottom)
-            } else {
-                // Show the final rows
-                (total_rows.saturating_sub(height), total_rows)
-            }
+    pub fn get_row_range_to_show(&self, term_height: u16) -> (u16, u16) {
+        let mut window =
+            StatefulSlidingWindow::new(0, term_height as usize, self.height() as usize);
+        if let Some(focus_row) = self.focus_row {
+            window.move_index_to(focus_row as usize);
+        } else if let Some(term_cursor_pos) = self.term_cursor_pos {
+            window.move_index_to(term_cursor_pos.row as usize);
         }
+
+        let row_range = window.get_window_range();
+
+        (row_range.start as u16, row_range.end as u16)
     }
 
     pub fn get_tagged_cell(

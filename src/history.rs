@@ -4,6 +4,7 @@ use std::vec;
 use crate::bash_symbols;
 use crate::palette::Palette;
 use crate::settings::Settings;
+use crate::stateful_sliding_window::StatefulSlidingWindow;
 use itertools::Itertools;
 use ratatui::text::Line;
 use skim::fuzzy_matcher::FuzzyMatcher;
@@ -351,7 +352,7 @@ impl HistoryManager {
         &mut self,
         current_cmd: &str,
         max_visible: usize,
-    ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
+    ) -> (&[HistoryEntryFormatted], usize, usize, usize) {
         self.fuzzy_search
             .get_fuzzy_search_results(&self.entries, current_cmd, max_visible)
     }
@@ -372,8 +373,8 @@ impl HistoryManager {
         self.fuzzy_search.accept_fuzzy_search_result()
     }
 
-    pub fn fuzzy_search_set_by_visual_idx(&mut self, visual_idx: usize) {
-        self.fuzzy_search.set_fuzzy_search_by_visual_idx(visual_idx);
+    pub fn fuzzy_search_set_idx(&mut self, idx: usize) {
+        self.fuzzy_search.set_fuzzy_search_idx(idx);
     }
 
     pub fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
@@ -389,6 +390,7 @@ pub(crate) struct HistoryEntryFormatted {
     pub score: i64,
     pub match_indices: Vec<usize>,
     pub command_spans: Option<Vec<Line<'static>>>,
+    pub idx_in_cache: Option<usize>,
 }
 
 impl std::cmp::Eq for HistoryEntryFormatted {}
@@ -416,6 +418,7 @@ impl HistoryEntryFormatted {
             score,
             match_indices,
             command_spans: None,
+            idx_in_cache: None,
         }
     }
 
@@ -440,10 +443,7 @@ struct FuzzyHistorySearch {
     cache_command: Option<String>,
     global_index: usize,
     cache_index: usize,
-    cache_visible_offset: usize,
-    /// The number of visible entries last used by `get_fuzzy_search_results`.
-    /// Used by page-navigation so the page size matches the displayed window.
-    visible_size: usize,
+    window: StatefulSlidingWindow,
 }
 
 impl std::fmt::Debug for FuzzyHistorySearch {
@@ -452,8 +452,7 @@ impl std::fmt::Debug for FuzzyHistorySearch {
             .field("cache_command", &self.cache_command)
             .field("global_index", &self.global_index)
             .field("cache_index", &self.cache_index)
-            .field("cache_visible_offset", &self.cache_visible_offset)
-            .field("visible_size", &self.visible_size)
+            .field("window", &self.window)
             .field("cache_len", &self.cache.len())
             .finish()
     }
@@ -507,8 +506,7 @@ impl FuzzyHistorySearch {
             cache_command: None,
             global_index: 0,
             cache_index: 0,
-            cache_visible_offset: 0,
-            visible_size: Self::VISIBLE_CACHE_SIZE,
+            window: StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0),
         }
     }
 
@@ -517,7 +515,7 @@ impl FuzzyHistorySearch {
         entries: &[HistoryEntry],
         current_cmd: &str,
         max_visible: usize,
-    ) -> (&mut [HistoryEntryFormatted], usize, usize, usize) {
+    ) -> (&[HistoryEntryFormatted], usize, usize, usize) {
         // when the command changes, reset the cache
         // but keep the current visual row if possible
         let mut desired_visual_row = None;
@@ -526,40 +524,34 @@ impl FuzzyHistorySearch {
             self.cache_command = Some(current_cmd.to_string());
             self.cache = vec![];
             self.global_index = 0;
-            desired_visual_row = Some(self.cache_index.saturating_sub(self.cache_visible_offset));
+            desired_visual_row = Some(self.window.visual_index_of_interest());
             self.cache_index = 0;
-            self.cache_visible_offset = 0;
+            self.window = StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0);
         }
 
         self.grow_fuzzy_search_cache(entries, current_cmd);
 
-        if let Some(desired_row) = desired_visual_row {
-            self.cache_index = self.cache_visible_offset + desired_row;
-        }
-
-        self.cache_index = self.cache_index.min(self.cache.len().saturating_sub(1));
-
-        self.visible_size = max_visible.max(2);
-
-        if self.cache_visible_offset + self.visible_size <= self.cache_index + 2 {
-            self.cache_visible_offset =
-                (self.cache_index + 2).saturating_sub(self.visible_size - 1);
-        } else if self.cache_index < self.cache_visible_offset + 2 {
-            self.cache_visible_offset = self.cache_index.saturating_sub(2);
-        }
-
-        assert!(self.cache_index >= self.cache_visible_offset);
-        let visible_index = self.cache_index.saturating_sub(self.cache_visible_offset);
-
         let cache_len = self.cache.len();
 
-        let end = self.cache_visible_offset + self.visible_size;
-        let entries_to_show = &mut self.cache[self.cache_visible_offset..end];
-        entries_to_show
-            .iter_mut()
-            .for_each(|e| e.gen_formatted_command());
+        self.window.update_max_index(cache_len);
+        self.window.update_window_size(max_visible);
+        if let Some(desired) = desired_visual_row {
+            self.window.set_visual_index_of_interest(desired);
+        }
+        self.window.move_index_to(self.cache_index);
 
-        (entries_to_show, visible_index, cache_len, self.global_index)
+        let entries_to_show = &mut self.cache[self.window.get_window_range()];
+        entries_to_show.iter_mut().enumerate().for_each(|(idx, e)| {
+            e.idx_in_cache = Some(self.window.get_window_range().start + idx);
+            e.gen_formatted_command();
+        });
+
+        (
+            entries_to_show,
+            self.cache_index,
+            cache_len,
+            self.global_index,
+        )
     }
 
     fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
@@ -571,11 +563,8 @@ impl FuzzyHistorySearch {
             .map(|formatted| &formatted.entry)
     }
 
-    fn set_fuzzy_search_by_visual_idx(&mut self, visual_idx: usize) {
-        let new_index = self.cache_visible_offset + visual_idx;
-        if new_index < self.cache.len() {
-            self.cache_index = new_index;
-        }
+    fn set_fuzzy_search_idx(&mut self, idx: usize) {
+        self.cache_index = idx.min(self.cache.len().saturating_sub(1));
     }
 
     fn fuzzy_search_onkeypress(&mut self, direction: HistorySearchDirection) {
@@ -594,10 +583,13 @@ impl FuzzyHistorySearch {
                 }
             }
             HistorySearchDirection::PageBackward => {
-                self.cache_index = (self.cache_index + self.visible_size).min(self.cache.len() - 1);
+                self.cache_index = (self.cache_index + self.window.get_window_range().len())
+                    .min(self.cache.len() - 1);
             }
             HistorySearchDirection::PageForward => {
-                self.cache_index = self.cache_index.saturating_sub(self.visible_size);
+                self.cache_index = self
+                    .cache_index
+                    .saturating_sub(self.window.get_window_range().len());
             }
         }
     }

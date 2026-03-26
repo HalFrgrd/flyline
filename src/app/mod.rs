@@ -9,7 +9,7 @@ use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
-use crate::history::{HistoryEntry, HistoryManager, HistorySearchDirection};
+use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
@@ -30,6 +30,8 @@ use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::time::Duration;
 use std::vec;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Shift+Enter to accept the command for editing";
 const TUTORIAL_HISTORY_PREFIX_HINT: &str =
@@ -472,7 +474,7 @@ impl<'a> App<'a> {
             Some((tag @ Tag::HistoryResult(idx), true)) => {
                 self.last_mouse_over_cell = Some(tag);
                 if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
-                    self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                    self.history_manager.fuzzy_search_set_idx(idx);
                 }
             }
             Some((tag @ Tag::AiResult(idx), true)) => {
@@ -515,7 +517,7 @@ impl<'a> App<'a> {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
                     && matches!(self.content_mode, ContentMode::FuzzyHistorySearch)
                 {
-                    self.history_manager.fuzzy_search_set_by_visual_idx(idx);
+                    self.history_manager.fuzzy_search_set_idx(idx);
                     self.accept_fuzzy_history_search();
                     update_buffer = true;
                 }
@@ -1266,11 +1268,6 @@ impl<'a> App<'a> {
     }
 
     fn wordinfo_fn(token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
-        log::debug!(
-            "Getting WordInfo for token '{}' with annotation {:?}",
-            token.token.value,
-            token.annotation
-        );
         match &token.annotation {
             dparser::TokenAnnotation::IsCommandWord(value) => {
                 let (command_type, description) = bash_funcs::get_command_info(&value);
@@ -1314,6 +1311,150 @@ impl<'a> App<'a> {
         );
         let s = timeago::format_5chars(duration);
         format!("{:>5}", s.trim_start_matches('0'))
+    }
+
+    /// Build the display lines for a single fuzzy-history entry.
+    ///
+    /// Returns one `Line` per terminal row. The first line combines the
+    /// header prefix (index / score / timeago / indicator) with the first
+    /// command row; subsequent lines carry the continuation prefix.
+    fn get_lines_for_entry(
+        formatted_entry: &HistoryEntryFormatted,
+        entry_idx: usize,
+        fuzzy_search_index: usize,
+        num_digits_for_index: usize,
+        num_digits_for_score: usize,
+        header_prefix_width: usize,
+        available_cols: u16,
+    ) -> Vec<Line<'static>> {
+        let is_selected = fuzzy_search_index == entry_idx;
+
+        let entry = &formatted_entry.entry;
+        let timeago_str = entry
+            .timestamp
+            .map(Self::ts_to_timeago_string_5chars)
+            .unwrap_or_else(|| "     ".to_string());
+
+        let indicator_span = || {
+            if is_selected {
+                Span::styled("▐", Palette::matched_character())
+            } else {
+                Span::styled(" ", Palette::secondary_text())
+            }
+        };
+
+        let Some(formatted_text) = formatted_entry.command_spans.as_ref() else {
+            log::warn!("No formatted text for history entry '{}'", entry.command);
+            return vec![];
+        };
+
+        let total_logical_lines = formatted_text.len();
+        let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
+        for (logical_idx, logical_line) in formatted_text.iter().enumerate() {
+            let terminal_rows = split_line_to_terminal_rows(logical_line, available_cols);
+            for (sub_idx, terminal_row) in terminal_rows.into_iter().enumerate() {
+                all_display_rows.push((sub_idx == 0, logical_idx, terminal_row));
+            }
+        }
+
+        let total_display_rows = all_display_rows.len();
+        let max_display_rows = if is_selected { 4 } else { 1 };
+        let has_more = total_display_rows > max_display_rows;
+        let rows_to_show = total_display_rows.min(max_display_rows);
+
+        let mut result: Vec<Line<'static>> = Vec::with_capacity(rows_to_show);
+
+        for (display_idx, (is_start_of_logical, logical_idx, display_line)) in all_display_rows
+            .into_iter()
+            .take(max_display_rows)
+            .enumerate()
+        {
+            let mut row_spans: Vec<Span<'static>> = if display_idx == 0 {
+                vec![
+                    Span::styled(
+                        format!("{:>num_digits_for_index$} ", entry.index + 1),
+                        Palette::secondary_text(),
+                    ),
+                    Span::styled(
+                        format!("{:>num_digits_for_score$} ", formatted_entry.score),
+                        Palette::secondary_text(),
+                    ),
+                    Span::styled(timeago_str.clone(), Palette::secondary_text()),
+                    indicator_span(),
+                ]
+            } else {
+                let indent_prefix = if is_start_of_logical {
+                    let line_num_str = format!("{}/{}", logical_idx + 1, total_logical_lines);
+                    format!("{:>width$}", line_num_str, width = header_prefix_width - 1)
+                } else {
+                    " ".repeat(header_prefix_width - 1)
+                };
+                vec![
+                    Span::styled(indent_prefix, Palette::secondary_text()),
+                    indicator_span(),
+                ]
+            };
+
+            let cmd_display_width: usize = display_line
+                .spans
+                .iter()
+                .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
+                .sum();
+
+            let mut cmd_spans: Vec<Span<'static>> = display_line
+                .spans
+                .into_iter()
+                .map(|span| {
+                    if is_selected {
+                        Span::styled(span.content, Palette::convert_to_selected(span.style))
+                    } else {
+                        span
+                    }
+                })
+                .collect();
+
+            // Append ellipsis on the last displayed row when more content exists.
+            // If the command row fills available_cols, trim the last grapheme to
+            // make space; otherwise just append.
+            if display_idx + 1 == rows_to_show && has_more {
+                let ellipsis_style = if is_selected {
+                    Palette::convert_to_selected(Palette::secondary_text())
+                } else {
+                    Palette::secondary_text()
+                };
+                if cmd_display_width >= available_cols as usize {
+                    'trim: loop {
+                        match cmd_spans.last_mut() {
+                            None => break 'trim,
+                            Some(last) => {
+                                let s = last.content.as_ref();
+                                match s.grapheme_indices(true).next_back() {
+                                    None => {
+                                        cmd_spans.pop();
+                                    }
+                                    Some((byte_idx, _)) => {
+                                        let trimmed = s[..byte_idx].to_string();
+                                        let style = last.style;
+                                        if trimmed.is_empty() {
+                                            cmd_spans.pop();
+                                        } else {
+                                            *last = Span::styled(trimmed, style);
+                                        }
+                                        break 'trim;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                cmd_spans.push(Span::styled("…", ellipsis_style));
+            }
+
+            row_spans.extend(cmd_spans);
+            result.push(Line::from(row_spans));
+        }
+
+        result
     }
 
     fn create_content(&mut self, width: u16, viewport_top: u16, terminal_height: u16) -> Contents {
@@ -1515,21 +1656,13 @@ impl<'a> App<'a> {
         }
 
         let rows_before = content.cursor_position().row;
-        let ideal_max_num_rows_for_below: u16;
-        if terminal_height.saturating_sub(rows_before) >= 20 {
-            ideal_max_num_rows_for_below = terminal_height.saturating_sub(rows_before);
-        } else {
-            ideal_max_num_rows_for_below = terminal_height.saturating_sub(rows_before).max(5);
-        }
+        let rows_left_before_end_of_screen: u16 = terminal_height.saturating_sub(rows_before + 1);
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
                 let grid_start_row = content.cursor_position().row;
-                let num_rows_for_suggestions = ideal_max_num_rows_for_below
-                    .saturating_sub(2)
-                    .min(15)
-                    .max(2);
+                let num_rows_for_suggestions = rows_left_before_end_of_screen.min(15).max(2);
                 let mut rows: Vec<Vec<(Vec<Span>, usize)>> =
                     vec![vec![]; num_rows_for_suggestions as usize];
 
@@ -1570,12 +1703,17 @@ impl<'a> App<'a> {
                 }
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
-                content.newline();
-
-                let num_rows_for_results = ideal_max_num_rows_for_below
-                    .saturating_sub(2)
+                let num_rows_for_instructions = if self.settings.tutorial_mode { 2 } else { 1 };
+                let num_rows_for_results = rows_left_before_end_of_screen
+                    .saturating_sub(num_rows_for_instructions)
                     .min(30)
                     .max(2);
+                log::debug!(
+                    "Fuzzy history search: rows_left_before_end_of_screen={}, num_rows_for_instructions={}, num_rows_for_results={}",
+                    rows_left_before_end_of_screen,
+                    num_rows_for_instructions,
+                    num_rows_for_results
+                );
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
@@ -1592,150 +1730,33 @@ impl<'a> App<'a> {
                     + (num_digits_for_score + 1)
                     + timeago_width
                     + indicator_width;
-                for (row_idx, formatted_entry) in fuzzy_results.iter_mut().enumerate() {
-                    let entry = &formatted_entry.entry;
-                    let mut spans = vec![];
-
-                    spans.push(Span::styled(
-                        format!("{:>num_digits_for_index$} ", entry.index + 1),
-                        Palette::secondary_text(),
-                    ));
-
-                    spans.push(Span::styled(
-                        format!("{:>num_digits_for_score$} ", formatted_entry.score),
-                        Palette::secondary_text(),
-                    ));
-
-                    let timeago_str = entry
-                        .timestamp
-                        .map(Self::ts_to_timeago_string_5chars)
-                        .unwrap_or("     ".to_string());
-
-                    spans.push(Span::styled(timeago_str, Palette::secondary_text()));
-
-                    let is_selected = fuzzy_search_index == row_idx;
+                let available_cols = content.width.saturating_sub(header_prefix_width as u16);
+                'outer: for formatted_entry in fuzzy_results.iter() {
+                    let entry_idx = formatted_entry.idx_in_cache.unwrap_or(0);
+                    let is_selected = fuzzy_search_index == entry_idx;
                     if is_selected {
                         content.set_focus_row(content.cursor_position().row);
-                        spans.push(Span::styled("▐", Palette::matched_character()));
-                    } else {
-                        spans.push(Span::styled(" ", Palette::secondary_text()));
                     }
-
-                    let line = Line::from(spans);
-                    content.write_line(&line, false, Tag::HistoryResult(row_idx));
-
-                    let formatted_text = {
-                        if formatted_entry.command_spans.is_none() {
-                            // Lazily generate the formatted command with highlights
-                            formatted_entry.gen_formatted_command();
+                    for line in Self::get_lines_for_entry(
+                        formatted_entry,
+                        entry_idx,
+                        fuzzy_search_index,
+                        num_digits_for_index,
+                        num_digits_for_score,
+                        header_prefix_width,
+                        available_cols,
+                    ) {
+                        content.newline();
+                        content.write_line(&line, false, Tag::HistoryResult(entry_idx));
+                        content.fill_line(Tag::HistoryResult(entry_idx));
+                        if content.cursor_position().row.saturating_sub(starting_row)
+                            >= num_rows_for_results
+                        {
+                            break 'outer;
                         }
-                        formatted_entry.command_spans.as_ref().unwrap()
-                    };
-
-                    // Width available for command content on each terminal row
-                    // (the header/indent prefix always occupies header_prefix_width columns)
-                    let available_cols = content.width.saturating_sub(header_prefix_width as u16);
-
-                    // Pre-process all logical lines into terminal display rows.
-                    // Each element is: (is_start_of_logical_line, logical_line_idx, row_spans)
-                    let total_logical_lines = formatted_text.len();
-                    let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
-                    for (logical_idx, logical_line) in formatted_text.iter().enumerate() {
-                        let terminal_rows =
-                            split_line_to_terminal_rows(logical_line, available_cols);
-                        for (sub_idx, terminal_row) in terminal_rows.into_iter().enumerate() {
-                            all_display_rows.push((sub_idx == 0, logical_idx, terminal_row));
-                        }
-                    }
-
-                    let total_display_rows = all_display_rows.len();
-                    let max_display_rows = if is_selected { 4 } else { 1 };
-                    let has_more = total_display_rows > max_display_rows;
-                    let rows_to_show = total_display_rows.min(max_display_rows);
-
-                    for (display_idx, (is_start_of_logical, logical_idx, display_line)) in
-                        all_display_rows
-                            .into_iter()
-                            .take(max_display_rows)
-                            .enumerate()
-                    {
-                        if display_idx > 0 {
-                            content.fill_line(Tag::HistoryResult(row_idx));
-                            content.newline();
-                            // Write indent prefix aligned to the header width.
-                            // For the first terminal row of a new logical line, show "X/N"
-                            // right-justified; for wrapped continuation rows, use blank padding.
-                            // The last column of the prefix is the indicator column (▐ or space).
-                            let indent_prefix = if is_start_of_logical {
-                                let line_num_str =
-                                    format!("{}/{}", logical_idx + 1, total_logical_lines);
-                                format!(
-                                    "{:>width$}",
-                                    line_num_str,
-                                    // header_prefix_width - 1: last column is the indicator
-                                    width = header_prefix_width - 1
-                                )
-                            } else {
-                                " ".repeat(header_prefix_width - 1)
-                            };
-                            content.write_span(
-                                &Span::styled(indent_prefix, Palette::secondary_text()),
-                                Tag::HistoryResult(row_idx),
-                            );
-                            // Write the indicator for every line of the selected entry
-                            if is_selected {
-                                content.write_span(
-                                    &Span::styled("▐", Palette::matched_character()),
-                                    Tag::HistoryResult(row_idx),
-                                );
-                            } else {
-                                content.write_span(
-                                    &Span::styled(" ", Palette::secondary_text()),
-                                    Tag::HistoryResult(row_idx),
-                                );
-                            }
-                        }
-
-                        for span in &display_line.spans {
-                            if is_selected {
-                                let selected_span = Span::styled(
-                                    span.content.clone(),
-                                    Palette::convert_to_selected(span.style),
-                                );
-                                content.write_span(&selected_span, Tag::HistoryResult(row_idx));
-                            } else {
-                                content.write_span(span, Tag::HistoryResult(row_idx));
-                            }
-                        }
-
-                        // Append ellipsis on the last displayed row when more content exists.
-                        // If the row is full (cursor at the end), jump back one column to
-                        // overwrite the last character; otherwise write the ellipsis right
-                        // after the last character so it isn't pushed to the line's far end.
-                        if display_idx + 1 == rows_to_show && has_more {
-                            let ellipsis_style = if is_selected {
-                                Palette::convert_to_selected(Palette::secondary_text())
-                            } else {
-                                Palette::secondary_text()
-                            };
-                            // "…" (U+2026) has a terminal display width of 1.
-                            if content.cursor_position().col >= content.width.saturating_sub(1) {
-                                content.set_cursor_col(content.width.saturating_sub(1));
-                            }
-                            content.write_span(
-                                &Span::styled("…", ellipsis_style),
-                                Tag::HistoryResult(row_idx),
-                            );
-                        }
-                    }
-                    content.fill_line(Tag::HistoryResult(row_idx));
-                    content.newline();
-                    if content.cursor_position().row.saturating_sub(starting_row)
-                        >= num_rows_for_results.saturating_sub(2)
-                    {
-                        break;
                     }
                 }
+                content.newline();
                 content.write_span(
                     &Span::styled(
                         format!("# Fuzzy search: {}/{}", num_results, num_searched),
@@ -1751,7 +1772,40 @@ impl<'a> App<'a> {
                     );
                 }
             }
-            ContentMode::Normal if self.mode.is_running() => {}
+            ContentMode::Normal if self.mode.is_running() => {
+                if let Some(tooltip) = &self.tooltip {
+                    content.newline();
+                    let tooltip_line =
+                        Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
+
+                    let max_tool_tip_rows: u16 = 3;
+
+                    let rows = split_line_to_terminal_rows(&tooltip_line, content.width);
+                    let truncated = rows.len() > max_tool_tip_rows as usize;
+                    for (i, row) in rows
+                        .into_iter()
+                        .take(max_tool_tip_rows as usize)
+                        .enumerate()
+                    {
+                        if i > 0 {
+                            content.newline();
+                        }
+                        for span in &row.spans {
+                            content.write_span(span, Tag::Tooltip);
+                        }
+                    }
+                    if truncated && max_tool_tip_rows > 0 {
+                        let last_col = content.width.saturating_sub(1);
+                        if content.cursor_position().col >= last_col {
+                            content.set_cursor_col(last_col);
+                        }
+                        content.write_span(
+                            &Span::styled("…", Palette::secondary_text()),
+                            Tag::Tooltip,
+                        );
+                    }
+                }
+            }
             ContentMode::AiMode {
                 command_display,
                 start_time,
@@ -1870,40 +1924,6 @@ impl<'a> App<'a> {
                 }
             }
             _ => {}
-        }
-        if self.mode.is_running()
-            && let Some(tooltip) = &self.tooltip
-        {
-            content.newline();
-            let tooltip_line = Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
-
-            let rows_before = content.cursor_position().row;
-            let max_tool_tip_rows: u16 = (terminal_height
-                .saturating_sub(viewport_top)
-                .saturating_sub(rows_before) as u16)
-                .min(3);
-
-            let rows = split_line_to_terminal_rows(&tooltip_line, content.width);
-            let truncated = rows.len() > max_tool_tip_rows as usize;
-            for (i, row) in rows
-                .into_iter()
-                .take(max_tool_tip_rows as usize)
-                .enumerate()
-            {
-                if i > 0 {
-                    content.newline();
-                }
-                for span in &row.spans {
-                    content.write_span(span, Tag::Tooltip);
-                }
-            }
-            if truncated && max_tool_tip_rows > 0 {
-                let last_col = content.width.saturating_sub(1);
-                if content.cursor_position().col >= last_col {
-                    content.set_cursor_col(last_col);
-                }
-                content.write_span(&Span::styled("…", Palette::secondary_text()), Tag::Tooltip);
-            }
         }
 
         if self.mode.is_running() && self.settings.matrix_animation {
