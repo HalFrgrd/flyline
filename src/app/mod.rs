@@ -1708,12 +1708,6 @@ impl<'a> App<'a> {
                     .saturating_sub(num_rows_for_instructions)
                     .min(30)
                     .max(2);
-                log::debug!(
-                    "Fuzzy history search: rows_left_before_end_of_screen={}, num_rows_for_instructions={}, num_rows_for_results={}",
-                    rows_left_before_end_of_screen,
-                    num_rows_for_instructions,
-                    num_rows_for_results
-                );
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager

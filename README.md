@@ -36,14 +36,14 @@ To install flyline, you need to:
 
 From easiest to hardest:
 
-### `install.sh`
+### Run `install.sh`
 
 Run `curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh` to automatically download and  set your `.bashrc` to run the latest flyline version.
 
 
 ### Download from releases
 
-Download the latest `libflyline` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant instead of `musl` unless you are running Alpine, Chimera, or another `musl` based distro.
+Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
@@ -52,9 +52,11 @@ flyline --tutorial-mode
 
 
 ### Build from source
+
+Clone the repo and run:
 ```bash
 cargo build
-enable -f target/debug/libflyline.so flyline
+enable -f /path/to/flyline_checkout/target/debug/libflyline.so flyline
 ```
 
 ### Notes
