@@ -19,18 +19,31 @@ target "built-artifact" {
 }
 
 # example command:
-# docker buildx bake -f docker/docker-bake.hcl extract-artifact
-target "extract-artifact" {
+# docker buildx bake -f docker/docker-bake.hcl extract-release-artifact
+target "extract-release-artifact" {
     context = "."
     output = ["type=local,dest=docker/build"]
     dockerfile = "docker/integration_test_build.Dockerfile"
     target = "flyline-built-artifact"
 }
 
+target "extract-integration-test-build-artifact" {
+    context = "."
+    output = ["type=local,dest=docker/build-integration-test"]
+    dockerfile = "docker/integration_test_build.Dockerfile"
+    target = "flyline-built-artifact"
+    args = {
+        CARGO_FEATURES = "integration-tests"
+    }
+}
+
 target "lib-tests" {
     context = "."
     dockerfile = "docker/integration_test_build.Dockerfile"
     target = "flyline-lib-tests"
+    args = {
+        CARGO_FEATURES = "integration-tests"
+    }
 }
 
 target "specific-bash-version" {
@@ -49,7 +62,7 @@ target "specific-bash-version" {
 target "bash-integration-tests" {
     context = "."
     contexts = {
-        built-artifact = "target:built-artifact",
+        built-artifact = "target:extract-integration-test-build-artifact",
         specific-bash-version = "target:specific-bash-version-${replace(docker_bash_version, ".", "_")}"
     }
     name = "bash-integration-test-${replace(docker_bash_version, ".", "_")}"
@@ -66,7 +79,7 @@ target "bash-integration-tests" {
 target "tab-completion-tests" {
     context = "."
     contexts = {
-        built-artifact = "target:built-artifact"
+        built-artifact = "target:extract-integration-test-build-artifact"
     }
     dockerfile = "docker/tab_completions.Dockerfile"
 }

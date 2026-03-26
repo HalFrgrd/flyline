@@ -35,14 +35,16 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 3: Run final Build
 FROM chef AS flyline-builder
+ARG CARGO_FEATURES
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --features integration-tests --recipe-path recipe.json
+RUN cargo chef cook --release ${CARGO_FEATURES:+--features $CARGO_FEATURES} --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
-RUN cargo build --release --features integration-tests
+RUN cargo build --release ${CARGO_FEATURES:+--features $CARGO_FEATURES}
 
 FROM flyline-builder AS flyline-lib-tests
-RUN cargo test --release --lib
+ARG CARGO_FEATURES
+RUN cargo test --release ${CARGO_FEATURES:+--features $CARGO_FEATURES} --lib
 
 
 # Build image with output. This won't have anything in the file system apart from the built library

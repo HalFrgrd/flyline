@@ -1280,7 +1280,7 @@ impl<'a> App<'a> {
                 let env_var_name = &token.token.value;
                 let tooltip = match bash_funcs::get_env_variable(env_var_name) {
                     Some(value) => format!("${}={}", env_var_name, value),
-                    None => format!("${}", env_var_name),
+                    None => format!("${}=", env_var_name),
                 };
                 Some(buffer_format::WordInfo {
                     tooltip: Some(tooltip),
@@ -1708,12 +1708,6 @@ impl<'a> App<'a> {
                     .saturating_sub(num_rows_for_instructions)
                     .min(30)
                     .max(2);
-                log::debug!(
-                    "Fuzzy history search: rows_left_before_end_of_screen={}, num_rows_for_instructions={}, num_rows_for_results={}",
-                    rows_left_before_end_of_screen,
-                    num_rows_for_instructions,
-                    num_rows_for_results
-                );
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager

@@ -13,7 +13,7 @@
 
 </div>
 
-Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) to provide a code-editor-like experience and other features:
+Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) to provide an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
 - Fuzzy history suggestions
@@ -27,6 +27,7 @@ Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/C
 - Runs in the same process as Bash
 - Cursor animations
 
+Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is written in Rust and uses [ratatui.rs](https://ratatui.rs/) to more easily draw complex user interfaces.
 
 # Installation
 
@@ -36,14 +37,14 @@ To install flyline, you need to:
 
 From easiest to hardest:
 
-### `install.sh`
+### Run `install.sh`
 
 Run `curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh` to automatically download and  set your `.bashrc` to run the latest flyline version.
 
 
 ### Download from releases
 
-Download the latest `libflyline` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant instead of `musl` unless you are running Alpine, Chimera, or another `musl` based distro.
+Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
@@ -52,9 +53,11 @@ flyline --tutorial-mode
 
 
 ### Build from source
+
+Clone the repo and run:
 ```bash
 cargo build
-enable -f target/debug/libflyline.so flyline
+enable -f /path/to/flyline_checkout/target/debug/libflyline.so flyline
 ```
 
 ### Notes
@@ -205,8 +208,7 @@ This allows you to write a command in plain English and your agent will convert 
 ![Agent mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
 
 [See the examples on how to set this up.](examples/agent_mode.sh)
-The agent should return a simple json array of possible results as described by the example system prompt.
-The agent can return more text than just the json array but flyline will only present data from the array.
+The agent should return a simple json array of commands as described by the example system prompt.
 
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
@@ -263,7 +265,7 @@ Pressing `Up` will scroll through history entries that are a prefix match with t
 **Zsh history entries:**
 Optionally read zsh history entries to make migrating to Bash easier. 
 
-# Integrations
+# Terminal emulator notes
 ## VS Code:
 Recommended settings
 - [`terminal.integrated.minimumContrastRatio = 1`](vscode://settings/terminal.integrated.minimumContrastRatio) to prevent the cell's foreground colour changing when it's under the cursor.
@@ -273,6 +275,8 @@ Recommended settings
 - Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
 
 ## macOS
+> These notes are for when the terminal emulator is running on macOS and flyline is running withing a remote Linux shell
+
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
 Two possible fixes are:
 - Map `Command+<KEY>` to `Control+<KEY>` in your terminal emulator settings.
