@@ -76,33 +76,33 @@ fn markdown_to_text(markdown: &str) -> Text<'static> {
 
     let mut bold = false;
     let mut italic = false;
-    let mut code_inline = false;
     let mut heading_level: Option<u8> = None;
     let mut list_depth: u32 = 0;
     let mut in_code_block = false;
 
-    let build_style = |bold: bool, italic: bool, code: bool, heading: Option<u8>| -> Style {
-        let mut style = Style::default();
-        if bold || heading.is_some() {
-            style = style.add_modifier(Modifier::BOLD);
-        }
-        if italic {
-            style = style.add_modifier(Modifier::ITALIC);
-        }
-        if code {
-            style = style.add_modifier(Modifier::DIM);
-        }
-        if let Some(level) = heading {
-            style = style.fg(match level {
-                1 => Color::Cyan,
-                2 => Color::Blue,
-                _ => Color::Magenta,
-            });
-        }
-        style
-    };
+    let style_from_markdown_state =
+        |bold: bool, italic: bool, code: bool, heading: Option<u8>| -> Style {
+            let mut style = Style::default();
+            if bold || heading.is_some() {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            if italic {
+                style = style.add_modifier(Modifier::ITALIC);
+            }
+            if code {
+                style = style.add_modifier(Modifier::DIM);
+            }
+            if let Some(level) = heading {
+                style = style.fg(match level {
+                    1 => Color::Cyan,
+                    2 => Color::Blue,
+                    _ => Color::Magenta,
+                });
+            }
+            style
+        };
 
-    let flush_line =
+    let finalize_line =
         |lines: &mut Vec<Line<'static>>, spans: &mut Vec<Span<'static>>, list_depth: u32| {
             if list_depth > 0 && !spans.is_empty() {
                 spans.insert(0, Span::raw("  ".repeat(list_depth as usize - 1) + "• "));
@@ -117,12 +117,12 @@ fn markdown_to_text(markdown: &str) -> Text<'static> {
                 heading_level = Some(level as u8);
             }
             Event::End(TagEnd::Heading(_)) => {
-                flush_line(&mut lines, &mut current_spans, 0);
+                finalize_line(&mut lines, &mut current_spans, 0);
                 heading_level = None;
             }
             Event::Start(Tag::Paragraph) => {}
             Event::End(TagEnd::Paragraph) => {
-                flush_line(&mut lines, &mut current_spans, list_depth);
+                finalize_line(&mut lines, &mut current_spans, list_depth);
             }
             Event::Start(Tag::Strong) => {
                 bold = true;
@@ -141,7 +141,7 @@ fn markdown_to_text(markdown: &str) -> Text<'static> {
             }
             Event::End(TagEnd::CodeBlock) => {
                 in_code_block = false;
-                flush_line(&mut lines, &mut current_spans, 0);
+                finalize_line(&mut lines, &mut current_spans, 0);
             }
             Event::Start(Tag::List(_)) => {
                 list_depth += 1;
@@ -151,24 +151,24 @@ fn markdown_to_text(markdown: &str) -> Text<'static> {
             }
             Event::Start(Tag::Item) => {}
             Event::End(TagEnd::Item) => {
-                flush_line(&mut lines, &mut current_spans, list_depth);
+                finalize_line(&mut lines, &mut current_spans, list_depth);
             }
             Event::Start(Tag::BlockQuote(_)) | Event::End(TagEnd::BlockQuote(_)) => {}
             Event::Code(text) => {
-                code_inline = true;
-                let style = build_style(bold, italic, code_inline, heading_level);
+                let is_code = true;
+                let style = style_from_markdown_state(bold, italic, is_code, heading_level);
                 current_spans.push(Span::styled(text.into_string(), style));
-                code_inline = false;
             }
             Event::Text(text) => {
-                let style = build_style(bold, italic, code_inline || in_code_block, heading_level);
+                let is_code = in_code_block;
+                let style = style_from_markdown_state(bold, italic, is_code, heading_level);
                 current_spans.push(Span::styled(text.into_string(), style));
             }
             Event::SoftBreak => {
                 current_spans.push(Span::raw(" "));
             }
             Event::HardBreak | Event::Rule => {
-                flush_line(&mut lines, &mut current_spans, list_depth);
+                finalize_line(&mut lines, &mut current_spans, list_depth);
             }
             _ => {}
         }
@@ -176,7 +176,7 @@ fn markdown_to_text(markdown: &str) -> Text<'static> {
 
     // Flush any remaining content.
     if !current_spans.is_empty() {
-        flush_line(&mut lines, &mut current_spans, list_depth);
+        finalize_line(&mut lines, &mut current_spans, list_depth);
     }
 
     Text::from(lines)
