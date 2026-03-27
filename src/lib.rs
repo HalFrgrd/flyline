@@ -108,6 +108,9 @@ struct FlylineArgs {
     /// Mouse capture mode (disabled, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
+    /// Use plain ASCII characters instead of Unicode in help/hint text
+    #[arg(long = "simple-text", default_missing_value = "true", num_args = 0..=1)]
+    simple_text: Option<bool>,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
@@ -320,6 +323,11 @@ impl Flyline {
                 if let Some(mode) = parsed.mouse_mode {
                     log::info!("Mouse mode set to {:?}", mode);
                     self.settings.mouse_mode = mode;
+                }
+
+                if let Some(enabled) = parsed.simple_text {
+                    log::info!("Simple text mode set to {}", enabled);
+                    self.settings.simple_text = enabled;
                 }
 
                 if let Some(Commands::AgentMode {
