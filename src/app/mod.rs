@@ -767,6 +767,9 @@ impl<'a> App<'a> {
                 ContentMode::AiMode { .. } => {}
                 ContentMode::AiError { .. } => {
                     self.content_mode = ContentMode::Normal;
+                    self.buffer.replace_buffer("flyline agent-mode --help");
+                    self.on_possible_buffer_change(None);
+                    self.try_submit_current_buffer();
                 }
                 ContentMode::AiOutputSelection(selection) => {
                     if let Some(cmd) = selection.selected_command() {
@@ -1909,6 +1912,14 @@ impl<'a> App<'a> {
                         );
                     }
                 }
+                content.newline();
+                content.write_span(
+                    &Span::styled(
+                        "Press Enter to run `flyline agent-mode --help`.",
+                        Palette::secondary_text(),
+                    ),
+                    Tag::Blank,
+                );
             }
             _ => {}
         }
