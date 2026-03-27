@@ -26,6 +26,7 @@ flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "4a38cb53accae3f6
 skim = { version = "3.6.0", default-features =  false, features = []}
 lscolors = "0.21.0"
 serde_json = "1.0"
+pulldown-cmark = { version = "0.13", default-features = false }
 regex = "1"
 rand = "0.10.0"
 

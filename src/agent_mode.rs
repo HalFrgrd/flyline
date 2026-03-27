@@ -1,4 +1,7 @@
 use anyhow::{anyhow, bail};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use ratatui::prelude::*;
+use ratatui::text::Text;
 use regex::Regex;
 use std::sync::OnceLock;
 
@@ -9,24 +12,185 @@ pub struct AiSuggestion {
     pub description: String,
 }
 
-/// Tracks the currently selected index inside the AI output selection list.
+/// Raw parsed output from the AI: the list of suggestions plus the prose that
+/// surrounded the JSON array in the model's response.
 #[derive(Debug)]
-pub struct AiOutputSelection {
+pub struct AiOutputParsed {
     pub suggestions: Vec<AiSuggestion>,
-    pub selected_idx: usize,
     /// Text from the AI output that appeared before the JSON array.
     pub header: String,
     /// Text from the AI output that appeared after the JSON array.
     pub footer: String,
 }
 
+/// Tracks the currently selected index inside the AI output selection list.
+/// Constructed from an [`AiOutputParsed`]; strips any outer code-fence lines
+/// from the header/footer and converts the prose to styled [`Text`] using
+/// pulldown-cmark.
+#[derive(Debug)]
+pub struct AiOutputSelection {
+    pub suggestions: Vec<AiSuggestion>,
+    pub selected_idx: usize,
+    /// Rendered markdown of the prose before the suggestions.
+    pub header_text: Text<'static>,
+    /// Rendered markdown of the prose after the suggestions.
+    pub footer_text: Text<'static>,
+}
+
+/// Strip the last line of `s` when it starts with three backticks.
+fn strip_trailing_fence(s: &str) -> &str {
+    match s.rsplit_once('\n') {
+        Some((rest, last)) if last.starts_with("```") => rest,
+        _ => {
+            if s.starts_with("```") {
+                ""
+            } else {
+                s
+            }
+        }
+    }
+}
+
+/// Strip the first line of `s` when it starts with three backticks.
+fn strip_leading_fence(s: &str) -> &str {
+    match s.split_once('\n') {
+        Some((first, rest)) if first.starts_with("```") => rest,
+        _ => {
+            if s.starts_with("```") {
+                ""
+            } else {
+                s
+            }
+        }
+    }
+}
+
+/// Convert a markdown string to a ratatui [`Text`] object.
+///
+/// Renders basic markdown constructs (headings, paragraphs, bold, italic,
+/// inline code, code blocks, list items, block quotes) as styled spans.
+/// Uses ratatui's own types so there is no external crate version conflict.
+fn markdown_to_text(markdown: &str) -> Text<'static> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut current_spans: Vec<Span<'static>> = Vec::new();
+
+    let mut bold = false;
+    let mut italic = false;
+    let mut heading_level: Option<u8> = None;
+    let mut list_depth: u32 = 0;
+    let mut in_code_block = false;
+
+    let style_from_markdown_state =
+        |bold: bool, italic: bool, code: bool, heading: Option<u8>| -> Style {
+            let mut style = Style::default();
+            if bold || heading.is_some() {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            if italic {
+                style = style.add_modifier(Modifier::ITALIC);
+            }
+            if code {
+                style = style.add_modifier(Modifier::DIM);
+            }
+            if let Some(level) = heading {
+                style = style.fg(match level {
+                    1 => Color::Cyan,
+                    2 => Color::Blue,
+                    _ => Color::Magenta,
+                });
+            }
+            style
+        };
+
+    let finalize_line =
+        |lines: &mut Vec<Line<'static>>, spans: &mut Vec<Span<'static>>, list_depth: u32| {
+            if list_depth > 0 && !spans.is_empty() {
+                spans.insert(0, Span::raw("  ".repeat(list_depth as usize - 1) + "• "));
+            }
+            lines.push(Line::from(std::mem::take(spans)));
+        };
+
+    let parser = Parser::new_ext(markdown, Options::all());
+    for event in parser {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => {
+                heading_level = Some(level as u8);
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                finalize_line(&mut lines, &mut current_spans, 0);
+                heading_level = None;
+            }
+            Event::Start(Tag::Paragraph) => {}
+            Event::End(TagEnd::Paragraph) => {
+                finalize_line(&mut lines, &mut current_spans, list_depth);
+            }
+            Event::Start(Tag::Strong) => {
+                bold = true;
+            }
+            Event::End(TagEnd::Strong) => {
+                bold = false;
+            }
+            Event::Start(Tag::Emphasis) => {
+                italic = true;
+            }
+            Event::End(TagEnd::Emphasis) => {
+                italic = false;
+            }
+            Event::Start(Tag::CodeBlock(_)) => {
+                in_code_block = true;
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                in_code_block = false;
+                finalize_line(&mut lines, &mut current_spans, 0);
+            }
+            Event::Start(Tag::List(_)) => {
+                list_depth += 1;
+            }
+            Event::End(TagEnd::List(_)) => {
+                list_depth = list_depth.saturating_sub(1);
+            }
+            Event::Start(Tag::Item) => {}
+            Event::End(TagEnd::Item) => {
+                finalize_line(&mut lines, &mut current_spans, list_depth);
+            }
+            Event::Start(Tag::BlockQuote(_)) | Event::End(TagEnd::BlockQuote(_)) => {}
+            Event::Code(text) => {
+                let is_code = true;
+                let style = style_from_markdown_state(bold, italic, is_code, heading_level);
+                current_spans.push(Span::styled(text.into_string(), style));
+            }
+            Event::Text(text) => {
+                let is_code = in_code_block;
+                let style = style_from_markdown_state(bold, italic, is_code, heading_level);
+                current_spans.push(Span::styled(text.into_string(), style));
+            }
+            Event::SoftBreak => {
+                current_spans.push(Span::raw(" "));
+            }
+            Event::HardBreak | Event::Rule => {
+                finalize_line(&mut lines, &mut current_spans, list_depth);
+            }
+            _ => {}
+        }
+    }
+
+    // Flush any remaining content.
+    if !current_spans.is_empty() {
+        finalize_line(&mut lines, &mut current_spans, list_depth);
+    }
+
+    Text::from(lines)
+}
+
 impl AiOutputSelection {
-    pub(crate) fn new(suggestions: Vec<AiSuggestion>, header: String, footer: String) -> Self {
+    pub fn new(parsed: AiOutputParsed) -> Self {
+        let header_md = strip_trailing_fence(parsed.header.as_str()).to_string();
+        let footer_md = strip_leading_fence(parsed.footer.as_str()).to_string();
         AiOutputSelection {
-            suggestions,
+            suggestions: parsed.suggestions,
             selected_idx: 0,
-            header,
-            footer,
+            header_text: markdown_to_text(&header_md),
+            footer_text: markdown_to_text(&footer_md),
         }
     }
 
@@ -56,7 +220,7 @@ impl AiOutputSelection {
     }
 }
 
-/// Parse AI command output into an [`AiOutputSelection`].
+/// Parse AI command output into an [`AiOutputParsed`].
 ///
 /// The output may contain prose before and/or after the JSON array.
 /// We use a regex to locate the start of the JSON array and then attempt to
@@ -64,7 +228,7 @@ impl AiOutputSelection {
 /// `header` and text after the array is stored as the `footer`.
 /// Returns `Err` if no valid JSON array with at least one non-empty command
 /// can be found.  The raw output is always logged at DEBUG level.
-pub fn parse_ai_output(raw: &str) -> anyhow::Result<AiOutputSelection> {
+pub fn parse_ai_output(raw: &str) -> anyhow::Result<AiOutputParsed> {
     log::debug!("AI raw output: {}", raw);
 
     // Find the first `[` that begins a JSON array using a regex.
@@ -149,7 +313,11 @@ pub fn parse_ai_output(raw: &str) -> anyhow::Result<AiOutputSelection> {
             if suggestions.is_empty() {
                 bail!("AI output JSON array contained no valid commands");
             }
-            Ok(AiOutputSelection::new(suggestions, header, footer))
+            Ok(AiOutputParsed {
+                suggestions,
+                header,
+                footer,
+            })
         }
         Ok(_) => {
             log::warn!("AI output JSON was not an array");
@@ -166,17 +334,25 @@ pub fn parse_ai_output(raw: &str) -> anyhow::Result<AiOutputSelection> {
 mod tests {
     use super::*;
 
+    fn make_selection(suggestions: Vec<AiSuggestion>) -> AiOutputSelection {
+        AiOutputSelection::new(AiOutputParsed {
+            suggestions,
+            header: String::new(),
+            footer: String::new(),
+        })
+    }
+
     #[test]
     fn test_parse_clean_json() {
         let raw = r#"[{"command": "ls -la", "description": "List all files"}, {"command": "pwd", "description": "Print working directory"}]"#;
-        let sel = parse_ai_output(raw).unwrap();
-        assert_eq!(sel.suggestions.len(), 2);
-        assert_eq!(sel.suggestions[0].command, "ls -la");
-        assert_eq!(sel.suggestions[0].description, "List all files");
-        assert_eq!(sel.suggestions[1].command, "pwd");
-        assert_eq!(sel.suggestions[1].description, "Print working directory");
-        assert_eq!(sel.header, "");
-        assert_eq!(sel.footer, "");
+        let parsed = parse_ai_output(raw).unwrap();
+        assert_eq!(parsed.suggestions.len(), 2);
+        assert_eq!(parsed.suggestions[0].command, "ls -la");
+        assert_eq!(parsed.suggestions[0].description, "List all files");
+        assert_eq!(parsed.suggestions[1].command, "pwd");
+        assert_eq!(parsed.suggestions[1].description, "Print working directory");
+        assert_eq!(parsed.header, "");
+        assert_eq!(parsed.footer, "");
     }
 
     #[test]
@@ -184,11 +360,11 @@ mod tests {
         let raw = r#"Here are some suggestions:
 [{"command": "grep -r foo .", "description": "Search recursively"}]
 That should help!"#;
-        let sel = parse_ai_output(raw).unwrap();
-        assert_eq!(sel.suggestions.len(), 1);
-        assert_eq!(sel.suggestions[0].command, "grep -r foo .");
-        assert_eq!(sel.header, "Here are some suggestions:");
-        assert_eq!(sel.footer, "That should help!");
+        let parsed = parse_ai_output(raw).unwrap();
+        assert_eq!(parsed.suggestions.len(), 1);
+        assert_eq!(parsed.suggestions[0].command, "grep -r foo .");
+        assert_eq!(parsed.header, "Here are some suggestions:");
+        assert_eq!(parsed.footer, "That should help!");
     }
 
     #[test]
@@ -204,9 +380,44 @@ That should help!"#;
     #[test]
     fn test_parse_empty_command_skipped() {
         let raw = r#"[{"command": "", "description": "empty"}, {"command": "echo hi", "description": "hello"}]"#;
-        let sel = parse_ai_output(raw).unwrap();
-        assert_eq!(sel.suggestions.len(), 1);
-        assert_eq!(sel.suggestions[0].command, "echo hi");
+        let parsed = parse_ai_output(raw).unwrap();
+        assert_eq!(parsed.suggestions.len(), 1);
+        assert_eq!(parsed.suggestions[0].command, "echo hi");
+    }
+
+    #[test]
+    fn test_strip_trailing_fence() {
+        assert_eq!(strip_trailing_fence("hello\n```json"), "hello");
+        assert_eq!(strip_trailing_fence("hello\n```"), "hello");
+        assert_eq!(strip_trailing_fence("hello\nworld"), "hello\nworld");
+        assert_eq!(strip_trailing_fence("```json"), "");
+        assert_eq!(strip_trailing_fence("no fence"), "no fence");
+    }
+
+    #[test]
+    fn test_strip_leading_fence() {
+        assert_eq!(strip_leading_fence("```json\nhello"), "hello");
+        assert_eq!(strip_leading_fence("```\nhello"), "hello");
+        assert_eq!(strip_leading_fence("hello\nworld"), "hello\nworld");
+        assert_eq!(strip_leading_fence("```json"), "");
+        assert_eq!(strip_leading_fence("no fence"), "no fence");
+    }
+
+    #[test]
+    fn test_ai_output_selection_strips_fences() {
+        let parsed = AiOutputParsed {
+            suggestions: vec![AiSuggestion {
+                command: "ls".to_string(),
+                description: "list".to_string(),
+            }],
+            header: "Here are commands:\n```json".to_string(),
+            footer: "```\nDone.".to_string(),
+        };
+        let sel = AiOutputSelection::new(parsed);
+        // header_text should be rendered from "Here are commands:" (fence stripped)
+        // footer_text should be rendered from "Done." (fence stripped)
+        assert!(!sel.header_text.lines.is_empty());
+        assert!(!sel.footer_text.lines.is_empty());
     }
 
     #[test]
@@ -225,7 +436,7 @@ That should help!"#;
                 description: "desc3".to_string(),
             },
         ];
-        let mut sel = AiOutputSelection::new(suggestions, String::new(), String::new());
+        let mut sel = make_selection(suggestions);
         assert_eq!(sel.selected_idx, 0);
         assert_eq!(sel.selected_command(), Some("cmd1"));
 
