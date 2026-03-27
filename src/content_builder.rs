@@ -36,6 +36,7 @@ impl Coord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
     Blank,
+    Normal,
     Ps1Prompt,
     Ps2Prompt,
     Command(usize),
@@ -411,9 +412,18 @@ impl Contents {
 
         let mut state_guard = MATRIX_ANIM_STATE.lock().unwrap();
         let state = state_guard.get_or_insert_with(MatrixAnimState::new);
+        let just_started = state.tendrils.is_empty();
         // State is updated using the full terminal height so tendril positions are
         // terminal-absolute (row 0 = top of terminal, not top of viewport).
         state.update(now, self.width, terminal_height);
+        // When the animation has just started and the viewport is below the top of the
+        // terminal, fast-forward so that tendrils are already visible in the viewport
+        // rather than needing to fall viewport_top rows before becoming visible.
+        if just_started && viewport_top > 0 {
+            for _ in 0..viewport_top {
+                state.step(terminal_height);
+            }
+        }
 
         for (col_idx, _tendril) in state.tendrils.iter().enumerate() {
             let styled_graphs = state.tendril_idx_to_graphemes(col_idx);
@@ -531,43 +541,48 @@ impl MatrixAnimState {
         const MS_PER_ROW: f32 = 1000.0 / NUM_ROWS_PER_SECOND;
         let steps_elapsed =
             (now.duration_since(self.last_update_time).as_millis() as f32 / MS_PER_ROW) as usize;
+
+        self.tendrils.resize(num_cols as usize, None);
+
         if steps_elapsed == 0 {
             return;
         }
         self.last_update_time = now;
 
-        self.tendrils.resize(num_cols as usize, None);
-
         for _ in 0..steps_elapsed {
-            // Move existing tendrils down
-            for tendril in &mut self.tendrils {
-                if let Some((y, offsets)) = tendril {
-                    *y += 1;
-                    // Randomly change an offset for some y in the tendril to create a flickering effect
-                    if rand::random::<f32>() < 0.9 {
-                        let rand_row = rand::random::<u64>() as usize % num_rows as usize;
-                        let rand_offset = rand::random::<u64>() as usize;
-                        offsets.insert(rand_row, rand_offset);
-                    }
+            self.step(num_rows);
+        }
+    }
+
+    fn step(&mut self, num_rows: u16) {
+        // Move existing tendrils down
+        for tendril in &mut self.tendrils {
+            if let Some((y, offsets)) = tendril {
+                *y += 1;
+                // Randomly change an offset for some y in the tendril to create a flickering effect
+                if rand::random::<f32>() < 0.9 {
+                    let rand_row = rand::random::<u64>() as usize % num_rows as usize;
+                    let rand_offset = rand::random::<u64>() as usize;
+                    offsets.insert(rand_row, rand_offset);
                 }
             }
+        }
 
-            // Remove tendrils that have moved off the bottom of the screen
-            let max_possible_tendril_height = num_rows as usize + Self::TENDRIL_MAX_LEN;
-            for tendril in &mut self.tendrils {
-                if let Some((y, _)) = tendril {
-                    if *y >= max_possible_tendril_height {
-                        *tendril = None;
-                    }
+        // Remove tendrils that have moved off the bottom of the screen
+        let max_possible_tendril_height = num_rows as usize + Self::TENDRIL_MAX_LEN;
+        for tendril in &mut self.tendrils {
+            if let Some((y, _)) = tendril {
+                if *y >= max_possible_tendril_height {
+                    *tendril = None;
                 }
             }
+        }
 
-            // Spawn new tendrils with some probability
-            for tendril in &mut self.tendrils {
-                let rand = rand::random::<f32>();
-                if tendril.is_none() && rand < 0.02 {
-                    *tendril = Some((0, HashMap::new()));
-                }
+        // Spawn new tendrils with some probability
+        for tendril in &mut self.tendrils {
+            let rand = rand::random::<f32>();
+            if tendril.is_none() && rand < 0.02 {
+                *tendril = Some((0, HashMap::new()));
             }
         }
     }

@@ -1554,7 +1554,7 @@ impl<'a> App<'a> {
                     "^C",
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
-                Tag::Blank,
+                Tag::Normal,
             );
         }
 
@@ -1816,13 +1816,13 @@ impl<'a> App<'a> {
                         format!("Running: {} [{}s]", command_display, elapsed_secs),
                         Palette::secondary_text(),
                     ),
-                    Tag::Blank,
+                    Tag::Normal,
                 );
             }
             ContentMode::AiOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
                 for line in &selection.header_text {
-                    content.write_line(line, true, Tag::Blank);
+                    content.write_line(line, true, Tag::Normal);
                 }
                 for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
                     let is_selected = selection.selected_idx == row_idx;
@@ -1888,7 +1888,7 @@ impl<'a> App<'a> {
                     content.newline();
                 }
                 for line in &selection.footer_text {
-                    content.write_line(line, true, Tag::Blank);
+                    content.write_line(line, true, Tag::Normal);
                 }
             }
             ContentMode::AiError {
@@ -1901,14 +1901,14 @@ impl<'a> App<'a> {
                         format!("AI failed: {}", message),
                         Style::default().fg(Color::Red),
                     ),
-                    Tag::Blank,
+                    Tag::Normal,
                 );
                 if !raw_output.is_empty() {
                     for line in raw_output.lines().take(5) {
                         content.newline();
                         content.write_span(
                             &Span::styled(line.to_string(), Palette::secondary_text()),
-                            Tag::Blank,
+                            Tag::Normal,
                         );
                     }
                 }
