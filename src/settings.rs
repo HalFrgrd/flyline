@@ -57,6 +57,8 @@ pub struct Settings {
     pub matrix_animation: bool,
     /// Render frame rate in frames per second (1–120).
     pub frame_rate: u8,
+    /// Whether to use plain ASCII instead of Unicode characters in help/hint text.
+    pub simple_text: bool,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -77,6 +79,7 @@ impl Default for Settings {
             custom_animations: HashMap::new(),
             matrix_animation: false,
             frame_rate: 30,
+            simple_text: false,
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }

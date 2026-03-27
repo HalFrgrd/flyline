@@ -34,10 +34,15 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Shift+Enter to accept the command for editing";
+const TUTORIAL_FUZZY_SEARCH_HINT_SIMPLE: &str = "[hint] Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Shift+Enter to accept the command for editing";
 const TUTORIAL_HISTORY_PREFIX_HINT: &str =
     "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
+const TUTORIAL_HISTORY_PREFIX_HINT_SIMPLE: &str =
+    "[hint] ^/v to scroll through history entries whose prefix matches your current command";
 const TUTORIAL_DISABLE_HINT: &str =
     "💡 Run `flyline --tutorial-mode false` to disable tutorial mode";
+const TUTORIAL_DISABLE_HINT_SIMPLE: &str =
+    "[hint] Run `flyline --tutorial-mode false` to disable tutorial mode";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -1327,6 +1332,7 @@ impl<'a> App<'a> {
         num_digits_for_score: usize,
         header_prefix_width: usize,
         available_cols: u16,
+        simple_text: bool,
     ) -> Vec<Line<'static>> {
         let is_selected = fuzzy_search_index == entry_idx;
 
@@ -1336,9 +1342,10 @@ impl<'a> App<'a> {
             .map(Self::ts_to_timeago_string_5chars)
             .unwrap_or_else(|| "     ".to_string());
 
+        let indicator_char = if simple_text { "|" } else { "▐" };
         let indicator_span = || {
             if is_selected {
-                Span::styled("▐", Palette::matched_character())
+                Span::styled(indicator_char, Palette::matched_character())
             } else {
                 Span::styled(" ", Palette::secondary_text())
             }
@@ -1362,6 +1369,8 @@ impl<'a> App<'a> {
         let max_display_rows = if is_selected { 4 } else { 1 };
         let has_more = total_display_rows > max_display_rows;
         let rows_to_show = total_display_rows.min(max_display_rows);
+
+        let ellipsis = if simple_text { "..." } else { "…" };
 
         let mut result: Vec<Line<'static>> = Vec::with_capacity(rows_to_show);
 
@@ -1415,15 +1424,18 @@ impl<'a> App<'a> {
                 .collect();
 
             // Append ellipsis on the last displayed row when more content exists.
-            // If the command row fills available_cols, trim the last grapheme to
-            // make space; otherwise just append.
+            // Trim graphemes from the end until cmd + ellipsis fits within available_cols.
             if display_idx + 1 == rows_to_show && has_more {
                 let ellipsis_style = if is_selected {
                     Palette::convert_to_selected(Palette::secondary_text())
                 } else {
                     Palette::secondary_text()
                 };
-                if cmd_display_width >= available_cols as usize {
+                let ellipsis_width = UnicodeWidthStr::width(ellipsis);
+                if cmd_display_width + ellipsis_width > available_cols as usize {
+                    let overflow = (cmd_display_width + ellipsis_width)
+                        .saturating_sub(available_cols as usize);
+                    let mut cols_to_trim = overflow;
                     'trim: loop {
                         match cmd_spans.last_mut() {
                             None => break 'trim,
@@ -1433,7 +1445,8 @@ impl<'a> App<'a> {
                                     None => {
                                         cmd_spans.pop();
                                     }
-                                    Some((byte_idx, _)) => {
+                                    Some((byte_idx, grapheme)) => {
+                                        let g_width = UnicodeWidthStr::width(grapheme);
                                         let trimmed = s[..byte_idx].to_string();
                                         let style = last.style;
                                         if trimmed.is_empty() {
@@ -1441,14 +1454,17 @@ impl<'a> App<'a> {
                                         } else {
                                             *last = Span::styled(trimmed, style);
                                         }
-                                        break 'trim;
+                                        if g_width >= cols_to_trim {
+                                            break 'trim;
+                                        }
+                                        cols_to_trim -= g_width;
                                     }
                                 }
                             }
                         }
                     }
                 }
-                cmd_spans.push(Span::styled("…", ellipsis_style));
+                cmd_spans.push(Span::styled(ellipsis, ellipsis_style));
             }
 
             row_spans.extend(cmd_spans);
@@ -1589,23 +1605,35 @@ impl<'a> App<'a> {
             && self.buffer.buffer().is_empty()
             && matches!(self.content_mode, ContentMode::Normal)
         {
+            let start_hint = if self.settings.simple_text {
+                " [hint] Start typing or search history with Ctrl+R"
+            } else {
+                " 💡 Start typing or search history with Ctrl+R"
+            };
+            let history_prefix_hint = if self.settings.simple_text {
+                TUTORIAL_HISTORY_PREFIX_HINT_SIMPLE
+            } else {
+                TUTORIAL_HISTORY_PREFIX_HINT
+            };
+            let disable_hint = if self.settings.simple_text {
+                TUTORIAL_DISABLE_HINT_SIMPLE
+            } else {
+                TUTORIAL_DISABLE_HINT
+            };
             content.write_span_dont_overwrite(
-                &Span::styled(
-                    " 💡 Start typing or search history with Ctrl+R",
-                    Palette::tutorial_hint(),
-                ),
+                &Span::styled(start_hint, Palette::tutorial_hint()),
                 |_| Tag::HistorySuggestion,
                 None,
             );
             content.newline();
             content.write_span_dont_overwrite(
-                &Span::styled(TUTORIAL_HISTORY_PREFIX_HINT, Palette::tutorial_hint()),
+                &Span::styled(history_prefix_hint, Palette::tutorial_hint()),
                 |_| Tag::HistorySuggestion,
                 None,
             );
             content.newline();
             content.write_span_dont_overwrite(
-                &Span::styled(TUTORIAL_DISABLE_HINT, Palette::tutorial_hint()),
+                &Span::styled(disable_hint, Palette::tutorial_hint()),
                 |_| Tag::HistorySuggestion,
                 None,
             );
@@ -1643,11 +1671,13 @@ impl<'a> App<'a> {
                         );
 
                         if self.settings.tutorial_mode {
+                            let accept_hint = if self.settings.simple_text {
+                                " [hint] Press -> or End to accept"
+                            } else {
+                                " 💡 Press → or End to accept"
+                            };
                             content.write_span_dont_overwrite(
-                                &Span::styled(
-                                    " 💡 Press → or End to accept",
-                                    Palette::tutorial_hint(),
-                                ),
+                                &Span::styled(accept_hint, Palette::tutorial_hint()),
                                 |_| Tag::HistorySuggestion,
                                 None,
                             );
@@ -1740,6 +1770,7 @@ impl<'a> App<'a> {
                         num_digits_for_score,
                         header_prefix_width,
                         available_cols,
+                        self.settings.simple_text,
                     ) {
                         content.newline();
                         content.write_line(&line, false, Tag::HistoryResult(entry_idx));
@@ -1760,9 +1791,14 @@ impl<'a> App<'a> {
                     Tag::FuzzySearch,
                 );
                 if self.settings.tutorial_mode {
+                    let fuzzy_hint = if self.settings.simple_text {
+                        TUTORIAL_FUZZY_SEARCH_HINT_SIMPLE
+                    } else {
+                        TUTORIAL_FUZZY_SEARCH_HINT
+                    };
                     content.newline();
                     content.write_span(
-                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::tutorial_hint()),
+                        &Span::styled(fuzzy_hint, Palette::tutorial_hint()),
                         Tag::FuzzySearch,
                     );
                 }
@@ -1794,8 +1830,13 @@ impl<'a> App<'a> {
                         if content.cursor_position().col >= last_col {
                             content.set_cursor_col(last_col);
                         }
+                        let ellipsis = if self.settings.simple_text {
+                            "..."
+                        } else {
+                            "…"
+                        };
                         content.write_span(
-                            &Span::styled("…", Palette::secondary_text()),
+                            &Span::styled(ellipsis, Palette::secondary_text()),
                             Tag::Tooltip,
                         );
                     }
@@ -1826,7 +1867,15 @@ impl<'a> App<'a> {
                     if is_selected {
                         content.set_focus_row(content.cursor_position().row);
                     }
-                    let indicator = if is_selected { "▐" } else { " " };
+                    let indicator = if is_selected {
+                        if self.settings.simple_text {
+                            "|"
+                        } else {
+                            "▐"
+                        }
+                    } else {
+                        " "
+                    };
                     let indicator_style = if is_selected {
                         Palette::matched_character()
                     } else {
