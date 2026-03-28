@@ -156,7 +156,7 @@ impl SuggestionFormatted {
 
     /// Render this suggestion into a sequence of styled [`Span`]s.
     ///
-    /// `col_width` is the visual width reserved for this cell (including
+    /// `col_width` is the visual width reserved for this cell (excluding any
     /// trailing padding).  When `col_width` is smaller than the suggestion
     /// text, middle-ellipsis truncation is applied so the text fits exactly
     /// within `col_width` characters.
@@ -491,14 +491,14 @@ impl ActiveSuggestions {
     /// terminal width, starting from column `col_offset`.
     ///
     /// Each element of the returned `Vec` is `(column_items, col_width)`.
-    /// For the very first visible column, `col_width` is capped at `cols`
+    /// For the very first visible column, `col_width` is capped at `max_width`
     /// so that an unusually long suggestion triggers middle-ellipsis
     /// rendering inside [`SuggestionFormatted::render`] rather than being
     /// dropped entirely.
     pub fn into_grid(
         &self,
-        rows: usize,
-        cols: usize,
+        max_rows: usize,
+        max_width: usize,
         col_offset: usize,
     ) -> Vec<(Vec<(&SuggestionFormatted, bool)>, usize)> {
         // Show as many suggestions as will fit in the given rows and columns
@@ -538,8 +538,8 @@ impl ActiveSuggestions {
 
         for (filtered_idx, formatted, is_selected) in self.iter() {
             current_col.push((formatted, is_selected));
-            col_width = col_width.max(formatted.display_width); // +2 for padding // TODO truncate very long suggestions
-            if (filtered_idx + 1) % rows == 0 {
+            col_width = col_width.max(formatted.display_width);
+            if (filtered_idx + 1) % max_rows == 0 {
                 // Skip columns before col_offset.
                 if abs_col_idx < col_offset {
                     abs_col_idx += 1;
@@ -548,7 +548,7 @@ impl ActiveSuggestions {
                     continue;
                 }
                 let col = std::mem::take(&mut current_col);
-                let added = push_col(&mut grid, &mut total_columns, col, col_width, cols);
+                let added = push_col(&mut grid, &mut total_columns, col, col_width, max_width);
                 abs_col_idx += 1;
                 col_width = 1;
                 if !added {
@@ -559,7 +559,7 @@ impl ActiveSuggestions {
 
         // Handle the last, possibly-incomplete column.
         if !current_col.is_empty() && abs_col_idx >= col_offset {
-            push_col(&mut grid, &mut total_columns, current_col, col_width, cols);
+            push_col(&mut grid, &mut total_columns, current_col, col_width, max_width);
         }
         grid
     }
