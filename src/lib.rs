@@ -416,9 +416,33 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("---------------------- Star    ting app ------------------------");
 
+            // if (job_control) {
+            //     give_terminal_to (shell_pgrp, 0);
+            // }
+
+            // let mut old_sigint = IMPOSSIBLE_TRAP_HANDLER;
+            // if bash_symbols::signal_is_ignored (libc::SIGINT) == 0 {
+            //     // rl_clear_signals ();		/* reset to known state, usually a no-op */
+            //     old_sigint = (SigHandler *) bash_symbols::set_signal_handler (libc::SIGINT, sigint_sighandler);
+            // }
+
+            //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 app::get_command(&self.settings)
             }));
+
+            unsafe {
+                let sig = bash_symbols::terminating_signal;
+
+                if sig != 0 {
+                    log::warn!("Terminating signal {} received, exiting immediately", sig);
+                    bash_symbols::termsig_handler(sig);
+                }
+            }
+
+            // if bash_symbols::signal_is_ignored (libc::SIGINT) == 0 && old_sigint != IMPOSSIBLE_TRAP_HANDLER {
+            //     bash_symbols::set_signal_handler (libc::SIGINT, old_sigint);
+            // }
 
             self.content = match result {
                 Ok(app::ExitState::WithCommand(cmd)) => cmd.into_bytes(),

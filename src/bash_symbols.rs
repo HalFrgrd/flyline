@@ -349,6 +349,15 @@ unsafe extern "C" {
     pub fn xmalloc(size: libc::size_t) -> *mut libc::c_void;
     pub fn xrealloc(ptr: *mut libc::c_void, size: libc::size_t) -> *mut libc::c_void;
     pub fn xfree(ptr: *mut libc::c_void);
+
+    // Signal handling
+    /* Set to the value of any terminating signal received. */
+    // volatile sig_atomic_t terminating_signal = 0;
+    #[link_name = "terminating_signal"]
+    pub static mut terminating_signal: c_int;
+
+    // void termsig_handler (int sig)
+    pub fn termsig_handler(sig: c_int);
 }
 
 /// Allocate a copy of `s` using bash's `xmalloc`.
