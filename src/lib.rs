@@ -414,7 +414,7 @@ impl Flyline {
     fn get(&mut self) -> c_int {
         // log::debug!("Getting byte from flyline input stream");
         if self.content.is_empty() || self.position >= self.content.len() {
-            log::debug!("---------------------- Starting app ------------------------");
+            log::debug!("---------------------- Star    ting app ------------------------");
 
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 app::get_command(&self.settings)
@@ -520,7 +520,6 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     //     );
     // }
 
-    // TODO: panic catch
     unsafe {
         if bash_symbols::interactive_shell == 0 || bash_symbols::no_line_editing != 0 {
             log::warn!("Not an interactive shell, flyline will not be loaded");

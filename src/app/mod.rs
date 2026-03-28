@@ -46,7 +46,7 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-fn restore() {
+fn restore_terminal() {
     crossterm::terminal::disable_raw_mode().unwrap();
     let _ = crossterm::execute!(
         std::io::stdout(),
@@ -60,7 +60,7 @@ fn restore() {
 fn set_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore();
+        restore_terminal();
         hook(info);
     }));
 }
@@ -123,7 +123,7 @@ pub fn get_command(settings: &Settings) -> ExitState {
 
     let end_state = runtime.block_on(App::new(settings).run(backend));
 
-    restore();
+    restore_terminal();
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -330,11 +330,9 @@ impl<'a> App<'a> {
                         log::error!("Failed to set viewport height: {}", e);
                     });
 
-                // The problem is that draw might try and query the cursor_position if it needs resizing
-                // and we are using Inline viewport.
-                // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
                 if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
                     log::error!("Failed to draw terminal UI: {}", e);
+                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
                 }
                 self.last_draw_time = std::time::Instant::now();
 
