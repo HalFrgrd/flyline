@@ -426,29 +426,24 @@ impl Flyline {
             //     give_terminal_to (shell_pgrp, 0);
             // }
 
-            // let mut old_sigint = IMPOSSIBLE_TRAP_HANDLER;
-            // if bash_symbols::signal_is_ignored (libc::SIGINT) == 0 {
-            //     // rl_clear_signals ();		/* reset to known state, usually a no-op */
-            //     old_sigint = (SigHandler *) bash_symbols::set_signal_handler (libc::SIGINT, sigint_sighandler);
-            // }
+            // In yy_readline_get, Bash has some SIGINT handling.
+            // But we put the terminal in raw mode so we're unlikely to receive SIGINTs.
+            // So I don't bother with this logic.
 
             //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 app::get_command(&self.settings)
             }));
 
-            // unsafe {
-            //     let sig = bash_symbols::terminating_signal;
-
-            //     if sig != 0 {
-            //         log::warn!("Terminating signal {} received, exiting immediately", sig);
-            //         bash_symbols::termsig_handler(sig);
-            //     }
-            // }
-
-            // if bash_symbols::signal_is_ignored (libc::SIGINT) == 0 && old_sigint != IMPOSSIBLE_TRAP_HANDLER {
-            //     bash_symbols::set_signal_handler (libc::SIGINT, old_sigint);
-            // }
+            unsafe {
+                // This doesn't seem to be strictly necessary but yy_readline_get does it here.
+                // I think something upstream will handle it if we don't run this here.
+                let sig = bash_symbols::terminating_signal;
+                if sig != 0 {
+                    log::warn!("in get: Terminating signal {} received, exiting immediately", sig);
+                    bash_symbols::termsig_handler(sig);
+                }
+            }
 
             self.content = match result {
                 Ok(app::ExitState::WithCommand(cmd)) => cmd.into_bytes(),

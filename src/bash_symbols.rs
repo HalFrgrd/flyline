@@ -466,35 +466,63 @@ pub fn clear_readline_state(state: libc::c_ulong) {
     }
 }
 
-
-
+#[allow(unused)]
 pub const RL_STATE_NONE: libc::c_ulong = 0x0000000; /* no state; before first call */
+#[allow(unused)]
 pub const RL_STATE_INITIALIZING: libc::c_ulong = 0x00000001; /* initializing */
+#[allow(unused)]
 pub const RL_STATE_INITIALIZED: libc::c_ulong = 0x00000002; /* initialization done */
+#[allow(unused)]
 pub const RL_STATE_TERMPREPPED: libc::c_ulong = 0x00000004; /* terminal is prepped */
+#[allow(unused)]
 pub const RL_STATE_READCMD: libc::c_ulong = 0x00000008; /* reading a command key */
+#[allow(unused)]
 pub const RL_STATE_METANEXT: libc::c_ulong = 0x00000010; /* reading input after ESC */
+#[allow(unused)]
 pub const RL_STATE_DISPATCHING: libc::c_ulong = 0x00000020; /* dispatching to a command */
+#[allow(unused)]
 pub const RL_STATE_MOREINPUT: libc::c_ulong = 0x00000040; /* reading more input in a command function */
+#[allow(unused)]
 pub const RL_STATE_ISEARCH: libc::c_ulong = 0x00000080; /* doing incremental search */
+#[allow(unused)]
 pub const RL_STATE_NSEARCH: libc::c_ulong = 0x00000100; /* doing non-inc search */
+#[allow(unused)]
 pub const RL_STATE_SEARCH: libc::c_ulong = 0x00000200; /* doing a history search */
+#[allow(unused)]
 pub const RL_STATE_NUMERICARG: libc::c_ulong = 0x00000400; /* reading numeric argument */
+#[allow(unused)]
 pub const RL_STATE_MACROINPUT: libc::c_ulong = 0x00000800; /* getting input from a macro */
+#[allow(unused)]
 pub const RL_STATE_MACRODEF: libc::c_ulong = 0x00001000; /* defining keyboard macro */
+#[allow(unused)]
 pub const RL_STATE_OVERWRITE: libc::c_ulong = 0x00002000; /* overwrite mode */
+#[allow(unused)]
 pub const RL_STATE_COMPLETING: libc::c_ulong = 0x00004000; /* doing completion */
+#[allow(unused)]
 pub const RL_STATE_SIGHANDLER: libc::c_ulong = 0x00008000; /* in readline sighandler */
+#[allow(unused)]
 pub const RL_STATE_UNDOING: libc::c_ulong = 0x00010000; /* doing an undo */
+#[allow(unused)]
 pub const RL_STATE_INPUTPENDING: libc::c_ulong = 0x00020000; /* rl_execute_next called */
+#[allow(unused)]
 pub const RL_STATE_TTYCSAVED: libc::c_ulong = 0x00040000; /* tty special chars saved */
+#[allow(unused)]
 pub const RL_STATE_CALLBACK: libc::c_ulong = 0x00080000; /* using the callback interface */
+#[allow(unused)]
 pub const RL_STATE_VIMOTION: libc::c_ulong = 0x00100000; /* reading vi motion arg */
+#[allow(unused)]
 pub const RL_STATE_MULTIKEY: libc::c_ulong = 0x00200000; /* reading multiple-key command */
+#[allow(unused)]
 pub const RL_STATE_VICMDONCE: libc::c_ulong = 0x00400000; /* entered vi command mode at least once */
+#[allow(unused)]
 pub const RL_STATE_CHARSEARCH: libc::c_ulong = 0x00800000; /* vi mode char search */
+#[allow(unused)]
 pub const RL_STATE_REDISPLAYING: libc::c_ulong = 0x01000000; /* updating terminal display */
+#[allow(unused)]
 pub const RL_STATE_DONE: libc::c_ulong = 0x02000000; /* done; accepted line */
+#[allow(unused)]
 pub const RL_STATE_TIMEOUT: libc::c_ulong = 0x04000000; /* done; timed out */
+#[allow(unused)]
 pub const RL_STATE_EOF: libc::c_ulong = 0x08000000; /* done; got eof on read */
+#[allow(unused)]
 pub const RL_STATE_READSTR: libc::c_ulong = 0x10000000; /* reading a string for M-x */

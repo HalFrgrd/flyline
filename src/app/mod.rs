@@ -260,14 +260,6 @@ impl<'a> App<'a> {
             return ExitState::WithoutCommand;
         }
 
-        // Install signal handler to log received signals
-        // unsafe {
-        //     libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
-        //     libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
-        //     libc::signal(libc::SIGWINCH, signal_handler as libc::sighandler_t);
-        //     libc::signal(libc::SIGHUP, signal_handler as libc::sighandler_t);
-        // }
-
         crossterm::terminal::enable_raw_mode().unwrap();
 
         let options = TerminalOptions {
@@ -280,21 +272,11 @@ impl<'a> App<'a> {
         }
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        // Set up event stream and timers directly
-        // let mut time_since_last_input = Instant::now();
-
-        // const ANIMATION_FPS_MAX: u64 = 60;
-        // const ANIMATION_FPS_MIN: u64 = 5;
-        // const ANIM_SWITCH_INACTIVITY_START: u128 = 10000;
-        // const ANIM_SWITCH_INACTIVITY_LEN: u128 = 10000;
-
-        // let anim_period = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
-
         let mut redraw = true;
         let mut needs_screen_cleared = false;
         let mut last_terminal_area = terminal.size().unwrap();
 
-        loop {
+        'main_loop: loop {
             // Poll AI background task: check if a result has arrived without blocking.
             let ai_result = if let ContentMode::AiMode { ref receiver, .. } = self.content_mode {
                 match receiver.try_recv() {
@@ -437,50 +419,44 @@ impl<'a> App<'a> {
                 redraw = true;
             }
 
-            if self.settings.spin {
-                let mut last_print = std::time::Instant::now();
-                let start = std::time::Instant::now();
-                loop {
-                    let now = std::time::Instant::now();
-                    if now.duration_since(last_print) > std::time::Duration::from_secs(1) {
-                        log::info!("spinning");
-                        last_print = now;
-                    }
-                    if let Some(handler) = unsafe { crate::bash_symbols::rl_signal_event_hook } {
-                        log::info!("rl_signal_event_hook has been set");
-                        unsafe {
-                            let sig = crate::bash_symbols::terminating_signal;
+            unsafe {
+                // Bash will set this to a function when it receives a terminating signal.
+                // The function is readline specific so we don't call it here.
+                // But the act of it being set is a signal that we should exit immediately
+                if let Some(_) = crate::bash_symbols::rl_signal_event_hook {
+                    log::info!("rl_signal_event_hook has been set");
+                    let sig = crate::bash_symbols::terminating_signal;
 
-                            match sig {
-                                libc::SIGTERM => log::warn!(
-                                    "Terminating signal SIGTERM received, exiting immediately"
-                                ),
-                                libc::SIGINT => log::warn!(
-                                    "Terminating signal SIGINT received, exiting immediately"
-                                ),
-                                libc::SIGHUP => log::warn!(
-                                    "Terminating signal SIGHUP received, exiting immediately"
-                                ),
-                                0 => {} // No signal
-                                _ => log::warn!(
-                                    "Terminating signal {} received, exiting immediately",
-                                    sig
-                                ),
-                            }
-
-                            // if sig != 0 {
-                            //     log::warn!("Terminating signal {} received, exiting immediately", sig);
-                            //     crate::bash_symbols::termsig_handler(sig);
-                            // }
+                    match sig {
+                        libc::SIGTERM => {
+                            log::warn!("Terminating signal SIGTERM received, exiting immediately")
                         }
-                        // handler();
-                        return ExitState::WithoutCommand;
+                        libc::SIGINT => {
+                            log::warn!("Terminating signal SIGINT received, exiting immediately")
+                        }
+                        libc::SIGHUP => {
+                            log::warn!("Terminating signal SIGHUP received, exiting immediately")
+                        }
+                        0 => {} // No signal
+                        _ => log::warn!("Terminating signal {} received, exiting immediately", sig),
                     }
-                    // if now.duration_since(start) > std::time::Duration::from_secs(10) {
-                    //     return ExitState::WithoutCommand;
-                    // }
+                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                    break 'main_loop;
                 }
             }
+
+            // if self.settings.spin {
+            //     let mut last_print = std::time::Instant::now();
+            //     let start = std::time::Instant::now();
+            //     loop {
+            //         let now = std::time::Instant::now();
+            //         if now.duration_since(last_print) > std::time::Duration::from_secs(1) {
+            //             log::info!("spinning");
+            //             last_print = now;
+            //         }
+
+            //     }
+            // }
         }
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
