@@ -5,7 +5,6 @@ use crate::active_suggestions::ActiveSuggestions;
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
-use crate::{command_acceptance, settings};
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -18,6 +17,7 @@ use crate::settings::{MouseMode, Settings};
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
+use crate::{bash_symbols, command_acceptance, settings};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -44,6 +44,22 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .unwrap()
+}
+
+extern "C" fn signal_handler(sig: libc::c_int) {
+    if sig == libc::SIGWINCH {
+        // Don't log SIGWINCH to avoid spamming the logs during terminal resizing
+        return;
+    }
+
+    let name = match sig {
+        libc::SIGTERM => "SIGTERM",
+        libc::SIGINT => "SIGINT",
+        libc::SIGWINCH => "SIGWINCH",
+        libc::SIGHUP => "SIGHUP",
+        _ => "UNKNOWN",
+    };
+    log::info!("Received signal: {} ({})", name, sig);
 }
 
 fn restore_terminal() {
@@ -244,6 +260,16 @@ impl<'a> App<'a> {
             return ExitState::WithoutCommand;
         }
 
+        // Install signal handler to log received signals
+        // unsafe {
+        //     libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
+        //     libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
+        //     libc::signal(libc::SIGWINCH, signal_handler as libc::sighandler_t);
+        //     libc::signal(libc::SIGHUP, signal_handler as libc::sighandler_t);
+        // }
+
+        crossterm::terminal::enable_raw_mode().unwrap();
+
         let options = TerminalOptions {
             viewport: Viewport::Inline(0),
         };
@@ -252,6 +278,7 @@ impl<'a> App<'a> {
         if !self.settings.use_term_emulator_cursor {
             terminal.hide_cursor().unwrap();
         }
+        bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         // Set up event stream and timers directly
         // let mut time_since_last_input = Instant::now();
@@ -369,7 +396,7 @@ impl<'a> App<'a> {
                     }
                     CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
                     CrosstermEvent::Resize(new_cols, new_rows) => {
-                        log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
+                        // log::trace!("Terminal resized to {}x{}", new_cols, new_rows);
                         last_terminal_area = Size {
                             width: new_cols,
                             height: new_rows,
@@ -378,12 +405,12 @@ impl<'a> App<'a> {
                         true
                     }
                     CrosstermEvent::FocusLost => {
-                        // log::debug!("Terminal focus lost");
+                        // log::trace!("Terminal focus lost");
                         self.cursor_animation.term_has_focus = false;
                         false
                     }
                     CrosstermEvent::FocusGained => {
-                        // log::debug!("Terminal focus gained");
+                        // log::trace!("Terminal focus gained");
                         self.cursor_animation.term_has_focus = true;
                         if self.settings.mouse_mode == MouseMode::Smart
                             && !self.mouse_state.is_explicitly_disabled_by_user()
@@ -393,8 +420,8 @@ impl<'a> App<'a> {
                         false
                     }
                     CrosstermEvent::Paste(pasted) => {
-                        log::debug!("Pasted content: {}", pasted);
-                        log::debug!("Pasted content as bytes: {:?}", pasted.as_bytes());
+                        log::trace!("Pasted content: {}", pasted);
+                        log::trace!("Pasted content as bytes: {:?}", pasted.as_bytes());
                         self.buffer.insert_str(&pasted);
                         self.on_possible_buffer_change(None);
                         true
@@ -412,15 +439,51 @@ impl<'a> App<'a> {
 
             if self.settings.spin {
                 let mut last_print = std::time::Instant::now();
+                let start = std::time::Instant::now();
                 loop {
                     let now = std::time::Instant::now();
-                    if now.duration_since(last_print) > std::time::Duration::from_secs(2) {
+                    if now.duration_since(last_print) > std::time::Duration::from_secs(1) {
                         log::info!("spinning");
                         last_print = now;
                     }
+                    if let Some(handler) = unsafe { crate::bash_symbols::rl_signal_event_hook } {
+                        log::info!("rl_signal_event_hook has been set");
+                        unsafe {
+                            let sig = crate::bash_symbols::terminating_signal;
+
+                            match sig {
+                                libc::SIGTERM => log::warn!(
+                                    "Terminating signal SIGTERM received, exiting immediately"
+                                ),
+                                libc::SIGINT => log::warn!(
+                                    "Terminating signal SIGINT received, exiting immediately"
+                                ),
+                                libc::SIGHUP => log::warn!(
+                                    "Terminating signal SIGHUP received, exiting immediately"
+                                ),
+                                0 => {} // No signal
+                                _ => log::warn!(
+                                    "Terminating signal {} received, exiting immediately",
+                                    sig
+                                ),
+                            }
+
+                            // if sig != 0 {
+                            //     log::warn!("Terminating signal {} received, exiting immediately", sig);
+                            //     crate::bash_symbols::termsig_handler(sig);
+                            // }
+                        }
+                        // handler();
+                        return ExitState::WithoutCommand;
+                    }
+                    // if now.duration_since(start) > std::time::Duration::from_secs(10) {
+                    //     return ExitState::WithoutCommand;
+                    // }
                 }
             }
         }
+
+        bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         match self.mode {
             AppRunningState::Exiting(exit_state) => exit_state,
@@ -1268,11 +1331,6 @@ impl<'a> App<'a> {
                 .contains(&self.buffer.cursor_byte_pos())
                 && let Some(tooltip) = part.tooltip.as_ref()
             {
-                log::debug!(
-                    "Setting tooltip for token at byte position {}: {}",
-                    part.token.token.byte_range().start,
-                    tooltip
-                );
                 self.tooltip = Some(tooltip.clone());
             }
         }

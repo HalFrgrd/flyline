@@ -420,7 +420,7 @@ impl Flyline {
     fn get(&mut self) -> c_int {
         // log::debug!("Getting byte from flyline input stream");
         if self.content.is_empty() || self.position >= self.content.len() {
-            log::debug!("---------------------- Star    ting app ------------------------");
+            log::debug!("---------------------- Starting app ------------------------");
 
             // if (job_control) {
             //     give_terminal_to (shell_pgrp, 0);
@@ -437,14 +437,14 @@ impl Flyline {
                 app::get_command(&self.settings)
             }));
 
-            unsafe {
-                let sig = bash_symbols::terminating_signal;
+            // unsafe {
+            //     let sig = bash_symbols::terminating_signal;
 
-                if sig != 0 {
-                    log::warn!("Terminating signal {} received, exiting immediately", sig);
-                    bash_symbols::termsig_handler(sig);
-                }
-            }
+            //     if sig != 0 {
+            //         log::warn!("Terminating signal {} received, exiting immediately", sig);
+            //         bash_symbols::termsig_handler(sig);
+            //     }
+            // }
 
             // if bash_symbols::signal_is_ignored (libc::SIGINT) == 0 && old_sigint != IMPOSSIBLE_TRAP_HANDLER {
             //     bash_symbols::set_signal_handler (libc::SIGINT, old_sigint);
@@ -468,10 +468,9 @@ impl Flyline {
         if self.position < self.content.len() {
             let byte = self.content[self.position];
             self.position += 1;
-            // log::debug!("Returning byte: {} (asci={})", byte, byte as char);
             byte as c_int
         } else {
-            log::debug!("End of input stream reached, returning EOF");
+            log::info!("End of input stream reached, returning EOF");
             bash_symbols::EOF
         }
     }

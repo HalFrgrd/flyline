@@ -358,6 +358,10 @@ unsafe extern "C" {
 
     // void termsig_handler (int sig)
     pub fn termsig_handler(sig: c_int);
+
+    // rl_hook_func_t *rl_signal_event_hook = (rl_hook_func_t *)NULL;
+    pub static mut rl_signal_event_hook: Option<extern "C" fn()>;
+
 }
 
 /// Allocate a copy of `s` using bash's `xmalloc`.
@@ -449,3 +453,48 @@ pub struct StringList {
     pub list_size: c_uint, // TODO verify this is the correct type
     pub list_len: c_uint,
 }
+
+pub fn set_readline_state(state: libc::c_ulong) {
+    unsafe {
+        rl_readline_state |= state;
+    }
+}
+
+pub fn clear_readline_state(state: libc::c_ulong) {
+    unsafe {
+        rl_readline_state &= !state;
+    }
+}
+
+
+
+pub const RL_STATE_NONE: libc::c_ulong = 0x0000000; /* no state; before first call */
+pub const RL_STATE_INITIALIZING: libc::c_ulong = 0x00000001; /* initializing */
+pub const RL_STATE_INITIALIZED: libc::c_ulong = 0x00000002; /* initialization done */
+pub const RL_STATE_TERMPREPPED: libc::c_ulong = 0x00000004; /* terminal is prepped */
+pub const RL_STATE_READCMD: libc::c_ulong = 0x00000008; /* reading a command key */
+pub const RL_STATE_METANEXT: libc::c_ulong = 0x00000010; /* reading input after ESC */
+pub const RL_STATE_DISPATCHING: libc::c_ulong = 0x00000020; /* dispatching to a command */
+pub const RL_STATE_MOREINPUT: libc::c_ulong = 0x00000040; /* reading more input in a command function */
+pub const RL_STATE_ISEARCH: libc::c_ulong = 0x00000080; /* doing incremental search */
+pub const RL_STATE_NSEARCH: libc::c_ulong = 0x00000100; /* doing non-inc search */
+pub const RL_STATE_SEARCH: libc::c_ulong = 0x00000200; /* doing a history search */
+pub const RL_STATE_NUMERICARG: libc::c_ulong = 0x00000400; /* reading numeric argument */
+pub const RL_STATE_MACROINPUT: libc::c_ulong = 0x00000800; /* getting input from a macro */
+pub const RL_STATE_MACRODEF: libc::c_ulong = 0x00001000; /* defining keyboard macro */
+pub const RL_STATE_OVERWRITE: libc::c_ulong = 0x00002000; /* overwrite mode */
+pub const RL_STATE_COMPLETING: libc::c_ulong = 0x00004000; /* doing completion */
+pub const RL_STATE_SIGHANDLER: libc::c_ulong = 0x00008000; /* in readline sighandler */
+pub const RL_STATE_UNDOING: libc::c_ulong = 0x00010000; /* doing an undo */
+pub const RL_STATE_INPUTPENDING: libc::c_ulong = 0x00020000; /* rl_execute_next called */
+pub const RL_STATE_TTYCSAVED: libc::c_ulong = 0x00040000; /* tty special chars saved */
+pub const RL_STATE_CALLBACK: libc::c_ulong = 0x00080000; /* using the callback interface */
+pub const RL_STATE_VIMOTION: libc::c_ulong = 0x00100000; /* reading vi motion arg */
+pub const RL_STATE_MULTIKEY: libc::c_ulong = 0x00200000; /* reading multiple-key command */
+pub const RL_STATE_VICMDONCE: libc::c_ulong = 0x00400000; /* entered vi command mode at least once */
+pub const RL_STATE_CHARSEARCH: libc::c_ulong = 0x00800000; /* vi mode char search */
+pub const RL_STATE_REDISPLAYING: libc::c_ulong = 0x01000000; /* updating terminal display */
+pub const RL_STATE_DONE: libc::c_ulong = 0x02000000; /* done; accepted line */
+pub const RL_STATE_TIMEOUT: libc::c_ulong = 0x04000000; /* done; timed out */
+pub const RL_STATE_EOF: libc::c_ulong = 0x08000000; /* done; got eof on read */
+pub const RL_STATE_READSTR: libc::c_ulong = 0x10000000; /* reading a string for M-x */

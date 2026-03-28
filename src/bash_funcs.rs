@@ -460,7 +460,7 @@ pub fn run_programmable_completions(
         let full_command_cstr = std::ffi::CString::new(full_command).unwrap();
         bash_symbols::rl_line_buffer = bash_symbols::xmalloc_cstr(&full_command_cstr); // git commi asdf
         bash_symbols::rl_point = cursor_byte_pos as std::ffi::c_int; // 7 ("git com|mi asdf")
-        bash_symbols::rl_readline_state |= 0x00004000; // RL_STATE_COMPLETING
+        bash_symbols::set_readline_state(bash_symbols::RL_STATE_COMPLETING);
 
         let quote_type = find_quote_type(word_under_cursor);
         bash_symbols::rl_completion_quote_character =
@@ -484,6 +484,8 @@ pub fn run_programmable_completions(
             word_under_cursor_byte_end as std::ffi::c_int,
             &foundcs as *const std::ffi::c_int as *mut std::ffi::c_int,
         );
+
+        bash_symbols::clear_readline_state(bash_symbols::RL_STATE_COMPLETING);
 
         print_copt_flags(foundcs);
 
