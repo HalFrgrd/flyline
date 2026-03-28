@@ -172,7 +172,7 @@ Please check https://github.com/${REPO}/releases for available assets."
     # Update or add 'enable -f ... flyline' in ~/.bashrc.
     ENABLE_CMD="enable -f ${LIB_PATH} flyline"
     if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
-        sed -i -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC"
+        sed -i -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$(readlink -f "$BASHRC")"
         say "Updated flyline configuration in ${BASHRC}"
     else
         printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
