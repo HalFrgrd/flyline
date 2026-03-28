@@ -20,6 +20,7 @@ mod mouse_state;
 mod palette;
 mod prompt_manager;
 mod settings;
+mod shell_integration;
 mod snake_animation;
 mod stateful_sliding_window;
 mod tab_completion_context;
