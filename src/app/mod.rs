@@ -408,22 +408,13 @@ impl<'a> App<'a> {
                 // The function is readline specific so we don't call it here.
                 // But the act of it being set is a signal that we should exit immediately
                 if let Some(_) = crate::bash_symbols::rl_signal_event_hook {
-                    log::info!("rl_signal_event_hook has been set");
                     let sig = crate::bash_symbols::terminating_signal;
 
-                    match sig {
-                        libc::SIGTERM => {
-                            log::warn!("Terminating signal SIGTERM received, exiting immediately")
-                        }
-                        libc::SIGINT => {
-                            log::warn!("Terminating signal SIGINT received, exiting immediately")
-                        }
-                        libc::SIGHUP => {
-                            log::warn!("Terminating signal SIGHUP received, exiting immediately")
-                        }
-                        0 => {} // No signal
-                        _ => log::warn!("Terminating signal {} received, exiting immediately", sig),
-                    }
+                    log::info!(
+                        "Signal {} received, exiting immediately",
+                        signal_to_str(sig)
+                    );
+
                     self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
                     break 'main_loop;
                 }
@@ -1989,5 +1980,26 @@ impl<'a> App<'a> {
         }
 
         self.last_contents = Some((content, (frame_area.y as i16) - start_content_row as i16));
+    }
+}
+
+pub fn signal_to_str(sig: libc::c_int) -> &'static str {
+    match sig {
+        libc::SIGHUP => "SIGHUP",
+        libc::SIGINT => "SIGINT",
+        libc::SIGQUIT => "SIGQUIT",
+        libc::SIGILL => "SIGILL",
+        libc::SIGTRAP => "SIGTRAP",
+        libc::SIGABRT => "SIGABRT",
+        libc::SIGBUS => "SIGBUS",
+        libc::SIGFPE => "SIGFPE",
+        libc::SIGKILL => "SIGKILL",
+        libc::SIGUSR1 => "SIGUSR1",
+        libc::SIGSEGV => "SIGSEGV",
+        libc::SIGUSR2 => "SIGUSR2",
+        libc::SIGPIPE => "SIGPIPE",
+        libc::SIGALRM => "SIGALRM",
+        libc::SIGTERM => "SIGTERM",
+        _ => "Unknown signal",
     }
 }

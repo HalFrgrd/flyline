@@ -77,7 +77,6 @@ impl Default for Settings {
             custom_animations: HashMap::new(),
             matrix_animation: false,
             frame_rate: 30,
-            spin: false,
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }

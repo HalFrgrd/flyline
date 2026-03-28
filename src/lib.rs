@@ -295,10 +295,7 @@ impl Flyline {
                     log::info!("Animations disabled: {}", enabled);
                     self.settings.show_animations = enabled;
                 }
-                if let Some(enabled) = parsed.spin {
-                    log::info!("Spin enabled: {}", enabled);
-                    self.settings.spin = enabled;
-                }
+
                 if let Some(enabled) = parsed.show_inline_history {
                     log::info!("Inline history suggestions set to {}", enabled);
                     self.settings.show_inline_history = enabled;
@@ -435,18 +432,18 @@ impl Flyline {
                 app::get_command(&self.settings)
             }));
 
-            unsafe {
-                // This doesn't seem to be strictly necessary but yy_readline_get does it here.
-                // I think something upstream will handle it if we don't run this here.
-                let sig = bash_symbols::terminating_signal;
-                if sig != 0 {
-                    log::warn!(
-                        "in get: Terminating signal {} received, exiting immediately",
-                        sig
-                    );
-                    bash_symbols::termsig_handler(sig);
-                }
-            }
+            // unsafe {
+            //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
+            //     // I think something upstream will handle it if we don't run this here.
+            //     let sig = bash_symbols::terminating_signal;
+            //     if sig != 0 {
+            //         log::info!(
+            //             "Terminating signal {} received, exiting immediately",
+            //             app::signal_to_str(sig)
+            //         );
+            //         bash_symbols::termsig_handler(sig);
+            //     }
+            // }
 
             self.content = match result {
                 Ok(app::ExitState::WithCommand(cmd)) => cmd.into_bytes(),
@@ -463,10 +460,9 @@ impl Flyline {
             self.position = 0;
         }
 
-        if self.position < self.content.len() {
-            let byte = self.content[self.position];
+        if let Some(byte) = self.content.get(self.position) {
             self.position += 1;
-            byte as c_int
+            *byte as c_int
         } else {
             log::info!("End of input stream reached, returning EOF");
             bash_symbols::EOF
