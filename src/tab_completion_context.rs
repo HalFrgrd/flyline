@@ -1226,4 +1226,17 @@ mod tests {
             Some(SecondaryCompType::FilenameExpansion)
         );
     }
+
+    #[test]
+    fn test_word_with_single_quote_past_newline_temp() {
+        let ctx = run_inline("fl_comp_util --fallback-to-default 'many spaces \n█");
+        match &ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                println!("command_word = {:?}", command_word);
+                println!("word_under_cursor = {:?}", ctx.word_under_cursor);
+            }
+            _ => println!("comp_type = FirstWord"),
+        }
+        // This test is just for debugging, don't assert
+    }
 }
