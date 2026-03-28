@@ -1226,4 +1226,17 @@ mod tests {
             Some(SecondaryCompType::FilenameExpansion)
         );
     }
+
+    #[test]
+    fn test_word_with_single_quote_past_newline() {
+        let ctx = run_inline("fl_comp_util --fallback-to-default 'many spaces \n█");
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "fl_comp_util");
+                assert_eq!(ctx.word_under_cursor, "");
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+    }
 }
