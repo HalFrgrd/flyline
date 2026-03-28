@@ -6,4 +6,3 @@ Set Framerate 30
 Set TypingSpeed 60ms
 Set PlaybackSpeed 1.0
 Set Padding 40
-Set FontFamily "JetBrainsMono Nerd Font Mono"
