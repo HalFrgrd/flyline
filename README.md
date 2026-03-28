@@ -39,7 +39,10 @@ From easiest to hardest:
 
 ### Run `install.sh`
 
-Run `curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh` to automatically download and  set your `.bashrc` to run the latest flyline version.
+Run the following command to automatically download and  set your `.bashrc` to run the latest flyline version:
+```bash
+curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
+```
 
 
 ### Download from releases
@@ -99,7 +102,7 @@ export PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
 ```
 
 ## RPS1 / RPROMPT
-The `RPS1` / `RPROMPT` variable sets the right prompt similarly to zsh.
+The `RPS1` / `RPROMPT` variable sets the right prompt similarly to Zsh.
 ![RPS1 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_rps1.gif)
 ```bash
 export RPS1='\t'
@@ -263,7 +266,7 @@ Inline suggestions appear as you type based on the most recent matching history 
 Pressing `Up` will scroll through history entries that are a prefix match with the current command.
 
 **Zsh history entries:**
-Optionally read zsh history entries to make migrating to Bash easier. 
+Optionally read Zsh history entries to make migrating to Bash easier. 
 
 # Terminal emulator notes
 ## VS Code:
@@ -317,7 +320,7 @@ Options:
           [possible values: error, warn, info, debug, trace]
 
       --load-zsh-history [<PATH>]
-          Load zsh history in addition to Bash history. Optionally specify a PATH to the zsh history file; if omitted, defaults to $HOME/.zsh_history
+          Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file; if omitted, defaults to $HOME/.zsh_history
 
       --tutorial-mode [<TUTORIAL_MODE>]
           Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode false` to disable

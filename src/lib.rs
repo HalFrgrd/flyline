@@ -79,7 +79,7 @@ struct FlylineArgs {
     /// Set the logging level
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<LogLevel>,
-    /// Load zsh history in addition to Bash history. Optionally specify a PATH to the zsh history
+    /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history
     /// file; if omitted, defaults to $HOME/.zsh_history
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,

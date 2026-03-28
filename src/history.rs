@@ -129,7 +129,7 @@ impl HistoryManager {
             }
         };
 
-        log::debug!("Reading zsh history from: {}", hist_path);
+        log::debug!("Reading Zsh history from: {}", hist_path);
 
         let content = match std::fs::read(&hist_path) {
             Ok(bytes) => match String::from_utf8(bytes) {
@@ -145,12 +145,12 @@ impl HistoryManager {
                 }
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                eprintln!("flyline: zsh history file not found: {}", hist_path);
+                eprintln!("flyline: Zsh history file not found: {}", hist_path);
                 log::warn!("Zsh history file not found: {}", hist_path);
                 String::new()
             }
             Err(e) => {
-                log::error!("Failed to read zsh history from {}: {}", hist_path, e);
+                log::error!("Failed to read Zsh history from {}: {}", hist_path, e);
                 String::new()
             }
         };
@@ -158,7 +158,7 @@ impl HistoryManager {
 
         let duration = start_time.elapsed();
         log::debug!(
-            "Parsed zsh history ({} entries) in {:?}",
+            "Parsed Zsh history ({} entries) in {:?}",
             res.len(),
             duration
         );
@@ -183,9 +183,9 @@ impl HistoryManager {
         // let bash_entries = Self::parse_bash_history_from_file();
 
         let mut entries: Vec<_> = if let Some(ref zsh_path) = settings.zsh_history_path {
-            // As a zsh user migrating to bash, I want to have my zsh history available too
+            // As a Zsh user migrating to Bash, I want to have my Zsh history available too
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
-            log::debug!("Loaded {} zsh history entries", zsh_entries.len());
+            log::debug!("Loaded {} Zsh history entries", zsh_entries.len());
             for entry in zsh_entries.iter().rev().take(5) {
                 log::debug!("zsh_entries => {:?}", entry);
             }
