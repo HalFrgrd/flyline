@@ -326,8 +326,9 @@ impl<'a> App<'a> {
                 if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
                     log::error!("Failed to draw terminal UI: {}", e);
                     self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                } else {
+                    self.last_draw_time = std::time::Instant::now();
                 }
-                self.last_draw_time = std::time::Instant::now();
 
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
