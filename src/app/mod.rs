@@ -5,7 +5,7 @@ use crate::active_suggestions::ActiveSuggestions;
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
-use crate::command_acceptance;
+use crate::{command_acceptance, settings};
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -408,6 +408,17 @@ impl<'a> App<'a> {
                 // redraw periodically to update animations even when no events are occurring
                 // (e.g. cursor blinking, matrix animation)
                 redraw = true;
+            }
+
+            if self.settings.spin {
+                let mut last_print = std::time::Instant::now();
+                loop {
+                    let now = std::time::Instant::now();
+                    if now.duration_since(last_print) > std::time::Duration::from_secs(2) {
+                        log::info!("spinning");
+                        last_print = now;
+                    }
+                }
             }
         }
 

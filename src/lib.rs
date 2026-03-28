@@ -94,6 +94,9 @@ struct FlylineArgs {
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
+    /// spinn
+    #[arg(long = "spin", default_missing_value = "true", num_args = 0..=1)]
+    spin: Option<bool>,
     /// Show inline history suggestions
     #[arg(long = "show-inline-history", default_missing_value = "true", num_args = 0..=1)]
     show_inline_history: Option<bool>,
@@ -295,7 +298,10 @@ impl Flyline {
                     log::info!("Animations disabled: {}", enabled);
                     self.settings.show_animations = enabled;
                 }
-
+                if let Some(enabled) = parsed.spin {
+                    log::info!("Spin enabled: {}", enabled);
+                    self.settings.spin = enabled;
+                }
                 if let Some(enabled) = parsed.show_inline_history {
                     log::info!("Inline history suggestions set to {}", enabled);
                     self.settings.show_inline_history = enabled;
