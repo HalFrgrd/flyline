@@ -5,6 +5,9 @@ Source demo_settings.tape
 Set Height 400
 Source demo_setup.tape
 
+Type echo "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁ"
+Enter
+
 Type@100ms "cat "
 Sleep 300ms
 Tab
