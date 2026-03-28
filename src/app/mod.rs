@@ -17,7 +17,7 @@ use crate::settings::{MouseMode, Settings};
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
-use crate::{bash_symbols, command_acceptance, settings};
+use crate::{bash_symbols, command_acceptance};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -44,22 +44,6 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .unwrap()
-}
-
-extern "C" fn signal_handler(sig: libc::c_int) {
-    if sig == libc::SIGWINCH {
-        // Don't log SIGWINCH to avoid spamming the logs during terminal resizing
-        return;
-    }
-
-    let name = match sig {
-        libc::SIGTERM => "SIGTERM",
-        libc::SIGINT => "SIGINT",
-        libc::SIGWINCH => "SIGWINCH",
-        libc::SIGHUP => "SIGHUP",
-        _ => "UNKNOWN",
-    };
-    log::info!("Received signal: {} ({})", name, sig);
 }
 
 fn restore_terminal() {
@@ -444,19 +428,6 @@ impl<'a> App<'a> {
                     break 'main_loop;
                 }
             }
-
-            // if self.settings.spin {
-            //     let mut last_print = std::time::Instant::now();
-            //     let start = std::time::Instant::now();
-            //     loop {
-            //         let now = std::time::Instant::now();
-            //         if now.duration_since(last_print) > std::time::Duration::from_secs(1) {
-            //             log::info!("spinning");
-            //             last_print = now;
-            //         }
-
-            //     }
-            // }
         }
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);

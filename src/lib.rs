@@ -94,9 +94,6 @@ struct FlylineArgs {
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
-    /// spinn
-    #[arg(long = "spin", default_missing_value = "true", num_args = 0..=1)]
-    spin: Option<bool>,
     /// Show inline history suggestions
     #[arg(long = "show-inline-history", default_missing_value = "true", num_args = 0..=1)]
     show_inline_history: Option<bool>,
@@ -434,7 +431,6 @@ impl Flyline {
 
             // I haven't bothered replicating this line either:
             //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
-
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 app::get_command(&self.settings)
             }));

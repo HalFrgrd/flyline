@@ -57,7 +57,6 @@ pub struct Settings {
     pub matrix_animation: bool,
     /// Render frame rate in frames per second (1–120).
     pub frame_rate: u8,
-    pub spin: bool,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
