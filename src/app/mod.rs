@@ -1665,45 +1665,51 @@ impl<'a> App<'a> {
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
-                let grid_start_row = content.cursor_position().row;
-                let num_rows_for_suggestions = rows_left_before_end_of_screen.min(15).max(2);
-                let mut rows: Vec<Vec<(Vec<Span>, usize)>> =
-                    vec![vec![]; num_rows_for_suggestions as usize];
 
-                let mut selected_grid_row: Option<u16> = None;
-                for (col, col_width) in
-                    active_suggestions.into_grid(num_rows_for_suggestions as usize, width as usize)
-                {
-                    for (row_idx, (formatted, is_selected)) in col.iter().enumerate() {
-                        let formatted_suggestion = formatted.render(col_width, *is_selected);
-                        if *is_selected {
-                            selected_grid_row = Some(row_idx as u16);
-                        }
-                        rows[row_idx].push((formatted_suggestion, formatted.suggestion_idx));
-                    }
-                }
-
-                let num_rows_used = rows.iter().filter(|r| !r.is_empty()).count();
-                let num_logical_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
-
-                for row in rows.into_iter().filter(|r| !r.is_empty()) {
-                    for (styled_spans, suggestion_idx) in row {
-                        for span in styled_spans {
-                            content.write_span(&span, Tag::Suggestion(suggestion_idx));
-                        }
-                    }
-                    content.newline();
-                }
-                if num_rows_used == 0 {
+                // Early exit when there are no suggestions to display.
+                if active_suggestions.filtered_suggestions_len() == 0 {
                     content.write_span(
                         &Span::styled("No suggestions", Palette::secondary_text()),
                         Tag::TabSuggestion,
                     );
-                }
-                active_suggestions.update_grid_size(num_rows_used, num_logical_cols);
+                } else {
+                    let grid_start_row = content.cursor_position().row;
+                    let num_rows_for_suggestions = rows_left_before_end_of_screen.min(15).max(2);
+                    let mut rows: Vec<Vec<(Vec<Span>, usize)>> =
+                        vec![vec![]; num_rows_for_suggestions as usize];
 
-                if let Some(sel_row) = selected_grid_row {
-                    content.set_focus_row(grid_start_row + sel_row);
+                    let mut selected_grid_row: Option<u16> = None;
+                    let col_offset = active_suggestions.col_scroll_offset();
+                    for (col, col_width) in active_suggestions.into_grid(
+                        num_rows_for_suggestions as usize,
+                        width as usize,
+                        col_offset,
+                    ) {
+                        for (row_idx, (formatted, is_selected)) in col.iter().enumerate() {
+                            let formatted_suggestion = formatted.render(col_width, *is_selected);
+                            if *is_selected {
+                                selected_grid_row = Some(row_idx as u16);
+                            }
+                            rows[row_idx].push((formatted_suggestion, formatted.suggestion_idx));
+                        }
+                    }
+
+                    let num_visible_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+
+                    for row in rows.into_iter().filter(|r| !r.is_empty()) {
+                        for (styled_spans, suggestion_idx) in row {
+                            for span in styled_spans {
+                                content.write_span(&span, Tag::Suggestion(suggestion_idx));
+                            }
+                        }
+                        content.newline();
+                    }
+                    active_suggestions
+                        .update_grid_size(num_rows_for_suggestions as usize, num_visible_cols);
+
+                    if let Some(sel_row) = selected_grid_row {
+                        content.set_focus_row(grid_start_row + sel_row);
+                    }
                 }
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {

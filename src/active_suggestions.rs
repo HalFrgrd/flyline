@@ -4,6 +4,8 @@ use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
+use unicode_width::UnicodeWidthStr;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
     pub s: String,
@@ -16,8 +18,123 @@ pub struct Suggestion {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuggestionFormatted {
     pub suggestion_idx: usize,
-    pub display_len: usize,
+    pub display_width: usize,
     pub spans: Vec<Span<'static>>,
+}
+
+fn vec_spans_width(spans: &[Span<'static>]) -> usize {
+    spans.iter().map(|s| s.width()).sum()
+}
+
+fn take_prefix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'static>> {
+    if n == 0 {
+        return vec![];
+    }
+
+    let mut out: Vec<Span<'static>> = Vec::new();
+
+    for span in spans {
+        if n == 0 {
+            break;
+        }
+        let span_width = span.width();
+        if span_width <= n {
+            out.push(span.clone());
+            n -= span_width;
+        } else {
+            span.styled_graphemes(span.style)
+                .take_while(|g| {
+                    let g_width = g.symbol.width();
+                    if g_width <= n {
+                        n -= g_width;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .for_each(|g| out.push(Span::styled(g.symbol.to_owned(), span.style)));
+
+            break;
+        }
+    }
+    out
+}
+
+fn take_suffix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'static>> {
+    if n == 0 {
+        return vec![];
+    }
+
+    let mut out: Vec<Span<'static>> = Vec::new();
+
+    for span in spans.iter().rev() {
+        if n == 0 {
+            break;
+        }
+        let span_width = span.width();
+        if span_width <= n {
+            out.push(span.clone());
+            n -= span_width;
+        } else {
+            span.styled_graphemes(span.style)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .take_while(|g| {
+                    let g_width = g.symbol.width();
+                    if g_width <= n {
+                        n -= g_width;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .for_each(|g| out.push(Span::styled(g.symbol.to_owned(), span.style)));
+
+            break;
+        }
+    }
+    out.reverse();
+    out
+}
+
+/// Truncate `spans` to at most `max_chars` Unicode characters using middle
+/// ellipsis (e.g. `"very_long_name"` → `"very…ame"`), preserving span styles.
+fn middle_truncate_spans(spans: &[Span<'static>], max_chars: usize) -> Vec<Span<'static>> {
+    let total = vec_spans_width(spans);
+    if total <= max_chars {
+        return spans.to_vec();
+    }
+    if max_chars == 0 {
+        return vec![];
+    }
+    if max_chars == 1 {
+        let style = spans
+            .first()
+            .map(|s| s.style)
+            .unwrap_or_else(Style::default);
+        return vec![Span::styled("…".to_string(), style)];
+    }
+
+    // Reserve 1 char for the ellipsis.
+    let keep = max_chars - 1;
+    let left = keep / 2;
+    let right = keep - left;
+
+    let mut out: Vec<Span<'static>> = Vec::new();
+    let mut left_spans = take_prefix_of_spans(spans, left);
+    let right_spans = take_suffix_of_spans(spans, right);
+
+    let ellipsis_style = left_spans
+        .last()
+        .map(|s| s.style)
+        .or_else(|| right_spans.first().map(|s| s.style))
+        .unwrap_or_else(Style::default);
+
+    out.append(&mut left_spans);
+    out.push(Span::styled("…".to_string(), ellipsis_style));
+    out.extend(right_spans);
+    out
 }
 
 impl SuggestionFormatted {
@@ -32,30 +149,79 @@ impl SuggestionFormatted {
 
         SuggestionFormatted {
             suggestion_idx,
-            display_len: suggestion.s.len() + 2,
+            display_width: suggestion.s.width(),
             spans: lines.into_iter().flat_map(|l| l.spans).collect(),
         }
     }
 
+    /// Render this suggestion into a sequence of styled [`Span`]s.
+    ///
+    /// `col_width` is the visual width reserved for this cell (excluding any
+    /// trailing padding).  When `col_width` is smaller than the suggestion
+    /// text, middle-ellipsis truncation is applied so the text fits exactly
+    /// within `col_width` characters.
     pub fn render(&self, col_width: usize, is_selected: bool) -> Vec<Span<'static>> {
-        let mut spans: Vec<Span<'static>> = if is_selected {
-            self.spans
-                .iter()
-                .map(|span| {
-                    Span::styled(
-                        span.content.clone(),
-                        Palette::convert_to_selected(span.style),
-                    )
-                })
-                .collect()
+        let mut spans: Vec<Span<'static>> = if col_width < self.display_width {
+            middle_truncate_spans(&self.spans, col_width)
         } else {
             self.spans.clone()
         };
 
-        let text_len = self.display_len.saturating_sub(2);
-        spans.push(Span::raw(" ".repeat(col_width.saturating_sub(text_len))));
+        if is_selected {
+            spans = spans
+                .into_iter()
+                .map(|span| Span::styled(span.content, Palette::convert_to_selected(span.style)))
+                .collect();
+        }
 
-        spans
+        let rendered_len = vec_spans_width(&spans);
+
+        let mut result = spans;
+        result.push(Span::raw(
+            " ".repeat(col_width.saturating_sub(rendered_len)),
+        ));
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn middle_truncate_spans_preserves_styles() {
+        let a = Style::default().fg(Color::Red);
+        let b = Style::default().fg(Color::Blue);
+
+        let spans = vec![
+            Span::styled("abcd".to_string(), a),
+            Span::styled("EFGH".to_string(), b),
+        ];
+
+        let out = middle_truncate_spans(&spans, 5);
+        assert_eq!(vec_spans_width(&out), 5);
+        assert_eq!(
+            out.iter().map(|s| s.content.as_ref()).collect::<String>(),
+            "ab…GH"
+        );
+
+        // Left piece keeps style a, right piece keeps style b.
+        assert_eq!(out[0].style, a);
+        assert_eq!(out.last().unwrap().style, b);
+    }
+
+    #[test]
+    fn middle_truncate_spans_handles_tiny_widths() {
+        let s = Style::default().fg(Color::Green);
+        let spans = vec![Span::styled("hello".to_string(), s)];
+
+        let out0 = middle_truncate_spans(&spans, 0);
+        assert_eq!(out0.len(), 0);
+
+        let out1 = middle_truncate_spans(&spans, 1);
+        assert_eq!(vec_spans_width(&out1), 1);
+        assert_eq!(out1[0].content.as_ref(), "…");
+        assert_eq!(out1[0].style, s);
     }
 }
 
@@ -116,9 +282,21 @@ impl Ord for Suggestion {
 pub struct ActiveSuggestions {
     all_suggestions: Vec<Suggestion>,
     filtered_suggestions: Vec<SuggestionFormatted>,
-    selected_filtered_index: usize,
+    /// 2-D position of the currently-selected suggestion within the grid.
+    /// `selected_col * last_num_rows_per_col + selected_row` gives the 1-D
+    /// index into `filtered_suggestions`.
+    selected_row: usize,
+    selected_col: usize,
     pub word_under_cursor: SubString,
-    last_grid_size: (usize, usize),
+    /// Number of suggestion rows per column as used in the last rendered
+    /// grid.  Kept in sync by [`update_grid_size`].
+    last_num_rows_per_col: usize,
+    /// Number of columns that were actually visible in the last rendered
+    /// grid.  Used to compute the scroll offset.
+    last_num_visible_cols: usize,
+    /// Index of the first column that is shown during rendering (0-based).
+    /// Non-zero when the selected column has scrolled out of the default view.
+    col_scroll_offset: usize,
     fuzzy_matcher: ArinaeMatcher,
 }
 
@@ -127,9 +305,12 @@ impl std::fmt::Debug for ActiveSuggestions {
         f.debug_struct("ActiveSuggestions")
             .field("all_suggestions", &self.all_suggestions)
             .field("filtered_suggestions", &self.filtered_suggestions)
-            .field("selected_filtered_index", &self.selected_filtered_index)
+            .field("selected_row", &self.selected_row)
+            .field("selected_col", &self.selected_col)
             .field("word_under_cursor", &self.word_under_cursor)
-            .field("last_grid_size", &self.last_grid_size)
+            .field("last_num_rows_per_col", &self.last_num_rows_per_col)
+            .field("last_num_visible_cols", &self.last_num_visible_cols)
+            .field("col_scroll_offset", &self.col_scroll_offset)
             .finish()
     }
 }
@@ -151,9 +332,12 @@ impl ActiveSuggestions {
         Some(ActiveSuggestions {
             all_suggestions: suggestions,
             filtered_suggestions,
-            selected_filtered_index: 0,
+            selected_row: 0,
+            selected_col: 0,
             word_under_cursor,
-            last_grid_size: (0, 0),
+            last_num_rows_per_col: 0,
+            last_num_visible_cols: 0,
+            col_scroll_offset: 0,
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
         })
     }
@@ -167,89 +351,234 @@ impl ActiveSuggestions {
         }
     }
 
-    pub fn sanitize_selected_index(&mut self, new_index: i32) {
-        if self.filtered_suggestions.is_empty() {
-            self.selected_filtered_index = 0;
+    /// Return the flat (1-D) index of the currently-selected suggestion.
+    fn current_1d_index(&self) -> usize {
+        self.selected_col
+            .saturating_mul(self.last_num_rows_per_col)
+            .saturating_add(self.selected_row)
+    }
+
+    /// Set the selected position from a flat (1-D) suggestion index.
+    fn set_from_1d_index(&mut self, idx: usize) {
+        if self.last_num_rows_per_col == 0 {
+            self.selected_row = idx;
+            self.selected_col = 0;
+        } else {
+            self.selected_col = idx / self.last_num_rows_per_col;
+            self.selected_row = idx % self.last_num_rows_per_col;
+        }
+        self.clamp_selection();
+        self.adjust_col_scroll_offset();
+    }
+
+    /// Ensure the selected position refers to a valid suggestion.
+    fn clamp_selection(&mut self) {
+        let n = self.filtered_suggestions.len();
+        if n == 0 {
+            self.selected_row = 0;
+            self.selected_col = 0;
             return;
         }
-        self.selected_filtered_index =
-            new_index.rem_euclid(self.filtered_suggestions.len() as i32) as usize;
+        // If the 2-D position points past the end of `filtered_suggestions`,
+        // wrap to index 0.
+        if self.current_1d_index() >= n {
+            self.selected_row = 0;
+            self.selected_col = 0;
+        }
+    }
+
+    /// Adjust `col_scroll_offset` so that `selected_col` is always within
+    /// the visible column range `[col_scroll_offset, col_scroll_offset +
+    /// last_num_visible_cols)`.
+    fn adjust_col_scroll_offset(&mut self) {
+        if self.last_num_visible_cols == 0 {
+            return;
+        }
+        if self.selected_col < self.col_scroll_offset {
+            self.col_scroll_offset = self.selected_col;
+        } else if self.selected_col >= self.col_scroll_offset + self.last_num_visible_cols {
+            self.col_scroll_offset = self.selected_col + 1 - self.last_num_visible_cols;
+        }
     }
 
     // TODO arrow keys when not all suggestions are visible
     pub fn on_right_arrow(&mut self) {
-        let new_idx: i32 = self.selected_filtered_index as i32 + self.last_grid_size.0 as i32;
-        self.sanitize_selected_index(new_idx);
+        let n = self.filtered_suggestions.len();
+        if n == 0 || self.last_num_rows_per_col == 0 {
+            return;
+        }
+        let next_col = self.selected_col + 1;
+        let next_idx = next_col * self.last_num_rows_per_col + self.selected_row;
+        if next_idx < n {
+            self.selected_col = next_col;
+        } else {
+            // No suggestion exists at (selected_row, next_col) → wrap to col 0.
+            self.selected_col = 0;
+            self.col_scroll_offset = 0;
+            // Row 0 of col 0 always exists (n > 0).
+        }
+        self.adjust_col_scroll_offset();
     }
 
     pub fn on_left_arrow(&mut self) {
-        let new_idx: i32 = self.selected_filtered_index as i32 - self.last_grid_size.0 as i32;
-        self.sanitize_selected_index(new_idx);
+        let n = self.filtered_suggestions.len();
+        if n == 0 || self.last_num_rows_per_col == 0 {
+            return;
+        }
+        if self.selected_col > 0 {
+            self.selected_col -= 1;
+        } else {
+            // Wrap to the last column.
+            let last_col = (n - 1) / self.last_num_rows_per_col;
+            self.selected_col = last_col;
+            // If (selected_row, last_col) is beyond the last suggestion,
+            // clamp the row to the last item in that column.
+            let idx = last_col * self.last_num_rows_per_col + self.selected_row;
+            if idx >= n {
+                self.selected_row = n - 1 - last_col * self.last_num_rows_per_col;
+            }
+        }
+        self.adjust_col_scroll_offset();
     }
 
     pub fn on_down_arrow(&mut self) {
-        let new_idx: i32 = self.selected_filtered_index as i32 + 1;
-        self.sanitize_selected_index(new_idx);
+        let n = self.filtered_suggestions.len();
+        if n == 0 || self.last_num_rows_per_col == 0 {
+            return;
+        }
+        let next_row = self.selected_row + 1;
+        let next_idx = self.selected_col * self.last_num_rows_per_col + next_row;
+        if next_row < self.last_num_rows_per_col && next_idx < n {
+            self.selected_row = next_row;
+        } else {
+            // Wrap to row 0 within this column.
+            self.selected_row = 0;
+        }
     }
 
     pub fn on_up_arrow(&mut self) {
-        let new_idx: i32 = self.selected_filtered_index as i32 - 1;
-        self.sanitize_selected_index(new_idx);
+        let n = self.filtered_suggestions.len();
+        if n == 0 || self.last_num_rows_per_col == 0 {
+            return;
+        }
+        if self.selected_row > 0 {
+            self.selected_row -= 1;
+        } else {
+            // Wrap to the last populated row in this column.
+            let col_start = self.selected_col * self.last_num_rows_per_col;
+            let col_end = (col_start + self.last_num_rows_per_col).min(n);
+            self.selected_row = col_end - col_start - 1;
+        }
     }
 
     pub fn set_selected_by_idx(&mut self, idx: usize) {
-        self.sanitize_selected_index(idx as i32);
+        self.set_from_1d_index(idx);
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, &SuggestionFormatted, bool)> {
         // prefix and suffix aren't shown in the suggestion list
         // but are applied when the suggestion is accepted
+        let selected_idx = self.current_1d_index();
         self.filtered_suggestions
             .iter()
             .enumerate()
-            .map(|(idx, formatted_suggestion)| {
-                (
-                    idx,
-                    formatted_suggestion,
-                    idx == self.selected_filtered_index,
-                )
+            .map(move |(idx, formatted_suggestion)| {
+                (idx, formatted_suggestion, idx == selected_idx)
             })
     }
 
+    /// Return the portion of the suggestions grid that fits within the given
+    /// terminal width, starting from column `col_offset`.
+    ///
+    /// Each element of the returned `Vec` is `(column_items, col_width)`.
+    /// For the very first visible column, `col_width` is capped at `max_width`
+    /// so that an unusually long suggestion triggers middle-ellipsis
+    /// rendering inside [`SuggestionFormatted::render`] rather than being
+    /// dropped entirely.
     pub fn into_grid(
         &self,
-        rows: usize,
-        cols: usize,
+        max_rows: usize,
+        max_width: usize,
+        col_offset: usize,
     ) -> Vec<(Vec<(&SuggestionFormatted, bool)>, usize)> {
         // Show as many suggestions as will fit in the given rows and columns
         // Each column should be the same width, based on the longest suggestion
-        let mut grid = vec![];
+        let mut grid: Vec<(Vec<(&SuggestionFormatted, bool)>, usize)> = vec![];
         let mut current_col = vec![];
         let mut col_width = 1;
         let mut total_columns = 0;
+        let mut abs_col_idx: usize = 0; // absolute column index (before offset)
 
-        for (filtered_idx, formatted, is_selected) in self.iter() {
-            current_col.push((formatted, is_selected));
-            col_width = col_width.max(formatted.display_len); // +2 for padding // TODO truncate very long suggestions
-            if (filtered_idx + 1) % rows == 0 {
-                if total_columns + col_width > cols {
-                    break;
-                }
-                grid.push((current_col, col_width));
-                total_columns += col_width;
-                current_col = vec![];
-                col_width = 1;
+        /// Push `col` to `grid` and update `total_columns`.  For the first
+        /// visible column the width is capped at the terminal width to
+        /// trigger middle-ellipsis rendering.  Returns `false` when the
+        /// column would overflow the terminal and should be discarded.
+        fn push_col<'a>(
+            grid: &mut Vec<(Vec<(&'a SuggestionFormatted, bool)>, usize)>,
+            total_columns: &mut usize,
+            col: Vec<(&'a SuggestionFormatted, bool)>,
+            col_width: usize,
+            term_cols: usize,
+        ) -> bool {
+            let is_first = grid.is_empty();
+            if is_first {
+                // Cap width so long suggestions are truncated rather than dropped.
+                let effective = col_width.min(term_cols);
+                grid.push((col, effective));
+                *total_columns += effective;
+                true
+            } else if *total_columns + col_width > term_cols {
+                false
+            } else {
+                grid.push((col, col_width));
+                *total_columns += col_width;
+                true
             }
         }
 
-        if !current_col.is_empty() && total_columns + col_width <= cols {
-            grid.push((current_col, col_width));
+        for (filtered_idx, formatted, is_selected) in self.iter() {
+            current_col.push((formatted, is_selected));
+            col_width = col_width.max(formatted.display_width);
+            if (filtered_idx + 1) % max_rows == 0 {
+                // Skip columns before col_offset.
+                if abs_col_idx < col_offset {
+                    abs_col_idx += 1;
+                    current_col = vec![];
+                    col_width = 1;
+                    continue;
+                }
+                let col = std::mem::take(&mut current_col);
+                let added = push_col(&mut grid, &mut total_columns, col, col_width, max_width);
+                abs_col_idx += 1;
+                col_width = 1;
+                if !added {
+                    break;
+                }
+            }
+        }
+
+        // Handle the last, possibly-incomplete column.
+        if !current_col.is_empty() && abs_col_idx >= col_offset {
+            push_col(&mut grid, &mut total_columns, current_col, col_width, max_width);
         }
         grid
     }
 
-    pub fn update_grid_size(&mut self, rows: usize, cols: usize) {
-        self.last_grid_size = (rows, cols);
+    pub fn update_grid_size(&mut self, num_rows_for_suggestions: usize, num_visible_cols: usize) {
+        self.last_num_rows_per_col = num_rows_for_suggestions;
+        self.last_num_visible_cols = num_visible_cols;
+        // Keep the selected column visible.
+        self.adjust_col_scroll_offset();
+    }
+
+    /// Number of suggestions currently shown (after fuzzy filtering).
+    pub fn filtered_suggestions_len(&self) -> usize {
+        self.filtered_suggestions.len()
+    }
+
+    /// Column index from which the rendered grid should start (scroll offset).
+    pub fn col_scroll_offset(&self) -> usize {
+        self.col_scroll_offset
     }
 
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
@@ -278,11 +607,12 @@ impl ActiveSuggestions {
             .map(|(_score, formatted)| formatted)
             .collect();
 
-        // Reset selected index if needed
-        if self.selected_filtered_index >= self.filtered_suggestions.len()
+        // Reset selected position if needed
+        if self.current_1d_index() >= self.filtered_suggestions.len()
             && !self.filtered_suggestions.is_empty()
         {
-            self.selected_filtered_index = 0;
+            self.selected_row = 0;
+            self.selected_col = 0;
         }
     }
 
@@ -308,13 +638,12 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
-        let formatted_completion = match self.filtered_suggestions.get(self.selected_filtered_index)
-        {
+        let formatted_completion = match self.filtered_suggestions.get(self.current_1d_index()) {
             Some(s) => s,
             None => {
                 log::warn!(
                     "No suggestion at selected index {}",
-                    self.selected_filtered_index
+                    self.current_1d_index()
                 );
                 return;
             }
@@ -342,139 +671,3 @@ impl ActiveSuggestions {
         }
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn test_fuzzy_filter_empty_pattern() {
-//         let buffer = TextBuffer::new("git");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("clone".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         let word = buffer.buffer();
-//         let mut active = ActiveSuggestions::try_new(suggestions.clone(), word, &buffer).unwrap();
-
-//         // Empty pattern should keep all suggestions
-//         assert!(active.apply_fuzzy_filter(""));
-//         assert_eq!(active.all_suggestions.len(), 3);
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_exact_match() {
-//         let buffer = TextBuffer::new("git co");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("clone".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("config".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "co" from buffer
-//         let word = &buffer.buffer()[4..6];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // "co" should match commit, checkout, clone, config
-//         assert!(active.apply_fuzzy_filter("co"));
-//         assert!(active.all_suggestions.len() >= 3);
-
-//         // All matched suggestions should contain relevant characters
-//         for suggestion in &active.all_suggestions {
-//             assert!(suggestion.s.contains('c') && suggestion.s.contains('o'));
-//         }
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_partial_match() {
-//         let buffer = TextBuffer::new("git chk");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("cherry-pick".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "chk" from buffer
-//         let word = &buffer.buffer()[4..7];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // "chk" should fuzzy match "checkout" (c-h-eckout)
-//         assert!(active.apply_fuzzy_filter("chk"));
-//         assert!(active.all_suggestions.len() >= 1);
-
-//         // checkout should be in the results
-//         assert!(active.all_suggestions.iter().any(|s| s.s == "checkout"));
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_no_matches() {
-//         let buffer = TextBuffer::new("git xyz");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("clone".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "xyz" from buffer
-//         let word = &buffer.buffer()[4..7];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // "xyz" should not match any git commands
-//         assert!(!active.apply_fuzzy_filter("xyz"));
-//         assert_eq!(active.all_suggestions.len(), 0);
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_resets_selected_index() {
-//         let buffer = TextBuffer::new("git c");
-
-//         let suggestions = vec![
-//             Suggestion::new("add".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("clone".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "c" from buffer
-//         let word = &buffer.buffer()[4..5];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // Move selection to last item
-//         active.selected_index = 3;
-
-//         // Filter to only "commit", "checkout", "clone" (3 items)
-//         assert!(active.apply_fuzzy_filter("c"));
-
-//         // Selected index should be reset to 0 since old index 3 might be out of bounds
-//         assert!(active.selected_index < active.all_suggestions.len());
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_prioritizes_better_matches() {
-//         let buffer = TextBuffer::new("git ch");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("cherry-pick".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("branch".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "ch" from buffer
-//         let word = &buffer.buffer()[4..6];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // "ch" should match cherry-pick and checkout better than others
-//         assert!(active.apply_fuzzy_filter("ch"));
-
-//         // The top matches should start with "ch"
-//         assert!(active.all_suggestions[0].s.starts_with("ch"));
-//     }
-// }
