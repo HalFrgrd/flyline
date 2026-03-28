@@ -77,8 +77,6 @@ pub struct Contents {
     cursor_pos: Coord, // visual cursor position with line wrapping
     /// Where the terminal emulator thinks the cursor is.
     pub term_cursor_pos: Option<Coord>,
-    /// Whether to tell the term emulator to move the cursor here
-    pub use_term_emulator_cursor: bool,
     /// The row to keep visible when content exceeds the terminal height.
     /// Falls back to the cursor row when `None`; set by fuzzy search, tab completions,
     /// and AI selection mode to point at the currently selected item.
@@ -96,7 +94,6 @@ impl Contents {
             width,
             cursor_pos: Coord::new(0, 0),
             term_cursor_pos: None,
-            use_term_emulator_cursor: false,
             focus_row: None,
         }
     }
@@ -301,10 +298,18 @@ impl Contents {
         }
     }
 
+    pub fn move_to_final_line(&mut self) {
+        self.cursor_pos.row = self.buf.len().saturating_sub(1) as u16;
+        self.cursor_pos.col = 0;
+    }
+
     /// Move to the next line (carriage return + line feed)
     pub fn newline(&mut self) {
         self.cursor_pos.row += 1;
         self.cursor_pos.col = 0;
+        for _ in self.buf.len()..(self.cursor_pos.row as usize + 1) {
+            self.increase_buf_single_row();
+        }
     }
 
     fn set_style(&mut self, area: Rect, style: ratatui::style::Style) {
@@ -323,14 +328,8 @@ impl Contents {
         }
     }
 
-    pub fn set_term_cursor_pos(
-        &mut self,
-        cursor: Coord,
-        style: Option<ratatui::style::Style>,
-        use_term_emulator_cursor: bool,
-    ) {
+    pub fn set_term_cursor_pos(&mut self, cursor: Coord, style: Option<ratatui::style::Style>) {
         self.term_cursor_pos = Some(cursor);
-        self.use_term_emulator_cursor = use_term_emulator_cursor;
         if let Some(style) = style {
             self.set_style(Rect::new(cursor.col, cursor.row, 1, 1), style);
         }
