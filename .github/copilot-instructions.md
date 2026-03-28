@@ -16,7 +16,7 @@ src/            Rust library source (cdylib crate)
 tests/          Rust integration tests (run inside Docker)
 docker/         Dockerfiles and helper scripts used by CI
   docker-bake.hcl              Bake file defining all build targets
-  integration_test_build.Dockerfile  Multi-stage build; produces libflyline.so
+  builder.Dockerfile  Multi-stage build; produces libflyline.so
   bash_integration_test.Dockerfile   Loads the .so into various Bash versions
 Cargo.toml      Rust manifest (edition 2024, cdylib crate type)
 ```

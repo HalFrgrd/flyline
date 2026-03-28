@@ -8,13 +8,13 @@ variable "FLYLINE_RELEASE_VERSION" {
 
 target "builder" {
     context = "."
-    dockerfile = "docker/integration_test_build.Dockerfile"
+    dockerfile = "docker/builder.Dockerfile"
     target = "flyline-builder"
 }
 
 target "built-artifact" {
     context = "."
-    dockerfile = "docker/integration_test_build.Dockerfile"
+    dockerfile = "docker/builder.Dockerfile"
     target = "flyline-built-artifact"
 }
 
@@ -23,14 +23,14 @@ target "built-artifact" {
 target "extract-release-artifact" {
     context = "."
     output = ["type=local,dest=docker/build"]
-    dockerfile = "docker/integration_test_build.Dockerfile"
+    dockerfile = "docker/builder.Dockerfile"
     target = "flyline-built-artifact"
 }
 
 target "extract-integration-test-build-artifact" {
     context = "."
     output = ["type=local,dest=docker/build-integration-test"]
-    dockerfile = "docker/integration_test_build.Dockerfile"
+    dockerfile = "docker/builder.Dockerfile"
     target = "flyline-built-artifact"
     args = {
         CARGO_FEATURES = "integration-tests"
@@ -39,7 +39,7 @@ target "extract-integration-test-build-artifact" {
 
 target "lib-tests" {
     context = "."
-    dockerfile = "docker/integration_test_build.Dockerfile"
+    dockerfile = "docker/builder.Dockerfile"
     target = "flyline-lib-tests"
     args = {
         CARGO_FEATURES = "integration-tests"
