@@ -418,7 +418,7 @@ impl Flyline {
     }
 
     fn get(&mut self) -> c_int {
-        // log::debug!("Getting byte from flyline input stream");
+        // This is meant to mimic yy_readline_get.
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("---------------------- Starting app ------------------------");
 
@@ -432,7 +432,9 @@ impl Flyline {
             // But we put the terminal in raw mode so we're unlikely to receive SIGINTs.
             // So I don't bother with this logic.
 
+            // I haven't bothered replicating this line either:
             //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
+
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 app::get_command(&self.settings)
             }));
