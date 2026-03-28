@@ -4,6 +4,8 @@ use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
+use unicode_width::UnicodeWidthStr;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
     pub s: String,
@@ -16,30 +18,123 @@ pub struct Suggestion {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuggestionFormatted {
     pub suggestion_idx: usize,
-    pub display_len: usize,
+    pub display_width: usize,
     pub spans: Vec<Span<'static>>,
 }
 
-/// Truncate `text` to at most `max_chars` Unicode characters using middle
-/// ellipsis (e.g. `"very_long_name"` → `"very…ame"`).
-fn middle_truncate(text: &str, max_chars: usize) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= max_chars {
-        return text.to_string();
+fn vec_spans_width(spans: &[Span<'static>]) -> usize {
+    spans.iter().map(|s| s.width()).sum()
+}
+
+fn take_prefix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'static>> {
+    if n == 0 {
+        return vec![];
+    }
+
+    let mut out: Vec<Span<'static>> = Vec::new();
+
+    for span in spans {
+        if n == 0 {
+            break;
+        }
+        let span_width = span.width();
+        if span_width <= n {
+            out.push(span.clone());
+            n -= span_width;
+        } else {
+            span.styled_graphemes(span.style)
+                .take_while(|g| {
+                    let g_width = g.symbol.width();
+                    if g_width <= n {
+                        n -= g_width;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .for_each(|g| out.push(Span::styled(g.symbol.to_owned(), span.style)));
+
+            break;
+        }
+    }
+    out
+}
+
+fn take_suffix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'static>> {
+    if n == 0 {
+        return vec![];
+    }
+
+    let mut out: Vec<Span<'static>> = Vec::new();
+
+    for span in spans.iter().rev() {
+        if n == 0 {
+            break;
+        }
+        let span_width = span.width();
+        if span_width <= n {
+            out.push(span.clone());
+            n -= span_width;
+        } else {
+            span.styled_graphemes(span.style)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .take_while(|g| {
+                    let g_width = g.symbol.width();
+                    if g_width <= n {
+                        n -= g_width;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .for_each(|g| out.push(Span::styled(g.symbol.to_owned(), span.style)));
+
+            break;
+        }
+    }
+    out.reverse();
+    out
+}
+
+/// Truncate `spans` to at most `max_chars` Unicode characters using middle
+/// ellipsis (e.g. `"very_long_name"` → `"very…ame"`), preserving span styles.
+fn middle_truncate_spans(spans: &[Span<'static>], max_chars: usize) -> Vec<Span<'static>> {
+    let total = vec_spans_width(spans);
+    if total <= max_chars {
+        return spans.to_vec();
     }
     if max_chars == 0 {
-        return String::new();
+        return vec![];
     }
     if max_chars == 1 {
-        return "…".to_string();
+        let style = spans
+            .first()
+            .map(|s| s.style)
+            .unwrap_or_else(Style::default);
+        return vec![Span::styled("…".to_string(), style)];
     }
+
     // Reserve 1 char for the ellipsis.
     let keep = max_chars - 1;
     let left = keep / 2;
     let right = keep - left;
-    let left_str: String = chars[..left].iter().collect();
-    let right_str: String = chars[chars.len() - right..].iter().collect();
-    format!("{}…{}", left_str, right_str)
+
+    let mut out: Vec<Span<'static>> = Vec::new();
+    let mut left_spans = take_prefix_of_spans(spans, left);
+    let right_spans = take_suffix_of_spans(spans, right);
+
+    let ellipsis_style = left_spans
+        .last()
+        .map(|s| s.style)
+        .or_else(|| right_spans.first().map(|s| s.style))
+        .unwrap_or_else(Style::default);
+
+    out.append(&mut left_spans);
+    out.push(Span::styled("…".to_string(), ellipsis_style));
+    out.extend(right_spans);
+    out
 }
 
 impl SuggestionFormatted {
@@ -54,7 +149,7 @@ impl SuggestionFormatted {
 
         SuggestionFormatted {
             suggestion_idx,
-            display_len: suggestion.s.len() + 2,
+            display_width: suggestion.s.width(),
             spans: lines.into_iter().flat_map(|l| l.spans).collect(),
         }
     }
@@ -66,47 +161,67 @@ impl SuggestionFormatted {
     /// text, middle-ellipsis truncation is applied so the text fits exactly
     /// within `col_width` characters.
     pub fn render(&self, col_width: usize, is_selected: bool) -> Vec<Span<'static>> {
-        let text_len = self.display_len.saturating_sub(2);
-
-        // If the column is narrower than the suggestion text, rebuild the
-        // spans from a middle-truncated version of the plain text.
-        let (spans, rendered_len): (Vec<Span<'static>>, usize) = if col_width < text_len {
-            let plain: String = self.spans.iter().map(|s| s.content.as_ref()).collect();
-            let truncated = middle_truncate(&plain, col_width);
-            let len = truncated.chars().count();
-            let base_style = self
-                .spans
-                .first()
-                .map(|s| s.style)
-                .unwrap_or(Style::default());
-            let style = if is_selected {
-                Palette::convert_to_selected(base_style)
-            } else {
-                base_style
-            };
-            (vec![Span::styled(truncated, style)], len)
+        let mut spans: Vec<Span<'static>> = if col_width < self.display_width {
+            middle_truncate_spans(&self.spans, col_width)
         } else {
-            let spans = if is_selected {
-                self.spans
-                    .iter()
-                    .map(|span| {
-                        Span::styled(
-                            span.content.clone(),
-                            Palette::convert_to_selected(span.style),
-                        )
-                    })
-                    .collect()
-            } else {
-                self.spans.clone()
-            };
-            (spans, text_len)
+            self.spans.clone()
         };
+
+        if is_selected {
+            spans = spans
+                .into_iter()
+                .map(|span| Span::styled(span.content, Palette::convert_to_selected(span.style)))
+                .collect();
+        }
+
+        let rendered_len = vec_spans_width(&spans);
 
         let mut result = spans;
         result.push(Span::raw(
             " ".repeat(col_width.saturating_sub(rendered_len)),
         ));
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn middle_truncate_spans_preserves_styles() {
+        let a = Style::default().fg(Color::Red);
+        let b = Style::default().fg(Color::Blue);
+
+        let spans = vec![
+            Span::styled("abcd".to_string(), a),
+            Span::styled("EFGH".to_string(), b),
+        ];
+
+        let out = middle_truncate_spans(&spans, 5);
+        assert_eq!(vec_spans_width(&out), 5);
+        assert_eq!(
+            out.iter().map(|s| s.content.as_ref()).collect::<String>(),
+            "ab…GH"
+        );
+
+        // Left piece keeps style a, right piece keeps style b.
+        assert_eq!(out[0].style, a);
+        assert_eq!(out.last().unwrap().style, b);
+    }
+
+    #[test]
+    fn middle_truncate_spans_handles_tiny_widths() {
+        let s = Style::default().fg(Color::Green);
+        let spans = vec![Span::styled("hello".to_string(), s)];
+
+        let out0 = middle_truncate_spans(&spans, 0);
+        assert_eq!(out0.len(), 0);
+
+        let out1 = middle_truncate_spans(&spans, 1);
+        assert_eq!(vec_spans_width(&out1), 1);
+        assert_eq!(out1[0].content.as_ref(), "…");
+        assert_eq!(out1[0].style, s);
     }
 }
 
@@ -423,7 +538,7 @@ impl ActiveSuggestions {
 
         for (filtered_idx, formatted, is_selected) in self.iter() {
             current_col.push((formatted, is_selected));
-            col_width = col_width.max(formatted.display_len); // +2 for padding // TODO truncate very long suggestions
+            col_width = col_width.max(formatted.display_width); // +2 for padding // TODO truncate very long suggestions
             if (filtered_idx + 1) % rows == 0 {
                 // Skip columns before col_offset.
                 if abs_col_idx < col_offset {
@@ -556,139 +671,3 @@ impl ActiveSuggestions {
         }
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn test_fuzzy_filter_empty_pattern() {
-//         let buffer = TextBuffer::new("git");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("clone".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         let word = buffer.buffer();
-//         let mut active = ActiveSuggestions::try_new(suggestions.clone(), word, &buffer).unwrap();
-
-//         // Empty pattern should keep all suggestions
-//         assert!(active.apply_fuzzy_filter(""));
-//         assert_eq!(active.all_suggestions.len(), 3);
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_exact_match() {
-//         let buffer = TextBuffer::new("git co");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("clone".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("config".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "co" from buffer
-//         let word = &buffer.buffer()[4..6];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // "co" should match commit, checkout, clone, config
-//         assert!(active.apply_fuzzy_filter("co"));
-//         assert!(active.all_suggestions.len() >= 3);
-
-//         // All matched suggestions should contain relevant characters
-//         for suggestion in &active.all_suggestions {
-//             assert!(suggestion.s.contains('c') && suggestion.s.contains('o'));
-//         }
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_partial_match() {
-//         let buffer = TextBuffer::new("git chk");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("cherry-pick".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "chk" from buffer
-//         let word = &buffer.buffer()[4..7];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // "chk" should fuzzy match "checkout" (c-h-eckout)
-//         assert!(active.apply_fuzzy_filter("chk"));
-//         assert!(active.all_suggestions.len() >= 1);
-
-//         // checkout should be in the results
-//         assert!(active.all_suggestions.iter().any(|s| s.s == "checkout"));
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_no_matches() {
-//         let buffer = TextBuffer::new("git xyz");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("clone".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "xyz" from buffer
-//         let word = &buffer.buffer()[4..7];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // "xyz" should not match any git commands
-//         assert!(!active.apply_fuzzy_filter("xyz"));
-//         assert_eq!(active.all_suggestions.len(), 0);
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_resets_selected_index() {
-//         let buffer = TextBuffer::new("git c");
-
-//         let suggestions = vec![
-//             Suggestion::new("add".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("clone".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "c" from buffer
-//         let word = &buffer.buffer()[4..5];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // Move selection to last item
-//         active.selected_index = 3;
-
-//         // Filter to only "commit", "checkout", "clone" (3 items)
-//         assert!(active.apply_fuzzy_filter("c"));
-
-//         // Selected index should be reset to 0 since old index 3 might be out of bounds
-//         assert!(active.selected_index < active.all_suggestions.len());
-//     }
-
-//     #[test]
-//     fn test_fuzzy_filter_prioritizes_better_matches() {
-//         let buffer = TextBuffer::new("git ch");
-
-//         let suggestions = vec![
-//             Suggestion::new("commit".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("cherry-pick".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("checkout".to_string(), "".to_string(), "".to_string()),
-//             Suggestion::new("branch".to_string(), "".to_string(), "".to_string()),
-//         ];
-
-//         // Extract "ch" from buffer
-//         let word = &buffer.buffer()[4..6];
-//         let mut active = ActiveSuggestions::try_new(suggestions, word, &buffer).unwrap();
-
-//         // "ch" should match cherry-pick and checkout better than others
-//         assert!(active.apply_fuzzy_filter("ch"));
-
-//         // The top matches should start with "ch"
-//         assert!(active.all_suggestions[0].s.starts_with("ch"));
-//     }
-// }

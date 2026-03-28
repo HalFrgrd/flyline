@@ -64,7 +64,11 @@ enum LogLevel {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "flyline", styles = get_styles())]
+#[command(
+    name = "flyline",
+    styles = get_styles(),
+    after_help = "Read more at https://github.com/HalFrgrd/flyline",
+)]
 struct FlylineArgs {
     /// Show version information
     #[arg(long)]
