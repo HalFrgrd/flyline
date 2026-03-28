@@ -329,21 +329,6 @@ impl<'a> App<'a> {
                 } else {
                     self.last_draw_time = std::time::Instant::now();
                 }
-
-                if !self.mode.is_running() {
-                    // put the terminal emulators cursor just below the content
-                    let final_cursor_row = terminal.get_frame().area().bottom().saturating_sub(1);
-                    let pos = Position {
-                        x: 0,
-                        y: final_cursor_row,
-                    };
-
-                    if let Err(e) = terminal.set_cursor_position(pos) {
-                        log::error!("Failed to set cursor position: {}", e);
-                    } else {
-                        log::debug!("Set cursor position to ({}, {})", 0, final_cursor_row);
-                    }
-                }
             }
 
             if !self.mode.is_running() {
@@ -1586,11 +1571,7 @@ impl<'a> App<'a> {
                 }
             };
 
-            content.set_term_cursor_pos(
-                cursor_anim_pos,
-                cursor_style,
-                self.settings.use_term_emulator_cursor,
-            );
+            content.set_term_cursor_pos(cursor_anim_pos, cursor_style);
         }
 
         if self.mode.is_running()
@@ -1940,6 +1921,18 @@ impl<'a> App<'a> {
             content.apply_matrix_anim(now, viewport_top, terminal_height);
         }
 
+        if !self.mode.is_running() {
+            content.move_to_final_line();
+            content.newline();
+            let cursor_pos = content.cursor_position();
+            log::info!(
+                "App is not running, moving terminal cursor to {:?}",
+                cursor_pos
+            );
+            content.set_term_cursor_pos(content.cursor_position(), None);
+            content.set_focus_row(content.cursor_position().row);
+        }
+
         content
     }
 
@@ -1968,8 +1961,8 @@ impl<'a> App<'a> {
             };
         }
 
-        if content.use_term_emulator_cursor
-            && let Some(cursor_pos) = content.term_cursor_pos
+        if let Some(cursor_pos) = content.term_cursor_pos
+            && (self.settings.use_term_emulator_cursor || !self.mode.is_running())
         {
             let screen_row = cursor_pos.row.saturating_sub(start_content_row);
             if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
