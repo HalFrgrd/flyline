@@ -825,6 +825,21 @@ impl App<'_> {
             &[&Suggestion::new(r#"'many spaces here/"#, "", "")],
         );
 
+        // When a newline appears after the single-quoted prefix the cursor lands on
+        // a Newline token, so word_under_cursor is empty and completion falls back
+        // to listing all files in the working directory.
+        run_test_on(
+            "fl_comp_util --fallback-to-default 'many spaces \n",
+            &[
+                &Suggestion::new(r#"abc/"#, "", ""),
+                &Suggestion::new(r#"bar.txt"#, "", " "),
+                &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
+                &Suggestion::new(r#"foo/"#, "", ""),
+                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
+            ],
+        );
+
         // Test that $HOME prefix is preserved (not backslash-escaped) while the
         // dollar sign in the new filename part IS escaped.
         // $HOME/foo/ should complete to $HOME/foo/\$baz.txt (not \$HOME/foo/\$baz.txt).
