@@ -559,7 +559,13 @@ impl ActiveSuggestions {
 
         // Handle the last, possibly-incomplete column.
         if !current_col.is_empty() && abs_col_idx >= col_offset {
-            push_col(&mut grid, &mut total_columns, current_col, col_width, max_width);
+            push_col(
+                &mut grid,
+                &mut total_columns,
+                current_col,
+                col_width,
+                max_width,
+            );
         }
         grid
     }

@@ -5,7 +5,6 @@ use crate::active_suggestions::ActiveSuggestions;
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
-use crate::command_acceptance;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -18,6 +17,7 @@ use crate::settings::{MouseMode, Settings};
 use crate::tab_completion_context;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
+use crate::{bash_symbols, command_acceptance};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -46,7 +46,7 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-fn restore() {
+fn restore_terminal() {
     crossterm::terminal::disable_raw_mode().unwrap();
     let _ = crossterm::execute!(
         std::io::stdout(),
@@ -60,7 +60,7 @@ fn restore() {
 fn set_panic_hook() {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore();
+        restore_terminal();
         hook(info);
     }));
 }
@@ -123,7 +123,7 @@ pub fn get_command(settings: &Settings) -> ExitState {
 
     let end_state = runtime.block_on(App::new(settings).run(backend));
 
-    restore();
+    restore_terminal();
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -244,6 +244,8 @@ impl<'a> App<'a> {
             return ExitState::WithoutCommand;
         }
 
+        crossterm::terminal::enable_raw_mode().unwrap();
+
         let options = TerminalOptions {
             viewport: Viewport::Inline(0),
         };
@@ -252,22 +254,13 @@ impl<'a> App<'a> {
         if !self.settings.use_term_emulator_cursor {
             terminal.hide_cursor().unwrap();
         }
-
-        // Set up event stream and timers directly
-        // let mut time_since_last_input = Instant::now();
-
-        // const ANIMATION_FPS_MAX: u64 = 60;
-        // const ANIMATION_FPS_MIN: u64 = 5;
-        // const ANIM_SWITCH_INACTIVITY_START: u128 = 10000;
-        // const ANIM_SWITCH_INACTIVITY_LEN: u128 = 10000;
-
-        // let anim_period = Duration::from_millis(1000 / ANIMATION_FPS_MAX);
+        bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         let mut redraw = true;
         let mut needs_screen_cleared = false;
         let mut last_terminal_area = terminal.size().unwrap();
 
-        loop {
+        'main_loop: loop {
             // Poll AI background task: check if a result has arrived without blocking.
             let ai_result = if let ContentMode::AiMode { ref receiver, .. } = self.content_mode {
                 match receiver.try_recv() {
@@ -330,13 +323,12 @@ impl<'a> App<'a> {
                         log::error!("Failed to set viewport height: {}", e);
                     });
 
-                // The problem is that draw might try and query the cursor_position if it needs resizing
-                // and we are using Inline viewport.
-                // Call is try_draw->autoresize->resize->compute_inline_size->backend.get_cursor_position
                 if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
                     log::error!("Failed to draw terminal UI: {}", e);
+                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                } else {
+                    self.last_draw_time = std::time::Instant::now();
                 }
-                self.last_draw_time = std::time::Instant::now();
 
                 if !self.mode.is_running() {
                     // put the terminal emulators cursor just below the content
@@ -371,7 +363,7 @@ impl<'a> App<'a> {
                     }
                     CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
                     CrosstermEvent::Resize(new_cols, new_rows) => {
-                        log::debug!("Terminal resized to {}x{}", new_cols, new_rows);
+                        // log::trace!("Terminal resized to {}x{}", new_cols, new_rows);
                         last_terminal_area = Size {
                             width: new_cols,
                             height: new_rows,
@@ -380,12 +372,12 @@ impl<'a> App<'a> {
                         true
                     }
                     CrosstermEvent::FocusLost => {
-                        // log::debug!("Terminal focus lost");
+                        // log::trace!("Terminal focus lost");
                         self.cursor_animation.term_has_focus = false;
                         false
                     }
                     CrosstermEvent::FocusGained => {
-                        // log::debug!("Terminal focus gained");
+                        // log::trace!("Terminal focus gained");
                         self.cursor_animation.term_has_focus = true;
                         if self.settings.mouse_mode == MouseMode::Smart
                             && !self.mouse_state.is_explicitly_disabled_by_user()
@@ -395,8 +387,8 @@ impl<'a> App<'a> {
                         false
                     }
                     CrosstermEvent::Paste(pasted) => {
-                        log::debug!("Pasted content: {}", pasted);
-                        log::debug!("Pasted content as bytes: {:?}", pasted.as_bytes());
+                        log::trace!("Pasted content: {}", pasted);
+                        log::trace!("Pasted content as bytes: {:?}", pasted.as_bytes());
                         self.buffer.insert_str(&pasted);
                         self.on_possible_buffer_change(None);
                         true
@@ -411,7 +403,26 @@ impl<'a> App<'a> {
                 // (e.g. cursor blinking, matrix animation)
                 redraw = true;
             }
+
+            unsafe {
+                // Bash will set this to a function when it receives a terminating signal.
+                // The function is readline specific so we don't call it here.
+                // But the act of it being set is a signal that we should exit immediately
+                if let Some(_) = crate::bash_symbols::rl_signal_event_hook {
+                    let sig = crate::bash_symbols::terminating_signal;
+
+                    log::info!(
+                        "Signal {} received, exiting immediately",
+                        signal_to_str(sig)
+                    );
+
+                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                    break 'main_loop;
+                }
+            }
         }
+
+        bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         match self.mode {
             AppRunningState::Exiting(exit_state) => exit_state,
@@ -1259,11 +1270,6 @@ impl<'a> App<'a> {
                 .contains(&self.buffer.cursor_byte_pos())
                 && let Some(tooltip) = part.tooltip.as_ref()
             {
-                log::debug!(
-                    "Setting tooltip for token at byte position {}: {}",
-                    part.token.token.byte_range().start,
-                    tooltip
-                );
                 self.tooltip = Some(tooltip.clone());
             }
         }
@@ -1975,5 +1981,26 @@ impl<'a> App<'a> {
         }
 
         self.last_contents = Some((content, (frame_area.y as i16) - start_content_row as i16));
+    }
+}
+
+pub fn signal_to_str(sig: libc::c_int) -> &'static str {
+    match sig {
+        libc::SIGHUP => "SIGHUP",
+        libc::SIGINT => "SIGINT",
+        libc::SIGQUIT => "SIGQUIT",
+        libc::SIGILL => "SIGILL",
+        libc::SIGTRAP => "SIGTRAP",
+        libc::SIGABRT => "SIGABRT",
+        libc::SIGBUS => "SIGBUS",
+        libc::SIGFPE => "SIGFPE",
+        libc::SIGKILL => "SIGKILL",
+        libc::SIGUSR1 => "SIGUSR1",
+        libc::SIGSEGV => "SIGSEGV",
+        libc::SIGUSR2 => "SIGUSR2",
+        libc::SIGPIPE => "SIGPIPE",
+        libc::SIGALRM => "SIGALRM",
+        libc::SIGTERM => "SIGTERM",
+        _ => "Unknown signal",
     }
 }

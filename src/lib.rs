@@ -412,13 +412,38 @@ impl Flyline {
     }
 
     fn get(&mut self) -> c_int {
-        // log::debug!("Getting byte from flyline input stream");
+        // This is meant to mimic yy_readline_get.
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("---------------------- Starting app ------------------------");
 
+            unsafe {
+                if bash_symbols::job_control != 0 {
+                    bash_symbols::give_terminal_to(bash_symbols::shell_pgrp, 0);
+                }
+            }
+
+            // In yy_readline_get, Bash has some SIGINT handling.
+            // But we put the terminal in raw mode so we're unlikely to receive SIGINTs.
+            // So I don't bother with this logic.
+
+            // I haven't bothered replicating this line either:
+            //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 app::get_command(&self.settings)
             }));
+
+            // unsafe {
+            //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.
+            //     // I think something upstream will handle it if we don't run this here.
+            //     let sig = bash_symbols::terminating_signal;
+            //     if sig != 0 {
+            //         log::info!(
+            //             "Terminating signal {} received, exiting immediately",
+            //             app::signal_to_str(sig)
+            //         );
+            //         bash_symbols::termsig_handler(sig);
+            //     }
+            // }
 
             self.content = match result {
                 Ok(app::ExitState::WithCommand(cmd)) => cmd.into_bytes(),
@@ -435,13 +460,11 @@ impl Flyline {
             self.position = 0;
         }
 
-        if self.position < self.content.len() {
-            let byte = self.content[self.position];
+        if let Some(byte) = self.content.get(self.position) {
             self.position += 1;
-            // log::debug!("Returning byte: {} (asci={})", byte, byte as char);
-            byte as c_int
+            *byte as c_int
         } else {
-            log::debug!("End of input stream reached, returning EOF");
+            log::info!("End of input stream reached, returning EOF");
             bash_symbols::EOF
         }
     }
@@ -520,7 +543,6 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     //     );
     // }
 
-    // TODO: panic catch
     unsafe {
         if bash_symbols::interactive_shell == 0 || bash_symbols::no_line_editing != 0 {
             log::warn!("Not an interactive shell, flyline will not be loaded");
