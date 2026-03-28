@@ -362,6 +362,8 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
+
+Read more at https://github.com/HalFrgrd/flyline
 ```
 <!-- FLYLINE_HELP_END -->
 
