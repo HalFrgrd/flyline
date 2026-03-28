@@ -64,7 +64,11 @@ enum LogLevel {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "flyline", styles = get_styles())]
+#[command(
+    name = "flyline",
+    styles = get_styles(),
+    after_help = "Read more at https://github.com/HalFrgrd/flyline",
+)]
 struct FlylineArgs {
     /// Show version information
     #[arg(long)]
@@ -420,7 +424,9 @@ impl Flyline {
                 Ok(app::ExitState::WithCommand(cmd)) => cmd.into_bytes(),
                 Ok(app::ExitState::WithoutCommand) => vec![],
                 Err(_) => {
-                    eprintln!("flyline: app panicked; recovering with empty command. Please create an issue with the steps to reproduce at https://github.com/HalFrgrd/flyline/issues.");
+                    eprintln!(
+                        "flyline: app panicked; recovering with empty command. Please create an issue with the steps to reproduce at https://github.com/HalFrgrd/flyline/issues."
+                    );
                     log::error!("app panicked; recovering with empty command");
                     std::thread::sleep(std::time::Duration::from_millis(1000));
                     vec![]
