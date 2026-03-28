@@ -81,6 +81,8 @@ pub struct Contents {
     /// Falls back to the cursor row when `None`; set by fuzzy search, tab completions,
     /// and AI selection mode to point at the currently selected item.
     pub focus_row: Option<u16>,
+    pub prompt_start: Option<Coord>,
+    pub prompt_end: Option<Coord>,
 }
 
 impl Contents {
@@ -95,6 +97,8 @@ impl Contents {
             cursor_pos: Coord::new(0, 0),
             term_cursor_pos: None,
             focus_row: None,
+            prompt_start: None,
+            prompt_end: None,
         }
     }
 
@@ -335,7 +339,7 @@ impl Contents {
         }
     }
 
-    pub fn get_row_range_to_show(&self, term_height: u16) -> (u16, u16) {
+    pub fn get_row_range_to_show(&self, term_height: u16) -> std::ops::Range<u16> {
         let mut window =
             StatefulSlidingWindow::new(0, term_height as usize, self.height() as usize);
         if let Some(focus_row) = self.focus_row {
@@ -344,54 +348,8 @@ impl Contents {
             window.move_index_to(term_cursor_pos.row as usize);
         }
 
-        let row_range = window.get_window_range();
-
-        (row_range.start as u16, row_range.end as u16)
-    }
-
-    pub fn get_tagged_cell(
-        &self,
-        term_em_x: u16,
-        term_em_y: u16,
-        term_em_offset: i16,
-    ) -> Option<(Tag, bool)> {
-        // log::debug!(
-        //     "Getting tagged cell at terminal em coords ({}, {}), offset {}",
-        //     term_em_x,
-        //     term_em_y,
-        //     term_em_offset
-        // );
-        if term_em_offset > term_em_y as i16 {
-            // log::debug!(
-            //     "Offset {} is greater than term_em_y {}, returning None",
-            //     term_em_offset,
-            //     term_em_y
-            // );
-            return None;
-        }
-
-        let direct_contact = self
-            .buf
-            .get(term_em_y.saturating_sub_signed(term_em_offset) as usize)
-            .and_then(|row| row.get(term_em_x as usize));
-
-        if direct_contact.is_some_and(|cell| {
-            matches!(
-                cell.tag,
-                Tag::Command(_) | Tag::Suggestion(_) | Tag::HistoryResult(_) | Tag::AiResult(_)
-            )
-        }) {
-            return direct_contact.map(|cell| (cell.tag, true));
-        }
-
-        self.buf
-            .get(term_em_y.saturating_sub_signed(term_em_offset) as usize)
-            .and_then(|row| {
-                row.iter().enumerate().rev().find(|(col_idx, tagged_cell)| {
-                    *col_idx <= term_em_x as usize && matches!(tagged_cell.tag, Tag::Command(_))
-                })
-            })
-            .map(|(_, cell)| (cell.tag, false))
+        let range = window.get_window_range();
+        range.start as u16..range.end as u16
     }
 
     pub fn apply_matrix_anim(

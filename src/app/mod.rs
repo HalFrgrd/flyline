@@ -14,10 +14,11 @@ use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::settings::{MouseMode, Settings};
-use crate::tab_completion_context;
+use crate::shell_integration::EscapeCodes;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
+use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -150,6 +151,63 @@ enum ContentMode {
     },
 }
 
+struct DrawnContent {
+    contents: Contents,
+    /// The terminal row (absolute) where the content starts. Used for translating mouse coordinates.
+    viewport_start: u16,
+    content_visible_row_range: std::ops::Range<u16>,
+}
+
+impl DrawnContent {
+    pub fn content_row_to_term_em_row(&self, content_row: u16) -> u16 {
+        content_row.saturating_sub(self.content_visible_row_range.start) + self.viewport_start
+    }
+
+    pub fn term_em_row_to_content_row(&self, term_em_row: u16) -> u16 {
+        term_em_row.saturating_sub(self.viewport_start) + self.content_visible_row_range.start
+    }
+
+    pub fn term_em_cursor_pos(&self) -> Option<Position> {
+        self.contents.term_cursor_pos.map(|cursor_pos| Position {
+            x: cursor_pos.col,
+            y: self.content_row_to_term_em_row(cursor_pos.row),
+        })
+    }
+
+    pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, bool)> {
+        // log::debug!(
+        //     "Getting tagged cell at terminal em coords ({}, {}), offset {}",
+        //     term_em_x,
+        //     term_em_y,
+        //     term_em_offset
+        // );
+
+        let content_row = self.term_em_row_to_content_row(term_em_y);
+
+        let content_buf_row = self.contents.buf.get(content_row as usize)?;
+
+        let direct_contact = content_buf_row.get(term_em_x as usize);
+
+        if direct_contact.is_some_and(|cell| {
+            matches!(
+                cell.tag,
+                Tag::Command(_) | Tag::Suggestion(_) | Tag::HistoryResult(_) | Tag::AiResult(_)
+            )
+        }) {
+            return direct_contact.map(|cell| (cell.tag, true));
+        }
+
+        content_buf_row
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(col_idx, tagged_cell)| {
+                *col_idx <= term_em_x as usize && matches!(tagged_cell.tag, Tag::Command(_))
+            })
+            .map(|(_, cell)| (cell.tag, false))
+    }
+}
+
 struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
@@ -166,7 +224,7 @@ struct App<'a> {
     history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
     content_mode: ContentMode,
-    last_contents: Option<(Contents, i16)>,
+    last_contents: Option<DrawnContent>,
     last_mouse_over_cell: Option<Tag>,
     tooltip: Option<String>,
     settings: &'a Settings,
@@ -323,11 +381,45 @@ impl<'a> App<'a> {
                         log::error!("Failed to set viewport height: {}", e);
                     });
 
-                if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
-                    log::error!("Failed to draw terminal UI: {}", e);
-                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
-                } else {
-                    self.last_draw_time = std::time::Instant::now();
+                let prev_contents = std::mem::take(&mut self.last_contents);
+                match terminal.draw(|f| self.ui(f, content)) {
+                    Ok(_) => {
+                        self.last_draw_time = std::time::Instant::now();
+
+                        let mut codes = vec![];
+
+                        if let Some(new_drawn_contents) = self.last_contents.as_ref() {
+                            if let Some(prompt_start) = new_drawn_contents.contents.prompt_start {
+                                if prev_contents.as_ref().is_none_or(|prev_contents| {
+                                    prev_contents.contents.prompt_start != Some(prompt_start)
+                                }) {
+                                    codes.push(EscapeCodes::PromptStart(
+                                        prompt_start.col,
+                                        prompt_start.row,
+                                    ));
+                                }
+                            }
+
+                            if let Some(prompt_end) = new_drawn_contents.contents.prompt_end {
+                                if prev_contents.as_ref().is_none_or(|prev_contents| {
+                                    prev_contents.contents.prompt_end != Some(prompt_end)
+                                }) {
+                                    codes.push(EscapeCodes::PromptEnd(
+                                        prompt_end.col,
+                                        prompt_end.row,
+                                    ));
+                                }
+                            }
+                        }
+
+                        shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                            log::error!("Failed to write escape codes: {}", e);
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("Failed to draw terminal UI: {}", e);
+                        self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                    }
                 }
             }
 
@@ -459,9 +551,11 @@ impl<'a> App<'a> {
 
         let mut cursor_directly_on_cell = true;
 
-        match self.last_contents.as_ref().and_then(|(contents, offset)| {
-            contents.get_tagged_cell(mouse.column, mouse.row, *offset)
-        }) {
+        match self
+            .last_contents
+            .as_ref()
+            .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
+        {
             Some((tag @ Tag::Suggestion(idx), true)) => {
                 self.last_mouse_over_cell = Some(tag);
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
@@ -1458,6 +1552,8 @@ impl<'a> App<'a> {
         let mut content = Contents::new(width);
         let empty_line = Line::from(vec![]);
 
+        content.prompt_start = Some(content.cursor_position());
+
         let (lprompt, rprompt, fill_span) = self
             .prompt_manager
             .get_ps1_lines(self.settings.show_animations);
@@ -1474,13 +1570,14 @@ impl<'a> App<'a> {
                     true,
                 );
             } else {
-                // log::debug!("Writing PS1 line:  right='{}'", r_line);
                 content.write_line_lrjustified(l_line, &fill_span, r_line, Tag::Ps1Prompt, false);
             }
             if !is_last {
                 content.newline();
             }
         }
+
+        content.prompt_end = Some(content.cursor_position());
 
         let mut line_idx = 0;
         let mut cursor_pos_maybe = None;
@@ -1949,11 +2046,13 @@ impl<'a> App<'a> {
         // Record where the viewport starts for smart mouse-mode position checks.
         self.last_viewport_top = frame_area.y;
 
-        let (start_content_row, _end_content_row) =
-            content.get_row_range_to_show(frame_area.height);
+        let content_visible_row_range = content.get_row_range_to_show(frame_area.height);
 
         for row_idx in 0..frame_area.height {
-            match content.buf.get((start_content_row + row_idx) as usize) {
+            match content
+                .buf
+                .get((content_visible_row_range.start + row_idx) as usize)
+            {
                 Some(row) => {
                     for (x, tagged_cell) in row.iter().enumerate() {
                         if x < frame_area.width as usize {
@@ -1967,19 +2066,21 @@ impl<'a> App<'a> {
             };
         }
 
-        if let Some(cursor_pos) = content.term_cursor_pos
+        let drawn_content = DrawnContent {
+            contents: content,
+            viewport_start: frame_area.y,
+            content_visible_row_range,
+        };
+
+        if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
             && (self.settings.use_term_emulator_cursor || !self.mode.is_running())
         {
-            let screen_row = cursor_pos.row.saturating_sub(start_content_row);
-            if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
-                frame.set_cursor_position(Position {
-                    x: cursor_pos.col,
-                    y: screen_row + frame_area.y,
-                });
+            if term_em_cursor.y < frame_area.height && term_em_cursor.x < frame_area.width {
+                frame.set_cursor_position(term_em_cursor);
             }
         }
 
-        self.last_contents = Some((content, (frame_area.y as i16) - start_content_row as i16));
+        self.last_contents = Some(drawn_content);
     }
 }
 
