@@ -174,6 +174,20 @@ impl DrawnContent {
         })
     }
 
+    pub fn term_em_prompt_start(&self) -> Option<Position> {
+        self.contents.prompt_start.map(|prompt_start| Position {
+            x: prompt_start.col,
+            y: self.content_row_to_term_em_row(prompt_start.row),
+        })
+    }
+
+    pub fn term_em_prompt_end(&self) -> Option<Position> {
+        self.contents.prompt_end.map(|prompt_end| Position {
+            x: prompt_end.col,
+            y: self.content_row_to_term_em_row(prompt_end.row),
+        })
+    }
+
     pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, bool)> {
         // log::debug!(
         //     "Getting tagged cell at terminal em coords ({}, {}), offset {}",
@@ -389,25 +403,25 @@ impl<'a> App<'a> {
                         let mut codes = vec![];
 
                         if let Some(new_drawn_contents) = self.last_contents.as_ref() {
-                            if let Some(prompt_start) = new_drawn_contents.contents.prompt_start {
+                            if let Some(prompt_start) = new_drawn_contents.term_em_prompt_start() {
                                 if prev_contents.as_ref().is_none_or(|prev_contents| {
-                                    prev_contents.contents.prompt_start != Some(prompt_start)
+                                    prev_contents.term_em_prompt_start() != Some(prompt_start)
                                 }) {
-                                    codes.push(EscapeCodes::PromptStart(
-                                        prompt_start.col,
-                                        prompt_start.row,
-                                    ));
+                                    codes.push(EscapeCodes::PromptStart {
+                                        col: prompt_start.x,
+                                        row: prompt_start.y,
+                                    });
                                 }
                             }
 
-                            if let Some(prompt_end) = new_drawn_contents.contents.prompt_end {
+                            if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end() {
                                 if prev_contents.as_ref().is_none_or(|prev_contents| {
-                                    prev_contents.contents.prompt_end != Some(prompt_end)
+                                    prev_contents.term_em_prompt_end() != Some(prompt_end)
                                 }) {
-                                    codes.push(EscapeCodes::PromptEnd(
-                                        prompt_end.col,
-                                        prompt_end.row,
-                                    ));
+                                    codes.push(EscapeCodes::PromptEnd {
+                                        col: prompt_end.x,
+                                        row: prompt_end.y,
+                                    });
                                 }
                             }
                         }
@@ -2069,9 +2083,7 @@ impl<'a> App<'a> {
         if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
             && (self.settings.use_term_emulator_cursor || !self.mode.is_running())
         {
-            if term_em_cursor.y < frame_area.height && term_em_cursor.x < frame_area.width {
-                frame.set_cursor_position(term_em_cursor);
-            }
+            frame.set_cursor_position(term_em_cursor);
         }
 
         self.last_contents = Some(drawn_content);
