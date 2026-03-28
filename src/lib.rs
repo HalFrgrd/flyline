@@ -422,9 +422,11 @@ impl Flyline {
         if self.content.is_empty() || self.position >= self.content.len() {
             log::debug!("---------------------- Starting app ------------------------");
 
-            // if (job_control) {
-            //     give_terminal_to (shell_pgrp, 0);
-            // }
+            unsafe {
+                if bash_symbols::job_control != 0 {
+                    bash_symbols::give_terminal_to(bash_symbols::shell_pgrp, 0);
+                }
+            }
 
             // In yy_readline_get, Bash has some SIGINT handling.
             // But we put the terminal in raw mode so we're unlikely to receive SIGINTs.
@@ -440,7 +442,10 @@ impl Flyline {
                 // I think something upstream will handle it if we don't run this here.
                 let sig = bash_symbols::terminating_signal;
                 if sig != 0 {
-                    log::warn!("in get: Terminating signal {} received, exiting immediately", sig);
+                    log::warn!(
+                        "in get: Terminating signal {} received, exiting immediately",
+                        sig
+                    );
                     bash_symbols::termsig_handler(sig);
                 }
             }

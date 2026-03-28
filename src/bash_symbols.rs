@@ -362,6 +362,20 @@ unsafe extern "C" {
     // rl_hook_func_t *rl_signal_event_hook = (rl_hook_func_t *)NULL;
     pub static mut rl_signal_event_hook: Option<extern "C" fn()>;
 
+    /* If this is non-zero, do job control. */
+    // int job_control = 1;
+    #[link_name = "job_control"]
+    pub static mut job_control: c_int;
+
+    /* Give the terminal to PGRP.  */
+    // int give_terminal_to (pid_t pgrp, int force)
+    pub fn give_terminal_to(pgrp: libc::pid_t, force: c_int) -> c_int;
+
+    /* The shell's process group. */
+    // pid_t shell_pgrp = NO_PID;
+    #[link_name = "shell_pgrp"]
+    pub static mut shell_pgrp: libc::pid_t;
+
 }
 
 /// Allocate a copy of `s` using bash's `xmalloc`.
