@@ -568,7 +568,7 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        let vscode_nonce = bash_funcs::get_env_variable("VSCODE_NONCE");
+        let vscode_nonce = bash_funcs::get_envvar_value("VSCODE_NONCE");
 
         log::info!("vscode_nonce: {:?}", vscode_nonce);
 
@@ -1470,8 +1470,9 @@ impl<'a> App<'a> {
             }
             dparser::TokenAnnotation::IsEnvVar => {
                 let env_var_name = &token.token.value;
-                let tooltip = match bash_funcs::get_env_variable(env_var_name) {
-                    Some(value) => format!("${}={}", env_var_name, value),
+
+                let tooltip = match bash_funcs::get_shell_var(env_var_name) {
+                    Some(mut var) => bash_funcs::format_shell_var(&mut var),
                     None => format!("${}=", env_var_name),
                 };
                 Some(buffer_format::WordInfo {

@@ -20,14 +20,14 @@ pub struct BashEnvManager {
 
 impl BashEnvManager {
     pub fn new() -> Self {
-        let executables = if let Some(path_str) = bash_funcs::get_env_variable("PATH") {
+        let executables = if let Some(path_str) = bash_funcs::get_envvar_value("PATH") {
             Self::get_executables_from_path(&path_str)
         } else {
             Vec::new()
         };
 
         let ls_colors =
-            bash_funcs::get_env_variable("LS_COLORS").map(|s| LsColors::from_string(&s));
+            bash_funcs::get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s));
 
         Self {
             defined_aliases: bash_funcs::get_all_aliases(),

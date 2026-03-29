@@ -1,4 +1,5 @@
 use crate::bash_symbols;
+use crate::bash_symbols::ShellVar;
 
 use anyhow::Result;
 
@@ -183,6 +184,19 @@ pub fn get_command_info(cmd: &str) -> (CommandType, String) {
         cache.insert(cmd.to_string(), result.clone());
         result
     }
+}
+
+pub fn format_shell_var(var: &mut bash_symbols::ShellVar) -> String {
+    let (result, output) = with_redirected_stdout(|| unsafe {
+        bash_symbols::show_var_attributes(var, 0, 0);
+    });
+    // remove the prefix up to var.get_name()
+    if let Some(name) = var.get_name() {
+        if let Some(pos) = output.find(&name) {
+            return output[pos..].trim().to_string();
+        }
+    }
+    output
 }
 
 pub fn get_all_aliases() -> Vec<String> {
@@ -548,16 +562,19 @@ pub fn print_copt_flags(flag: c_int) {
     }
 }
 
-pub fn get_env_variable(var_name: &str) -> Option<String> {
+pub fn get_shell_var(var_name: &str) -> Option<ShellVar> {
     unsafe {
         let var_cstr = std::ffi::CString::new(var_name).unwrap();
-        let value_ptr = bash_symbols::getenv(var_cstr.as_ptr());
+        let value_ptr = bash_symbols::find_variable(var_cstr.as_ptr());
         if value_ptr.is_null() {
             return None;
         }
-        let c_str = std::ffi::CStr::from_ptr(value_ptr);
-        c_str.to_str().ok().map(|s| s.to_string())
+        Some((*value_ptr).clone())
     }
+}
+
+pub fn get_envvar_value(var_name: &str) -> Option<String> {
+    get_shell_var(var_name).and_then(|var| var.get_value())
 }
 
 pub fn expand_filename(filename: &str) -> String {
