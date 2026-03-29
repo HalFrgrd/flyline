@@ -14,6 +14,16 @@ use crate::bash_symbols;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EscapeCodes {
+    // OSC 7
+    CurrentDirectory {
+        host: String,
+        path: String,
+    },
+    KittyCurrentDirectory {
+        host: String,
+        path: String,
+    },
+
     // OSC 133 (FinalTerm)
     PromptStart {
         col: u16,
@@ -108,9 +118,20 @@ impl Command for EscapeCodes {
         let bash_pid = unsafe { bash_symbols::shell_pgrp };
 
         match self {
+            // OSC 7
+            EscapeCodes::CurrentDirectory { host, path } => {
+                write!(f, "\x1b]7;file://{}{}\x1b\\", host, path)
+            }
+            EscapeCodes::KittyCurrentDirectory { host, path } => {
+                write!(f, "\x1b]7;kitty-shell-cwd://{}{}\x1b\\", host, path)
+            }
             // OSC 133
             EscapeCodes::PromptStart { .. } => {
-                write!(f, "\x1b]133;A;click_events=1;aid={}\x1b\\", bash_pid)
+                write!(
+                    f,
+                    "\x1b]133;A;click_events=1;aid={};redraw=1\x1b\\",
+                    bash_pid
+                )
             }
             EscapeCodes::PromptEnd { .. } => f.write_str("\x1b]133;B\x1b\\"),
             EscapeCodes::PreExecution { commandline } => match commandline {
@@ -122,8 +143,8 @@ impl Command for EscapeCodes {
                 None => f.write_str("\x1b]133;C\x1b\\"),
             },
             EscapeCodes::ExecutionFinished { exit_code, .. } => match exit_code {
-                Some(code) => write!(f, "\x1b]133;D;{}\x1b\\", code),
-                None => f.write_str("\x1b]133;D\x1b\\"),
+                Some(code) => write!(f, "\x1b]133;D;{};aid={}\x1b\\", code, bash_pid),
+                None => write!(f, "\x1b]133;D;aid={}\x1b\\", bash_pid),
             },
 
             // OSC 633

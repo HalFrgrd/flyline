@@ -310,6 +310,23 @@ impl<'a> App<'a> {
         // Send execution finished escape codes (previous command has completed).
         if self.settings.send_shell_integration_codes {
             let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
+            let hostname = unsafe {
+                let ptr = bash_symbols::current_host_name;
+                if ptr.is_null() {
+                    String::new()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            };
+            let cwd = unsafe {
+                let ptr = bash_symbols::get_working_directory(c"flyline".as_ptr());
+                if ptr.is_null() {
+                    String::new()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            };
+
             log::info!(
                 "Sending execution finished escape codes with exit value {}",
                 last_command_exit_value
@@ -321,6 +338,14 @@ impl<'a> App<'a> {
                 },
                 EscapeCodes::VscExecutionFinished {
                     exit_code: Some(last_command_exit_value),
+                },
+                EscapeCodes::CurrentDirectory {
+                    host: hostname.clone(),
+                    path: cwd.clone(),
+                },
+                EscapeCodes::KittyCurrentDirectory {
+                    host: hostname,
+                    path: cwd,
                 },
             ])
             .unwrap_or_else(|e| {
@@ -533,36 +558,40 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        // Send pre-execution escape codes (command is about to run).
-        if self.settings.send_shell_integration_codes {
-            let mut codes = vec![];
-            if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) = self.mode {
-                codes.push(EscapeCodes::VscCommandLine {
-                    commandline: cmd.clone(),
-                    nonce: None,
-                });
-            }
-            codes.push(EscapeCodes::PreExecution {
-                commandline: if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) =
-                    self.mode
-                {
-                    Some(cmd.clone())
-                } else {
-                    None
-                },
-            });
-            codes.push(EscapeCodes::VscPreExecution);
-            shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
-                log::error!("Failed to write pre-execution escape codes: {}", e);
-            });
-        }
-
         match self.mode {
-            AppRunningState::Exiting(exit_state) => exit_state,
+            AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
+                if self.settings.send_shell_integration_codes {
+                    let codes = vec![
+                        EscapeCodes::VscCommandLine {
+                            commandline: cmd.clone(),
+                            nonce: None,
+                        },
+                        EscapeCodes::PreExecution {
+                            commandline: Some(cmd.clone()),
+                        },
+                        EscapeCodes::VscPreExecution,
+                    ];
+
+                    shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                        log::error!("Failed to write pre-execution escape codes: {}", e);
+                    });
+                }
+
+                log::info!("Exiting with command: {}", cmd);
+                ExitState::WithCommand(cmd)
+            }
             _ => {
-                log::error!(
-                    "Exited run loop without valid exit state, defaulting to ExitingWithoutCommand"
-                );
+                if self.settings.send_shell_integration_codes {
+                    let codes = vec![
+                        EscapeCodes::PreExecution { commandline: None },
+                        EscapeCodes::VscPreExecution,
+                    ];
+
+                    shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                        log::error!("Failed to write pre-execution escape codes: {}", e);
+                    });
+                }
+
                 ExitState::WithoutCommand
             }
         }
