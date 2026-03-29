@@ -266,7 +266,7 @@ impl<'a> App<'a> {
         let buffer = TextBuffer::new("");
         let formatted_buffer_cache = FormattedBuffer::default();
 
-        bash_funcs::reset_call_type_cache();
+        bash_funcs::reset_caches();
 
         App {
             mode: AppRunningState::Running,
@@ -568,7 +568,7 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        let vscode_nonce = bash_funcs::get_env_variable("VSCODE_NONCE");
+        let vscode_nonce = bash_funcs::get_envvar_value("VSCODE_NONCE");
 
         log::info!("vscode_nonce: {:?}", vscode_nonce);
 
@@ -1470,10 +1470,9 @@ impl<'a> App<'a> {
             }
             dparser::TokenAnnotation::IsEnvVar => {
                 let env_var_name = &token.token.value;
-                let tooltip = match bash_funcs::get_env_variable(env_var_name) {
-                    Some(value) => format!("${}={}", env_var_name, value),
-                    None => format!("${}=", env_var_name),
-                };
+
+                let tooltip = bash_funcs::format_shell_var(env_var_name);
+
                 Some(buffer_format::WordInfo {
                     tooltip: Some(tooltip),
                     is_recognised_command: false,

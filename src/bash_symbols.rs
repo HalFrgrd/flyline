@@ -1,4 +1,5 @@
 use libc::{c_char, c_int, c_uint};
+use std::fmt::Debug;
 
 pub const EOF: c_int = -1;
 
@@ -334,6 +335,10 @@ unsafe extern "C" {
     // char* getenv(const char* name);
     pub fn getenv(name: *const c_char) -> *mut c_char;
 
+    // variables.h
+    // SHELL_VAR * find_variable (const char *name)
+    pub fn find_variable(name: *const c_char) -> *mut ShellVar;
+
     // common.h
     // int evalstring (char *string, const char *from_file, int flags)
     pub fn evalstring(string: *mut c_char, from_file: *const c_char, flags: c_int) -> c_int;
@@ -387,6 +392,8 @@ unsafe extern "C" {
     #[link_name = "current_host_name"]
     pub static mut current_host_name: *mut c_char;
 
+    // extern int show_var_attributes (SHELL_VAR *, int, int);
+    pub fn show_var_attributes(var: *mut ShellVar, flags: c_int, output_fd: c_int) -> c_int;
 }
 
 /// Allocate a copy of `s` using bash's `xmalloc`.
@@ -446,6 +453,7 @@ pub struct Alias {
 // variables.h
 #[repr(C)]
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct ShellVar {
     pub name: *mut c_char,      // Symbol that the user types.
     pub value: *mut c_char,     // Value that is returned.
@@ -455,6 +463,145 @@ pub struct ShellVar {
     pub attributes: c_int,                                 // export, readonly, array, invisible...
     pub context: c_int, // Which context this variable belongs to.
 }
+
+impl ShellVar {
+    pub fn get_value(&self) -> Option<String> {
+        if self.value.is_null() {
+            None
+        } else {
+            unsafe {
+                Some(
+                    std::ffi::CStr::from_ptr(self.value)
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            }
+        }
+    }
+
+    pub fn get_name(&self) -> Option<String> {
+        if self.name.is_null() {
+            None
+        } else {
+            unsafe {
+                Some(
+                    std::ffi::CStr::from_ptr(self.name)
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            }
+        }
+    }
+
+    pub fn get_exportstr(&self) -> Option<String> {
+        if self.exportstr.is_null() {
+            None
+        } else {
+            unsafe {
+                Some(
+                    std::ffi::CStr::from_ptr(self.exportstr)
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            }
+        }
+    }
+
+    pub fn is_exported(&self) -> bool {
+        self.attributes & ATT_EXPORTED as c_int != 0
+    }
+
+    pub fn is_readonly(&self) -> bool {
+        self.attributes & ATT_READONLY as c_int != 0
+    }
+
+    pub fn is_array(&self) -> bool {
+        self.attributes & ATT_ARRAY as c_int != 0
+    }
+
+    pub fn is_function(&self) -> bool {
+        self.attributes & ATT_FUNCTION as c_int != 0
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.attributes & ATT_INTEGER as c_int != 0
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.attributes & ATT_LOCAL as c_int != 0
+    }
+
+    pub fn is_associative_array(&self) -> bool {
+        self.attributes & ATT_ASSOC as c_int != 0
+    }
+}
+
+impl Debug for ShellVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShellVar")
+            .field("name", &self.get_name())
+            .field("value", &self.get_value())
+            .field("exportstr", &self.get_exportstr())
+            .field("attributes", &self.attributes)
+            .field("is_exported", &self.is_exported())
+            .field("is_readonly", &self.is_readonly())
+            .field("is_array", &self.is_array())
+            .field("is_function", &self.is_function())
+            .field("is_integer", &self.is_integer())
+            .field("is_local", &self.is_local())
+            .field("is_associative_array", &self.is_associative_array())
+            .finish()
+    }
+}
+
+/* The various attributes that a given variable can have. */
+/* First, the user-visible attributes */
+#[allow(unused)]
+pub const ATT_EXPORTED: libc::c_ulong = 0x0000001; /* export to environment */
+#[allow(unused)]
+pub const ATT_READONLY: libc::c_ulong = 0x0000002; /* cannot change */
+#[allow(unused)]
+pub const ATT_ARRAY: libc::c_ulong = 0x0000004; /* value is an array */
+#[allow(unused)]
+pub const ATT_FUNCTION: libc::c_ulong = 0x0000008; /* value is a function */
+#[allow(unused)]
+pub const ATT_INTEGER: libc::c_ulong = 0x0000010; /* internal representation is int */
+#[allow(unused)]
+pub const ATT_LOCAL: libc::c_ulong = 0x0000020; /* variable is local to a function */
+#[allow(unused)]
+pub const ATT_ASSOC: libc::c_ulong = 0x0000040; /* variable is an associative array */
+#[allow(unused)]
+pub const ATT_TRACE: libc::c_ulong = 0x0000080; /* function is traced with DEBUG trap */
+#[allow(unused)]
+pub const ATT_UPPERCASE: libc::c_ulong = 0x0000100; /* word converted to uppercase on assignment */
+#[allow(unused)]
+pub const ATT_LOWERCASE: libc::c_ulong = 0x0000200; /* word converted to lowercase on assignment */
+#[allow(unused)]
+pub const ATT_CAPCASE: libc::c_ulong = 0x0000400; /* word capitalized on assignment */
+#[allow(unused)]
+pub const ATT_NAMEREF: libc::c_ulong = 0x0000800; /* word is a name reference */
+
+/* Internal attributes used for bookkeeping */
+#[allow(unused)]
+pub const ATT_INVISIBLE: libc::c_ulong = 0x0001000; /* cannot see */
+#[allow(unused)]
+pub const ATT_NOUNSET: libc::c_ulong = 0x0002000; /* cannot unset */
+#[allow(unused)]
+pub const ATT_NOASSIGN: libc::c_ulong = 0x0004000; /* assignment not allowed */
+#[allow(unused)]
+pub const ATT_IMPORTED: libc::c_ulong = 0x0008000; /* came from environment */
+#[allow(unused)]
+pub const ATT_SPECIAL: libc::c_ulong = 0x0010000; /* requires special handling */
+#[allow(unused)]
+pub const ATT_NOFREE: libc::c_ulong = 0x0020000; /* do not free value on unset */
+#[allow(unused)]
+pub const ATT_REGENERATE: libc::c_ulong = 0x0040000; /* regenerate when exported */
+
+/* Internal attributes used for variable scoping. */
+#[allow(unused)]
+pub const ATT_TEMPVAR: libc::c_ulong = 0x0100000; /* variable came from the temp environment */
+#[allow(unused)]
+pub const ATT_PROPAGATE: libc::c_ulong = 0x0200000; /* propagate to previous scope */
 
 // builtins.h
 // };

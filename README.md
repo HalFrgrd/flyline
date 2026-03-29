@@ -275,9 +275,9 @@ Recommended settings
 - You may want to set [`terminal.integrated.macOptionIsMeta`](vscode://settings/terminal.integrated.macOptionIsMeta) so `Option+<KEY>` shortcuts are properly recognised.
 - Enable [`terminal.integrated.enableKittyKeyboardProtocol`](vscode://settings/terminal.integrated.enableKittyKeyboardProtocol) so that the integrated terminal [correctly forwards keystrokes to flyline](https://code.visualstudio.com/updates/v1_109#_new-vt-features). You will need to set [`workbench.settings.alwaysShowAdvancedSettings = 1`](vscode://settings/workbench.settings.alwaysShowAdvancedSettings) to find this setting.
 - If keybindings are not working properly, you can debug by [Toggling Keyboard Shortcuts Troubleshooting](https://code.visualstudio.com/docs/configure/keybindings#_troubleshooting-keyboard-shortcuts).
-- Shell integration WIP (https://github.com/HalFrgrd/flyline/issues/52)
 
 ## macOS
+> [!NOTE]
 > These notes are for when the terminal emulator is running on macOS and flyline is running withing a remote Linux shell
 
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
@@ -285,6 +285,8 @@ Two possible fixes are:
 - Map `Command+<KEY>` to `Control+<KEY>` in your terminal emulator settings.
 - Use a terminal emulator that supports [Kitty's extended keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
+## Shell integration
+Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escpae codes to integrate the shell with the terminal. These are on by default and can be disabled with `flyline --send-shell-integration-codes false`.
 
 # Settings
 

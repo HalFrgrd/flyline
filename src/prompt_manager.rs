@@ -278,7 +278,7 @@ impl PromptManager {
             // Read the raw PS1 env var so we can intercept time format codes
             // before handing the string to decode_prompt_string.  Fall back to
             // the already-expanded readline prompt when PS1 is not available.
-            let ps1_raw = bash_funcs::get_env_variable("PS1").or_else(get_current_readline_prompt);
+            let ps1_raw = bash_funcs::get_envvar_value("PS1").or_else(get_current_readline_prompt);
 
             let ps1 = ps1_raw
                 .and_then(|raw| builder.expand_prompt_string(raw))
@@ -298,14 +298,14 @@ impl PromptManager {
             // Examples:
             // export RPS1='\e[01;32m\t\e[0m'
             // export RPROMPT='\e[01;32m\D{%H:%M:%S}\e[0m'
-            let rps1 = bash_funcs::get_env_variable("RPS1")
-                .or_else(|| bash_funcs::get_env_variable("RPROMPT"))
+            let rps1 = bash_funcs::get_envvar_value("RPS1")
+                .or_else(|| bash_funcs::get_envvar_value("RPROMPT"))
                 .and_then(|raw| builder.expand_prompt_string(raw))
                 .unwrap_or_default();
 
             log::debug!("Parsed RPS1: {:?}", rps1);
 
-            let fill_lines = bash_funcs::get_env_variable("PS1_FILL")
+            let fill_lines = bash_funcs::get_envvar_value("PS1_FILL")
                 .and_then(|raw| builder.expand_prompt_string(raw))
                 .unwrap_or_else(|| vec![Line::from(" ")]);
 
