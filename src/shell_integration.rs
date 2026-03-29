@@ -4,6 +4,8 @@ use crossterm::Command;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{MoveTo, RestorePosition, SavePosition};
 
+use crate::bash_symbols;
+
 /// https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences
 /// https://sw.kovidgoyal.net/kitty/shell-integration/
 /// https://ghostty.org/docs/features/shell-integration#troubleshooting
@@ -103,9 +105,13 @@ impl EscapeCodes {
 
 impl Command for EscapeCodes {
     fn write_ansi(&self, f: &mut impl core::fmt::Write) -> core::fmt::Result {
+        let bash_pid = unsafe { bash_symbols::shell_pgrp };
+
         match self {
             // OSC 133
-            EscapeCodes::PromptStart { .. } => f.write_str("\x1b]133;A;click_events=1\x1b\\"),
+            EscapeCodes::PromptStart { .. } => {
+                write!(f, "\x1b]133;A;click_events=1;aid={}\x1b\\", bash_pid)
+            }
             EscapeCodes::PromptEnd { .. } => f.write_str("\x1b]133;B\x1b\\"),
             EscapeCodes::PreExecution { commandline } => match commandline {
                 Some(cmd) => write!(
