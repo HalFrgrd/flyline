@@ -316,6 +316,25 @@ impl<'a> App<'a> {
             return ExitState::WithoutCommand;
         }
 
+        // Send execution finished escape codes (previous command has completed).
+        if let Ok((col, row)) = crossterm::cursor::position() {
+            shell_integration::write_escape_codes(&[
+                EscapeCodes::ExecutionFinished {
+                    col,
+                    row,
+                    exit_code: None,
+                },
+                EscapeCodes::VscExecutionFinished {
+                    col,
+                    row,
+                    exit_code: None,
+                },
+            ])
+            .unwrap_or_else(|e| {
+                log::error!("Failed to write execution finished escape codes: {}", e);
+            });
+        }
+
         crossterm::terminal::enable_raw_mode().unwrap();
 
         let options = TerminalOptions {
@@ -411,6 +430,10 @@ impl<'a> App<'a> {
                                         col: prompt_start.x,
                                         row: prompt_start.y,
                                     });
+                                    codes.push(EscapeCodes::VscPromptStart {
+                                        col: prompt_start.x,
+                                        row: prompt_start.y,
+                                    });
                                 }
                             }
 
@@ -419,6 +442,10 @@ impl<'a> App<'a> {
                                     prev_contents.term_em_prompt_end() != Some(prompt_end)
                                 }) {
                                     codes.push(EscapeCodes::PromptEnd {
+                                        col: prompt_end.x,
+                                        row: prompt_end.y,
+                                    });
+                                    codes.push(EscapeCodes::VscPromptEnd {
                                         col: prompt_end.x,
                                         row: prompt_end.y,
                                     });
@@ -514,6 +541,25 @@ impl<'a> App<'a> {
         }
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
+
+        // Send pre-execution escape codes (command is about to run).
+        if let Ok((col, row)) = crossterm::cursor::position() {
+            let mut codes = vec![
+                EscapeCodes::PreExecution { col, row },
+                EscapeCodes::VscPreExecution { col, row },
+            ];
+            if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) = self.mode {
+                codes.push(EscapeCodes::VscCommandLine {
+                    col,
+                    row,
+                    commandline: cmd.clone(),
+                    nonce: None,
+                });
+            }
+            shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                log::error!("Failed to write pre-execution escape codes: {}", e);
+            });
+        }
 
         match self.mode {
             AppRunningState::Exiting(exit_state) => exit_state,

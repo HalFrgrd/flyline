@@ -6,27 +6,77 @@ use crossterm::cursor::MoveTo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EscapeCodes {
-    PromptStart { col: u16, row: u16 },
-    PromptEnd { col: u16, row: u16 },
-    // PreExecution(u16, u16),
-    // PostExecution(u16, u16, Option<i32>), // The optional i32 is the exit code for PostExecution
-    // CurrentWorkingDirectory(String),
+    // OSC 133 (FinalTerm)
+    PromptStart {
+        col: u16,
+        row: u16,
+    },
+    PromptEnd {
+        col: u16,
+        row: u16,
+    },
+    PreExecution {
+        col: u16,
+        row: u16,
+    },
+    ExecutionFinished {
+        col: u16,
+        row: u16,
+        exit_code: Option<i32>,
+    },
+
+    // OSC 633 (VS Code)
+    VscPromptStart {
+        col: u16,
+        row: u16,
+    },
+    VscPromptEnd {
+        col: u16,
+        row: u16,
+    },
+    VscPreExecution {
+        col: u16,
+        row: u16,
+    },
+    VscExecutionFinished {
+        col: u16,
+        row: u16,
+        exit_code: Option<i32>,
+    },
+    VscCommandLine {
+        col: u16,
+        row: u16,
+        commandline: String,
+        nonce: Option<String>,
+    },
 }
 
 impl Command for EscapeCodes {
     fn write_ansi(&self, f: &mut impl core::fmt::Write) -> core::fmt::Result {
         match self {
-            EscapeCodes::PromptStart { col: _, row: _ } => f.write_str("\x1b]133;A\x1b\\"),
-            EscapeCodes::PromptEnd { col: _, row: _ } => f.write_str("\x1b]133;B\x1b\\"),
-            // EscapeCodes::PreExecution(row, col) => write!(f, "\x1b]133;C;{};{}\x1b\\", row, col),
-            // EscapeCodes::PostExecution(row, col, exit_code) => {
-            //     if let Some(code) = exit_code {
-            //         write!(f, "\x1b]133;D;{};{};{}\x1b\\", row, col, code)
-            //     } else {
-            //         write!(f, "\x1b]133;D;{};{}\x1b\\", row, col)
-            //     }
-            // }
-            // EscapeCodes::CurrentWorkingDirectory(path) => write!(f, "\x1b]133;P;{}\x1b\\", path),
+            // OSC 133
+            EscapeCodes::PromptStart { .. } => f.write_str("\x1b]133;A\x1b\\"),
+            EscapeCodes::PromptEnd { .. } => f.write_str("\x1b]133;B\x1b\\"),
+            EscapeCodes::PreExecution { .. } => f.write_str("\x1b]133;C\x1b\\"),
+            EscapeCodes::ExecutionFinished { exit_code, .. } => match exit_code {
+                Some(code) => write!(f, "\x1b]133;D;{}\x1b\\", code),
+                None => f.write_str("\x1b]133;D\x1b\\"),
+            },
+
+            // OSC 633
+            EscapeCodes::VscPromptStart { .. } => f.write_str("\x1b]633;A\x1b\\"),
+            EscapeCodes::VscPromptEnd { .. } => f.write_str("\x1b]633;B\x1b\\"),
+            EscapeCodes::VscPreExecution { .. } => f.write_str("\x1b]633;C\x1b\\"),
+            EscapeCodes::VscExecutionFinished { exit_code, .. } => match exit_code {
+                Some(code) => write!(f, "\x1b]633;D;{}\x1b\\", code),
+                None => f.write_str("\x1b]633;D\x1b\\"),
+            },
+            EscapeCodes::VscCommandLine {
+                commandline, nonce, ..
+            } => match nonce {
+                Some(n) => write!(f, "\x1b]633;E;{};{}\x1b\\", commandline, n),
+                None => write!(f, "\x1b]633;E;{}\x1b\\", commandline),
+            },
         }
     }
 }
@@ -35,23 +85,26 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
     let mut queue = std::io::stdout();
 
     for code in codes {
-        let position_command = match code {
-            EscapeCodes::PromptStart { col, row } => Some((*col, *row)),
-            EscapeCodes::PromptEnd { col, row } => Some((*col, *row)),
-            // EscapeCodes::PreExecution(row, col) => Some((*row, *col)),
-            // EscapeCodes::PostExecution(row, col, exit_code) => Some((*row, *col)),
-            // EscapeCodes::CurrentWorkingDirectory(path) => Some((*row, *col)),
+        let position = match code {
+            EscapeCodes::PromptStart { col, row }
+            | EscapeCodes::PromptEnd { col, row }
+            | EscapeCodes::PreExecution { col, row }
+            | EscapeCodes::ExecutionFinished { col, row, .. }
+            | EscapeCodes::VscPromptStart { col, row }
+            | EscapeCodes::VscPromptEnd { col, row }
+            | EscapeCodes::VscPreExecution { col, row }
+            | EscapeCodes::VscExecutionFinished { col, row, .. }
+            | EscapeCodes::VscCommandLine { col, row, .. } => (*col, *row),
         };
 
-        if let Some((col, row)) = position_command {
-            log::debug!(
-                "Moving cursor to ({}, {}) for escape code: {:?}",
-                col,
-                row,
-                code
-            );
-            queue.queue(MoveTo(col, row))?;
-        }
+        let (col, row) = position;
+        log::debug!(
+            "Moving cursor to ({}, {}) for escape code: {:?}",
+            col,
+            row,
+            code
+        );
+        queue.queue(MoveTo(col, row))?;
         log::debug!("Writing escape code: {:?}", code);
         queue.queue(code)?;
     }
