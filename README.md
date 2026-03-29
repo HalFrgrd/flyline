@@ -365,8 +365,15 @@ Options:
           - simple:   Mouse capture is on by default; toggled when Escape is pressed or Alt is pressed/released
           - smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
 
+      --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
+          Send shell integration escape codes (OSC 133 / OSC 633)
+          
+          [possible values: true, false]
+
   -h, --help
           Print help (see a summary with '-h')
+
+Read more at https://github.com/HalFrgrd/flyline
 ```
 <!-- FLYLINE_HELP_END -->
 
