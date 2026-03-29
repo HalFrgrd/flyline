@@ -70,6 +70,7 @@ fn set_panic_hook() {
 pub enum ExitState {
     WithCommand(String),
     WithoutCommand,
+    EOF,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -603,7 +604,11 @@ impl<'a> App<'a> {
                     });
                 }
 
-                ExitState::WithoutCommand
+                if matches!(self.mode, AppRunningState::Exiting(ExitState::EOF)) {
+                    ExitState::EOF
+                } else {
+                    ExitState::WithoutCommand
+                }
             }
         }
     }
@@ -1022,6 +1027,14 @@ impl<'a> App<'a> {
                     }
                 }
             },
+            // Ctrl+D - exit
+            KeyEvent {
+                code: KeyCode::Char('d'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.mode = AppRunningState::Exiting(ExitState::EOF);
+            }
             // Ctrl+C - cancel
             KeyEvent {
                 code: KeyCode::Char('c'),

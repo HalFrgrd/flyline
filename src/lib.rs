@@ -456,6 +456,10 @@ impl Flyline {
 
             self.content = match result {
                 Ok(app::ExitState::WithCommand(cmd)) => cmd.into_bytes(),
+                Ok(app::ExitState::EOF) => {
+                    log::info!("App signaled EOF");
+                    return bash_symbols::EOF;
+                }
                 Ok(app::ExitState::WithoutCommand) => vec![],
                 Err(_) => {
                     eprintln!(
