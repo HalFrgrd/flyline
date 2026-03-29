@@ -266,7 +266,7 @@ impl<'a> App<'a> {
         let buffer = TextBuffer::new("");
         let formatted_buffer_cache = FormattedBuffer::default();
 
-        bash_funcs::reset_call_type_cache();
+        bash_funcs::reset_caches();
 
         App {
             mode: AppRunningState::Running,
@@ -1471,10 +1471,8 @@ impl<'a> App<'a> {
             dparser::TokenAnnotation::IsEnvVar => {
                 let env_var_name = &token.token.value;
 
-                let tooltip = match bash_funcs::get_shell_var(env_var_name) {
-                    Some(mut var) => bash_funcs::format_shell_var(&mut var),
-                    None => format!("${}=", env_var_name),
-                };
+                let tooltip = bash_funcs::format_shell_var(env_var_name);
+
                 Some(buffer_format::WordInfo {
                     tooltip: Some(tooltip),
                     is_recognised_command: false,

@@ -168,11 +168,6 @@ fn get_command_type_uncached(cmd: &str) -> (CommandType, String) {
 
 static CALL_TYPE_CACHE: Mutex<Option<HashMap<String, (CommandType, String)>>> = Mutex::new(None);
 
-pub fn reset_call_type_cache() {
-    let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
-    *cache_guard = None;
-}
-
 pub fn get_command_info(cmd: &str) -> (CommandType, String) {
     let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
     let cache = cache_guard.get_or_insert_with(|| HashMap::new());
@@ -186,17 +181,49 @@ pub fn get_command_info(cmd: &str) -> (CommandType, String) {
     }
 }
 
-pub fn format_shell_var(var: &mut bash_symbols::ShellVar) -> String {
-    let (result, output) = with_redirected_stdout(|| unsafe {
-        bash_symbols::show_var_attributes(var, 0, 0);
-    });
-    // remove the prefix up to var.get_name()
-    if let Some(name) = var.get_name() {
-        if let Some(pos) = output.find(&name) {
-            return output[pos..].trim().to_string();
-        }
+pub fn format_shell_var_uncached(name: &str) -> String {
+    get_shell_var(name)
+        .and_then(|mut var| {
+            let (res, output) = with_redirected_stdout(|| unsafe {
+                bash_symbols::show_var_attributes(&mut var, 0, 0)
+            });
+            if res != 0 {
+                return None;
+            } else {
+                Some(output.trim().to_string())
+            }
+        })
+        .map(|output| {
+            if let Some(pos) = output.find(&name) {
+                format!("${}", output[pos..].trim())
+            } else {
+                output.trim().to_string()
+            }
+        })
+        .unwrap_or_else(|| format!("${}=", name))
+}
+
+static SHELL_VAR_CACHE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+pub fn format_shell_var(name: &str) -> String {
+    let mut cache_guard = SHELL_VAR_CACHE.lock().unwrap();
+    let cache = cache_guard.get_or_insert_with(|| HashMap::new());
+
+    if let Some(res) = cache.get(name) {
+        res.clone()
+    } else {
+        let result = format_shell_var_uncached(name);
+        cache.insert(name.to_string(), result.clone());
+        result
     }
-    output
+}
+
+pub fn reset_caches() {
+    let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
+    *cache_guard = None;
+
+    let mut cache_guard = SHELL_VAR_CACHE.lock().unwrap();
+    *cache_guard = None;
 }
 
 pub fn get_all_aliases() -> Vec<String> {
