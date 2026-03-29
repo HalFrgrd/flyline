@@ -189,13 +189,6 @@ impl DrawnContent {
     }
 
     pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, bool)> {
-        // log::debug!(
-        //     "Getting tagged cell at terminal em coords ({}, {}), offset {}",
-        //     term_em_x,
-        //     term_em_y,
-        //     term_em_offset
-        // );
-
         let content_row = self.term_em_row_to_content_row(term_em_y);
 
         let content_buf_row = self.contents.buf.get(content_row as usize)?;
@@ -316,9 +309,15 @@ impl<'a> App<'a> {
 
         // Send execution finished escape codes (previous command has completed).
         if self.settings.send_shell_integration_codes {
+            let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
+            log::info!(
+                "Sending execution finished escape codes with exit value {}",
+                last_command_exit_value
+            );
+
             shell_integration::write_escape_codes(&[
-                EscapeCodes::ExecutionFinished { exit_code: None },
-                EscapeCodes::VscExecutionFinished { exit_code: None },
+                EscapeCodes::ExecutionFinished { exit_code: Some(last_command_exit_value) },
+                EscapeCodes::VscExecutionFinished { exit_code: Some(last_command_exit_value) },
             ])
             .unwrap_or_else(|e| {
                 log::error!("Failed to write execution finished escape codes: {}", e);
@@ -543,9 +542,6 @@ impl<'a> App<'a> {
                 log::error!("Failed to write pre-execution escape codes: {}", e);
             });
         }
-
-        let cursor_pos = terminal.get_cursor_position().unwrap();
-        log::info!("Final cursor position: {:?}", cursor_pos);
 
         match self.mode {
             AppRunningState::Exiting(exit_state) => exit_state,

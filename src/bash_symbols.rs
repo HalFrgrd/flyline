@@ -376,6 +376,10 @@ unsafe extern "C" {
     #[link_name = "shell_pgrp"]
     pub static mut shell_pgrp: libc::pid_t;
 
+    /* The value returned by the last synchronous command. */
+    #[link_name = "last_command_exit_value"]
+    pub static mut last_command_exit_value: c_int;
+
 }
 
 /// Allocate a copy of `s` using bash's `xmalloc`.
