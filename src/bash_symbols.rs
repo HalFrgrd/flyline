@@ -75,11 +75,11 @@ pub enum BuiltinExitCode {
 #[repr(C)]
 #[allow(dead_code)]
 pub enum StreamType {
-    StNone = 0,
-    StStdin = 1,
-    StStream = 2,
-    StString = 3,
-    StBStream = 4,
+    None = 0,
+    Stdin = 1,
+    Stream = 2,
+    String = 3,
+    BStream = 4,
 }
 
 // INPUT_STREAM union from bash
@@ -87,7 +87,7 @@ pub enum StreamType {
 pub union InputStreamLocation {
     pub string: *mut c_char,
     _file: *mut libc::c_void, // FILE* - we don't use this
-    _buffered_fd: c_int,      // for st_bstream - we don't use this
+    _buffered_fd: c_int,      // for bstream - we don't use this
 }
 
 // BUFFERED_STREAM from bash's input.h (opaque pointer for our purposes)

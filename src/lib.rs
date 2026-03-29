@@ -581,7 +581,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
         let name = c"flyline";
         let name_ptr = unsafe { bash_symbols::xmalloc_cstr(&name) };
         unsafe {
-            (*bash_input).stream_type = bash_symbols::StreamType::StStdin;
+            (*bash_input).stream_type = bash_symbols::StreamType::Stdin;
             (*bash_input).name = name_ptr;
             (*bash_input).getter = Some(flyline_get_char);
             (*bash_input).ungetter = Some(flyline_unget_char);
@@ -632,8 +632,8 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
                     name,
                     stream.bash_input.stream_type
                 );
-                if stream.bash_input.stream_type == bash_symbols::StreamType::StStdin
-                    || stream.bash_input.stream_type == bash_symbols::StreamType::StNone
+                if stream.bash_input.stream_type == bash_symbols::StreamType::Stdin
+                    || stream.bash_input.stream_type == bash_symbols::StreamType::None
                 {
                     if name.starts_with("flyline") {
                         log::trace!(
@@ -679,7 +679,7 @@ pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
 
             // we don't have access to yy_readline_(un)get so we can't set it directly
             // but we can call with_input_from_stdin which will set it up properly
-            bash_symbols::bash_input.stream_type = bash_symbols::StreamType::StNone;
+            bash_symbols::bash_input.stream_type = bash_symbols::StreamType::None;
             bash_symbols::with_input_from_stdin();
         } else {
             let head: &mut bash_symbols::StreamSaver = &mut *bash_symbols::stream_list;
