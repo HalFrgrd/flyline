@@ -317,23 +317,13 @@ impl<'a> App<'a> {
         }
 
         // Send execution finished escape codes (previous command has completed).
-        if let Ok((col, row)) = crossterm::cursor::position() {
-            shell_integration::write_escape_codes(&[
-                EscapeCodes::ExecutionFinished {
-                    col,
-                    row,
-                    exit_code: None,
-                },
-                EscapeCodes::VscExecutionFinished {
-                    col,
-                    row,
-                    exit_code: None,
-                },
-            ])
-            .unwrap_or_else(|e| {
-                log::error!("Failed to write execution finished escape codes: {}", e);
-            });
-        }
+        shell_integration::write_escape_codes(&[
+            EscapeCodes::ExecutionFinished { exit_code: None },
+            EscapeCodes::VscExecutionFinished { exit_code: None },
+        ])
+        .unwrap_or_else(|e| {
+            log::error!("Failed to write execution finished escape codes: {}", e);
+        });
 
         crossterm::terminal::enable_raw_mode().unwrap();
 
@@ -543,23 +533,16 @@ impl<'a> App<'a> {
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         // Send pre-execution escape codes (command is about to run).
-        if let Ok((col, row)) = crossterm::cursor::position() {
-            let mut codes = vec![
-                EscapeCodes::PreExecution { col, row },
-                EscapeCodes::VscPreExecution { col, row },
-            ];
-            if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) = self.mode {
-                codes.push(EscapeCodes::VscCommandLine {
-                    col,
-                    row,
-                    commandline: cmd.clone(),
-                    nonce: None,
-                });
-            }
-            shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
-                log::error!("Failed to write pre-execution escape codes: {}", e);
+        let mut codes = vec![EscapeCodes::PreExecution, EscapeCodes::VscPreExecution];
+        if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) = self.mode {
+            codes.push(EscapeCodes::VscCommandLine {
+                commandline: cmd.clone(),
+                nonce: None,
             });
         }
+        shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+            log::error!("Failed to write pre-execution escape codes: {}", e);
+        });
 
         match self.mode {
             AppRunningState::Exiting(exit_state) => exit_state,
