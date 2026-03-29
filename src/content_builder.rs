@@ -528,10 +528,10 @@ impl MatrixAnimState {
         // Remove tendrils that have moved off the bottom of the screen
         let max_possible_tendril_height = num_rows as usize + Self::TENDRIL_MAX_LEN;
         for tendril in &mut self.tendrils {
-            if let Some((y, _)) = tendril {
-                if *y >= max_possible_tendril_height {
-                    *tendril = None;
-                }
+            if let Some((y, _)) = tendril
+                && *y >= max_possible_tendril_height
+            {
+                *tendril = None;
             }
         }
 

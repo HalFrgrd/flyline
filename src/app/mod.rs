@@ -134,7 +134,7 @@ pub fn get_command(settings: &Settings) -> ExitState {
 enum ContentMode {
     Normal,
     FuzzyHistorySearch,
-    TabCompletion(ActiveSuggestions),
+    TabCompletion(Box<ActiveSuggestions>),
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
     AiMode {
@@ -442,39 +442,36 @@ impl<'a> App<'a> {
                             if let Some(new_drawn_contents) = self.last_contents.as_ref() {
                                 if let Some(prompt_start) =
                                     new_drawn_contents.term_em_prompt_start()
-                                {
-                                    if !self.mode.is_running()
+                                    && (!self.mode.is_running()
                                         || prev_contents.as_ref().is_none_or(|prev_contents| {
                                             prev_contents.term_em_prompt_start()
                                                 != Some(prompt_start)
-                                        })
-                                    {
-                                        codes.push(EscapeCodes::VscPromptStart {
-                                            col: prompt_start.x,
-                                            row: prompt_start.y,
-                                        });
-                                        codes.push(EscapeCodes::PromptStart {
-                                            col: prompt_start.x,
-                                            row: prompt_start.y,
-                                        });
-                                    }
+                                        }))
+                                {
+                                    codes.push(EscapeCodes::VscPromptStart {
+                                        col: prompt_start.x,
+                                        row: prompt_start.y,
+                                    });
+                                    codes.push(EscapeCodes::PromptStart {
+                                        col: prompt_start.x,
+                                        row: prompt_start.y,
+                                    });
                                 }
 
-                                if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end() {
-                                    if !self.mode.is_running()
+                                if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end()
+                                    && (!self.mode.is_running()
                                         || prev_contents.as_ref().is_none_or(|prev_contents| {
                                             prev_contents.term_em_prompt_end() != Some(prompt_end)
-                                        })
-                                    {
-                                        codes.push(EscapeCodes::VscPromptEnd {
-                                            col: prompt_end.x,
-                                            row: prompt_end.y,
-                                        });
-                                        codes.push(EscapeCodes::PromptEnd {
-                                            col: prompt_end.x,
-                                            row: prompt_end.y,
-                                        });
-                                    }
+                                        }))
+                                {
+                                    codes.push(EscapeCodes::VscPromptEnd {
+                                        col: prompt_end.x,
+                                        row: prompt_end.y,
+                                    });
+                                    codes.push(EscapeCodes::PromptEnd {
+                                        col: prompt_end.x,
+                                        row: prompt_end.y,
+                                    });
                                 }
                             }
 
@@ -1258,16 +1255,14 @@ impl<'a> App<'a> {
 
         if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
             // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
-            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx) {
-                if closing_token.token.byte_range().start == cursor_pos {
-                    if let dparser::TokenAnnotation::IsClosing {
-                        is_auto_inserted: true,
-                        ..
-                    } = closing_token.annotation
-                    {
-                        self.buffer.delete_forwards();
-                    }
-                }
+            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx)
+                && closing_token.token.byte_range().start == cursor_pos
+                && let dparser::TokenAnnotation::IsClosing {
+                    is_auto_inserted: true,
+                    ..
+                } = closing_token.annotation
+            {
+                self.buffer.delete_forwards();
             }
         }
     }
@@ -1462,7 +1457,7 @@ impl<'a> App<'a> {
     fn wordinfo_fn(token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
         match &token.annotation {
             dparser::TokenAnnotation::IsCommandWord(value) => {
-                let (command_type, description) = bash_funcs::get_command_info(&value);
+                let (command_type, description) = bash_funcs::get_command_info(value);
                 Some(buffer_format::WordInfo {
                     tooltip: Some(description.to_string()),
                     is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
@@ -1860,7 +1855,7 @@ impl<'a> App<'a> {
                     );
                 } else {
                     let grid_start_row = content.cursor_position().row;
-                    let num_rows_for_suggestions = rows_left_before_end_of_screen.min(15).max(2);
+                    let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
                     let mut rows: Vec<Vec<(Vec<Span>, usize)>> =
                         vec![vec![]; num_rows_for_suggestions as usize];
 
@@ -1902,8 +1897,7 @@ impl<'a> App<'a> {
                 let num_rows_for_instructions = if self.settings.tutorial_mode { 2 } else { 1 };
                 let num_rows_for_results = rows_left_before_end_of_screen
                     .saturating_sub(num_rows_for_instructions)
-                    .min(30)
-                    .max(2);
+                    .clamp(2, 30);
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager

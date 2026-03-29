@@ -170,7 +170,7 @@ static CALL_TYPE_CACHE: Mutex<Option<HashMap<String, (CommandType, String)>>> = 
 
 pub fn get_command_info(cmd: &str) -> (CommandType, String) {
     let mut cache_guard = CALL_TYPE_CACHE.lock().unwrap();
-    let cache = cache_guard.get_or_insert_with(|| HashMap::new());
+    let cache = cache_guard.get_or_insert_with(HashMap::new);
 
     if let Some(res) = cache.get(cmd) {
         res.clone()
@@ -188,13 +188,13 @@ pub fn format_shell_var_uncached(name: &str) -> String {
                 bash_symbols::show_var_attributes(&mut var, 0, 0)
             });
             if res != 0 {
-                return None;
+                None
             } else {
                 Some(output.trim().to_string())
             }
         })
         .map(|output| {
-            if let Some(pos) = output.find(&name) {
+            if let Some(pos) = output.find(name) {
                 format!("${}", output[pos..].trim())
             } else {
                 output.trim().to_string()
@@ -207,7 +207,7 @@ static SHELL_VAR_CACHE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None
 
 pub fn format_shell_var(name: &str) -> String {
     let mut cache_guard = SHELL_VAR_CACHE.lock().unwrap();
-    let cache = cache_guard.get_or_insert_with(|| HashMap::new());
+    let cache = cache_guard.get_or_insert_with(HashMap::new);
 
     if let Some(res) = cache.get(name) {
         res.clone()
@@ -674,7 +674,7 @@ impl QuoteType {
         }
     }
 
-    pub fn into_byte(&self) -> u8 {
+    pub fn into_byte(self) -> u8 {
         match self {
             QuoteType::SingleQuote => b'\'',
             QuoteType::DoubleQuote => b'"',

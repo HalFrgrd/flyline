@@ -219,8 +219,8 @@ impl HistoryManager {
     }
 
     fn parse_timestamp(line: &str) -> Option<u64> {
-        if line.starts_with('#') {
-            line[1..].trim().parse::<u64>().ok()
+        if let Some(stripped) = line.strip_prefix('#') {
+            stripped.trim().parse::<u64>().ok()
         } else {
             None
         }
