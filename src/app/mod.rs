@@ -14,10 +14,11 @@ use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::settings::{MouseMode, Settings};
-use crate::tab_completion_context;
+use crate::shell_integration::EscapeCodes;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
+use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{
     self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
     MouseEventKind,
@@ -150,6 +151,70 @@ enum ContentMode {
     },
 }
 
+struct DrawnContent {
+    contents: Contents,
+    /// The terminal row (absolute) where the content starts. Used for translating mouse coordinates.
+    viewport_start: u16,
+    content_visible_row_range: std::ops::Range<u16>,
+}
+
+impl DrawnContent {
+    pub fn content_row_to_term_em_row(&self, content_row: u16) -> u16 {
+        content_row.saturating_sub(self.content_visible_row_range.start) + self.viewport_start
+    }
+
+    pub fn term_em_row_to_content_row(&self, term_em_row: u16) -> u16 {
+        term_em_row.saturating_sub(self.viewport_start) + self.content_visible_row_range.start
+    }
+
+    pub fn term_em_cursor_pos(&self) -> Option<Position> {
+        self.contents.term_cursor_pos.map(|cursor_pos| Position {
+            x: cursor_pos.col,
+            y: self.content_row_to_term_em_row(cursor_pos.row),
+        })
+    }
+
+    pub fn term_em_prompt_start(&self) -> Option<Position> {
+        self.contents.prompt_start.map(|prompt_start| Position {
+            x: prompt_start.col,
+            y: self.content_row_to_term_em_row(prompt_start.row),
+        })
+    }
+
+    pub fn term_em_prompt_end(&self) -> Option<Position> {
+        self.contents.prompt_end.map(|prompt_end| Position {
+            x: prompt_end.col,
+            y: self.content_row_to_term_em_row(prompt_end.row),
+        })
+    }
+
+    pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, bool)> {
+        let content_row = self.term_em_row_to_content_row(term_em_y);
+
+        let content_buf_row = self.contents.buf.get(content_row as usize)?;
+
+        let direct_contact = content_buf_row.get(term_em_x as usize);
+
+        if direct_contact.is_some_and(|cell| {
+            matches!(
+                cell.tag,
+                Tag::Command(_) | Tag::Suggestion(_) | Tag::HistoryResult(_) | Tag::AiResult(_)
+            )
+        }) {
+            return direct_contact.map(|cell| (cell.tag, true));
+        }
+
+        content_buf_row
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(col_idx, tagged_cell)| {
+                *col_idx <= term_em_x as usize && matches!(tagged_cell.tag, Tag::Command(_))
+            })
+            .map(|(_, cell)| (cell.tag, false))
+    }
+}
+
 struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
@@ -166,12 +231,11 @@ struct App<'a> {
     history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
     content_mode: ContentMode,
-    last_contents: Option<(Contents, i16)>,
+    last_contents: Option<DrawnContent>,
     last_mouse_over_cell: Option<Tag>,
     tooltip: Option<String>,
     settings: &'a Settings,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
-    last_viewport_top: u16,
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
 }
@@ -229,7 +293,6 @@ impl<'a> App<'a> {
             last_mouse_over_cell: None,
             tooltip: None,
             settings,
-            last_viewport_top: 0,
             last_draw_time: std::time::Instant::now(),
         }
     }
@@ -244,6 +307,57 @@ impl<'a> App<'a> {
             return ExitState::WithoutCommand;
         }
 
+        // Send execution finished escape codes (previous command has completed).
+        if self.settings.send_shell_integration_codes {
+            let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
+            let hostname = unsafe {
+                let ptr = bash_symbols::current_host_name;
+                if ptr.is_null() {
+                    String::new()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            };
+            let cwd = unsafe {
+                let ptr = bash_symbols::get_working_directory(c"flyline".as_ptr());
+                if ptr.is_null() {
+                    String::new()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            };
+
+            log::info!(
+                "Sending execution finished escape codes with exit value {}",
+                last_command_exit_value
+            );
+
+            shell_integration::write_escape_codes(&[
+                EscapeCodes::VscExecutionFinished {
+                    exit_code: Some(last_command_exit_value),
+                },
+                EscapeCodes::VscProperties {
+                    cwd: cwd.clone(),
+                    has_rich_command_detection: true,
+                },
+                // If found that this one needs to be after VscExecutionFinished for some reason to be reliably picked up by vscode's terminal.
+                EscapeCodes::ExecutionFinished {
+                    exit_code: Some(last_command_exit_value),
+                },
+                EscapeCodes::CurrentDirectory {
+                    host: hostname.clone(),
+                    path: cwd.clone(),
+                },
+                EscapeCodes::KittyCurrentDirectory {
+                    host: hostname,
+                    path: cwd.clone(),
+                },
+            ])
+            .unwrap_or_else(|e| {
+                log::error!("Failed to write execution finished escape codes: {}", e);
+            });
+        }
+
         crossterm::terminal::enable_raw_mode().unwrap();
 
         let options = TerminalOptions {
@@ -251,9 +365,7 @@ impl<'a> App<'a> {
         };
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
-        if !self.settings.use_term_emulator_cursor {
-            terminal.hide_cursor().unwrap();
-        }
+
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         let mut redraw = true;
@@ -303,19 +415,15 @@ impl<'a> App<'a> {
             if redraw {
                 let frame_area = terminal.get_frame().area();
 
-                let mut content =
+                let content =
                     self.create_content(frame_area.width, frame_area.y, last_terminal_area.height);
-
-                if !self.mode.is_running() {
-                    // so that we can put the terminal emulators cursor below the content
-                    content.increase_buf_single_row();
-                }
 
                 let desired_height = if needs_screen_cleared {
                     last_terminal_area.height
                 } else {
-                    content.height().min(last_terminal_area.height)
+                    content.height()
                 };
+
                 needs_screen_cleared = false;
                 terminal
                     .set_viewport_height(desired_height)
@@ -323,25 +431,61 @@ impl<'a> App<'a> {
                         log::error!("Failed to set viewport height: {}", e);
                     });
 
-                if let Err(e) = terminal.draw(|f| self.ui(f, content)) {
-                    log::error!("Failed to draw terminal UI: {}", e);
-                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
-                } else {
-                    self.last_draw_time = std::time::Instant::now();
-                }
+                let prev_contents = std::mem::take(&mut self.last_contents);
+                match terminal.draw(|f| self.ui(f, content)) {
+                    Ok(_) => {
+                        self.last_draw_time = std::time::Instant::now();
 
-                if !self.mode.is_running() {
-                    // put the terminal emulators cursor just below the content
-                    let final_cursor_row = terminal.get_frame().area().bottom().saturating_sub(1);
-                    let pos = Position {
-                        x: 0,
-                        y: final_cursor_row,
-                    };
+                        if self.settings.send_shell_integration_codes {
+                            let mut codes = vec![];
 
-                    if let Err(e) = terminal.set_cursor_position(pos) {
-                        log::error!("Failed to set cursor position: {}", e);
-                    } else {
-                        log::debug!("Set cursor position to ({}, {})", 0, final_cursor_row);
+                            if let Some(new_drawn_contents) = self.last_contents.as_ref() {
+                                if let Some(prompt_start) =
+                                    new_drawn_contents.term_em_prompt_start()
+                                {
+                                    if !self.mode.is_running()
+                                        || prev_contents.as_ref().is_none_or(|prev_contents| {
+                                            prev_contents.term_em_prompt_start()
+                                                != Some(prompt_start)
+                                        })
+                                    {
+                                        codes.push(EscapeCodes::VscPromptStart {
+                                            col: prompt_start.x,
+                                            row: prompt_start.y,
+                                        });
+                                        codes.push(EscapeCodes::PromptStart {
+                                            col: prompt_start.x,
+                                            row: prompt_start.y,
+                                        });
+                                    }
+                                }
+
+                                if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end() {
+                                    if !self.mode.is_running()
+                                        || prev_contents.as_ref().is_none_or(|prev_contents| {
+                                            prev_contents.term_em_prompt_end() != Some(prompt_end)
+                                        })
+                                    {
+                                        codes.push(EscapeCodes::VscPromptEnd {
+                                            col: prompt_end.x,
+                                            row: prompt_end.y,
+                                        });
+                                        codes.push(EscapeCodes::PromptEnd {
+                                            col: prompt_end.x,
+                                            row: prompt_end.y,
+                                        });
+                                    }
+                                }
+                            }
+
+                            shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                                log::error!("Failed to write escape codes: {}", e);
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to draw terminal UI: {}", e);
+                        self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
                     }
                 }
             }
@@ -424,12 +568,44 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
+        let vscode_nonce = bash_funcs::get_env_variable("VSCODE_NONCE");
+
+        log::info!("vscode_nonce: {:?}", vscode_nonce);
+
         match self.mode {
-            AppRunningState::Exiting(exit_state) => exit_state,
+            AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
+                if self.settings.send_shell_integration_codes {
+                    let codes = vec![
+                        EscapeCodes::VscCommandLine {
+                            commandline: cmd.clone(),
+                            nonce: vscode_nonce,
+                        },
+                        EscapeCodes::VscPreExecution,
+                        EscapeCodes::PreExecution {
+                            commandline: Some(cmd.clone()),
+                        },
+                    ];
+
+                    shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                        log::error!("Failed to write pre-execution escape codes: {}", e);
+                    });
+                }
+
+                log::info!("Exiting with command: {}", cmd);
+                ExitState::WithCommand(cmd)
+            }
             _ => {
-                log::error!(
-                    "Exited run loop without valid exit state, defaulting to ExitingWithoutCommand"
-                );
+                if self.settings.send_shell_integration_codes {
+                    let codes = vec![
+                        EscapeCodes::VscPreExecution,
+                        EscapeCodes::PreExecution { commandline: None },
+                    ];
+
+                    shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                        log::error!("Failed to write pre-execution escape codes: {}", e);
+                    });
+                }
+
                 ExitState::WithoutCommand
             }
         }
@@ -459,7 +635,11 @@ impl<'a> App<'a> {
                 }
                 _ => {}
             }
-            if mouse.row < self.last_viewport_top {
+            if self
+                .last_contents
+                .as_ref()
+                .is_some_and(|contents| mouse.row < contents.viewport_start)
+            {
                 // Only disable mouse capture when the user clicks above the viewport,
                 // indicating intent to interact with terminal content above (e.g. select text).
                 // Mere mouse movement above the viewport does not disable capture.
@@ -474,9 +654,11 @@ impl<'a> App<'a> {
 
         let mut cursor_directly_on_cell = true;
 
-        match self.last_contents.as_ref().and_then(|(contents, offset)| {
-            contents.get_tagged_cell(mouse.column, mouse.row, *offset)
-        }) {
+        match self
+            .last_contents
+            .as_ref()
+            .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
+        {
             Some((tag @ Tag::Suggestion(idx), true)) => {
                 self.last_mouse_over_cell = Some(tag);
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
@@ -1473,6 +1655,8 @@ impl<'a> App<'a> {
         let mut content = Contents::new(width);
         let empty_line = Line::from(vec![]);
 
+        content.prompt_start = Some(content.cursor_position());
+
         let (lprompt, rprompt, fill_span) = self
             .prompt_manager
             .get_ps1_lines(self.settings.show_animations);
@@ -1489,13 +1673,14 @@ impl<'a> App<'a> {
                     true,
                 );
             } else {
-                // log::debug!("Writing PS1 line:  right='{}'", r_line);
                 content.write_line_lrjustified(l_line, &fill_span, r_line, Tag::Ps1Prompt, false);
             }
             if !is_last {
                 content.newline();
             }
         }
+
+        content.prompt_end = Some(content.cursor_position());
 
         let mut line_idx = 0;
         let mut cursor_pos_maybe = None;
@@ -1586,11 +1771,7 @@ impl<'a> App<'a> {
                 }
             };
 
-            content.set_term_cursor_pos(
-                cursor_anim_pos,
-                cursor_style,
-                self.settings.use_term_emulator_cursor,
-            );
+            content.set_term_cursor_pos(cursor_anim_pos, cursor_style);
         }
 
         if self.mode.is_running()
@@ -1946,6 +2127,14 @@ impl<'a> App<'a> {
             content.apply_matrix_anim(now, viewport_top, terminal_height);
         }
 
+        if !self.mode.is_running() {
+            content.move_to_final_line();
+            content.newline();
+            let cursor_pos = content.cursor_position();
+            content.set_term_cursor_pos(cursor_pos, None);
+            content.set_focus_row(cursor_pos.row);
+        }
+
         content
     }
 
@@ -1953,14 +2142,13 @@ impl<'a> App<'a> {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
 
-        // Record where the viewport starts for smart mouse-mode position checks.
-        self.last_viewport_top = frame_area.y;
-
-        let (start_content_row, _end_content_row) =
-            content.get_row_range_to_show(frame_area.height);
+        let content_visible_row_range = content.get_row_range_to_show(frame_area.height);
 
         for row_idx in 0..frame_area.height {
-            match content.buf.get((start_content_row + row_idx) as usize) {
+            match content
+                .buf
+                .get((content_visible_row_range.start + row_idx) as usize)
+            {
                 Some(row) => {
                     for (x, tagged_cell) in row.iter().enumerate() {
                         if x < frame_area.width as usize {
@@ -1974,19 +2162,19 @@ impl<'a> App<'a> {
             };
         }
 
-        if content.use_term_emulator_cursor
-            && let Some(cursor_pos) = content.term_cursor_pos
+        let drawn_content = DrawnContent {
+            contents: content,
+            viewport_start: frame_area.y,
+            content_visible_row_range,
+        };
+
+        if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
+            && (self.settings.use_term_emulator_cursor || !self.mode.is_running())
         {
-            let screen_row = cursor_pos.row.saturating_sub(start_content_row);
-            if screen_row < frame_area.height && cursor_pos.col < frame_area.width {
-                frame.set_cursor_position(Position {
-                    x: cursor_pos.col,
-                    y: screen_row + frame_area.y,
-                });
-            }
+            frame.set_cursor_position(term_em_cursor);
         }
 
-        self.last_contents = Some((content, (frame_area.y as i16) - start_content_row as i16));
+        self.last_contents = Some(drawn_content);
     }
 }
 

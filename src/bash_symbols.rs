@@ -376,6 +376,17 @@ unsafe extern "C" {
     #[link_name = "shell_pgrp"]
     pub static mut shell_pgrp: libc::pid_t;
 
+    /* The value returned by the last synchronous command. */
+    #[link_name = "last_command_exit_value"]
+    pub static mut last_command_exit_value: c_int;
+
+    // char * get_working_directory (const char *for_whom)
+    pub fn get_working_directory(for_whom: *const c_char) -> *mut c_char;
+
+    // char *current_host_name = (char *)NULL;
+    #[link_name = "current_host_name"]
+    pub static mut current_host_name: *mut c_char;
+
 }
 
 /// Allocate a copy of `s` using bash's `xmalloc`.
