@@ -4,6 +4,12 @@ use crossterm::Command;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{MoveTo, RestorePosition, SavePosition};
 
+/// https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences
+/// https://sw.kovidgoyal.net/kitty/shell-integration/
+/// https://ghostty.org/docs/features/shell-integration#troubleshooting
+/// Ghostty right click -> Terminal inspector -> Terminal IO -> Filter for osc
+/// And you click on the event to see more details.
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EscapeCodes {
     // OSC 133 (FinalTerm)
@@ -15,7 +21,9 @@ pub enum EscapeCodes {
         col: u16,
         row: u16,
     },
-    PreExecution,
+    PreExecution {
+        commandline: Option<String>,
+    },
     ExecutionFinished {
         exit_code: Option<i32>,
     },
@@ -29,7 +37,7 @@ pub enum EscapeCodes {
         col: u16,
         row: u16,
     },
-    VscPreExecution,
+    VscPreExecution, // Vs Code has another escape code for sending the command
     VscExecutionFinished {
         exit_code: Option<i32>,
     },
@@ -39,13 +47,74 @@ pub enum EscapeCodes {
     },
 }
 
+impl EscapeCodes {
+    fn osc_133_encode_string(s: &str) -> String {
+        // encoded by %q means the encoding produced by the %q format to printf in bash and similar shells
+        if s.is_empty() {
+            return "''".to_string();
+        }
+
+        let needs_quoting = s.chars().any(|c| {
+            !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '@' | '%' | '+' | ',' | '.' | '/' | '-' | '_' | ':')
+        });
+
+        if !needs_quoting {
+            return s.to_string();
+        }
+
+        let mut result = String::from("$'");
+        for c in s.chars() {
+            match c {
+                '\x07' => result.push_str("\\a"),
+                '\x08' => result.push_str("\\b"),
+                '\t' => result.push_str("\\t"),
+                '\n' => result.push_str("\\n"),
+                '\x0B' => result.push_str("\\v"),
+                '\x0C' => result.push_str("\\f"),
+                '\r' => result.push_str("\\r"),
+                '\x1B' => result.push_str("\\E"),
+                '\'' => result.push_str("\\'"),
+                '\\' => result.push_str("\\\\"),
+                c if (c as u32) < 0x20 || c as u32 == 0x7F => {
+                    result.push_str(&format!("\\x{:02x}", c as u32));
+                }
+                c => result.push(c),
+            }
+        }
+        result.push('\'');
+        result
+    }
+
+    fn vsc_encode_string(s: &str) -> String {
+        // The command line can escape ASCII characters using the \xAB format, where AB are the hexadecimal representation of the character code (case insensitive), and escape the \ character using \\. It's required to escape semi-colon (0x3b) and characters 0x20 and below and this is particularly important for new line and semi-colon.
+        s.chars()
+            .map(|c| {
+                if c == '\\' {
+                    "\\\\".to_string()
+                } else if c as u32 <= 0x20 || c == ';' {
+                    format!("\\x{:02x}", c as u32)
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect()
+    }
+}
+
 impl Command for EscapeCodes {
     fn write_ansi(&self, f: &mut impl core::fmt::Write) -> core::fmt::Result {
         match self {
             // OSC 133
-            EscapeCodes::PromptStart { .. } => f.write_str("\x1b]133;A\x1b\\"),
+            EscapeCodes::PromptStart { .. } => f.write_str("\x1b]133;A;click_events=1\x1b\\"),
             EscapeCodes::PromptEnd { .. } => f.write_str("\x1b]133;B\x1b\\"),
-            EscapeCodes::PreExecution => f.write_str("\x1b]133;C\x1b\\"),
+            EscapeCodes::PreExecution { commandline } => match commandline {
+                Some(cmd) => write!(
+                    f,
+                    "\x1b]133;C;cmdline={}\x1b\\",
+                    EscapeCodes::osc_133_encode_string(cmd)
+                ),
+                None => f.write_str("\x1b]133;C\x1b\\"),
+            },
             EscapeCodes::ExecutionFinished { exit_code, .. } => match exit_code {
                 Some(code) => write!(f, "\x1b]133;D;{}\x1b\\", code),
                 None => f.write_str("\x1b]133;D\x1b\\"),
@@ -62,8 +131,17 @@ impl Command for EscapeCodes {
             EscapeCodes::VscCommandLine {
                 commandline, nonce, ..
             } => match nonce {
-                Some(n) => write!(f, "\x1b]633;E;{};{}\x1b\\", commandline, n),
-                None => write!(f, "\x1b]633;E;{}\x1b\\", commandline),
+                Some(n) => write!(
+                    f,
+                    "\x1b]633;E;{};{}\x1b\\",
+                    EscapeCodes::vsc_encode_string(commandline),
+                    n
+                ),
+                None => write!(
+                    f,
+                    "\x1b]633;E;{}\x1b\\",
+                    EscapeCodes::vsc_encode_string(commandline)
+                ),
             },
         }
     }

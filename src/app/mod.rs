@@ -316,8 +316,12 @@ impl<'a> App<'a> {
             );
 
             shell_integration::write_escape_codes(&[
-                EscapeCodes::ExecutionFinished { exit_code: Some(last_command_exit_value) },
-                EscapeCodes::VscExecutionFinished { exit_code: Some(last_command_exit_value) },
+                EscapeCodes::ExecutionFinished {
+                    exit_code: Some(last_command_exit_value),
+                },
+                EscapeCodes::VscExecutionFinished {
+                    exit_code: Some(last_command_exit_value),
+                },
             ])
             .unwrap_or_else(|e| {
                 log::error!("Failed to write execution finished escape codes: {}", e);
@@ -531,13 +535,23 @@ impl<'a> App<'a> {
 
         // Send pre-execution escape codes (command is about to run).
         if self.settings.send_shell_integration_codes {
-            let mut codes = vec![EscapeCodes::PreExecution, EscapeCodes::VscPreExecution];
+            let mut codes = vec![];
             if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) = self.mode {
                 codes.push(EscapeCodes::VscCommandLine {
                     commandline: cmd.clone(),
                     nonce: None,
                 });
             }
+            codes.push(EscapeCodes::PreExecution {
+                commandline: if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) =
+                    self.mode
+                {
+                    Some(cmd.clone())
+                } else {
+                    None
+                },
+            });
+            codes.push(EscapeCodes::VscPreExecution);
             shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
                 log::error!("Failed to write pre-execution escape codes: {}", e);
             });
