@@ -196,6 +196,18 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
     queue.queue(SavePosition)?;
 
     for code in codes {
+        // if !matches!(
+        //     code,
+        //     EscapeCodes::VscCommandLine { .. }
+        //         | EscapeCodes::VscPreExecution
+        //         | EscapeCodes::VscExecutionFinished { .. }
+        //         | EscapeCodes::VscPromptEnd { .. }
+        //         | EscapeCodes::VscPromptStart { .. }
+        //         | EscapeCodes::VscProperties { .. }
+        // ) {
+        //     continue;
+        // }
+
         let position = match code {
             EscapeCodes::PromptStart { col, row }
             | EscapeCodes::PromptEnd { col, row }
@@ -204,15 +216,15 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
             _ => None,
         };
         if let Some((col, row)) = position {
-            log::debug!(
-                "Moving cursor to ({}, {}) for escape code: {:?}",
-                col,
-                row,
-                code
-            );
+            // log::info!(
+            //     "Moving cursor to ({}, {}) for escape code: {:?}",
+            //     col,
+            //     row,
+            //     code
+            // );
             queue.queue(MoveTo(col, row))?;
         }
-        log::debug!("Writing escape code: {:?}", code);
+        log::info!("Writing escape code: {:?}", code);
         queue.queue(code)?;
     }
     queue.queue(RestorePosition)?;

@@ -387,7 +387,6 @@ unsafe extern "C" {
     #[link_name = "current_host_name"]
     pub static mut current_host_name: *mut c_char;
 
-
 }
 
 /// Allocate a copy of `s` using bash's `xmalloc`.

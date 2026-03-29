@@ -333,24 +333,24 @@ impl<'a> App<'a> {
             );
 
             shell_integration::write_escape_codes(&[
-                EscapeCodes::ExecutionFinished {
-                    exit_code: Some(last_command_exit_value),
-                },
+                // EscapeCodes::ExecutionFinished {
+                //     exit_code: Some(last_command_exit_value),
+                // },
                 EscapeCodes::VscExecutionFinished {
                     exit_code: Some(last_command_exit_value),
                 },
-                EscapeCodes::CurrentDirectory {
-                    host: hostname.clone(),
-                    path: cwd.clone(),
-                },
-                EscapeCodes::KittyCurrentDirectory {
-                    host: hostname,
-                    path: cwd.clone(),
-                },
-                EscapeCodes::VscProperties {
-                    cwd: cwd.clone(),
-                    has_rich_command_detection: true,
-                },
+                // EscapeCodes::CurrentDirectory {
+                //     host: hostname.clone(),
+                //     path: cwd.clone(),
+                // },
+                // EscapeCodes::KittyCurrentDirectory {
+                //     host: hostname,
+                //     path: cwd.clone(),
+                // },
+                // EscapeCodes::VscProperties {
+                //     cwd: cwd.clone(),
+                //     has_rich_command_detection: true,
+                // },
             ])
             .unwrap_or_else(|e| {
                 log::error!("Failed to write execution finished escape codes: {}", e);
@@ -442,13 +442,16 @@ impl<'a> App<'a> {
                                 if let Some(prompt_start) =
                                     new_drawn_contents.term_em_prompt_start()
                                 {
-                                    if prev_contents.as_ref().is_none_or(|prev_contents| {
-                                        prev_contents.term_em_prompt_start() != Some(prompt_start)
-                                    }) {
-                                        codes.push(EscapeCodes::PromptStart {
-                                            col: prompt_start.x,
-                                            row: prompt_start.y,
-                                        });
+                                    if !self.mode.is_running()
+                                        || prev_contents.as_ref().is_none_or(|prev_contents| {
+                                            prev_contents.term_em_prompt_start()
+                                                != Some(prompt_start)
+                                        })
+                                    {
+                                        // codes.push(EscapeCodes::PromptStart {
+                                        //     col: prompt_start.x,
+                                        //     row: prompt_start.y,
+                                        // });
                                         codes.push(EscapeCodes::VscPromptStart {
                                             col: prompt_start.x,
                                             row: prompt_start.y,
@@ -457,13 +460,15 @@ impl<'a> App<'a> {
                                 }
 
                                 if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end() {
-                                    if prev_contents.as_ref().is_none_or(|prev_contents| {
-                                        prev_contents.term_em_prompt_end() != Some(prompt_end)
-                                    }) {
-                                        codes.push(EscapeCodes::PromptEnd {
-                                            col: prompt_end.x,
-                                            row: prompt_end.y,
-                                        });
+                                    if !self.mode.is_running()
+                                        || prev_contents.as_ref().is_none_or(|prev_contents| {
+                                            prev_contents.term_em_prompt_end() != Some(prompt_end)
+                                        })
+                                    {
+                                        // codes.push(EscapeCodes::PromptEnd {
+                                        //     col: prompt_end.x,
+                                        //     row: prompt_end.y,
+                                        // });
                                         codes.push(EscapeCodes::VscPromptEnd {
                                             col: prompt_end.x,
                                             row: prompt_end.y,
@@ -562,7 +567,6 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-
         let vscode_nonce = bash_funcs::get_env_variable("VSCODE_NONCE");
 
         log::info!("vscode_nonce: {:?}", vscode_nonce);
@@ -576,9 +580,9 @@ impl<'a> App<'a> {
                             nonce: vscode_nonce,
                         },
                         EscapeCodes::VscPreExecution,
-                        EscapeCodes::PreExecution {
-                            commandline: Some(cmd.clone()),
-                        },
+                        // EscapeCodes::PreExecution {
+                        //     commandline: Some(cmd.clone()),
+                        // },
                     ];
 
                     shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
@@ -592,7 +596,7 @@ impl<'a> App<'a> {
             _ => {
                 if self.settings.send_shell_integration_codes {
                     let codes = vec![
-                        EscapeCodes::PreExecution { commandline: None },
+                        // EscapeCodes::PreExecution { commandline: None },
                         EscapeCodes::VscPreExecution,
                     ];
 
