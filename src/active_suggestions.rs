@@ -109,10 +109,7 @@ fn middle_truncate_spans(spans: &[Span<'static>], max_chars: usize) -> Vec<Span<
         return vec![];
     }
     if max_chars == 1 {
-        let style = spans
-            .first()
-            .map(|s| s.style)
-            .unwrap_or_else(Style::default);
+        let style = spans.first().map(|s| s.style).unwrap_or_default();
         return vec![Span::styled("…".to_string(), style)];
     }
 
@@ -129,7 +126,7 @@ fn middle_truncate_spans(spans: &[Span<'static>], max_chars: usize) -> Vec<Span<
         .last()
         .map(|s| s.style)
         .or_else(|| right_spans.first().map(|s| s.style))
-        .unwrap_or_else(Style::default);
+        .unwrap_or_default();
 
     out.append(&mut left_spans);
     out.push(Span::styled("…".to_string(), ellipsis_style));

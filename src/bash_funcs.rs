@@ -194,7 +194,7 @@ pub fn format_shell_var_uncached(name: &str) -> String {
             }
         })
         .map(|output| {
-            if let Some(pos) = output.find(&name) {
+            if let Some(pos) = output.find(name) {
                 format!("${}", output[pos..].trim())
             } else {
                 output.trim().to_string()

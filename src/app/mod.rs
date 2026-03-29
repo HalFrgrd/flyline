@@ -442,39 +442,36 @@ impl<'a> App<'a> {
                             if let Some(new_drawn_contents) = self.last_contents.as_ref() {
                                 if let Some(prompt_start) =
                                     new_drawn_contents.term_em_prompt_start()
-                                {
-                                    if !self.mode.is_running()
+                                    && (!self.mode.is_running()
                                         || prev_contents.as_ref().is_none_or(|prev_contents| {
                                             prev_contents.term_em_prompt_start()
                                                 != Some(prompt_start)
-                                        })
-                                    {
-                                        codes.push(EscapeCodes::VscPromptStart {
-                                            col: prompt_start.x,
-                                            row: prompt_start.y,
-                                        });
-                                        codes.push(EscapeCodes::PromptStart {
-                                            col: prompt_start.x,
-                                            row: prompt_start.y,
-                                        });
-                                    }
+                                        }))
+                                {
+                                    codes.push(EscapeCodes::VscPromptStart {
+                                        col: prompt_start.x,
+                                        row: prompt_start.y,
+                                    });
+                                    codes.push(EscapeCodes::PromptStart {
+                                        col: prompt_start.x,
+                                        row: prompt_start.y,
+                                    });
                                 }
 
-                                if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end() {
-                                    if !self.mode.is_running()
+                                if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end()
+                                    && (!self.mode.is_running()
                                         || prev_contents.as_ref().is_none_or(|prev_contents| {
                                             prev_contents.term_em_prompt_end() != Some(prompt_end)
-                                        })
-                                    {
-                                        codes.push(EscapeCodes::VscPromptEnd {
-                                            col: prompt_end.x,
-                                            row: prompt_end.y,
-                                        });
-                                        codes.push(EscapeCodes::PromptEnd {
-                                            col: prompt_end.x,
-                                            row: prompt_end.y,
-                                        });
-                                    }
+                                        }))
+                                {
+                                    codes.push(EscapeCodes::VscPromptEnd {
+                                        col: prompt_end.x,
+                                        row: prompt_end.y,
+                                    });
+                                    codes.push(EscapeCodes::PromptEnd {
+                                        col: prompt_end.x,
+                                        row: prompt_end.y,
+                                    });
                                 }
                             }
 
@@ -552,7 +549,7 @@ impl<'a> App<'a> {
                 // Bash will set this to a function when it receives a terminating signal.
                 // The function is readline specific so we don't call it here.
                 // But the act of it being set is a signal that we should exit immediately
-                if let Some(_) = crate::bash_symbols::rl_signal_event_hook {
+                if crate::bash_symbols::rl_signal_event_hook.is_some() {
                     let sig = crate::bash_symbols::terminating_signal;
 
                     log::info!(
@@ -1258,16 +1255,14 @@ impl<'a> App<'a> {
 
         if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
             // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
-            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx) {
-                if closing_token.token.byte_range().start == cursor_pos {
-                    if let dparser::TokenAnnotation::IsClosing {
-                        is_auto_inserted: true,
-                        ..
-                    } = closing_token.annotation
-                    {
-                        self.buffer.delete_forwards();
-                    }
-                }
+            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx)
+                && closing_token.token.byte_range().start == cursor_pos
+                && let dparser::TokenAnnotation::IsClosing {
+                    is_auto_inserted: true,
+                    ..
+                } = closing_token.annotation
+            {
+                self.buffer.delete_forwards();
             }
         }
     }
@@ -1462,7 +1457,7 @@ impl<'a> App<'a> {
     fn wordinfo_fn(token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
         match &token.annotation {
             dparser::TokenAnnotation::IsCommandWord(value) => {
-                let (command_type, description) = bash_funcs::get_command_info(&value);
+                let (command_type, description) = bash_funcs::get_command_info(value);
                 Some(buffer_format::WordInfo {
                     tooltip: Some(description.to_string()),
                     is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
