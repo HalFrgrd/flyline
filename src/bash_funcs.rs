@@ -674,7 +674,7 @@ impl QuoteType {
         }
     }
 
-    pub fn into_byte(&self) -> u8 {
+    pub fn into_byte(self) -> u8 {
         match self {
             QuoteType::SingleQuote => b'\'',
             QuoteType::DoubleQuote => b'"',

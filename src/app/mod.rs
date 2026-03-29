@@ -134,7 +134,7 @@ pub fn get_command(settings: &Settings) -> ExitState {
 enum ContentMode {
     Normal,
     FuzzyHistorySearch,
-    TabCompletion(ActiveSuggestions),
+    TabCompletion(Box<ActiveSuggestions>),
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
     AiMode {
@@ -549,7 +549,7 @@ impl<'a> App<'a> {
                 // Bash will set this to a function when it receives a terminating signal.
                 // The function is readline specific so we don't call it here.
                 // But the act of it being set is a signal that we should exit immediately
-                if crate::bash_symbols::rl_signal_event_hook.is_some() {
+                if let Some(_) = crate::bash_symbols::rl_signal_event_hook {
                     let sig = crate::bash_symbols::terminating_signal;
 
                     log::info!(
@@ -1855,7 +1855,7 @@ impl<'a> App<'a> {
                     );
                 } else {
                     let grid_start_row = content.cursor_position().row;
-                    let num_rows_for_suggestions = rows_left_before_end_of_screen.min(15).max(2);
+                    let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
                     let mut rows: Vec<Vec<(Vec<Span>, usize)>> =
                         vec![vec![]; num_rows_for_suggestions as usize];
 
@@ -1897,8 +1897,7 @@ impl<'a> App<'a> {
                 let num_rows_for_instructions = if self.settings.tutorial_mode { 2 } else { 1 };
                 let num_rows_for_results = rows_left_before_end_of_screen
                     .saturating_sub(num_rows_for_instructions)
-                    .min(30)
-                    .max(2);
+                    .clamp(2, 30);
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager

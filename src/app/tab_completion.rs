@@ -93,28 +93,28 @@ impl PathPatternExpansion {
     }
 }
 
-/// bash programmable completions:
-///
-/// - bashline.c: initialize_readline:
-///    - rl_attempted_completion_function = attempt_shell_completion;
-///
-/// - complete.c: rl_complete_internal:
-///     - sets our_func to rl_completion_entry_function or backup rl_filename_completion_function
-///     - gen_completion_matches:
-///         - sets rl_completion_found_quote
-///         - sets rl_completion_quote_character
-///         - calls rl_attempted_completion_function (which is attempt_shell_completion)
-///             - bashline.c: attempt_shell_completion:
-///                 - this figures out if we are completing the first word, an env var, tilde expansion, or if we should call the programmable completion function for the command.
-///                 - If it detects we want first word completion, it tries to find a special compspec: `iw_compspec = progcomp_search (INITIALWORD)`
-///                     it calls: `programmable_completions (INITIALWORD = "_InitialWorD_", text, s, e, &foundcs)`. I assume `text` is the first word.
-///                 - The core call is to `programmable_completions`
-///         - If that doesnt return any completions, it falls back to `our_func`
-///     - if rl_completion_found_quote, it think it tries to undo the quote escaping
-///     - when inserting the match, I think it tries to do quoting /  escaping based on what the  word_under_cursor looks like and what rl_completion_quote_character is set to.
-///        e.g. if you have a folder called `qwe asd` and you type `cd qw` and tab complete, it will insert `cd qwe\ asd/`
-///        but if you type `cd "qw` and tab complete, it will insert `cd "qwe asd"/`
-///
+// bash programmable completions:
+//
+// - bashline.c: initialize_readline:
+//    - rl_attempted_completion_function = attempt_shell_completion;
+//
+// - complete.c: rl_complete_internal:
+//     - sets our_func to rl_completion_entry_function or backup rl_filename_completion_function
+//     - gen_completion_matches:
+//         - sets rl_completion_found_quote
+//         - sets rl_completion_quote_character
+//         - calls rl_attempted_completion_function (which is attempt_shell_completion)
+//             - bashline.c: attempt_shell_completion:
+//                 - this figures out if we are completing the first word, an env var, tilde expansion, or if we should call the programmable completion function for the command.
+//                 - If it detects we want first word completion, it tries to find a special compspec: `iw_compspec = progcomp_search (INITIALWORD)`
+//                     it calls: `programmable_completions (INITIALWORD = "_InitialWorD_", text, s, e, &foundcs)`. I assume `text` is the first word.
+//                 - The core call is to `programmable_completions`
+//         - If that doesnt return any completions, it falls back to `our_func`
+//     - if rl_completion_found_quote, it think it tries to undo the quote escaping
+//     - when inserting the match, I think it tries to do quoting /  escaping based on what the  word_under_cursor looks like and what rl_completion_quote_character is set to.
+//        e.g. if you have a folder called `qwe asd` and you type `cd qw` and tab complete, it will insert `cd qwe\ asd/`
+//        but if you type `cd "qw` and tab complete, it will insert `cd "qwe asd"/`
+//
 
 // Something I have noticed is that `compgen` behaviour depends  on  `rl_completion_found_quote` and  some other  readline global variables.
 // For instance, I think `compgen -d` eventually calls `pcomp_filename_completion_function` which has some escaping logic:
@@ -122,13 +122,6 @@ impl PathPatternExpansion {
 //   iscompleting = RL_ISSTATE (RL_STATE_COMPLETING);
 //   if (iscompgen && iscompleting == 0 && rl_completion_found_quote == 0
 //   && rl_filename_dequoting_function) { ... }
-
-// TODO: instead of trying to do my own first word completion, I could  try to leverage bash's solution.
-// TODO: figure out escapements / quoting.
-// TODO probably need to set
-//   rl_filename_quoting_function = bash_quote_filename;
-//   rl_filename_dequoting_function = bash_dequote_filename;
-//   rl_char_is_quoted_p = char_is_quoted; // TODO  probably not necessary?
 
 struct AliasExpandedCompletion {
     command_word: String,
@@ -205,7 +198,7 @@ impl App<'_> {
                 self.content_mode = ContentMode::Normal;
             }
             Some(suggestions) => {
-                self.content_mode = ContentMode::TabCompletion(suggestions);
+                self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
             }
         }
     }
@@ -574,8 +567,8 @@ impl App<'_> {
     }
 
     fn tab_complete_tilde_expansion(&self, pattern: &str) -> Vec<Suggestion> {
-        let user_pattern = if pattern.starts_with('~') {
-            &pattern[1..]
+        let user_pattern = if let Some(stripped) = pattern.strip_prefix('~') {
+            stripped
         } else {
             return vec![];
         };
