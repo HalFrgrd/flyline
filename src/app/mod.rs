@@ -333,24 +333,25 @@ impl<'a> App<'a> {
             );
 
             shell_integration::write_escape_codes(&[
-                // EscapeCodes::ExecutionFinished {
-                //     exit_code: Some(last_command_exit_value),
-                // },
                 EscapeCodes::VscExecutionFinished {
                     exit_code: Some(last_command_exit_value),
                 },
-                // EscapeCodes::CurrentDirectory {
-                //     host: hostname.clone(),
-                //     path: cwd.clone(),
-                // },
-                // EscapeCodes::KittyCurrentDirectory {
-                //     host: hostname,
-                //     path: cwd.clone(),
-                // },
-                // EscapeCodes::VscProperties {
-                //     cwd: cwd.clone(),
-                //     has_rich_command_detection: true,
-                // },
+                EscapeCodes::VscProperties {
+                    cwd: cwd.clone(),
+                    has_rich_command_detection: true,
+                },
+                // If found that this one needs to be after VscExecutionFinished for some reason to be reliably picked up by vscode's terminal.
+                EscapeCodes::ExecutionFinished {
+                    exit_code: Some(last_command_exit_value),
+                },
+                EscapeCodes::CurrentDirectory {
+                    host: hostname.clone(),
+                    path: cwd.clone(),
+                },
+                EscapeCodes::KittyCurrentDirectory {
+                    host: hostname,
+                    path: cwd.clone(),
+                },
             ])
             .unwrap_or_else(|e| {
                 log::error!("Failed to write execution finished escape codes: {}", e);
@@ -448,11 +449,11 @@ impl<'a> App<'a> {
                                                 != Some(prompt_start)
                                         })
                                     {
-                                        // codes.push(EscapeCodes::PromptStart {
-                                        //     col: prompt_start.x,
-                                        //     row: prompt_start.y,
-                                        // });
                                         codes.push(EscapeCodes::VscPromptStart {
+                                            col: prompt_start.x,
+                                            row: prompt_start.y,
+                                        });
+                                        codes.push(EscapeCodes::PromptStart {
                                             col: prompt_start.x,
                                             row: prompt_start.y,
                                         });
@@ -465,11 +466,11 @@ impl<'a> App<'a> {
                                             prev_contents.term_em_prompt_end() != Some(prompt_end)
                                         })
                                     {
-                                        // codes.push(EscapeCodes::PromptEnd {
-                                        //     col: prompt_end.x,
-                                        //     row: prompt_end.y,
-                                        // });
                                         codes.push(EscapeCodes::VscPromptEnd {
+                                            col: prompt_end.x,
+                                            row: prompt_end.y,
+                                        });
+                                        codes.push(EscapeCodes::PromptEnd {
                                             col: prompt_end.x,
                                             row: prompt_end.y,
                                         });
@@ -580,9 +581,9 @@ impl<'a> App<'a> {
                             nonce: vscode_nonce,
                         },
                         EscapeCodes::VscPreExecution,
-                        // EscapeCodes::PreExecution {
-                        //     commandline: Some(cmd.clone()),
-                        // },
+                        EscapeCodes::PreExecution {
+                            commandline: Some(cmd.clone()),
+                        },
                     ];
 
                     shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
@@ -596,8 +597,8 @@ impl<'a> App<'a> {
             _ => {
                 if self.settings.send_shell_integration_codes {
                     let codes = vec![
-                        // EscapeCodes::PreExecution { commandline: None },
                         EscapeCodes::VscPreExecution,
+                        EscapeCodes::PreExecution { commandline: None },
                     ];
 
                     shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
