@@ -26,7 +26,9 @@ jobs:
         uses: docker/bake-action@v6
         with:
           files: docker/docker-bake.hcl
-          targets: extract-integration-test-build-artifact
+          targets: |
+            extract-integration-test-build-artifact
+            lib-tests
           set: |
             extract-integration-test-build-artifact.output=type=local,dest=${{ runner.temp }}/docker/build
             *.cache-from=type=gha
@@ -38,26 +40,6 @@ jobs:
           name: built-flyline-library
           path: ${{ runner.temp }}/docker/build/libflyline.so
 
-
-  run-library-tests:
-    name: Run library tests
-    needs: build-ubuntu-1604
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Run tests
-        # running the tests by building an image is a cache friendly way to do it
-        # if we build a container, the previous step would need to have exported the image to docker
-        # which is slow
-        uses: docker/bake-action@v6
-        with:
-          files: docker/docker-bake.hcl
-          targets: lib-tests
-          set: |
-            *.cache-from=type=gha
-            *.cache-to=type=gha,mode=max
 
   bash-integration-tests:
     name: Bash integration tests using built library

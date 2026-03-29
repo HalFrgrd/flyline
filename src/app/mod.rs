@@ -1732,7 +1732,13 @@ impl<'a> App<'a> {
                 let starting_row = content.cursor_position().row;
 
                 let num_digits_for_index = num_searched.to_string().len();
-                let num_digits_for_score = 3;
+                let num_digits_for_score = 3.max(
+                    fuzzy_results
+                        .iter()
+                        .map(|r| r.score.to_string().len())
+                        .max()
+                        .unwrap_or(0),
+                );
                 let timeago_width = 5; // ts_to_timeago_string_5chars always returns 5 chars
                 let indicator_width = 1; // "▐" or " "
                 // Width of the header prefix: "{index} {score} {timeago}{indicator}"

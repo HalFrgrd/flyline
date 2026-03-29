@@ -14,7 +14,16 @@ COPY --from=flyline-extracted-library /libflyline.so .
 # Give john ownership of the app directory
 RUN chown -R john:john /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends bash-completion faketime && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash-completion \
+    faketime \
+    fonts-noto-color-emoji \
+    fonts-noto-cjk \
+    fonts-noto-cjk-extra \
+    fontconfig \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -f -v
+
 
 USER john
 
