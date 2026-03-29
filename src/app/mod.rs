@@ -345,7 +345,11 @@ impl<'a> App<'a> {
                 },
                 EscapeCodes::KittyCurrentDirectory {
                     host: hostname,
-                    path: cwd,
+                    path: cwd.clone(),
+                },
+                EscapeCodes::VscProperties {
+                    cwd: cwd.clone(),
+                    has_rich_command_detection: true,
                 },
             ])
             .unwrap_or_else(|e| {
@@ -558,18 +562,23 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
+
+        let vscode_nonce = bash_funcs::get_env_variable("VSCODE_NONCE");
+
+        log::info!("vscode_nonce: {:?}", vscode_nonce);
+
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
                 if self.settings.send_shell_integration_codes {
                     let codes = vec![
                         EscapeCodes::VscCommandLine {
                             commandline: cmd.clone(),
-                            nonce: None,
+                            nonce: vscode_nonce,
                         },
+                        EscapeCodes::VscPreExecution,
                         EscapeCodes::PreExecution {
                             commandline: Some(cmd.clone()),
                         },
-                        EscapeCodes::VscPreExecution,
                     ];
 
                     shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {

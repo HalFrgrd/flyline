@@ -41,6 +41,10 @@ pub enum EscapeCodes {
     },
 
     // OSC 633 (VS Code)
+    VscProperties {
+        cwd: String,
+        has_rich_command_detection: bool,
+    },
     VscPromptStart {
         col: u16,
         row: u16,
@@ -129,7 +133,7 @@ impl Command for EscapeCodes {
             EscapeCodes::PromptStart { .. } => {
                 write!(
                     f,
-                    "\x1b]133;A;click_events=1;aid={};redraw=1\x1b\\",
+                    "\x1b]133;A;click_events=1;redraw=1;aid={}\x1b\\",
                     bash_pid
                 )
             }
@@ -148,6 +152,19 @@ impl Command for EscapeCodes {
             },
 
             // OSC 633
+            EscapeCodes::VscProperties {
+                cwd,
+                has_rich_command_detection,
+            } => write!(
+                f,
+                "\x1b]633;P;Cwd={};HasRichCommandDetection={}\x1b\\",
+                EscapeCodes::vsc_encode_string(cwd),
+                if *has_rich_command_detection {
+                    "True"
+                } else {
+                    "False"
+                }
+            ),
             EscapeCodes::VscPromptStart { .. } => f.write_str("\x1b]633;A\x1b\\"),
             EscapeCodes::VscPromptEnd { .. } => f.write_str("\x1b]633;B\x1b\\"),
             EscapeCodes::VscPreExecution => f.write_str("\x1b]633;C\x1b\\"),
