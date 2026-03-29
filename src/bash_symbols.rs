@@ -534,25 +534,6 @@ impl ShellVar {
     pub fn is_associative_array(&self) -> bool {
         self.attributes & ATT_ASSOC as c_int != 0
     }
-
-    // pub fn tooltip(&self) -> String {
-    //     let mut repr = format!(
-    //         "${}={:?}",
-    //         self.get_name().unwrap_or_default(),
-    //         self.get_value().unwrap_or_default()
-    //     );
-
-    //     if self.is_array() {
-    //         repr.push_str(" (array)");
-    //     } else if self.is_function() {
-    //         repr.push_str(" (function)");
-    //     } else if self.is_integer() {
-    //         repr.push_str(" (integer)");
-    //     } else if self.is_associative_array() {
-    //         repr.push_str(" (associative array)");
-    //     }
-    //     repr
-    // }
 }
 
 impl Debug for ShellVar {
