@@ -394,6 +394,12 @@ unsafe extern "C" {
 
     // extern int show_var_attributes (SHELL_VAR *, int, int);
     pub fn show_var_attributes(var: *mut ShellVar, flags: c_int, output_fd: c_int) -> c_int;
+
+    /* A flag denoting whether or not ignoreeof is set. */
+    // int ignoreeof = 0;
+    #[link_name = "ignoreeof"]
+    pub static mut ignoreeof: c_int;
+
 }
 
 /// Allocate a copy of `s` using bash's `xmalloc`.

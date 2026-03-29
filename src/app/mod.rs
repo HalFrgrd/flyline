@@ -1033,7 +1033,11 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.mode = AppRunningState::Exiting(ExitState::EOF);
+                if self.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
+                    self.mode = AppRunningState::Exiting(ExitState::EOF);
+                } else {
+                    self.buffer.delete_forwards();
+                }
             }
             // Ctrl+C - cancel
             KeyEvent {
