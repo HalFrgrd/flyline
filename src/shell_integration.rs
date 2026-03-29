@@ -2,7 +2,7 @@ use std::io::Write;
 
 use crossterm::Command;
 use crossterm::QueueableCommand;
-use crossterm::cursor::MoveTo;
+use crossterm::cursor::{MoveTo, RestorePosition, SavePosition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EscapeCodes {
@@ -71,6 +71,7 @@ impl Command for EscapeCodes {
 
 pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
     let mut queue = std::io::stdout();
+    queue.queue(SavePosition)?;
 
     for code in codes {
         let position = match code {
@@ -92,6 +93,7 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
         log::debug!("Writing escape code: {:?}", code);
         queue.queue(code)?;
     }
+    queue.queue(RestorePosition)?;
     queue.flush()?;
     Ok(())
 }

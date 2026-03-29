@@ -113,6 +113,9 @@ struct FlylineArgs {
     /// Mouse capture mode (disabled, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
+    /// Send shell integration escape codes (OSC 133 / OSC 633)
+    #[arg(long = "send-shell-integration-codes", default_missing_value = "true", num_args = 0..=1)]
+    send_shell_integration_codes: Option<bool>,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
@@ -327,6 +330,11 @@ impl Flyline {
                     self.settings.mouse_mode = mode;
                 }
 
+                if let Some(enabled) = parsed.send_shell_integration_codes {
+                    log::info!("Shell integration codes set to {}", enabled);
+                    self.settings.send_shell_integration_codes = enabled;
+                }
+
                 if let Some(Commands::AgentMode {
                     system_prompt,
                     command,
@@ -415,7 +423,7 @@ impl Flyline {
     fn get(&mut self) -> c_int {
         // This is meant to mimic yy_readline_get.
         if self.content.is_empty() || self.position >= self.content.len() {
-            log::debug!("---------------------- Starting app ------------------------");
+            log::info!("---------------------- Starting app ------------------------");
 
             unsafe {
                 if bash_symbols::job_control != 0 {
@@ -458,7 +466,7 @@ impl Flyline {
                     vec![]
                 }
             };
-            log::debug!("---------------------- App finished ------------------------");
+            log::info!("---------------------- App finished ------------------------");
             self.content.push(b'\n');
             self.position = 0;
         }

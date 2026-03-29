@@ -243,7 +243,6 @@ struct App<'a> {
     tooltip: Option<String>,
     settings: &'a Settings,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
-    last_viewport_top: u16,
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
 }
@@ -301,7 +300,6 @@ impl<'a> App<'a> {
             last_mouse_over_cell: None,
             tooltip: None,
             settings,
-            last_viewport_top: 0,
             last_draw_time: std::time::Instant::now(),
         }
     }
@@ -317,13 +315,15 @@ impl<'a> App<'a> {
         }
 
         // Send execution finished escape codes (previous command has completed).
-        shell_integration::write_escape_codes(&[
-            EscapeCodes::ExecutionFinished { exit_code: None },
-            EscapeCodes::VscExecutionFinished { exit_code: None },
-        ])
-        .unwrap_or_else(|e| {
-            log::error!("Failed to write execution finished escape codes: {}", e);
-        });
+        if self.settings.send_shell_integration_codes {
+            shell_integration::write_escape_codes(&[
+                EscapeCodes::ExecutionFinished { exit_code: None },
+                EscapeCodes::VscExecutionFinished { exit_code: None },
+            ])
+            .unwrap_or_else(|e| {
+                log::error!("Failed to write execution finished escape codes: {}", e);
+            });
+        }
 
         crossterm::terminal::enable_raw_mode().unwrap();
 
@@ -332,9 +332,7 @@ impl<'a> App<'a> {
         };
         let mut terminal =
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
-        if !self.settings.use_term_emulator_cursor {
-            terminal.hide_cursor().unwrap();
-        }
+
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         let mut redraw = true;
@@ -384,19 +382,15 @@ impl<'a> App<'a> {
             if redraw {
                 let frame_area = terminal.get_frame().area();
 
-                let mut content =
+                let content =
                     self.create_content(frame_area.width, frame_area.y, last_terminal_area.height);
-
-                if !self.mode.is_running() {
-                    // so that we can put the terminal emulators cursor below the content
-                    content.increase_buf_single_row();
-                }
 
                 let desired_height = if needs_screen_cleared {
                     last_terminal_area.height
                 } else {
-                    content.height().min(last_terminal_area.height)
+                    content.height()
                 };
+
                 needs_screen_cleared = false;
                 terminal
                     .set_viewport_height(desired_height)
@@ -409,43 +403,47 @@ impl<'a> App<'a> {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
 
-                        let mut codes = vec![];
+                        if self.settings.send_shell_integration_codes {
+                            let mut codes = vec![];
 
-                        if let Some(new_drawn_contents) = self.last_contents.as_ref() {
-                            if let Some(prompt_start) = new_drawn_contents.term_em_prompt_start() {
-                                if prev_contents.as_ref().is_none_or(|prev_contents| {
-                                    prev_contents.term_em_prompt_start() != Some(prompt_start)
-                                }) {
-                                    codes.push(EscapeCodes::PromptStart {
-                                        col: prompt_start.x,
-                                        row: prompt_start.y,
-                                    });
-                                    codes.push(EscapeCodes::VscPromptStart {
-                                        col: prompt_start.x,
-                                        row: prompt_start.y,
-                                    });
+                            if let Some(new_drawn_contents) = self.last_contents.as_ref() {
+                                if let Some(prompt_start) =
+                                    new_drawn_contents.term_em_prompt_start()
+                                {
+                                    if prev_contents.as_ref().is_none_or(|prev_contents| {
+                                        prev_contents.term_em_prompt_start() != Some(prompt_start)
+                                    }) {
+                                        codes.push(EscapeCodes::PromptStart {
+                                            col: prompt_start.x,
+                                            row: prompt_start.y,
+                                        });
+                                        codes.push(EscapeCodes::VscPromptStart {
+                                            col: prompt_start.x,
+                                            row: prompt_start.y,
+                                        });
+                                    }
+                                }
+
+                                if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end() {
+                                    if prev_contents.as_ref().is_none_or(|prev_contents| {
+                                        prev_contents.term_em_prompt_end() != Some(prompt_end)
+                                    }) {
+                                        codes.push(EscapeCodes::PromptEnd {
+                                            col: prompt_end.x,
+                                            row: prompt_end.y,
+                                        });
+                                        codes.push(EscapeCodes::VscPromptEnd {
+                                            col: prompt_end.x,
+                                            row: prompt_end.y,
+                                        });
+                                    }
                                 }
                             }
 
-                            if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end() {
-                                if prev_contents.as_ref().is_none_or(|prev_contents| {
-                                    prev_contents.term_em_prompt_end() != Some(prompt_end)
-                                }) {
-                                    codes.push(EscapeCodes::PromptEnd {
-                                        col: prompt_end.x,
-                                        row: prompt_end.y,
-                                    });
-                                    codes.push(EscapeCodes::VscPromptEnd {
-                                        col: prompt_end.x,
-                                        row: prompt_end.y,
-                                    });
-                                }
-                            }
+                            shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                                log::error!("Failed to write escape codes: {}", e);
+                            });
                         }
-
-                        shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
-                            log::error!("Failed to write escape codes: {}", e);
-                        });
                     }
                     Err(e) => {
                         log::error!("Failed to draw terminal UI: {}", e);
@@ -533,16 +531,21 @@ impl<'a> App<'a> {
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         // Send pre-execution escape codes (command is about to run).
-        let mut codes = vec![EscapeCodes::PreExecution, EscapeCodes::VscPreExecution];
-        if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) = self.mode {
-            codes.push(EscapeCodes::VscCommandLine {
-                commandline: cmd.clone(),
-                nonce: None,
+        if self.settings.send_shell_integration_codes {
+            let mut codes = vec![EscapeCodes::PreExecution, EscapeCodes::VscPreExecution];
+            if let AppRunningState::Exiting(ExitState::WithCommand(ref cmd)) = self.mode {
+                codes.push(EscapeCodes::VscCommandLine {
+                    commandline: cmd.clone(),
+                    nonce: None,
+                });
+            }
+            shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                log::error!("Failed to write pre-execution escape codes: {}", e);
             });
         }
-        shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
-            log::error!("Failed to write pre-execution escape codes: {}", e);
-        });
+
+        let cursor_pos = terminal.get_cursor_position().unwrap();
+        log::info!("Final cursor position: {:?}", cursor_pos);
 
         match self.mode {
             AppRunningState::Exiting(exit_state) => exit_state,
@@ -579,7 +582,11 @@ impl<'a> App<'a> {
                 }
                 _ => {}
             }
-            if mouse.row < self.last_viewport_top {
+            if self
+                .last_contents
+                .as_ref()
+                .is_some_and(|contents| mouse.row < contents.viewport_start)
+            {
                 // Only disable mouse capture when the user clicks above the viewport,
                 // indicating intent to interact with terminal content above (e.g. select text).
                 // Mere mouse movement above the viewport does not disable capture.
@@ -2071,12 +2078,8 @@ impl<'a> App<'a> {
             content.move_to_final_line();
             content.newline();
             let cursor_pos = content.cursor_position();
-            log::info!(
-                "App is not running, moving terminal cursor to {:?}",
-                cursor_pos
-            );
-            content.set_term_cursor_pos(content.cursor_position(), None);
-            content.set_focus_row(content.cursor_position().row);
+            content.set_term_cursor_pos(cursor_pos, None);
+            content.set_focus_row(cursor_pos.row);
         }
 
         content
@@ -2085,9 +2088,6 @@ impl<'a> App<'a> {
     fn ui(&mut self, frame: &mut Frame, content: Contents) {
         let frame_area = frame.area();
         frame.buffer_mut().reset();
-
-        // Record where the viewport starts for smart mouse-mode position checks.
-        self.last_viewport_top = frame_area.y;
 
         let content_visible_row_range = content.get_row_range_to_show(frame_area.height);
 
