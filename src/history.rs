@@ -86,6 +86,8 @@ impl HistoryManager {
                     let timestamp = if !hist_entry.timestamp.is_null() {
                         let timestamp_cstr = std::ffi::CStr::from_ptr(hist_entry.timestamp);
                         if let Ok(timestamp_str) = timestamp_cstr.to_str() {
+                            // If there are no timestamps in the history file,
+                            // Bash will use the current time for all entries, which can lead to many identical timestamps.
                             let ts_str = timestamp_str.trim_start_matches('#').trim();
                             ts_str.parse::<u64>().ok()
                         } else {
@@ -104,15 +106,6 @@ impl HistoryManager {
                 }
 
                 index += 1;
-
-                // Safety check to prevent infinite loops
-                if index > 100000 {
-                    log::warn!(
-                        "History parsing stopped at {} entries to prevent infinite loop",
-                        index
-                    );
-                    break;
-                }
             }
         }
         res

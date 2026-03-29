@@ -204,9 +204,10 @@ pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
             _ => None,
         };
         if let Some((col, row)) = position {
+            log::trace!("Moving cursor to ({}, {}) for escape code: {:?}", col, row, code);
             queue.queue(MoveTo(col, row))?;
         }
-        log::info!("Writing escape code: {:?}", code);
+        log::trace!("Writing escape code: {:?}", code);
         queue.queue(code)?;
     }
     queue.queue(RestorePosition)?;
