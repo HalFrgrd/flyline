@@ -4,45 +4,75 @@ use ratatui::style::{Color, Modifier, Style};
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
+use std::cell::OnceCell;
 use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 /// Manages bash environment state including caches for command types, aliases, and other bash constructs
 pub struct BashEnvManager {
-    defined_aliases: Vec<String>,
-    defined_reserved_words: Vec<String>,
-    defined_shell_functions: Vec<String>,
-    defined_builtins: Vec<String>,
-    defined_executables: Vec<(PathBuf, String)>,
-    ls_colors: Option<LsColors>,
+    defined_aliases: OnceCell<Vec<String>>,
+    defined_reserved_words: OnceCell<Vec<String>>,
+    defined_shell_functions: OnceCell<Vec<String>>,
+    defined_builtins: OnceCell<Vec<String>>,
+    defined_executables: OnceCell<Vec<(PathBuf, String)>>,
+    ls_colors: OnceCell<Option<LsColors>>,
 }
 
 impl BashEnvManager {
     pub fn new() -> Self {
-        let executables = if let Some(path_str) = bash_funcs::get_envvar_value("PATH") {
-            Self::get_executables_from_path(&path_str)
-        } else {
-            Vec::new()
-        };
-
-        let ls_colors =
-            bash_funcs::get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s));
-
         Self {
-            defined_aliases: bash_funcs::get_all_aliases(),
-            defined_reserved_words: bash_funcs::get_all_reserved_words(),
-            defined_shell_functions: bash_funcs::get_all_shell_functions(),
-            defined_builtins: bash_funcs::get_all_shell_builtins(),
-            defined_executables: executables,
-            ls_colors,
+            defined_aliases: OnceCell::new(),
+            defined_reserved_words: OnceCell::new(),
+            defined_shell_functions: OnceCell::new(),
+            defined_builtins: OnceCell::new(),
+            defined_executables: OnceCell::new(),
+            ls_colors: OnceCell::new(),
         }
+    }
+
+    fn aliases(&self) -> &Vec<String> {
+        self.defined_aliases
+            .get_or_init(|| bash_funcs::get_all_aliases())
+    }
+
+    fn reserved_words(&self) -> &Vec<String> {
+        self.defined_reserved_words
+            .get_or_init(|| bash_funcs::get_all_reserved_words())
+    }
+
+    fn shell_functions(&self) -> &Vec<String> {
+        self.defined_shell_functions
+            .get_or_init(|| bash_funcs::get_all_shell_functions())
+    }
+
+    fn builtins(&self) -> &Vec<String> {
+        self.defined_builtins
+            .get_or_init(|| bash_funcs::get_all_shell_builtins())
+    }
+
+    fn executables(&self) -> &Vec<(PathBuf, String)> {
+        self.defined_executables.get_or_init(|| {
+            if let Some(path_str) = bash_funcs::get_envvar_value("PATH") {
+                Self::get_executables_from_path(&path_str)
+            } else {
+                Vec::new()
+            }
+        })
+    }
+
+    fn ls_colors(&self) -> Option<&LsColors> {
+        self.ls_colors
+            .get_or_init(|| {
+                bash_funcs::get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s))
+            })
+            .as_ref()
     }
 
     /// Return a ratatui `Style` for the given path based on the `LS_COLORS` environment variable.
     /// Returns `None` if `LS_COLORS` was not set or the path has no matching entry.
     pub fn style_for_path(&self, path: &Path) -> Option<Style> {
-        let lscolors_style = self.ls_colors.as_ref()?.style_for_path(path)?;
+        let lscolors_style = self.ls_colors()?.style_for_path(path)?;
         Some(lscolors_style_to_ratatui(lscolors_style))
     }
 
@@ -56,12 +86,12 @@ impl BashEnvManager {
         }
 
         for poss_completion in self
-            .defined_aliases
+            .aliases()
             .iter()
-            .chain(self.defined_reserved_words.iter())
-            .chain(self.defined_shell_functions.iter())
-            .chain(self.defined_builtins.iter())
-            .chain(self.defined_executables.iter().map(|(_, name)| name))
+            .chain(self.reserved_words().iter())
+            .chain(self.shell_functions().iter())
+            .chain(self.builtins().iter())
+            .chain(self.executables().iter().map(|(_, name)| name))
         {
             if poss_completion.starts_with(command) && seen.insert(poss_completion.as_str()) {
                 res.push(poss_completion.to_string());
@@ -79,12 +109,12 @@ impl BashEnvManager {
 
         let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
         let mut scored: Vec<(i64, String)> = self
-            .defined_aliases
+            .aliases()
             .iter()
-            .chain(self.defined_reserved_words.iter())
-            .chain(self.defined_shell_functions.iter())
-            .chain(self.defined_builtins.iter())
-            .chain(self.defined_executables.iter().map(|(_, name)| name))
+            .chain(self.reserved_words().iter())
+            .chain(self.shell_functions().iter())
+            .chain(self.builtins().iter())
+            .chain(self.executables().iter().map(|(_, name)| name))
             .filter_map(|poss_completion| {
                 matcher
                     .fuzzy_match(poss_completion, command)
