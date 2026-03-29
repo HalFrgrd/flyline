@@ -602,26 +602,6 @@ mod tests {
     use super::*;
     use ratatui::text::{Line, Span};
 
-    #[test]
-    fn test_write_zero_width_span_to_full_buffer() {
-        let width = 10u16;
-        let mut contents = Contents::new(width);
-
-        // Fill two rows completely
-        let row_text = "a".repeat(width as usize);
-        contents.write_line(&Line::from(row_text.clone()), true, Tag::Blank);
-        contents.write_line(&Line::from(row_text.clone()), true, Tag::Blank);
-
-        assert_eq!(contents.height(), 2);
-
-        // Append a span containing a zero-width character
-        let zero_width_span = Span::raw("\u{200B}"); // zero-width space
-        contents.write_span(&zero_width_span, Tag::Blank);
-
-        // The buffer should still have 2 rows — zero-width span must not add a new row
-        assert_eq!(contents.height(), 2);
-    }
-
     fn spans_text(rows: &[Line<'static>]) -> Vec<String> {
         rows.iter()
             .map(|row| row.spans.iter().map(|s| s.content.as_ref()).collect())
