@@ -822,19 +822,6 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            // Shift+Enter in fuzzy search - accept without running (move to buffer only)
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.accept_fuzzy_history_search();
-            }
             // Shift+Enter - activate AI mode like Ctrl+I (requires --ai-command to be configured)
             KeyEvent {
                 code: KeyCode::Enter,
@@ -865,7 +852,9 @@ impl<'a> App<'a> {
             } => match &mut self.content_mode {
                 ContentMode::FuzzyHistorySearch => {
                     self.accept_fuzzy_history_search();
-                    self.try_submit_current_buffer();
+                    // TODO: allow someone to accept and run the command immediately
+                    // Instead of Enter+Enter
+                    // self.try_submit_current_buffer();
                 }
                 ContentMode::TabCompletion(active_suggestions) => {
                     active_suggestions.accept_currently_selected(&mut self.buffer);
