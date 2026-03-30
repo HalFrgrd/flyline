@@ -1,8 +1,10 @@
+use crate::bash_funcs;
 use crate::palette::Palette;
 use crate::text_buffer::{SubString, TextBuffer};
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
+use std::path::PathBuf;
 
 use unicode_width::UnicodeWidthStr;
 
@@ -280,9 +282,138 @@ impl Ord for Suggestion {
     }
 }
 
+/// A completion that may or may not have been post-processed yet.
+///
+/// The `Ready` variant holds a fully processed [`Suggestion`] (used by code
+/// paths that produce suggestions directly, e.g. env-var or tilde expansion).
+///
+/// The `Raw` variant holds a raw completion string from bash together with the
+/// metadata needed to produce a [`Suggestion`] on demand via
+/// [`post_process_completion`].  The expensive filesystem calls (`is_dir`,
+/// `style_for_path`, `fully_expand_path`) are deferred until the item is
+/// actually rendered or accepted.
+#[derive(Debug, Clone)]
+pub enum CompletionItem {
+    Ready(Suggestion),
+    Raw {
+        raw_text: String,
+        expanded_path: Option<PathBuf>,
+        flags: bash_funcs::CompletionFlags,
+        word_under_cursor: String,
+    },
+}
+
+impl CompletionItem {
+    /// The text used for fuzzy matching and sorting.
+    pub fn match_text(&self) -> &str {
+        match self {
+            CompletionItem::Ready(s) => &s.s,
+            CompletionItem::Raw { raw_text, .. } => raw_text,
+        }
+    }
+
+    /// Produce the fully processed [`Suggestion`], running post-processing
+    /// for `Raw` items or returning the existing suggestion for `Ready` items.
+    pub fn to_suggestion(&self) -> Suggestion {
+        match self {
+            CompletionItem::Ready(s) => s.clone(),
+            CompletionItem::Raw {
+                raw_text,
+                expanded_path,
+                flags,
+                word_under_cursor,
+            } => post_process_completion(
+                raw_text,
+                expanded_path.as_deref(),
+                *flags,
+                word_under_cursor,
+            ),
+        }
+    }
+}
+
+/// Post-process a single raw completion string into a [`Suggestion`].
+///
+/// This performs quoting, filesystem checks (`is_dir`, `style_for_path`), and
+/// suffix computation.  Expensive for filenames due to syscalls; call lazily.
+pub fn post_process_completion(
+    sug: &str,
+    path_to_use: Option<&std::path::Path>,
+    comp_resultflags: bash_funcs::CompletionFlags,
+    word_under_cursor: &str,
+) -> Suggestion {
+    let quoted = if comp_resultflags.filename_quoting_desired
+        && comp_resultflags.filename_completion_desired
+    {
+        if !word_under_cursor.is_empty()
+            && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
+        {
+            let quoted_suffix = bash_funcs::quote_function_rust(
+                new_suffix,
+                comp_resultflags.quote_type.unwrap_or_default(),
+            );
+            format!("{}{}", word_under_cursor, quoted_suffix)
+        } else {
+            bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
+        }
+    } else {
+        sug.to_string()
+    };
+
+    let suffix = if comp_resultflags.no_suffix_desired {
+        None
+    } else if comp_resultflags.suffix_character == ' ' {
+        if sug.ends_with(" ") { None } else { Some(' ') }
+    } else {
+        Some(comp_resultflags.suffix_character)
+    };
+
+    let (appended, suffix, ls_style) = if comp_resultflags.filename_completion_desired {
+        let owned_path;
+        let path = match path_to_use {
+            Some(p) => p,
+            None => {
+                owned_path = std::path::PathBuf::from(bash_funcs::fully_expand_path(sug));
+                &owned_path
+            }
+        };
+
+        let appended = if path.is_dir() {
+            (format!("{}/", quoted), None)
+        } else {
+            (quoted, suffix)
+        };
+        let ls_style = bash_funcs::style_for_path(path);
+        (appended.0, appended.1, ls_style)
+    } else {
+        (quoted, suffix, None)
+    };
+
+    let suffix_str = suffix.map(|f| f.to_string()).unwrap_or_default();
+    let suggestion = Suggestion::new(appended, "", &suffix_str);
+    match ls_style {
+        Some(style) => suggestion.with_style(style),
+        None => suggestion,
+    }
+}
+
+/// Lightweight entry in the filtered suggestion list.
+///
+/// Unlike [`SuggestionFormatted`], this stores only the index, score, and
+/// fuzzy-match indices — no precomputed spans or display widths.  The
+/// expensive rendering work is done on demand in [`ActiveSuggestions::into_grid`].
+#[derive(Debug, Clone)]
+struct FilteredItem {
+    suggestion_idx: usize,
+    matching_indices: Vec<usize>,
+    /// Approximate display width from the raw/match text, used for grid
+    /// column sizing without requiring full post-processing.
+    display_width: usize,
+}
+
 pub struct ActiveSuggestions {
-    all_suggestions: Vec<Suggestion>,
-    filtered_suggestions: Vec<SuggestionFormatted>,
+    all_suggestions: Vec<CompletionItem>,
+    filtered_suggestions: Vec<FilteredItem>,
     /// 2-D position of the currently-selected suggestion within the grid.
     /// `selected_col * last_num_rows_per_col + selected_row` gives the 1-D
     /// index into `filtered_suggestions`.
@@ -304,8 +435,8 @@ pub struct ActiveSuggestions {
 impl std::fmt::Debug for ActiveSuggestions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ActiveSuggestions")
-            .field("all_suggestions", &self.all_suggestions)
-            .field("filtered_suggestions", &self.filtered_suggestions)
+            .field("all_suggestions_len", &self.all_suggestions.len())
+            .field("filtered_suggestions_len", &self.filtered_suggestions.len())
             .field("selected_row", &self.selected_row)
             .field("selected_col", &self.selected_col)
             .field("word_under_cursor", &self.word_under_cursor)
@@ -318,7 +449,7 @@ impl std::fmt::Debug for ActiveSuggestions {
 
 impl ActiveSuggestions {
     pub fn try_new<'underlying_buffer>(
-        suggestions: Vec<Suggestion>,
+        suggestions: Vec<CompletionItem>,
         word_under_cursor: &'underlying_buffer str,
         buffer: &'underlying_buffer TextBuffer,
     ) -> Option<Self> {
@@ -327,7 +458,11 @@ impl ActiveSuggestions {
         let filtered_suggestions = suggestions
             .iter()
             .enumerate()
-            .map(|(idx, s)| SuggestionFormatted::new(s, idx, vec![]))
+            .map(|(idx, item)| FilteredItem {
+                suggestion_idx: idx,
+                matching_indices: vec![],
+                display_width: item.match_text().width(),
+            })
             .collect();
 
         Some(ActiveSuggestions {
@@ -476,20 +611,12 @@ impl ActiveSuggestions {
         self.set_from_1d_index(idx);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (usize, &SuggestionFormatted, bool)> {
-        // prefix and suffix aren't shown in the suggestion list
-        // but are applied when the suggestion is accepted
-        let selected_idx = self.current_1d_index();
-        self.filtered_suggestions
-            .iter()
-            .enumerate()
-            .map(move |(idx, formatted_suggestion)| {
-                (idx, formatted_suggestion, idx == selected_idx)
-            })
-    }
-
     /// Return the portion of the suggestions grid that fits within the given
     /// terminal width, starting from column `col_offset`.
+    ///
+    /// [`SuggestionFormatted`] values are produced **on demand** — only items
+    /// in the visible columns go through the (potentially expensive)
+    /// [`CompletionItem::to_suggestion`] + [`SuggestionFormatted::new`] path.
     ///
     /// Each element of the returned `Vec` is `(column_items, col_width)`.
     /// For the very first visible column, `col_width` is capped at `max_width`
@@ -501,73 +628,75 @@ impl ActiveSuggestions {
         max_rows: usize,
         max_width: usize,
         col_offset: usize,
-    ) -> Vec<(Vec<(&SuggestionFormatted, bool)>, usize)> {
-        // Show as many suggestions as will fit in the given rows and columns
-        // Each column should be the same width, based on the longest suggestion
-        let mut grid: Vec<(Vec<(&SuggestionFormatted, bool)>, usize)> = vec![];
-        let mut current_col = vec![];
-        let mut col_width = 1;
-        let mut total_columns = 0;
-        let mut abs_col_idx: usize = 0; // absolute column index (before offset)
+    ) -> Vec<(Vec<(SuggestionFormatted, bool)>, usize)> {
+        let selected_1d = self.current_1d_index();
+        let n = self.filtered_suggestions.len();
+        if n == 0 || max_rows == 0 {
+            return vec![];
+        }
 
-        /// Push `col` to `grid` and update `total_columns`.  For the first
-        /// visible column the width is capped at the terminal width to
-        /// trigger middle-ellipsis rendering.  Returns `false` when the
-        /// column would overflow the terminal and should be discarded.
-        fn push_col<'a>(
-            grid: &mut Vec<(Vec<(&'a SuggestionFormatted, bool)>, usize)>,
-            total_columns: &mut usize,
-            col: Vec<(&'a SuggestionFormatted, bool)>,
-            col_width: usize,
-            term_cols: usize,
-        ) -> bool {
+        // ── Phase 1: determine column boundaries and widths ──────────
+        // Walk through ALL filtered items to discover how many columns
+        // exist and the maximum display_width in each column.  This is
+        // cheap because FilteredItem stores display_width already.
+        let num_cols = (n + max_rows - 1) / max_rows;
+        let mut col_widths: Vec<usize> = Vec::with_capacity(num_cols);
+        {
+            let mut col_w: usize = 1;
+            for (i, item) in self.filtered_suggestions.iter().enumerate() {
+                col_w = col_w.max(item.display_width);
+                if (i + 1) % max_rows == 0 {
+                    col_widths.push(col_w);
+                    col_w = 1;
+                }
+            }
+            // Trailing (incomplete) column.
+            if n % max_rows != 0 {
+                col_widths.push(col_w);
+            }
+        }
+
+        // ── Phase 2: figure out visible column range ─────────────────
+        let mut grid: Vec<(Vec<(SuggestionFormatted, bool)>, usize)> = vec![];
+        let mut total_width: usize = 0;
+
+        for col_idx in col_offset..col_widths.len() {
+            let cw = col_widths[col_idx];
+
             let is_first = grid.is_empty();
-            if is_first {
-                // Cap width so long suggestions are truncated rather than dropped.
-                let effective = col_width.min(term_cols);
-                grid.push((col, effective));
-                *total_columns += effective;
-                true
-            } else if *total_columns + COLUMN_PADDING + col_width > term_cols {
-                false
+            let effective_cw = if is_first {
+                cw.min(max_width)
+            } else if total_width + COLUMN_PADDING + cw > max_width {
+                break;
             } else {
-                grid.push((col, col_width));
-                *total_columns += COLUMN_PADDING + col_width;
-                true
+                cw
+            };
+
+            // Build the column, processing each item lazily.
+            let start = col_idx * max_rows;
+            let end = (start + max_rows).min(n);
+            let col_items: Vec<(SuggestionFormatted, bool)> = (start..end)
+                .map(|filtered_idx| {
+                    let fi = &self.filtered_suggestions[filtered_idx];
+                    let suggestion = self.all_suggestions[fi.suggestion_idx].to_suggestion();
+                    let formatted = SuggestionFormatted::new(
+                        &suggestion,
+                        fi.suggestion_idx,
+                        fi.matching_indices.clone(),
+                    );
+                    let is_selected = filtered_idx == selected_1d;
+                    (formatted, is_selected)
+                })
+                .collect();
+
+            if is_first {
+                total_width += effective_cw;
+            } else {
+                total_width += COLUMN_PADDING + effective_cw;
             }
+            grid.push((col_items, effective_cw));
         }
 
-        for (filtered_idx, formatted, is_selected) in self.iter() {
-            current_col.push((formatted, is_selected));
-            col_width = col_width.max(formatted.display_width);
-            if (filtered_idx + 1) % max_rows == 0 {
-                // Skip columns before col_offset.
-                if abs_col_idx < col_offset {
-                    abs_col_idx += 1;
-                    current_col = vec![];
-                    col_width = 1;
-                    continue;
-                }
-                let col = std::mem::take(&mut current_col);
-                let added = push_col(&mut grid, &mut total_columns, col, col_width, max_width);
-                abs_col_idx += 1;
-                col_width = 1;
-                if !added {
-                    break;
-                }
-            }
-        }
-
-        // Handle the last, possibly-incomplete column.
-        if !current_col.is_empty() && abs_col_idx >= col_offset {
-            push_col(
-                &mut grid,
-                &mut total_columns,
-                current_col,
-                col_width,
-                max_width,
-            );
-        }
         grid
     }
 
@@ -593,15 +722,22 @@ impl ActiveSuggestions {
         self.word_under_cursor = new_word_under_cursor.clone();
 
         // Score and filter suggestions using the stored matcher
-        let mut scored: Vec<(i64, SuggestionFormatted)> = self
+        let mut scored: Vec<(i64, FilteredItem)> = self
             .all_suggestions
             .iter()
             .enumerate()
-            .filter_map(|(idx, suggestion)| {
+            .filter_map(|(idx, item)| {
                 self.fuzzy_matcher
-                    .fuzzy_indices(&suggestion.s, &new_word_under_cursor.s)
+                    .fuzzy_indices(item.match_text(), &new_word_under_cursor.s)
                     .map(|(score, indices)| {
-                        (score, SuggestionFormatted::new(suggestion, idx, indices))
+                        (
+                            score,
+                            FilteredItem {
+                                suggestion_idx: idx,
+                                matching_indices: indices,
+                                display_width: item.match_text().width(),
+                            },
+                        )
                     })
             })
             .collect();
@@ -609,10 +745,7 @@ impl ActiveSuggestions {
         // Sort by score (descending - higher scores are better matches)
         scored.sort_by(|a, b| b.0.cmp(&a.0));
 
-        self.filtered_suggestions = scored
-            .into_iter()
-            .map(|(_score, formatted)| formatted)
-            .collect();
+        self.filtered_suggestions = scored.into_iter().map(|(_score, item)| item).collect();
 
         // Reset selected position if needed
         if self.current_1d_index() >= self.filtered_suggestions.len()
@@ -645,7 +778,7 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
-        let formatted_completion = match self.filtered_suggestions.get(self.current_1d_index()) {
+        let filtered_item = match self.filtered_suggestions.get(self.current_1d_index()) {
             Some(s) => s,
             None => {
                 log::warn!(
@@ -656,21 +789,19 @@ impl ActiveSuggestions {
             }
         };
 
-        let suggestion = match self
-            .all_suggestions
-            .get(formatted_completion.suggestion_idx)
-        {
+        let completion_item = match self.all_suggestions.get(filtered_item.suggestion_idx) {
             Some(s) => s,
             None => {
                 log::warn!(
                     "Suggestion index {} out of bounds (len={})",
-                    formatted_completion.suggestion_idx,
+                    filtered_item.suggestion_idx,
                     self.all_suggestions.len()
                 );
                 return;
             }
         };
 
+        let suggestion = completion_item.to_suggestion();
         if let Err(e) =
             buffer.replace_word_under_cursor(&suggestion.formatted(), &self.word_under_cursor)
         {

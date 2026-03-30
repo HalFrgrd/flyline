@@ -4,7 +4,6 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
-use crate::bash_env_manager::BashEnvManager;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -227,7 +226,6 @@ struct App<'a> {
     /// Parsed bash history available at startup.
     history_manager: HistoryManager,
     buffer_before_history_navigation: Option<String>,
-    bash_env: BashEnvManager,
     history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
     content_mode: ContentMode,
@@ -285,7 +283,6 @@ impl<'a> App<'a> {
             ),
             history_manager: HistoryManager::new(settings),
             buffer_before_history_navigation: None,
-            bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             history_suggestion: None,
             mouse_state: MouseState::initialize(&settings.mouse_mode),
             content_mode: ContentMode::Normal,
@@ -310,27 +307,8 @@ impl<'a> App<'a> {
         // Send execution finished escape codes (previous command has completed).
         if self.settings.send_shell_integration_codes {
             let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
-            let hostname = unsafe {
-                let ptr = bash_symbols::current_host_name;
-                if ptr.is_null() {
-                    String::new()
-                } else {
-                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
-                }
-            };
-            let cwd = unsafe {
-                let ptr = bash_symbols::get_working_directory(c"flyline".as_ptr());
-                if ptr.is_null() {
-                    String::new()
-                } else {
-                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
-                }
-            };
-
-            log::info!(
-                "Sending execution finished escape codes with exit value {}",
-                last_command_exit_value
-            );
+            let hostname = bash_funcs::get_hostname();
+            let cwd = bash_funcs::get_cwd();
 
             shell_integration::write_startup_codes(last_command_exit_value, &hostname, &cwd)
                 .unwrap_or_else(|e| {
@@ -841,19 +819,6 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            // Shift+Enter in fuzzy search - accept without running (move to buffer only)
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.accept_fuzzy_history_search();
-            }
             // Shift+Enter - activate AI mode like Ctrl+I (requires --ai-command to be configured)
             KeyEvent {
                 code: KeyCode::Enter,
@@ -884,7 +849,9 @@ impl<'a> App<'a> {
             } => match &mut self.content_mode {
                 ContentMode::FuzzyHistorySearch => {
                     self.accept_fuzzy_history_search();
-                    self.try_submit_current_buffer();
+                    // TODO: allow someone to accept and run the command immediately
+                    // Instead of Enter+Enter
+                    // self.try_submit_current_buffer();
                 }
                 ContentMode::TabCompletion(active_suggestions) => {
                     active_suggestions.accept_currently_selected(&mut self.buffer);
@@ -983,15 +950,13 @@ impl<'a> App<'a> {
             }
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             KeyEvent {
-                code: KeyCode::Char('7'),
+                code: KeyCode::Char('7') | KeyCode::Char('/'),
                 modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
                 self.buffer.move_to_start();
                 self.buffer.insert_str("#");
-                self.mode = AppRunningState::Exiting(ExitState::WithCommand(
-                    self.buffer.buffer().to_string(),
-                ));
+                self.try_submit_current_buffer();
             }
             KeyEvent {
                 code: KeyCode::Char('r'),
@@ -1112,11 +1077,6 @@ impl<'a> App<'a> {
             .iter()
             .find(|t| t.token.byte_range().contains(&cursor_pos))
         {
-            log::info!(
-                "Token at cursor position: '{}', with annotation {:?}",
-                dparser_token.token.value,
-                dparser_token.annotation
-            );
             if let dparser::TokenAnnotation::IsClosing {
                 is_auto_inserted: true,
                 ..
@@ -1455,7 +1415,7 @@ impl<'a> App<'a> {
     /// Returns one `Line` per terminal row. The first line combines the
     /// header prefix (index / score / timeago / indicator) with the first
     /// command row; subsequent lines carry the continuation prefix.
-    fn get_lines_for_entry(
+    fn get_lines_for_history_entry(
         formatted_entry: &HistoryEntryFormatted,
         entry_idx: usize,
         fuzzy_search_index: usize,
@@ -1480,10 +1440,7 @@ impl<'a> App<'a> {
             }
         };
 
-        let Some(formatted_text) = formatted_entry.command_spans.as_ref() else {
-            log::warn!("No formatted text for history entry '{}'", entry.command);
-            return vec![];
-        };
+        let formatted_text = formatted_entry.command_spans();
 
         let total_logical_lines = formatted_text.len();
         let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
@@ -1886,7 +1843,7 @@ impl<'a> App<'a> {
                     if is_selected {
                         content.set_focus_row(content.cursor_position().row);
                     }
-                    for line in Self::get_lines_for_entry(
+                    for line in Self::get_lines_for_history_entry(
                         formatted_entry,
                         entry_idx,
                         fuzzy_search_index,
