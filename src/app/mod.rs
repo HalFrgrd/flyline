@@ -310,27 +310,8 @@ impl<'a> App<'a> {
         // Send execution finished escape codes (previous command has completed).
         if self.settings.send_shell_integration_codes {
             let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
-            let hostname = unsafe {
-                let ptr = bash_symbols::current_host_name;
-                if ptr.is_null() {
-                    String::new()
-                } else {
-                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
-                }
-            };
-            let cwd = unsafe {
-                let ptr = bash_symbols::get_working_directory(c"flyline".as_ptr());
-                if ptr.is_null() {
-                    String::new()
-                } else {
-                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
-                }
-            };
-
-            log::info!(
-                "Sending execution finished escape codes with exit value {}",
-                last_command_exit_value
-            );
+            let hostname = bash_funcs::get_hostname();
+            let cwd = bash_funcs::get_cwd();
 
             shell_integration::write_startup_codes(last_command_exit_value, &hostname, &cwd)
                 .unwrap_or_else(|e| {
