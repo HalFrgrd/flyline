@@ -1,4 +1,46 @@
+use ratatui::style::{Color, Modifier, Style};
 use std::collections::HashMap;
+
+/// Colour palette used for configurable UI elements.
+#[derive(Debug, Clone)]
+pub struct ColorPalette {
+    /// Style for inline history suggestions shown to the right of the cursor.
+    pub inline_suggestion: Style,
+    /// Style for matched characters in fuzzy-search results.
+    pub matching_char: Style,
+}
+
+impl ColorPalette {
+    /// Dark-terminal defaults (the original flyline palette).
+    pub fn dark() -> Self {
+        ColorPalette {
+            inline_suggestion: Style::default()
+                .add_modifier(Modifier::DIM)
+                .add_modifier(Modifier::ITALIC),
+            matching_char: Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        }
+    }
+
+    /// Light-terminal defaults.
+    pub fn light() -> Self {
+        ColorPalette {
+            inline_suggestion: Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+            matching_char: Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        }
+    }
+}
+
+impl Default for ColorPalette {
+    fn default() -> Self {
+        Self::dark()
+    }
+}
 
 /// A single custom prompt animation registered with `flyline create-anim`.
 #[derive(Debug, Clone)]
@@ -59,6 +101,8 @@ pub struct Settings {
     pub frame_rate: u8,
     /// Whether to send shell integration escape codes (OSC 133 / OSC 633).
     pub send_shell_integration_codes: bool,
+    /// Configurable colour palette for UI elements.
+    pub color_palette: ColorPalette,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -80,6 +124,7 @@ impl Default for Settings {
             matrix_animation: false,
             frame_rate: 30,
             send_shell_integration_codes: true,
+            color_palette: ColorPalette::dark(),
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }

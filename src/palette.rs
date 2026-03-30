@@ -1,6 +1,21 @@
 use itertools::Itertools;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use std::sync::{LazyLock, RwLock};
+
+use crate::settings::ColorPalette;
+
+/// Global active colour palette, updated by `set_active_palette`.
+static ACTIVE_PALETTE: LazyLock<RwLock<ColorPalette>> =
+    LazyLock::new(|| RwLock::new(ColorPalette::dark()));
+
+/// Replace the global active palette. Called whenever the user runs
+/// `flyline set-color …`.
+pub fn set_active_palette(palette: ColorPalette) {
+    if let Ok(mut guard) = ACTIVE_PALETTE.write() {
+        *guard = palette;
+    }
+}
 
 pub struct Palette;
 
@@ -21,9 +36,14 @@ impl Palette {
         Style::default().add_modifier(Modifier::DIM)
     }
     pub fn history_inline_meta() -> Style {
-        Style::default()
-            .add_modifier(Modifier::DIM)
-            .add_modifier(Modifier::ITALIC)
+        ACTIVE_PALETTE
+            .read()
+            .map(|p| p.inline_suggestion)
+            .unwrap_or_else(|_| {
+                Style::default()
+                    .add_modifier(Modifier::DIM)
+                    .add_modifier(Modifier::ITALIC)
+            })
     }
     pub fn tutorial_hint() -> Style {
         Style::default().add_modifier(Modifier::BOLD)
@@ -35,9 +55,14 @@ impl Palette {
         Style::default()
     }
     pub fn matched_character() -> Style {
-        Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD)
+        ACTIVE_PALETTE
+            .read()
+            .map(|p| p.matching_char)
+            .unwrap_or_else(|_| {
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
+            })
     }
     pub fn opening_and_closing_pair() -> Style {
         Self::matched_character().add_modifier(Modifier::UNDERLINED)

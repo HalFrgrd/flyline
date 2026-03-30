@@ -304,6 +304,7 @@ Usage: flyline [OPTIONS] [COMMAND]
 Commands:
   agent-mode   Configure AI agent mode.
   create-anim  Create a custom prompt animation.
+  set-color    Configure the colour palette.
   help         Print this message or the help of the given subcommand(s)
 
 Options:
@@ -379,4 +380,35 @@ Read more at https://github.com/HalFrgrd/flyline
 
 When flyline loads, it automatically sets up its own tab completion
 so you can type `flyline --<Tab>` in your shell to interactively browse and configure settings.
+
+## Colour palette
+
+Flyline ships with two built-in colour presets (dark and light) and lets you override individual colours.
+
+### Presets
+
+```bash
+flyline set-color --default dark   # original palette, optimised for dark terminals
+flyline set-color --default light  # preset optimised for light terminals
+```
+
+### Custom colours
+
+Style strings follow the [rich](https://rich.readthedocs.io/en/stable/style.html) syntax: a
+space-separated list of attributes and colours.
+
+Supported attributes: `bold`, `dim`, `italic`, `underline`, `blink`, `reverse`, `strike`.
+
+Colours can be specified by name (`red`, `green`, `blue`, `magenta`, `cyan`, `yellow`,
+`white`, `black`, `bright_red`, …), as a 256-colour index (`color(196)`), or as an RGB
+hex code (`#ff5500`) or `rgb(r,g,b)` form.
+
+```bash
+flyline set-color --inline-suggestion "dim italic"     # style for inline history suggestions
+flyline set-color --matching-char "bold green"         # style for matched chars in fuzzy search
+flyline set-color --matching-char "#ff8700"            # orange matching chars
+flyline set-color --inline-suggestion "bold red"       # combine --default with custom overrides
+```
+
+An error is printed and the setting is not changed when the style string cannot be parsed.
 

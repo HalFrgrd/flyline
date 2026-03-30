@@ -124,6 +124,14 @@ struct FlylineArgs {
     command: Option<Commands>,
 }
 
+#[derive(ValueEnum, Clone, Debug)]
+enum ColorDefault {
+    /// Dark-terminal colour preset (the original flyline palette).
+    Dark,
+    /// Light-terminal colour preset.
+    Light,
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Configure AI agent mode.
@@ -170,10 +178,77 @@ enum Commands {
         /// One or more animation frames (positional).  Use `\e` for the ESC character.
         frames: Vec<String>,
     },
+    /// Configure the colour palette.
+    ///
+    /// Style strings follow rich's syntax: a space-separated list of attributes
+    /// (bold, dim, italic, underline, blink, reverse, strike) and colours
+    /// (e.g. red, #ff0000, rgb(255,0,0), color(196)).
+    ///
+    /// Examples:
+    ///   flyline set-color --default dark
+    ///   flyline set-color --inline-suggestion "dim italic"
+    ///   flyline set-color --matching-char "bold green"
+    ///   flyline set-color --default light --matching-char "bold blue"
+    #[command(name = "set-color", verbatim_doc_comment)]
+    SetColor {
+        /// Apply a built-in colour preset for dark or light terminals.
+        #[arg(long = "default", value_name = "MODE")]
+        default: Option<ColorDefault>,
+        /// Style for inline history suggestions (e.g. "dim italic", "bold red").
+        #[arg(long = "inline-suggestion", value_name = "STYLE")]
+        inline_suggestion: Option<String>,
+        /// Style for matched characters in fuzzy-search results (e.g. "bold green").
+        #[arg(long = "matching-char", value_name = "STYLE")]
+        matching_char: Option<String>,
+    },
 }
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
+
+/// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
+/// Returns an error message if the string cannot be parsed.
+fn parse_style(s: &str) -> Result<ratatui::style::Style, String> {
+    use parse_style::{Attribute, Style as ParseStyle};
+    use ratatui::style::{Modifier, Style};
+
+    let parsed: ParseStyle = s.parse().map_err(|e| format!("{e}"))?;
+    let mut style = Style::default();
+
+    if let Some(fg) = parsed.get_foreground() {
+        style = style.fg(parse_color_to_ratatui(fg));
+    }
+    if let Some(bg) = parsed.get_background() {
+        style = style.bg(parse_color_to_ratatui(bg));
+    }
+
+    let attr_map: &[(Attribute, Modifier)] = &[
+        (Attribute::Bold, Modifier::BOLD),
+        (Attribute::Dim, Modifier::DIM),
+        (Attribute::Italic, Modifier::ITALIC),
+        (Attribute::Underline, Modifier::UNDERLINED),
+        (Attribute::Blink, Modifier::SLOW_BLINK),
+        (Attribute::Blink2, Modifier::RAPID_BLINK),
+        (Attribute::Reverse, Modifier::REVERSED),
+        (Attribute::Conceal, Modifier::HIDDEN),
+        (Attribute::Strike, Modifier::CROSSED_OUT),
+    ];
+    for &(attr, modifier) in attr_map {
+        if parsed.is_enabled(attr) {
+            style = style.add_modifier(modifier);
+        }
+    }
+    Ok(style)
+}
+
+fn parse_color_to_ratatui(c: parse_style::Color) -> ratatui::style::Color {
+    use parse_style::Color;
+    match c {
+        Color::Default => ratatui::style::Color::Reset,
+        Color::Color256(c256) => ratatui::style::Color::Indexed(c256.0),
+        Color::Rgb(rgb) => ratatui::style::Color::Rgb(rgb.red(), rgb.green(), rgb.blue()),
+    }
+}
 
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
@@ -345,36 +420,82 @@ impl Flyline {
                     self.settings.ai_system_prompt = system_prompt.clone();
                 }
 
-                if let Some(Commands::CreateAnim {
-                    name,
-                    fps,
-                    frames,
-                    ping_pong,
-                }) = parsed.command
-                {
-                    if fps <= 0.0 {
-                        eprintln!(
-                            "flyline create-anim: --fps must be greater than 0 (got {}); animation '{}' not registered",
-                            fps, name
-                        );
-                        return bash_symbols::BuiltinExitCode::Usage as c_int;
-                    }
-                    log::info!(
-                        "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
+                match parsed.command {
+                    Some(Commands::CreateAnim {
                         name,
                         fps,
-                        frames.len(),
-                        ping_pong
-                    );
-                    self.settings.custom_animations.insert(
-                        name.clone(),
-                        settings::PromptAnimation {
+                        frames,
+                        ping_pong,
+                    }) => {
+                        if fps <= 0.0 {
+                            eprintln!(
+                                "flyline create-anim: --fps must be greater than 0 (got {}); animation '{}' not registered",
+                                fps, name
+                            );
+                            return bash_symbols::BuiltinExitCode::Usage as c_int;
+                        }
+                        log::info!(
+                            "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
                             name,
                             fps,
-                            frames,
-                            ping_pong,
-                        },
-                    );
+                            frames.len(),
+                            ping_pong
+                        );
+                        self.settings.custom_animations.insert(
+                            name.clone(),
+                            settings::PromptAnimation {
+                                name,
+                                fps,
+                                frames,
+                                ping_pong,
+                            },
+                        );
+                    }
+                    Some(Commands::SetColor {
+                        default,
+                        inline_suggestion,
+                        matching_char,
+                    }) => {
+                        if let Some(preset) = default {
+                            self.settings.color_palette = match preset {
+                                ColorDefault::Dark => settings::ColorPalette::dark(),
+                                ColorDefault::Light => settings::ColorPalette::light(),
+                            };
+                            log::info!("Color palette set to {:?} preset", preset);
+                        }
+                        if let Some(ref style_str) = inline_suggestion {
+                            match parse_style(style_str) {
+                                Ok(style) => {
+                                    self.settings.color_palette.inline_suggestion = style;
+                                    log::info!("Inline-suggestion style set to {:?}", style_str);
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "flyline set-color: invalid --inline-suggestion style {:?}: {}",
+                                        style_str, e
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            }
+                        }
+                        if let Some(ref style_str) = matching_char {
+                            match parse_style(style_str) {
+                                Ok(style) => {
+                                    self.settings.color_palette.matching_char = style;
+                                    log::info!("Matching-char style set to {:?}", style_str);
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "flyline set-color: invalid --matching-char style {:?}: {}",
+                                        style_str, e
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            }
+                        }
+                        palette::set_active_palette(self.settings.color_palette.clone());
+                    }
+                    _ => {}
                 }
 
                 #[cfg(feature = "integration-tests")]
