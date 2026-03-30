@@ -14,7 +14,6 @@ use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::settings::{MouseMode, Settings};
-use crate::shell_integration::EscapeCodes;
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
@@ -333,30 +332,10 @@ impl<'a> App<'a> {
                 last_command_exit_value
             );
 
-            shell_integration::write_escape_codes(&[
-                EscapeCodes::VscExecutionFinished {
-                    exit_code: Some(last_command_exit_value),
-                },
-                EscapeCodes::VscProperties {
-                    cwd: cwd.clone(),
-                    has_rich_command_detection: true,
-                },
-                // If found that this one needs to be after VscExecutionFinished for some reason to be reliably picked up by vscode's terminal.
-                EscapeCodes::ExecutionFinished {
-                    exit_code: Some(last_command_exit_value),
-                },
-                EscapeCodes::CurrentDirectory {
-                    host: hostname.clone(),
-                    path: cwd.clone(),
-                },
-                EscapeCodes::KittyCurrentDirectory {
-                    host: hostname,
-                    path: cwd.clone(),
-                },
-            ])
-            .unwrap_or_else(|e| {
-                log::error!("Failed to write execution finished escape codes: {}", e);
-            });
+            shell_integration::write_startup_codes(last_command_exit_value, &hostname, &cwd)
+                .unwrap_or_else(|e| {
+                    log::error!("Failed to write execution finished escape codes: {}", e);
+                });
         }
 
         crossterm::terminal::enable_raw_mode().unwrap();
@@ -438,45 +417,39 @@ impl<'a> App<'a> {
                         self.last_draw_time = std::time::Instant::now();
 
                         if self.settings.send_shell_integration_codes {
-                            let mut codes = vec![];
+                            let new_drawn_contents = self.last_contents.as_ref();
 
-                            if let Some(new_drawn_contents) = self.last_contents.as_ref() {
-                                if let Some(prompt_start) =
-                                    new_drawn_contents.term_em_prompt_start()
-                                    && (!self.mode.is_running()
-                                        || prev_contents.as_ref().is_none_or(|prev_contents| {
-                                            prev_contents.term_em_prompt_start()
-                                                != Some(prompt_start)
-                                        }))
+                            let prompt_start = new_drawn_contents.and_then(|c| {
+                                let ps = c.term_em_prompt_start()?;
+                                if !self.mode.is_running()
+                                    || prev_contents
+                                        .as_ref()
+                                        .is_none_or(|prev| prev.term_em_prompt_start() != Some(ps))
                                 {
-                                    codes.push(EscapeCodes::VscPromptStart {
-                                        col: prompt_start.x,
-                                        row: prompt_start.y,
-                                    });
-                                    codes.push(EscapeCodes::PromptStart {
-                                        col: prompt_start.x,
-                                        row: prompt_start.y,
-                                    });
+                                    Some((ps.x, ps.y))
+                                } else {
+                                    None
                                 }
+                            });
 
-                                if let Some(prompt_end) = new_drawn_contents.term_em_prompt_end()
-                                    && (!self.mode.is_running()
-                                        || prev_contents.as_ref().is_none_or(|prev_contents| {
-                                            prev_contents.term_em_prompt_end() != Some(prompt_end)
-                                        }))
+                            let prompt_end = new_drawn_contents.and_then(|c| {
+                                let pe = c.term_em_prompt_end()?;
+                                if !self.mode.is_running()
+                                    || prev_contents
+                                        .as_ref()
+                                        .is_none_or(|prev| prev.term_em_prompt_end() != Some(pe))
                                 {
-                                    codes.push(EscapeCodes::VscPromptEnd {
-                                        col: prompt_end.x,
-                                        row: prompt_end.y,
-                                    });
-                                    codes.push(EscapeCodes::PromptEnd {
-                                        col: prompt_end.x,
-                                        row: prompt_end.y,
-                                    });
+                                    Some((pe.x, pe.y))
+                                } else {
+                                    None
                                 }
-                            }
+                            });
 
-                            shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                            shell_integration::write_after_rendering_codes(
+                                prompt_start,
+                                prompt_end,
+                            )
+                            .unwrap_or_else(|e| {
                                 log::error!("Failed to write escape codes: {}", e);
                             });
                         }
@@ -566,25 +539,10 @@ impl<'a> App<'a> {
 
         bash_symbols::clear_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
-        let vscode_nonce = bash_funcs::get_envvar_value("VSCODE_NONCE");
-
-        log::info!("vscode_nonce: {:?}", vscode_nonce);
-
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
                 if self.settings.send_shell_integration_codes {
-                    let codes = vec![
-                        EscapeCodes::VscCommandLine {
-                            commandline: cmd.clone(),
-                            nonce: vscode_nonce,
-                        },
-                        EscapeCodes::VscPreExecution,
-                        EscapeCodes::PreExecution {
-                            commandline: Some(cmd.clone()),
-                        },
-                    ];
-
-                    shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                    shell_integration::write_on_exit_codes(Some(&cmd)).unwrap_or_else(|e| {
                         log::error!("Failed to write pre-execution escape codes: {}", e);
                     });
                 }
@@ -594,12 +552,7 @@ impl<'a> App<'a> {
             }
             _ => {
                 if self.settings.send_shell_integration_codes {
-                    let codes = vec![
-                        EscapeCodes::VscPreExecution,
-                        EscapeCodes::PreExecution { commandline: None },
-                    ];
-
-                    shell_integration::write_escape_codes(&codes).unwrap_or_else(|e| {
+                    shell_integration::write_on_exit_codes(None).unwrap_or_else(|e| {
                         log::error!("Failed to write pre-execution escape codes: {}", e);
                     });
                 }
