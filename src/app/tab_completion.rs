@@ -286,7 +286,7 @@ impl App<'_> {
             } else {
                 (quoted, suffix)
             };
-            let ls_style = self.bash_env.style_for_path(path);
+            let ls_style = bash_funcs::style_for_path(path);
             (appended.0, appended.1, ls_style)
         } else {
             (quoted, suffix, None)
@@ -489,12 +489,12 @@ impl App<'_> {
             );
         }
 
-        let mut res = self.bash_env.get_first_word_completions(command);
+        let mut res = bash_funcs::get_first_word_completions(command);
 
         if res.is_empty() {
             // No prefix matches found, fall back to fuzzy search
             log::debug!("No prefix matches for '{}', trying fuzzy search", command);
-            res = self.bash_env.get_fuzzy_first_word_completions(command);
+            res = bash_funcs::get_fuzzy_first_word_completions(command);
             return Suggestion::from_string_vec(res, "", " ");
         }
 

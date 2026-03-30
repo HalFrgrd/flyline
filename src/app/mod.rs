@@ -4,7 +4,6 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
-use crate::bash_env_manager::BashEnvManager;
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -227,7 +226,6 @@ struct App<'a> {
     /// Parsed bash history available at startup.
     history_manager: HistoryManager,
     buffer_before_history_navigation: Option<String>,
-    bash_env: BashEnvManager,
     history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
     content_mode: ContentMode,
@@ -285,7 +283,6 @@ impl<'a> App<'a> {
             ),
             history_manager: HistoryManager::new(settings),
             buffer_before_history_navigation: None,
-            bash_env: BashEnvManager::new(), // TODO: This is potentially expensive, load in background?
             history_suggestion: None,
             mouse_state: MouseState::initialize(&settings.mouse_mode),
             content_mode: ContentMode::Normal,

@@ -6,7 +6,6 @@ use std::sync::Mutex;
 mod active_suggestions;
 mod agent_mode;
 mod app;
-mod bash_env_manager;
 mod bash_funcs;
 mod bash_symbols;
 mod command_acceptance;
