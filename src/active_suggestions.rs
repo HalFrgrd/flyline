@@ -145,10 +145,10 @@ impl SuggestionFormatted {
         suggestion: &Suggestion,
         suggestion_idx: usize,
         matching_indices: Vec<usize>,
+        palette: &Palette,
     ) -> Self {
-        let base_style = suggestion.style.unwrap_or(Palette::normal_text());
-        let lines =
-            Palette::highlight_maching_indices(&suggestion.s, &matching_indices, base_style);
+        let base_style = suggestion.style.unwrap_or(palette.normal_text);
+        let lines = palette.highlight_maching_indices(&suggestion.s, &matching_indices, base_style);
 
         SuggestionFormatted {
             suggestion_idx,
@@ -628,6 +628,7 @@ impl ActiveSuggestions {
         max_rows: usize,
         max_width: usize,
         col_offset: usize,
+        palette: &Palette,
     ) -> Vec<(Vec<(SuggestionFormatted, bool)>, usize)> {
         let selected_1d = self.current_1d_index();
         let n = self.filtered_suggestions.len();
@@ -683,6 +684,7 @@ impl ActiveSuggestions {
                         &suggestion,
                         fi.suggestion_idx,
                         fi.matching_indices.clone(),
+                        palette,
                     );
                     let is_selected = filtered_idx == selected_1d;
                     (formatted, is_selected)

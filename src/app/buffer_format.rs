@@ -34,7 +34,14 @@ impl FormattedBuffer {
         let mut parser = crate::dparser::DParser::from(input);
         parser.walk_to_end();
         let tokens = parser.tokens().to_vec();
-        format_buffer(&tokens, cursor_pos, input.len(), false, None)
+        format_buffer(
+            &tokens,
+            cursor_pos,
+            input.len(),
+            false,
+            None,
+            &Palette::dark(),
+        )
     }
 }
 
@@ -81,30 +88,31 @@ fn token_to_style(
     token: &AnnotatedToken,
     recognised_command: Option<bool>,
     cursor_on_this_or_closing_token: bool,
+    palette: &Palette,
 ) -> Style {
     if cursor_on_this_or_closing_token {
-        return Palette::opening_and_closing_pair();
+        return palette.opening_and_closing_pair;
     }
 
     if matches!(token.annotation, TokenAnnotation::IsCommandWord(_)) {
         if recognised_command == Some(true) {
-            return Palette::recognised_word();
+            return palette.recognised_word;
         }
-        return Palette::unrecognised_word();
+        return palette.unrecognised_word;
     }
 
     if token.annotation == TokenAnnotation::IsPartOfSingleQuotedString
         || token.token.kind == TokenKind::SingleQuote
     {
-        return Palette::single_quoted_word();
+        return palette.single_quoted_word;
     }
 
     if token.annotation == TokenAnnotation::IsPartOfDoubleQuotedString
         || token.token.kind == TokenKind::Quote
     {
-        return Palette::double_quoted_word();
+        return palette.double_quoted_word;
     }
-    Palette::normal_text()
+    palette.normal_text
 }
 
 #[derive(Debug)]
@@ -121,12 +129,18 @@ impl FormattedBufferPart {
         wordinfo_fn: &mut Option<WordInfoFn<'_>>,
         cursor_on_this_or_closing_token: bool,
         cursor_byte_pos_in_token: Option<usize>,
+        palette: &Palette,
     ) -> Self {
         let word_info = wordinfo_fn.as_mut().and_then(|f| f(token));
         let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
         let recognised_command = word_info.as_ref().map(|info| info.is_recognised_command);
 
-        let style = token_to_style(token, recognised_command, cursor_on_this_or_closing_token);
+        let style = token_to_style(
+            token,
+            recognised_command,
+            cursor_on_this_or_closing_token,
+            palette,
+        );
         let span = Span::styled(token.token.value.clone(), style);
 
         let cursor_grapheme_idx = cursor_byte_pos_in_token.map(|byte_pos| {
@@ -164,6 +178,7 @@ impl FormattedBufferPart {
             && token.token.value.starts_with("python")
         {
             let normal_string = token.token.value.clone();
+            let recognised_style = palette.recognised_word;
 
             Some(Arc::new(move |now| {
                 let mut anim = SNAKE_ANIMATION
@@ -172,7 +187,7 @@ impl FormattedBufferPart {
                     .unwrap();
                 anim.update_anim(now);
                 let snake_str = anim.apply_to_string(&normal_string);
-                Span::styled(snake_str, Palette::recognised_word())
+                Span::styled(snake_str, recognised_style)
             }))
         } else {
             None
@@ -235,6 +250,7 @@ pub fn format_buffer<'a>(
     buffer_byte_length: usize,
     app_is_running: bool,
     mut wordinfo_fn: Option<WordInfoFn<'a>>,
+    palette: &Palette,
 ) -> FormattedBuffer {
     let check_highlight = |inclusive: bool| {
         annotated_tokens
@@ -287,7 +303,13 @@ pub fn format_buffer<'a>(
             } else {
                 None
             };
-            FormattedBufferPart::new(tok, &mut wordinfo_fn, highlight, cursor_pos_in_token)
+            FormattedBufferPart::new(
+                tok,
+                &mut wordinfo_fn,
+                highlight,
+                cursor_pos_in_token,
+                palette,
+            )
         })
         .collect();
 

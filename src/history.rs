@@ -415,12 +415,12 @@ impl HistoryEntryFormatted {
         }
     }
 
-    pub fn command_spans(&self) -> &Vec<Line<'static>> {
+    pub fn command_spans(&self, palette: &Palette) -> &Vec<Line<'static>> {
         self.command_spans.get_or_init(|| {
-            Palette::highlight_maching_indices(
+            palette.highlight_maching_indices(
                 &self.entry.command,
                 &self.match_indices,
-                Palette::normal_text(),
+                palette.normal_text,
             )
         })
     }

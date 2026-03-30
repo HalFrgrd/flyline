@@ -1346,6 +1346,7 @@ impl<'a> App<'a> {
             self.buffer.buffer().len(),
             self.mode.is_running(),
             Some(Box::new(Self::wordinfo_fn)),
+            &self.settings.color_palette,
         );
 
         self.tooltip = None;
@@ -1423,6 +1424,7 @@ impl<'a> App<'a> {
         num_digits_for_score: usize,
         header_prefix_width: usize,
         available_cols: u16,
+        palette: &Palette,
     ) -> Vec<Line<'static>> {
         let is_selected = fuzzy_search_index == entry_idx;
 
@@ -1434,13 +1436,13 @@ impl<'a> App<'a> {
 
         let indicator_span = || {
             if is_selected {
-                Span::styled("▐", Palette::matched_character())
+                Span::styled("▐", palette.matching_char)
             } else {
-                Span::styled(" ", Palette::secondary_text())
+                Span::styled(" ", palette.secondary_text)
             }
         };
 
-        let formatted_text = formatted_entry.command_spans();
+        let formatted_text = formatted_entry.command_spans(&palette);
 
         let total_logical_lines = formatted_text.len();
         let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
@@ -1467,13 +1469,13 @@ impl<'a> App<'a> {
                 vec![
                     Span::styled(
                         format!("{:>num_digits_for_index$} ", entry.index + 1),
-                        Palette::secondary_text(),
+                        palette.secondary_text,
                     ),
                     Span::styled(
                         format!("{:>num_digits_for_score$} ", formatted_entry.score),
-                        Palette::secondary_text(),
+                        palette.secondary_text,
                     ),
-                    Span::styled(timeago_str.clone(), Palette::secondary_text()),
+                    Span::styled(timeago_str.clone(), palette.secondary_text),
                     indicator_span(),
                 ]
             } else {
@@ -1484,7 +1486,7 @@ impl<'a> App<'a> {
                     " ".repeat(header_prefix_width - 1)
                 };
                 vec![
-                    Span::styled(indent_prefix, Palette::secondary_text()),
+                    Span::styled(indent_prefix, palette.secondary_text),
                     indicator_span(),
                 ]
             };
@@ -1512,9 +1514,9 @@ impl<'a> App<'a> {
             // make space; otherwise just append.
             if display_idx + 1 == rows_to_show && has_more {
                 let ellipsis_style = if is_selected {
-                    Palette::convert_to_selected(Palette::secondary_text())
+                    Palette::convert_to_selected(palette.secondary_text)
                 } else {
-                    Palette::secondary_text()
+                    palette.secondary_text
                 };
                 if cmd_display_width >= available_cols as usize {
                     'trim: loop {
@@ -1628,7 +1630,10 @@ impl<'a> App<'a> {
             if part.token.token.kind == TokenKind::Newline {
                 line_idx += 1;
                 content.newline();
-                let ps2 = Span::styled(format!("{}∙", line_idx + 1), Palette::secondary_text());
+                let ps2 = Span::styled(
+                    format!("{}∙", line_idx + 1),
+                    self.settings.color_palette.secondary_text,
+                );
                 content.write_span(&ps2, Tag::Ps2Prompt);
             }
         }
@@ -1684,20 +1689,26 @@ impl<'a> App<'a> {
             content.write_span_dont_overwrite(
                 &Span::styled(
                     " 💡 Start typing or search history with Ctrl+R",
-                    Palette::tutorial_hint(),
+                    self.settings.color_palette.tutorial_hint,
                 ),
                 |_| Tag::HistorySuggestion,
                 None,
             );
             content.newline();
             content.write_span_dont_overwrite(
-                &Span::styled(TUTORIAL_HISTORY_PREFIX_HINT, Palette::tutorial_hint()),
+                &Span::styled(
+                    TUTORIAL_HISTORY_PREFIX_HINT,
+                    self.settings.color_palette.tutorial_hint,
+                ),
                 |_| Tag::HistorySuggestion,
                 None,
             );
             content.newline();
             content.write_span_dont_overwrite(
-                &Span::styled(TUTORIAL_DISABLE_HINT, Palette::tutorial_hint()),
+                &Span::styled(
+                    TUTORIAL_DISABLE_HINT,
+                    self.settings.color_palette.tutorial_hint,
+                ),
                 |_| Tag::HistorySuggestion,
                 None,
             );
@@ -1716,7 +1727,8 @@ impl<'a> App<'a> {
                     }
 
                     content.write_span_dont_overwrite(
-                        &Span::from(line.to_owned()).style(Palette::secondary_text()),
+                        &Span::from(line.to_owned())
+                            .style(self.settings.color_palette.secondary_text),
                         |_| Tag::HistorySuggestion,
                         None,
                     );
@@ -1729,7 +1741,8 @@ impl<'a> App<'a> {
                         }
 
                         content.write_span_dont_overwrite(
-                            &Span::from(extra_info_text).style(Palette::history_inline_meta()),
+                            &Span::from(extra_info_text)
+                                .style(self.settings.color_palette.inline_suggestion),
                             |_| Tag::HistorySuggestion,
                             None,
                         );
@@ -1738,7 +1751,7 @@ impl<'a> App<'a> {
                             content.write_span_dont_overwrite(
                                 &Span::styled(
                                     " 💡 Press → or End to accept",
-                                    Palette::tutorial_hint(),
+                                    self.settings.color_palette.tutorial_hint,
                                 ),
                                 |_| Tag::HistorySuggestion,
                                 None,
@@ -1758,7 +1771,7 @@ impl<'a> App<'a> {
                 // Early exit when there are no suggestions to display.
                 if active_suggestions.filtered_suggestions_len() == 0 {
                     content.write_span(
-                        &Span::styled("No suggestions", Palette::secondary_text()),
+                        &Span::styled("No suggestions", self.settings.color_palette.secondary_text),
                         Tag::TabSuggestion,
                     );
                 } else {
@@ -1773,6 +1786,7 @@ impl<'a> App<'a> {
                         num_rows_for_suggestions as usize,
                         width as usize,
                         col_offset,
+                        &self.settings.color_palette,
                     ) {
                         for (row_idx, (formatted, is_selected)) in col.iter().enumerate() {
                             let formatted_suggestion = formatted.render(col_width, *is_selected);
@@ -1851,6 +1865,7 @@ impl<'a> App<'a> {
                         num_digits_for_score,
                         header_prefix_width,
                         available_cols,
+                        &self.settings.color_palette,
                     ) {
                         content.newline();
                         content.write_line(&line, false, Tag::HistoryResult(entry_idx));
@@ -1866,14 +1881,17 @@ impl<'a> App<'a> {
                 content.write_span(
                     &Span::styled(
                         format!("# Fuzzy search: {}/{}", num_results, num_searched),
-                        Palette::secondary_text(),
+                        self.settings.color_palette.secondary_text,
                     ),
                     Tag::FuzzySearch,
                 );
                 if self.settings.tutorial_mode {
                     content.newline();
                     content.write_span(
-                        &Span::styled(TUTORIAL_FUZZY_SEARCH_HINT, Palette::tutorial_hint()),
+                        &Span::styled(
+                            TUTORIAL_FUZZY_SEARCH_HINT,
+                            self.settings.color_palette.tutorial_hint,
+                        ),
                         Tag::FuzzySearch,
                     );
                 }
@@ -1881,8 +1899,10 @@ impl<'a> App<'a> {
             ContentMode::Normal if self.mode.is_running() => {
                 if let Some(tooltip) = &self.tooltip {
                     content.newline();
-                    let tooltip_line =
-                        Line::from(Span::styled(tooltip.clone(), Palette::secondary_text()));
+                    let tooltip_line = Line::from(Span::styled(
+                        tooltip.clone(),
+                        self.settings.color_palette.secondary_text,
+                    ));
 
                     let max_tool_tip_rows: u16 = 3;
 
@@ -1906,7 +1926,7 @@ impl<'a> App<'a> {
                             content.set_cursor_col(last_col);
                         }
                         content.write_span(
-                            &Span::styled("…", Palette::secondary_text()),
+                            &Span::styled("…", self.settings.color_palette.secondary_text),
                             Tag::Tooltip,
                         );
                     }
@@ -1922,7 +1942,7 @@ impl<'a> App<'a> {
                 content.write_span(
                     &Span::styled(
                         format!("Running: {} [{}s]", command_display, elapsed_secs),
-                        Palette::secondary_text(),
+                        self.settings.color_palette.secondary_text,
                     ),
                     Tag::Normal,
                 );
@@ -1939,9 +1959,9 @@ impl<'a> App<'a> {
                     }
                     let indicator = if is_selected { "▐" } else { " " };
                     let indicator_style = if is_selected {
-                        Palette::matched_character()
+                        self.settings.color_palette.matching_char
                     } else {
-                        Palette::secondary_text()
+                        self.settings.color_palette.secondary_text
                     };
                     content.write_span(
                         &Span::styled(indicator, indicator_style),
@@ -1949,9 +1969,9 @@ impl<'a> App<'a> {
                     );
                     // Description line
                     let desc_style = if is_selected {
-                        Palette::convert_to_selected(Palette::secondary_text())
+                        Palette::convert_to_selected(self.settings.color_palette.secondary_text)
                     } else {
-                        Palette::secondary_text()
+                        self.settings.color_palette.secondary_text
                     };
                     content.write_span(
                         &Span::styled(suggestion.description.clone(), desc_style),
@@ -1976,6 +1996,7 @@ impl<'a> App<'a> {
                         cmd.len(),
                         false,
                         Some(Box::new(Self::wordinfo_fn)),
+                        &self.settings.color_palette,
                     );
                     for part in &formatted_cmd.parts {
                         if matches!(part.token.token.kind, TokenKind::Newline) {
@@ -2015,7 +2036,10 @@ impl<'a> App<'a> {
                     for line in raw_output.lines().take(5) {
                         content.newline();
                         content.write_span(
-                            &Span::styled(line.to_string(), Palette::secondary_text()),
+                            &Span::styled(
+                                line.to_string(),
+                                self.settings.color_palette.secondary_text,
+                            ),
                             Tag::Normal,
                         );
                     }
@@ -2024,7 +2048,7 @@ impl<'a> App<'a> {
                 content.write_span(
                     &Span::styled(
                         "Press Enter to run `flyline agent-mode --help`.",
-                        Palette::secondary_text(),
+                        self.settings.color_palette.secondary_text,
                     ),
                     Tag::Blank,
                 );

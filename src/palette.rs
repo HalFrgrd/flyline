@@ -1,71 +1,97 @@
 use itertools::Itertools;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use std::sync::{LazyLock, RwLock};
 
-use crate::settings::ColorPalette;
-
-/// Global active colour palette, updated by `set_active_palette`.
-static ACTIVE_PALETTE: LazyLock<RwLock<ColorPalette>> =
-    LazyLock::new(|| RwLock::new(ColorPalette::dark()));
-
-/// Replace the global active palette. Called whenever the user runs
-/// `flyline set-color …`.
-pub fn set_active_palette(palette: ColorPalette) {
-    if let Ok(mut guard) = ACTIVE_PALETTE.write() {
-        *guard = palette;
-    }
+/// Which built-in colour preset is active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DefaultMode {
+    #[default]
+    Dark,
+    Light,
 }
 
-pub struct Palette;
+/// The colour palette. Holds all configurable styles.
+#[derive(Debug, Clone)]
+pub struct Palette {
+    /// Which built-in preset was used as the base.
+    pub default_mode: DefaultMode,
+    /// Style for recognised (valid) commands.
+    pub recognised_word: Style,
+    /// Style for unrecognised (invalid) commands.
+    pub unrecognised_word: Style,
+    /// Style for single-quoted strings.
+    pub single_quoted_word: Style,
+    /// Style for double-quoted strings.
+    pub double_quoted_word: Style,
+    /// Style for secondary / muted text.
+    pub secondary_text: Style,
+    /// Style for inline history suggestions shown to the right of the cursor.
+    pub inline_suggestion: Style,
+    /// Style for tutorial hint text.
+    pub tutorial_hint: Style,
+    /// Style for matched characters in fuzzy-search results.
+    pub matching_char: Style,
+    /// Style for opening/closing bracket pairs when the cursor is on one.
+    pub opening_and_closing_pair: Style,
+    /// Style for normal (unstyled) text.
+    pub normal_text: Style,
+}
 
 impl Palette {
-    pub fn recognised_word() -> Style {
-        Style::default().fg(Color::Green)
+    // ── Presets ──────────────────────────────────────────────────────
+
+    /// Dark-terminal defaults (the original flyline palette).
+    pub fn dark() -> Self {
+        Palette {
+            default_mode: DefaultMode::Dark,
+            recognised_word: Style::default().fg(Color::Green),
+            unrecognised_word: Style::default().fg(Color::Red),
+            single_quoted_word: Style::default().fg(Color::Yellow),
+            double_quoted_word: Style::default().fg(Color::Red),
+            secondary_text: Style::default().add_modifier(Modifier::DIM),
+            inline_suggestion: Style::default()
+                .add_modifier(Modifier::DIM)
+                .add_modifier(Modifier::ITALIC),
+            tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
+            matching_char: Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            opening_and_closing_pair: Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
+            normal_text: Style::default(),
+        }
     }
-    pub fn unrecognised_word() -> Style {
-        Style::default().fg(Color::Red)
+
+    /// Light-terminal defaults.
+    pub fn light() -> Self {
+        Palette {
+            default_mode: DefaultMode::Light,
+            recognised_word: Style::default().fg(Color::DarkGray),
+            unrecognised_word: Style::default().fg(Color::Red),
+            single_quoted_word: Style::default().fg(Color::Yellow),
+            double_quoted_word: Style::default().fg(Color::Magenta),
+            secondary_text: Style::default().fg(Color::DarkGray),
+            inline_suggestion: Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+            tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
+            matching_char: Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+            opening_and_closing_pair: Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
+            normal_text: Style::default(),
+        }
     }
-    pub fn single_quoted_word() -> Style {
-        Style::default().fg(Color::Yellow)
-    }
-    pub fn double_quoted_word() -> Style {
-        Style::default().fg(Color::Red)
-    }
-    pub fn secondary_text() -> Style {
-        Style::default().add_modifier(Modifier::DIM)
-    }
-    pub fn history_inline_meta() -> Style {
-        ACTIVE_PALETTE
-            .read()
-            .map(|p| p.inline_suggestion)
-            .unwrap_or_else(|_| {
-                Style::default()
-                    .add_modifier(Modifier::DIM)
-                    .add_modifier(Modifier::ITALIC)
-            })
-    }
-    pub fn tutorial_hint() -> Style {
-        Style::default().add_modifier(Modifier::BOLD)
-    }
+
+    // ── Derived / constant styles ───────────────────────────────────
+
     pub fn convert_to_selected(style: Style) -> Style {
         style.add_modifier(Modifier::REVERSED)
-    }
-    pub fn normal_text() -> Style {
-        Style::default()
-    }
-    pub fn matched_character() -> Style {
-        ACTIVE_PALETTE
-            .read()
-            .map(|p| p.matching_char)
-            .unwrap_or_else(|_| {
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD)
-            })
-    }
-    pub fn opening_and_closing_pair() -> Style {
-        Self::matched_character().add_modifier(Modifier::UNDERLINED)
     }
 
     pub fn cursor_style(intensity: u8) -> Style {
@@ -73,6 +99,7 @@ impl Palette {
     }
 
     pub fn highlight_maching_indices(
+        &self,
         s: &str,
         matching_indices: &[usize],
         base_style: Style,
@@ -100,7 +127,7 @@ impl Palette {
                 if is_matching {
                     normal_spans.push(Span::styled(
                         chunk_str,
-                        base_style.patch(Palette::matched_character()),
+                        base_style.patch(self.matching_char),
                     ));
                 } else {
                     normal_spans.push(Span::styled(chunk_str, base_style));
@@ -113,5 +140,11 @@ impl Palette {
         }
 
         normal_lines
+    }
+}
+
+impl Default for Palette {
+    fn default() -> Self {
+        Self::dark()
     }
 }

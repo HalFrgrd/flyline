@@ -1,6 +1,7 @@
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
 use clap_complete::{Shell, generate};
 use libc::{c_char, c_int};
+use ratatui::style::Style;
 use std::sync::Mutex;
 
 mod active_suggestions;
@@ -188,17 +189,43 @@ enum Commands {
     ///   flyline set-color --inline-suggestion "dim italic"
     ///   flyline set-color --matching-char "bold green"
     ///   flyline set-color --default light --matching-char "bold blue"
+    ///   flyline set-color --recognised-word "green" --unrecognised-word "bold red"
+    ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
     #[command(name = "set-color", verbatim_doc_comment)]
     SetColor {
         /// Apply a built-in colour preset for dark or light terminals.
         #[arg(long = "default", value_name = "MODE")]
         default: Option<ColorDefault>,
+        /// Style for recognised (valid) commands (e.g. "green").
+        #[arg(long = "recognised-word", value_name = "STYLE")]
+        recognised_word: Option<String>,
+        /// Style for unrecognised (invalid) commands (e.g. "red").
+        #[arg(long = "unrecognised-word", value_name = "STYLE")]
+        unrecognised_word: Option<String>,
+        /// Style for single-quoted strings (e.g. "yellow").
+        #[arg(long = "single-quoted-word", value_name = "STYLE")]
+        single_quoted_word: Option<String>,
+        /// Style for double-quoted strings (e.g. "red").
+        #[arg(long = "double-quoted-word", value_name = "STYLE")]
+        double_quoted_word: Option<String>,
+        /// Style for secondary / muted text (e.g. "dim").
+        #[arg(long = "secondary-text", value_name = "STYLE")]
+        secondary_text: Option<String>,
         /// Style for inline history suggestions (e.g. "dim italic", "bold red").
         #[arg(long = "inline-suggestion", value_name = "STYLE")]
         inline_suggestion: Option<String>,
+        /// Style for tutorial hint text (e.g. "bold").
+        #[arg(long = "tutorial-hint", value_name = "STYLE")]
+        tutorial_hint: Option<String>,
         /// Style for matched characters in fuzzy-search results (e.g. "bold green").
         #[arg(long = "matching-char", value_name = "STYLE")]
         matching_char: Option<String>,
+        /// Style for opening/closing bracket pairs (e.g. "bold green underline").
+        #[arg(long = "opening-closing-pair", value_name = "STYLE")]
+        opening_closing_pair: Option<String>,
+        /// Style for normal (unstyled) text.
+        #[arg(long = "normal-text", value_name = "STYLE")]
+        normal_text: Option<String>,
     },
 }
 
@@ -452,47 +479,73 @@ impl Flyline {
                     }
                     Some(Commands::SetColor {
                         default,
+                        recognised_word,
+                        unrecognised_word,
+                        single_quoted_word,
+                        double_quoted_word,
+                        secondary_text,
                         inline_suggestion,
+                        tutorial_hint,
                         matching_char,
+                        opening_closing_pair,
+                        normal_text,
                     }) => {
                         if let Some(preset) = default {
                             self.settings.color_palette = match preset {
-                                ColorDefault::Dark => settings::ColorPalette::dark(),
-                                ColorDefault::Light => settings::ColorPalette::light(),
+                                ColorDefault::Dark => palette::Palette::dark(),
+                                ColorDefault::Light => palette::Palette::light(),
                             };
                             log::info!("Color palette set to {:?} preset", preset);
                         }
-                        if let Some(ref style_str) = inline_suggestion {
-                            match parse_style(style_str) {
-                                Ok(style) => {
-                                    self.settings.color_palette.inline_suggestion = style;
-                                    log::info!("Inline-suggestion style set to {:?}", style_str);
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "flyline set-color: invalid --inline-suggestion style {:?}: {}",
-                                        style_str, e
-                                    );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+
+                        let style_overrides: &[(
+                            &Option<String>,
+                            &str,
+                            fn(&mut palette::Palette, Style),
+                        )] = &[
+                            (&recognised_word, "recognised-word", |p, s| {
+                                p.recognised_word = s
+                            }),
+                            (&unrecognised_word, "unrecognised-word", |p, s| {
+                                p.unrecognised_word = s
+                            }),
+                            (&single_quoted_word, "single-quoted-word", |p, s| {
+                                p.single_quoted_word = s
+                            }),
+                            (&double_quoted_word, "double-quoted-word", |p, s| {
+                                p.double_quoted_word = s
+                            }),
+                            (&secondary_text, "secondary-text", |p, s| {
+                                p.secondary_text = s
+                            }),
+                            (&inline_suggestion, "inline-suggestion", |p, s| {
+                                p.inline_suggestion = s
+                            }),
+                            (&tutorial_hint, "tutorial-hint", |p, s| p.tutorial_hint = s),
+                            (&matching_char, "matching-char", |p, s| p.matching_char = s),
+                            (&opening_closing_pair, "opening-closing-pair", |p, s| {
+                                p.opening_and_closing_pair = s
+                            }),
+                            (&normal_text, "normal-text", |p, s| p.normal_text = s),
+                        ];
+
+                        for (opt, flag_name, setter) in style_overrides {
+                            if let Some(style_str) = opt {
+                                match parse_style(style_str) {
+                                    Ok(style) => {
+                                        setter(&mut self.settings.color_palette, style);
+                                        log::info!("{} style set to {:?}", flag_name, style_str);
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "flyline set-color: invalid --{} style {:?}: {}",
+                                            flag_name, style_str, e
+                                        );
+                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                    }
                                 }
                             }
                         }
-                        if let Some(ref style_str) = matching_char {
-                            match parse_style(style_str) {
-                                Ok(style) => {
-                                    self.settings.color_palette.matching_char = style;
-                                    log::info!("Matching-char style set to {:?}", style_str);
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "flyline set-color: invalid --matching-char style {:?}: {}",
-                                        style_str, e
-                                    );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
-                                }
-                            }
-                        }
-                        palette::set_active_palette(self.settings.color_palette.clone());
                     }
                     _ => {}
                 }
