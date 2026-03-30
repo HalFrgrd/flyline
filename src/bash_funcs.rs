@@ -420,10 +420,30 @@ impl Default for CompletionFlags {
     }
 }
 
-#[derive(Debug)]
 pub struct ProgrammableCompleteReturn {
     pub completions: Vec<String>,
     pub flags: CompletionFlags,
+}
+
+impl std::fmt::Debug for ProgrammableCompleteReturn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const MAX_DISPLAY: usize = 50;
+        let mut s = f.debug_struct("ProgrammableCompleteReturn");
+        if self.completions.len() <= MAX_DISPLAY {
+            s.field("completions", &self.completions);
+        } else {
+            s.field(
+                "completions",
+                &format_args!(
+                    "({} total, showing first {}) {:?}",
+                    self.completions.len(),
+                    MAX_DISPLAY,
+                    &self.completions[..MAX_DISPLAY]
+                ),
+            );
+        }
+        s.field("flags", &self.flags).finish()
+    }
 }
 
 impl ProgrammableCompleteReturn {
