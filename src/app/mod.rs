@@ -1080,11 +1080,6 @@ impl<'a> App<'a> {
             .iter()
             .find(|t| t.token.byte_range().contains(&cursor_pos))
         {
-            log::info!(
-                "Token at cursor position: '{}', with annotation {:?}",
-                dparser_token.token.value,
-                dparser_token.annotation
-            );
             if let dparser::TokenAnnotation::IsClosing {
                 is_auto_inserted: true,
                 ..
