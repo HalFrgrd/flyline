@@ -14,7 +14,7 @@ use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)
 where
@@ -884,49 +884,24 @@ pub fn find_quote_type(s: &str) -> Option<QuoteType> {
 // Cached environment lookups (moved from BashEnvManager)
 // ---------------------------------------------------------------------------
 
-static DEFINED_ALIASES: OnceLock<Vec<String>> = OnceLock::new();
-static DEFINED_RESERVED_WORDS: OnceLock<Vec<String>> = OnceLock::new();
-static DEFINED_SHELL_FUNCTIONS: OnceLock<Vec<String>> = OnceLock::new();
-static DEFINED_BUILTINS: OnceLock<Vec<String>> = OnceLock::new();
-static DEFINED_EXECUTABLES: OnceLock<Vec<(PathBuf, String)>> = OnceLock::new();
-static LS_COLORS: OnceLock<Option<LsColors>> = OnceLock::new();
-
-fn cached_aliases() -> &'static Vec<String> {
-    DEFINED_ALIASES.get_or_init(get_all_aliases)
-}
-
-fn cached_reserved_words() -> &'static Vec<String> {
-    DEFINED_RESERVED_WORDS.get_or_init(get_all_reserved_words)
-}
-
-fn cached_shell_functions() -> &'static Vec<String> {
-    DEFINED_SHELL_FUNCTIONS.get_or_init(get_all_shell_functions)
-}
-
-fn cached_builtins() -> &'static Vec<String> {
-    DEFINED_BUILTINS.get_or_init(get_all_shell_builtins)
-}
-
-fn cached_executables() -> &'static Vec<(PathBuf, String)> {
-    DEFINED_EXECUTABLES.get_or_init(|| {
-        if let Some(path_str) = get_envvar_value("PATH") {
-            get_executables_from_path(&path_str)
-        } else {
-            Vec::new()
-        }
-    })
-}
-
-fn cached_ls_colors() -> Option<&'static LsColors> {
-    LS_COLORS
-        .get_or_init(|| get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s)))
-        .as_ref()
-}
+static DEFINED_ALIASES: LazyLock<Vec<String>> = LazyLock::new(get_all_aliases);
+static DEFINED_RESERVED_WORDS: LazyLock<Vec<String>> = LazyLock::new(get_all_reserved_words);
+static DEFINED_SHELL_FUNCTIONS: LazyLock<Vec<String>> = LazyLock::new(get_all_shell_functions);
+static DEFINED_BUILTINS: LazyLock<Vec<String>> = LazyLock::new(get_all_shell_builtins);
+static DEFINED_EXECUTABLES: LazyLock<Vec<(PathBuf, String)>> = LazyLock::new(|| {
+    if let Some(path_str) = get_envvar_value("PATH") {
+        get_executables_from_path(&path_str)
+    } else {
+        Vec::new()
+    }
+});
+static LS_COLORS: LazyLock<Option<LsColors>> =
+    LazyLock::new(|| get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s)));
 
 /// Return a ratatui `Style` for the given path based on the `LS_COLORS` environment variable.
 /// Returns `None` if `LS_COLORS` was not set or the path has no matching entry.
 pub fn style_for_path(path: &Path) -> Option<Style> {
-    let lscolors_style = cached_ls_colors()?.style_for_path(path)?;
+    let lscolors_style = LS_COLORS.as_ref()?.style_for_path(path)?;
     Some(lscolors_style_to_ratatui(lscolors_style))
 }
 
@@ -939,12 +914,12 @@ pub fn get_first_word_completions(command: &str) -> Vec<String> {
         return res;
     }
 
-    for poss_completion in cached_aliases()
+    for poss_completion in DEFINED_ALIASES
         .iter()
-        .chain(cached_reserved_words().iter())
-        .chain(cached_shell_functions().iter())
-        .chain(cached_builtins().iter())
-        .chain(cached_executables().iter().map(|(_, name)| name))
+        .chain(DEFINED_RESERVED_WORDS.iter())
+        .chain(DEFINED_SHELL_FUNCTIONS.iter())
+        .chain(DEFINED_BUILTINS.iter())
+        .chain(DEFINED_EXECUTABLES.iter().map(|(_, name)| name))
     {
         if poss_completion.starts_with(command) && seen.insert(poss_completion.as_str()) {
             res.push(poss_completion.to_string());
@@ -961,12 +936,12 @@ pub fn get_fuzzy_first_word_completions(command: &str) -> Vec<String> {
     }
 
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
-    let mut scored: Vec<(i64, String)> = cached_aliases()
+    let mut scored: Vec<(i64, String)> = DEFINED_ALIASES
         .iter()
-        .chain(cached_reserved_words().iter())
-        .chain(cached_shell_functions().iter())
-        .chain(cached_builtins().iter())
-        .chain(cached_executables().iter().map(|(_, name)| name))
+        .chain(DEFINED_RESERVED_WORDS.iter())
+        .chain(DEFINED_SHELL_FUNCTIONS.iter())
+        .chain(DEFINED_BUILTINS.iter())
+        .chain(DEFINED_EXECUTABLES.iter().map(|(_, name)| name))
         .filter_map(|poss_completion| {
             matcher
                 .fuzzy_match(poss_completion, command)
