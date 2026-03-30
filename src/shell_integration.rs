@@ -3,6 +3,7 @@ use std::io::Write;
 use crossterm::Command;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{MoveTo, RestorePosition, SavePosition};
+use ratatui::prelude::Position;
 
 use crate::{bash_funcs, bash_symbols};
 
@@ -192,7 +193,7 @@ impl Command for EscapeCodes {
 }
 
 fn is_vscode() -> bool {
-    bash_funcs::get_shell_bar_name().as_deref() == Some("vscode")
+    bash_funcs::get_envvar_value("TERM_PROGRAM").as_deref() == Some("vscode")
 }
 
 pub fn write_startup_codes(exit_code: i32, hostname: &str, cwd: &str) -> std::io::Result<()> {
@@ -225,24 +226,44 @@ pub fn write_startup_codes(exit_code: i32, hostname: &str, cwd: &str) -> std::io
 }
 
 pub fn write_after_rendering_codes(
-    prompt_start: Option<(u16, u16)>,
-    prompt_end: Option<(u16, u16)>,
+    prev_prompt_start: Option<Position>,
+    prev_prompt_end: Option<Position>,
+    new_prompt_start: Option<Position>,
+    new_prompt_end: Option<Position>,
+    is_running: bool,
 ) -> std::io::Result<()> {
     let mut codes: Vec<EscapeCodes> = vec![];
 
+    let effective_start = new_prompt_start
+        .filter(|&ps| !is_running || prev_prompt_start.is_none_or(|prev| prev != ps));
+    let effective_end =
+        new_prompt_end.filter(|&pe| !is_running || prev_prompt_end.is_none_or(|prev| prev != pe));
+
     if is_vscode() {
-        if let Some((col, row)) = prompt_start {
-            codes.push(EscapeCodes::VscPromptStart { col, row });
+        if let Some(pos) = effective_start {
+            codes.push(EscapeCodes::VscPromptStart {
+                col: pos.x,
+                row: pos.y,
+            });
         }
-        if let Some((col, row)) = prompt_end {
-            codes.push(EscapeCodes::VscPromptEnd { col, row });
+        if let Some(pos) = effective_end {
+            codes.push(EscapeCodes::VscPromptEnd {
+                col: pos.x,
+                row: pos.y,
+            });
         }
     } else {
-        if let Some((col, row)) = prompt_start {
-            codes.push(EscapeCodes::PromptStart { col, row });
+        if let Some(pos) = effective_start {
+            codes.push(EscapeCodes::PromptStart {
+                col: pos.x,
+                row: pos.y,
+            });
         }
-        if let Some((col, row)) = prompt_end {
-            codes.push(EscapeCodes::PromptEnd { col, row });
+        if let Some(pos) = effective_end {
+            codes.push(EscapeCodes::PromptEnd {
+                col: pos.x,
+                row: pos.y,
+            });
         }
     }
 

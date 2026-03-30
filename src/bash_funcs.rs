@@ -604,10 +604,6 @@ pub fn get_envvar_value(var_name: &str) -> Option<String> {
     get_shell_var(var_name).and_then(|var| var.get_value())
 }
 
-pub fn get_shell_bar_name() -> Option<String> {
-    get_envvar_value("TERM_PROGRAM")
-}
-
 pub fn expand_filename(filename: &str) -> String {
     unsafe {
         let expanded_string = bash_symbols::expand_string_to_string(

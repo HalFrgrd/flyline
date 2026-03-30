@@ -417,37 +417,18 @@ impl<'a> App<'a> {
                         self.last_draw_time = std::time::Instant::now();
 
                         if self.settings.send_shell_integration_codes {
-                            let new_drawn_contents = self.last_contents.as_ref();
-
-                            let prompt_start = new_drawn_contents.and_then(|c| {
-                                let ps = c.term_em_prompt_start()?;
-                                if !self.mode.is_running()
-                                    || prev_contents
-                                        .as_ref()
-                                        .is_none_or(|prev| prev.term_em_prompt_start() != Some(ps))
-                                {
-                                    Some((ps.x, ps.y))
-                                } else {
-                                    None
-                                }
-                            });
-
-                            let prompt_end = new_drawn_contents.and_then(|c| {
-                                let pe = c.term_em_prompt_end()?;
-                                if !self.mode.is_running()
-                                    || prev_contents
-                                        .as_ref()
-                                        .is_none_or(|prev| prev.term_em_prompt_end() != Some(pe))
-                                {
-                                    Some((pe.x, pe.y))
-                                } else {
-                                    None
-                                }
-                            });
-
                             shell_integration::write_after_rendering_codes(
-                                prompt_start,
-                                prompt_end,
+                                prev_contents
+                                    .as_ref()
+                                    .and_then(|c| c.term_em_prompt_start()),
+                                prev_contents.as_ref().and_then(|c| c.term_em_prompt_end()),
+                                self.last_contents
+                                    .as_ref()
+                                    .and_then(|c| c.term_em_prompt_start()),
+                                self.last_contents
+                                    .as_ref()
+                                    .and_then(|c| c.term_em_prompt_end()),
+                                self.mode.is_running(),
                             )
                             .unwrap_or_else(|e| {
                                 log::error!("Failed to write escape codes: {}", e);
