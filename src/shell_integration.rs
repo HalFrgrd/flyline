@@ -7,6 +7,10 @@ use ratatui::prelude::Position;
 
 use crate::{bash_funcs, bash_symbols};
 
+static IS_VSCODE: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+    bash_funcs::get_envvar_value("TERM_PROGRAM").as_deref() == Some("vscode")
+});
+
 /// https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences
 /// https://sw.kovidgoyal.net/kitty/shell-integration/
 /// https://ghostty.org/docs/features/shell-integration#troubleshooting
@@ -193,7 +197,7 @@ impl Command for EscapeCodes {
 }
 
 fn is_vscode() -> bool {
-    bash_funcs::get_envvar_value("TERM_PROGRAM").as_deref() == Some("vscode")
+    *IS_VSCODE
 }
 
 pub fn write_startup_codes(exit_code: i32, hostname: &str, cwd: &str) -> std::io::Result<()> {
