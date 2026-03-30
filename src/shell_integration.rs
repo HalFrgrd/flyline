@@ -3,8 +3,9 @@ use std::io::Write;
 use crossterm::Command;
 use crossterm::QueueableCommand;
 use crossterm::cursor::{MoveTo, RestorePosition, SavePosition};
+use ratatui::prelude::Position;
 
-use crate::bash_symbols;
+use crate::{bash_funcs, bash_symbols};
 
 /// https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences
 /// https://sw.kovidgoyal.net/kitty/shell-integration/
@@ -189,6 +190,106 @@ impl Command for EscapeCodes {
             },
         }
     }
+}
+
+fn is_vscode() -> bool {
+    bash_funcs::get_envvar_value("TERM_PROGRAM").as_deref() == Some("vscode")
+}
+
+pub fn write_startup_codes(exit_code: i32, hostname: &str, cwd: &str) -> std::io::Result<()> {
+    let codes: Vec<EscapeCodes> = if is_vscode() {
+        vec![
+            EscapeCodes::VscExecutionFinished {
+                exit_code: Some(exit_code),
+            },
+            EscapeCodes::VscProperties {
+                cwd: cwd.to_string(),
+                has_rich_command_detection: true,
+            },
+        ]
+    } else {
+        vec![
+            EscapeCodes::ExecutionFinished {
+                exit_code: Some(exit_code),
+            },
+            EscapeCodes::CurrentDirectory {
+                host: hostname.to_string(),
+                path: cwd.to_string(),
+            },
+            EscapeCodes::KittyCurrentDirectory {
+                host: hostname.to_string(),
+                path: cwd.to_string(),
+            },
+        ]
+    };
+    write_escape_codes(&codes)
+}
+
+pub fn write_after_rendering_codes(
+    prev_prompt_start: Option<Position>,
+    prev_prompt_end: Option<Position>,
+    new_prompt_start: Option<Position>,
+    new_prompt_end: Option<Position>,
+    is_running: bool,
+) -> std::io::Result<()> {
+    let mut codes: Vec<EscapeCodes> = vec![];
+
+    let effective_start = new_prompt_start
+        .filter(|&ps| !is_running || prev_prompt_start.is_none_or(|prev| prev != ps));
+    let effective_end =
+        new_prompt_end.filter(|&pe| !is_running || prev_prompt_end.is_none_or(|prev| prev != pe));
+
+    if is_vscode() {
+        if let Some(pos) = effective_start {
+            codes.push(EscapeCodes::VscPromptStart {
+                col: pos.x,
+                row: pos.y,
+            });
+        }
+        if let Some(pos) = effective_end {
+            codes.push(EscapeCodes::VscPromptEnd {
+                col: pos.x,
+                row: pos.y,
+            });
+        }
+    } else {
+        if let Some(pos) = effective_start {
+            codes.push(EscapeCodes::PromptStart {
+                col: pos.x,
+                row: pos.y,
+            });
+        }
+        if let Some(pos) = effective_end {
+            codes.push(EscapeCodes::PromptEnd {
+                col: pos.x,
+                row: pos.y,
+            });
+        }
+    }
+
+    write_escape_codes(&codes)
+}
+
+pub fn write_on_exit_codes(commandline: Option<&str>) -> std::io::Result<()> {
+    let codes: Vec<EscapeCodes> = if is_vscode() {
+        let nonce = bash_funcs::get_envvar_value("VSCODE_NONCE");
+        log::info!("vscode_nonce: {:?}", nonce);
+        match commandline {
+            Some(cmd) => vec![
+                EscapeCodes::VscCommandLine {
+                    commandline: cmd.to_string(),
+                    nonce,
+                },
+                EscapeCodes::VscPreExecution,
+            ],
+            None => vec![EscapeCodes::VscPreExecution],
+        }
+    } else {
+        vec![EscapeCodes::PreExecution {
+            commandline: commandline.map(|s| s.to_string()),
+        }]
+    };
+    write_escape_codes(&codes)
 }
 
 pub fn write_escape_codes(codes: &[EscapeCodes]) -> std::io::Result<()> {
