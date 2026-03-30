@@ -964,15 +964,13 @@ impl<'a> App<'a> {
             }
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             KeyEvent {
-                code: KeyCode::Char('7'),
+                code: KeyCode::Char('7') | KeyCode::Char('/'),
                 modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
                 ..
             } => {
                 self.buffer.move_to_start();
                 self.buffer.insert_str("#");
-                self.mode = AppRunningState::Exiting(ExitState::WithCommand(
-                    self.buffer.buffer().to_string(),
-                ));
+                self.try_submit_current_buffer();
             }
             KeyEvent {
                 code: KeyCode::Char('r'),

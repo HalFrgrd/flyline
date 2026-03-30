@@ -292,7 +292,7 @@ Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#note
 
 Configure flyline by running `flyline [OPTIONS]` in your `.bashrc` (after the `enable` call) or in Bash session.
 Run `flyline --help` to see all available options.
-You can also set these options in your current session but they won't persist between sessions.
+You could set these options in your current session but then they wouldn't persist between sessions.
 [Examples can be found here.](examples/settings.sh)
 
 The block below is auto-generated from `flyline --help`:
