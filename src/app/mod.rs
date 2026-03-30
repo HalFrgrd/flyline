@@ -1,7 +1,7 @@
 mod buffer_format;
 mod tab_completion;
 
-use crate::active_suggestions::ActiveSuggestions;
+use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::buffer_format::{FormattedBuffer, format_buffer};
 use crate::bash_env_manager::BashEnvManager;
@@ -1895,9 +1895,17 @@ impl<'a> App<'a> {
                     let num_visible_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
 
                     for row in rows.into_iter().filter(|r| !r.is_empty()) {
-                        for (styled_spans, suggestion_idx) in row {
+                        let num_cols = row.len();
+                        for (col_idx, (styled_spans, suggestion_idx)) in row.into_iter().enumerate()
+                        {
                             for span in styled_spans {
                                 content.write_span(&span, Tag::Suggestion(suggestion_idx));
+                            }
+                            if col_idx + 1 < num_cols {
+                                content.write_span(
+                                    &Span::raw(" ".repeat(COLUMN_PADDING)),
+                                    Tag::TabSuggestion,
+                                );
                             }
                         }
                         content.newline();

@@ -6,6 +6,10 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 use unicode_width::UnicodeWidthStr;
 
+/// Number of whitespace characters inserted between adjacent columns in the
+/// suggestions grid.
+pub(crate) const COLUMN_PADDING: usize = 2;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
     pub s: String,
@@ -524,11 +528,11 @@ impl ActiveSuggestions {
                 grid.push((col, effective));
                 *total_columns += effective;
                 true
-            } else if *total_columns + col_width > term_cols {
+            } else if *total_columns + COLUMN_PADDING + col_width > term_cols {
                 false
             } else {
                 grid.push((col, col_width));
-                *total_columns += col_width;
+                *total_columns += COLUMN_PADDING + col_width;
                 true
             }
         }
