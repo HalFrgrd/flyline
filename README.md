@@ -39,7 +39,7 @@ From easiest to hardest:
 
 ### Run `install.sh`
 
-Run the following command to automatically download and  set your `.bashrc` to run the latest flyline version:
+Run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
@@ -278,7 +278,7 @@ Recommended settings
 
 ## macOS
 > [!NOTE]
-> These notes are for when the terminal emulator is running on macOS and flyline is running withing a remote Linux shell
+> These notes are for when the terminal emulator is running on macOS and flyline is running within a remote Linux shell
 
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
 Two possible fixes are:
@@ -286,7 +286,7 @@ Two possible fixes are:
 - Use a terminal emulator that supports [Kitty's extended keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
 ## Shell integration
-Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escpae codes to integrate the shell with the terminal. These are on by default and can be disabled with `flyline --send-shell-integration-codes false`.
+Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escape codes to integrate the shell with the terminal. These are on by default and can be disabled with `flyline --send-shell-integration-codes false`.
 
 # Settings
 
