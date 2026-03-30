@@ -3,6 +3,7 @@ name: Update Settings Documentation
 on:
   push:
     branches: [ master ]
+  workflow_dispatch:
 
 concurrency:
   group: update-settings-docs

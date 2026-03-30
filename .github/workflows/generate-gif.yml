@@ -3,6 +3,7 @@ name: Generate GIF
 on:
   push:
     branches: [ master ]
+  workflow_dispatch:
 
 concurrency:
   group: generate-gif

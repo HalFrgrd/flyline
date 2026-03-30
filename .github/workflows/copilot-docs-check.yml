@@ -3,6 +3,7 @@ name: Copilot Documentation Check
 on:
   schedule:
     - cron: '0 0 */3 * *'
+  workflow_dispatch:
 
 concurrency:
   group: copilot-docs-check
