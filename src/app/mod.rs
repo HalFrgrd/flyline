@@ -1423,7 +1423,7 @@ impl<'a> App<'a> {
     /// Returns one `Line` per terminal row. The first line combines the
     /// header prefix (index / score / timeago / indicator) with the first
     /// command row; subsequent lines carry the continuation prefix.
-    fn get_lines_for_entry(
+    fn get_lines_for_history_entry(
         formatted_entry: &HistoryEntryFormatted,
         entry_idx: usize,
         fuzzy_search_index: usize,
@@ -1448,10 +1448,7 @@ impl<'a> App<'a> {
             }
         };
 
-        let Some(formatted_text) = formatted_entry.command_spans.as_ref() else {
-            log::warn!("No formatted text for history entry '{}'", entry.command);
-            return vec![];
-        };
+        let formatted_text = formatted_entry.command_spans();
 
         let total_logical_lines = formatted_text.len();
         let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
@@ -1854,7 +1851,7 @@ impl<'a> App<'a> {
                     if is_selected {
                         content.set_focus_row(content.cursor_position().row);
                     }
-                    for line in Self::get_lines_for_entry(
+                    for line in Self::get_lines_for_history_entry(
                         formatted_entry,
                         entry_idx,
                         fuzzy_search_index,

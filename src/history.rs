@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::time::Instant;
 use std::vec;
 
@@ -376,12 +377,12 @@ impl HistoryManager {
     // fuzzy search cache logic moved to FuzzyHistorySearch
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct HistoryEntryFormatted {
     pub entry: HistoryEntry,
     pub score: i64,
     pub match_indices: Vec<usize>,
-    pub command_spans: Option<Vec<Line<'static>>>,
+    command_spans: OnceCell<Vec<Line<'static>>>,
     pub idx_in_cache: Option<usize>,
 }
 
@@ -409,23 +410,19 @@ impl HistoryEntryFormatted {
             entry,
             score,
             match_indices,
-            command_spans: None,
+            command_spans: OnceCell::new(),
             idx_in_cache: None,
         }
     }
 
-    pub fn gen_formatted_command(&mut self) {
-        if self.command_spans.is_some() {
-            return;
-        }
-
-        let command_spans = Palette::highlight_maching_indices(
-            &self.entry.command,
-            &self.match_indices,
-            Palette::normal_text(),
-        );
-
-        self.command_spans = Some(command_spans);
+    pub fn command_spans(&self) -> &Vec<Line<'static>> {
+        self.command_spans.get_or_init(|| {
+            Palette::highlight_maching_indices(
+                &self.entry.command,
+                &self.match_indices,
+                Palette::normal_text(),
+            )
+        })
     }
 }
 
@@ -535,7 +532,6 @@ impl FuzzyHistorySearch {
         let entries_to_show = &mut self.cache[self.window.get_window_range()];
         entries_to_show.iter_mut().enumerate().for_each(|(idx, e)| {
             e.idx_in_cache = Some(self.window.get_window_range().start + idx);
-            e.gen_formatted_command();
         });
 
         (
