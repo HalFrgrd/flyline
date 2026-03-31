@@ -1,8 +1,10 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use crate::app::actions;
 use crate::palette::Palette;
 use clap::ValueEnum;
+use crate::tutorial::TutorialStep;
 
 /// Which theme the user has configured for the colour palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
@@ -60,6 +62,8 @@ pub struct Settings {
     pub zsh_history_path: Option<String>,
     /// Whether to show tutorial hints for first-time users.
     pub tutorial_mode: bool,
+    /// Current tutorial step.
+    pub tutorial_step: Cell<TutorialStep>,
     /// Whether to show all animations (cursor movement, cursor fading, dynamic time).
     pub show_animations: bool,
     /// Whether to show inline history suggestions.
@@ -99,6 +103,7 @@ impl Default for Settings {
         Self {
             zsh_history_path: None,
             tutorial_mode: false,
+            tutorial_step: Cell::new(TutorialStep::NotRunning),
             show_animations: true,
             show_inline_history: true,
             auto_close_chars: true,

@@ -27,6 +27,7 @@ mod snake_animation;
 mod stateful_sliding_window;
 mod tab_completion_context;
 mod text_buffer;
+mod tutorial;
 
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
@@ -424,6 +425,15 @@ impl Flyline {
                 if let Some(enabled) = parsed.tutorial_mode {
                     log::info!("Tutorial mode set to {}", enabled);
                     self.settings.tutorial_mode = enabled;
+                    if enabled {
+                        self.settings
+                            .tutorial_step
+                            .set(tutorial::TutorialStep::FirstStep);
+                    } else {
+                        self.settings
+                            .tutorial_step
+                            .set(tutorial::TutorialStep::NotRunning);
+                    }
                 }
 
                 if let Some(enabled) = parsed.show_animations {
@@ -721,7 +731,19 @@ impl Flyline {
             // }
 
             self.content = match result {
-                Ok(app::ExitState::WithCommand(cmd)) => cmd.into_bytes(),
+                Ok(app::ExitState::WithCommand(cmd)) => {
+                    let step = self.settings.tutorial_step.get();
+                    if step.is_active() {
+                        let mut new_step = step;
+                        new_step.next();
+                        self.settings.tutorial_step.set(new_step);
+                        log::info!("Tutorial step advanced to {:?}", new_step);
+                        if !new_step.is_active() {
+                            self.settings.tutorial_mode = false;
+                        }
+                    }
+                    cmd.into_bytes()
+                }
                 Ok(app::ExitState::EOF) => {
                     log::info!("App signaled EOF");
                     return bash_symbols::EOF;

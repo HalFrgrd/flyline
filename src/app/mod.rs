@@ -191,7 +191,12 @@ impl DrawnContent {
         if direct_contact.is_some_and(|cell| {
             matches!(
                 cell.tag,
-                Tag::Command(_) | Tag::Suggestion(_) | Tag::HistoryResult(_) | Tag::AiResult(_)
+                Tag::Command(_)
+                    | Tag::Suggestion(_)
+                    | Tag::HistoryResult(_)
+                    | Tag::AiResult(_)
+                    | Tag::TutorialPrev
+                    | Tag::TutorialNext
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
@@ -600,6 +605,12 @@ impl<'a> App<'a> {
                     self.tooltip = Some(tooltip.clone());
                 }
             }
+            Some((tag @ Tag::TutorialPrev, true)) => {
+                self.last_mouse_over_cell = Some(tag);
+            }
+            Some((tag @ Tag::TutorialNext, true)) => {
+                self.last_mouse_over_cell = Some(tag);
+            }
 
             t => {
                 log::trace!("Mouse over  {:?}", t);
@@ -650,6 +661,28 @@ impl<'a> App<'a> {
                     self.buffer
                         .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
                     update_buffer = true;
+                }
+            }
+            Some(Tag::TutorialPrev) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    let mut step = self.settings.tutorial_step.get();
+                    step.prev();
+                    self.settings.tutorial_step.set(step);
+                    log::info!("Tutorial navigated to prev: {:?}", step);
+                    return true;
+                }
+            }
+            Some(Tag::TutorialNext) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    let mut step = self.settings.tutorial_step.get();
+                    step.next();
+                    self.settings.tutorial_step.set(step);
+                    log::info!("Tutorial navigated to next: {:?}", step);
+                    if !step.is_active() {
+                        // Tutorial finished — but we can't set tutorial_mode here since settings is &.
+                        // The tutorial_step being NotRunning is sufficient.
+                    }
+                    return true;
                 }
             }
             _ => {}
@@ -1093,6 +1126,30 @@ impl<'a> App<'a> {
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
         let empty_line = Line::from(vec![]);
+
+        // Render tutorial text above the prompt when a tutorial step is active.
+        if self.mode.is_running() {
+            if let Some(tutorial_lines) = crate::tutorial::generate_tutorial_text(
+                self.settings.tutorial_step.get(),
+                &self.settings.color_palette,
+                width,
+            ) {
+                for line in &tutorial_lines {
+                    // Tag spans: detect prev/next navigation boxes for mouse click handling.
+                    for span in &line.spans {
+                        let tag = if span.content.contains("prev") {
+                            Tag::TutorialPrev
+                        } else if span.content.contains("next") {
+                            Tag::TutorialNext
+                        } else {
+                            Tag::Normal
+                        };
+                        content.write_span(span, tag);
+                    }
+                    content.newline();
+                }
+            }
+        }
 
         content.prompt_start = Some(content.cursor_position());
 
