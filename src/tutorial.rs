@@ -53,6 +53,7 @@ impl TutorialStep {
 ///
 /// This checks the `TERM` and `TERM_PROGRAM` environment variables for terminals known to
 /// support the protocol.
+/// TODO: https://sw.kovidgoyal.net/kitty/keyboard-protocol/#detection-of-support-for-this-protocol
 fn detect_kitty_keyboard_support() -> bool {
     let term = bash_funcs::get_envvar_value("TERM").unwrap_or_default();
     let term_program = bash_funcs::get_envvar_value("TERM_PROGRAM").unwrap_or_default();
@@ -74,7 +75,7 @@ fn is_vscode() -> bool {
 
 /// Generate recommended settings text for the first tutorial step.
 pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
-    let hint_style = palette.tutorial_hint;
+    let hint_style = palette.tutorial_hint();
     let mut lines: Vec<Line> = Vec::new();
 
     lines.push(Line::from(Span::styled(
@@ -85,23 +86,19 @@ pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
 
     if is_vscode() {
         lines.push(Line::from(Span::styled(
-            "You are running in VS Code. For the best experience, set these in settings.json:",
+            "You are running in VS Code. For the best experience, set these in settings.json (try ctrl+clicking the links):",
             hint_style,
         )));
         lines.push(Line::from(Span::styled(
-            "  • terminal.integrated.minimumContrastRatio = 1",
+            "  • vscode://settings/terminal.integrated.minimumContrastRatio = 1",
             hint_style,
         )));
         lines.push(Line::from(Span::styled(
-            "  • terminal.integrated.enableKittyKeyboardProtocol = true",
+            "  • vscode://settings/terminal.integrated.enableKittyKeyboardProtocol = true",
             hint_style,
         )));
         lines.push(Line::from(Span::styled(
-            "  • workbench.settings.alwaysShowAdvancedSettings = 1",
-            hint_style,
-        )));
-        lines.push(Line::from(Span::styled(
-            "  • terminal.integrated.macOptionIsMeta (if on macOS)",
+            "  • vscode://settings/terminal.integrated.macOptionIsMeta (if on macOS)",
             hint_style,
         )));
         lines.push(Line::from(""));
@@ -130,6 +127,12 @@ pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
     Text::from(lines)
 }
 
+// const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Alt+Enter to accept the command for editing";
+// const TUTORIAL_HISTORY_PREFIX_HINT: &str =
+//     "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
+// const TUTORIAL_DISABLE_HINT: &str =
+//     "💡 Run `flyline --run-tutorial false` to disable the tutorial";
+
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
 pub fn generate_tutorial_text(
@@ -141,7 +144,7 @@ pub fn generate_tutorial_text(
         return None;
     }
 
-    let hint_style = palette.tutorial_hint;
+    let hint_style = palette.tutorial_hint();
     let mut lines: Vec<Line> = Vec::new();
 
     // Navigation bar with prev/next boxes
@@ -192,11 +195,11 @@ pub fn generate_tutorial_text(
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "Press Tab to trigger autocompletions.",
+                "Type `grep --` and press Tab to trigger autocompletions. If nothing comes up, first set normal Bash completions (https://github.com/scop/bash-completion).",
                 hint_style,
             )));
             lines.push(Line::from(Span::styled(
-                "Type to filter suggestions, use arrow keys to navigate.",
+                "Type to filter suggestions, use arrow keys or your mouse to navigate.",
                 hint_style,
             )));
             lines.push(Line::from(Span::styled(
@@ -252,7 +255,7 @@ pub fn generate_tutorial_text(
 
 /// Build the navigation line with [prev] and [next] boxes.
 fn build_nav_line(step: TutorialStep, palette: &Palette, width: u16) -> Line<'static> {
-    let hint_style = palette.tutorial_hint;
+    let hint_style = palette.tutorial_hint();
     let step_label = match step {
         TutorialStep::FirstStep => "Step 1/4",
         TutorialStep::SecondStep => "Step 2/4",

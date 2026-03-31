@@ -31,12 +31,6 @@ use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Alt+Enter to accept the command for editing";
-const TUTORIAL_HISTORY_PREFIX_HINT: &str =
-    "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
-const TUTORIAL_DISABLE_HINT: &str =
-    "💡 Run `flyline --run-tutorial false` to disable the tutorial";
-
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -1274,39 +1268,6 @@ impl<'a> App<'a> {
             content.set_term_cursor_pos(cursor_anim_pos, cursor_style);
         }
 
-        if self.mode.is_running()
-            && self.settings.run_tutorial
-            && self.buffer.buffer().is_empty()
-            && matches!(self.content_mode, ContentMode::Normal)
-        {
-            content.write_span_dont_overwrite(
-                &Span::styled(
-                    " 💡 Start typing or search history with Ctrl+R",
-                    self.settings.color_palette.tutorial_hint(),
-                ),
-                |_| Tag::HistorySuggestion,
-                None,
-            );
-            content.newline();
-            content.write_span_dont_overwrite(
-                &Span::styled(
-                    TUTORIAL_HISTORY_PREFIX_HINT,
-                    self.settings.color_palette.tutorial_hint(),
-                ),
-                |_| Tag::HistorySuggestion,
-                None,
-            );
-            content.newline();
-            content.write_span_dont_overwrite(
-                &Span::styled(
-                    TUTORIAL_DISABLE_HINT,
-                    self.settings.color_palette.tutorial_hint(),
-                ),
-                |_| Tag::HistorySuggestion,
-                None,
-            );
-        }
-
         if let Some((sug, suf)) = &self.inline_history_suggestion
             && self.mode.is_running()
         {
@@ -1411,9 +1372,9 @@ impl<'a> App<'a> {
                 }
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
-                let num_rows_for_instructions = if self.settings.run_tutorial { 2 } else { 1 };
+                let num_rows_footer = 1;
                 let num_rows_for_results = rows_left_before_end_of_screen
-                    .saturating_sub(num_rows_for_instructions)
+                    .saturating_sub(num_rows_footer)
                     .clamp(2, 30);
 
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
@@ -1472,16 +1433,6 @@ impl<'a> App<'a> {
                     ),
                     Tag::FuzzySearch,
                 );
-                if self.settings.run_tutorial {
-                    content.newline();
-                    content.write_span(
-                        &Span::styled(
-                            TUTORIAL_FUZZY_SEARCH_HINT,
-                            self.settings.color_palette.tutorial_hint(),
-                        ),
-                        Tag::FuzzySearch,
-                    );
-                }
             }
             ContentMode::Normal if self.mode.is_running() => {
                 if let Some(tooltip) = &self.tooltip {
