@@ -130,6 +130,9 @@ enum ColorDefault {
     Dark,
     /// Light-terminal colour preset.
     Light,
+    /// Automatically detect dark or light mode by querying the terminal background
+    /// colour at startup.
+    Auto,
 }
 
 #[derive(Subcommand, Debug)]
@@ -185,17 +188,19 @@ enum Commands {
     /// (e.g. red, #ff0000, rgb(255,0,0), color(196)).
     ///
     /// Examples:
-    ///   flyline set-color --default dark
+    ///   flyline set-color --default-theme dark
+    ///   flyline set-color --default-theme auto
     ///   flyline set-color --inline-suggestion "dim italic"
     ///   flyline set-color --matching-char "bold green"
-    ///   flyline set-color --default light --matching-char "bold blue"
+    ///   flyline set-color --default-theme light --matching-char "bold blue"
     ///   flyline set-color --recognised-word "green" --unrecognised-word "bold red"
     ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
     #[command(name = "set-color", verbatim_doc_comment)]
     SetColor {
-        /// Apply a built-in colour preset for dark or light terminals.
-        #[arg(long = "default", value_name = "MODE")]
-        default: Option<ColorDefault>,
+        /// Apply a built-in colour preset for dark or light terminals, or `auto` to detect
+        /// the terminal background colour at startup and choose automatically.
+        #[arg(long = "default-theme", value_name = "MODE")]
+        default_theme: Option<ColorDefault>,
         /// Style for recognised (valid) commands (e.g. "green").
         #[arg(long = "recognised-word", value_name = "STYLE")]
         recognised_word: Option<String>,
@@ -478,7 +483,7 @@ impl Flyline {
                         );
                     }
                     Some(Commands::SetColor {
-                        default,
+                        default_theme,
                         recognised_word,
                         unrecognised_word,
                         single_quoted_word,
@@ -490,50 +495,103 @@ impl Flyline {
                         opening_closing_pair,
                         normal_text,
                     }) => {
-                        if let Some(preset) = default {
-                            self.settings.color_palette = match preset {
-                                ColorDefault::Dark => palette::Palette::dark(),
-                                ColorDefault::Light => palette::Palette::light(),
+                        if let Some(preset) = default_theme {
+                            self.settings.color_theme = match preset {
+                                ColorDefault::Dark => settings::ColorTheme::Dark,
+                                ColorDefault::Light => settings::ColorTheme::Light,
+                                ColorDefault::Auto => settings::ColorTheme::Auto,
                             };
-                            log::info!("Color palette set to {:?} preset", preset);
+                            // Rebuild the palette from the new theme and existing overrides,
+                            // unless the theme is Auto (resolved at app startup).
+                            if self.settings.color_theme != settings::ColorTheme::Auto {
+                                let mode = match self.settings.color_theme {
+                                    settings::ColorTheme::Dark => palette::DefaultMode::Dark,
+                                    settings::ColorTheme::Light => palette::DefaultMode::Light,
+                                    settings::ColorTheme::Auto => unreachable!(),
+                                };
+                                self.settings.color_palette =
+                                    palette::Palette::from_mode_with_overrides(
+                                        mode,
+                                        &self.settings.color_overrides,
+                                    );
+                            }
+                            log::info!("Color theme set to {:?}", self.settings.color_theme);
                         }
 
                         let style_overrides: &[(
                             &Option<String>,
                             &str,
+                            fn(&mut palette::PaletteOverrides, Style),
                             fn(&mut palette::Palette, Style),
                         )] = &[
-                            (&recognised_word, "recognised-word", |p, s| {
-                                p.recognised_word = s
-                            }),
-                            (&unrecognised_word, "unrecognised-word", |p, s| {
-                                p.unrecognised_word = s
-                            }),
-                            (&single_quoted_word, "single-quoted-word", |p, s| {
-                                p.single_quoted_word = s
-                            }),
-                            (&double_quoted_word, "double-quoted-word", |p, s| {
-                                p.double_quoted_word = s
-                            }),
-                            (&secondary_text, "secondary-text", |p, s| {
-                                p.secondary_text = s
-                            }),
-                            (&inline_suggestion, "inline-suggestion", |p, s| {
-                                p.inline_suggestion = s
-                            }),
-                            (&tutorial_hint, "tutorial-hint", |p, s| p.tutorial_hint = s),
-                            (&matching_char, "matching-char", |p, s| p.matching_char = s),
-                            (&opening_closing_pair, "opening-closing-pair", |p, s| {
-                                p.opening_and_closing_pair = s
-                            }),
-                            (&normal_text, "normal-text", |p, s| p.normal_text = s),
+                            (
+                                &recognised_word,
+                                "recognised-word",
+                                |o, s| o.recognised_word = Some(s),
+                                |p, s| p.recognised_word = s,
+                            ),
+                            (
+                                &unrecognised_word,
+                                "unrecognised-word",
+                                |o, s| o.unrecognised_word = Some(s),
+                                |p, s| p.unrecognised_word = s,
+                            ),
+                            (
+                                &single_quoted_word,
+                                "single-quoted-word",
+                                |o, s| o.single_quoted_word = Some(s),
+                                |p, s| p.single_quoted_word = s,
+                            ),
+                            (
+                                &double_quoted_word,
+                                "double-quoted-word",
+                                |o, s| o.double_quoted_word = Some(s),
+                                |p, s| p.double_quoted_word = s,
+                            ),
+                            (
+                                &secondary_text,
+                                "secondary-text",
+                                |o, s| o.secondary_text = Some(s),
+                                |p, s| p.secondary_text = s,
+                            ),
+                            (
+                                &inline_suggestion,
+                                "inline-suggestion",
+                                |o, s| o.inline_suggestion = Some(s),
+                                |p, s| p.inline_suggestion = s,
+                            ),
+                            (
+                                &tutorial_hint,
+                                "tutorial-hint",
+                                |o, s| o.tutorial_hint = Some(s),
+                                |p, s| p.tutorial_hint = s,
+                            ),
+                            (
+                                &matching_char,
+                                "matching-char",
+                                |o, s| o.matching_char = Some(s),
+                                |p, s| p.matching_char = s,
+                            ),
+                            (
+                                &opening_closing_pair,
+                                "opening-closing-pair",
+                                |o, s| o.opening_and_closing_pair = Some(s),
+                                |p, s| p.opening_and_closing_pair = s,
+                            ),
+                            (
+                                &normal_text,
+                                "normal-text",
+                                |o, s| o.normal_text = Some(s),
+                                |p, s| p.normal_text = s,
+                            ),
                         ];
 
-                        for (opt, flag_name, setter) in style_overrides {
+                        for (opt, flag_name, override_setter, palette_setter) in style_overrides {
                             if let Some(style_str) = opt {
                                 match parse_style(style_str) {
                                     Ok(style) => {
-                                        setter(&mut self.settings.color_palette, style);
+                                        override_setter(&mut self.settings.color_overrides, style);
+                                        palette_setter(&mut self.settings.color_palette, style);
                                         log::info!("{} style set to {:?}", flag_name, style_str);
                                     }
                                     Err(e) => {
@@ -554,7 +612,7 @@ impl Flyline {
                 if parsed.run_tab_completion_tests {
                     self.settings.run_tab_completion_tests = true;
                     println!("Running tab completion tests...");
-                    app::get_command(&self.settings);
+                    app::get_command(&mut self.settings);
                     println!("Finished running tab completion tests.");
                 }
 
@@ -611,7 +669,7 @@ impl Flyline {
             // I haven't bothered replicating this line either:
             //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                app::get_command(&self.settings)
+                app::get_command(&mut self.settings)
             }));
 
             // unsafe {

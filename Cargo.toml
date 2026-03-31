@@ -31,8 +31,11 @@ regex = "1"
 rand = "0.10.0"
 parse-style = { version = "0.2.0" }
 
+# Fork of crossterm that adds query_background_color() / query_foreground_color() (OSC 10/11).
+# Track upstream PR: https://github.com/crossterm-rs/crossterm/compare/master...nornagon:crossterm:nornagon/color-query
 [dependencies.crossterm]
-version = "0.29.0"
+git = "https://github.com/nornagon/crossterm"
+rev = "87db8bfa6dc99427fd3b071681b07fc31c6ce995"
 features = ["event-stream"]
 
 [dependencies.tokio]

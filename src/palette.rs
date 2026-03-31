@@ -10,6 +10,22 @@ pub enum DefaultMode {
     Light,
 }
 
+/// Per-field style overrides set by the user via the CLI.
+/// Each field is `None` until explicitly overridden.
+#[derive(Debug, Clone, Default)]
+pub struct PaletteOverrides {
+    pub recognised_word: Option<Style>,
+    pub unrecognised_word: Option<Style>,
+    pub single_quoted_word: Option<Style>,
+    pub double_quoted_word: Option<Style>,
+    pub secondary_text: Option<Style>,
+    pub inline_suggestion: Option<Style>,
+    pub tutorial_hint: Option<Style>,
+    pub matching_char: Option<Style>,
+    pub opening_and_closing_pair: Option<Style>,
+    pub normal_text: Option<Style>,
+}
+
 /// The colour palette. Holds all configurable styles.
 #[derive(Debug, Clone)]
 pub struct Palette {
@@ -86,6 +102,46 @@ impl Palette {
                 .add_modifier(Modifier::UNDERLINED),
             normal_text: Style::default(),
         }
+    }
+
+    /// Build a palette from a preset mode, then apply any user overrides on top.
+    /// Override values take priority over the preset defaults.
+    pub fn from_mode_with_overrides(mode: DefaultMode, overrides: &PaletteOverrides) -> Self {
+        let mut p = match mode {
+            DefaultMode::Dark => Self::dark(),
+            DefaultMode::Light => Self::light(),
+        };
+        if let Some(s) = overrides.recognised_word {
+            p.recognised_word = s;
+        }
+        if let Some(s) = overrides.unrecognised_word {
+            p.unrecognised_word = s;
+        }
+        if let Some(s) = overrides.single_quoted_word {
+            p.single_quoted_word = s;
+        }
+        if let Some(s) = overrides.double_quoted_word {
+            p.double_quoted_word = s;
+        }
+        if let Some(s) = overrides.secondary_text {
+            p.secondary_text = s;
+        }
+        if let Some(s) = overrides.inline_suggestion {
+            p.inline_suggestion = s;
+        }
+        if let Some(s) = overrides.tutorial_hint {
+            p.tutorial_hint = s;
+        }
+        if let Some(s) = overrides.matching_char {
+            p.matching_char = s;
+        }
+        if let Some(s) = overrides.opening_and_closing_pair {
+            p.opening_and_closing_pair = s;
+        }
+        if let Some(s) = overrides.normal_text {
+            p.normal_text = s;
+        }
+        p
     }
 
     // ── Derived / constant styles ───────────────────────────────────

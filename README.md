@@ -388,8 +388,9 @@ Flyline ships with two built-in colour presets (dark and light) and lets you ove
 ### Presets
 
 ```bash
-flyline set-color --default dark   # original palette, optimised for dark terminals
-flyline set-color --default light  # preset optimised for light terminals
+flyline set-color --default-theme dark   # original palette, optimised for dark terminals
+flyline set-color --default-theme light  # preset optimised for light terminals
+flyline set-color --default-theme auto   # detect dark/light from the terminal background colour
 ```
 
 ### Custom colours
@@ -407,7 +408,7 @@ hex code (`#ff5500`) or `rgb(r,g,b)` form.
 flyline set-color --inline-suggestion "dim italic"     # style for inline history suggestions
 flyline set-color --matching-char "bold green"         # style for matched chars in fuzzy search
 flyline set-color --matching-char "#ff8700"            # orange matching chars
-flyline set-color --inline-suggestion "bold red"       # combine --default with custom overrides
+flyline set-color --inline-suggestion "bold red"       # combine --default-theme with custom overrides
 ```
 
 An error is printed and the setting is not changed when the style string cannot be parsed.

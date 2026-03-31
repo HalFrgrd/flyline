@@ -1,6 +1,19 @@
 use std::collections::HashMap;
 
-use crate::palette::Palette;
+use crate::palette::{Palette, PaletteOverrides};
+
+/// Which theme the user has configured for the colour palette.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColorTheme {
+    /// Dark-terminal preset (the original flyline palette). This is the default.
+    #[default]
+    Dark,
+    /// Light-terminal preset.
+    Light,
+    /// Automatically detect dark or light mode by querying the terminal background
+    /// colour at startup.
+    Auto,
+}
 
 /// A single custom prompt animation registered with `flyline create-anim`.
 #[derive(Debug, Clone)]
@@ -63,6 +76,11 @@ pub struct Settings {
     pub send_shell_integration_codes: bool,
     /// Configurable colour palette for UI elements.
     pub color_palette: Palette,
+    /// Which colour theme the user has selected (dark, light, or auto).
+    pub color_theme: ColorTheme,
+    /// Per-field style overrides set by the user via `flyline set-color`.
+    /// These take priority over the preset defaults selected by `color_theme`.
+    pub color_overrides: PaletteOverrides,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -85,6 +103,8 @@ impl Default for Settings {
             frame_rate: 30,
             send_shell_integration_codes: true,
             color_palette: Palette::dark(),
+            color_theme: ColorTheme::Dark,
+            color_overrides: PaletteOverrides::default(),
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }
