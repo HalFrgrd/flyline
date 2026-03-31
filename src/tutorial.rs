@@ -18,6 +18,8 @@ pub enum TutorialStep {
     ThirdStep,
     /// Setting theme colours.
     FourthStep,
+    /// Auto-closing quotes, parentheses, and brackets.
+    FifthStep,
 }
 
 impl TutorialStep {
@@ -28,7 +30,8 @@ impl TutorialStep {
             TutorialStep::FirstStep => TutorialStep::SecondStep,
             TutorialStep::SecondStep => TutorialStep::ThirdStep,
             TutorialStep::ThirdStep => TutorialStep::FourthStep,
-            TutorialStep::FourthStep => TutorialStep::NotRunning,
+            TutorialStep::FourthStep => TutorialStep::FifthStep,
+            TutorialStep::FifthStep => TutorialStep::NotRunning,
         };
     }
 
@@ -40,6 +43,7 @@ impl TutorialStep {
             TutorialStep::SecondStep => TutorialStep::FirstStep,
             TutorialStep::ThirdStep => TutorialStep::SecondStep,
             TutorialStep::FourthStep => TutorialStep::ThirdStep,
+            TutorialStep::FifthStep => TutorialStep::FourthStep,
         };
     }
 
@@ -126,12 +130,6 @@ pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
 
     Text::from(lines)
 }
-
-// const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Alt+Enter to accept the command for editing";
-// const TUTORIAL_HISTORY_PREFIX_HINT: &str =
-//     "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
-// const TUTORIAL_DISABLE_HINT: &str =
-//     "💡 Run `flyline --run-tutorial false` to disable the tutorial";
 
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
@@ -240,6 +238,30 @@ pub fn generate_tutorial_text(
                 hint_style,
             )));
         }
+        TutorialStep::FifthStep => {
+            lines.push(Line::from(Span::styled(
+                "Auto-Closing Quotes & Brackets",
+                hint_style.add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Flyline automatically inserts closing characters when you type an opening one.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "Try typing: echo $(\" — watch how the closing \" ) are inserted for you.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "This works for parentheses (), square brackets [], curly braces {}, and quotes \" \".",
+                hint_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Toggle this feature with `flyline --auto-close-chars true/false`.",
+                hint_style,
+            )));
+        }
         TutorialStep::NotRunning => unreachable!(),
     }
 
@@ -257,10 +279,11 @@ pub fn generate_tutorial_text(
 fn build_nav_line(step: TutorialStep, palette: &Palette, width: u16) -> Line<'static> {
     let hint_style = palette.tutorial_hint();
     let step_label = match step {
-        TutorialStep::FirstStep => "Step 1/4",
-        TutorialStep::SecondStep => "Step 2/4",
-        TutorialStep::ThirdStep => "Step 3/4",
-        TutorialStep::FourthStep => "Step 4/4",
+        TutorialStep::FirstStep => "Step 1/5",
+        TutorialStep::SecondStep => "Step 2/5",
+        TutorialStep::ThirdStep => "Step 3/5",
+        TutorialStep::FourthStep => "Step 4/5",
+        TutorialStep::FifthStep => "Step 5/5",
         TutorialStep::NotRunning => "",
     };
 
