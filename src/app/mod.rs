@@ -875,11 +875,11 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::ALT,
                 ..
             } if matches!(self.content_mode, ContentMode::Normal) => {
-                if!self.settings.ai_command.is_empty() {
+                if !self.settings.ai_command.is_empty() {
                     self.start_agent_mode();
                 } else {
                     self.show_agent_mode_not_configured_error();
-                }   
+                }
             }
             // Enter key - accept suggestions or submit command
             KeyEvent {
@@ -1620,15 +1620,21 @@ impl<'a> App<'a> {
                 }
             };
 
-            let graph_idx_to_tag = part
-                .normal_span()
-                .styled_graphemes(Style::default())
-                .scan(part.token.token.byte_range().start, |acc, graph| {
-                    let tag = Tag::Command(*acc);
-                    *acc += graph.symbol.len();
-                    Some(tag)
-                })
-                .collect::<Vec<_>>();
+            let graph_idx_to_tag = if part.token.token.kind == TokenKind::Newline {
+                // For newlines, span_to_draw is replaced with " " (1 grapheme), but
+                // styled_graphemes("\n") yields zero items, so we must build the tag
+                // mapping manually to avoid falling back to Tag::Command(0).
+                vec![Tag::Command(part.token.token.byte_range().start)]
+            } else {
+                part.normal_span()
+                    .styled_graphemes(Style::default())
+                    .scan(part.token.token.byte_range().start, |acc, graph| {
+                        let tag = Tag::Command(*acc);
+                        *acc += graph.symbol.len();
+                        Some(tag)
+                    })
+                    .collect::<Vec<_>>()
+            };
 
             let poss_cursor_anim_pos = content.write_span_dont_overwrite(
                 span_to_draw,
