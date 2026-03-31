@@ -10,9 +10,9 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager, HistorySearchDirection};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
-use crate::palette::Palette;
+use crate::palette::{DefaultMode, Palette};
 use crate::prompt_manager::PromptManager;
-use crate::settings::{MouseMode, Settings};
+use crate::settings::{ColorTheme, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
@@ -64,6 +64,45 @@ fn set_panic_hook() {
     }));
 }
 
+/// Standard sRGB luminance coefficients (ITU-R BT.709).
+const SRGB_RED_COEFF: f32 = 0.2126;
+const SRGB_GREEN_COEFF: f32 = 0.7152;
+const SRGB_BLUE_COEFF: f32 = 0.0722;
+/// Backgrounds with perceived luminance above this threshold are treated as light.
+const LUMINANCE_LIGHT_THRESHOLD: f32 = 0.5;
+
+/// Query the terminal background colour and decide whether to use the dark or
+/// light palette preset.  Falls back to `Dark` if the query fails or the
+/// terminal does not respond.
+fn detect_background_mode() -> DefaultMode {
+    match crossterm::style::query_background_color() {
+        Ok(Some(crossterm::style::Color::Rgb { r, g, b })) => {
+            // Perceived luminance using the standard sRGB coefficients.
+            let luminance = SRGB_RED_COEFF * (r as f32 / 255.0)
+                + SRGB_GREEN_COEFF * (g as f32 / 255.0)
+                + SRGB_BLUE_COEFF * (b as f32 / 255.0);
+            if luminance > LUMINANCE_LIGHT_THRESHOLD {
+                log::debug!("Background RGB({r},{g},{b}) luminance={luminance:.3} → light mode");
+                DefaultMode::Light
+            } else {
+                log::debug!("Background RGB({r},{g},{b}) luminance={luminance:.3} → dark mode");
+                DefaultMode::Dark
+            }
+        }
+        Ok(color) => {
+            log::debug!(
+                "Background color {:?} not an RGB value, defaulting to dark mode",
+                color
+            );
+            DefaultMode::Dark
+        }
+        Err(e) => {
+            log::debug!("Could not query background color: {e}, defaulting to dark mode");
+            DefaultMode::Dark
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ExitState {
     WithCommand(String),
@@ -94,7 +133,7 @@ pub enum LastKeyPressAction {
     InsertedAutoClosing { char: char, byte_pos: usize },
 }
 
-pub fn get_command(settings: &Settings) -> ExitState {
+pub fn get_command(settings: &mut Settings) -> ExitState {
     // if let Err(e) = color_eyre::install() {
     //     log::error!("Failed to install color_eyre panic handler: {}", e);
     // }
@@ -103,6 +142,16 @@ pub fn get_command(settings: &Settings) -> ExitState {
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
+
+    // Resolve the colour palette before starting the TUI. When the theme is
+    // `Auto`, query the terminal background colour and apply the appropriate
+    // preset defaults; user-specified overrides inside the palette are preserved.
+    if settings.color_theme == ColorTheme::Auto {
+        let mode = detect_background_mode();
+        settings.color_palette.apply_theme(mode);
+        log::info!("Auto theme resolved to {:?}", mode);
+    }
+
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
 
     // Set up terminal features. Mouse capture is handled separately inside
@@ -1436,9 +1485,9 @@ impl<'a> App<'a> {
 
         let indicator_span = || {
             if is_selected {
-                Span::styled("▐", palette.matching_char)
+                Span::styled("▐", palette.matching_char())
             } else {
-                Span::styled(" ", palette.secondary_text)
+                Span::styled(" ", palette.secondary_text())
             }
         };
 
@@ -1469,13 +1518,13 @@ impl<'a> App<'a> {
                 vec![
                     Span::styled(
                         format!("{:>num_digits_for_index$} ", entry.index + 1),
-                        palette.secondary_text,
+                        palette.secondary_text(),
                     ),
                     Span::styled(
                         format!("{:>num_digits_for_score$} ", formatted_entry.score),
-                        palette.secondary_text,
+                        palette.secondary_text(),
                     ),
-                    Span::styled(timeago_str.clone(), palette.secondary_text),
+                    Span::styled(timeago_str.clone(), palette.secondary_text()),
                     indicator_span(),
                 ]
             } else {
@@ -1486,7 +1535,7 @@ impl<'a> App<'a> {
                     " ".repeat(header_prefix_width - 1)
                 };
                 vec![
-                    Span::styled(indent_prefix, palette.secondary_text),
+                    Span::styled(indent_prefix, palette.secondary_text()),
                     indicator_span(),
                 ]
             };
@@ -1514,9 +1563,9 @@ impl<'a> App<'a> {
             // make space; otherwise just append.
             if display_idx + 1 == rows_to_show && has_more {
                 let ellipsis_style = if is_selected {
-                    Palette::convert_to_selected(palette.secondary_text)
+                    Palette::convert_to_selected(palette.secondary_text())
                 } else {
-                    palette.secondary_text
+                    palette.secondary_text()
                 };
                 if cmd_display_width >= available_cols as usize {
                     'trim: loop {
@@ -1632,7 +1681,7 @@ impl<'a> App<'a> {
                 content.newline();
                 let ps2 = Span::styled(
                     format!("{}∙", line_idx + 1),
-                    self.settings.color_palette.secondary_text,
+                    self.settings.color_palette.secondary_text(),
                 );
                 content.write_span(&ps2, Tag::Ps2Prompt);
             }
@@ -1689,7 +1738,7 @@ impl<'a> App<'a> {
             content.write_span_dont_overwrite(
                 &Span::styled(
                     " 💡 Start typing or search history with Ctrl+R",
-                    self.settings.color_palette.tutorial_hint,
+                    self.settings.color_palette.tutorial_hint(),
                 ),
                 |_| Tag::HistorySuggestion,
                 None,
@@ -1698,7 +1747,7 @@ impl<'a> App<'a> {
             content.write_span_dont_overwrite(
                 &Span::styled(
                     TUTORIAL_HISTORY_PREFIX_HINT,
-                    self.settings.color_palette.tutorial_hint,
+                    self.settings.color_palette.tutorial_hint(),
                 ),
                 |_| Tag::HistorySuggestion,
                 None,
@@ -1707,7 +1756,7 @@ impl<'a> App<'a> {
             content.write_span_dont_overwrite(
                 &Span::styled(
                     TUTORIAL_DISABLE_HINT,
-                    self.settings.color_palette.tutorial_hint,
+                    self.settings.color_palette.tutorial_hint(),
                 ),
                 |_| Tag::HistorySuggestion,
                 None,
@@ -1728,7 +1777,7 @@ impl<'a> App<'a> {
 
                     content.write_span_dont_overwrite(
                         &Span::from(line.to_owned())
-                            .style(self.settings.color_palette.secondary_text),
+                            .style(self.settings.color_palette.secondary_text()),
                         |_| Tag::HistorySuggestion,
                         None,
                     );
@@ -1742,7 +1791,7 @@ impl<'a> App<'a> {
 
                         content.write_span_dont_overwrite(
                             &Span::from(extra_info_text)
-                                .style(self.settings.color_palette.inline_suggestion),
+                                .style(self.settings.color_palette.inline_suggestion()),
                             |_| Tag::HistorySuggestion,
                             None,
                         );
@@ -1751,7 +1800,7 @@ impl<'a> App<'a> {
                             content.write_span_dont_overwrite(
                                 &Span::styled(
                                     " 💡 Press → or End to accept",
-                                    self.settings.color_palette.tutorial_hint,
+                                    self.settings.color_palette.tutorial_hint(),
                                 ),
                                 |_| Tag::HistorySuggestion,
                                 None,
@@ -1771,7 +1820,10 @@ impl<'a> App<'a> {
                 // Early exit when there are no suggestions to display.
                 if active_suggestions.filtered_suggestions_len() == 0 {
                     content.write_span(
-                        &Span::styled("No suggestions", self.settings.color_palette.secondary_text),
+                        &Span::styled(
+                            "No suggestions",
+                            self.settings.color_palette.secondary_text(),
+                        ),
                         Tag::TabSuggestion,
                     );
                 } else {
@@ -1881,7 +1933,7 @@ impl<'a> App<'a> {
                 content.write_span(
                     &Span::styled(
                         format!("# Fuzzy search: {}/{}", num_results, num_searched),
-                        self.settings.color_palette.secondary_text,
+                        self.settings.color_palette.secondary_text(),
                     ),
                     Tag::FuzzySearch,
                 );
@@ -1890,7 +1942,7 @@ impl<'a> App<'a> {
                     content.write_span(
                         &Span::styled(
                             TUTORIAL_FUZZY_SEARCH_HINT,
-                            self.settings.color_palette.tutorial_hint,
+                            self.settings.color_palette.tutorial_hint(),
                         ),
                         Tag::FuzzySearch,
                     );
@@ -1901,7 +1953,7 @@ impl<'a> App<'a> {
                     content.newline();
                     let tooltip_line = Line::from(Span::styled(
                         tooltip.clone(),
-                        self.settings.color_palette.secondary_text,
+                        self.settings.color_palette.secondary_text(),
                     ));
 
                     let max_tool_tip_rows: u16 = 3;
@@ -1926,7 +1978,7 @@ impl<'a> App<'a> {
                             content.set_cursor_col(last_col);
                         }
                         content.write_span(
-                            &Span::styled("…", self.settings.color_palette.secondary_text),
+                            &Span::styled("…", self.settings.color_palette.secondary_text()),
                             Tag::Tooltip,
                         );
                     }
@@ -1942,7 +1994,7 @@ impl<'a> App<'a> {
                 content.write_span(
                     &Span::styled(
                         format!("Running: {} [{}s]", command_display, elapsed_secs),
-                        self.settings.color_palette.secondary_text,
+                        self.settings.color_palette.secondary_text(),
                     ),
                     Tag::Normal,
                 );
@@ -1959,9 +2011,9 @@ impl<'a> App<'a> {
                     }
                     let indicator = if is_selected { "▐" } else { " " };
                     let indicator_style = if is_selected {
-                        self.settings.color_palette.matching_char
+                        self.settings.color_palette.matching_char()
                     } else {
-                        self.settings.color_palette.secondary_text
+                        self.settings.color_palette.secondary_text()
                     };
                     content.write_span(
                         &Span::styled(indicator, indicator_style),
@@ -1969,9 +2021,9 @@ impl<'a> App<'a> {
                     );
                     // Description line
                     let desc_style = if is_selected {
-                        Palette::convert_to_selected(self.settings.color_palette.secondary_text)
+                        Palette::convert_to_selected(self.settings.color_palette.secondary_text())
                     } else {
-                        self.settings.color_palette.secondary_text
+                        self.settings.color_palette.secondary_text()
                     };
                     content.write_span(
                         &Span::styled(suggestion.description.clone(), desc_style),
@@ -2038,7 +2090,7 @@ impl<'a> App<'a> {
                         content.write_span(
                             &Span::styled(
                                 line.to_string(),
-                                self.settings.color_palette.secondary_text,
+                                self.settings.color_palette.secondary_text(),
                             ),
                             Tag::Normal,
                         );
@@ -2048,7 +2100,7 @@ impl<'a> App<'a> {
                 content.write_span(
                     &Span::styled(
                         "Press Enter to run `flyline agent-mode --help`.",
-                        self.settings.color_palette.secondary_text,
+                        self.settings.color_palette.secondary_text(),
                     ),
                     Tag::Blank,
                 );

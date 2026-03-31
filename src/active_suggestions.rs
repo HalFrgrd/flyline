@@ -147,7 +147,7 @@ impl SuggestionFormatted {
         matching_indices: Vec<usize>,
         palette: &Palette,
     ) -> Self {
-        let base_style = suggestion.style.unwrap_or(palette.normal_text);
+        let base_style = suggestion.style.unwrap_or(palette.normal_text());
         let lines = palette.highlight_maching_indices(&suggestion.s, &matching_indices, base_style);
 
         SuggestionFormatted {
