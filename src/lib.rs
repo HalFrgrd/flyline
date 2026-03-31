@@ -139,7 +139,7 @@ enum ColorDefault {
 enum Commands {
     /// Configure AI agent mode.
     ///
-    /// When Shift+Enter is pressed, flyline invokes COMMAND with the current buffer
+    /// When Alt+Enter is pressed, flyline invokes COMMAND with the current buffer
     /// (optionally prepended by SYSTEM_PROMPT) as the final argument.
     ///
     /// Example:
@@ -154,7 +154,7 @@ enum Commands {
         #[arg(long = "system-prompt")]
         system_prompt: Option<String>,
         /// Command (and arguments) to invoke. The current buffer is appended as the
-        /// final argument when Shift+Enter is pressed.
+        /// final argument when Alt+Enter is pressed.
         #[arg(long = "command", num_args = 1.., allow_hyphen_values = true, required = true)]
         command: Vec<String>,
     },
@@ -231,6 +231,24 @@ enum Commands {
         /// Style for normal (unstyled) text.
         #[arg(long = "normal-text", value_name = "STYLE")]
         normal_text: Option<String>,
+        /// Style for shell comments (e.g. "dim italic gray").
+        #[arg(long = "comment", value_name = "STYLE")]
+        comment: Option<String>,
+        /// Style for environment variables (e.g. "cyan").
+        #[arg(long = "env-var", value_name = "STYLE")]
+        env_var: Option<String>,
+        /// Style for markdown H1 headings (e.g. "bold cyan").
+        #[arg(long = "markdown-heading1", value_name = "STYLE")]
+        markdown_heading1: Option<String>,
+        /// Style for markdown H2 headings (e.g. "bold blue").
+        #[arg(long = "markdown-heading2", value_name = "STYLE")]
+        markdown_heading2: Option<String>,
+        /// Style for markdown H3+ headings (e.g. "bold magenta").
+        #[arg(long = "markdown-heading3", value_name = "STYLE")]
+        markdown_heading3: Option<String>,
+        /// Style for markdown inline/block code (e.g. "dim").
+        #[arg(long = "markdown-code", value_name = "STYLE")]
+        markdown_code: Option<String>,
     },
 }
 
@@ -494,6 +512,12 @@ impl Flyline {
                         matching_char,
                         opening_closing_pair,
                         normal_text,
+                        comment,
+                        env_var,
+                        markdown_heading1,
+                        markdown_heading2,
+                        markdown_heading3,
+                        markdown_code,
                     }) => {
                         if let Some(preset) = default_theme {
                             self.settings.color_theme = match preset {
@@ -548,6 +572,20 @@ impl Flyline {
                             }),
                             (&normal_text, "normal-text", |p, s| {
                                 p.normal_text_override = Some(s)
+                            }),
+                            (&comment, "comment", |p, s| p.comment_override = Some(s)),
+                            (&env_var, "env-var", |p, s| p.env_var_override = Some(s)),
+                            (&markdown_heading1, "markdown-heading1", |p, s| {
+                                p.markdown_heading1_override = Some(s)
+                            }),
+                            (&markdown_heading2, "markdown-heading2", |p, s| {
+                                p.markdown_heading2_override = Some(s)
+                            }),
+                            (&markdown_heading3, "markdown-heading3", |p, s| {
+                                p.markdown_heading3_override = Some(s)
+                            }),
+                            (&markdown_code, "markdown-code", |p, s| {
+                                p.markdown_code_override = Some(s)
                             }),
                         ];
 

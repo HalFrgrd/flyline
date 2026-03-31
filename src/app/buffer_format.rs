@@ -112,6 +112,15 @@ fn token_to_style(
     {
         return palette.double_quoted_text();
     }
+
+    if token.annotation == TokenAnnotation::IsComment {
+        return palette.comment();
+    }
+
+    if token.annotation == TokenAnnotation::IsEnvVar {
+        return palette.env_var();
+    }
+
     palette.normal_text()
 }
 
