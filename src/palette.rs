@@ -25,16 +25,16 @@ pub struct Palette {
     /// Which built-in preset is active.
     pub default_mode: DefaultMode,
 
-    recognised_word: Style,
+    recognised_command: Style,
     pub recognised_word_override: Option<Style>,
 
-    unrecognised_word: Style,
+    unrecognised_command: Style,
     pub unrecognised_word_override: Option<Style>,
 
-    single_quoted_word: Style,
+    single_quoted_text: Style,
     pub single_quoted_word_override: Option<Style>,
 
-    double_quoted_word: Style,
+    double_quoted_text: Style,
     pub double_quoted_word_override: Option<Style>,
 
     secondary_text: Style,
@@ -59,24 +59,24 @@ pub struct Palette {
 impl Palette {
     // ── Getters (override wins over theme default) ────────────────────
 
-    pub fn recognised_word(&self) -> Style {
+    pub fn recognised_command(&self) -> Style {
         self.recognised_word_override
-            .unwrap_or(self.recognised_word)
+            .unwrap_or(self.recognised_command)
     }
 
-    pub fn unrecognised_word(&self) -> Style {
+    pub fn unrecognised_command(&self) -> Style {
         self.unrecognised_word_override
-            .unwrap_or(self.unrecognised_word)
+            .unwrap_or(self.unrecognised_command)
     }
 
-    pub fn single_quoted_word(&self) -> Style {
+    pub fn single_quoted_text(&self) -> Style {
         self.single_quoted_word_override
-            .unwrap_or(self.single_quoted_word)
+            .unwrap_or(self.single_quoted_text)
     }
 
-    pub fn double_quoted_word(&self) -> Style {
+    pub fn double_quoted_text(&self) -> Style {
         self.double_quoted_word_override
-            .unwrap_or(self.double_quoted_word)
+            .unwrap_or(self.double_quoted_text)
     }
 
     pub fn secondary_text(&self) -> Style {
@@ -105,94 +105,52 @@ impl Palette {
         self.normal_text_override.unwrap_or(self.normal_text)
     }
 
-    // ── Presets ──────────────────────────────────────────────────────
-
-    /// Dark-terminal defaults (the original flyline palette).
-    pub fn dark() -> Self {
-        Palette {
-            default_mode: DefaultMode::Dark,
-            recognised_word: Style::default().fg(Color::Green),
-            recognised_word_override: None,
-            unrecognised_word: Style::default().fg(Color::Red),
-            unrecognised_word_override: None,
-            single_quoted_word: Style::default().fg(Color::Yellow),
-            single_quoted_word_override: None,
-            double_quoted_word: Style::default().fg(Color::Red),
-            double_quoted_word_override: None,
-            secondary_text: Style::default().add_modifier(Modifier::DIM),
-            secondary_text_override: None,
-            inline_suggestion: Style::default()
-                .add_modifier(Modifier::DIM)
-                .add_modifier(Modifier::ITALIC),
-            inline_suggestion_override: None,
-            tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
-            tutorial_hint_override: None,
-            matching_char: Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-            matching_char_override: None,
-            opening_and_closing_pair: Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD)
-                .add_modifier(Modifier::UNDERLINED),
-            opening_and_closing_pair_override: None,
-            normal_text: Style::default(),
-            normal_text_override: None,
-        }
-    }
-
-    /// Light-terminal defaults.
-    pub fn light() -> Self {
-        Palette {
-            default_mode: DefaultMode::Light,
-            recognised_word: Style::default().fg(Color::DarkGray),
-            recognised_word_override: None,
-            unrecognised_word: Style::default().fg(Color::Red),
-            unrecognised_word_override: None,
-            single_quoted_word: Style::default().fg(Color::Yellow),
-            single_quoted_word_override: None,
-            double_quoted_word: Style::default().fg(Color::Magenta),
-            double_quoted_word_override: None,
-            secondary_text: Style::default().fg(Color::DarkGray),
-            secondary_text_override: None,
-            inline_suggestion: Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::ITALIC),
-            inline_suggestion_override: None,
-            tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
-            tutorial_hint_override: None,
-            matching_char: Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-            matching_char_override: None,
-            opening_and_closing_pair: Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD)
-                .add_modifier(Modifier::UNDERLINED),
-            opening_and_closing_pair_override: None,
-            normal_text: Style::default(),
-            normal_text_override: None,
-        }
-    }
-
     /// Apply a new theme preset to the default style values, leaving any
     /// user-specified overrides intact.
     pub fn apply_theme(&mut self, mode: DefaultMode) {
-        let template = match mode {
-            DefaultMode::Dark => Self::dark(),
-            DefaultMode::Light => Self::light(),
-        };
-        self.default_mode = template.default_mode;
-        self.recognised_word = template.recognised_word;
-        self.unrecognised_word = template.unrecognised_word;
-        self.single_quoted_word = template.single_quoted_word;
-        self.double_quoted_word = template.double_quoted_word;
-        self.secondary_text = template.secondary_text;
-        self.inline_suggestion = template.inline_suggestion;
-        self.tutorial_hint = template.tutorial_hint;
-        self.matching_char = template.matching_char;
-        self.opening_and_closing_pair = template.opening_and_closing_pair;
-        self.normal_text = template.normal_text;
+        match mode {
+            DefaultMode::Dark => {
+                self.default_mode = DefaultMode::Dark;
+                self.recognised_command = Style::default().fg(Color::Green);
+                self.unrecognised_command = Style::default().fg(Color::Red);
+                self.single_quoted_text = Style::default().fg(Color::Yellow);
+                self.double_quoted_text = Style::default().fg(Color::Red);
+                self.secondary_text = Style::default().add_modifier(Modifier::DIM);
+                self.inline_suggestion = Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::DIM)
+                    .add_modifier(Modifier::ITALIC);
+                self.tutorial_hint = Style::default().add_modifier(Modifier::BOLD);
+                self.matching_char = Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD);
+                self.opening_and_closing_pair = Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::UNDERLINED);
+                self.normal_text = Style::default();
+            }
+            DefaultMode::Light => {
+                self.default_mode = DefaultMode::Light;
+                self.recognised_command = Style::default().fg(Color::DarkGray);
+                self.unrecognised_command = Style::default().fg(Color::Red);
+                self.single_quoted_text = Style::default().fg(Color::Yellow);
+                self.double_quoted_text = Style::default().fg(Color::Magenta);
+                self.secondary_text = Style::default().fg(Color::DarkGray);
+                self.inline_suggestion = Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC);
+                self.tutorial_hint = Style::default().add_modifier(Modifier::BOLD);
+                self.matching_char = Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD);
+                self.opening_and_closing_pair = Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::UNDERLINED);
+                self.normal_text = Style::default();
+            }
+        }
     }
 
     // ── Derived / constant styles ───────────────────────────────────
@@ -252,6 +210,30 @@ impl Palette {
 
 impl Default for Palette {
     fn default() -> Self {
-        Self::dark()
+        let mut p = Self {
+            default_mode: DefaultMode::Dark,
+            recognised_command: Style::default(),
+            recognised_word_override: None,
+            unrecognised_command: Style::default(),
+            unrecognised_word_override: None,
+            single_quoted_text: Style::default(),
+            single_quoted_word_override: None,
+            double_quoted_text: Style::default(),
+            double_quoted_word_override: None,
+            secondary_text: Style::default(),
+            secondary_text_override: None,
+            inline_suggestion: Style::default(),
+            inline_suggestion_override: None,
+            tutorial_hint: Style::default(),
+            tutorial_hint_override: None,
+            matching_char: Style::default(),
+            matching_char_override: None,
+            opening_and_closing_pair: Style::default(),
+            opening_and_closing_pair_override: None,
+            normal_text: Style::default(),
+            normal_text_override: None,
+        };
+        p.apply_theme(DefaultMode::Dark);
+        p
     }
 }

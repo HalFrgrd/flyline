@@ -99,7 +99,7 @@ impl Default for Settings {
             matrix_animation: false,
             frame_rate: 30,
             send_shell_integration_codes: true,
-            color_palette: Palette::dark(),
+            color_palette: Palette::default(),
             color_theme: ColorTheme::Dark,
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,

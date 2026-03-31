@@ -193,7 +193,7 @@ enum Commands {
     ///   flyline set-color --inline-suggestion "dim italic"
     ///   flyline set-color --matching-char "bold green"
     ///   flyline set-color --default-theme light --matching-char "bold blue"
-    ///   flyline set-color --recognised-word "green" --unrecognised-word "bold red"
+    ///   flyline set-color --recognised-command "green" --unrecognised-command "bold red"
     ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
     #[command(name = "set-color", verbatim_doc_comment)]
     SetColor {
@@ -202,17 +202,17 @@ enum Commands {
         #[arg(long = "default-theme", value_name = "MODE")]
         default_theme: Option<ColorDefault>,
         /// Style for recognised (valid) commands (e.g. "green").
-        #[arg(long = "recognised-word", value_name = "STYLE")]
-        recognised_word: Option<String>,
+        #[arg(long = "recognised-command", value_name = "STYLE")]
+        recognised_command: Option<String>,
         /// Style for unrecognised (invalid) commands (e.g. "red").
-        #[arg(long = "unrecognised-word", value_name = "STYLE")]
-        unrecognised_word: Option<String>,
+        #[arg(long = "unrecognised-command", value_name = "STYLE")]
+        unrecognised_command: Option<String>,
         /// Style for single-quoted strings (e.g. "yellow").
-        #[arg(long = "single-quoted-word", value_name = "STYLE")]
-        single_quoted_word: Option<String>,
+        #[arg(long = "single-quoted-text", value_name = "STYLE")]
+        single_quoted_text: Option<String>,
         /// Style for double-quoted strings (e.g. "red").
-        #[arg(long = "double-quoted-word", value_name = "STYLE")]
-        double_quoted_word: Option<String>,
+        #[arg(long = "double-quoted-text", value_name = "STYLE")]
+        double_quoted_text: Option<String>,
         /// Style for secondary / muted text (e.g. "dim").
         #[arg(long = "secondary-text", value_name = "STYLE")]
         secondary_text: Option<String>,
@@ -484,10 +484,10 @@ impl Flyline {
                     }
                     Some(Commands::SetColor {
                         default_theme,
-                        recognised_word,
-                        unrecognised_word,
-                        single_quoted_word,
-                        double_quoted_word,
+                        recognised_command,
+                        unrecognised_command,
+                        single_quoted_text,
+                        double_quoted_text,
                         secondary_text,
                         inline_suggestion,
                         tutorial_hint,
@@ -519,16 +519,16 @@ impl Flyline {
                             &str,
                             fn(&mut palette::Palette, Style),
                         )] = &[
-                            (&recognised_word, "recognised-word", |p, s| {
+                            (&recognised_command, "recognised-command", |p, s| {
                                 p.recognised_word_override = Some(s)
                             }),
-                            (&unrecognised_word, "unrecognised-word", |p, s| {
+                            (&unrecognised_command, "unrecognised-command", |p, s| {
                                 p.unrecognised_word_override = Some(s)
                             }),
-                            (&single_quoted_word, "single-quoted-word", |p, s| {
+                            (&single_quoted_text, "single-quoted-text", |p, s| {
                                 p.single_quoted_word_override = Some(s)
                             }),
-                            (&double_quoted_word, "double-quoted-word", |p, s| {
+                            (&double_quoted_text, "double-quoted-text", |p, s| {
                                 p.double_quoted_word_override = Some(s)
                             }),
                             (&secondary_text, "secondary-text", |p, s| {

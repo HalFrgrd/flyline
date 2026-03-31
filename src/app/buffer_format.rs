@@ -96,21 +96,21 @@ fn token_to_style(
 
     if matches!(token.annotation, TokenAnnotation::IsCommandWord(_)) {
         if recognised_command == Some(true) {
-            return palette.recognised_word();
+            return palette.recognised_command();
         }
-        return palette.unrecognised_word();
+        return palette.unrecognised_command();
     }
 
     if token.annotation == TokenAnnotation::IsPartOfSingleQuotedString
         || token.token.kind == TokenKind::SingleQuote
     {
-        return palette.single_quoted_word();
+        return palette.single_quoted_text();
     }
 
     if token.annotation == TokenAnnotation::IsPartOfDoubleQuotedString
         || token.token.kind == TokenKind::Quote
     {
-        return palette.double_quoted_word();
+        return palette.double_quoted_text();
     }
     palette.normal_text()
 }
@@ -178,7 +178,7 @@ impl FormattedBufferPart {
             && token.token.value.starts_with("python")
         {
             let normal_string = token.token.value.clone();
-            let recognised_style = palette.recognised_word();
+            let recognised_style = palette.recognised_command();
 
             Some(Arc::new(move |now| {
                 let mut anim = SNAKE_ANIMATION
