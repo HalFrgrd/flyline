@@ -49,6 +49,7 @@ pub enum Tag {
     AiResult(usize),
     TutorialPrev,
     TutorialNext,
+    Tutorial,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,11 +173,6 @@ impl Contents {
                 // cold_path();
                 // If the grapheme is still too wide after wrapping, skip it
                 // We probably start at cursor_pos_x=0 here, so very unlikely to happen
-                log::warn!(
-                    "Grapheme too wide for line: '{}' (width {})",
-                    graph.symbol,
-                    graph_w
-                );
                 continue;
             }
             if Some(i) == mark_nth_grapheme {
@@ -401,6 +397,24 @@ impl Contents {
                     cell.cell
                         .set_symbol(styled_graph.symbol)
                         .set_style(styled_graph.style);
+                }
+            }
+        }
+    }
+
+    pub fn write_buffer(&mut self, buffer: &ratatui::buffer::Buffer, tag: Tag) {
+        for pos in buffer.area().positions() {
+            for _ in self.buf.len()..=pos.y as usize {
+                self.increase_buf_single_row();
+            }
+            if let Some(cell) = buffer.cell(pos) {
+                if let Some(row) = self.buf.get_mut(pos.y as usize)
+                    && let Some(tagged_cell) = row.get_mut(pos.x as usize)
+                {
+                    tagged_cell.cell = cell.clone();
+                    tagged_cell.tag = tag;
+
+                    self.cursor_pos = Coord::new(pos.y, pos.x);
                 }
             }
         }

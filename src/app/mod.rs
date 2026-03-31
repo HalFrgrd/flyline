@@ -24,6 +24,7 @@ use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
+use ratatui::widgets::{Block, Paragraph};
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::time::Duration;
@@ -1126,24 +1127,41 @@ impl<'a> App<'a> {
             if let Some(tutorial_lines) = crate::tutorial::generate_tutorial_text(
                 self.settings.tutorial_step.get(),
                 &self.settings.color_palette,
-                width,
             ) {
-                for line in &tutorial_lines {
-                    // Tag spans: detect prev/next navigation boxes for mouse click handling.
-                    for span in &line.spans {
-                        let tag = if span.content.contains("prev") {
-                            Tag::TutorialPrev
-                        } else if span.content.contains("next") {
-                            Tag::TutorialNext
-                        } else {
-                            Tag::Normal
-                        };
-                        content.write_span(span, tag);
-                    }
-                    content.newline();
-                }
+                let buffer_rect = Rect {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height: 8,
+                };
+
+                let mut buffer = ratatui::buffer::Buffer::empty(buffer_rect);
+
+                let [prev_block, text_block, next_block] =
+                    buffer.area().layout(&Layout::horizontal([
+                        Constraint::Min(6),
+                        Constraint::Percentage(90),
+                        Constraint::Min(6),
+                    ]));
+
+                Block::bordered()
+                    .style(Style::default().bg(Color::Green))
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .render(prev_block.inner(Margin::new(0, 1)), &mut buffer);
+
+                Block::bordered()
+                    .style(Style::default().bg(Color::Green))
+                    .border_type(ratatui::widgets::BorderType::Double)
+                    .render(next_block.inner(Margin::new(0, 1)), &mut buffer);
+
+                let para = Paragraph::new(tutorial_lines);
+                para.render(text_block, &mut buffer);
+
+                content.write_buffer(&buffer, Tag::Tutorial);
             }
         }
+
+        content.move_to_final_line();
 
         content.prompt_start = Some(content.cursor_position());
 

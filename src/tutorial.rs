@@ -133,22 +133,13 @@ pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
 
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
-pub fn generate_tutorial_text(
-    step: TutorialStep,
-    palette: &Palette,
-    width: u16,
-) -> Option<Vec<Line<'static>>> {
+pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<Vec<Line<'static>>> {
     if !step.is_active() {
         return None;
     }
 
     let hint_style = palette.tutorial_hint();
     let mut lines: Vec<Line> = Vec::new();
-
-    // Navigation bar with prev/next boxes
-    let nav_line = build_nav_line(step, palette, width);
-    lines.push(nav_line);
-    lines.push(Line::from(""));
 
     match step {
         TutorialStep::FirstStep => {
@@ -273,38 +264,4 @@ pub fn generate_tutorial_text(
     lines.push(Line::from(""));
 
     Some(lines)
-}
-
-/// Build the navigation line with [prev] and [next] boxes.
-fn build_nav_line(step: TutorialStep, palette: &Palette, width: u16) -> Line<'static> {
-    let hint_style = palette.tutorial_hint();
-    let step_label = match step {
-        TutorialStep::FirstStep => "Step 1/5",
-        TutorialStep::SecondStep => "Step 2/5",
-        TutorialStep::ThirdStep => "Step 3/5",
-        TutorialStep::FourthStep => "Step 4/5",
-        TutorialStep::FifthStep => "Step 5/5",
-        TutorialStep::NotRunning => "",
-    };
-
-    let prev_text = " ◀ prev ";
-    let next_text = " next ▶ ";
-    let step_text = format!(" {} ", step_label);
-
-    // Total width of nav content: prev + step + next + spaces
-    let content_width = prev_text.len() + step_text.len() + next_text.len() + 2; // 2 spaces between parts
-    let padding = if (width as usize) > content_width {
-        " ".repeat(width as usize - content_width)
-    } else {
-        String::new()
-    };
-
-    Line::from(vec![
-        Span::styled(prev_text, hint_style.add_modifier(Modifier::REVERSED)),
-        Span::styled(" ", hint_style),
-        Span::styled(step_text, hint_style),
-        Span::styled(" ", hint_style),
-        Span::styled(next_text, hint_style.add_modifier(Modifier::REVERSED)),
-        Span::styled(padding, hint_style),
-    ])
 }
