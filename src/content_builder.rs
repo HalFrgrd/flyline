@@ -133,6 +133,8 @@ pub enum Tag {
     HistoryResult(usize),
     Tooltip,
     AiResult(usize),
+    TutorialPrev,
+    TutorialNext,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
