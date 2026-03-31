@@ -32,7 +32,7 @@ use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Shift+Enter to accept the command for editing";
+const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Alt+Enter to accept the command for editing";
 const TUTORIAL_HISTORY_PREFIX_HINT: &str =
     "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
 const TUTORIAL_DISABLE_HINT: &str =
@@ -185,15 +185,15 @@ enum ContentMode {
     TabCompletion(Box<ActiveSuggestions>),
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
-    AiMode {
+    AgentMode {
         receiver: std::sync::mpsc::Receiver<Result<String, (String, String)>>,
         command_display: String,
         start_time: std::time::Instant,
     },
     /// AI output has been parsed; user is selecting a suggestion from the list.
-    AiOutputSelection(AiOutputSelection),
+    AgentOutputSelection(AiOutputSelection),
     /// AI command or JSON parsing failed; stores the error message and any raw output.
-    AiError {
+    AgentError {
         message: String,
         raw_output: String,
     },
@@ -381,7 +381,7 @@ impl<'a> App<'a> {
 
         'main_loop: loop {
             // Poll AI background task: check if a result has arrived without blocking.
-            let ai_result = if let ContentMode::AiMode { ref receiver, .. } = self.content_mode {
+            let ai_result = if let ContentMode::AgentMode { ref receiver, .. } = self.content_mode {
                 match receiver.try_recv() {
                     Ok(result) => Some(result),
                     Err(std::sync::mpsc::TryRecvError::Empty) => None,
@@ -397,12 +397,13 @@ impl<'a> App<'a> {
                 match result {
                     Ok(raw_output) => match parse_ai_output(&raw_output) {
                         Ok(parsed) => {
-                            self.content_mode =
-                                ContentMode::AiOutputSelection(AiOutputSelection::new(parsed));
+                            self.content_mode = ContentMode::AgentOutputSelection(
+                                AiOutputSelection::new(parsed, &self.settings.color_palette),
+                            );
                         }
                         Err(e) => {
                             log::warn!("AI command returned no suggestions: {}", e);
-                            self.content_mode = ContentMode::AiError {
+                            self.content_mode = ContentMode::AgentError {
                                 message: format!("Failed to parse AI output: {}", e),
                                 raw_output,
                             };
@@ -410,7 +411,7 @@ impl<'a> App<'a> {
                     },
                     Err((msg, raw_output)) => {
                         log::error!("AI command failed: {}", msg);
-                        self.content_mode = ContentMode::AiError {
+                        self.content_mode = ContentMode::AgentError {
                             message: msg,
                             raw_output,
                         };
@@ -636,7 +637,7 @@ impl<'a> App<'a> {
             }
             Some((tag @ Tag::AiResult(idx), true)) => {
                 self.last_mouse_over_cell = Some(tag);
-                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+                if let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode {
                     selection.set_selected_by_idx(idx);
                 }
             }
@@ -681,7 +682,7 @@ impl<'a> App<'a> {
             }
             Some(Tag::AiResult(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
-                    && let ContentMode::AiOutputSelection(selection) = &mut self.content_mode
+                    && let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode
                 {
                     selection.set_selected_by_idx(idx);
                     if let Some(cmd) = selection.selected_command() {
@@ -781,16 +782,16 @@ impl<'a> App<'a> {
             }
             KeyEvent {
                 code: KeyCode::Up, ..
-            } if matches!(self.content_mode, ContentMode::AiOutputSelection(_)) => {
-                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+            } if matches!(self.content_mode, ContentMode::AgentOutputSelection(_)) => {
+                if let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode {
                     selection.move_up();
                 }
             }
             KeyEvent {
                 code: KeyCode::Down,
                 ..
-            } if matches!(self.content_mode, ContentMode::AiOutputSelection(_)) => {
-                if let ContentMode::AiOutputSelection(selection) = &mut self.content_mode {
+            } if matches!(self.content_mode, ContentMode::AgentOutputSelection(_)) => {
+                if let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode {
                     selection.move_down();
                 }
             }
@@ -868,23 +869,17 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            // Shift+Enter - activate AI mode like Ctrl+I (requires --ai-command to be configured)
+            // Alt+Enter - activate Agent mode (requires --agent-mode to be configured)
             KeyEvent {
                 code: KeyCode::Enter,
-                modifiers: KeyModifiers::SHIFT,
+                modifiers: KeyModifiers::ALT,
                 ..
-            } if !self.settings.ai_command.is_empty()
-                && !matches!(self.content_mode, ContentMode::AiMode { .. }) =>
-            {
-                self.start_ai_mode();
-            }
-            // Shift+Enter - show error if agent mode is not configured
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            } if self.settings.ai_command.is_empty() => {
-                self.show_agent_mode_not_configured_error();
+            } if matches!(self.content_mode, ContentMode::Normal) => {
+                if!self.settings.ai_command.is_empty() {
+                    self.start_agent_mode();
+                } else {
+                    self.show_agent_mode_not_configured_error();
+                }   
             }
             // Enter key - accept suggestions or submit command
             KeyEvent {
@@ -909,14 +904,14 @@ impl<'a> App<'a> {
                 ContentMode::Normal => {
                     self.try_submit_current_buffer();
                 }
-                ContentMode::AiMode { .. } => {}
-                ContentMode::AiError { .. } => {
+                ContentMode::AgentMode { .. } => {}
+                ContentMode::AgentError { .. } => {
                     self.content_mode = ContentMode::Normal;
                     self.buffer.replace_buffer("flyline agent-mode --help");
                     self.on_possible_buffer_change(None);
                     self.try_submit_current_buffer();
                 }
-                ContentMode::AiOutputSelection(selection) => {
+                ContentMode::AgentOutputSelection(selection) => {
                     if let Some(cmd) = selection.selected_command() {
                         let cmd = cmd.to_string();
                         self.buffer.replace_buffer(&cmd);
@@ -952,9 +947,9 @@ impl<'a> App<'a> {
                 ContentMode::Normal => {
                     self.start_tab_complete();
                 }
-                ContentMode::AiMode { .. } => {}
-                ContentMode::AiOutputSelection(_) => {}
-                ContentMode::AiError { .. } => {}
+                ContentMode::AgentMode { .. } => {}
+                ContentMode::AgentOutputSelection(_) => {}
+                ContentMode::AgentError { .. } => {}
             },
 
             // Escape - clear suggestions or toggle mouse (Simple and Smart modes)
@@ -963,9 +958,9 @@ impl<'a> App<'a> {
             } => match self.content_mode {
                 ContentMode::TabCompletion(_)
                 | ContentMode::FuzzyHistorySearch
-                | ContentMode::AiMode { .. }
-                | ContentMode::AiOutputSelection(_)
-                | ContentMode::AiError { .. } => {
+                | ContentMode::AgentMode { .. }
+                | ContentMode::AgentOutputSelection(_)
+                | ContentMode::AgentError { .. } => {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
@@ -1000,7 +995,7 @@ impl<'a> App<'a> {
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             KeyEvent {
                 code: KeyCode::Char('7') | KeyCode::Char('/'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::META | KeyModifiers::SUPER,
                 ..
             } => {
                 self.buffer.move_to_start();
@@ -1022,9 +1017,9 @@ impl<'a> App<'a> {
                         self.history_manager
                             .warm_fuzzy_search_cache(self.buffer.buffer());
                     }
-                    ContentMode::AiMode { .. }
-                    | ContentMode::AiOutputSelection(_)
-                    | ContentMode::AiError { .. } => {}
+                    ContentMode::AgentMode { .. }
+                    | ContentMode::AgentOutputSelection(_)
+                    | ContentMode::AgentError { .. } => {}
                 }
             }
             KeyEvent {
@@ -1034,33 +1029,6 @@ impl<'a> App<'a> {
             } => {
                 // Clear screen
                 return KeyPressReturnType::NeedScreenClear;
-            }
-            // Ctrl+I - activate AI mode (requires --ai-command to be configured)
-            KeyEvent {
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                // This shortcut is just so it can work in the vhs demo.
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if !self.settings.ai_command.is_empty() => {
-                self.start_ai_mode();
-            }
-            // Ctrl+I - show error if agent mode is not configured
-            KeyEvent {
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if self.settings.ai_command.is_empty() => {
-                self.show_agent_mode_not_configured_error();
             }
             KeyEvent {
                 code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
@@ -1237,7 +1205,7 @@ impl<'a> App<'a> {
 
     /// Show an error explaining that agent mode is not configured, with links to help resources.
     fn show_agent_mode_not_configured_error(&mut self) {
-        self.content_mode = ContentMode::AiError {
+        self.content_mode = ContentMode::AgentError {
             message: "Agent mode is not configured. Run `flyline agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
             raw_output: String::new(),
         };
@@ -1245,7 +1213,7 @@ impl<'a> App<'a> {
 
     /// Spawn the configured AI command in a background thread and transition to `AiMode`.
     /// Words that contain a space are quoted with single quotes in the display string.
-    fn start_ai_mode(&mut self) {
+    fn start_agent_mode(&mut self) {
         let cmd_args = self.settings.ai_command.clone();
         let buffer_str = self.buffer.buffer().to_string();
         let final_arg = match self.settings.ai_system_prompt.as_deref() {
@@ -1313,7 +1281,7 @@ impl<'a> App<'a> {
                 log::warn!("AI task: failed to send result (receiver dropped): {}", e);
             }
         });
-        self.content_mode = ContentMode::AiMode {
+        self.content_mode = ContentMode::AgentMode {
             receiver: rx,
             command_display,
             start_time: std::time::Instant::now(),
@@ -1984,7 +1952,7 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            ContentMode::AiMode {
+            ContentMode::AgentMode {
                 command_display,
                 start_time,
                 ..
@@ -1999,7 +1967,7 @@ impl<'a> App<'a> {
                     Tag::Normal,
                 );
             }
-            ContentMode::AiOutputSelection(selection) if self.mode.is_running() => {
+            ContentMode::AgentOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
                 for line in &selection.header_text {
                     content.write_line(line, true, Tag::Normal);
@@ -2072,7 +2040,7 @@ impl<'a> App<'a> {
                     content.write_line(line, true, Tag::Normal);
                 }
             }
-            ContentMode::AiError {
+            ContentMode::AgentError {
                 message,
                 raw_output,
             } if self.mode.is_running() => {

@@ -70,7 +70,7 @@ fn strip_leading_fence(s: &str) -> &str {
 /// Renders basic markdown constructs (headings, paragraphs, bold, italic,
 /// inline code, code blocks, list items, block quotes) as styled spans.
 /// Uses ratatui's own types so there is no external crate version conflict.
-fn markdown_to_text(markdown: &str) -> Text<'static> {
+fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'static> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
 
@@ -80,24 +80,29 @@ fn markdown_to_text(markdown: &str) -> Text<'static> {
     let mut list_depth: u32 = 0;
     let mut in_code_block = false;
 
+    let heading1_style = palette.markdown_heading1();
+    let heading2_style = palette.markdown_heading2();
+    let heading3_style = palette.markdown_heading3();
+    let code_style = palette.markdown_code();
+
     let style_from_markdown_state =
-        |bold: bool, italic: bool, code: bool, heading: Option<u8>| -> Style {
+        move |bold: bool, italic: bool, code: bool, heading: Option<u8>| -> Style {
+            if code {
+                return code_style;
+            }
+            if let Some(level) = heading {
+                return match level {
+                    1 => heading1_style,
+                    2 => heading2_style,
+                    _ => heading3_style,
+                };
+            }
             let mut style = Style::default();
-            if bold || heading.is_some() {
+            if bold {
                 style = style.add_modifier(Modifier::BOLD);
             }
             if italic {
                 style = style.add_modifier(Modifier::ITALIC);
-            }
-            if code {
-                style = style.add_modifier(Modifier::DIM);
-            }
-            if let Some(level) = heading {
-                style = style.fg(match level {
-                    1 => Color::Cyan,
-                    2 => Color::Blue,
-                    _ => Color::Magenta,
-                });
             }
             style
         };
@@ -183,14 +188,14 @@ fn markdown_to_text(markdown: &str) -> Text<'static> {
 }
 
 impl AiOutputSelection {
-    pub fn new(parsed: AiOutputParsed) -> Self {
+    pub fn new(parsed: AiOutputParsed, palette: &crate::palette::Palette) -> Self {
         let header_md = strip_trailing_fence(parsed.header.as_str()).to_string();
         let footer_md = strip_leading_fence(parsed.footer.as_str()).to_string();
         AiOutputSelection {
             suggestions: parsed.suggestions,
             selected_idx: 0,
-            header_text: markdown_to_text(&header_md),
-            footer_text: markdown_to_text(&footer_md),
+            header_text: markdown_to_text(&header_md, palette),
+            footer_text: markdown_to_text(&footer_md, palette),
         }
     }
 
@@ -335,11 +340,15 @@ mod tests {
     use super::*;
 
     fn make_selection(suggestions: Vec<AiSuggestion>) -> AiOutputSelection {
-        AiOutputSelection::new(AiOutputParsed {
-            suggestions,
-            header: String::new(),
-            footer: String::new(),
-        })
+        let palette = crate::palette::Palette::default();
+        AiOutputSelection::new(
+            AiOutputParsed {
+                suggestions,
+                header: String::new(),
+                footer: String::new(),
+            },
+            &palette,
+        )
     }
 
     #[test]
@@ -413,7 +422,8 @@ That should help!"#;
             header: "Here are commands:\n```json".to_string(),
             footer: "```\nDone.".to_string(),
         };
-        let sel = AiOutputSelection::new(parsed);
+        let palette = crate::palette::Palette::default();
+        let sel = AiOutputSelection::new(parsed, &palette);
         // header_text should be rendered from "Here are commands:" (fence stripped)
         // footer_text should be rendered from "Done." (fence stripped)
         assert!(!sel.header_text.lines.is_empty());

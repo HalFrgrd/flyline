@@ -25,17 +25,17 @@ pub struct Palette {
     /// Which built-in preset is active.
     pub default_mode: DefaultMode,
 
-    recognised_word: Style,
-    pub recognised_word_override: Option<Style>,
+    recognised_command: Style,
+    pub recognised_command_override: Option<Style>,
 
-    unrecognised_word: Style,
-    pub unrecognised_word_override: Option<Style>,
+    unrecognised_command: Style,
+    pub unrecognised_command_override: Option<Style>,
 
-    single_quoted_word: Style,
-    pub single_quoted_word_override: Option<Style>,
+    single_quoted_text: Style,
+    pub single_quoted_text_override: Option<Style>,
 
-    double_quoted_word: Style,
-    pub double_quoted_word_override: Option<Style>,
+    double_quoted_text: Style,
+    pub double_quoted_text_override: Option<Style>,
 
     secondary_text: Style,
     pub secondary_text_override: Option<Style>,
@@ -54,29 +54,47 @@ pub struct Palette {
 
     normal_text: Style,
     pub normal_text_override: Option<Style>,
+
+    comment: Style,
+    pub comment_override: Option<Style>,
+
+    env_var: Style,
+    pub env_var_override: Option<Style>,
+
+    markdown_heading1: Style,
+    pub markdown_heading1_override: Option<Style>,
+
+    markdown_heading2: Style,
+    pub markdown_heading2_override: Option<Style>,
+
+    markdown_heading3: Style,
+    pub markdown_heading3_override: Option<Style>,
+
+    markdown_code: Style,
+    pub markdown_code_override: Option<Style>,
 }
 
 impl Palette {
     // ── Getters (override wins over theme default) ────────────────────
 
-    pub fn recognised_word(&self) -> Style {
-        self.recognised_word_override
-            .unwrap_or(self.recognised_word)
+    pub fn recognised_command(&self) -> Style {
+        self.recognised_command_override
+            .unwrap_or(self.recognised_command)
     }
 
-    pub fn unrecognised_word(&self) -> Style {
-        self.unrecognised_word_override
-            .unwrap_or(self.unrecognised_word)
+    pub fn unrecognised_command(&self) -> Style {
+        self.unrecognised_command_override
+            .unwrap_or(self.unrecognised_command)
     }
 
-    pub fn single_quoted_word(&self) -> Style {
-        self.single_quoted_word_override
-            .unwrap_or(self.single_quoted_word)
+    pub fn single_quoted_text(&self) -> Style {
+        self.single_quoted_text_override
+            .unwrap_or(self.single_quoted_text)
     }
 
-    pub fn double_quoted_word(&self) -> Style {
-        self.double_quoted_word_override
-            .unwrap_or(self.double_quoted_word)
+    pub fn double_quoted_text(&self) -> Style {
+        self.double_quoted_text_override
+            .unwrap_or(self.double_quoted_text)
     }
 
     pub fn secondary_text(&self) -> Style {
@@ -105,24 +123,51 @@ impl Palette {
         self.normal_text_override.unwrap_or(self.normal_text)
     }
 
+    pub fn comment(&self) -> Style {
+        self.comment_override.unwrap_or(self.comment)
+    }
+
+    pub fn env_var(&self) -> Style {
+        self.env_var_override.unwrap_or(self.env_var)
+    }
+
+    pub fn markdown_heading1(&self) -> Style {
+        self.markdown_heading1_override
+            .unwrap_or(self.markdown_heading1)
+    }
+
+    pub fn markdown_heading2(&self) -> Style {
+        self.markdown_heading2_override
+            .unwrap_or(self.markdown_heading2)
+    }
+
+    pub fn markdown_heading3(&self) -> Style {
+        self.markdown_heading3_override
+            .unwrap_or(self.markdown_heading3)
+    }
+
+    pub fn markdown_code(&self) -> Style {
+        self.markdown_code_override.unwrap_or(self.markdown_code)
+    }
+
     // ── Presets ──────────────────────────────────────────────────────
 
     /// Dark-terminal defaults (the original flyline palette).
     pub fn dark() -> Self {
         Palette {
             default_mode: DefaultMode::Dark,
-            recognised_word: Style::default().fg(Color::Green),
-            recognised_word_override: None,
-            unrecognised_word: Style::default().fg(Color::Red),
-            unrecognised_word_override: None,
-            single_quoted_word: Style::default().fg(Color::Yellow),
-            single_quoted_word_override: None,
-            double_quoted_word: Style::default().fg(Color::Red),
-            double_quoted_word_override: None,
+            recognised_command: Style::default().fg(Color::Green),
+            recognised_command_override: None,
+            unrecognised_command: Style::default().fg(Color::Red),
+            unrecognised_command_override: None,
+            single_quoted_text: Style::default().fg(Color::Yellow),
+            single_quoted_text_override: None,
+            double_quoted_text: Style::default().fg(Color::Magenta),
+            double_quoted_text_override: None,
             secondary_text: Style::default().add_modifier(Modifier::DIM),
             secondary_text_override: None,
             inline_suggestion: Style::default()
-                .add_modifier(Modifier::DIM)
+                .fg(Color::Blue)
                 .add_modifier(Modifier::ITALIC),
             inline_suggestion_override: None,
             tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
@@ -138,6 +183,26 @@ impl Palette {
             opening_and_closing_pair_override: None,
             normal_text: Style::default(),
             normal_text_override: None,
+            comment: Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::ITALIC),
+            comment_override: None,
+            env_var: Style::default().fg(Color::Cyan),
+            env_var_override: None,
+            markdown_heading1: Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+            markdown_heading1_override: None,
+            markdown_heading2: Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+            markdown_heading2_override: None,
+            markdown_heading3: Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+            markdown_heading3_override: None,
+            markdown_code: Style::default().add_modifier(Modifier::DIM),
+            markdown_code_override: None,
         }
     }
 
@@ -145,14 +210,14 @@ impl Palette {
     pub fn light() -> Self {
         Palette {
             default_mode: DefaultMode::Light,
-            recognised_word: Style::default().fg(Color::DarkGray),
-            recognised_word_override: None,
-            unrecognised_word: Style::default().fg(Color::Red),
-            unrecognised_word_override: None,
-            single_quoted_word: Style::default().fg(Color::Yellow),
-            single_quoted_word_override: None,
-            double_quoted_word: Style::default().fg(Color::Magenta),
-            double_quoted_word_override: None,
+            recognised_command: Style::default().fg(Color::DarkGray),
+            recognised_command_override: None,
+            unrecognised_command: Style::default().fg(Color::Red),
+            unrecognised_command_override: None,
+            single_quoted_text: Style::default().fg(Color::Yellow),
+            single_quoted_text_override: None,
+            double_quoted_text: Style::default().fg(Color::Magenta),
+            double_quoted_text_override: None,
             secondary_text: Style::default().fg(Color::DarkGray),
             secondary_text_override: None,
             inline_suggestion: Style::default()
@@ -172,6 +237,26 @@ impl Palette {
             opening_and_closing_pair_override: None,
             normal_text: Style::default(),
             normal_text_override: None,
+            comment: Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::ITALIC),
+            comment_override: None,
+            env_var: Style::default().fg(Color::Blue),
+            env_var_override: None,
+            markdown_heading1: Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+            markdown_heading1_override: None,
+            markdown_heading2: Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+            markdown_heading2_override: None,
+            markdown_heading3: Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+            markdown_heading3_override: None,
+            markdown_code: Style::default().add_modifier(Modifier::DIM),
+            markdown_code_override: None,
         }
     }
 
@@ -183,16 +268,22 @@ impl Palette {
             DefaultMode::Light => Self::light(),
         };
         self.default_mode = template.default_mode;
-        self.recognised_word = template.recognised_word;
-        self.unrecognised_word = template.unrecognised_word;
-        self.single_quoted_word = template.single_quoted_word;
-        self.double_quoted_word = template.double_quoted_word;
+        self.recognised_command = template.recognised_command;
+        self.unrecognised_command = template.unrecognised_command;
+        self.single_quoted_text = template.single_quoted_text;
+        self.double_quoted_text = template.double_quoted_text;
         self.secondary_text = template.secondary_text;
         self.inline_suggestion = template.inline_suggestion;
         self.tutorial_hint = template.tutorial_hint;
         self.matching_char = template.matching_char;
         self.opening_and_closing_pair = template.opening_and_closing_pair;
         self.normal_text = template.normal_text;
+        self.comment = template.comment;
+        self.env_var = template.env_var;
+        self.markdown_heading1 = template.markdown_heading1;
+        self.markdown_heading2 = template.markdown_heading2;
+        self.markdown_heading3 = template.markdown_heading3;
+        self.markdown_code = template.markdown_code;
     }
 
     // ── Derived / constant styles ───────────────────────────────────

@@ -139,7 +139,7 @@ enum ColorDefault {
 enum Commands {
     /// Configure AI agent mode.
     ///
-    /// When Shift+Enter is pressed, flyline invokes COMMAND with the current buffer
+    /// When Alt+Enter is pressed, flyline invokes COMMAND with the current buffer
     /// (optionally prepended by SYSTEM_PROMPT) as the final argument.
     ///
     /// Example:
@@ -154,7 +154,7 @@ enum Commands {
         #[arg(long = "system-prompt")]
         system_prompt: Option<String>,
         /// Command (and arguments) to invoke. The current buffer is appended as the
-        /// final argument when Shift+Enter is pressed.
+        /// final argument when Alt+Enter is pressed.
         #[arg(long = "command", num_args = 1.., allow_hyphen_values = true, required = true)]
         command: Vec<String>,
     },
@@ -193,7 +193,7 @@ enum Commands {
     ///   flyline set-color --inline-suggestion "dim italic"
     ///   flyline set-color --matching-char "bold green"
     ///   flyline set-color --default-theme light --matching-char "bold blue"
-    ///   flyline set-color --recognised-word "green" --unrecognised-word "bold red"
+    ///   flyline set-color --recognised-command "green" --unrecognised-command "bold red"
     ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
     #[command(name = "set-color", verbatim_doc_comment)]
     SetColor {
@@ -202,17 +202,17 @@ enum Commands {
         #[arg(long = "default-theme", value_name = "MODE")]
         default_theme: Option<ColorDefault>,
         /// Style for recognised (valid) commands (e.g. "green").
-        #[arg(long = "recognised-word", value_name = "STYLE")]
-        recognised_word: Option<String>,
+        #[arg(long = "recognised-command", value_name = "STYLE")]
+        recognised_command: Option<String>,
         /// Style for unrecognised (invalid) commands (e.g. "red").
-        #[arg(long = "unrecognised-word", value_name = "STYLE")]
-        unrecognised_word: Option<String>,
+        #[arg(long = "unrecognised-command", value_name = "STYLE")]
+        unrecognised_command: Option<String>,
         /// Style for single-quoted strings (e.g. "yellow").
-        #[arg(long = "single-quoted-word", value_name = "STYLE")]
-        single_quoted_word: Option<String>,
+        #[arg(long = "single-quoted-text", value_name = "STYLE")]
+        single_quoted_text: Option<String>,
         /// Style for double-quoted strings (e.g. "red").
-        #[arg(long = "double-quoted-word", value_name = "STYLE")]
-        double_quoted_word: Option<String>,
+        #[arg(long = "double-quoted-text", value_name = "STYLE")]
+        double_quoted_text: Option<String>,
         /// Style for secondary / muted text (e.g. "dim").
         #[arg(long = "secondary-text", value_name = "STYLE")]
         secondary_text: Option<String>,
@@ -231,6 +231,24 @@ enum Commands {
         /// Style for normal (unstyled) text.
         #[arg(long = "normal-text", value_name = "STYLE")]
         normal_text: Option<String>,
+        /// Style for shell comments (e.g. "dim italic gray").
+        #[arg(long = "comment", value_name = "STYLE")]
+        comment: Option<String>,
+        /// Style for environment variables (e.g. "cyan").
+        #[arg(long = "env-var", value_name = "STYLE")]
+        env_var: Option<String>,
+        /// Style for markdown H1 headings (e.g. "bold cyan").
+        #[arg(long = "markdown-heading1", value_name = "STYLE")]
+        markdown_heading1: Option<String>,
+        /// Style for markdown H2 headings (e.g. "bold blue").
+        #[arg(long = "markdown-heading2", value_name = "STYLE")]
+        markdown_heading2: Option<String>,
+        /// Style for markdown H3+ headings (e.g. "bold magenta").
+        #[arg(long = "markdown-heading3", value_name = "STYLE")]
+        markdown_heading3: Option<String>,
+        /// Style for markdown inline/block code (e.g. "dim").
+        #[arg(long = "markdown-code", value_name = "STYLE")]
+        markdown_code: Option<String>,
     },
 }
 
@@ -484,16 +502,22 @@ impl Flyline {
                     }
                     Some(Commands::SetColor {
                         default_theme,
-                        recognised_word,
-                        unrecognised_word,
-                        single_quoted_word,
-                        double_quoted_word,
+                        recognised_command,
+                        unrecognised_command,
+                        single_quoted_text,
+                        double_quoted_text,
                         secondary_text,
                         inline_suggestion,
                         tutorial_hint,
                         matching_char,
                         opening_closing_pair,
                         normal_text,
+                        comment,
+                        env_var,
+                        markdown_heading1,
+                        markdown_heading2,
+                        markdown_heading3,
+                        markdown_code,
                     }) => {
                         if let Some(preset) = default_theme {
                             self.settings.color_theme = match preset {
@@ -519,17 +543,17 @@ impl Flyline {
                             &str,
                             fn(&mut palette::Palette, Style),
                         )] = &[
-                            (&recognised_word, "recognised-word", |p, s| {
-                                p.recognised_word_override = Some(s)
+                            (&recognised_command, "recognised-command", |p, s| {
+                                p.recognised_command_override = Some(s)
                             }),
-                            (&unrecognised_word, "unrecognised-word", |p, s| {
-                                p.unrecognised_word_override = Some(s)
+                            (&unrecognised_command, "unrecognised-command", |p, s| {
+                                p.unrecognised_command_override = Some(s)
                             }),
-                            (&single_quoted_word, "single-quoted-word", |p, s| {
-                                p.single_quoted_word_override = Some(s)
+                            (&single_quoted_text, "single-quoted-text", |p, s| {
+                                p.single_quoted_text_override = Some(s)
                             }),
-                            (&double_quoted_word, "double-quoted-word", |p, s| {
-                                p.double_quoted_word_override = Some(s)
+                            (&double_quoted_text, "double-quoted-text", |p, s| {
+                                p.double_quoted_text_override = Some(s)
                             }),
                             (&secondary_text, "secondary-text", |p, s| {
                                 p.secondary_text_override = Some(s)
@@ -548,6 +572,20 @@ impl Flyline {
                             }),
                             (&normal_text, "normal-text", |p, s| {
                                 p.normal_text_override = Some(s)
+                            }),
+                            (&comment, "comment", |p, s| p.comment_override = Some(s)),
+                            (&env_var, "env-var", |p, s| p.env_var_override = Some(s)),
+                            (&markdown_heading1, "markdown-heading1", |p, s| {
+                                p.markdown_heading1_override = Some(s)
+                            }),
+                            (&markdown_heading2, "markdown-heading2", |p, s| {
+                                p.markdown_heading2_override = Some(s)
+                            }),
+                            (&markdown_heading3, "markdown-heading3", |p, s| {
+                                p.markdown_heading3_override = Some(s)
+                            }),
+                            (&markdown_code, "markdown-code", |p, s| {
+                                p.markdown_code_override = Some(s)
                             }),
                         ];
 
@@ -778,7 +816,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
         // Bash expects name to be heap allocated so it can free it later
         let name = c"flyline";
-        let name_ptr = unsafe { bash_symbols::xmalloc_cstr(name) };
+        let name_ptr = unsafe { bash_symbols::xmalloc_cstr(&name) };
         unsafe {
             (*bash_input).stream_type = bash_symbols::StreamType::Stdin;
             (*bash_input).name = name_ptr;
