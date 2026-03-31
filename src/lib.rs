@@ -727,14 +727,10 @@ impl Flyline {
     }
 }
 
-static FLYLINE_NAME: std::sync::LazyLock<std::ffi::CString> = std::sync::LazyLock::new(|| {
-    std::ffi::CString::new(format!("flyline-v{}", env!("CARGO_PKG_VERSION"))).unwrap()
-});
-
 /* Exported builtin struct */
 #[unsafe(no_mangle)]
 pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBuiltin {
-    name: FLYLINE_NAME.as_ptr() as *const c_char,
+    name: c"flyline".as_ptr() as *const c_char,
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
     long_doc: [
@@ -820,7 +816,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
         // Bash expects name to be heap allocated so it can free it later
         let name = c"flyline";
-        let name_ptr = unsafe { bash_symbols::xmalloc_cstr(name) };
+        let name_ptr = unsafe { bash_symbols::xmalloc_cstr(&name) };
         unsafe {
             (*bash_input).stream_type = bash_symbols::StreamType::Stdin;
             (*bash_input).name = name_ptr;
