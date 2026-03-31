@@ -420,7 +420,7 @@ impl HistoryEntryFormatted {
             palette.highlight_maching_indices(
                 &self.entry.command,
                 &self.match_indices,
-                palette.normal_text,
+                palette.normal_text(),
             )
         })
     }

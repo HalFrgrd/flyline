@@ -501,7 +501,7 @@ impl Flyline {
                                 ColorDefault::Light => settings::ColorTheme::Light,
                                 ColorDefault::Auto => settings::ColorTheme::Auto,
                             };
-                            // Rebuild the palette from the new theme and existing overrides,
+                            // Apply the theme defaults immediately (leaving overrides intact)
                             // unless the theme is Auto (resolved at app startup).
                             if self.settings.color_theme != settings::ColorTheme::Auto {
                                 let mode = match self.settings.color_theme {
@@ -509,11 +509,7 @@ impl Flyline {
                                     settings::ColorTheme::Light => palette::DefaultMode::Light,
                                     settings::ColorTheme::Auto => unreachable!(),
                                 };
-                                self.settings.color_palette =
-                                    palette::Palette::from_mode_with_overrides(
-                                        mode,
-                                        &self.settings.color_overrides,
-                                    );
+                                self.settings.color_palette.apply_theme(mode);
                             }
                             log::info!("Color theme set to {:?}", self.settings.color_theme);
                         }
@@ -521,77 +517,45 @@ impl Flyline {
                         let style_overrides: &[(
                             &Option<String>,
                             &str,
-                            fn(&mut palette::PaletteOverrides, Style),
                             fn(&mut palette::Palette, Style),
                         )] = &[
-                            (
-                                &recognised_word,
-                                "recognised-word",
-                                |o, s| o.recognised_word = Some(s),
-                                |p, s| p.recognised_word = s,
-                            ),
-                            (
-                                &unrecognised_word,
-                                "unrecognised-word",
-                                |o, s| o.unrecognised_word = Some(s),
-                                |p, s| p.unrecognised_word = s,
-                            ),
-                            (
-                                &single_quoted_word,
-                                "single-quoted-word",
-                                |o, s| o.single_quoted_word = Some(s),
-                                |p, s| p.single_quoted_word = s,
-                            ),
-                            (
-                                &double_quoted_word,
-                                "double-quoted-word",
-                                |o, s| o.double_quoted_word = Some(s),
-                                |p, s| p.double_quoted_word = s,
-                            ),
-                            (
-                                &secondary_text,
-                                "secondary-text",
-                                |o, s| o.secondary_text = Some(s),
-                                |p, s| p.secondary_text = s,
-                            ),
-                            (
-                                &inline_suggestion,
-                                "inline-suggestion",
-                                |o, s| o.inline_suggestion = Some(s),
-                                |p, s| p.inline_suggestion = s,
-                            ),
-                            (
-                                &tutorial_hint,
-                                "tutorial-hint",
-                                |o, s| o.tutorial_hint = Some(s),
-                                |p, s| p.tutorial_hint = s,
-                            ),
-                            (
-                                &matching_char,
-                                "matching-char",
-                                |o, s| o.matching_char = Some(s),
-                                |p, s| p.matching_char = s,
-                            ),
-                            (
-                                &opening_closing_pair,
-                                "opening-closing-pair",
-                                |o, s| o.opening_and_closing_pair = Some(s),
-                                |p, s| p.opening_and_closing_pair = s,
-                            ),
-                            (
-                                &normal_text,
-                                "normal-text",
-                                |o, s| o.normal_text = Some(s),
-                                |p, s| p.normal_text = s,
-                            ),
+                            (&recognised_word, "recognised-word", |p, s| {
+                                p.recognised_word_override = Some(s)
+                            }),
+                            (&unrecognised_word, "unrecognised-word", |p, s| {
+                                p.unrecognised_word_override = Some(s)
+                            }),
+                            (&single_quoted_word, "single-quoted-word", |p, s| {
+                                p.single_quoted_word_override = Some(s)
+                            }),
+                            (&double_quoted_word, "double-quoted-word", |p, s| {
+                                p.double_quoted_word_override = Some(s)
+                            }),
+                            (&secondary_text, "secondary-text", |p, s| {
+                                p.secondary_text_override = Some(s)
+                            }),
+                            (&inline_suggestion, "inline-suggestion", |p, s| {
+                                p.inline_suggestion_override = Some(s)
+                            }),
+                            (&tutorial_hint, "tutorial-hint", |p, s| {
+                                p.tutorial_hint_override = Some(s)
+                            }),
+                            (&matching_char, "matching-char", |p, s| {
+                                p.matching_char_override = Some(s)
+                            }),
+                            (&opening_closing_pair, "opening-closing-pair", |p, s| {
+                                p.opening_and_closing_pair_override = Some(s)
+                            }),
+                            (&normal_text, "normal-text", |p, s| {
+                                p.normal_text_override = Some(s)
+                            }),
                         ];
 
-                        for (opt, flag_name, override_setter, palette_setter) in style_overrides {
+                        for (opt, flag_name, setter) in style_overrides {
                             if let Some(style_str) = opt {
                                 match parse_style(style_str) {
                                     Ok(style) => {
-                                        override_setter(&mut self.settings.color_overrides, style);
-                                        palette_setter(&mut self.settings.color_palette, style);
+                                        setter(&mut self.settings.color_palette, style);
                                         log::info!("{} style set to {:?}", flag_name, style_str);
                                     }
                                     Err(e) => {

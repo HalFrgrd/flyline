@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::palette::{Palette, PaletteOverrides};
+use crate::palette::Palette;
 
 /// Which theme the user has configured for the colour palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -78,9 +78,6 @@ pub struct Settings {
     pub color_palette: Palette,
     /// Which colour theme the user has selected (dark, light, or auto).
     pub color_theme: ColorTheme,
-    /// Per-field style overrides set by the user via `flyline set-color`.
-    /// These take priority over the preset defaults selected by `color_theme`.
-    pub color_overrides: PaletteOverrides,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -104,7 +101,6 @@ impl Default for Settings {
             send_shell_integration_codes: true,
             color_palette: Palette::dark(),
             color_theme: ColorTheme::Dark,
-            color_overrides: PaletteOverrides::default(),
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }
