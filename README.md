@@ -51,7 +51,7 @@ Download the latest `libflyline.so` for your system from [the releases page](htt
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
-flyline --tutorial-mode
+flyline --run-tutorial
 ```
 
 
@@ -329,8 +329,8 @@ Options:
       --load-zsh-history [<PATH>]
           Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file; if omitted, defaults to $HOME/.zsh_history
 
-      --tutorial-mode [<TUTORIAL_MODE>]
-          Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode false` to disable
+      --run-tutorial [<TUTORIAL_MODE>]
+          Enable or disable tutorial mode with hints for first-time users. Use `--run-tutorial false` to disable
           
           [possible values: true, false]
 

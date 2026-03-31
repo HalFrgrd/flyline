@@ -242,7 +242,7 @@ pub fn generate_tutorial_text(
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "💡 Run `flyline --tutorial-mode false` to disable the tutorial.",
+        "💡 Run `flyline --run-tutorial false` to disable the tutorial.",
         hint_style,
     )));
     lines.push(Line::from(""));

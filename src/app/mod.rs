@@ -35,7 +35,7 @@ const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys 
 const TUTORIAL_HISTORY_PREFIX_HINT: &str =
     "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
 const TUTORIAL_DISABLE_HINT: &str =
-    "💡 Run `flyline --tutorial-mode false` to disable tutorial mode";
+    "💡 Run `flyline --run-tutorial false` to disable the tutorial";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -679,7 +679,7 @@ impl<'a> App<'a> {
                     self.settings.tutorial_step.set(step);
                     log::info!("Tutorial navigated to next: {:?}", step);
                     if !step.is_active() {
-                        // Tutorial finished — but we can't set tutorial_mode here since settings is &.
+                        // Tutorial finished — but we can't set run_tutorial here since settings is &.
                         // The tutorial_step being NotRunning is sufficient.
                     }
                     return true;
@@ -1275,7 +1275,7 @@ impl<'a> App<'a> {
         }
 
         if self.mode.is_running()
-            && self.settings.tutorial_mode
+            && self.settings.run_tutorial
             && self.buffer.buffer().is_empty()
             && matches!(self.content_mode, ContentMode::Normal)
         {
@@ -1340,7 +1340,7 @@ impl<'a> App<'a> {
                             None,
                         );
 
-                        if self.settings.tutorial_mode {
+                        if self.settings.run_tutorial {
                             content.write_span_dont_overwrite(
                                 &Span::styled(
                                     " 💡 Press → or End to accept",
@@ -1411,7 +1411,7 @@ impl<'a> App<'a> {
                 }
             }
             ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
-                let num_rows_for_instructions = if self.settings.tutorial_mode { 2 } else { 1 };
+                let num_rows_for_instructions = if self.settings.run_tutorial { 2 } else { 1 };
                 let num_rows_for_results = rows_left_before_end_of_screen
                     .saturating_sub(num_rows_for_instructions)
                     .clamp(2, 30);
@@ -1472,7 +1472,7 @@ impl<'a> App<'a> {
                     ),
                     Tag::FuzzySearch,
                 );
-                if self.settings.tutorial_mode {
+                if self.settings.run_tutorial {
                     content.newline();
                     content.write_span(
                         &Span::styled(

@@ -91,10 +91,10 @@ struct FlylineArgs {
     /// file; if omitted, defaults to $HOME/.zsh_history
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
-    /// Enable or disable tutorial mode with hints for first-time users.
-    /// Use `--tutorial-mode false` to disable.
-    #[arg(long = "tutorial-mode", default_missing_value = "true", num_args = 0..=1)]
-    tutorial_mode: Option<bool>,
+    /// Run the interactive tutorial for first-time users.
+    /// Use `--run-tutorial false` to disable.
+    #[arg(long = "run-tutorial", default_missing_value = "true", num_args = 0..=1)]
+    run_tutorial: Option<bool>,
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
@@ -422,9 +422,9 @@ impl Flyline {
                     self.settings.zsh_history_path = Some(path);
                 }
 
-                if let Some(enabled) = parsed.tutorial_mode {
-                    log::info!("Tutorial mode set to {}", enabled);
-                    self.settings.tutorial_mode = enabled;
+                if let Some(enabled) = parsed.run_tutorial {
+                    log::info!("Run tutorial set to {}", enabled);
+                    self.settings.run_tutorial = enabled;
                     if enabled {
                         self.settings
                             .tutorial_step
@@ -739,7 +739,7 @@ impl Flyline {
                         self.settings.tutorial_step.set(new_step);
                         log::info!("Tutorial step advanced to {:?}", new_step);
                         if !new_step.is_active() {
-                            self.settings.tutorial_mode = false;
+                            self.settings.run_tutorial = false;
                         }
                     }
                     cmd.into_bytes()
