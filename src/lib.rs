@@ -520,16 +520,16 @@ impl Flyline {
                             fn(&mut palette::Palette, Style),
                         )] = &[
                             (&recognised_command, "recognised-command", |p, s| {
-                                p.recognised_word_override = Some(s)
+                                p.recognised_command_override = Some(s)
                             }),
                             (&unrecognised_command, "unrecognised-command", |p, s| {
-                                p.unrecognised_word_override = Some(s)
+                                p.unrecognised_command_override = Some(s)
                             }),
                             (&single_quoted_text, "single-quoted-text", |p, s| {
-                                p.single_quoted_word_override = Some(s)
+                                p.single_quoted_text_override = Some(s)
                             }),
                             (&double_quoted_text, "double-quoted-text", |p, s| {
-                                p.double_quoted_word_override = Some(s)
+                                p.double_quoted_text_override = Some(s)
                             }),
                             (&secondary_text, "secondary-text", |p, s| {
                                 p.secondary_text_override = Some(s)
