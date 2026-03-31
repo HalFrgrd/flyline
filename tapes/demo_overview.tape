@@ -98,8 +98,7 @@ Enter
 Sleep 800ms
 Type "list files older than three days"
 Sleep 500ms
-# special shortcut for agent mode
-Alt+I
+Alt+Enter
 Sleep 4000ms
 Down
 Sleep 1000ms

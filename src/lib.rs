@@ -727,10 +727,14 @@ impl Flyline {
     }
 }
 
+static FLYLINE_NAME: std::sync::LazyLock<std::ffi::CString> = std::sync::LazyLock::new(|| {
+    std::ffi::CString::new(format!("flyline-v{}", env!("CARGO_PKG_VERSION"))).unwrap()
+});
+
 /* Exported builtin struct */
 #[unsafe(no_mangle)]
 pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBuiltin {
-    name: c"flyline".as_ptr() as *const c_char,
+    name: FLYLINE_NAME.as_ptr() as *const c_char,
     function: Some(flyline_call_command),
     flags: bash_symbols::BUILTIN_ENABLED,
     long_doc: [

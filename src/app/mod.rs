@@ -869,23 +869,17 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            // Alt+Enter - activate Agent mode like Ctrl+I (requires --agent-mode to be configured)
+            // Alt+Enter - activate Agent mode (requires --agent-mode to be configured)
             KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::ALT,
                 ..
-            } if !self.settings.ai_command.is_empty()
-                && !matches!(self.content_mode, ContentMode::AgentMode { .. }) =>
-            {
-                self.start_agent_mode();
-            }
-            // Alt+Enter - show error if agent mode is not configured
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if self.settings.ai_command.is_empty() => {
-                self.show_agent_mode_not_configured_error();
+            } if matches!(self.content_mode, ContentMode::Normal) => {
+                if!self.settings.ai_command.is_empty() {
+                    self.start_agent_mode();
+                } else {
+                    self.show_agent_mode_not_configured_error();
+                }   
             }
             // Enter key - accept suggestions or submit command
             KeyEvent {
@@ -1001,7 +995,7 @@ impl<'a> App<'a> {
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             KeyEvent {
                 code: KeyCode::Char('7') | KeyCode::Char('/'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::META | KeyModifiers::SUPER,
                 ..
             } => {
                 self.buffer.move_to_start();
@@ -1035,33 +1029,6 @@ impl<'a> App<'a> {
             } => {
                 // Clear screen
                 return KeyPressReturnType::NeedScreenClear;
-            }
-            // Ctrl+I - activate AI mode (requires --agent-mode to be configured)
-            KeyEvent {
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                // This shortcut is just so it can work in the vhs demo.
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if !self.settings.ai_command.is_empty() => {
-                self.start_agent_mode();
-            }
-            // Ctrl+I - show error if agent mode is not configured
-            KeyEvent {
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('i'),
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if self.settings.ai_command.is_empty() => {
-                self.show_agent_mode_not_configured_error();
             }
             KeyEvent {
                 code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),

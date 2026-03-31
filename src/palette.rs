@@ -168,7 +168,6 @@ impl Palette {
             secondary_text_override: None,
             inline_suggestion: Style::default()
                 .fg(Color::Blue)
-                .add_modifier(Modifier::DIM)
                 .add_modifier(Modifier::ITALIC),
             inline_suggestion_override: None,
             tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
