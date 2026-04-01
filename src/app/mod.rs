@@ -1793,46 +1793,39 @@ impl<'a> App<'a> {
                 } else {
                     let grid_start_row = content.cursor_position().row;
                     let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
-                    let mut rows: Vec<Vec<(Vec<Span>, usize)>> =
-                        vec![vec![]; num_rows_for_suggestions as usize];
 
                     let mut selected_grid_row: Option<u16> = None;
                     let col_offset = active_suggestions.col_scroll_offset();
-                    for (col, col_width) in active_suggestions.into_grid(
+
+                    let grid = active_suggestions.into_grid(
                         num_rows_for_suggestions as usize,
                         width as usize,
                         col_offset,
                         &self.settings.color_palette,
-                    ) {
-                        for (row_idx, (formatted, is_selected)) in col.iter().enumerate() {
-                            let formatted_suggestion = formatted.render(col_width, *is_selected);
-                            if *is_selected {
-                                selected_grid_row = Some(row_idx as u16);
-                            }
-                            rows[row_idx].push((formatted_suggestion, formatted.suggestion_idx));
-                        }
-                    }
+                    );
 
-                    let num_visible_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
-
-                    for row in rows.into_iter().filter(|r| !r.is_empty()) {
-                        let num_cols = row.len();
-                        for (col_idx, (styled_spans, suggestion_idx)) in row.into_iter().enumerate()
-                        {
-                            for span in styled_spans {
-                                content.write_span(&span, Tag::Suggestion(suggestion_idx));
-                            }
-                            if col_idx + 1 < num_cols {
-                                content.write_span(
-                                    &Span::raw(" ".repeat(COLUMN_PADDING)),
-                                    Tag::TabSuggestion,
-                                );
+                    for row_idx in 0..grid[0].0.len() {
+                        for (is_first, _, (col, col_width)) in grid.iter().flag_first_last() {
+                            if let Some((formatted, is_selected)) = col.get(row_idx) {
+                                if !is_first {
+                                    content.write_span(
+                                        &Span::raw(" ".repeat(COLUMN_PADDING)),
+                                        Tag::TabSuggestion,
+                                    );
+                                }
+                                let formatted_suggestion =
+                                    formatted.render(*col_width, *is_selected);
+                                let tag = Tag::Suggestion(formatted.suggestion_idx);
+                                for span in formatted_suggestion {
+                                    content.write_span(&span, tag);
+                                }
+                                if *is_selected && selected_grid_row.is_none() {
+                                    selected_grid_row = Some(row_idx as u16);
+                                }
                             }
                         }
                         content.newline();
                     }
-                    active_suggestions
-                        .update_grid_size(num_rows_for_suggestions as usize, num_visible_cols);
 
                     if let Some(sel_row) = selected_grid_row {
                         content.set_focus_row(grid_start_row + sel_row);

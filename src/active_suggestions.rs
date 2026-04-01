@@ -613,7 +613,7 @@ impl ActiveSuggestions {
     /// Return the portion of the suggestions grid that fits within the given
     /// terminal width, starting from column `col_offset`.
     pub fn into_grid(
-        &self,
+        &mut self,
         max_rows: usize,
         max_width: usize,
         col_offset: usize,
@@ -629,6 +629,7 @@ impl ActiveSuggestions {
         let mut total_width: usize = 0;
 
         let max_col_index = (n - 1) / max_rows;
+        let mut first_col_len = max_rows;
         for col_idx in col_offset..=max_col_index {
             // Build the column, processing each item lazily.
             let start = col_idx * max_rows;
@@ -673,6 +674,7 @@ impl ActiveSuggestions {
             };
 
             if is_first {
+                first_col_len = col_items.len();
                 total_width += effective_cw;
             } else {
                 total_width += COLUMN_PADDING + effective_cw;
@@ -680,14 +682,10 @@ impl ActiveSuggestions {
             grid.push((col_items, effective_cw));
         }
 
-        grid
-    }
-
-    pub fn update_grid_size(&mut self, num_rows_for_suggestions: usize, num_visible_cols: usize) {
-        self.last_num_rows_per_col = num_rows_for_suggestions;
-        self.last_num_visible_cols = num_visible_cols;
-        // Keep the selected column visible.
+        self.last_num_visible_cols = grid.len();
+        self.last_num_rows_per_col = max_rows.min(first_col_len);
         self.adjust_col_scroll_offset();
+        grid
     }
 
     /// Number of suggestions currently shown (after fuzzy filtering).
