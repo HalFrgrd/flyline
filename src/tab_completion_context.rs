@@ -109,18 +109,25 @@ pub fn get_completion_context<'a>(
         .iter()
         .enumerate()
         .filter(|(_, t)| !t.token.kind.is_whitespace())
-        .find(|(_, t)| t.token.byte_range().to_inclusive().contains(&cursor_byte_pos))
-    {
+        .find(|(_, t)| {
+            t.token
+                .byte_range()
+                .to_inclusive()
+                .contains(&cursor_byte_pos)
+        }) {
         Some(idx_and_node) => Some(idx_and_node),
-        None => context_tokens
-            .iter()
-            .enumerate()
-            .find(|(_, t)| t.token.byte_range().to_inclusive().contains(&cursor_byte_pos)),
+        None => context_tokens.iter().enumerate().find(|(_, t)| {
+            t.token
+                .byte_range()
+                .to_inclusive()
+                .contains(&cursor_byte_pos)
+        }),
     };
 
     let word_under_cursor_range = match opt_cursor_node {
         Some((_, cursor_node))
-            if cursor_node.token.kind.is_whitespace() || cursor_node.token.kind == TokenKind::Newline =>
+            if cursor_node.token.kind.is_whitespace()
+                || cursor_node.token.kind == TokenKind::Newline =>
         {
             cursor_byte_pos..cursor_byte_pos
         }
@@ -134,25 +141,20 @@ pub fn get_completion_context<'a>(
             for i in (0..node_idx).rev() {
                 let range_contains_dollar = buffer.get(start..end).is_some_and(|s| s.contains('$'));
 
-                match context_tokens.get(i).map(|t| &t.token) {
-                    Some(
-                        t @ Token {
-                            kind: TokenKind::Dollar,
-                            ..
-                        },
-                    ) => {
-                        start = t.byte_range().start;
+                match context_tokens.get(i) {
+                    Some(t) if t.annotations.is_env_var => {
+                        start = t.token.byte_range().start;
                         while buffer.get(end.saturating_sub(1)..end) == Some(" ") {
                             end = end.saturating_sub(1);
                         }
                     }
-                    Some(
-                        t @ Token {
-                            kind: TokenKind::SingleQuote | TokenKind::Quote,
-                            ..
-                        },
-                    ) if !range_contains_dollar || cursor_node.token.value.contains('/') => {
-                        start = t.byte_range().start;
+                    Some(t)
+                        if (t.token.kind == TokenKind::SingleQuote
+                            || t.token.kind == TokenKind::Quote)
+                            && (!range_contains_dollar
+                                || cursor_node.token.value.contains('/')) =>
+                    {
+                        start = t.token.byte_range().start;
                     }
                     _ => break,
                 }
