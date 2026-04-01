@@ -154,10 +154,7 @@ impl Contents {
         overwrite: bool,
         mark_nth_grapheme: Option<usize>,
     ) -> Option<Coord> {
-        let graphemes = span.content.graphemes(true).map(|g| StyledGrapheme {
-            symbol: g,
-            style: span.style,
-        });
+        let graphemes = span.styled_graphemes(span.style);
         let mut marked_graph_coord = None;
 
         for (i, graph) in graphemes.enumerate() {
@@ -245,12 +242,7 @@ impl Contents {
             let fill_graphemes: Vec<StyledGrapheme> = fill_line
                 .spans
                 .iter()
-                .flat_map(|span| {
-                    span.content.graphemes(true).map(move |g| StyledGrapheme {
-                        symbol: g,
-                        style: span.style,
-                    })
-                })
+                .flat_map(|span| span.styled_graphemes(span.style))
                 .collect();
 
             let has_nonzero_width = fill_graphemes.iter().any(|g| g.symbol.width() > 0);
