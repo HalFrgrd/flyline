@@ -482,7 +482,6 @@ source = "git+https://github.com/nornagon/crossterm?rev=87db8bfa6dc99427fd3b0716
 dependencies = [
  "bitflags 2.10.0",
  "crossterm_winapi",
- "futures-core",
  "mio",
  "parking_lot",
  "rustix 0.38.44",
@@ -805,7 +804,7 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 [[package]]
 name = "flash"
 version = "0.0.6"
-source = "git+https://github.com/HalFrgrd/flash.git?rev=4a38cb53accae3f6d01e5a39df39a38576119495#4a38cb53accae3f6d01e5a39df39a38576119495"
+source = "git+https://github.com/HalFrgrd/flash.git?rev=e515077183c61ff21a7d66f9fe8a8198acc01b64#e515077183c61ff21a7d66f9fe8a8198acc01b64"
 dependencies = [
  "atty",
  "libc",

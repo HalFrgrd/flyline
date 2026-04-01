@@ -10,6 +10,9 @@ crate-type = ["cdylib"]
 clap = { version = "4.5.49", features = ["derive"] }
 clap_complete = "4.5.66"
 ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default"] }
+# Fork of crossterm that adds query_background_color() / query_foreground_color() (OSC 10/11).
+# Track upstream PR: https://github.com/crossterm-rs/crossterm/compare/master...nornagon:crossterm:nornagon/color-query
+crossterm = { git = "https://github.com/nornagon/crossterm", rev = "87db8bfa6dc99427fd3b071681b07fc31c6ce995" }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3.31"
 log = "0.4"
@@ -22,7 +25,7 @@ unicode-segmentation = "1.12.0"
 itertools = "0.14.0"
 glob = "0.3.3"
 color-eyre = "0.6.5"
-flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "4a38cb53accae3f6d01e5a39df39a38576119495" }
+flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "e515077183c61ff21a7d66f9fe8a8198acc01b64" }
 skim = { version = "3.6.0", default-features =  false, features = []}
 lscolors = "0.21.0"
 serde_json = "1.0"
@@ -31,16 +34,10 @@ regex = "1"
 rand = "0.10.0"
 parse-style = { version = "0.2.0" }
 
-# Fork of crossterm that adds query_background_color() / query_foreground_color() (OSC 10/11).
-# Track upstream PR: https://github.com/crossterm-rs/crossterm/compare/master...nornagon:crossterm:nornagon/color-query
-[dependencies.crossterm]
-git = "https://github.com/nornagon/crossterm"
-rev = "87db8bfa6dc99427fd3b071681b07fc31c6ce995"
-features = ["event-stream"]
 
 [dependencies.tokio]
 version = "1.47.1"
-features = ["rt-multi-thread", "io-util", "sync", "full", "net", "signal", "rt", "process", "time", "io-std", "parking_lot", "macros"]
+features = ["full"]
 default-features = false
 
 [features]
