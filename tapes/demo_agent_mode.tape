@@ -7,6 +7,7 @@ Source demo_setup.tape
 Require claude
 
 Hide
+Sleep 50ms
 Type `export PATH="/home/john/bin/:$PATH" && clear`
 Enter
 Show

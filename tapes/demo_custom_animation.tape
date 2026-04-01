@@ -6,6 +6,7 @@ Set Height 400
 Source demo_setup.tape
 
 Hide
+Sleep 50ms
 Type `export PS1="${PS1::-2} " && clear`
 Enter
 Show

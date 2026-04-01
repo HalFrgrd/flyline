@@ -555,20 +555,32 @@ impl DParser {
                             if prev_token.token.kind == TokenKind::Dollar {
                                 self.tokens[idx].annotations.is_env_var = true;
                                 self.tokens[idx.saturating_sub(1)].annotations.is_env_var = true;
-
-                                if let Some(start_of_command) =
-                                    prev_token.annotations.command_word.clone()
-                                {
-                                    let full_command =
-                                        start_of_command + &self.tokens[idx].token.value;
-                                    self.tokens[idx].annotations.command_word =
-                                        Some(full_command.clone());
-                                    self.tokens[idx.saturating_sub(1)].annotations.command_word =
-                                        Some(full_command);
-                                }
                             } else if !in_double_quote && self.current_command_range.is_none() {
                                 self.tokens[idx].annotations.command_word =
                                     Some(self.tokens[idx].token.value.clone());
+                            }
+
+                            // Extend the command word into this one
+                            if let Some(start_of_command) =
+                                prev_token.annotations.command_word.as_ref()
+                            {
+                                let full_command =
+                                    start_of_command.clone() + &self.tokens[idx].token.value;
+                                self.tokens[idx].annotations.command_word =
+                                    Some(full_command.clone());
+
+                                for prev_command_token in self.tokens[..idx].iter_mut().rev() {
+                                    // println!("Checking if we should extend command word annotation to token '{:?}' with value '{}'", prev_command_token.token.kind, prev_command_token.token.value);
+                                    if prev_command_token.annotations.command_word.as_ref()
+                                        == Some(start_of_command)
+                                    {
+                                        // println!("Extending command word annotation from '{}' to '{}'", start_of_command, full_command);
+                                        prev_command_token.annotations.command_word =
+                                            Some(full_command.clone());
+                                    } else {
+                                        break;
+                                    }
+                                }
                             }
                         } else if !in_double_quote {
                             self.tokens[idx].annotations.command_word =
@@ -576,7 +588,8 @@ impl DParser {
                         }
                     }
 
-                    if self.current_command_range.is_none() && !in_double_quote && !in_single_quote {
+                    if self.current_command_range.is_none() && !in_double_quote && !in_single_quote
+                    {
                         self.tokens[idx].annotations.command_word =
                             Some(self.tokens[idx].token.value.clone());
 
@@ -616,13 +629,10 @@ impl DParser {
             .any(|t| t.annotations.opening == Some(OpeningState::Unmatched))
     }
 
-    pub fn get_current_command_tokens(&self) -> Vec<&Token> {
+    pub fn get_current_command_tokens(&self) -> &[AnnotatedToken] {
         match &self.current_command_range {
-            Some(range) => self.tokens[range.clone()]
-                .iter()
-                .map(|t| &t.token)
-                .collect::<Vec<_>>(),
-            None => Vec::new(),
+            Some(range) => &self.tokens[range.clone()],
+            None => &[],
         }
     }
 
@@ -630,7 +640,7 @@ impl DParser {
     pub fn get_current_command_str(&self) -> String {
         self.get_current_command_tokens()
             .iter()
-            .map(|t| t.value.to_string())
+            .map(|t| t.token.value.to_string())
             .collect::<Vec<_>>()
             .join("")
     }
@@ -1092,7 +1102,6 @@ mod tests {
         assert_eq!(tokens[3].token.value, "fi");
         assert!(tokens[3].annotations.is_inside_double_quotes);
         assert!(tokens[3].annotations.command_word.is_none());
-
     }
 
     // ── closing_char_to_insert ───────────────────────────────────────────────
@@ -1345,29 +1354,6 @@ mod tests {
     }
 
     #[test]
-    fn test_env_var_starting_command() {
-        let input = "$HOME/bin/echo";
-        let mut parser = DParser::from(input);
-        parser.walk_to_end();
-
-        let tokens = parser.tokens();
-        for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotations);
-        }
-
-        assert_eq!(tokens[0].token.value, "$");
-        assert_eq!(
-            tokens[0].annotations.command_word,
-            Some("$HOME/bin/echo".to_string())
-        );
-        assert_eq!(tokens[1].token.value, "HOME/bin/echo");
-        assert_eq!(
-            tokens[1].annotations.command_word,
-            Some("$HOME/bin/echo".to_string())
-        );
-    }
-
-    #[test]
     fn test_comment_annotation() {
         let input = "echo hello # this is a comment";
         let mut parser = DParser::from(input);
@@ -1389,7 +1375,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Need to fix flash first"]
     fn env_var_in_double_quotes_has_env_var_color() {
         let input = r#"echo "$HOME/foo""#;
         let mut parser = DParser::from(input);
@@ -1408,13 +1393,13 @@ mod tests {
         assert_eq!(tokens[3].annotations.is_env_var, true);
         assert_eq!(tokens[4].token.value, "HOME");
         assert_eq!(tokens[4].annotations.is_env_var, true);
-        assert_eq!(tokens[5].token.value, "/");
-        assert_eq!(tokens[6].token.value, "foo");
-        assert_eq!(tokens[7].token.value, "\"");
+        assert_eq!(tokens[5].token.value, "/foo");
+        assert_eq!(tokens[5].annotations.is_env_var, false);
+        assert_eq!(tokens[6].token.value, "\"");
     }
 
     #[test]
-    fn env_var_starting_command() {
+    fn test_env_var_starting_command() {
         let input = r#"$HOME/bin/echo"#;
         let mut parser = DParser::from(input);
         parser.walk_to_end();
@@ -1430,12 +1415,17 @@ mod tests {
             tokens[0].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
         );
-        // TODO this should just be "HOME" with is_env_var, not "HOME/bin/echo"
-        // will required the new version of flash
-        assert_eq!(tokens[1].token.value, "HOME/bin/echo");
+        assert_eq!(tokens[1].token.value, "HOME");
         assert_eq!(tokens[1].annotations.is_env_var, true);
         assert_eq!(
             tokens[1].annotations.command_word.as_ref().unwrap(),
+            "$HOME/bin/echo"
+        );
+
+        assert_eq!(tokens[2].token.value, "/bin/echo");
+        assert_eq!(tokens[2].annotations.is_env_var, false);
+        assert_eq!(
+            tokens[2].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
         );
     }
