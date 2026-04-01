@@ -661,6 +661,31 @@ impl TextBuffer {
         }
     }
 
+    fn less_strict_class_slash_only(c: char) -> u8 {
+        if c.is_whitespace() {
+            0
+        } else if c == '/' || c == '\\' {
+            1
+        } else {
+            2
+        }
+    }
+
+    fn has_slash_in_word_left(buf: &str, cursor_byte: usize) -> bool {
+        buf[..cursor_byte]
+            .chars()
+            .rev()
+            .take_while(|c| !c.is_whitespace())
+            .any(|c| c == '/' || c == '\\')
+    }
+
+    fn has_slash_in_word_right(buf: &str, cursor_byte: usize) -> bool {
+        buf[cursor_byte..]
+            .chars()
+            .take_while(|c| !c.is_whitespace())
+            .any(|c| c == '/' || c == '\\')
+    }
+
     pub fn delete_backwards(&mut self) {
         // delete one grapheme to the left
         self.push_snapshot(true);
@@ -699,14 +724,18 @@ impl TextBuffer {
                 })
                 .unwrap_or(0);
         } else {
+            let class_fn: fn(char) -> u8 =
+                if Self::has_slash_in_word_left(&self.buf, self.cursor_byte) {
+                    Self::less_strict_class_slash_only
+                } else {
+                    Self::less_strict_class
+                };
             self.cursor_byte = match iter.next() {
                 Some((first_i, first_c)) => {
-                    let class = Self::less_strict_class(first_c);
+                    let class = class_fn(first_c);
                     iter.scan((first_i, first_c), |prev, (i, c)| {
                         let (prev_i, prev_c) = *prev;
-                        let boundary = if Self::less_strict_class(prev_c) == class
-                            && Self::less_strict_class(c) != class
-                        {
+                        let boundary = if class_fn(prev_c) == class && class_fn(c) != class {
                             Some(prev_i)
                         } else {
                             None
@@ -737,21 +766,21 @@ impl TextBuffer {
                 .next()
                 .map_or(end, |(i, _)| i)
         } else {
+            let class_fn: fn(char) -> u8 =
+                if Self::has_slash_in_word_right(&self.buf, self.cursor_byte) {
+                    Self::less_strict_class_slash_only
+                } else {
+                    Self::less_strict_class
+                };
             let mut iter = self
                 .buf
                 .char_indices()
                 .skip_while(|(i, _)| *i < self.cursor_byte);
             match iter.next() {
                 Some((_, first_c)) => {
-                    let class = Self::less_strict_class(first_c);
-                    iter.find_map(|(i, c)| {
-                        if Self::less_strict_class(c) != class {
-                            Some(i)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(end)
+                    let class = class_fn(first_c);
+                    iter.find_map(|(i, c)| if class_fn(c) != class { Some(i) } else { None })
+                        .unwrap_or(end)
                 }
                 None => end,
             }
@@ -999,6 +1028,52 @@ mod test_editing_advanced {
         assert_eq!(tb.buffer(), "/asd");
         tb.delete_one_word_right(WordDelim::LessStrict);
         assert_eq!(tb.buffer(), "asd");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "");
+    }
+
+    #[test]
+    fn delete_one_word_left_less_strict_path() {
+        // When the word to the left contains slashes, only / and \ are treated as
+        // punctuation boundaries, so filename components with dots are not split.
+        let mut tb = TextBuffer::new("echo ./foo_bar/baz.jeb");
+        tb.move_end_of_line();
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "echo ./foo_bar/");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "echo ./foo_bar");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "echo ./");
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "echo .");
+        // No more slashes in the remaining word; full punctuation mode resumes.
+        tb.delete_one_word_left(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "echo ");
+    }
+
+    #[test]
+    fn delete_one_word_right_less_strict_path() {
+        // Symmetric: forward deletion is also slash-aware.
+        let mut tb = TextBuffer::new("echo ./foo_bar/baz.jeb");
+        tb.move_start_of_line();
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), " ./foo_bar/baz.jeb");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "./foo_bar/baz.jeb");
+        // Now the word starts with "./" which contains a slash; slash-only mode.
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "/foo_bar/baz.jeb");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "foo_bar/baz.jeb");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "/baz.jeb");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "baz.jeb");
+        // No more slashes; full punctuation mode.
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), ".jeb");
+        tb.delete_one_word_right(WordDelim::LessStrict);
+        assert_eq!(tb.buffer(), "jeb");
         tb.delete_one_word_right(WordDelim::LessStrict);
         assert_eq!(tb.buffer(), "");
     }
