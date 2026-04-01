@@ -1,5 +1,6 @@
 use crate::bash_funcs;
 use crate::palette::Palette;
+use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::text_buffer::{SubString, TextBuffer};
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
@@ -427,9 +428,7 @@ pub struct ActiveSuggestions {
     /// Number of columns that were actually visible in the last rendered
     /// grid.  Used to compute the scroll offset.
     last_num_visible_cols: usize,
-    /// Index of the first column that is shown during rendering (0-based).
-    /// Non-zero when the selected column has scrolled out of the default view.
-    col_scroll_offset: usize,
+    col_window_to_show: StatefulSlidingWindow,
     fuzzy_matcher: ArinaeMatcher,
 }
 
@@ -446,7 +445,7 @@ impl std::fmt::Debug for ActiveSuggestions {
             .field("word_under_cursor", &self.word_under_cursor)
             .field("last_num_rows_per_col", &self.last_num_rows_per_col)
             .field("last_num_visible_cols", &self.last_num_visible_cols)
-            .field("col_scroll_offset", &self.col_scroll_offset)
+            .field("col_window_to_show", &self.col_window_to_show)
             .finish()
     }
 }
@@ -460,6 +459,7 @@ impl ActiveSuggestions {
         let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).ok()?;
 
         let filtered_suggestions = vec![];
+        let sug_len = suggestions.len();
 
         let mut active_sug = ActiveSuggestions {
             all_unprocessed_suggestions: suggestions,
@@ -469,7 +469,7 @@ impl ActiveSuggestions {
             word_under_cursor: word_under_cursor.clone(),
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
-            col_scroll_offset: 0,
+            col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
         };
 
@@ -503,7 +503,6 @@ impl ActiveSuggestions {
             self.selected_row = idx % self.last_num_rows_per_col;
         }
         self.clamp_selection();
-        self.adjust_col_scroll_offset();
     }
 
     /// Ensure the selected position refers to a valid suggestion.
@@ -522,20 +521,6 @@ impl ActiveSuggestions {
         }
     }
 
-    /// Adjust `col_scroll_offset` so that `selected_col` is always within
-    /// the visible column range `[col_scroll_offset, col_scroll_offset +
-    /// last_num_visible_cols)`.
-    fn adjust_col_scroll_offset(&mut self) {
-        if self.last_num_visible_cols == 0 {
-            return;
-        }
-        if self.selected_col < self.col_scroll_offset {
-            self.col_scroll_offset = self.selected_col;
-        } else if self.selected_col >= self.col_scroll_offset + self.last_num_visible_cols {
-            self.col_scroll_offset = self.selected_col + 1 - self.last_num_visible_cols;
-        }
-    }
-
     // TODO arrow keys when not all suggestions are visible
     pub fn on_right_arrow(&mut self) {
         let n = self.filtered_suggestions.len();
@@ -549,10 +534,7 @@ impl ActiveSuggestions {
         } else {
             // No suggestion exists at (selected_row, next_col) → wrap to col 0.
             self.selected_col = 0;
-            self.col_scroll_offset = 0;
-            // Row 0 of col 0 always exists (n > 0).
         }
-        self.adjust_col_scroll_offset();
     }
 
     pub fn on_left_arrow(&mut self) {
@@ -573,7 +555,6 @@ impl ActiveSuggestions {
                 self.selected_row = n - 1 - last_col * self.last_num_rows_per_col;
             }
         }
-        self.adjust_col_scroll_offset();
     }
 
     pub fn on_down_arrow(&mut self) {
@@ -616,7 +597,6 @@ impl ActiveSuggestions {
         &mut self,
         max_rows: usize,
         max_width: usize,
-        col_offset: usize,
         palette: &Palette,
     ) -> Vec<(Vec<(SuggestionFormatted, bool)>, usize)> {
         let selected_1d = self.current_1d_index();
@@ -630,7 +610,16 @@ impl ActiveSuggestions {
 
         let max_col_index = (n - 1) / max_rows;
         let mut first_col_len = max_rows;
-        for col_idx in col_offset..=max_col_index {
+
+        self.col_window_to_show.update_max_index(max_col_index + 1);
+        self.col_window_to_show
+            .update_window_size(self.last_num_visible_cols.max(1));
+        self.col_window_to_show.move_index_to(self.selected_col);
+
+        // log::info!("self.col_window_to_show: {:?}", self.col_window_to_show);
+        // log::info!("self.col_window_to_show.get_window_range(): {:?}", self.col_window_to_show.get_window_range());
+
+        for col_idx in self.col_window_to_show.get_window_range().start..=max_col_index {
             // Build the column, processing each item lazily.
             let start = col_idx * max_rows;
             let end = (start + max_rows).min(n);
@@ -684,18 +673,12 @@ impl ActiveSuggestions {
 
         self.last_num_visible_cols = grid.len();
         self.last_num_rows_per_col = max_rows.min(first_col_len);
-        self.adjust_col_scroll_offset();
         grid
     }
 
     /// Number of suggestions currently shown (after fuzzy filtering).
     pub fn filtered_suggestions_len(&self) -> usize {
         self.filtered_suggestions.len()
-    }
-
-    /// Column index from which the rendered grid should start (scroll offset).
-    pub fn col_scroll_offset(&self) -> usize {
-        self.col_scroll_offset
     }
 
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.

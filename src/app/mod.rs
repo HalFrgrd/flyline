@@ -1795,12 +1795,10 @@ impl<'a> App<'a> {
                     let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
 
                     let mut selected_grid_row: Option<u16> = None;
-                    let col_offset = active_suggestions.col_scroll_offset();
 
                     let grid = active_suggestions.into_grid(
                         num_rows_for_suggestions as usize,
                         width as usize,
-                        col_offset,
                         &self.settings.color_palette,
                     );
 
