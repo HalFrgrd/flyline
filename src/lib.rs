@@ -148,11 +148,12 @@ enum Commands {
     ///
     /// Examples:
     ///   (N.B. `--command` should be the final flag since it consumes all remaining arguments)
-    ///   flyline agent-mode --command llm prompt
     ///   flyline agent-mode \
     ///     --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
     ///     --command copilot --reasoning-effort low --prompt
-    ///   flyline agent-mode --trigger-prefix "ai " --command llm prompt
+    ///   flyline agent-mode --trigger-prefix ": " --command copilot --reasoning-effort low --prompt
+    ///
+    /// See https://github.com/HalFrgrd/flyline/blob/master/examples/agent_mode.sh for more details and example usage.
     #[command(name = "agent-mode", verbatim_doc_comment)]
     AgentMode {
         /// Optional system prompt prepended to the buffer.
@@ -177,6 +178,8 @@ enum Commands {
     /// Examples:
     ///   flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
     ///   flyline create-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
+    ///
+    /// See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
     #[command(name = "create-anim", verbatim_doc_comment)]
     CreateAnim {
         /// Name to embed in prompt strings as the animation placeholder.
@@ -264,50 +267,6 @@ enum Commands {
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
-
-/// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
-/// Returns an error message if the string cannot be parsed.
-fn parse_style(s: &str) -> Result<ratatui::style::Style, String> {
-    use parse_style::{Attribute, Style as ParseStyle};
-    use ratatui::style::{Modifier, Style};
-
-    let parsed: ParseStyle = s.parse().map_err(|e| format!("{e}"))?;
-    let mut style = Style::default();
-
-    if let Some(fg) = parsed.get_foreground() {
-        style = style.fg(parse_color_to_ratatui(fg));
-    }
-    if let Some(bg) = parsed.get_background() {
-        style = style.bg(parse_color_to_ratatui(bg));
-    }
-
-    let attr_map: &[(Attribute, Modifier)] = &[
-        (Attribute::Bold, Modifier::BOLD),
-        (Attribute::Dim, Modifier::DIM),
-        (Attribute::Italic, Modifier::ITALIC),
-        (Attribute::Underline, Modifier::UNDERLINED),
-        (Attribute::Blink, Modifier::SLOW_BLINK),
-        (Attribute::Blink2, Modifier::RAPID_BLINK),
-        (Attribute::Reverse, Modifier::REVERSED),
-        (Attribute::Conceal, Modifier::HIDDEN),
-        (Attribute::Strike, Modifier::CROSSED_OUT),
-    ];
-    for &(attr, modifier) in attr_map {
-        if parsed.is_enabled(attr) {
-            style = style.add_modifier(modifier);
-        }
-    }
-    Ok(style)
-}
-
-fn parse_color_to_ratatui(c: parse_style::Color) -> ratatui::style::Color {
-    use parse_style::Color;
-    match c {
-        Color::Default => ratatui::style::Color::Reset,
-        Color::Color256(c256) => ratatui::style::Color::Indexed(c256.0),
-        Color::Rgb(rgb) => ratatui::style::Color::Rgb(rgb.red(), rgb.green(), rgb.blue()),
-    }
-}
 
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
@@ -611,7 +570,7 @@ impl Flyline {
 
                         for (opt, flag_name, setter) in style_overrides {
                             if let Some(style_str) = opt {
-                                match parse_style(style_str) {
+                                match palette::parse_str_to_style(style_str) {
                                     Ok(style) => {
                                         setter(&mut self.settings.color_palette, style);
                                         log::info!("{} style set to {:?}", flag_name, style_str);

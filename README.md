@@ -406,10 +406,10 @@ Colours can be specified by name (`red`, `green`, `blue`, `magenta`, `cyan`, `ye
 hex code (`#ff5500`) or `rgb(r,g,b)` form.
 
 ```bash
-flyline set-color --inline-suggestion "dim italic"     # style for inline history suggestions
-flyline set-color --matching-char "bold green"         # style for matched chars in fuzzy search
-flyline set-color --matching-char "#ff8700"            # orange matching chars
-flyline set-color --inline-suggestion "bold red"       # combine --default-theme with custom overrides
+flyline set-color --inline-suggestion "dim italic"
+flyline set-color --default-theme light --matching-char "bold blue"
+flyline set-color --recognised-command "green" --unrecognised-command "bold red"
+flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"overrides
 ```
 
 An error is printed and the setting is not changed when the style string cannot be parsed.
