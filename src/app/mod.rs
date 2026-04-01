@@ -1,9 +1,9 @@
-mod buffer_format;
+mod formated_buffer;
 mod tab_completion;
 
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
-use crate::app::buffer_format::{FormattedBuffer, format_buffer};
+use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -1094,10 +1094,10 @@ impl<'a> App<'a> {
             .iter()
             .find(|t| t.token.byte_range().contains(&cursor_pos))
         {
-            if let dparser::TokenAnnotation::IsClosing {
+            if let Some(dparser::ClosingAnnotation {
                 is_auto_inserted: true,
                 ..
-            } = dparser_token.annotation
+            }) = &dparser_token.annotations.closing
             {
                 return dparser_token.token.value.starts_with(c);
             }
@@ -1144,9 +1144,9 @@ impl<'a> App<'a> {
         for token in dparser_tokens {
             if token.token.byte_range().start == byte_pos
                 && token.token.value.starts_with(c)
-                && let dparser::TokenAnnotation::IsClosing {
+                && let Some(dparser::ClosingAnnotation {
                     is_auto_inserted, ..
-                } = &mut token.annotation
+                }) = &mut token.annotations.closing
             {
                 *is_auto_inserted = true;
                 log::info!(
@@ -1179,16 +1179,16 @@ impl<'a> App<'a> {
             .dparser_tokens_cache
             .iter()
             .find(|t| t.token.byte_range().contains(&(cursor_pos - 1)))
-            .map(|t| t.annotation.clone());
+            .map(|t| t.annotations.opening.clone());
 
-        if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
+        if let Some(Some(dparser::OpeningState::Matched(closing_idx))) = opening_annotation {
             // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
             if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx)
                 && closing_token.token.byte_range().start == cursor_pos
-                && let dparser::TokenAnnotation::IsClosing {
+                && let Some(dparser::ClosingAnnotation {
                     is_auto_inserted: true,
                     ..
-                } = closing_token.annotation
+                }) = closing_token.annotations.closing
             {
                 self.buffer.delete_forwards();
             }
@@ -1362,7 +1362,7 @@ impl<'a> App<'a> {
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
-            Some(Box::new(Self::wordinfo_fn)),
+            Some(Box::new(Self::get_word_info)),
             &self.settings.color_palette,
         );
 
@@ -1383,37 +1383,32 @@ impl<'a> App<'a> {
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
     }
 
-    fn wordinfo_fn(token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
-        match &token.annotation {
-            dparser::TokenAnnotation::IsCommandWord(value) => {
-                let (command_type, description) = bash_funcs::get_command_info(value);
-                Some(buffer_format::WordInfo {
-                    tooltip: Some(description.to_string()),
-                    is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
-                })
-            }
-            dparser::TokenAnnotation::IsEnvVar => {
-                let env_var_name = &token.token.value;
+    fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
+        if token.annotations.is_env_var && token.token.kind.is_word() {
+            let env_var_name = &token.token.value;
 
-                let tooltip = bash_funcs::format_shell_var(env_var_name);
+            let tooltip = bash_funcs::format_shell_var(env_var_name);
 
-                Some(buffer_format::WordInfo {
-                    tooltip: Some(tooltip),
+            return Some(formated_buffer::WordInfo {
+                tooltip: Some(tooltip),
+                is_recognised_command: false,
+            });
+        } else if let Some(value) = &token.annotations.command_word {
+            let (command_type, description) = bash_funcs::get_command_info(value);
+            return Some(formated_buffer::WordInfo {
+                tooltip: Some(description.to_string()),
+                is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+            });
+        } else if token.annotations.is_empty() && token.token.value.starts_with('~') {
+            let expanded = bash_funcs::expand_filename(&token.token.value);
+            if expanded != token.token.value {
+                return Some(formated_buffer::WordInfo {
+                    tooltip: Some(format!("{}={}", token.token.value, expanded)),
                     is_recognised_command: false,
-                })
+                });
             }
-            dparser::TokenAnnotation::None if token.token.value.starts_with('~') => {
-                let expanded = bash_funcs::expand_filename(&token.token.value);
-                if expanded != token.token.value {
-                    return Some(buffer_format::WordInfo {
-                        tooltip: Some(format!("{}={}", token.token.value, expanded)),
-                        is_recognised_command: false,
-                    });
-                }
-                None
-            }
-            _ => None,
         }
+        None
     }
 
     fn ts_to_timeago_string_5chars(ts: u64) -> String {
@@ -2021,7 +2016,7 @@ impl<'a> App<'a> {
                         cmd.len(),
                         cmd.len(),
                         false,
-                        Some(Box::new(Self::wordinfo_fn)),
+                        Some(Box::new(Self::get_word_info)),
                         &self.settings.color_palette,
                     );
                     for part in &formatted_cmd.parts {

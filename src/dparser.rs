@@ -189,31 +189,56 @@ impl ToInclusiveRange for Range<usize> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenAnnotation {
-    None,
-    IsPartOfSingleQuotedString,
-    IsPartOfDoubleQuotedString,
-    IsOpening(Option<usize>), // index of the closing token in the tokens vector
-    IsClosing {
-        opening_idx: usize,     // index of the opening token in the tokens vector
-        is_auto_inserted: bool, // true if this closing token was automatically inserted by the editor
-    },
-    IsCommandWord(String), // the first word of a command. e.g.`git commit -m "message"` -> `git` would be annotated with this
-    IsEnvVar,
-    IsComment,
+pub struct ClosingAnnotation {
+    pub opening_idx: usize,     // index of the opening token in the tokens vector
+    pub is_auto_inserted: bool, // true if this closing token was automatically inserted by the editor
+}
+
+/// Represents the matched/unmatched state of an opening delimiter token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpeningState {
+    /// The opening delimiter has been found but its closing counterpart has not yet been matched.
+    Unmatched,
+    /// The opening delimiter is matched with a closing token at the given index.
+    Matched(usize),
+}
+
+/// All annotations that can be applied to a token. Multiple annotations can be present
+/// simultaneously (e.g. a token can be both inside double quotes and an env var).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Annotations {
+    pub is_inside_single_quotes: bool,
+    pub is_inside_double_quotes: bool,
+    pub is_env_var: bool,
+    pub is_comment: bool,
+    /// `Some(Unmatched)` = this token is an opening delimiter whose closing has not been found yet.
+    /// `Some(Matched(idx))` = this token is an opening delimiter with its closing at index `idx`.
+    /// `None` = not an opening token.
+    pub opening: Option<OpeningState>,
+    /// `Some(_)` = this token is a closing delimiter.
+    pub closing: Option<ClosingAnnotation>,
+    /// `Some(name)` = this token is the first word of a command (e.g. `git` in `git commit`).
+    pub command_word: Option<String>,
+}
+
+impl Annotations {
+    /// Returns `true` if no annotations have been set on this token.
+    pub fn is_empty(&self) -> bool {
+        *self == Annotations::default()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct AnnotatedToken {
     pub token: Token,
-    pub annotation: TokenAnnotation,
+    pub annotations: Annotations,
 }
 
 impl AnnotatedToken {
     pub fn new(token: Token) -> Self {
         Self {
             token,
-            annotation: TokenAnnotation::None,
+            annotations: Annotations::default(),
         }
     }
 }
@@ -399,7 +424,7 @@ impl DParser {
                         cursor_byte_pos.is_some(),
                     ) =>
                 {
-                    self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
+                    self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
 
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
@@ -409,7 +434,7 @@ impl DParser {
                     self.current_command_range = None; // set for next word after this
                 }
                 TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
-                    self.tokens[idx].annotation = TokenAnnotation::IsOpening(None);
+                    self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
 
                     heredocs.push_back((idx, strip_heredoc_delimiter_quotes(delim)));
                 }
@@ -426,10 +451,10 @@ impl DParser {
                     if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
-                    self.tokens[idx].annotation = TokenAnnotation::IsClosing {
+                    self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
                         opening_idx,
                         is_auto_inserted: false,
-                    };
+                    });
 
                     let current_command_range_contains_cursor =
                         cursor_byte_pos.is_some_and(|pos| {
@@ -476,10 +501,10 @@ impl DParser {
                     if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
                 {
                     let (opening_idx, _) = heredocs.pop_front().unwrap();
-                    self.tokens[idx].annotation = TokenAnnotation::IsClosing {
+                    self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
                         opening_idx,
                         is_auto_inserted: false,
-                    };
+                    });
                 }
 
                 TokenKind::And
@@ -515,66 +540,46 @@ impl DParser {
                         matches!(nestings.last(), Some((_, TokenKind::SingleQuote)));
                     let in_double_quote = matches!(nestings.last(), Some((_, TokenKind::Quote)));
 
-                    if token.kind == TokenKind::Newline {
-                        if in_single_quote {
-                            self.tokens[idx].annotation =
-                                TokenAnnotation::IsPartOfSingleQuotedString;
-                        } else if in_double_quote {
-                            self.tokens[idx].annotation =
-                                TokenAnnotation::IsPartOfDoubleQuotedString;
-                        }
+                    if in_single_quote {
+                        self.tokens[idx].annotations.is_inside_single_quotes = true;
+                    } else if in_double_quote {
+                        self.tokens[idx].annotations.is_inside_double_quotes = true;
                     }
 
                     if token.kind == TokenKind::Comment {
-                        self.tokens[idx].annotation = TokenAnnotation::IsComment;
+                        self.tokens[idx].annotations.is_comment = true;
                     }
 
-                    if token.kind.is_word() {
-                        if in_single_quote {
-                            self.tokens[idx].annotation =
-                                TokenAnnotation::IsPartOfSingleQuotedString;
-                        } else if in_double_quote {
-                            self.tokens[idx].annotation =
-                                TokenAnnotation::IsPartOfDoubleQuotedString;
-                        } else if let Some(prev_token) = &previous_token {
-                            match prev_token.token.kind {
-                                TokenKind::Dollar => {
-                                    if let TokenAnnotation::IsCommandWord(start_of_command) =
-                                        &prev_token.annotation
-                                    {
-                                        let full_command = TokenAnnotation::IsCommandWord(
-                                            start_of_command.clone()
-                                                + &self.tokens[idx].token.value,
-                                        );
-                                        self.tokens[idx.saturating_sub(1)].annotation =
-                                            full_command.clone();
-                                        self.tokens[idx].annotation = full_command;
-                                    } else {
-                                        self.tokens[idx].annotation = TokenAnnotation::IsEnvVar;
-                                    }
+                    if token.kind.is_word() && !in_single_quote {
+                        if let Some(prev_token) = &previous_token {
+                            if prev_token.token.kind == TokenKind::Dollar {
+                                self.tokens[idx].annotations.is_env_var = true;
+                                self.tokens[idx.saturating_sub(1)].annotations.is_env_var = true;
+
+                                if let Some(start_of_command) =
+                                    prev_token.annotations.command_word.clone()
+                                {
+                                    let full_command =
+                                        start_of_command + &self.tokens[idx].token.value;
+                                    self.tokens[idx].annotations.command_word =
+                                        Some(full_command.clone());
+                                    self.tokens[idx.saturating_sub(1)].annotations.command_word =
+                                        Some(full_command);
                                 }
-                                _ if self.current_command_range.is_none() => {
-                                    self.tokens[idx].annotation = TokenAnnotation::IsCommandWord(
-                                        self.tokens[idx].token.value.clone(),
-                                    );
-                                }
-                                _ => {
-                                    // leave as None
-                                }
+                            } else if !in_double_quote && self.current_command_range.is_none() {
+                                self.tokens[idx].annotations.command_word =
+                                    Some(self.tokens[idx].token.value.clone());
                             }
-                        } else {
-                            self.tokens[idx].annotation = TokenAnnotation::IsCommandWord(
-                                self.tokens[idx].token.value.clone(),
-                            );
+                        } else if !in_double_quote {
+                            self.tokens[idx].annotations.command_word =
+                                Some(self.tokens[idx].token.value.clone());
                         }
                     }
 
-                    if self.current_command_range.is_none() {
-                        if self.tokens[idx].annotation == TokenAnnotation::None {
-                            self.tokens[idx].annotation = TokenAnnotation::IsCommandWord(
-                                self.tokens[idx].token.value.clone(),
-                            );
-                        }
+                    if self.current_command_range.is_none() && !in_double_quote && !in_single_quote {
+                        self.tokens[idx].annotations.command_word =
+                            Some(self.tokens[idx].token.value.clone());
+
                         self.current_command_range = Some(idx..=idx);
                     } else if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
@@ -595,22 +600,20 @@ impl DParser {
         // We need to collect the updates first to avoid mutable borrow issues
         let mut updates = Vec::new();
         for (idx, annotated_token) in self.tokens.iter().enumerate() {
-            if let TokenAnnotation::IsClosing { opening_idx, .. } = annotated_token.annotation {
-                updates.push((opening_idx, idx));
+            if let Some(closing) = &annotated_token.annotations.closing {
+                updates.push((closing.opening_idx, idx));
             }
         }
 
         for (opening_idx, closing_idx) in updates {
-            if let TokenAnnotation::IsOpening(None) = self.tokens[opening_idx].annotation {
-                self.tokens[opening_idx].annotation = TokenAnnotation::IsOpening(Some(closing_idx));
-            }
+            self.tokens[opening_idx].annotations.opening = Some(OpeningState::Matched(closing_idx));
         }
     }
 
     pub fn needs_more_input(&self) -> bool {
         self.tokens
             .iter()
-            .any(|t| matches!(t.annotation, TokenAnnotation::IsOpening(None)))
+            .any(|t| t.annotations.opening == Some(OpeningState::Unmatched))
     }
 
     pub fn get_current_command_tokens(&self) -> Vec<&Token> {
@@ -677,7 +680,7 @@ impl DParser {
         let has_unmatched_opener = tokens.iter().any(|p| {
             p.token.byte_range().start < just_inserted_pos
                 && p.token.kind == opener_kind
-                && matches!(p.annotation, TokenAnnotation::IsOpening(None))
+                && p.annotations.opening == Some(OpeningState::Unmatched)
         });
 
         if has_unmatched_opener {
@@ -696,20 +699,14 @@ impl DParser {
             if old.token.kind != new.token.kind || old.token.value != new.token.value {
                 break;
             }
-            if let TokenAnnotation::IsClosing {
+            if let Some(ClosingAnnotation {
                 opening_idx: old_opening_idx,
                 is_auto_inserted: true,
-            } = old.annotation
-                && let TokenAnnotation::IsClosing {
-                    opening_idx: new_opening_idx,
-                    ..
-                } = new.annotation
-                && old_opening_idx == new_opening_idx
+            }) = &old.annotations.closing
+                && let Some(new_closing) = &mut new.annotations.closing
+                && *old_opening_idx == new_closing.opening_idx
             {
-                new.annotation = TokenAnnotation::IsClosing {
-                    opening_idx: new_opening_idx,
-                    is_auto_inserted: true,
-                };
+                new_closing.is_auto_inserted = true;
             }
         }
 
@@ -718,21 +715,13 @@ impl DParser {
             if old.token.kind != new.token.kind || old.token.value != new.token.value {
                 break;
             }
-            if let TokenAnnotation::IsClosing {
-                opening_idx: _,
+            if let Some(ClosingAnnotation {
                 is_auto_inserted: true,
-            } = old.annotation
-                && let TokenAnnotation::IsClosing {
-                    opening_idx: new_opening_idx,
-                    ..
-                } = new.annotation
+                ..
+            }) = &old.annotations.closing
+                && let Some(new_closing) = &mut new.annotations.closing
             {
-                // if old_opening_idx == new_opening_idx {
-                new.annotation = TokenAnnotation::IsClosing {
-                    opening_idx: new_opening_idx,
-                    is_auto_inserted: true,
-                };
-                // }
+                new_closing.is_auto_inserted = true;
             }
         }
     }
@@ -807,41 +796,35 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(
-            tokens[0].annotation,
-            TokenAnnotation::IsCommandWord("echo".to_string())
-        );
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "héllo");
-        assert_eq!(tokens[2].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[2].annotations, Annotations::default());
         assert_eq!(tokens[3].token.value, " ");
         assert_eq!(tokens[4].token.value, "&&");
-        assert_eq!(tokens[4].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[4].annotations, Annotations::default());
         assert_eq!(tokens[5].token.value, " ");
         assert_eq!(tokens[6].token.value, "echo");
-        assert_eq!(
-            tokens[6].annotation,
-            TokenAnnotation::IsCommandWord("echo".to_string())
-        );
+        assert_eq!(tokens[6].annotations.command_word, Some("echo".to_string()));
         assert_eq!(tokens[7].token.value, " ");
         assert_eq!(tokens[8].token.value, "'");
-        assert_eq!(tokens[8].annotation, TokenAnnotation::IsOpening(Some(10)));
-        assert_eq!(tokens[9].token.value, "wörld");
         assert_eq!(
-            tokens[9].annotation,
-            TokenAnnotation::IsPartOfSingleQuotedString
+            tokens[8].annotations.opening,
+            Some(OpeningState::Matched(10))
         );
+        assert_eq!(tokens[9].token.value, "wörld");
+        assert!(tokens[9].annotations.is_inside_single_quotes);
         assert_eq!(tokens[10].token.value, "'");
         assert_eq!(
-            tokens[10].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[10].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 8,
                 is_auto_inserted: false
-            }
+            })
         );
     }
 
@@ -854,29 +837,26 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(
-            tokens[0].annotation,
-            TokenAnnotation::IsCommandWord("echo".to_string())
-        );
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "\"");
-        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(4)));
-        assert_eq!(tokens[3].token.value, "wörld");
         assert_eq!(
-            tokens[3].annotation,
-            TokenAnnotation::IsPartOfDoubleQuotedString
+            tokens[2].annotations.opening,
+            Some(OpeningState::Matched(4))
         );
+        assert_eq!(tokens[3].token.value, "wörld");
+        assert!(tokens[3].annotations.is_inside_double_quotes);
         assert_eq!(tokens[4].token.value, "\"");
         assert_eq!(
-            tokens[4].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[4].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 2,
                 is_auto_inserted: false
-            }
+            })
         );
     }
 
@@ -889,46 +869,49 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
         assert_eq!(tokens[0].token.value, "cat");
-        assert_eq!(
-            tokens[0].annotation,
-            TokenAnnotation::IsCommandWord("cat".to_string())
-        );
+        assert_eq!(tokens[0].annotations.command_word, Some("cat".to_string()));
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "<<A");
-        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(8)));
+        assert_eq!(
+            tokens[2].annotations.opening,
+            Some(OpeningState::Matched(8))
+        );
         assert_eq!(tokens[3].token.value, " ");
         assert_eq!(tokens[4].token.value, "<<-B");
-        assert_eq!(tokens[4].annotation, TokenAnnotation::IsOpening(Some(12)));
+        assert_eq!(
+            tokens[4].annotations.opening,
+            Some(OpeningState::Matched(12))
+        );
         assert_eq!(tokens[5].token.value, "\n");
-        assert_eq!(tokens[5].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[5].annotations, Annotations::default());
         assert_eq!(tokens[6].token.value, "line1");
-        assert_eq!(tokens[6].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[6].annotations, Annotations::default());
         assert_eq!(tokens[7].token.value, "\n");
-        assert_eq!(tokens[7].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[7].annotations, Annotations::default());
         assert_eq!(tokens[8].token.value, "A");
         assert_eq!(
-            tokens[8].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[8].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 2,
                 is_auto_inserted: false
-            }
+            })
         );
         assert_eq!(tokens[9].token.value, "\n");
-        assert_eq!(tokens[9].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[9].annotations, Annotations::default());
         assert_eq!(tokens[10].token.value, "line2");
-        assert_eq!(tokens[10].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[10].annotations, Annotations::default());
         assert_eq!(tokens[11].token.value, "\n");
-        assert_eq!(tokens[11].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[11].annotations, Annotations::default());
         assert_eq!(tokens[12].token.value, "B");
         assert_eq!(
-            tokens[12].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[12].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 4,
                 is_auto_inserted: false
-            }
+            })
         );
     }
 
@@ -973,38 +956,29 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(
-            tokens[0].annotation,
-            TokenAnnotation::IsCommandWord("echo".to_string())
-        );
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "'");
-        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
+        assert_eq!(
+            tokens[2].annotations.opening,
+            Some(OpeningState::Matched(6))
+        );
         assert_eq!(tokens[3].token.value, "line1");
-        assert_eq!(
-            tokens[3].annotation,
-            TokenAnnotation::IsPartOfSingleQuotedString
-        );
+        assert!(tokens[3].annotations.is_inside_single_quotes);
         assert_eq!(tokens[4].token.kind, TokenKind::Newline);
-        assert_eq!(
-            tokens[4].annotation,
-            TokenAnnotation::IsPartOfSingleQuotedString
-        );
+        assert!(tokens[4].annotations.is_inside_single_quotes);
         assert_eq!(tokens[5].token.value, "line2");
-        assert_eq!(
-            tokens[5].annotation,
-            TokenAnnotation::IsPartOfSingleQuotedString
-        );
+        assert!(tokens[5].annotations.is_inside_single_quotes);
         assert_eq!(tokens[6].token.value, "'");
         assert_eq!(
-            tokens[6].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[6].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 2,
                 is_auto_inserted: false
-            }
+            })
         );
     }
 
@@ -1021,7 +995,7 @@ mod tests {
         let tokens = parser.tokens();
 
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         // After merging: echo (0), ' ' (1), $(( (2), ' ' (3), bar (4), ' ' (5), )) (6)
@@ -1029,16 +1003,19 @@ mod tests {
         assert_eq!(tokens.len(), 7);
 
         assert_eq!(tokens[2].token.kind, TokenKind::ArithSubst);
-        assert_eq!(tokens[2].annotation, TokenAnnotation::IsOpening(Some(6)));
+        assert_eq!(
+            tokens[2].annotations.opening,
+            Some(OpeningState::Matched(6))
+        );
 
         assert_eq!(tokens[6].token.kind, TokenKind::DoubleRParen);
         assert_eq!(tokens[6].token.value, "))");
         assert_eq!(
-            tokens[6].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[6].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 2,
                 is_auto_inserted: false
-            }
+            })
         );
     }
 
@@ -1049,18 +1026,73 @@ mod tests {
         parser.walk_to_end();
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(
-            tokens[0].annotation,
-            TokenAnnotation::IsCommandWord("echo".to_string())
-        );
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "$");
-        assert_eq!(tokens[2].annotation, TokenAnnotation::None);
+        assert!(tokens[2].annotations.is_env_var);
         assert_eq!(tokens[3].token.value, "HOME");
-        assert_eq!(tokens[3].annotation, TokenAnnotation::IsEnvVar);
+        assert!(tokens[3].annotations.is_env_var);
+    }
+
+    #[test]
+    fn test_env_var_in_double_quotes_annotations() {
+        let input = r#"echo "prefix$HOME""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+        // tokens: echo(0) ' '(1) "(2) prefix(3) $(4) HOME(5) "(6)
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
+        assert_eq!(tokens[2].token.value, "\"");
+        assert_eq!(
+            tokens[2].annotations.opening,
+            Some(OpeningState::Matched(6))
+        );
+
+        assert_eq!(tokens[3].token.value, "prefix");
+        assert!(tokens[3].annotations.is_inside_double_quotes,);
+        assert!(!tokens[3].annotations.is_env_var,);
+
+        assert_eq!(tokens[4].token.value, "$");
+        assert!(tokens[4].annotations.is_inside_double_quotes);
+        assert!(tokens[4].annotations.is_env_var);
+
+        assert_eq!(tokens[5].token.value, "HOME");
+        assert!(tokens[5].annotations.is_inside_double_quotes);
+        assert!(tokens[5].annotations.is_env_var);
+
+        assert_eq!(tokens[6].token.value, "\"");
+        assert_eq!(
+            tokens[6].annotations.closing,
+            Some(ClosingAnnotation {
+                opening_idx: 2,
+                is_auto_inserted: false
+            })
+        );
+    }
+
+    #[test]
+    fn test_first_word_of_quotes() {
+        let input = r#"echo "fi""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "\"");
+        assert_eq!(tokens[3].token.value, "fi");
+        assert!(tokens[3].annotations.is_inside_double_quotes);
+        assert!(tokens[3].annotations.command_word.is_none());
+
     }
 
     // ── closing_char_to_insert ───────────────────────────────────────────────
@@ -1219,24 +1251,21 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         // <<'EOF' token should be an opening that is matched.
         assert_eq!(tokens[2].token.value, "<<'EOF'");
-        assert!(matches!(
-            tokens[2].annotation,
-            TokenAnnotation::IsOpening(Some(_))
-        ));
+        assert!(tokens[2].annotations.opening.is_some());
 
         // Find the "EOF" closing token.
         let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
         assert_eq!(
-            tokens[closing_idx].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[closing_idx].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 2,
                 is_auto_inserted: false,
-            }
+            })
         );
     }
 
@@ -1248,23 +1277,20 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         // <<"EOF" token should be matched.
         assert_eq!(tokens[2].token.value, "<<\"EOF\"");
-        assert!(matches!(
-            tokens[2].annotation,
-            TokenAnnotation::IsOpening(Some(_))
-        ));
+        assert!(tokens[2].annotations.opening.is_some());
 
         let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
         assert_eq!(
-            tokens[closing_idx].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[closing_idx].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 2,
                 is_auto_inserted: false,
-            }
+            })
         );
     }
 
@@ -1276,23 +1302,20 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         // <<\EOF token should be matched.
         assert_eq!(tokens[2].token.value, "<<\\EOF");
-        assert!(matches!(
-            tokens[2].annotation,
-            TokenAnnotation::IsOpening(Some(_))
-        ));
+        assert!(tokens[2].annotations.opening.is_some());
 
         let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
         assert_eq!(
-            tokens[closing_idx].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[closing_idx].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 2,
                 is_auto_inserted: false,
-            }
+            })
         );
     }
 
@@ -1305,22 +1328,19 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         assert_eq!(tokens[2].token.value, "<<E'O'F");
-        assert!(matches!(
-            tokens[2].annotation,
-            TokenAnnotation::IsOpening(Some(_))
-        ));
+        assert!(tokens[2].annotations.opening.is_some());
 
         let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
         assert_eq!(
-            tokens[closing_idx].annotation,
-            TokenAnnotation::IsClosing {
+            tokens[closing_idx].annotations.closing,
+            Some(ClosingAnnotation {
                 opening_idx: 2,
                 is_auto_inserted: false,
-            }
+            })
         );
     }
 
@@ -1332,18 +1352,18 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         assert_eq!(tokens[0].token.value, "$");
         assert_eq!(
-            tokens[0].annotation,
-            TokenAnnotation::IsCommandWord("$HOME/bin/echo".to_string())
+            tokens[0].annotations.command_word,
+            Some("$HOME/bin/echo".to_string())
         );
         assert_eq!(tokens[1].token.value, "HOME/bin/echo");
         assert_eq!(
-            tokens[1].annotation,
-            TokenAnnotation::IsCommandWord("$HOME/bin/echo".to_string())
+            tokens[1].annotations.command_word,
+            Some("$HOME/bin/echo".to_string())
         );
     }
 
@@ -1355,19 +1375,68 @@ mod tests {
 
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotation);
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
         }
 
         assert_eq!(tokens[0].token.value, "echo");
-        assert_eq!(
-            tokens[0].annotation,
-            TokenAnnotation::IsCommandWord("echo".to_string())
-        );
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
         assert_eq!(tokens[1].token.value, " ");
         assert_eq!(tokens[2].token.value, "hello");
-        assert_eq!(tokens[2].annotation, TokenAnnotation::None);
+        assert_eq!(tokens[2].annotations, Annotations::default());
         assert_eq!(tokens[3].token.value, " ");
         assert_eq!(tokens[4].token.value, "# this is a comment");
-        assert_eq!(tokens[4].annotation, TokenAnnotation::IsComment);
+        assert!(tokens[4].annotations.is_comment);
+    }
+
+    #[test]
+    #[ignore = "Need to fix flash first"]
+    fn env_var_in_double_quotes_has_env_var_color() {
+        let input = r#"echo "$HOME/foo""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "\"");
+        assert_eq!(tokens[3].token.value, "$");
+        assert_eq!(tokens[3].annotations.is_env_var, true);
+        assert_eq!(tokens[4].token.value, "HOME");
+        assert_eq!(tokens[4].annotations.is_env_var, true);
+        assert_eq!(tokens[5].token.value, "/");
+        assert_eq!(tokens[6].token.value, "foo");
+        assert_eq!(tokens[7].token.value, "\"");
+    }
+
+    #[test]
+    fn env_var_starting_command() {
+        let input = r#"$HOME/bin/echo"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        assert_eq!(tokens[0].token.value, "$");
+        assert_eq!(tokens[0].annotations.is_env_var, true);
+        assert_eq!(
+            tokens[0].annotations.command_word.as_ref().unwrap(),
+            "$HOME/bin/echo"
+        );
+        // TODO this should just be "HOME" with is_env_var, not "HOME/bin/echo"
+        // will required the new version of flash
+        assert_eq!(tokens[1].token.value, "HOME/bin/echo");
+        assert_eq!(tokens[1].annotations.is_env_var, true);
+        assert_eq!(
+            tokens[1].annotations.command_word.as_ref().unwrap(),
+            "$HOME/bin/echo"
+        );
     }
 }
