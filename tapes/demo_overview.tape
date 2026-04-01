@@ -7,6 +7,7 @@ Source demo_setup.tape
 Require claude
 
 Hide
+Sleep 50ms
 Type `flyline --auto-close-chars true && clear`
 Enter
 Show
@@ -56,7 +57,7 @@ Enter
 Sleep 800ms
 Ctrl+R
 Sleep 1500ms
-Type `hs`
+Type `crgo`
 Sleep 800ms
 Down
 Sleep 500ms
