@@ -29,6 +29,17 @@ pub struct PromptAnimation {
     pub ping_pong: bool,
 }
 
+/// A configured agent-mode command with its optional system prompt.
+#[derive(Debug, Clone)]
+pub struct AgentModeCommand {
+    /// Command (and arguments) to invoke. The current buffer is appended as the
+    /// final argument.
+    pub command: Vec<String>,
+    /// Optional system prompt prepended to the buffer when invoking AI mode.
+    /// When set, the subprocess receives `"<system_prompt>\n<buffer>"` as its final argument.
+    pub system_prompt: Option<String>,
+}
+
 /// Controls how flyline manages mouse capture.
 #[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
 pub enum MouseMode {
@@ -60,12 +71,11 @@ pub struct Settings {
     pub use_term_emulator_cursor: bool,
     /// Mouse capture mode.
     pub mouse_mode: MouseMode,
-    /// Command (and arguments) to invoke for AI mode. The current buffer is appended as the
-    /// final argument. Empty means AI mode is not configured.
-    pub ai_command: Vec<String>,
-    /// Optional system prompt prepended to the buffer when invoking AI mode.
-    /// When set, the subprocess receives `"<system_prompt>\n<buffer>"` as its final argument.
-    pub ai_system_prompt: Option<String>,
+    /// Agent-mode commands keyed by optional trigger prefix.
+    /// - `None` key: the default command invoked via Alt+Enter (no prefix match needed).
+    /// - `Some(prefix)` key: activated when the user presses Enter and the buffer starts
+    ///   with `prefix`; the prefix is stripped before the buffer is sent to the command.
+    pub agent_commands: HashMap<Option<String>, AgentModeCommand>,
     /// Custom prompt animations registered with `flyline create-anim`.
     pub custom_animations: HashMap<String, PromptAnimation>,
     /// Run matrix animation in the terminal background.
@@ -93,8 +103,7 @@ impl Default for Settings {
             auto_close_chars: true,
             use_term_emulator_cursor: false,
             mouse_mode: MouseMode::Smart,
-            ai_command: vec![],
-            ai_system_prompt: None,
+            agent_commands: HashMap::new(),
             custom_animations: HashMap::new(),
             matrix_animation: false,
             frame_rate: 30,

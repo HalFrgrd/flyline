@@ -1,3 +1,4 @@
+mod auto_close;
 mod formated_buffer;
 mod tab_completion;
 
@@ -12,7 +13,7 @@ use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::{DefaultMode, Palette};
 use crate::prompt_manager::PromptManager;
-use crate::settings::{ColorTheme, MouseMode, Settings};
+use crate::settings::{self, ColorTheme, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
@@ -134,9 +135,6 @@ pub enum LastKeyPressAction {
 }
 
 pub fn get_command(settings: &mut Settings) -> ExitState {
-    // if let Err(e) = color_eyre::install() {
-    //     log::error!("Failed to install color_eyre panic handler: {}", e);
-    // }
     set_panic_hook();
 
     let mut stdout = std::io::stdout();
@@ -875,8 +873,8 @@ impl<'a> App<'a> {
                 modifiers: KeyModifiers::ALT,
                 ..
             } if matches!(self.content_mode, ContentMode::Normal) => {
-                if !self.settings.ai_command.is_empty() {
-                    self.start_agent_mode();
+                if let Some((agent_cmd, buffer)) = self.resolve_agent_command(false) {
+                    self.start_agent_mode(agent_cmd, &buffer);
                 } else {
                     self.show_agent_mode_not_configured_error();
                 }
@@ -902,7 +900,11 @@ impl<'a> App<'a> {
                     self.content_mode = ContentMode::Normal;
                 }
                 ContentMode::Normal => {
-                    self.try_submit_current_buffer();
+                    if let Some((agent_cmd, buffer)) = self.resolve_agent_command(true) {
+                        self.start_agent_mode(agent_cmd, &buffer);
+                    } else {
+                        self.try_submit_current_buffer();
+                    }
                 }
                 ContentMode::AgentMode { .. } => {}
                 ContentMode::AgentError { .. } => {
@@ -1040,29 +1042,12 @@ impl<'a> App<'a> {
                     self.toggle_mouse_state("simple mode: Alt pressed");
                 }
             }
-            KeyEvent {
+            key @ KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
             } if self.settings.auto_close_chars => {
-                if self.would_overwrite_auto_inserted_closing(c) {
-                    log::info!(
-                        "Not inserting char '{}' to avoid overwriting auto-inserted closing token",
-                        c
-                    );
-                    self.buffer.move_right();
-                } else {
-                    let initial_cursor_pos = self.buffer.cursor_byte_pos();
-                    self.buffer.on_keypress(key);
-                    if let Some((auto_char, auto_pos)) =
-                        self.insert_closing_char(c, initial_cursor_pos)
-                    {
-                        keypress_action = Some(LastKeyPressAction::InsertedAutoClosing {
-                            char: auto_char,
-                            byte_pos: auto_pos,
-                        });
-                    }
-                }
+                keypress_action = self.handle_char_insertion(key, c);
             }
             // Backspace: if the char to the right of the cursor is an auto-inserted closing token
             // paired with the char about to be deleted, remove it as well.
@@ -1211,14 +1196,42 @@ impl<'a> App<'a> {
         };
     }
 
+    /// Resolve which agent command to use for Alt+Enter.
+    /// First tries to find a trigger-prefix match, then falls back to the `None`-keyed default.
+    fn resolve_agent_command(
+        &self,
+        needs_prefix: bool,
+    ) -> Option<(settings::AgentModeCommand, String)> {
+        log::info!(
+            "Resolving agent command for buffer: '{}'",
+            self.buffer.buffer()
+        );
+        let buf = self.buffer.buffer();
+        for (prefix_key, agent_cmd) in &self.settings.agent_commands {
+            if let Some(prefix) = prefix_key
+                && let Some(stripped) = buf.strip_prefix(prefix.as_str())
+            {
+                return Some((agent_cmd.clone(), stripped.to_string()));
+            }
+        }
+        if needs_prefix {
+            return None;
+        }
+
+        let buf = self.buffer.buffer().to_string();
+        self.settings
+            .agent_commands
+            .get(&None)
+            .map(|cmd| (cmd.clone(), buf))
+    }
+
     /// Spawn the configured AI command in a background thread and transition to `AiMode`.
     /// Words that contain a space are quoted with single quotes in the display string.
-    fn start_agent_mode(&mut self) {
-        let cmd_args = self.settings.ai_command.clone();
-        let buffer_str = self.buffer.buffer().to_string();
-        let final_arg = match self.settings.ai_system_prompt.as_deref() {
+    fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
+        let cmd_args = agent_cmd.command;
+        let final_arg = match agent_cmd.system_prompt.as_deref() {
             Some(prompt) => format!("{}\n{}", prompt, buffer_str),
-            None => buffer_str,
+            None => buffer_str.to_string(),
         };
         let (tx, rx) = std::sync::mpsc::channel::<Result<String, (String, String)>>();
         // Build a human-readable representation of the full command being run.

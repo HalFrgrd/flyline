@@ -2,6 +2,50 @@ use itertools::Itertools;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
+/// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
+/// Returns an error message if the string cannot be parsed.
+pub fn parse_str_to_style(s: &str) -> Result<ratatui::style::Style, String> {
+    use parse_style::{Attribute, Style as ParseStyle};
+    use ratatui::style::{Modifier, Style};
+
+    let parsed: ParseStyle = s.parse().map_err(|e| format!("{e}"))?;
+    let mut style = Style::default();
+
+    if let Some(fg) = parsed.get_foreground() {
+        style = style.fg(parse_color_to_ratatui(fg));
+    }
+    if let Some(bg) = parsed.get_background() {
+        style = style.bg(parse_color_to_ratatui(bg));
+    }
+
+    let attr_map: &[(Attribute, Modifier)] = &[
+        (Attribute::Bold, Modifier::BOLD),
+        (Attribute::Dim, Modifier::DIM),
+        (Attribute::Italic, Modifier::ITALIC),
+        (Attribute::Underline, Modifier::UNDERLINED),
+        (Attribute::Blink, Modifier::SLOW_BLINK),
+        (Attribute::Blink2, Modifier::RAPID_BLINK),
+        (Attribute::Reverse, Modifier::REVERSED),
+        (Attribute::Conceal, Modifier::HIDDEN),
+        (Attribute::Strike, Modifier::CROSSED_OUT),
+    ];
+    for &(attr, modifier) in attr_map {
+        if parsed.is_enabled(attr) {
+            style = style.add_modifier(modifier);
+        }
+    }
+    Ok(style)
+}
+
+fn parse_color_to_ratatui(c: parse_style::Color) -> ratatui::style::Color {
+    use parse_style::Color;
+    match c {
+        Color::Default => ratatui::style::Color::Reset,
+        Color::Color256(c256) => ratatui::style::Color::Indexed(c256.0),
+        Color::Rgb(rgb) => ratatui::style::Color::Rgb(rgb.red(), rgb.green(), rgb.blue()),
+    }
+}
+
 /// Which built-in colour preset is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DefaultMode {
