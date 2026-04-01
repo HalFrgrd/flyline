@@ -5,7 +5,7 @@ use crate::snake_animation::SnakeAnimation;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::dparser::{AnnotatedToken, ToInclusiveRange, TokenAnnotation};
+use crate::dparser::{AnnotatedToken, ClosingAnnotation, ToInclusiveRange};
 use crate::palette::Palette;
 use itertools::{EitherOrBoth, Itertools};
 use ratatui::prelude::*;
@@ -94,31 +94,30 @@ fn token_to_style(
         return palette.opening_and_closing_pair();
     }
 
-    if matches!(token.annotation, TokenAnnotation::IsCommandWord(_)) {
+    // Env var coloring has the highest priority among base colors: a token can have both
+    // `is_env_var` and `is_inside_double_quotes` (e.g. `$HOME` in `"$HOME"`), and the env var
+    // color should win over the double-quoted color.
+    if token.annotations.is_env_var {
+        return palette.env_var();
+    }
+
+    if token.annotations.command_word.is_some() {
         if recognised_command == Some(true) {
             return palette.recognised_command();
         }
         return palette.unrecognised_command();
     }
 
-    if token.annotation == TokenAnnotation::IsPartOfSingleQuotedString
-        || token.token.kind == TokenKind::SingleQuote
-    {
+    if token.annotations.is_inside_single_quotes || token.token.kind == TokenKind::SingleQuote {
         return palette.single_quoted_text();
     }
 
-    if token.annotation == TokenAnnotation::IsPartOfDoubleQuotedString
-        || token.token.kind == TokenKind::Quote
-    {
+    if token.annotations.is_inside_double_quotes || token.token.kind == TokenKind::Quote {
         return palette.double_quoted_text();
     }
 
-    if token.annotation == TokenAnnotation::IsComment {
+    if token.annotations.is_comment {
         return palette.comment();
-    }
-
-    if token.annotation == TokenAnnotation::IsEnvVar {
-        return palette.env_var();
     }
 
     palette.normal_text()
@@ -183,9 +182,7 @@ impl FormattedBufferPart {
 
         let animated_span_fn: Option<
             Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>,
-        > = if matches!(token.annotation, TokenAnnotation::IsCommandWord(_))
-            && token.token.value.starts_with("python")
-        {
+        > = if token.annotations.command_word.is_some() && token.token.value.starts_with("python") {
             let normal_string = token.token.value.clone();
             let recognised_style = palette.recognised_command();
 
@@ -274,23 +271,24 @@ pub fn format_buffer<'a>(
                     }
                 };
 
-                match tok.annotation {
-                    TokenAnnotation::IsOpening(Some(corresponding_idx)) => {
-                        range_check(tok)
-                            || annotated_tokens
-                                .get(corresponding_idx)
-                                .is_some_and(range_check)
-                    }
-                    TokenAnnotation::IsClosing {
-                        opening_idx: corresponding_idx,
-                        ..
-                    } => {
-                        range_check(tok)
-                            || annotated_tokens
-                                .get(corresponding_idx)
-                                .is_some_and(range_check)
-                    }
-                    _ => false,
+                if let Some(crate::dparser::OpeningState::Matched(corresponding_idx)) =
+                    tok.annotations.opening
+                {
+                    range_check(tok)
+                        || annotated_tokens
+                            .get(corresponding_idx)
+                            .is_some_and(range_check)
+                } else if let Some(ClosingAnnotation {
+                    opening_idx: corresponding_idx,
+                    ..
+                }) = tok.annotations.closing
+                {
+                    range_check(tok)
+                        || annotated_tokens
+                            .get(corresponding_idx)
+                            .is_some_and(range_check)
+                } else {
+                    false
                 }
             })
             .collect::<Vec<bool>>()
@@ -331,7 +329,7 @@ pub fn format_buffer<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dparser::TokenAnnotation;
+    use crate::dparser::Annotations;
 
     // Helper: find all parts whose token value equals `val`.
     fn parts_with_value<'a>(fb: &'a FormattedBuffer, val: &str) -> Vec<&'a FormattedBufferPart> {
@@ -359,9 +357,9 @@ mod tests {
         let quotes = parts_with_value(&fb, "\"");
         assert_eq!(quotes.len(), 1);
         assert!(
-            matches!(quotes[0].token.annotation, TokenAnnotation::IsOpening(_)),
-            "expected IsOpening, got {:?}",
-            quotes[0].token.annotation
+            quotes[0].token.annotations.opening.is_some(),
+            "expected opening annotation, got {:?}",
+            quotes[0].token.annotations
         );
     }
 
@@ -373,14 +371,8 @@ mod tests {
         let fb = FormattedBuffer::from(input, cursor);
         let quotes = parts_with_value(&fb, "\"");
         assert_eq!(quotes.len(), 2);
-        assert!(matches!(
-            quotes[0].token.annotation,
-            TokenAnnotation::IsOpening(_)
-        ));
-        assert!(matches!(
-            quotes[1].token.annotation,
-            TokenAnnotation::IsClosing { .. }
-        ));
+        assert!(quotes[0].token.annotations.opening.is_some());
+        assert!(quotes[1].token.annotations.closing.is_some());
     }
 
     #[test]
@@ -389,10 +381,7 @@ mod tests {
         let fb = FormattedBuffer::from(input, input.len());
         let sq = parts_with_value(&fb, "'");
         assert_eq!(sq.len(), 1);
-        assert!(matches!(
-            sq[0].token.annotation,
-            TokenAnnotation::IsOpening(_)
-        ));
+        assert!(sq[0].token.annotations.opening.is_some());
     }
 
     #[test]
@@ -401,9 +390,43 @@ mod tests {
         let fb = FormattedBuffer::from(input, input.len());
         let braces = parts_with_value(&fb, "{");
         assert_eq!(braces.len(), 1);
-        assert!(matches!(
-            braces[0].token.annotation,
-            TokenAnnotation::IsOpening(_)
-        ));
+        assert!(braces[0].token.annotations.opening.is_some());
+    }
+
+    #[test]
+    fn env_var_in_double_quotes_has_env_var_color() {
+        // In `echo "$HOME"`, the `$` and `HOME` tokens should use the env_var palette color,
+        // which has higher priority than the double-quoted color.
+        let input = r#"echo "$HOME""#;
+        let fb = FormattedBuffer::from(input, input.len());
+        let palette = crate::palette::Palette::dark();
+        let env_var_style = palette.env_var();
+        let double_quote_style = palette.double_quoted_text();
+
+        let dollar = fb
+            .parts
+            .iter()
+            .find(|p| p.token.token.value == "$")
+            .unwrap();
+        let home = fb
+            .parts
+            .iter()
+            .find(|p| p.token.token.value == "HOME")
+            .unwrap();
+
+        assert_eq!(
+            dollar.normal_span().style,
+            env_var_style,
+            "$ inside double quotes should use env_var color (highest priority)"
+        );
+        assert_eq!(
+            home.normal_span().style,
+            env_var_style,
+            "HOME inside double quotes should use env_var color (highest priority)"
+        );
+
+        // Verify the double-quoted style is indeed different from env_var style,
+        // so the test is meaningful.
+        assert_ne!(env_var_style, double_quote_style);
     }
 }
