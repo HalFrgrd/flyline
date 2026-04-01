@@ -553,6 +553,9 @@ impl DParser {
                     if token.kind.is_word() && !in_single_quote {
                         if let Some(prev_token) = &previous_token {
                             if prev_token.token.kind == TokenKind::Dollar {
+                                self.tokens[idx].annotations.is_env_var = true;
+                                self.tokens[idx.saturating_sub(1)].annotations.is_env_var = true;
+
                                 if let Some(start_of_command) =
                                     prev_token.annotations.command_word.clone()
                                 {
@@ -562,10 +565,6 @@ impl DParser {
                                         Some(full_command.clone());
                                     self.tokens[idx.saturating_sub(1)].annotations.command_word =
                                         Some(full_command);
-                                } else {
-                                    self.tokens[idx].annotations.is_env_var = true;
-                                    self.tokens[idx.saturating_sub(1)].annotations.is_env_var =
-                                        true;
                                 }
                             } else if !in_double_quote && self.current_command_range.is_none() {
                                 self.tokens[idx].annotations.command_word =
@@ -577,11 +576,10 @@ impl DParser {
                         }
                     }
 
-                    if self.current_command_range.is_none() {
-                        if self.tokens[idx].annotations.is_empty() {
-                            self.tokens[idx].annotations.command_word =
-                                Some(self.tokens[idx].token.value.clone());
-                        }
+                    if self.current_command_range.is_none() && !in_double_quote && !in_single_quote {
+                        self.tokens[idx].annotations.command_word =
+                            Some(self.tokens[idx].token.value.clone());
+
                         self.current_command_range = Some(idx..=idx);
                     } else if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
@@ -1041,9 +1039,6 @@ mod tests {
 
     #[test]
     fn test_env_var_in_double_quotes_annotations() {
-        // echo "prefix$HOME":
-        // "prefix" should have only is_inside_double_quotes.
-        // $ and HOME should both have is_env_var and is_inside_double_quotes.
         let input = r#"echo "prefix$HOME""#;
         let mut parser = DParser::from(input);
         parser.walk_to_end();
@@ -1061,31 +1056,16 @@ mod tests {
         );
 
         assert_eq!(tokens[3].token.value, "prefix");
-        assert!(
-            tokens[3].annotations.is_inside_double_quotes,
-            "prefix should have is_inside_double_quotes"
-        );
-        assert!(
-            !tokens[3].annotations.is_env_var,
-            "prefix should NOT have is_env_var"
-        );
+        assert!(tokens[3].annotations.is_inside_double_quotes,);
+        assert!(!tokens[3].annotations.is_env_var,);
 
         assert_eq!(tokens[4].token.value, "$");
-        assert!(
-            tokens[4].annotations.is_inside_double_quotes,
-            "$ should have is_inside_double_quotes"
-        );
-        assert!(tokens[4].annotations.is_env_var, "$ should have is_env_var");
+        assert!(tokens[4].annotations.is_inside_double_quotes);
+        assert!(tokens[4].annotations.is_env_var);
 
         assert_eq!(tokens[5].token.value, "HOME");
-        assert!(
-            tokens[5].annotations.is_inside_double_quotes,
-            "HOME should have is_inside_double_quotes"
-        );
-        assert!(
-            tokens[5].annotations.is_env_var,
-            "HOME should have is_env_var"
-        );
+        assert!(tokens[5].annotations.is_inside_double_quotes);
+        assert!(tokens[5].annotations.is_env_var);
 
         assert_eq!(tokens[6].token.value, "\"");
         assert_eq!(
@@ -1095,6 +1075,24 @@ mod tests {
                 is_auto_inserted: false
             })
         );
+    }
+
+    #[test]
+    fn test_first_word_of_quotes() {
+        let input = r#"echo "fi""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "\"");
+        assert_eq!(tokens[3].token.value, "fi");
+        assert!(tokens[3].annotations.is_inside_double_quotes);
+        assert!(tokens[3].annotations.command_word.is_none());
+
     }
 
     // ── closing_char_to_insert ───────────────────────────────────────────────
@@ -1388,5 +1386,57 @@ mod tests {
         assert_eq!(tokens[3].token.value, " ");
         assert_eq!(tokens[4].token.value, "# this is a comment");
         assert!(tokens[4].annotations.is_comment);
+    }
+
+    #[test]
+    #[ignore = "Need to fix flash first"]
+    fn env_var_in_double_quotes_has_env_var_color() {
+        let input = r#"echo "$HOME/foo""#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
+        assert_eq!(tokens[1].token.value, " ");
+        assert_eq!(tokens[2].token.value, "\"");
+        assert_eq!(tokens[3].token.value, "$");
+        assert_eq!(tokens[3].annotations.is_env_var, true);
+        assert_eq!(tokens[4].token.value, "HOME");
+        assert_eq!(tokens[4].annotations.is_env_var, true);
+        assert_eq!(tokens[5].token.value, "/");
+        assert_eq!(tokens[6].token.value, "foo");
+        assert_eq!(tokens[7].token.value, "\"");
+    }
+
+    #[test]
+    fn env_var_starting_command() {
+        let input = r#"$HOME/bin/echo"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        assert_eq!(tokens[0].token.value, "$");
+        assert_eq!(tokens[0].annotations.is_env_var, true);
+        assert_eq!(
+            tokens[0].annotations.command_word.as_ref().unwrap(),
+            "$HOME/bin/echo"
+        );
+        // TODO this should just be "HOME" with is_env_var, not "HOME/bin/echo"
+        // will required the new version of flash
+        assert_eq!(tokens[1].token.value, "HOME/bin/echo");
+        assert_eq!(tokens[1].annotations.is_env_var, true);
+        assert_eq!(
+            tokens[1].annotations.command_word.as_ref().unwrap(),
+            "$HOME/bin/echo"
+        );
     }
 }

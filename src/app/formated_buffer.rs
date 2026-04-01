@@ -329,7 +329,6 @@ pub fn format_buffer<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dparser::Annotations;
 
     // Helper: find all parts whose token value equals `val`.
     fn parts_with_value<'a>(fb: &'a FormattedBuffer, val: &str) -> Vec<&'a FormattedBufferPart> {
@@ -391,42 +390,5 @@ mod tests {
         let braces = parts_with_value(&fb, "{");
         assert_eq!(braces.len(), 1);
         assert!(braces[0].token.annotations.opening.is_some());
-    }
-
-    #[test]
-    fn env_var_in_double_quotes_has_env_var_color() {
-        // In `echo "$HOME"`, the `$` and `HOME` tokens should use the env_var palette color,
-        // which has higher priority than the double-quoted color.
-        let input = r#"echo "$HOME""#;
-        let fb = FormattedBuffer::from(input, input.len());
-        let palette = crate::palette::Palette::dark();
-        let env_var_style = palette.env_var();
-        let double_quote_style = palette.double_quoted_text();
-
-        let dollar = fb
-            .parts
-            .iter()
-            .find(|p| p.token.token.value == "$")
-            .unwrap();
-        let home = fb
-            .parts
-            .iter()
-            .find(|p| p.token.token.value == "HOME")
-            .unwrap();
-
-        assert_eq!(
-            dollar.normal_span().style,
-            env_var_style,
-            "$ inside double quotes should use env_var color (highest priority)"
-        );
-        assert_eq!(
-            home.normal_span().style,
-            env_var_style,
-            "HOME inside double quotes should use env_var color (highest priority)"
-        );
-
-        // Verify the double-quoted style is indeed different from env_var style,
-        // so the test is meaningful.
-        assert_ne!(env_var_style, double_quote_style);
     }
 }

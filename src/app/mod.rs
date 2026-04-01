@@ -1,9 +1,9 @@
-mod buffer_format;
+mod formated_buffer;
 mod tab_completion;
 
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
-use crate::app::buffer_format::{FormattedBuffer, format_buffer};
+use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -1362,7 +1362,7 @@ impl<'a> App<'a> {
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
-            Some(Box::new(Self::wordinfo_fn)),
+            Some(Box::new(Self::get_word_info)),
             &self.settings.color_palette,
         );
 
@@ -1383,28 +1383,26 @@ impl<'a> App<'a> {
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
     }
 
-    fn wordinfo_fn(token: &dparser::AnnotatedToken) -> Option<buffer_format::WordInfo> {
-        if let Some(value) = &token.annotations.command_word {
-            let (command_type, description) = bash_funcs::get_command_info(value);
-            return Some(buffer_format::WordInfo {
-                tooltip: Some(description.to_string()),
-                is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
-            });
-        }
+    fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
         if token.annotations.is_env_var && token.token.kind.is_word() {
             let env_var_name = &token.token.value;
 
             let tooltip = bash_funcs::format_shell_var(env_var_name);
 
-            return Some(buffer_format::WordInfo {
+            return Some(formated_buffer::WordInfo {
                 tooltip: Some(tooltip),
                 is_recognised_command: false,
             });
-        }
-        if token.annotations.is_empty() && token.token.value.starts_with('~') {
+        } else if let Some(value) = &token.annotations.command_word {
+            let (command_type, description) = bash_funcs::get_command_info(value);
+            return Some(formated_buffer::WordInfo {
+                tooltip: Some(description.to_string()),
+                is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+            });
+        } else if token.annotations.is_empty() && token.token.value.starts_with('~') {
             let expanded = bash_funcs::expand_filename(&token.token.value);
             if expanded != token.token.value {
-                return Some(buffer_format::WordInfo {
+                return Some(formated_buffer::WordInfo {
                     tooltip: Some(format!("{}={}", token.token.value, expanded)),
                     is_recognised_command: false,
                 });
@@ -2018,7 +2016,7 @@ impl<'a> App<'a> {
                         cmd.len(),
                         cmd.len(),
                         false,
-                        Some(Box::new(Self::wordinfo_fn)),
+                        Some(Box::new(Self::get_word_info)),
                         &self.settings.color_palette,
                     );
                     for part in &formatted_cmd.parts {
