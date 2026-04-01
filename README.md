@@ -201,7 +201,7 @@ Options:
 
 ## Starship integration
 TODO:
-Starship provides customizable prompts for any shell. The git metrics prompt part is very useful but can slow down the time it takes to generate the prompt. Because Flyline can redraw the prompt, it can asynchronously load the slower widgets in the background to keep the shell feeling snappy 
+Starship provides customizable prompts for any shell. The git metrics prompt part is very useful but can slow down the time it takes to generate the prompt. Because Flyline can redraw the prompt, it can asynchronously load the slower widgets in the background to keep the shell feeling snappy.
 
 
 # Agent mode
@@ -211,7 +211,7 @@ This allows you to write a command in plain English and your agent will convert 
 ![Agent mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
 
 [See the examples on how to set this up.](examples/agent_mode.sh)
-The agent should return a simple json array of commands as described by the example system prompt.
+The agent should return a simple JSON array of commands as described by the example system prompt.
 
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
@@ -236,7 +236,7 @@ When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
 
-![LS_COLORS demo demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_ls_colors.gif)
+![LS_COLORS demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_ls_colors.gif)
 
 # Mouse support
 
@@ -262,11 +262,11 @@ Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl
 **Inline suggestions:**
 Inline suggestions appear as you type based on the most recent matching history entry. Accept them with `Right`/`End`.
 
-**Scroll through prefix matches**
+**Scroll through prefix matches:**
 Pressing `Up` will scroll through history entries that are a prefix match with the current command.
 
 **Zsh history entries:**
-Optionally read Zsh history entries to make migrating to Bash easier. 
+Optionally read Zsh history entries to make migrating to Bash easier.
 
 # Terminal emulator notes
 ## VS Code:
