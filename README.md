@@ -13,7 +13,7 @@
 
 </div>
 
-Flyline replaces [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) to provide an enhanced line editing experience with:
+When you write a command in Bash, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have to come expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
 - Fuzzy history suggestions
