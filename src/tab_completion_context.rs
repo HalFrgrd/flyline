@@ -97,7 +97,7 @@ pub fn get_completion_context<'a>(
         println!("Context tokens:");
         dbg!(cursor_byte_pos);
         for t in context_tokens.iter() {
-            println!("{:?} byte_range={:?}", t, t.byte_range());
+            println!("{:?} byte_range={:?}", t, t.token.byte_range());
         }
     }
 
@@ -108,24 +108,24 @@ pub fn get_completion_context<'a>(
     let opt_cursor_node = match context_tokens
         .iter()
         .enumerate()
-        .filter(|(_, t)| !t.kind.is_whitespace())
-        .find(|(_, t)| t.byte_range().to_inclusive().contains(&cursor_byte_pos))
+        .filter(|(_, t)| !t.token.kind.is_whitespace())
+        .find(|(_, t)| t.token.byte_range().to_inclusive().contains(&cursor_byte_pos))
     {
         Some(idx_and_node) => Some(idx_and_node),
         None => context_tokens
             .iter()
             .enumerate()
-            .find(|(_, t)| t.byte_range().to_inclusive().contains(&cursor_byte_pos)),
+            .find(|(_, t)| t.token.byte_range().to_inclusive().contains(&cursor_byte_pos)),
     };
 
     let word_under_cursor_range = match opt_cursor_node {
         Some((_, cursor_node))
-            if cursor_node.kind.is_whitespace() || cursor_node.kind == TokenKind::Newline =>
+            if cursor_node.token.kind.is_whitespace() || cursor_node.token.kind == TokenKind::Newline =>
         {
             cursor_byte_pos..cursor_byte_pos
         }
-        Some((node_idx, cursor_node)) if cursor_node.kind.is_word() => {
-            let byte_range = cursor_node.byte_range();
+        Some((node_idx, cursor_node)) if cursor_node.token.kind.is_word() => {
+            let byte_range = cursor_node.token.byte_range();
 
             // try grow to the left if there are single or double quotes or $
             let mut start = byte_range.start;
@@ -134,7 +134,7 @@ pub fn get_completion_context<'a>(
             for i in (0..node_idx).rev() {
                 let range_contains_dollar = buffer.get(start..end).is_some_and(|s| s.contains('$'));
 
-                match context_tokens.get(i) {
+                match context_tokens.get(i).map(|t| &t.token) {
                     Some(
                         t @ Token {
                             kind: TokenKind::Dollar,
@@ -151,7 +151,7 @@ pub fn get_completion_context<'a>(
                             kind: TokenKind::SingleQuote | TokenKind::Quote,
                             ..
                         },
-                    ) if !range_contains_dollar || cursor_node.value.contains('/') => {
+                    ) if !range_contains_dollar || cursor_node.token.value.contains('/') => {
                         start = t.byte_range().start;
                     }
                     _ => break,
@@ -160,7 +160,7 @@ pub fn get_completion_context<'a>(
 
             start..end
         }
-        Some((_, cursor_node)) => cursor_node.byte_range(),
+        Some((_, cursor_node)) => cursor_node.token.byte_range(),
         None if context_tokens.is_empty() => {
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
@@ -169,7 +169,7 @@ pub fn get_completion_context<'a>(
                 "cursor_byte_pos={cursor_byte_pos} is outside all context tokens; returning empty context"
             );
             for t in context_tokens.iter() {
-                log::error!("  Token: {:?} byte_range={:?}", t, t.byte_range());
+                log::error!("  Token: {:?} byte_range={:?}", t, t.token.byte_range());
             }
             return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
         }
@@ -181,11 +181,11 @@ pub fn get_completion_context<'a>(
             .contains(&cursor_byte_pos)
     );
 
-    let comp_context_range = if context_tokens.iter().all(|t| t.kind.is_whitespace()) {
+    let comp_context_range = if context_tokens.iter().all(|t| t.token.kind.is_whitespace()) {
         cursor_byte_pos..cursor_byte_pos
     } else {
-        context_tokens.first().unwrap().byte_range().start
-            ..context_tokens.last().unwrap().byte_range().end
+        context_tokens.first().unwrap().token.byte_range().start
+            ..context_tokens.last().unwrap().token.byte_range().end
     };
 
     let context_until_cursor = &buffer[comp_context_range.start..cursor_byte_pos];

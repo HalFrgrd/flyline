@@ -629,13 +629,10 @@ impl DParser {
             .any(|t| t.annotations.opening == Some(OpeningState::Unmatched))
     }
 
-    pub fn get_current_command_tokens(&self) -> Vec<&Token> {
+    pub fn get_current_command_tokens(&self) -> &[AnnotatedToken] {
         match &self.current_command_range {
-            Some(range) => self.tokens[range.clone()]
-                .iter()
-                .map(|t| &t.token)
-                .collect::<Vec<_>>(),
-            None => Vec::new(),
+            Some(range) => &self.tokens[range.clone()],
+            None => &[],
         }
     }
 
@@ -643,7 +640,7 @@ impl DParser {
     pub fn get_current_command_str(&self) -> String {
         self.get_current_command_tokens()
             .iter()
-            .map(|t| t.value.to_string())
+            .map(|t| t.token.value.to_string())
             .collect::<Vec<_>>()
             .join("")
     }
