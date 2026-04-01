@@ -142,17 +142,27 @@ enum Commands {
     /// When Alt+Enter is pressed, flyline invokes COMMAND with the current buffer
     /// (optionally prepended by SYSTEM_PROMPT) as the final argument.
     ///
-    /// Example:
+    /// When --trigger-prefix is set, pressing Enter also activates agent mode
+    /// if the buffer starts with the given prefix (the prefix is stripped before
+    /// the buffer is sent to the command).
+    ///
+    /// Examples:
+    ///   (N.B. `--command` should be the final flag since it consumes all remaining arguments)
     ///   flyline agent-mode --command llm prompt
     ///   flyline agent-mode \
     ///     --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
     ///     --command copilot --reasoning-effort low --prompt
+    ///   flyline agent-mode --trigger-prefix "ai " --command llm prompt
     #[command(name = "agent-mode", verbatim_doc_comment)]
     AgentMode {
         /// Optional system prompt prepended to the buffer.
         /// The subprocess receives "<system-prompt>\n<buffer>" as its final argument.
         #[arg(long = "system-prompt")]
         system_prompt: Option<String>,
+        /// Optional trigger prefix. When set, pressing Enter with a buffer that
+        /// starts with this prefix activates agent mode (the prefix is stripped).
+        #[arg(long = "trigger-prefix")]
+        trigger_prefix: Option<String>,
         /// Command (and arguments) to invoke. The current buffer is appended as the
         /// final argument when Alt+Enter is pressed.
         #[arg(long = "command", num_args = 1.., allow_hyphen_values = true, required = true)]
@@ -461,12 +471,22 @@ impl Flyline {
 
                 if let Some(Commands::AgentMode {
                     system_prompt,
+                    trigger_prefix,
                     command,
                 }) = parsed.command.as_ref()
                 {
-                    log::info!("AI command set: {:?}", command);
-                    self.settings.ai_command = command.clone();
-                    self.settings.ai_system_prompt = system_prompt.clone();
+                    log::info!(
+                        "AI command set: {:?} (trigger_prefix={:?})",
+                        command,
+                        trigger_prefix
+                    );
+                    self.settings.agent_commands.insert(
+                        trigger_prefix.clone(),
+                        settings::AgentModeCommand {
+                            command: command.clone(),
+                            system_prompt: system_prompt.clone(),
+                        },
+                    );
                 }
 
                 match parsed.command {
