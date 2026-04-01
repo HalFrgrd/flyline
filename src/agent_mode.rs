@@ -116,8 +116,10 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
         };
 
     let parser = Parser::new_ext(markdown, Options::all());
+    let mut prev_event = None;
     for event in parser {
-        match event {
+        log::info!("Markdown event: {:?}", event);
+        match event.clone() {
             Event::Start(Tag::Heading { level, .. }) => {
                 heading_level = Some(level as u8);
             }
@@ -125,7 +127,11 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
                 finalize_line(&mut lines, &mut current_spans, 0);
                 heading_level = None;
             }
-            Event::Start(Tag::Paragraph) => {}
+            Event::Start(Tag::Paragraph) => {
+                if !matches!(prev_event, Some(Event::End(TagEnd::Heading { .. }))) {
+                    finalize_line(&mut lines, &mut current_spans, list_depth);
+                }
+            }
             Event::End(TagEnd::Paragraph) => {
                 finalize_line(&mut lines, &mut current_spans, list_depth);
             }
@@ -177,6 +183,7 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
             }
             _ => {}
         }
+        prev_event = Some(event);
     }
 
     // Flush any remaining content.

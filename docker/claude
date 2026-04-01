@@ -1,3 +1,37 @@
 #!/bin/bash
 sleep 3
-echo '[{"command": "find . -mtime +3 -type f", "description": "Find regular files older than 3 days"}, {"command": "find $HOME -mtime +3", "description": "Find files in home directory older than 3 days"}, {"command": "ls -lt | tail -n +2", "description": "List files sorted by modification time"}]'
+cat <<'EOF'
+```json
+[
+  {
+    "command": "find . -mtime +3",
+    "description": "Find files modified more than 3 days ago (recursive from current directory)"
+  },
+  {
+    "command": "find . -mtime +3 -type f",
+    "description": "Find only regular files (not directories) modified more than 3 days ago"
+  },
+  {
+    "command": "find /path/to/dir -mtime +3 -type f -ls",
+    "description": "Find files older than 3 days and display detailed info (size, permissions, date)"
+  }
+]
+```
+
+---
+
+## Finding Files Older Than 3 Days
+
+Use `find` with the `-mtime +3` flag (`+3` means **more than** 3 days since modification):
+
+Flags:
+- `-mtime +3` : Modified **more than** 3 days ago 
+- `-type f` : Regular files only 
+- `-type d` : Directories only 
+- `-ls` : Long listing with details 
+
+**Common options:**
+- `-atime` — last **access** time
+- `-ctime` — last **status change** time
+- Add `-delete` to remove matched files (use with caution!)
+EOF

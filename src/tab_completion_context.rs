@@ -1,4 +1,4 @@
-use flash::lexer::{Token, TokenKind};
+use flash::lexer::TokenKind;
 
 use crate::dparser::{DParser, ToInclusiveRange};
 
