@@ -1,3 +1,4 @@
+mod auto_close;
 mod buffer_format;
 mod tab_completion;
 
@@ -1085,24 +1086,11 @@ impl<'a> App<'a> {
     }
 
     fn would_overwrite_auto_inserted_closing(&self, c: char) -> bool {
-        let cursor_pos = self.buffer.cursor_byte_pos();
-        if cursor_pos == 0 {
-            return false;
-        }
-        if let Some(dparser_token) = self
-            .dparser_tokens_cache
-            .iter()
-            .find(|t| t.token.byte_range().contains(&cursor_pos))
-        {
-            if let dparser::TokenAnnotation::IsClosing {
-                is_auto_inserted: true,
-                ..
-            } = dparser_token.annotation
-            {
-                return dparser_token.token.value.starts_with(c);
-            }
-        }
-        false
+        auto_close::would_overwrite_auto_inserted_closing(
+            &self.dparser_tokens_cache,
+            self.buffer.cursor_byte_pos(),
+            c,
+        )
     }
 
     /// After a character `c` has been inserted into the buffer, insert the corresponding
@@ -1116,23 +1104,12 @@ impl<'a> App<'a> {
     /// Returns the byte position of the auto-inserted closing character, or `None` if no
     /// closing character was inserted.
     fn insert_closing_char(&mut self, c: char, initial_cursor_pos: usize) -> Option<(char, usize)> {
-        if let Some(closing) = dparser::DParser::closing_char_to_insert(
+        auto_close::insert_closing_char(
             &self.dparser_tokens_cache,
+            &mut self.buffer,
             c,
             initial_cursor_pos,
-        ) {
-            self.buffer.insert_char(closing);
-            self.buffer.move_left();
-            // After move_left, cursor is at the start of the auto-inserted closing char.
-            log::info!(
-                "Inserted auto-closing char '{}' at byte position {}",
-                closing,
-                self.buffer.cursor_byte_pos()
-            );
-            Some((closing, self.buffer.cursor_byte_pos()))
-        } else {
-            None
-        }
+        )
     }
 
     /// Mark the dparser token at `byte_pos` as auto-inserted in the cache.
@@ -1141,27 +1118,7 @@ impl<'a> App<'a> {
         c: char,
         byte_pos: usize,
     ) {
-        for token in dparser_tokens {
-            if token.token.byte_range().start == byte_pos
-                && token.token.value.starts_with(c)
-                && let dparser::TokenAnnotation::IsClosing {
-                    is_auto_inserted, ..
-                } = &mut token.annotation
-            {
-                *is_auto_inserted = true;
-                log::info!(
-                    "Marked token '{}' at byte {} as auto-inserted",
-                    token.token.value,
-                    byte_pos
-                );
-                return;
-            }
-        }
-        log::warn!(
-            "Failed to mark auto-inserted closing char '{}' at byte position {}: no matching token found in cache",
-            c,
-            byte_pos
-        );
+        auto_close::mark_auto_inserted_closing(dparser_tokens, c, byte_pos);
     }
 
     /// If the token immediately to the right of the cursor is an auto-inserted closing token
@@ -1169,30 +1126,10 @@ impl<'a> App<'a> {
     /// This is called before a simple Backspace so that deleting an auto-paired opener also
     /// removes the auto-inserted closer.
     fn delete_auto_inserted_closing_if_present(&mut self) {
-        let cursor_pos = self.buffer.cursor_byte_pos();
-        if cursor_pos == 0 {
-            return;
-        }
-
-        // Find the token that ends at cursor_pos (the one about to be deleted by Backspace).
-        let opening_annotation = self
-            .dparser_tokens_cache
-            .iter()
-            .find(|t| t.token.byte_range().contains(&(cursor_pos - 1)))
-            .map(|t| t.annotation.clone());
-
-        if let Some(dparser::TokenAnnotation::IsOpening(Some(closing_idx))) = opening_annotation {
-            // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
-            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx)
-                && closing_token.token.byte_range().start == cursor_pos
-                && let dparser::TokenAnnotation::IsClosing {
-                    is_auto_inserted: true,
-                    ..
-                } = closing_token.annotation
-            {
-                self.buffer.delete_forwards();
-            }
-        }
+        auto_close::delete_auto_inserted_closing_if_present(
+            &self.dparser_tokens_cache,
+            &mut self.buffer,
+        );
     }
 
     fn accept_fuzzy_history_search(&mut self) {
