@@ -1357,29 +1357,6 @@ mod tests {
     }
 
     #[test]
-    fn test_env_var_starting_command() {
-        let input = "$HOME/bin/echo";
-        let mut parser = DParser::from(input);
-        parser.walk_to_end();
-
-        let tokens = parser.tokens();
-        for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotations);
-        }
-
-        assert_eq!(tokens[0].token.value, "$");
-        assert_eq!(
-            tokens[0].annotations.command_word,
-            Some("$HOME/bin/echo".to_string())
-        );
-        assert_eq!(tokens[1].token.value, "HOME/bin/echo");
-        assert_eq!(
-            tokens[1].annotations.command_word,
-            Some("$HOME/bin/echo".to_string())
-        );
-    }
-
-    #[test]
     fn test_comment_annotation() {
         let input = "echo hello # this is a comment";
         let mut parser = DParser::from(input);
@@ -1419,13 +1396,13 @@ mod tests {
         assert_eq!(tokens[3].annotations.is_env_var, true);
         assert_eq!(tokens[4].token.value, "HOME");
         assert_eq!(tokens[4].annotations.is_env_var, true);
-        assert_eq!(tokens[5].token.value, "/");
-        assert_eq!(tokens[6].token.value, "foo");
-        assert_eq!(tokens[7].token.value, "\"");
+        assert_eq!(tokens[5].token.value, "/foo");
+        assert_eq!(tokens[5].annotations.is_env_var, false);
+        assert_eq!(tokens[6].token.value, "\"");
     }
 
     #[test]
-    fn env_var_starting_command() {
+    fn test_env_var_starting_command() {
         let input = r#"$HOME/bin/echo"#;
         let mut parser = DParser::from(input);
         parser.walk_to_end();
@@ -1445,6 +1422,13 @@ mod tests {
         assert_eq!(tokens[1].annotations.is_env_var, true);
         assert_eq!(
             tokens[1].annotations.command_word.as_ref().unwrap(),
+            "$HOME/bin/echo"
+        );
+
+        assert_eq!(tokens[2].token.value, "/bin/echo");
+        assert_eq!(tokens[2].annotations.is_env_var, false);
+        assert_eq!(
+            tokens[2].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
         );
     }
