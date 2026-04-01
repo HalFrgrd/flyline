@@ -576,7 +576,8 @@ impl DParser {
                         }
                     }
 
-                    if self.current_command_range.is_none() && !in_double_quote && !in_single_quote {
+                    if self.current_command_range.is_none() && !in_double_quote && !in_single_quote
+                    {
                         self.tokens[idx].annotations.command_word =
                             Some(self.tokens[idx].token.value.clone());
 
@@ -1092,7 +1093,6 @@ mod tests {
         assert_eq!(tokens[3].token.value, "fi");
         assert!(tokens[3].annotations.is_inside_double_quotes);
         assert!(tokens[3].annotations.command_word.is_none());
-
     }
 
     // ── closing_char_to_insert ───────────────────────────────────────────────

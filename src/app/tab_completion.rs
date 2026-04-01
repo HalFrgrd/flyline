@@ -1,4 +1,4 @@
-use crate::active_suggestions::{ActiveSuggestions, CompletionItem, Suggestion};
+use crate::active_suggestions::{ActiveSuggestions, Suggestion, UnprocessedSuggestion};
 use crate::app::{App, ContentMode};
 use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
@@ -230,10 +230,10 @@ impl App<'_> {
         completions: Vec<String>,
         comp_resultflags: bash_funcs::CompletionFlags,
         word_under_cursor: &str,
-    ) -> Vec<CompletionItem> {
+    ) -> Vec<UnprocessedSuggestion> {
         completions
             .into_iter()
-            .map(|sug| CompletionItem::Raw {
+            .map(|sug| UnprocessedSuggestion::Raw {
                 raw_text: sug,
                 expanded_path: None,
                 flags: comp_resultflags,
@@ -245,7 +245,7 @@ impl App<'_> {
     pub fn gen_completions_internal(
         &self,
         completion_context: &tab_completion_context::CompletionContext,
-    ) -> Option<Vec<CompletionItem>> {
+    ) -> Option<Vec<UnprocessedSuggestion>> {
         log::debug!("Completion context: {:#?}", completion_context);
 
         let word_under_cursor = completion_context.word_under_cursor;
@@ -326,7 +326,7 @@ impl App<'_> {
         &self,
         completion_context: &tab_completion_context::CompletionContext,
         comp_resultflags: bash_funcs::CompletionFlags,
-    ) -> Option<Vec<CompletionItem>> {
+    ) -> Option<Vec<UnprocessedSuggestion>> {
         let word_under_cursor = completion_context.word_under_cursor;
         match completion_context.comp_type_secondary {
             Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
@@ -335,7 +335,7 @@ impl App<'_> {
                 return Some(
                     Suggestion::from_string_vec(matching_vars, "", " ")
                         .into_iter()
-                        .map(CompletionItem::Ready)
+                        .map(UnprocessedSuggestion::Ready)
                         .collect(),
                 );
             }
@@ -378,7 +378,7 @@ impl App<'_> {
                     return Some(
                         Suggestion::from_string_vec(vec![completions_as_string], "", suffix)
                             .into_iter()
-                            .map(CompletionItem::Ready)
+                            .map(UnprocessedSuggestion::Ready)
                             .collect(),
                     );
                 }
@@ -410,7 +410,7 @@ impl App<'_> {
         None
     }
 
-    fn tab_complete_first_word(&self, command: &str) -> Vec<CompletionItem> {
+    fn tab_complete_first_word(&self, command: &str) -> Vec<UnprocessedSuggestion> {
         log::debug!("Generating first word completions for: '{}'", command);
         if command.is_empty() {
             return vec![];
@@ -432,7 +432,7 @@ impl App<'_> {
             res = bash_funcs::get_fuzzy_first_word_completions(command);
             return Suggestion::from_string_vec(res, "", " ")
                 .into_iter()
-                .map(CompletionItem::Ready)
+                .map(UnprocessedSuggestion::Ready)
                 .collect();
         }
 
@@ -441,7 +441,7 @@ impl App<'_> {
         res.dedup();
         Suggestion::from_string_vec(res, "", " ")
             .into_iter()
-            .map(CompletionItem::Ready)
+            .map(UnprocessedSuggestion::Ready)
             .collect()
     }
 
@@ -449,7 +449,7 @@ impl App<'_> {
         &self,
         pattern: &str,
         mut comp_resultflags: bash_funcs::CompletionFlags,
-    ) -> Vec<CompletionItem> {
+    ) -> Vec<UnprocessedSuggestion> {
         // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
         // e.g. my_command $PWD/fi<TAB> should expand to:
         // my_command $PWD/file\ with\ spaces.txt
@@ -484,7 +484,7 @@ impl App<'_> {
                         comp_resultflags.quote_type,
                     );
 
-                    results.push(CompletionItem::Raw {
+                    results.push(UnprocessedSuggestion::Raw {
                         raw_text: unexpanded,
                         expanded_path: Some(path),
                         flags: comp_resultflags,
@@ -502,7 +502,7 @@ impl App<'_> {
         results
     }
 
-    fn tab_complete_tilde_expansion(&self, pattern: &str) -> Vec<CompletionItem> {
+    fn tab_complete_tilde_expansion(&self, pattern: &str) -> Vec<UnprocessedSuggestion> {
         let user_pattern = if let Some(stripped) = pattern.strip_prefix('~') {
             stripped
         } else {
@@ -511,7 +511,7 @@ impl App<'_> {
 
         // `~` alone — suggest the current user's home directory as `~/`
         if user_pattern.is_empty() {
-            return vec![CompletionItem::Ready(Suggestion::new("~/", "", ""))];
+            return vec![UnprocessedSuggestion::Ready(Suggestion::new("~/", "", ""))];
         }
 
         // `~username` — find matching users by listing /home/ and checking /root
@@ -523,7 +523,7 @@ impl App<'_> {
                     let name = entry.file_name();
                     let name_str = name.to_string_lossy();
                     if name_str.starts_with(user_pattern) {
-                        suggestions.push(CompletionItem::Ready(Suggestion::new(
+                        suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
                             format!("~{}/", name_str),
                             "",
                             "",
@@ -538,7 +538,9 @@ impl App<'_> {
             && Path::new("/root").is_dir()
             && !suggestions.iter().any(|s| s.match_text() == "~root/")
         {
-            suggestions.push(CompletionItem::Ready(Suggestion::new("~root/", "", "")));
+            suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
+                "~root/", "", "",
+            )));
         }
 
         suggestions.sort_by(|a, b| a.match_text().cmp(b.match_text()));
