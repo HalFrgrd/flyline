@@ -142,7 +142,7 @@ pub fn get_completion_context<'a>(
                 let range_contains_dollar = buffer.get(start..end).is_some_and(|s| s.contains('$'));
 
                 match context_tokens.get(i) {
-                    Some(t) if t.annotations.is_env_var => {
+                    Some(t) if t.annotations.is_env_var && !range_contains_dollar => {
                         start = t.token.byte_range().start;
                         while buffer.get(end.saturating_sub(1)..end) == Some(" ") {
                             end = end.saturating_sub(1);
