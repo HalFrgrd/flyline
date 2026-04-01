@@ -650,19 +650,26 @@ impl ActiveSuggestions {
                 })
                 .collect();
 
-            let col_width = col_items
+            let untruncated_col_width = col_items
                 .iter()
                 .map(|(formatted, _)| formatted.display_width)
                 .max()
                 .unwrap_or(0);
 
+            const MIN_COL_WIDTH: usize = 10;
+
             let is_first = grid.is_empty();
             let effective_cw = if is_first {
-                col_width.min(max_width)
-            } else if total_width + COLUMN_PADDING + col_width > max_width {
-                break;
+                untruncated_col_width.min(max_width)
+            } else if total_width + COLUMN_PADDING + untruncated_col_width > max_width {
+                if max_width.saturating_sub(total_width + COLUMN_PADDING) > MIN_COL_WIDTH {
+                    // We can still MIN_COL_WIDTH chars of this col so it should be alright.
+                    max_width - total_width - COLUMN_PADDING
+                } else {
+                    break;
+                }
             } else {
-                col_width
+                untruncated_col_width
             };
 
             if is_first {
