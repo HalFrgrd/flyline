@@ -555,20 +555,32 @@ impl DParser {
                             if prev_token.token.kind == TokenKind::Dollar {
                                 self.tokens[idx].annotations.is_env_var = true;
                                 self.tokens[idx.saturating_sub(1)].annotations.is_env_var = true;
-
-                                if let Some(start_of_command) =
-                                    prev_token.annotations.command_word.clone()
-                                {
-                                    let full_command =
-                                        start_of_command + &self.tokens[idx].token.value;
-                                    self.tokens[idx].annotations.command_word =
-                                        Some(full_command.clone());
-                                    self.tokens[idx.saturating_sub(1)].annotations.command_word =
-                                        Some(full_command);
-                                }
                             } else if !in_double_quote && self.current_command_range.is_none() {
                                 self.tokens[idx].annotations.command_word =
                                     Some(self.tokens[idx].token.value.clone());
+                            }
+
+                            // Extend the command word into this one
+                            if let Some(start_of_command) =
+                                prev_token.annotations.command_word.as_ref()
+                            {
+                                let full_command =
+                                    start_of_command.clone() + &self.tokens[idx].token.value;
+                                self.tokens[idx].annotations.command_word =
+                                    Some(full_command.clone());
+
+                                for prev_command_token in self.tokens[..idx].iter_mut().rev() {
+                                    // println!("Checking if we should extend command word annotation to token '{:?}' with value '{}'", prev_command_token.token.kind, prev_command_token.token.value);
+                                    if prev_command_token.annotations.command_word.as_ref()
+                                        == Some(start_of_command)
+                                    {
+                                        // println!("Extending command word annotation from '{}' to '{}'", start_of_command, full_command);
+                                        prev_command_token.annotations.command_word =
+                                            Some(full_command.clone());
+                                    } else {
+                                        break;
+                                    }
+                                }
                             }
                         } else if !in_double_quote {
                             self.tokens[idx].annotations.command_word =
@@ -1389,7 +1401,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Need to fix flash first"]
     fn env_var_in_double_quotes_has_env_var_color() {
         let input = r#"echo "$HOME/foo""#;
         let mut parser = DParser::from(input);
@@ -1430,9 +1441,7 @@ mod tests {
             tokens[0].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
         );
-        // TODO this should just be "HOME" with is_env_var, not "HOME/bin/echo"
-        // will required the new version of flash
-        assert_eq!(tokens[1].token.value, "HOME/bin/echo");
+        assert_eq!(tokens[1].token.value, "HOME");
         assert_eq!(tokens[1].annotations.is_env_var, true);
         assert_eq!(
             tokens[1].annotations.command_word.as_ref().unwrap(),
