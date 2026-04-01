@@ -6,6 +6,7 @@ use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use std::path::PathBuf;
 
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 /// Number of whitespace characters inserted between adjacent columns in the
@@ -48,9 +49,10 @@ fn take_prefix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'stat
             out.push(span.clone());
             n -= span_width;
         } else {
-            span.styled_graphemes(span.style)
+            span.content
+                .graphemes(true)
                 .take_while(|g| {
-                    let g_width = g.symbol.width();
+                    let g_width = g.width();
                     if g_width <= n {
                         n -= g_width;
                         true
@@ -58,7 +60,7 @@ fn take_prefix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'stat
                         false
                     }
                 })
-                .for_each(|g| out.push(Span::styled(g.symbol.to_owned(), span.style)));
+                .for_each(|g| out.push(Span::styled(g.to_owned(), span.style)));
 
             break;
         }
@@ -82,12 +84,13 @@ fn take_suffix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'stat
             out.push(span.clone());
             n -= span_width;
         } else {
-            span.styled_graphemes(span.style)
+            span.content
+                .graphemes(true)
                 .collect::<Vec<_>>()
                 .into_iter()
                 .rev()
                 .take_while(|g| {
-                    let g_width = g.symbol.width();
+                    let g_width = g.width();
                     if g_width <= n {
                         n -= g_width;
                         true
@@ -95,7 +98,7 @@ fn take_suffix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'stat
                         false
                     }
                 })
-                .for_each(|g| out.push(Span::styled(g.symbol.to_owned(), span.style)));
+                .for_each(|g| out.push(Span::styled(g.to_owned(), span.style)));
 
             break;
         }
