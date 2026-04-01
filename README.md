@@ -411,6 +411,3 @@ flyline set-color --default-theme light --matching-char "bold blue"
 flyline set-color --recognised-command "green" --unrecognised-command "bold red"
 flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"overrides
 ```
-
-An error is printed and the setting is not changed when the style string cannot be parsed.
-
