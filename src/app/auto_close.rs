@@ -16,7 +16,7 @@ impl<'a> App<'a> {
             self.buffer.move_right();
         } else {
             let initial_cursor_pos = self.buffer.cursor_byte_pos();
-            self.buffer.on_keypress(key);
+            self.buffer.insert_char(c);
             if let Some((auto_char, auto_pos)) = self.insert_closing_char(c, initial_cursor_pos) {
                 return Some(LastKeyPressAction::InsertedAutoClosing {
                     char: auto_char,

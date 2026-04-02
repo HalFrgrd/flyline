@@ -610,7 +610,14 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
                 "delete_backwards",
                 "Delete character before cursor",
                 Scope::Normal,
-                |app, _key| app.buffer.delete_backwards(),
+                |app, _key| {
+                    if app.settings.auto_close_chars {
+                        // Backspace: if the char to the right of the cursor is an auto-inserted closing token
+                        // paired with the char about to be deleted, remove it as well.
+                        app.delete_auto_inserted_closing_if_present();
+                    }
+                    app.buffer.delete_backwards()
+                }
             ),
         )
         .unwrap(),
@@ -787,7 +794,11 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
                 Scope::Normal,
                 |app, key| {
                     if let KeyCode::Char(c) = key.code {
-                        app.buffer.insert_char(c);
+                        if app.settings.auto_close_chars {
+                            app.last_keypress_action = app.handle_char_insertion(key, c);
+                        } else {
+                            app.buffer.insert_char(c);
+                        }
                     }
                 },
             ),

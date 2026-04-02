@@ -284,6 +284,7 @@ struct App<'a> {
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
     needs_screen_cleared: bool,
+    last_keypress_action: Option<LastKeyPressAction>,
 }
 
 impl<'a> App<'a> {
@@ -513,7 +514,7 @@ impl<'a> App<'a> {
                         log::trace!("Pasted content: {}", pasted);
                         log::trace!("Pasted content as bytes: {:?}", pasted.as_bytes());
                         self.buffer.insert_str(&pasted);
-                        self.on_possible_buffer_change(None);
+                        self.on_possible_buffer_change();
                         true
                     }
                 }
@@ -706,7 +707,7 @@ impl<'a> App<'a> {
         }
 
         if update_buffer {
-            self.on_possible_buffer_change(None);
+            self.on_possible_buffer_change();
             true
         } else {
             false
@@ -733,8 +734,6 @@ impl<'a> App<'a> {
     fn on_keypress(&mut self, key: KeyEvent) {
         log::trace!("Key event: {:?}", key);
 
-        let mut keypress_action: Option<LastKeyPressAction> = None;
-
         // Smart mode: any keypress re-enables mouse capture, unless the user has
         // explicitly disabled it via a toggle action.
         if self.settings.mouse_mode == MouseMode::Smart
@@ -743,34 +742,9 @@ impl<'a> App<'a> {
             self.mouse_state.enable("smart mode: keypress detected");
         }
 
-        match key {
+        self.handle_key_event(key);
 
-              // key @ KeyEvent {
-              //     code: KeyCode::Char(c),
-              //     modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
-              //     ..
-              // } if self.settings.auto_close_chars => {
-              //     keypress_action = self.handle_char_insertion(key, c);
-              // }
-              // Backspace: if the char to the right of the cursor is an auto-inserted closing token
-              // paired with the char about to be deleted, remove it as well.
-              // KeyEvent {
-              //     code: KeyCode::Backspace,
-              //     modifiers: KeyModifiers::NONE,
-              //     ..
-              // } if self.settings.auto_close_chars => {
-              //     self.delete_auto_inserted_closing_if_present();
-              //     self.buffer.on_keypress(key);
-              // }
-              // _ => {
-              //     // Delegate basic text editing to TextBuffer
-              //     self.handle_key_event(key);
-
-              //     // self.buffer.on_keypress(key);
-              // }
-        }
-
-        self.on_possible_buffer_change(keypress_action);
+        self.on_possible_buffer_change();
     }
 
     fn would_overwrite_auto_inserted_closing(&self, c: char) -> bool {
@@ -1020,7 +994,7 @@ impl<'a> App<'a> {
         }
     }
 
-    fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction>) {
+    fn on_possible_buffer_change(&mut self) {
         self.inline_history_suggestion =
             if !self.settings.show_inline_history || self.buffer.buffer().is_empty() {
                 None
@@ -1061,7 +1035,7 @@ impl<'a> App<'a> {
         parser.walk_to_end();
         let mut new_tokens = parser.into_tokens();
         if let Some(LastKeyPressAction::InsertedAutoClosing { char, byte_pos }) =
-            last_keypress_action
+            self.last_keypress_action
         {
             // If the last keypress inserted an auto-closing char, mark the corresponding token in the new cache as auto-inserted.
             Self::mark_auto_inserted_closing(&mut new_tokens, char, byte_pos);
