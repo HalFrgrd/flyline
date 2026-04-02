@@ -126,8 +126,23 @@ impl TryFrom<&str> for KeyEventMatch {
                 "down" => KeyCode::Down,
                 "home" => KeyCode::Home,
                 "end" => KeyCode::End,
+                "pageup" => KeyCode::PageUp,
+                "pagedown" => KeyCode::PageDown,
                 "tab" => KeyCode::Tab,
+                "backtab" => KeyCode::BackTab,
                 "delete" => KeyCode::Delete,
+                "insert" => KeyCode::Insert,
+                // "f"
+                "esc" | "escape" => KeyCode::Esc,
+                "capslock" => KeyCode::CapsLock,
+                "scrolllock" => KeyCode::ScrollLock,
+                "numlock" => KeyCode::NumLock,
+                "printscreen" => KeyCode::PrintScreen,
+                "pause" => KeyCode::Pause,
+                "menu" => KeyCode::Menu,
+                "keypadbegin" => KeyCode::KeypadBegin,
+                // media
+                // modifers?
                 "anychar" => return Ok(KeyEventMatch::AnyCharEitherMod(vec![modifiers])),
                 other => return Err(anyhow::anyhow!("Unknown key code: '{}'", other)),
             }
@@ -156,8 +171,8 @@ impl Binding {
 
     pub fn matches(&self, key: KeyEvent) -> bool {
         self.key_events.iter().any(|k| match k {
-            KeyEventMatch::Exact(k_event) => {
-                k_event.code == key.code && k_event.modifiers.contains(key.modifiers)
+            KeyEventMatch::Exact(action_binding) => {
+                action_binding.code == key.code && key.modifiers.contains(action_binding.modifiers)
             }
             KeyEventMatch::AnyCharEitherMod(mods) => {
                 matches!(key.code, KeyCode::Char(_))
@@ -167,11 +182,25 @@ impl Binding {
     }
 }
 
-// Handle basic text editing keypresses
-// Useful reference:
-// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
-// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
+/// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
+/// MacOs command keyboard shortcuts are not sent to terminal apps by default.
+/// They are often captured by the terminal emulator itself for various commands
+/// Try `ghostty +list-keybinds --default` on ghostty. Most
+///
+/// META: this is similar to Alt. How are they different?
+/// SUPER: Windows key or Mac Command key
+/// HYPER: Often as as result of pressing Ctrl + Shift + Alt + Windows/Command key. rarely used.
+///
+/// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
+///
+/// Meta vs Alt:
+/// On iterm2, there is a seetitng in Porfiles->Keys->Left option key.
+/// Choices are Normal or  (Set high bit (not recommended) or Esc+).
+/// Set high bit gives you a warning: "You have chosen to have an option key as Meta. This is
+/// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
+/// In text_buffer.rs, I check if either of them are set for maximal compatibility.
+/// From highest priority to lowest
+static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
     [
         Binding::try_new(
             &["Right", "End"],
@@ -367,7 +396,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
                 |app, _key| {
                     app.content_mode = ContentMode::Normal;
                     app.buffer.replace_buffer("flyline agent-mode --help");
-                    app.on_possible_buffer_change(None);
+                    app.on_possible_buffer_change(); // TODO: is this needed?
                     app.try_submit_current_buffer();
                 },
             ),
@@ -385,7 +414,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
                         if let Some(cmd) = selection.selected_command() {
                             let cmd = cmd.to_string();
                             app.buffer.replace_buffer(&cmd);
-                            app.on_possible_buffer_change(None);
+                            app.on_possible_buffer_change(); // TODO: is this needed?
                         }
                         app.content_mode = ContentMode::Normal;
                     }
@@ -809,6 +838,16 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
 
 impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
+        log::trace!("Key event: {:?}", key);
+
+        // Smart mode: any keypress re-enables mouse capture, unless the user has
+        // explicitly disabled it via a toggle action.
+        if self.settings.mouse_mode == MouseMode::Smart
+            && !self.mouse_state.is_explicitly_disabled_by_user()
+        {
+            self.mouse_state.enable("smart mode: keypress detected");
+        }
+
         for binding in DEFAULT_BINDINGS.iter() {
             if binding.action.scope.is_active(self) && binding.matches(key) {
                 log::trace!("Matched binding: {}", binding.action.name);
@@ -816,5 +855,7 @@ impl<'a> App<'a> {
                 break;
             }
         }
+
+        self.on_possible_buffer_change();
     }
 }
