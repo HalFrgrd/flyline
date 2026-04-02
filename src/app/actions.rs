@@ -11,13 +11,13 @@ use std::sync::LazyLock;
 pub struct Scope(u16);
 
 impl Scope {
-    pub const Normal: Self = Self(1 << 0);
-    pub const FuzzyHistorySearch: Self = Self(1 << 1);
-    pub const TabCompletion: Self = Self(1 << 2);
-    pub const AgentModeWaiting: Self = Self(1 << 3);
-    pub const AgentOutputSelection: Self = Self(1 << 4);
-    pub const AgentError: Self = Self(1 << 5);
-    pub const InlineHistoryAcceptable: Self = Self(1 << 6);
+    pub const NORMAL: Self = Self(1 << 0);
+    pub const FUZZY_HISTORY_SEARCH: Self = Self(1 << 1);
+    pub const TAB_COMPLETION: Self = Self(1 << 2);
+    pub const AGENT_MODE_WAITING: Self = Self(1 << 3);
+    pub const AGENT_OUTPUT_SELECTION: Self = Self(1 << 4);
+    pub const AGENT_ERROR: Self = Self(1 << 5);
+    pub const INLINE_HISTORY_ACCEPTABLE: Self = Self(1 << 6);
 
     pub fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
@@ -33,31 +33,31 @@ impl std::ops::BitOr for Scope {
 
 impl Scope {
     pub fn is_active(&self, app: &App) -> bool {
-        if self.contains(Scope::Normal) {
+        if self.contains(Scope::NORMAL) {
             true
-        } else if self.contains(Scope::FuzzyHistorySearch) {
+        } else if self.contains(Scope::FUZZY_HISTORY_SEARCH) {
             matches!(
                 app.content_mode,
                 crate::app::ContentMode::FuzzyHistorySearch
             )
-        } else if self.contains(Scope::TabCompletion) {
+        } else if self.contains(Scope::TAB_COMPLETION) {
             matches!(
                 app.content_mode,
                 crate::app::ContentMode::TabCompletion { .. }
             )
-        } else if self.contains(Scope::AgentModeWaiting) {
+        } else if self.contains(Scope::AGENT_MODE_WAITING) {
             matches!(
                 app.content_mode,
                 crate::app::ContentMode::AgentModeWaiting { .. }
             )
-        } else if self.contains(Scope::AgentOutputSelection) {
+        } else if self.contains(Scope::AGENT_OUTPUT_SELECTION) {
             matches!(
                 app.content_mode,
                 crate::app::ContentMode::AgentOutputSelection { .. }
             )
-        } else if self.contains(Scope::AgentError) {
+        } else if self.contains(Scope::AGENT_ERROR) {
             matches!(app.content_mode, crate::app::ContentMode::AgentError { .. })
-        } else if self.contains(Scope::InlineHistoryAcceptable) {
+        } else if self.contains(Scope::INLINE_HISTORY_ACCEPTABLE) {
             app.buffer.is_cursor_at_end() && app.inline_history_suggestion.is_some()
         } else {
             false
@@ -207,7 +207,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "accept_suggestion",
                 "Accept inline history suggestion",
-                Scope::InlineHistoryAcceptable,
+                Scope::INLINE_HISTORY_ACCEPTABLE,
                 |app, _key| {
                     if let Some((_, suf)) = &app.inline_history_suggestion {
                         app.buffer.insert_str(suf);
@@ -221,7 +221,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_down_in_agent_output_selection",
                 "Move down in agent output selection",
-                Scope::AgentOutputSelection,
+                Scope::AGENT_OUTPUT_SELECTION,
                 |app, _key| {
                     if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                         selection.move_down();
@@ -234,7 +234,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_up_in_agent_output_selection",
                 "Move up in agent output selection",
-                Scope::AgentOutputSelection,
+                Scope::AGENT_OUTPUT_SELECTION,
                 |app, _key| {
                     if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                         selection.move_up();
@@ -247,7 +247,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_up",
                 "Move up in tab completion suggestions",
-                Scope::TabCompletion,
+                Scope::TAB_COMPLETION,
                 |app, _key| {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                         active_suggestions.on_up_arrow();
@@ -261,7 +261,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_down",
                 "Move down in tab completion suggestions",
-                Scope::TabCompletion,
+                Scope::TAB_COMPLETION,
                 |app, _key| {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                         active_suggestions.on_down_arrow(); // TODO combine this with tab?
@@ -274,7 +274,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_left",
                 "Move left in tab completion suggestions",
-                Scope::TabCompletion,
+                Scope::TAB_COMPLETION,
                 |app, _key| {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                         active_suggestions.on_left_arrow();
@@ -287,7 +287,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_right",
                 "Move right in tab completion suggestions",
-                Scope::TabCompletion,
+                Scope::TAB_COMPLETION,
                 |app, _key| {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                         active_suggestions.on_right_arrow();
@@ -300,7 +300,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "history_search_up",
                 "Scroll up through fuzzy history search results",
-                Scope::FuzzyHistorySearch,
+                Scope::FUZZY_HISTORY_SEARCH,
                 |app, _key| {
                     app.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::Forward);
                 },
@@ -312,7 +312,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "history_search_down",
                 "Scroll down through fuzzy history search results",
-                Scope::FuzzyHistorySearch,
+                Scope::FUZZY_HISTORY_SEARCH,
                 |app, _key| {
                     app.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::Backward);
                 },
@@ -323,7 +323,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "page_up",
                 "Scroll up one page",
-                Scope::FuzzyHistorySearch,
+                Scope::FUZZY_HISTORY_SEARCH,
                 |app, _key| {
                     app.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
                 },
@@ -334,7 +334,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "page_down",
                 "Scroll down one page",
-                Scope::FuzzyHistorySearch,
+                Scope::FUZZY_HISTORY_SEARCH,
                 |app, _key| {
                     app.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
                 },
@@ -345,7 +345,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "run_agent_mode",
                 "Run the agent mode command",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
                         app.start_agent_mode(agent_cmd, &buffer);
@@ -362,7 +362,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "accept_entry",
                 "Accept the currently selected entry",
-                Scope::FuzzyHistorySearch,
+                Scope::FUZZY_HISTORY_SEARCH,
                 |app, _key| {
                   app.accept_fuzzy_history_search();
 
@@ -376,7 +376,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "accept_entry",
                 "Accept the currently selected suggestion",
-                Scope::TabCompletion,
+                Scope::TAB_COMPLETION,
                 |app, _key| {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                         active_suggestions.accept_currently_selected(&mut app.buffer);
@@ -392,7 +392,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "run_help_command",
                 "Run the agent mode help command",
-                Scope::AgentError,
+                Scope::AGENT_ERROR,
                 |app, _key| {
                     app.content_mode = ContentMode::Normal;
                     app.buffer.replace_buffer("flyline agent-mode --help");
@@ -408,7 +408,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "accept_entry",
                 "Accept the currently selected agent output",
-                Scope::AgentOutputSelection,
+                Scope::AGENT_OUTPUT_SELECTION,
                 |app, _key| {
                     if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                         if let Some(cmd) = selection.selected_command() {
@@ -428,7 +428,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "submit_or_newline", // TODO name
                 "Submit the current command. Insert a newline if the buffer has unclosed quotes, brackets, or parentheses.",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
                         app.start_agent_mode(agent_cmd, &buffer);
@@ -444,7 +444,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "prev_suggestion",
                 "Move to the previous tab completion suggestion",
-                Scope::TabCompletion,
+                Scope::TAB_COMPLETION,
                 |app, _key| {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                         active_suggestions.on_tab(true);
@@ -457,7 +457,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "accept_and_edit",
                 "Accept the current fuzzy history search suggestion for editing",
-                Scope::FuzzyHistorySearch,
+                Scope::FUZZY_HISTORY_SEARCH,
                 |app, _key| {
                     app.accept_fuzzy_history_search();
                 },
@@ -468,7 +468,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "next_suggestion",
                 "Move to the next tab completion suggestion",
-                Scope::AgentOutputSelection,
+                Scope::AGENT_OUTPUT_SELECTION,
                 |app, _key| {
                     if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                         selection.move_down(); // TODO: cycle through
@@ -481,7 +481,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "next_suggestion",
                 "Move to the next tab completion suggestion",
-                Scope::TabCompletion,
+                Scope::TAB_COMPLETION,
                 |app, _key| {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                         active_suggestions.on_tab(false);
@@ -494,7 +494,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "trigger_tab_completion",
                 "Trigger tab completion or cycle through suggestions if already active",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     app.start_tab_complete()
                 },
@@ -505,7 +505,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "escape_to_normal_mode",
                 "Escape - clear suggestions or toggle mouse (Simple and Smart modes)",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     app.content_mode = ContentMode::Normal;
                 },
@@ -517,7 +517,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "toggle_mouse",
                 "Toggle mouse state (Simple and Smart modes)",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     if matches!(
                         app.settings.mouse_mode,
@@ -534,7 +534,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "exit",
                 "Exit the application",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
                         app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
@@ -550,7 +550,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "cancel",
                 "Cancel the current command or exit if no command is running",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     app.mode =
                         crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
@@ -564,7 +564,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "comment_line",
                 "Comment out the current line and submit",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     app.buffer.move_to_start();
                     app.buffer.insert_str("#");
@@ -578,7 +578,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "toggle_fuzzy_history_search",
                 "Toggle fuzzy search through command history",
-                Scope::Normal | Scope::FuzzyHistorySearch, // TODO: allow multiple scopes her
+                Scope::NORMAL | Scope::FUZZY_HISTORY_SEARCH, // TODO: allow multiple scopes her
                 |app, _key| {
                     if matches!(app.content_mode, ContentMode::FuzzyHistorySearch) {
                         app.content_mode = ContentMode::Normal;
@@ -596,7 +596,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "clear_screen",
                 "Clear the screen",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     app.needs_screen_cleared = true;
                 },
@@ -608,7 +608,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "delete_until_start_of_line",
                 "Delete until start of line",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.delete_until_start_of_line(),
             ),
         )
@@ -618,7 +618,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "delete_one_word_left",
                 "Delete one word to the left",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.delete_one_word_left(WordDelim::LessStrict),
             ),
         )
@@ -628,7 +628,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "delete_one_word_left_whitespace",
                 "Delete one word to the left, using whitespace as delimiter",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.delete_one_word_left(WordDelim::WhiteSpace),
             ),
         )
@@ -638,7 +638,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "delete_backwards",
                 "Delete character before cursor",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     if app.settings.auto_close_chars {
                         // Backspace: if the char to the right of the cursor is an auto-inserted closing token
@@ -655,7 +655,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "delete_until_end_of_line",
                 "Delete until end of line",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.delete_until_end_of_line(),
             ),
         )
@@ -665,7 +665,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "delete_one_word_right",
                 "Delete one word to the right",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.delete_one_word_right(WordDelim::LessStrict),
             ),
         )
@@ -675,7 +675,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "delete_one_word_right_whitespace",
                 "Delete one word to the right, using whitespace as delimiter",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.delete_one_word_right(WordDelim::WhiteSpace),
             ),
         )
@@ -685,7 +685,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "delete_forwards",
                 "Delete character after cursor",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.delete_forwards(),
             ),
         )
@@ -695,7 +695,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_start_of_line",
                 "Move cursor to start of line",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.move_start_of_line(),
             ),
         )
@@ -705,7 +705,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_one_word_left_whitespace",
                 "Move one word left, using whitespace as delimiter",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.move_one_word_left(WordDelim::WhiteSpace),
             ),
         )
@@ -715,7 +715,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_left",
                 "Move cursor left",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.move_left(),
             ),
         )
@@ -725,7 +725,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_end_of_line",
                 "Move cursor to end of line",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.move_end_of_line(),
             ),
         )
@@ -735,7 +735,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_one_word_right_whitespace",
                 "Move one word right, using whitespace as delimiter",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
             ),
         )
@@ -745,7 +745,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_right",
                 "Move cursor right",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| app.buffer.move_right(),
             ),
         )
@@ -755,7 +755,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_line_up_or_history_up",
                 "Move cursor up one line or navigate history if on the first buffer line",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key|  {
                     if app.buffer.cursor_row() == 0  {
                         app.buffer_before_history_navigation
@@ -778,7 +778,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "move_line_down_or_history_down",
                 "Move cursor down one line or navigate history if the on final buffer line",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, _key| {
                     if app.buffer.is_cursor_on_final_line() {
                         match app
@@ -803,14 +803,14 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(
             &["Ctrl+z", "Super+Shift+Z"],
-            Action::new("undo", "Undo last action", Scope::Normal, |app, _key| {
+            Action::new("undo", "Undo last action", Scope::NORMAL, |app, _key| {
                 app.buffer.undo()
             }),
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+y", "Super+Shift+Z"],
-            Action::new("redo", "Redo last action", Scope::Normal, |app, _key| {
+            Action::new("redo", "Redo last action", Scope::NORMAL, |app, _key| {
                 app.buffer.redo()
             }),
         )
@@ -820,7 +820,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             Action::new(
                 "insert_char",
                 "Insert character",
-                Scope::Normal,
+                Scope::NORMAL,
                 |app, key| {
                     if let KeyCode::Char(c) = key.code {
                         if app.settings.auto_close_chars {

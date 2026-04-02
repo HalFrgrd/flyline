@@ -8,7 +8,7 @@ use crate::{
 impl<'a> App<'a> {
     pub(crate) fn handle_char_insertion(
         &mut self,
-        key: KeyEvent,
+        _key: KeyEvent,
         c: char,
     ) -> Option<LastKeyPressAction> {
         if self.would_overwrite_auto_inserted_closing(c) {
