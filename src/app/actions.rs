@@ -1,8 +1,8 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::LazyLock;
-use crate::text_buffer::{WordDelim, TextBuffer};
-use crate::app::App;
+use crate::text_buffer::{WordDelim};
+use crate::app::{App, ContentMode};
 
 #[derive(Clone, Debug)]
 pub enum Scope {
@@ -144,8 +144,41 @@ impl Binding {
 // Useful reference:
 // https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
 // From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 19]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
     [
+        Binding::try_new(
+            &["ctrl+r", "meta+r"],
+            Action::new(
+                "toggle_fuzzy_history_search",
+                "Toggle fuzzy search through command history",
+                Scope::FuzzyHistorySearch,
+                |app, _key| {
+                    app.content_mode = ContentMode::Normal;
+                }
+            )
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["ctrl+r", "meta+r"],
+            Action::new(
+                "toggle_fuzzy_history_search",
+                "Toggle fuzzy search through command history",
+                Scope::Normal, // TODO: allow multiple scopes here for the same action?
+                |app, _key| {
+                    app.content_mode = ContentMode::FuzzyHistorySearch;
+                    app.history_manager
+                        .warm_fuzzy_search_cache(app.buffer.buffer());
+                }
+            )
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Ctrl+l"],
+            Action::new("clear_screen", "Clear the screen", Scope::Normal, |app, _key| {
+                app.needs_screen_cleared = true;
+            }),
+        )
+        .unwrap(),
         Binding::try_new(
             &["Super+Backspace", "Ctrl+u", "Ctrl+Shift+Backspace"],
             Action::new(

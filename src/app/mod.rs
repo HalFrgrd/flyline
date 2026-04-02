@@ -20,7 +20,7 @@ use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{
-    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
+    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent,
     MouseEventKind,
 };
 use flash::lexer::TokenKind;
@@ -284,6 +284,8 @@ struct App<'a> {
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
+    needs_screen_cleared: bool,
+
 }
 
 impl<'a> App<'a> {
@@ -339,6 +341,7 @@ impl<'a> App<'a> {
             tooltip: None,
             settings,
             last_draw_time: std::time::Instant::now(),
+            needs_screen_cleared: false,
         }
     }
 
@@ -425,13 +428,13 @@ impl<'a> App<'a> {
                 let content =
                     self.create_content(frame_area.width, frame_area.y, last_terminal_area.height);
 
-                let desired_height = if needs_screen_cleared {
+                let desired_height = if self.needs_screen_cleared {
                     last_terminal_area.height
                 } else {
                     content.height()
                 };
 
-                needs_screen_cleared = false;
+                self.needs_screen_cleared = false;
                 terminal
                     .set_viewport_height(desired_height)
                     .unwrap_or_else(|e| {
@@ -479,9 +482,7 @@ impl<'a> App<'a> {
             redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
-                        if let KeyPressReturnType::NeedScreenClear = self.on_keypress(key) {
-                            needs_screen_cleared = true;
-                        }
+                        self.on_keypress(key);
                         true
                     }
                     CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
@@ -730,7 +731,7 @@ impl<'a> App<'a> {
     /// Set high bit gives you a warning: "You have chosen to have an option key as Meta. This is
     /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
     /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
-    fn on_keypress(&mut self, key: KeyEvent) -> KeyPressReturnType {
+    fn on_keypress(&mut self, key: KeyEvent) {
         log::trace!("Key event: {:?}", key);
 
         let mut keypress_action: Option<LastKeyPressAction> = None;
@@ -1005,71 +1006,44 @@ impl<'a> App<'a> {
                 self.buffer.insert_str("#");
                 self.try_submit_current_buffer();
             }
-            KeyEvent {
-                code: KeyCode::Char('r'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
-                ..
-            } => {
-                match self.content_mode {
-                    ContentMode::FuzzyHistorySearch => {
-                        self.content_mode = ContentMode::Normal;
-                        // self.fuzzy_history_search_results.clear();
-                    }
-                    ContentMode::Normal | ContentMode::TabCompletion(_) => {
-                        self.content_mode = ContentMode::FuzzyHistorySearch;
-                        self.history_manager
-                            .warm_fuzzy_search_cache(self.buffer.buffer());
-                    }
-                    ContentMode::AgentMode { .. }
-                    | ContentMode::AgentOutputSelection(_)
-                    | ContentMode::AgentError { .. } => {}
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Char('l'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                // Clear screen
-                return KeyPressReturnType::NeedScreenClear;
-            }
-            KeyEvent {
-                code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                // In Simple mode: Alt press toggles mouse capture.
-                if self.settings.mouse_mode == MouseMode::Simple {
-                    self.toggle_mouse_state("simple mode: Alt pressed");
-                }
-            }
-            key @ KeyEvent {
-                code: KeyCode::Char(c),
-                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
-                ..
-            } if self.settings.auto_close_chars => {
-                keypress_action = self.handle_char_insertion(key, c);
-            }
+
+
+            // KeyEvent {
+            //     code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
+            //     modifiers: KeyModifiers::ALT | KeyModifiers::META,
+            //     ..
+            // } => {
+            //     // In Simple mode: Alt press toggles mouse capture.
+            //     if self.settings.mouse_mode == MouseMode::Simple {
+            //         self.toggle_mouse_state("simple mode: Alt pressed");
+            //     }
+            // }
+            // key @ KeyEvent {
+            //     code: KeyCode::Char(c),
+            //     modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+            //     ..
+            // } if self.settings.auto_close_chars => {
+            //     keypress_action = self.handle_char_insertion(key, c);
+            // }
             // Backspace: if the char to the right of the cursor is an auto-inserted closing token
             // paired with the char about to be deleted, remove it as well.
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } if self.settings.auto_close_chars => {
-                self.delete_auto_inserted_closing_if_present();
-                self.buffer.on_keypress(key);
-            }
-            _ => {
-                // Delegate basic text editing to TextBuffer
-                self.handle_key_event(key);
+            // KeyEvent {
+            //     code: KeyCode::Backspace,
+            //     modifiers: KeyModifiers::NONE,
+            //     ..
+            // } if self.settings.auto_close_chars => {
+            //     self.delete_auto_inserted_closing_if_present();
+            //     self.buffer.on_keypress(key);
+            // }
+            // _ => {
+            //     // Delegate basic text editing to TextBuffer
+            //     self.handle_key_event(key);
 
-                // self.buffer.on_keypress(key);
-            }
+            //     // self.buffer.on_keypress(key);
+            // }
         }
 
         self.on_possible_buffer_change(keypress_action);
-        KeyPressReturnType::None
     }
 
     fn would_overwrite_auto_inserted_closing(&self, c: char) -> bool {
