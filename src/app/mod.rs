@@ -421,12 +421,12 @@ impl<'a> App<'a> {
                     self.create_content(frame_area.width, frame_area.y, last_terminal_area.height);
 
                 let desired_height = if self.needs_screen_cleared {
+                    self.needs_screen_cleared = false;
                     last_terminal_area.height
                 } else {
                     content.height()
                 };
 
-                self.needs_screen_cleared = false;
                 terminal
                     .set_viewport_height(desired_height)
                     .unwrap_or_else(|e| {
@@ -453,7 +453,7 @@ impl<'a> App<'a> {
                                 self.mode.is_running(),
                             )
                             .unwrap_or_else(|e| {
-                                log::error!("Failed to write escape codes: {}", e);
+                                log::error!("Failed to write prompt position escape codes: {}", e);
                             });
                         }
                     }
