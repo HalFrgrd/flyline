@@ -1,4 +1,4 @@
-mod actions;
+pub(crate) mod actions;
 mod auto_close;
 mod formated_buffer;
 mod tab_completion;

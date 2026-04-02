@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::palette::Palette;
+use crate::app::actions;
 
 /// Which theme the user has configured for the colour palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -88,6 +89,8 @@ pub struct Settings {
     pub color_palette: Palette,
     /// Which colour theme the user has selected (dark, light, or auto).
     pub color_theme: ColorTheme,
+    /// User defined keybindings
+    pub keybindings: Vec<actions::Binding>,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -110,6 +113,7 @@ impl Default for Settings {
             send_shell_integration_codes: true,
             color_palette: Palette::default(),
             color_theme: ColorTheme::Dark,
+            keybindings: Vec::new(),
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }

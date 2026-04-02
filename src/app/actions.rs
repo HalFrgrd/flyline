@@ -65,6 +65,23 @@ impl Scope {
     }
 }
 
+impl TryFrom<&str> for Scope {
+    type Error = anyhow::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s.to_lowercase().as_str() {
+            "normal" => Ok(Scope::NORMAL),
+            "fuzzy_history_search" => Ok(Scope::FUZZY_HISTORY_SEARCH),
+            "tab_completion" => Ok(Scope::TAB_COMPLETION),
+            "agent_mode_waiting" => Ok(Scope::AGENT_MODE_WAITING),
+            "agent_output_selection" => Ok(Scope::AGENT_OUTPUT_SELECTION),
+            "agent_error" => Ok(Scope::AGENT_ERROR),
+            "inline_history_acceptable" => Ok(Scope::INLINE_HISTORY_ACCEPTABLE),
+            other => Err(anyhow::anyhow!("Unknown scope: '{}'", other)),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Action {
     pub name: &'static str,
@@ -172,6 +189,28 @@ impl Binding {
             key_events: events,
             action,
         })
+    }
+
+    pub fn try_new_from_strs(
+        key_event: &str,
+        scope_and_action: &str,
+    ) -> Result<Self> {
+
+
+        let parts = scope_and_action.split("::").collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Invalid scope and action format: '{}'. Expected 'scope::action'",
+                scope_and_action
+            ));
+        }
+        let scope_str = parts[0];
+        let scope = Scope::try_from(scope_str)?;
+
+        let action_str = parts[1];
+
+
+        Ok(Self::try_new(&[key_event], scope, action_str)?)
     }
 
     pub fn matches(&self, key: KeyEvent) -> bool {
@@ -831,7 +870,7 @@ impl<'a> App<'a> {
             self.mouse_state.enable("smart mode: keypress detected");
         }
 
-        for binding in DEFAULT_BINDINGS.iter() {
+        for binding in self.settings.keybindings.iter().chain(DEFAULT_BINDINGS.iter()) {
             if binding.action.scope.is_active(self) && binding.matches(key) {
                 log::trace!("Matched binding: {}", binding.action.name);
                 (binding.action.action)(self, key);

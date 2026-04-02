@@ -4,6 +4,8 @@ use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
 
+use crate::app::actions;
+
 mod active_suggestions;
 mod agent_mode;
 mod app;
@@ -263,6 +265,14 @@ enum Commands {
         #[arg(long = "markdown-code", value_name = "STYLE")]
         markdown_code: Option<String>,
     },
+    /// Keybidnings asdf
+    #[command(name = "bind", verbatim_doc_comment)]
+    Bind {
+        /// Key sequence to bind (e.g. "Ctrl+X Ctrl+S", "Alt+Enter", "Enter", "Tab").
+        key_sequence: String,
+        /// Action to perform (e.g. TODO).
+        action: String,
+    }
 }
 
 // Global state for our custom input stream
@@ -428,27 +438,27 @@ impl Flyline {
                     self.settings.send_shell_integration_codes = enabled;
                 }
 
-                if let Some(Commands::AgentMode {
-                    system_prompt,
-                    trigger_prefix,
-                    command,
-                }) = parsed.command.as_ref()
-                {
-                    log::info!(
-                        "AI command set: {:?} (trigger_prefix={:?})",
-                        command,
-                        trigger_prefix
-                    );
-                    self.settings.agent_commands.insert(
-                        trigger_prefix.clone(),
-                        settings::AgentModeCommand {
-                            command: command.clone(),
-                            system_prompt: system_prompt.clone(),
-                        },
-                    );
-                }
+
 
                 match parsed.command {
+                    Some(Commands::AgentMode {
+                        system_prompt,
+                        trigger_prefix,
+                        command,
+                    }) => {
+                        log::info!(
+                            "AI command set: {:?} (trigger_prefix={:?})",
+                            command,
+                            trigger_prefix
+                        );
+                        self.settings.agent_commands.insert(
+                            trigger_prefix.clone(),
+                            settings::AgentModeCommand {
+                                command: command.clone(),
+                                system_prompt: system_prompt.clone(),
+                            },
+                        );
+                    }
                     Some(Commands::CreateAnim {
                         name,
                         fps,
@@ -586,7 +596,23 @@ impl Flyline {
                             }
                         }
                     }
-                    _ => {}
+                    Some(Commands::Bind { key_sequence, action }) => {
+                        let binding = actions::Binding::try_new_from_strs(&key_sequence, &action);
+                        match binding {
+                            Ok(binding) => {
+                                log::info!("Registering key binding: {} -> {}", key_sequence, action);
+                                self.settings.keybindings.push(binding);
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "flyline bind: failed to parse key sequence '{}' or action '{}': {}",
+                                    key_sequence, action, e
+                                );
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
+                        }
+                    }
+                    None => {}
                 }
 
                 #[cfg(feature = "integration-tests")]
