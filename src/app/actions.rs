@@ -1,5 +1,6 @@
 use crate::app::{App, ContentMode};
 use crate::bash_symbols;
+use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
 use crate::text_buffer::WordDelim;
 use anyhow::Result;
@@ -16,7 +17,7 @@ impl Scope {
     pub const AgentModeWaiting: Self = Self(1 << 3);
     pub const AgentOutputSelection: Self = Self(1 << 4);
     pub const AgentError: Self = Self(1 << 5);
-    pub const InlineHistorySuggestion: Self = Self(1 << 6);
+    pub const InlineHistoryAcceptable: Self = Self(1 << 6);
 
     pub fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
@@ -56,8 +57,8 @@ impl Scope {
             )
         } else if self.contains(Scope::AgentError) {
             matches!(app.content_mode, crate::app::ContentMode::AgentError { .. })
-        } else if self.contains(Scope::InlineHistorySuggestion) {
-            app.inline_history_suggestion.is_some()
+        } else if self.contains(Scope::InlineHistoryAcceptable) {
+            app.buffer.is_cursor_at_end() && app.inline_history_suggestion.is_some()
         } else {
             false
         }
@@ -170,12 +171,148 @@ impl Binding {
 // Useful reference:
 // https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
 // From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
     [
         Binding::try_new(
-            &[
-                "Alt+Enter",
-            ],
+            &["Right", "End"],
+            Action::new(
+                "accept_suggestion",
+                "Accept inline history suggestion",
+                Scope::InlineHistoryAcceptable,
+                |app, _key| {
+                    if let Some((_, suf)) = &app.inline_history_suggestion {
+                        app.buffer.insert_str(suf);
+                        app.buffer.move_to_end();
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Down"],
+            Action::new(
+                "move_down_in_agent_output_selection",
+                "Move down in agent output selection",
+                Scope::AgentOutputSelection,
+                |app, _key| {
+                    if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                        selection.move_down();
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Up"],
+            Action::new(
+                "move_up_in_agent_output_selection",
+                "Move up in agent output selection",
+                Scope::AgentOutputSelection,
+                |app, _key| {
+                    if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                        selection.move_up();
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Up"],
+            Action::new(
+                "move_up",
+                "Move up in tab completion suggestions",
+                Scope::TabCompletion,
+                |app, _key| {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                        active_suggestions.on_up_arrow();
+                    }
+                },
+            ),
+        ).unwrap(),
+
+        Binding::try_new(
+            &["Down"],
+            Action::new(
+                "move_down",
+                "Move down in tab completion suggestions",
+                Scope::TabCompletion,
+                |app, _key| {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                        active_suggestions.on_down_arrow(); // TODO combine this with tab?
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Left"],
+            Action::new(
+                "move_left",
+                "Move left in tab completion suggestions",
+                Scope::TabCompletion,
+                |app, _key| {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                        active_suggestions.on_left_arrow();
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Right"],
+            Action::new(
+                "move_right",
+                "Move right in tab completion suggestions",
+                Scope::TabCompletion,
+                |app, _key| {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                        active_suggestions.on_right_arrow();
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Up"],
+            Action::new(
+                "history_search_up",
+                "Scroll up through fuzzy history search results",
+                Scope::FuzzyHistorySearch,
+                |app, _key| {
+                    app.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::Forward);
+                },
+            ),
+        ).unwrap(),
+
+        Binding::try_new(
+            &["Down", "Ctrl+s"],
+            Action::new(
+                "history_search_down",
+                "Scroll down through fuzzy history search results",
+                Scope::FuzzyHistorySearch,
+                |app, _key| {
+                    app.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::Backward);
+                },
+            ),
+        ).unwrap(),
+            Binding::try_new(
+            &["PageUp",],
+            Action::new(
+                "page_up",
+                "Scroll up one page",
+                Scope::FuzzyHistorySearch,
+                |app, _key| {
+                    app.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["PageDown",],
+            Action::new(
+                "page_down",
+                "Scroll down one page",
+                Scope::FuzzyHistorySearch,
+                |app, _key| {
+                    app.history_manager.fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Alt+Enter",],
             Action::new(
                 "run_agent_mode",
                 "Run the agent mode command",
@@ -340,7 +477,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
                 "escape_to_normal_mode",
                 "Escape - clear suggestions or toggle mouse (Simple and Smart modes)",
                 Scope::Normal,
-                |app, key| {
+                |app, _key| {
                     app.content_mode = ContentMode::Normal;
                 },
             ),
@@ -352,7 +489,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
                 "toggle_mouse",
                 "Toggle mouse state (Simple and Smart modes)",
                 Scope::Normal,
-                |app, key| {
+                |app, _key| {
                     if matches!(
                         app.settings.mouse_mode,
                         MouseMode::Simple | MouseMode::Smart
@@ -580,20 +717,51 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
         Binding::try_new(
             &["Up"],
             Action::new(
-                "move_line_up",
-                "Move cursor up one line",
+                "move_line_up_or_history_up",
+                "Move cursor up one line or navigate history if on the first buffer line",
                 Scope::Normal,
-                |app, _key| app.buffer.move_line_up(),
+                |app, _key|  {
+                    if app.buffer.cursor_row() == 0  {
+                        app.buffer_before_history_navigation
+                            .get_or_insert_with(|| app.buffer.buffer().to_string());
+                        if let Some(entry) = app
+                            .history_manager
+                            .search_in_history(app.buffer.buffer(), HistorySearchDirection::Backward)
+                        {
+                            app.buffer.replace_buffer(&entry.command);
+                        }
+                    } else {
+                        app.buffer.move_line_up()
+                    }
+                },
             ),
         )
         .unwrap(),
         Binding::try_new(
             &["Down"],
             Action::new(
-                "move_line_down",
-                "Move cursor down one line",
+                "move_line_down_or_history_down",
+                "Move cursor down one line or navigate history if the on final buffer line",
                 Scope::Normal,
-                |app, _key| app.buffer.move_line_down(),
+                |app, _key| {
+                    if app.buffer.is_cursor_on_final_line() {
+                        match app
+                            .history_manager
+                            .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward){
+                            Some(entry) => {
+                                app.buffer.replace_buffer(&entry.command);
+                            }
+                            None => {
+                                if let Some(original_buffer) = app.buffer_before_history_navigation.take()
+                                {
+                                    app.buffer.replace_buffer(&original_buffer);
+                                }
+                            }
+                        }
+                } else {
+                    app.buffer.move_line_down()
+                }
+            }
             ),
         )
         .unwrap(),
