@@ -201,7 +201,7 @@ static POSSIBLE_ACTIONS: LazyLock<Vec<Action>> = LazyLock::new(|| {
             },
         ),
         Action::new(
-            "move_down_in_agent_output_selection",
+            "select_next",
             "Move down in agent output selection",
             Scope::AGENT_OUTPUT_SELECTION,
             |app, _key| {
@@ -211,7 +211,7 @@ static POSSIBLE_ACTIONS: LazyLock<Vec<Action>> = LazyLock::new(|| {
             },
         ),
         Action::new(
-            "move_up_in_agent_output_selection",
+            "select_prev",
             "Move up in agent output selection",
             Scope::AGENT_OUTPUT_SELECTION,
             |app, _key| {
@@ -261,7 +261,7 @@ static POSSIBLE_ACTIONS: LazyLock<Vec<Action>> = LazyLock::new(|| {
             },
         ),
         Action::new(
-            "history_search_up",
+            "select_prev",
             "Scroll up through fuzzy history search results",
             Scope::FUZZY_HISTORY_SEARCH,
             |app, _key| {
@@ -270,7 +270,7 @@ static POSSIBLE_ACTIONS: LazyLock<Vec<Action>> = LazyLock::new(|| {
             },
         ),
         Action::new(
-            "history_search_down",
+            "select_next",
             "Scroll down through fuzzy history search results",
             Scope::FUZZY_HISTORY_SEARCH,
             |app, _key| {
@@ -671,24 +671,24 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
         Binding::try_new(
             &["Down"],
             Scope::AGENT_OUTPUT_SELECTION,
-            "move_down_in_agent_output_selection",
+            "select_next",
         )
         .unwrap(),
         Binding::try_new(
             &["Up"],
             Scope::AGENT_OUTPUT_SELECTION,
-            "move_up_in_agent_output_selection",
+            "select_prev",
         )
         .unwrap(),
         Binding::try_new(&["Up"], Scope::TAB_COMPLETION, "move_up").unwrap(),
         Binding::try_new(&["Down"], Scope::TAB_COMPLETION, "move_down").unwrap(),
         Binding::try_new(&["Left"], Scope::TAB_COMPLETION, "move_left").unwrap(),
         Binding::try_new(&["Right"], Scope::TAB_COMPLETION, "move_right").unwrap(),
-        Binding::try_new(&["Up"], Scope::FUZZY_HISTORY_SEARCH, "history_search_up").unwrap(),
+        Binding::try_new(&["Up"], Scope::FUZZY_HISTORY_SEARCH, "select_prev").unwrap(),
         Binding::try_new(
             &["Down", "Ctrl+s"],
             Scope::FUZZY_HISTORY_SEARCH,
-            "history_search_down",
+            "select_next",
         )
         .unwrap(),
         Binding::try_new(&["PageUp"], Scope::FUZZY_HISTORY_SEARCH, "page_up").unwrap(),
