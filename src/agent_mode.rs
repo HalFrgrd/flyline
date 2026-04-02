@@ -68,8 +68,9 @@ fn strip_leading_fence(s: &str) -> &str {
 /// Convert a markdown string to a ratatui [`Text`] object.
 ///
 /// Renders basic markdown constructs (headings, paragraphs, bold, italic,
-/// inline code, code blocks, list items, block quotes) as styled spans.
-/// Uses ratatui's own types so there is no external crate version conflict.
+/// inline code, code blocks, list items, block quotes, tables) as styled
+/// spans. Uses ratatui's own types so there is no external crate version
+/// conflict.
 fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'static> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
@@ -79,6 +80,9 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
     let mut heading_level: Option<u8> = None;
     let mut list_depth: u32 = 0;
     let mut in_code_block = false;
+
+    // Table rendering state.
+    let mut table_row_cells: Vec<Vec<Span<'static>>> = Vec::new();
 
     let heading1_style = palette.markdown_heading1();
     let heading2_style = palette.markdown_heading2();
@@ -114,6 +118,18 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
             }
             lines.push(Line::from(std::mem::take(spans)));
         };
+
+    let render_table_row = |cells: Vec<Vec<Span<'static>>>| -> Line<'static> {
+        let mut row_spans: Vec<Span<'static>> = vec![Span::raw("| ")];
+        for (i, cell) in cells.into_iter().enumerate() {
+            if i > 0 {
+                row_spans.push(Span::raw(" | "));
+            }
+            row_spans.extend(cell);
+        }
+        row_spans.push(Span::raw(" |"));
+        Line::from(row_spans)
+    };
 
     let parser = Parser::new_ext(markdown, Options::all());
     let mut prev_event = None;
@@ -165,6 +181,38 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
                 finalize_line(&mut lines, &mut current_spans, list_depth);
             }
             Event::Start(Tag::BlockQuote(_)) | Event::End(TagEnd::BlockQuote(_)) => {}
+            Event::Start(Tag::Table(_)) => {}
+            Event::End(TagEnd::Table) => {}
+            Event::Start(Tag::TableHead) => {
+                table_row_cells.clear();
+            }
+            Event::End(TagEnd::TableHead) => {
+                // Render the header row from cells accumulated directly inside TableHead.
+                let ncols = table_row_cells.len();
+                let cells = std::mem::take(&mut table_row_cells);
+                lines.push(render_table_row(cells));
+                // Render a separator row under the header.
+                if ncols > 0 {
+                    let mut sep_spans: Vec<Span<'static>> = vec![Span::raw("|")];
+                    for _ in 0..ncols {
+                        sep_spans.push(Span::raw("---|"));
+                    }
+                    lines.push(Line::from(sep_spans));
+                }
+            }
+            Event::Start(Tag::TableRow) => {
+                table_row_cells.clear();
+            }
+            Event::End(TagEnd::TableRow) => {
+                let cells = std::mem::take(&mut table_row_cells);
+                lines.push(render_table_row(cells));
+            }
+            Event::Start(Tag::TableCell) => {
+                current_spans.clear();
+            }
+            Event::End(TagEnd::TableCell) => {
+                table_row_cells.push(std::mem::take(&mut current_spans));
+            }
             Event::Code(text) => {
                 let is_code = true;
                 let style = style_from_markdown_state(bold, italic, is_code, heading_level);
@@ -480,5 +528,47 @@ That should help!"#;
         // Out of bounds is ignored
         sel.set_selected_by_idx(100);
         assert_eq!(sel.selected_idx, 1);
+    }
+
+    #[test]
+    fn test_markdown_table() {
+        let palette = crate::palette::Palette::default();
+        let md = "| Header 1 | Header 2 |\n|---|---|\n| Cell 1 | Cell 2 |\n| Cell 3 | Cell 4 |";
+
+        let text = markdown_to_text(md, &palette);
+
+        // Expected line layout:
+        //   [0] "| Header 1 | Header 2 |"
+        //   [1] "|---|---|"  (separator)
+        //   [2] "| Cell 1 | Cell 2 |"
+        //   [3] "| Cell 3 | Cell 4 |"
+        assert!(
+            text.lines.len() >= 4,
+            "expected at least 4 lines, got {}",
+            text.lines.len()
+        );
+
+        let line_text = |idx: usize| -> String {
+            text.lines[idx]
+                .spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect()
+        };
+
+        let header = line_text(0);
+        assert!(header.contains("Header 1"), "header line: {header:?}");
+        assert!(header.contains("Header 2"), "header line: {header:?}");
+
+        let sep = line_text(1);
+        assert!(sep.contains("---"), "separator line: {sep:?}");
+
+        let body1 = line_text(2);
+        assert!(body1.contains("Cell 1"), "body row 1: {body1:?}");
+        assert!(body1.contains("Cell 2"), "body row 1: {body1:?}");
+
+        let body2 = line_text(3);
+        assert!(body2.contains("Cell 3"), "body row 2: {body2:?}");
+        assert!(body2.contains("Cell 4"), "body row 2: {body2:?}");
     }
 }
