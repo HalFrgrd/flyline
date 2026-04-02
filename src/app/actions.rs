@@ -171,7 +171,7 @@ impl Binding {
 // Useful reference:
 // https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
 // From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
     [
         Binding::try_new(
             &["Right", "End"],

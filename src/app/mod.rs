@@ -744,16 +744,7 @@ impl<'a> App<'a> {
         }
 
         match key {
-             // KeyEvent {
-              //     code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
-              //     modifiers: KeyModifiers::ALT | KeyModifiers::META,
-              //     ..
-              // } => {
-              //     // In Simple mode: Alt press toggles mouse capture.
-              //     if self.settings.mouse_mode == MouseMode::Simple {
-              //         self.toggle_mouse_state("simple mode: Alt pressed");
-              //     }
-              // }
+
               // key @ KeyEvent {
               //     code: KeyCode::Char(c),
               //     modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
