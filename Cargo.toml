@@ -9,14 +9,14 @@ crate-type = ["cdylib"]
 [dependencies]
 clap = { version = "4.5.49", features = ["derive"] }
 clap_complete = "4.5.66"
-ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default"] }
+ratatui = { version = "0.30.0", features = ["default"] }
 # Fork of crossterm that adds query_background_color() / query_foreground_color() (OSC 10/11).
 # Track upstream PR: https://github.com/crossterm-rs/crossterm/compare/master...nornagon:crossterm:nornagon/color-query
 crossterm = { git = "https://github.com/nornagon/crossterm", rev = "87db8bfa6dc99427fd3b071681b07fc31c6ce995" }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3.31"
 log = "0.4"
-ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9101076f8e23010515ff6fe1571bf87a2d0d4abc"}
+ansi-to-tui = "8.0.1"
 libc = "0.2.177"
 timeago = "0.5.0"
 anyhow = "1.0.100"
@@ -45,6 +45,9 @@ integration-tests = []
 
 [build-dependencies]
 chrono = { version = "0.4" }
+
+[patch.crates-io]
+ratatui-core = { path = "vendor/ratatui-core" }
 
 # cross-rs configurations
 [package.metadata.cross.target.x86_64-unknown-linux-gnu]
