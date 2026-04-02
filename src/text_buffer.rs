@@ -87,13 +87,6 @@ impl TextBuffer {
             }
             KeyEvent {
                 code: KeyCode::Backspace,
-                modifiers,
-                ..
-            } if modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
-                self.delete_until_start_of_line();
-            }
-            KeyEvent {
-                code: KeyCode::Backspace,
                 modifiers: KeyModifiers::SUPER,
                 ..
             }
@@ -1234,7 +1227,7 @@ impl TextBuffer {
         self.undo_redo.add_snapshot(snapshot, merge_with_recent);
     }
 
-    fn undo(&mut self) {
+    pub fn undo(&mut self) {
         let current_state = self.create_snapshot();
 
         if let Some(snapshot) = self.undo_redo.prev_snapshot(current_state) {
@@ -1243,7 +1236,7 @@ impl TextBuffer {
         }
     }
 
-    fn redo(&mut self) {
+    pub fn redo(&mut self) {
         let current_state = self.create_snapshot();
 
         if let Some(snapshot) = self.undo_redo.next_snapshot(current_state) {

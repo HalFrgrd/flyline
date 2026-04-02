@@ -1,3 +1,4 @@
+mod actions;
 mod auto_close;
 mod formated_buffer;
 mod tab_completion;
@@ -273,7 +274,7 @@ struct App<'a> {
     /// Parsed bash history available at startup.
     history_manager: HistoryManager,
     buffer_before_history_navigation: Option<String>,
-    history_suggestion: Option<(HistoryEntry, String)>,
+    inline_history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
     content_mode: ContentMode,
     last_contents: Option<DrawnContent>,
@@ -330,7 +331,7 @@ impl<'a> App<'a> {
             ),
             history_manager: HistoryManager::new(settings),
             buffer_before_history_navigation: None,
-            history_suggestion: None,
+            inline_history_suggestion: None,
             mouse_state: MouseState::initialize(&settings.mouse_mode),
             content_mode: ContentMode::Normal,
             last_contents: None,
@@ -742,6 +743,7 @@ impl<'a> App<'a> {
             self.mouse_state.enable("smart mode: keypress detected");
         }
 
+
         match key {
             KeyEvent {
                 code: KeyCode::Left,
@@ -765,8 +767,8 @@ impl<'a> App<'a> {
             KeyEvent {
                 code: KeyCode::Right | KeyCode::End,
                 ..
-            } if self.buffer.is_cursor_at_end() && self.history_suggestion.is_some() => {
-                if let Some((_, suf)) = &self.history_suggestion {
+            } if self.buffer.is_cursor_at_end() && self.inline_history_suggestion.is_some() => {
+                if let Some((_, suf)) = &self.inline_history_suggestion {
                     self.buffer.insert_str(suf);
                     self.buffer.move_to_end();
                 }
@@ -1061,6 +1063,8 @@ impl<'a> App<'a> {
             }
             _ => {
                 // Delegate basic text editing to TextBuffer
+                self.handle_key_event(key);
+
                 self.buffer.on_keypress(key);
             }
         }
@@ -1317,7 +1321,7 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction>) {
-        self.history_suggestion =
+        self.inline_history_suggestion =
             if !self.settings.show_inline_history || self.buffer.buffer().is_empty() {
                 None
             } else {
@@ -1740,7 +1744,7 @@ impl<'a> App<'a> {
             );
         }
 
-        if let Some((sug, suf)) = &self.history_suggestion
+        if let Some((sug, suf)) = &self.inline_history_suggestion
             && self.mode.is_running()
         {
             suf.lines()
