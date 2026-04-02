@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail};
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, Event, Options, Parser, Tag, TagEnd};
 use ratatui::prelude::*;
 use ratatui::text::Text;
 use regex::Regex;
@@ -65,11 +65,136 @@ fn strip_leading_fence(s: &str) -> &str {
     }
 }
 
+/// Accumulated data for a single markdown table being parsed.
+struct TableAccum {
+    alignments: Vec<Alignment>,
+    /// Cells of the header row.
+    header_cells: Vec<String>,
+    /// Body rows (each row is a list of cell strings).
+    body_rows: Vec<Vec<String>>,
+    /// Cells of the row currently being built.
+    current_cells: Vec<String>,
+    /// Text content being accumulated for the current cell.
+    current_cell_buf: String,
+    /// True while processing the `<thead>` row.
+    in_header: bool,
+}
+
+impl TableAccum {
+    fn new(alignments: Vec<Alignment>) -> Self {
+        TableAccum {
+            alignments,
+            header_cells: Vec::new(),
+            body_rows: Vec::new(),
+            current_cells: Vec::new(),
+            current_cell_buf: String::new(),
+            in_header: false,
+        }
+    }
+}
+
+/// Render a collected [`TableAccum`] into ratatui [`Line`]s.
+///
+/// Produces an ASCII-box table:
+/// ```text
+/// | Header1   | Header2   |
+/// |-----------|-----------|
+/// | cell      | cell      |
+/// ```
+fn render_table(accum: &TableAccum) -> Vec<Line<'static>> {
+    let ncols = accum.header_cells.len();
+    if ncols == 0 {
+        return Vec::new();
+    }
+
+    // Calculate minimum column widths from cell contents.
+    let mut col_widths: Vec<usize> = accum.header_cells.iter().map(|s| s.len()).collect();
+    for row in &accum.body_rows {
+        for (j, cell) in row.iter().enumerate() {
+            if j < ncols {
+                col_widths[j] = col_widths[j].max(cell.len());
+            }
+        }
+    }
+    // Ensure a minimum column width of 3 so short separator dashes look reasonable.
+    for w in &mut col_widths {
+        *w = (*w).max(3);
+    }
+
+    let build_row = |cells: &[String], bold: bool| -> Line<'static> {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        spans.push(Span::raw("│ "));
+        for (j, cell) in cells.iter().enumerate() {
+            let width = col_widths.get(j).copied().unwrap_or(0);
+            let padded = format!("{:<width$}", cell, width = width);
+            if bold {
+                spans.push(Span::styled(
+                    padded,
+                    Style::default().add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                spans.push(Span::raw(padded));
+            }
+            spans.push(Span::raw(" │ "));
+        }
+        // Remove the trailing " │ " so the line ends with " │".
+        if spans.len() > 1 {
+            let last = spans.pop().unwrap();
+            // last is " │ " — push " │" instead
+            let trimmed = last.content.trim_end().to_string();
+            spans.push(Span::raw(trimmed));
+        }
+        Line::from(spans)
+    };
+
+    let build_separator = || -> Line<'static> {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        spans.push(Span::raw("├─"));
+        for (j, &width) in col_widths.iter().enumerate() {
+            let dashes = match accum.alignments.get(j) {
+                Some(Alignment::Center) => {
+                    let inner = "─".repeat(width.saturating_sub(2));
+                    format!(":{inner}:")
+                }
+                Some(Alignment::Right) => {
+                    let inner = "─".repeat(width.saturating_sub(1));
+                    format!("{inner}:")
+                }
+                Some(Alignment::Left) => {
+                    let inner = "─".repeat(width.saturating_sub(1));
+                    format!(":{inner}")
+                }
+                _ => "─".repeat(width),
+            };
+            spans.push(Span::raw(dashes));
+            if j + 1 < col_widths.len() {
+                spans.push(Span::raw("─┼─"));
+            }
+        }
+        spans.push(Span::raw("─┤"));
+        Line::from(spans)
+    };
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    lines.push(build_row(&accum.header_cells, true));
+    lines.push(build_separator());
+    for row in &accum.body_rows {
+        // Pad row to the expected number of columns.
+        let mut padded = row.clone();
+        while padded.len() < ncols {
+            padded.push(String::new());
+        }
+        lines.push(build_row(&padded, false));
+    }
+    lines
+}
+
 /// Convert a markdown string to a ratatui [`Text`] object.
 ///
 /// Renders basic markdown constructs (headings, paragraphs, bold, italic,
-/// inline code, code blocks, list items, block quotes) as styled spans.
-/// Uses ratatui's own types so there is no external crate version conflict.
+/// inline code, code blocks, list items, block quotes, and tables) as
+/// styled spans.  Uses ratatui's own types so there is no external crate
+/// version conflict.
 fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'static> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
@@ -79,6 +204,8 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
     let mut heading_level: Option<u8> = None;
     let mut list_depth: u32 = 0;
     let mut in_code_block = false;
+    // When `Some`, we are inside a markdown table and accumulating its data.
+    let mut table_accum: Option<TableAccum> = None;
 
     let heading1_style = palette.markdown_heading1();
     let heading2_style = palette.markdown_heading2();
@@ -120,6 +247,55 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
     for event in parser {
         log::info!("Markdown event: {:?}", event);
         match event.clone() {
+            // ── Table events ──────────────────────────────────────────────
+            Event::Start(Tag::Table(alignments)) => {
+                // Flush any preceding inline content as a line before the table.
+                if !current_spans.is_empty() {
+                    finalize_line(&mut lines, &mut current_spans, list_depth);
+                }
+                table_accum = Some(TableAccum::new(alignments));
+            }
+            Event::End(TagEnd::Table) => {
+                if let Some(accum) = table_accum.take() {
+                    lines.extend(render_table(&accum));
+                }
+            }
+            Event::Start(Tag::TableHead) => {
+                if let Some(ref mut accum) = table_accum {
+                    accum.in_header = true;
+                }
+            }
+            Event::End(TagEnd::TableHead) => {
+                if let Some(ref mut accum) = table_accum {
+                    accum.header_cells = std::mem::take(&mut accum.current_cells);
+                    accum.in_header = false;
+                }
+            }
+            Event::Start(Tag::TableRow) => {
+                if let Some(ref mut accum) = table_accum {
+                    accum.current_cells.clear();
+                }
+            }
+            Event::End(TagEnd::TableRow) => {
+                if let Some(ref mut accum) = table_accum {
+                    accum
+                        .body_rows
+                        .push(std::mem::take(&mut accum.current_cells));
+                }
+            }
+            Event::Start(Tag::TableCell) => {
+                if let Some(ref mut accum) = table_accum {
+                    accum.current_cell_buf.clear();
+                }
+            }
+            Event::End(TagEnd::TableCell) => {
+                if let Some(ref mut accum) = table_accum {
+                    accum
+                        .current_cells
+                        .push(std::mem::take(&mut accum.current_cell_buf));
+                }
+            }
+            // ── Non-table events ──────────────────────────────────────────
             Event::Start(Tag::Heading { level, .. }) => {
                 heading_level = Some(level as u8);
             }
@@ -166,20 +342,32 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
             }
             Event::Start(Tag::BlockQuote(_)) | Event::End(TagEnd::BlockQuote(_)) => {}
             Event::Code(text) => {
-                let is_code = true;
-                let style = style_from_markdown_state(bold, italic, is_code, heading_level);
-                current_spans.push(Span::styled(text.into_string(), style));
+                if let Some(ref mut accum) = table_accum {
+                    accum.current_cell_buf.push_str(&text);
+                } else {
+                    let is_code = true;
+                    let style = style_from_markdown_state(bold, italic, is_code, heading_level);
+                    current_spans.push(Span::styled(text.into_string(), style));
+                }
             }
             Event::Text(text) => {
-                let is_code = in_code_block;
-                let style = style_from_markdown_state(bold, italic, is_code, heading_level);
-                current_spans.push(Span::styled(text.into_string(), style));
+                if let Some(ref mut accum) = table_accum {
+                    accum.current_cell_buf.push_str(&text);
+                } else {
+                    let is_code = in_code_block;
+                    let style = style_from_markdown_state(bold, italic, is_code, heading_level);
+                    current_spans.push(Span::styled(text.into_string(), style));
+                }
             }
             Event::SoftBreak => {
-                current_spans.push(Span::raw(" "));
+                if table_accum.is_none() {
+                    current_spans.push(Span::raw(" "));
+                }
             }
             Event::HardBreak | Event::Rule => {
-                finalize_line(&mut lines, &mut current_spans, list_depth);
+                if table_accum.is_none() {
+                    finalize_line(&mut lines, &mut current_spans, list_depth);
+                }
             }
             _ => {}
         }
@@ -435,6 +623,100 @@ That should help!"#;
         // footer_text should be rendered from "Done." (fence stripped)
         assert!(!sel.header_text.lines.is_empty());
         assert!(!sel.footer_text.lines.is_empty());
+    }
+
+    #[test]
+    fn test_markdown_table_rendering() {
+        let palette = crate::palette::Palette::default();
+        // Basic two-column table
+        let md = "\
+| Command | Description       |
+|---------|-------------------|
+| ls      | List files        |
+| pwd     | Print working dir |
+";
+        let text = markdown_to_text(md, &palette);
+        // Should produce 3 lines: header, separator, 2 body rows
+        assert_eq!(
+            text.lines.len(),
+            4,
+            "expected 4 lines (header + sep + 2 rows), got {}: {:#?}",
+            text.lines.len(),
+            text.lines
+        );
+
+        // Flatten each line to a plain string for easy assertion.
+        let plain: Vec<String> = text
+            .lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+
+        // Header row contains the column names.
+        assert!(plain[0].contains("Command"), "header: {}", plain[0]);
+        assert!(plain[0].contains("Description"), "header: {}", plain[0]);
+        // Separator row contains box-drawing dashes.
+        assert!(plain[1].contains('─'), "separator: {}", plain[1]);
+        // Body rows contain cell values.
+        assert!(plain[2].contains("ls"), "row1: {}", plain[2]);
+        assert!(plain[2].contains("List files"), "row1: {}", plain[2]);
+        assert!(plain[3].contains("pwd"), "row2: {}", plain[3]);
+        assert!(plain[3].contains("Print working dir"), "row2: {}", plain[3]);
+    }
+
+    #[test]
+    fn test_markdown_table_with_alignment() {
+        let palette = crate::palette::Palette::default();
+        // Table with left/center/right alignment hints
+        let md = "\
+| Left   | Center | Right |
+|:-------|:------:|------:|
+| a      | b      | c     |
+";
+        let text = markdown_to_text(md, &palette);
+        // 3 lines: header + separator + 1 body row
+        assert_eq!(
+            text.lines.len(),
+            3,
+            "expected 3 lines, got {}: {:#?}",
+            text.lines.len(),
+            text.lines
+        );
+
+        let sep: String = text.lines[1]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        // Separator encodes alignment markers
+        assert!(
+            sep.contains(':'),
+            "separator should have ':' for alignment: {sep}"
+        );
+    }
+
+    #[test]
+    fn test_markdown_table_empty() {
+        let palette = crate::palette::Palette::default();
+        // A table with a header but no body rows.
+        let md = "\
+| A | B |
+|---|---|
+";
+        let text = markdown_to_text(md, &palette);
+        // header + separator
+        assert_eq!(
+            text.lines.len(),
+            2,
+            "expected 2 lines (header + sep), got {}: {:#?}",
+            text.lines.len(),
+            text.lines
+        );
     }
 
     #[test]
