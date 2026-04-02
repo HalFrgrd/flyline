@@ -1,0 +1,29 @@
+[package]
+name = "ansi-to-tui"
+version = "7.0.0"
+authors = ["Uttarayan Mondal <email@uttarayan.me>"]
+edition = "2021"
+description = "A library to convert ansi color coded text into ratatui::text::Text type from ratatui library"
+keywords = ["ansi", "ascii", "tui", "parser"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/uttarayan21/ansi-to-tui"
+
+# This is a local copy of HalFrgrd/ansi-to-tui (based on uttarayan21/ansi-to-tui) patched to
+# depend on the custom Marlinski ratatui fork so the returned Text/Line/Span types are the
+# same instances as those used by the rest of the flyline project.
+#
+# Kept here instead of as an external GitHub fork so all custom code lives in one repo and can
+# be updated in a single PR.
+
+[dependencies]
+nom = "7.1"
+tui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", default-features = false, package = "ratatui" }
+thiserror = "1.0"
+simdutf8 = { version = "0.1", optional = true }
+smallvec = { version = "1.10.0", features = ["const_generics"] }
+
+[features]
+simd = ["dep:simdutf8"]
+zero-copy = []
+default = ["zero-copy", "simd"]
