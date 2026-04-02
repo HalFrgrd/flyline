@@ -20,8 +20,7 @@ use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{
-    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent,
-    MouseEventKind,
+    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
 };
 use flash::lexer::TokenKind;
 use itertools::Itertools;
@@ -285,7 +284,6 @@ struct App<'a> {
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
     needs_screen_cleared: bool,
-
 }
 
 impl<'a> App<'a> {
@@ -955,59 +953,6 @@ impl<'a> App<'a> {
                 ContentMode::AgentOutputSelection(_) => {}
                 ContentMode::AgentError { .. } => {}
             },
-
-            // Escape - clear suggestions or toggle mouse (Simple and Smart modes)
-            KeyEvent {
-                code: KeyCode::Esc, ..
-            } => match self.content_mode {
-                ContentMode::TabCompletion(_)
-                | ContentMode::FuzzyHistorySearch
-                | ContentMode::AgentMode { .. }
-                | ContentMode::AgentOutputSelection(_)
-                | ContentMode::AgentError { .. } => {
-                    self.content_mode = ContentMode::Normal;
-                }
-                ContentMode::Normal => {
-                    if matches!(
-                        self.settings.mouse_mode,
-                        MouseMode::Simple | MouseMode::Smart
-                    ) {
-                        self.toggle_mouse_state("Escape pressed");
-                    }
-                }
-            },
-            // Ctrl+D - exit
-            KeyEvent {
-                code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                if self.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
-                    self.mode = AppRunningState::Exiting(ExitState::EOF);
-                } else {
-                    self.buffer.delete_forwards();
-                }
-            }
-            // Ctrl+C - cancel
-            KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
-                ..
-            } => {
-                self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
-            }
-            // Ctrl+/ (shows as Ctrl+7) - comment out and execute
-            KeyEvent {
-                code: KeyCode::Char('7') | KeyCode::Char('/'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META | KeyModifiers::SUPER,
-                ..
-            } => {
-                self.buffer.move_to_start();
-                self.buffer.insert_str("#");
-                self.try_submit_current_buffer();
-            }
-
-
             // KeyEvent {
             //     code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
             //     modifiers: KeyModifiers::ALT | KeyModifiers::META,

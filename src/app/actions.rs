@@ -1,39 +1,54 @@
+use crate::app::{App, ContentMode};
+use crate::bash_symbols;
+use crate::settings::MouseMode;
+use crate::text_buffer::WordDelim;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::LazyLock;
-use crate::text_buffer::{WordDelim};
-use crate::app::{App, ContentMode};
 
-#[derive(Clone, Debug)]
-pub enum Scope {
-    Normal,
-    FuzzyHistorySearch,
-    TabCompletion,
-    AgentMode,
-    AgentOutputSelection,
-    InlineHistorySuggestion,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Scope(u8);
+
+impl Scope {
+    pub const Normal: Self = Self(1 << 0);
+    pub const FuzzyHistorySearch: Self = Self(1 << 1);
+    pub const TabCompletion: Self = Self(1 << 2);
+    pub const AgentMode: Self = Self(1 << 3);
+    pub const AgentOutputSelection: Self = Self(1 << 4);
+    pub const InlineHistorySuggestion: Self = Self(1 << 5);
+
+    pub fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+}
+
+impl std::ops::BitOr for Scope {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
+    }
 }
 
 impl Scope {
     pub fn is_active(&self, app: &App) -> bool {
         match self {
-            Scope::Normal => true,
-            Scope::FuzzyHistorySearch => matches!(
+            &Scope::Normal => true,
+            &Scope::FuzzyHistorySearch => matches!(
                 app.content_mode,
                 crate::app::ContentMode::FuzzyHistorySearch
             ),
-            Scope::TabCompletion => matches!(
+            &Scope::TabCompletion => matches!(
                 app.content_mode,
                 crate::app::ContentMode::TabCompletion { .. }
             ),
-            Scope::AgentMode => {
+            &Scope::AgentMode => {
                 matches!(app.content_mode, crate::app::ContentMode::AgentMode { .. })
             }
-            Scope::AgentOutputSelection => matches!(
+            &Scope::AgentOutputSelection => matches!(
                 app.content_mode,
                 crate::app::ContentMode::AgentOutputSelection { .. }
             ),
-            Scope::InlineHistorySuggestion => app.inline_history_suggestion.is_some(),
+            &Scope::InlineHistorySuggestion => app.inline_history_suggestion.is_some(),
         }
     }
 }
@@ -147,15 +162,76 @@ impl Binding {
 static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
     [
         Binding::try_new(
-            &["ctrl+r", "meta+r"],
+            &["Esc"],
             Action::new(
-                "toggle_fuzzy_history_search",
-                "Toggle fuzzy search through command history",
-                Scope::FuzzyHistorySearch,
-                |app, _key| {
+                "escape_to_normal_mode",
+                "Escape - clear suggestions or toggle mouse (Simple and Smart modes)",
+                Scope::Normal,
+                |app, key| {
                     app.content_mode = ContentMode::Normal;
-                }
-            )
+                },
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            Action::new(
+                "toggle_mouse",
+                "Toggle mouse state (Simple and Smart modes)",
+                Scope::Normal,
+                |app, key| {
+                    if matches!(
+                        app.settings.mouse_mode,
+                        MouseMode::Simple | MouseMode::Smart
+                    ) {
+                        app.toggle_mouse_state("Escape pressed");
+                    }
+                },
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Ctrl+d"],
+            Action::new(
+                "exit",
+                "Exit the application",
+                Scope::Normal,
+                |app, _key| {
+                    if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
+                        app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
+                    } else {
+                        app.buffer.delete_forwards();
+                    }
+                },
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Ctrl+c", "Meta+c"],
+            Action::new(
+                "cancel",
+                "Cancel the current command or exit if no command is running",
+                Scope::Normal,
+                |app, _key| {
+                    app.mode =
+                        crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
+                },
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            // Ctrl+/ (shows as Ctrl+7) - comment out and execute
+            &["Ctrl+/", "Meta+/", "Super+/", "Ctrl+7"],
+            Action::new(
+                "comment_line",
+                "Comment out the current line and submit",
+                Scope::Normal,
+                |app, _key| {
+                    app.buffer.move_to_start();
+                    app.buffer.insert_str("#");
+                    app.try_submit_current_buffer();
+                },
+            ),
         )
         .unwrap(),
         Binding::try_new(
@@ -163,20 +239,29 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
             Action::new(
                 "toggle_fuzzy_history_search",
                 "Toggle fuzzy search through command history",
-                Scope::Normal, // TODO: allow multiple scopes here for the same action?
+                Scope::Normal | Scope::FuzzyHistorySearch, // TODO: allow multiple scopes her
                 |app, _key| {
-                    app.content_mode = ContentMode::FuzzyHistorySearch;
-                    app.history_manager
-                        .warm_fuzzy_search_cache(app.buffer.buffer());
-                }
-            )
+                    if matches!(app.content_mode, ContentMode::FuzzyHistorySearch) {
+                        app.content_mode = ContentMode::Normal;
+                    } else {
+                        app.content_mode = ContentMode::FuzzyHistorySearch;
+                        app.history_manager
+                            .warm_fuzzy_search_cache(app.buffer.buffer());
+                    }
+                },
+            ),
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+l"],
-            Action::new("clear_screen", "Clear the screen", Scope::Normal, |app, _key| {
-                app.needs_screen_cleared = true;
-            }),
+            Action::new(
+                "clear_screen",
+                "Clear the screen",
+                Scope::Normal,
+                |app, _key| {
+                    app.needs_screen_cleared = true;
+                },
+            ),
         )
         .unwrap(),
         Binding::try_new(
