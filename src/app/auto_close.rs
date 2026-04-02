@@ -1,16 +1,10 @@
-use crossterm::event::KeyEvent;
-
 use crate::{
     app::{App, LastKeyPressAction},
     dparser,
 };
 
 impl<'a> App<'a> {
-    pub(crate) fn handle_char_insertion(
-        &mut self,
-        _key: KeyEvent,
-        c: char,
-    ) -> Option<LastKeyPressAction> {
+    pub(crate) fn handle_char_insertion(&mut self, c: char) -> Option<LastKeyPressAction> {
         if self.would_overwrite_auto_inserted_closing(c) {
             log::info!(
                 "Not inserting char '{}' to avoid overwriting auto-inserted closing token",

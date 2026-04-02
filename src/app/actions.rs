@@ -781,23 +781,23 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
                 Scope::NORMAL,
                 |app, _key| {
                     if app.buffer.is_cursor_on_final_line() {
-                        match app
-                            .history_manager
-                            .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward){
-                            Some(entry) => {
-                                app.buffer.replace_buffer(&entry.command);
-                            }
-                            None => {
-                                if let Some(original_buffer) = app.buffer_before_history_navigation.take()
-                                {
-                                    app.buffer.replace_buffer(&original_buffer);
+                            match app
+                                .history_manager
+                                .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward){
+                                Some(entry) => {
+                                    app.buffer.replace_buffer(&entry.command);
+                                }
+                                None => {
+                                    if let Some(original_buffer) = app.buffer_before_history_navigation.take()
+                                    {
+                                        app.buffer.replace_buffer(&original_buffer);
+                                    }
                                 }
                             }
-                        }
-                } else {
-                    app.buffer.move_line_down()
+                    } else {
+                        app.buffer.move_line_down()
+                    }
                 }
-            }
             ),
         )
         .unwrap(),
@@ -824,7 +824,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
                 |app, key| {
                     if let KeyCode::Char(c) = key.code {
                         if app.settings.auto_close_chars {
-                            app.last_keypress_action = app.handle_char_insertion(key, c);
+                            app.last_keypress_action = app.handle_char_insertion(c);
                         } else {
                             app.buffer.insert_char(c);
                         }
