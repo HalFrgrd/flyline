@@ -743,7 +743,6 @@ impl<'a> App<'a> {
             self.mouse_state.enable("smart mode: keypress detected");
         }
 
-
         match key {
             KeyEvent {
                 code: KeyCode::Left,
@@ -1065,7 +1064,7 @@ impl<'a> App<'a> {
                 // Delegate basic text editing to TextBuffer
                 self.handle_key_event(key);
 
-                self.buffer.on_keypress(key);
+                // self.buffer.on_keypress(key);
             }
         }
 

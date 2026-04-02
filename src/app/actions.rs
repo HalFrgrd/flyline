@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::LazyLock;
-
+use crate::text_buffer::{WordDelim, TextBuffer};
 use crate::app::App;
 
 #[derive(Clone, Debug)]
@@ -68,54 +68,58 @@ pub enum KeyEventMatch {
     AnyCharEitherMod(Vec<KeyModifiers>),
 }
 
+impl TryFrom<&str> for KeyEventMatch {
+    type Error = anyhow::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let mut modifiers = KeyModifiers::empty();
+        let mut parts = s.split('+').collect::<Vec<_>>();
+        let key_part = parts
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("Invalid key event string: '{}'", s))?;
+        for mod_part in parts {
+            match mod_part.to_lowercase().as_str() {
+                "ctrl" | "control" => modifiers |= KeyModifiers::CONTROL,
+                "shift" => modifiers |= KeyModifiers::SHIFT,
+                "alt" => modifiers |= KeyModifiers::ALT,
+                "meta" => modifiers |= KeyModifiers::META,
+                "super" | "cmd" | "win" => modifiers |= KeyModifiers::SUPER,
+                _ => return Err(anyhow::anyhow!("Unknown modifier: '{}'", mod_part)),
+            }
+        }
+        let code = if key_part.len() == 1 {
+            KeyCode::Char(key_part.chars().next().unwrap())
+        } else {
+            match key_part.to_lowercase().as_str() {
+                "enter" => KeyCode::Enter,
+                "backspace" => KeyCode::Backspace,
+                "left" => KeyCode::Left,
+                "right" => KeyCode::Right,
+                "up" => KeyCode::Up,
+                "down" => KeyCode::Down,
+                "home" => KeyCode::Home,
+                "end" => KeyCode::End,
+                "tab" => KeyCode::Tab,
+                "delete" => KeyCode::Delete,
+                "anychar" => return Ok(KeyEventMatch::AnyCharEitherMod(vec![modifiers])),
+                other => return Err(anyhow::anyhow!("Unknown key code: '{}'", other)),
+            }
+        };
+        Ok(KeyEventMatch::Exact(KeyEvent::new(code, modifiers)))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Binding {
     key_events: Vec<KeyEventMatch>,
     action: Action,
 }
 
-pub fn str_to_key_event(s: &str) -> Result<KeyEventMatch> {
-    let mut modifiers = KeyModifiers::empty();
-    let mut parts = s.split('+').collect::<Vec<_>>();
-    let key_part = parts
-        .pop()
-        .ok_or_else(|| anyhow::anyhow!("Invalid key event string: '{}'", s))?;
-    for mod_part in parts {
-        match mod_part.to_lowercase().as_str() {
-            "ctrl" | "control" => modifiers |= KeyModifiers::CONTROL,
-            "shift" => modifiers |= KeyModifiers::SHIFT,
-            "alt" => modifiers |= KeyModifiers::ALT,
-            "meta" => modifiers |= KeyModifiers::META,
-            "super" | "cmd" | "win" => modifiers |= KeyModifiers::SUPER,
-            _ => return Err(anyhow::anyhow!("Unknown modifier: '{}'", mod_part)),
-        }
-    }
-    let code = if key_part.len() == 1 {
-        KeyCode::Char(key_part.chars().next().unwrap())
-    } else {
-        match key_part.to_lowercase().as_str() {
-            "enter" => KeyCode::Enter,
-            "backspace" => KeyCode::Backspace,
-            "left" => KeyCode::Left,
-            "right" => KeyCode::Right,
-            "up" => KeyCode::Up,
-            "down" => KeyCode::Down,
-            "home" => KeyCode::Home,
-            "end" => KeyCode::End,
-            "tab" => KeyCode::Tab,
-            "delete" => KeyCode::Delete,
-            "AnyChar" => return Ok(KeyEventMatch::AnyCharEitherMod(vec![modifiers])),
-            other => return Err(anyhow::anyhow!("Unknown key code: '{}'", other)),
-        }
-    };
-    Ok(KeyEventMatch::Exact(KeyEvent::new(code, modifiers)))
-}
-
 impl Binding {
     pub fn try_new(key_events: &[&str], action: Action) -> Result<Self> {
         let mut events = Vec::new();
         for &key_event in key_events {
-            events.push(str_to_key_event(key_event)?);
+            events.push(KeyEventMatch::try_from(key_event)?);
         }
         Ok(Self {
             key_events: events,
@@ -140,9 +144,8 @@ impl Binding {
 // Useful reference:
 // https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
 // From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 4]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 19]> = LazyLock::new(|| {
     [
-
         Binding::try_new(
             &["Super+Backspace", "Ctrl+u", "Ctrl+Shift+Backspace"],
             Action::new(
@@ -223,7 +226,6 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 4]> = LazyLock::new(|| {
             ),
         )
         .unwrap(),
-
         Binding::try_new(
             &["Home", "Super+Left", "Ctrl+A", "Super+A"],
             Action::new(
@@ -244,64 +246,6 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 4]> = LazyLock::new(|| {
             ),
         )
         .unwrap(),
-
-
-            KeyEvent {
-                code: KeyCode::Left,
-                ..
-            } => {
-                self.move_left();
-            }
-            KeyEvent {
-                code: KeyCode::End, ..
-            }
-            | KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::SUPER,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('e'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
-                ..
-            } => {
-                self.move_end_of_line();
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('f'), // Emacs-style. ghostty sends this for Alt+Right by default
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                self.move_one_word_right(WordDelim::WhiteSpace);
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                ..
-            } => {
-                self.move_right();
-            }
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } => {
-                if self.cursor_row() > 0 {
-                    self.move_line_up();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            } => {
-                if !self.is_cursor_on_final_line() {
-                    self.move_line_down();
-                }
-            }
-
-
         Binding::try_new(
             &["Left"],
             Action::new(
@@ -309,6 +253,56 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 4]> = LazyLock::new(|| {
                 "Move cursor left",
                 Scope::Normal,
                 |app, _key| app.buffer.move_left(),
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["End", "Super+Right", "Ctrl+E", "Super+E"],
+            Action::new(
+                "move_end_of_line",
+                "Move cursor to end of line",
+                Scope::Normal,
+                |app, _key| app.buffer.move_end_of_line(),
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Ctrl+Right", "Alt+Right", "Meta+Right", "Alt+f", "Meta+f"], // Emacs-style. ghostty sends Alt+Right as Meta+Right by default
+            Action::new(
+                "move_one_word_right_whitespace",
+                "Move one word right, using whitespace as delimiter",
+                Scope::Normal,
+                |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Right"],
+            Action::new(
+                "move_right",
+                "Move cursor right",
+                Scope::Normal,
+                |app, _key| app.buffer.move_right(),
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Up"],
+            Action::new(
+                "move_line_up",
+                "Move cursor up one line",
+                Scope::Normal,
+                |app, _key| app.buffer.move_line_up(),
+            ),
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Down"],
+            Action::new(
+                "move_line_down",
+                "Move cursor down one line",
+                Scope::Normal,
+                |app, _key| app.buffer.move_line_down(),
             ),
         )
         .unwrap(),
@@ -327,7 +321,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 4]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &["Shift+AnyChar"],
+            &["AnyChar", "Shift+AnyChar"],
             Action::new(
                 "insert_char",
                 "Insert character",
@@ -345,8 +339,9 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 4]> = LazyLock::new(|| {
 
 impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
-        for binding in DEFAULT_BINDINGS.iter().rev() {
+        for binding in DEFAULT_BINDINGS.iter() {
             if binding.action.scope.is_active(self) && binding.matches(key) {
+                log::trace!("Matched binding: {}", binding.action.name);
                 (binding.action.action)(self, key);
                 break;
             }
