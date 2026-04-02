@@ -183,7 +183,7 @@ enum ContentMode {
     TabCompletion(Box<ActiveSuggestions>),
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
-    AgentMode {
+    AgentModeWaiting {
         receiver: std::sync::mpsc::Receiver<Result<String, (String, String)>>,
         command_display: String,
         start_time: std::time::Instant,
@@ -381,18 +381,19 @@ impl<'a> App<'a> {
 
         'main_loop: loop {
             // Poll AI background task: check if a result has arrived without blocking.
-            let ai_result = if let ContentMode::AgentMode { ref receiver, .. } = self.content_mode {
-                match receiver.try_recv() {
-                    Ok(result) => Some(result),
-                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        log::warn!("AI task channel disconnected unexpectedly");
-                        Some(Err(("AI task disconnected".to_string(), String::new())))
+            let ai_result =
+                if let ContentMode::AgentModeWaiting { ref receiver, .. } = self.content_mode {
+                    match receiver.try_recv() {
+                        Ok(result) => Some(result),
+                        Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            log::warn!("AI task channel disconnected unexpectedly");
+                            Some(Err(("AI task disconnected".to_string(), String::new())))
+                        }
                     }
-                }
-            } else {
-                None
-            };
+                } else {
+                    None
+                };
             if let Some(result) = ai_result {
                 match result {
                     Ok(raw_output) => match parse_ai_output(&raw_output) {
@@ -866,126 +867,39 @@ impl<'a> App<'a> {
                         }
                     }
                 }
-            }
-            // Alt+Enter - activate Agent mode (requires --agent-mode to be configured)
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if matches!(self.content_mode, ContentMode::Normal) => {
-                if let Some((agent_cmd, buffer)) = self.resolve_agent_command(false) {
-                    self.start_agent_mode(agent_cmd, &buffer);
-                } else {
-                    self.show_agent_mode_not_configured_error();
-                }
-            }
-            // Enter key - accept suggestions or submit command
-            KeyEvent {
-                code: KeyCode::Enter,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('j'), // Without this, when I hold enter, sometimes 'j' is read as input
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => match &mut self.content_mode {
-                ContentMode::FuzzyHistorySearch => {
-                    self.accept_fuzzy_history_search();
-                    // TODO: allow someone to accept and run the command immediately
-                    // Instead of Enter+Enter
-                    // self.try_submit_current_buffer();
-                }
-                ContentMode::TabCompletion(active_suggestions) => {
-                    active_suggestions.accept_currently_selected(&mut self.buffer);
-                    self.content_mode = ContentMode::Normal;
-                }
-                ContentMode::Normal => {
-                    if let Some((agent_cmd, buffer)) = self.resolve_agent_command(true) {
-                        self.start_agent_mode(agent_cmd, &buffer);
-                    } else {
-                        self.try_submit_current_buffer();
-                    }
-                }
-                ContentMode::AgentMode { .. } => {}
-                ContentMode::AgentError { .. } => {
-                    self.content_mode = ContentMode::Normal;
-                    self.buffer.replace_buffer("flyline agent-mode --help");
-                    self.on_possible_buffer_change(None);
-                    self.try_submit_current_buffer();
-                }
-                ContentMode::AgentOutputSelection(selection) => {
-                    if let Some(cmd) = selection.selected_command() {
-                        let cmd = cmd.to_string();
-                        self.buffer.replace_buffer(&cmd);
-                        self.on_possible_buffer_change(None);
-                    }
-                    self.content_mode = ContentMode::Normal;
-                }
-            },
-            // Shift+Tab or BackTab - cycle suggestions backward
-            KeyEvent {
-                code: KeyCode::Tab,
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::BackTab,
-                ..
-            } => {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                    active_suggestions.on_tab(true);
-                }
-            }
-            // Tab - cycle suggestions or trigger completion
-            KeyEvent {
-                code: KeyCode::Tab, ..
-            } => match &mut self.content_mode {
-                ContentMode::FuzzyHistorySearch => {
-                    self.accept_fuzzy_history_search();
-                }
-                ContentMode::TabCompletion(active_suggestions) => {
-                    active_suggestions.on_tab(false);
-                }
-                ContentMode::Normal => {
-                    self.start_tab_complete();
-                }
-                ContentMode::AgentMode { .. } => {}
-                ContentMode::AgentOutputSelection(_) => {}
-                ContentMode::AgentError { .. } => {}
-            },
-            // KeyEvent {
-            //     code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
-            //     modifiers: KeyModifiers::ALT | KeyModifiers::META,
-            //     ..
-            // } => {
-            //     // In Simple mode: Alt press toggles mouse capture.
-            //     if self.settings.mouse_mode == MouseMode::Simple {
-            //         self.toggle_mouse_state("simple mode: Alt pressed");
-            //     }
-            // }
-            // key @ KeyEvent {
-            //     code: KeyCode::Char(c),
-            //     modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
-            //     ..
-            // } if self.settings.auto_close_chars => {
-            //     keypress_action = self.handle_char_insertion(key, c);
-            // }
-            // Backspace: if the char to the right of the cursor is an auto-inserted closing token
-            // paired with the char about to be deleted, remove it as well.
-            // KeyEvent {
-            //     code: KeyCode::Backspace,
-            //     modifiers: KeyModifiers::NONE,
-            //     ..
-            // } if self.settings.auto_close_chars => {
-            //     self.delete_auto_inserted_closing_if_present();
-            //     self.buffer.on_keypress(key);
-            // }
-            // _ => {
-            //     // Delegate basic text editing to TextBuffer
-            //     self.handle_key_event(key);
+            } // KeyEvent {
+              //     code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
+              //     modifiers: KeyModifiers::ALT | KeyModifiers::META,
+              //     ..
+              // } => {
+              //     // In Simple mode: Alt press toggles mouse capture.
+              //     if self.settings.mouse_mode == MouseMode::Simple {
+              //         self.toggle_mouse_state("simple mode: Alt pressed");
+              //     }
+              // }
+              // key @ KeyEvent {
+              //     code: KeyCode::Char(c),
+              //     modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+              //     ..
+              // } if self.settings.auto_close_chars => {
+              //     keypress_action = self.handle_char_insertion(key, c);
+              // }
+              // Backspace: if the char to the right of the cursor is an auto-inserted closing token
+              // paired with the char about to be deleted, remove it as well.
+              // KeyEvent {
+              //     code: KeyCode::Backspace,
+              //     modifiers: KeyModifiers::NONE,
+              //     ..
+              // } if self.settings.auto_close_chars => {
+              //     self.delete_auto_inserted_closing_if_present();
+              //     self.buffer.on_keypress(key);
+              // }
+              // _ => {
+              //     // Delegate basic text editing to TextBuffer
+              //     self.handle_key_event(key);
 
-            //     // self.buffer.on_keypress(key);
-            // }
+              //     // self.buffer.on_keypress(key);
+              // }
         }
 
         self.on_possible_buffer_change(keypress_action);
@@ -1216,7 +1130,7 @@ impl<'a> App<'a> {
                 log::warn!("AI task: failed to send result (receiver dropped): {}", e);
             }
         });
-        self.content_mode = ContentMode::AgentMode {
+        self.content_mode = ContentMode::AgentModeWaiting {
             receiver: rx,
             command_display,
             start_time: std::time::Instant::now(),
@@ -1874,7 +1788,7 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            ContentMode::AgentMode {
+            ContentMode::AgentModeWaiting {
                 command_display,
                 start_time,
                 ..

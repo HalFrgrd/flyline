@@ -7,15 +7,16 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::LazyLock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Scope(u8);
+pub struct Scope(u16);
 
 impl Scope {
     pub const Normal: Self = Self(1 << 0);
     pub const FuzzyHistorySearch: Self = Self(1 << 1);
     pub const TabCompletion: Self = Self(1 << 2);
-    pub const AgentMode: Self = Self(1 << 3);
+    pub const AgentModeWaiting: Self = Self(1 << 3);
     pub const AgentOutputSelection: Self = Self(1 << 4);
-    pub const InlineHistorySuggestion: Self = Self(1 << 5);
+    pub const AgentError: Self = Self(1 << 5);
+    pub const InlineHistorySuggestion: Self = Self(1 << 6);
 
     pub fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
@@ -31,24 +32,34 @@ impl std::ops::BitOr for Scope {
 
 impl Scope {
     pub fn is_active(&self, app: &App) -> bool {
-        match self {
-            &Scope::Normal => true,
-            &Scope::FuzzyHistorySearch => matches!(
+        if self.contains(Scope::Normal) {
+            true
+        } else if self.contains(Scope::FuzzyHistorySearch) {
+            matches!(
                 app.content_mode,
                 crate::app::ContentMode::FuzzyHistorySearch
-            ),
-            &Scope::TabCompletion => matches!(
+            )
+        } else if self.contains(Scope::TabCompletion) {
+            matches!(
                 app.content_mode,
                 crate::app::ContentMode::TabCompletion { .. }
-            ),
-            &Scope::AgentMode => {
-                matches!(app.content_mode, crate::app::ContentMode::AgentMode { .. })
-            }
-            &Scope::AgentOutputSelection => matches!(
+            )
+        } else if self.contains(Scope::AgentModeWaiting) {
+            matches!(
+                app.content_mode,
+                crate::app::ContentMode::AgentModeWaiting { .. }
+            )
+        } else if self.contains(Scope::AgentOutputSelection) {
+            matches!(
                 app.content_mode,
                 crate::app::ContentMode::AgentOutputSelection { .. }
-            ),
-            &Scope::InlineHistorySuggestion => app.inline_history_suggestion.is_some(),
+            )
+        } else if self.contains(Scope::AgentError) {
+            matches!(app.content_mode, crate::app::ContentMode::AgentError { .. })
+        } else if self.contains(Scope::InlineHistorySuggestion) {
+            app.inline_history_suggestion.is_some()
+        } else {
+            false
         }
     }
 }
@@ -161,6 +172,168 @@ impl Binding {
 // From highest priority to lowest
 static DEFAULT_BINDINGS: LazyLock<[Binding; _]> = LazyLock::new(|| {
     [
+        Binding::try_new(
+            &[
+                "Alt+Enter",
+            ],
+            Action::new(
+                "run_agent_mode",
+                "Run the agent mode command",
+                Scope::Normal,
+                |app, _key| {
+                    if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
+                        app.start_agent_mode(agent_cmd, &buffer);
+                    } else {
+                        app.show_agent_mode_not_configured_error();
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &[
+                "Enter", "Ctrl+j", // Without this, when I hold enter, sometimes 'j' is read as input
+            ],
+            Action::new(
+                "accept_entry",
+                "Accept the currently selected entry",
+                Scope::FuzzyHistorySearch,
+                |app, _key| {
+                  app.accept_fuzzy_history_search();
+
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &[
+                "Enter", "Ctrl+j",
+            ],
+            Action::new(
+                "accept_entry",
+                "Accept the currently selected suggestion",
+                Scope::TabCompletion,
+                |app, _key| {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                        active_suggestions.accept_currently_selected(&mut app.buffer);
+                        app.content_mode = ContentMode::Normal;
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &[
+                "Enter", "Ctrl+j",
+            ],
+            Action::new(
+                "run_help_command",
+                "Run the agent mode help command",
+                Scope::AgentError,
+                |app, _key| {
+                    app.content_mode = ContentMode::Normal;
+                    app.buffer.replace_buffer("flyline agent-mode --help");
+                    app.on_possible_buffer_change(None);
+                    app.try_submit_current_buffer();
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &[
+                "Enter", "Ctrl+j",
+            ],
+            Action::new(
+                "accept_entry",
+                "Accept the currently selected agent output",
+                Scope::AgentOutputSelection,
+                |app, _key| {
+                    if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                        if let Some(cmd) = selection.selected_command() {
+                            let cmd = cmd.to_string();
+                            app.buffer.replace_buffer(&cmd);
+                            app.on_possible_buffer_change(None);
+                        }
+                        app.content_mode = ContentMode::Normal;
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &[
+                "Enter", "Ctrl+j",
+            ],
+            Action::new(
+                "submit_or_newline", // TODO name
+                "Submit the current command. Insert a newline if the buffer has unclosed quotes, brackets, or parentheses.",
+                Scope::Normal,
+                |app, _key| {
+                    if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
+                        app.start_agent_mode(agent_cmd, &buffer);
+                    } else {
+                        app.try_submit_current_buffer();
+                    }
+                },
+            ),
+        ).unwrap(),
+
+        Binding::try_new(
+            &["Shift+Tab", "Backtab"], // TODO backtab and shift tab for agent output selection
+            Action::new(
+                "prev_suggestion",
+                "Move to the previous tab completion suggestion",
+                Scope::TabCompletion,
+                |app, _key| {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                        active_suggestions.on_tab(true);
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Tab"],
+            Action::new(
+                "accept_and_edit",
+                "Accept the current fuzzy history search suggestion for editing",
+                Scope::FuzzyHistorySearch,
+                |app, _key| {
+                    app.accept_fuzzy_history_search();
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Tab"],
+            Action::new(
+                "next_suggestion",
+                "Move to the next tab completion suggestion",
+                Scope::AgentOutputSelection,
+                |app, _key| {
+                    if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                        selection.move_down(); // TODO: cycle through
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Tab"],
+            Action::new(
+                "next_suggestion",
+                "Move to the next tab completion suggestion",
+                Scope::TabCompletion,
+                |app, _key| {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                        active_suggestions.on_tab(false);
+                    }
+                },
+            ),
+        ).unwrap(),
+        Binding::try_new(
+            &["Tab"],
+            Action::new(
+                "trigger_tab_completion",
+                "Trigger tab completion or cycle through suggestions if already active",
+                Scope::Normal,
+                |app, _key| {
+                    app.start_tab_complete()
+                },
+            ),
+        ).unwrap(),
         Binding::try_new(
             &["Esc"],
             Action::new(
