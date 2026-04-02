@@ -43,18 +43,6 @@ dependencies = [
 
 [[package]]
 name = "ansi-to-tui"
-version = "7.0.0"
-source = "git+https://github.com/HalFrgrd/ansi-to-tui.git?rev=9101076f8e23010515ff6fe1571bf87a2d0d4abc#9101076f8e23010515ff6fe1571bf87a2d0d4abc"
-dependencies = [
- "nom 7.1.3",
- "ratatui 0.30.0-beta.0",
- "simdutf8",
- "smallvec",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "ansi-to-tui"
 version = "8.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e42366bb9d958f042bf58f0a85e1b2d091997c1257ca49bddd7e4827aadc65fd"
@@ -816,7 +804,7 @@ dependencies = [
 name = "flyline"
 version = "0.6.0"
 dependencies = [
- "ansi-to-tui 7.0.0",
+ "ansi-to-tui",
  "anyhow",
  "chrono",
  "clap",
@@ -1275,15 +1263,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f8cc7106155f10bdf99a6f379688f543ad6596a415375b36a59a054ceda1198"
 dependencies = [
  "hashbrown 0.15.5",
-]
-
-[[package]]
-name = "lru"
-version = "0.16.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1dc47f592c06f33f8e3aea9591776ec7c9f9e4124778ff8a3c3b87159f7e593"
-dependencies = [
- "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -1819,7 +1798,7 @@ dependencies = [
  "indoc",
  "itertools",
  "kasuari",
- "lru 0.14.0",
+ "lru",
  "strum",
  "thiserror 2.0.18",
  "unicode-segmentation",
@@ -1830,21 +1809,8 @@ dependencies = [
 [[package]]
 name = "ratatui-core"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ef8dea09a92caaf73bff7adb70b76162e5937524058a7e5bff37869cbbec293"
 dependencies = [
- "bitflags 2.10.0",
- "compact_str",
- "hashbrown 0.16.1",
- "indoc",
- "itertools",
- "kasuari",
- "lru 0.16.3",
- "strum",
- "thiserror 2.0.18",
- "unicode-segmentation",
- "unicode-truncate",
- "unicode-width",
+ "ratatui-core 0.1.0-beta.0",
 ]
 
 [[package]]
@@ -2256,7 +2222,7 @@ version = "3.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1294bd490a9cf6cc328467a11fa15b7fa01f026606de50050ea2273a64c57e51"
 dependencies = [
- "ansi-to-tui 8.0.1",
+ "ansi-to-tui",
  "assert_enum_variants",
  "clap_complete_nushell",
  "color-eyre",
