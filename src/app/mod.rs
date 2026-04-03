@@ -183,9 +183,12 @@ enum ContentMode {
     /// AI output has been parsed; user is selecting a suggestion from the list.
     AgentOutputSelection(AiOutputSelection),
     /// AI command or JSON parsing failed; stores the error message and any raw output.
+    /// When `suggested_buffer` is set, the error is a "no default agent but prefix-only config"
+    /// case: pressing Enter will launch agent mode with that buffer instead of running help.
     AgentError {
         message: String,
         raw_output: String,
+        suggested_buffer: Option<String>,
     },
 }
 
@@ -400,6 +403,7 @@ impl<'a> App<'a> {
                             self.content_mode = ContentMode::AgentError {
                                 message: format!("Failed to parse AI output: {}", e),
                                 raw_output,
+                                suggested_buffer: None,
                             };
                         }
                     },
@@ -408,6 +412,7 @@ impl<'a> App<'a> {
                         self.content_mode = ContentMode::AgentError {
                             message: msg,
                             raw_output,
+                            suggested_buffer: None,
                         };
                     }
                 }
@@ -715,10 +720,37 @@ impl<'a> App<'a> {
     }
 
     /// Show an error explaining that agent mode is not configured, with links to help resources.
+    /// If the user has agent mode configured with a trigger prefix but no default (None-keyed)
+    /// command, offer to prepend that prefix to the current buffer and launch agent mode.
     fn show_agent_mode_not_configured_error(&mut self) {
+        // Find a trigger-prefix-based command (a Some(prefix) key) if any exists.
+        // Sort prefixes for deterministic selection.
+        let prefix = self
+            .settings
+            .agent_commands
+            .keys()
+            .filter_map(|k| k.as_deref())
+            .min();
+
+        let (message, suggested_buffer) = if let Some(prefix) = prefix {
+            let suggested_buf = format!("{}{}", prefix, self.buffer.buffer());
+            (
+                format!(
+                    "No default agent mode configured, but you have agent mode configured with trigger prefix \"{}\".",
+                    prefix
+                ),
+                Some(suggested_buf),
+            )
+        } else {
+            (
+                "Agent mode is not configured. Run `flyline agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
+                None,
+            )
+        };
         self.content_mode = ContentMode::AgentError {
-            message: "Agent mode is not configured. Run `flyline agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
+            message,
             raw_output: String::new(),
+            suggested_buffer,
         };
     }
 
@@ -1569,35 +1601,52 @@ impl<'a> App<'a> {
             ContentMode::AgentError {
                 message,
                 raw_output,
+                suggested_buffer,
             } if self.mode.is_running() => {
                 content.newline();
                 content.write_span(
-                    &Span::styled(
-                        format!("AI failed: {}", message),
-                        Style::default().fg(Color::Red),
-                    ),
+                    &Span::styled(message.clone(), Style::default().fg(Color::Red)),
                     Tag::Normal,
                 );
-                if !raw_output.is_empty() {
-                    for line in raw_output.lines().take(5) {
-                        content.newline();
-                        content.write_span(
-                            &Span::styled(
-                                line.to_string(),
-                                self.settings.color_palette.secondary_text(),
-                            ),
-                            Tag::Normal,
-                        );
+                if let Some(suggested) = suggested_buffer {
+                    content.newline();
+                    content.write_span(
+                        &Span::styled(
+                            format!("Buffer with prefix: {}", suggested),
+                            self.settings.color_palette.secondary_text(),
+                        ),
+                        Tag::Normal,
+                    );
+                    content.newline();
+                    content.write_span(
+                        &Span::styled(
+                            "Press Enter to launch agent mode with this buffer.",
+                            self.settings.color_palette.secondary_text(),
+                        ),
+                        Tag::Blank,
+                    );
+                } else {
+                    if !raw_output.is_empty() {
+                        for line in raw_output.lines().take(5) {
+                            content.newline();
+                            content.write_span(
+                                &Span::styled(
+                                    line.to_string(),
+                                    self.settings.color_palette.secondary_text(),
+                                ),
+                                Tag::Normal,
+                            );
+                        }
                     }
+                    content.newline();
+                    content.write_span(
+                        &Span::styled(
+                            "Press Enter to run `flyline agent-mode --help`.",
+                            self.settings.color_palette.secondary_text(),
+                        ),
+                        Tag::Blank,
+                    );
                 }
-                content.newline();
-                content.write_span(
-                    &Span::styled(
-                        "Press Enter to run `flyline agent-mode --help`.",
-                        self.settings.color_palette.secondary_text(),
-                    ),
-                    Tag::Blank,
-                );
             }
             _ => {}
         }

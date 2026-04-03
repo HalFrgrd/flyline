@@ -19,7 +19,6 @@ impl Scope {
     pub const AGENT_ERROR: Self = Self(1 << 5);
     pub const INLINE_HISTORY_ACCEPTABLE: Self = Self(1 << 6);
 
-
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
@@ -61,7 +60,6 @@ impl Scope {
             false
         }
     }
-
 }
 
 impl<'a> IntoIterator for Scope {
@@ -93,8 +91,6 @@ impl<'a> IntoIterator for Scope {
         }
         scopes.into_iter()
     }
-
-
 }
 
 impl TryFrom<&str> for Scope {
@@ -138,7 +134,9 @@ impl Action {
     }
 
     pub fn display_each_scope(&self) -> Vec<String> {
-        self.scope.into_iter().map(|s| format!("{}::{}", s, self.name))
+        self.scope
+            .into_iter()
+            .map(|s| format!("{}::{}", s, self.name))
             .collect()
     }
 }
@@ -257,7 +255,7 @@ impl Binding {
     }
 }
 
-const  POSSIBLE_ACTIONS: &[Action] = &[
+const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "accept_suggestion",
         "Accept inline history suggestion",
@@ -375,6 +373,32 @@ const  POSSIBLE_ACTIONS: &[Action] = &[
             } else {
                 app.show_agent_mode_not_configured_error();
             }
+        },
+    ),
+    Action::new(
+        "run_agent_error_suggestion",
+        "Run the agent error suggested command",
+        Scope::AGENT_ERROR,
+        |app, _key| match &app.content_mode {
+            ContentMode::AgentError {
+                suggested_buffer: Some(buf),
+                ..
+            } => {
+                let buf = buf.clone();
+                app.buffer.replace_buffer(&buf);
+                app.on_possible_buffer_change();
+                app.content_mode = ContentMode::Normal;
+                if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
+                    app.start_agent_mode(agent_cmd, &buffer);
+                }
+            }
+            ContentMode::AgentError { .. } => {
+                app.content_mode = ContentMode::Normal;
+                app.buffer.replace_buffer("flyline agent-mode --help");
+                app.on_possible_buffer_change();
+                app.try_submit_current_buffer();
+            }
+            _ => {}
         },
     ),
     Action::new(
@@ -970,15 +994,14 @@ impl KeyEventMatch {
 /// to highest priority.  User-defined bindings appear above the defaults and
 /// are marked with `*` in the rightmost column.
 pub fn print_bindings_table(user_bindings: &[Binding], filter_key: Option<&str>) {
-    let filter_event: Option<KeyEvent> = filter_key.and_then(|k| {
-        match KeyEventMatch::try_from(k) {
+    let filter_event: Option<KeyEvent> =
+        filter_key.and_then(|k| match KeyEventMatch::try_from(k) {
             Ok(KeyEventMatch::Exact(ev)) => Some(ev),
             _ => {
                 eprintln!("Warning: could not parse key sequence '{}'", k);
                 None
             }
-        }
-    });
+        });
 
     struct Row {
         keys: String,
@@ -1100,7 +1123,8 @@ impl<'a> App<'a> {
         for binding in self
             .settings
             .keybindings
-            .iter().rev()
+            .iter()
+            .rev()
             .chain(DEFAULT_BINDINGS.iter())
         {
             if binding.action.scope.is_active(self) && binding.matches(key) {
