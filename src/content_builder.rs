@@ -430,26 +430,66 @@ impl Contents {
             (_x,y) if y == area.top() => '─',
             (x,_y) if x == area.left() => '│',
             (x,_y) if x == area.right() - 1 => '│',
-                _ => 'X'
+                _ => ' '
             };
         
         if !is_selected {
             return char;
         }
 
+        // match char {
+        //     '╭' => '╔',
+        //     '╮' => '╗',
+        //     '╰' => '╚',
+        //     '╯' => '╝',
+        //     '─' => '═', // if y == area.top() { '▂' } else { '🬂' },
+        //     '│' => '║', // if x == area.left() { '🮇' } else { '🯏' },
+        //     ' ' => '🮖', // 🮖 █
+        //     _ => char
+        // }
+        // match char {
+        //     '╭' => '▗',
+        //     '╮' => '▖',
+        //     '╰' => '▝',
+        //     '╯' => '▘',
+        //     '─' =>  if y == area.top() { '▄' } else { '▀' },
+        //     '│' =>  if x == area.left() { '▐' } else { '▌' },
+        //     ' ' => '🮖', // 🮖 █
+        //     _ => char
+        // }
+        // match char {
+        //     '╭' => '▗',
+        //     '╮' => '▖',
+        //     '╰' => '🯬',
+        //     '╯' => '▘',
+        //     '─' =>  if y == area.top() { '🮏' } else { '🮎' },
+        //     '│' =>  if x == area.left() { '🮍' } else { '🮌' },
+        //     ' ' => '🮐', // 🮖 █
+        //     _ => char
+        // }
+        // match char {
+        //     '╭' => '🬆',
+        //     '╮' => '🬊',
+        //     '╰' => '🬱',
+        //     '╯' => '🬵',
+        //     '─' =>  if y == area.top() { '🮏' } else { '🮎' },
+        //     '│' =>  if x == area.left() { '🮍' } else { '🮌' },
+        //     ' ' => '🮐', // 🮖 █
+        //     _ => char
+        // }
         match char {
-            '╭' => '🯮',
-            '╮' => '🯭',
-            '╰' => '🯬',
-            '╯' => '🯯',
-            '─' => if y == area.top() { '▂' } else { '🬂' },
-            '│' => if x == area.left() { '🮇' } else { '🯏' },
-            'X' => '🮖', // 🮖 █
+            // '╭' => '🬆',
+            // '╮' => '🬊',
+            // '╰' => '🬱',
+            // '╯' => '🬵',
+            '─' =>  if y == area.top() { '🮏' } else { '🮎' },
+            '│' =>  if x == area.left() { '🮍' } else { '🮌' },
+            ' ' => '🮐', // 🮖 █
             _ => char
         }
     }
 
-        pub fn render_block(&mut self, area: Rect, tag: Tag, is_selected: bool) {
+        pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, is_selected: bool) {
             for y in area.top()..area.bottom() {
                 for x in area.left()..area.right() {
                     if let Some(row) = self.buf.get_mut(y as usize)
@@ -461,6 +501,17 @@ impl Contents {
                     tagged_cell.cell.set_symbol(&char.to_string()).set_style(ratatui::style::Style::default());
                     tagged_cell.tag = tag;
                 }
+            }
+
+            // write label in center of block:
+            let label_span = Span::styled(label.to_string(), ratatui::style::Style::default());
+            let label_width = label_span.width() as u16;
+            if label_width < area.width {
+                let label_x = area.left() + (area.width - label_width) / 2;
+                let label_y = area.top() + (area.height / 2);
+                self.set_cursor_col(label_x);
+                self.cursor_pos.row = label_y;
+                self.write_span(&label_span, tag);
             }
         }
     }
