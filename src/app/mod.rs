@@ -12,9 +12,9 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
-use crate::palette::{DefaultMode, Palette};
+use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
-use crate::settings::{self, ColorTheme, MouseMode, Settings};
+use crate::settings::{self, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
@@ -63,45 +63,6 @@ fn set_panic_hook() {
     }));
 }
 
-/// Standard sRGB luminance coefficients (ITU-R BT.709).
-const SRGB_RED_COEFF: f32 = 0.2126;
-const SRGB_GREEN_COEFF: f32 = 0.7152;
-const SRGB_BLUE_COEFF: f32 = 0.0722;
-/// Backgrounds with perceived luminance above this threshold are treated as light.
-const LUMINANCE_LIGHT_THRESHOLD: f32 = 0.5;
-
-/// Query the terminal background colour and decide whether to use the dark or
-/// light palette preset.  Falls back to `Dark` if the query fails or the
-/// terminal does not respond.
-fn detect_background_mode() -> DefaultMode {
-    match crossterm::style::query_background_color() {
-        Ok(Some(crossterm::style::Color::Rgb { r, g, b })) => {
-            // Perceived luminance using the standard sRGB coefficients.
-            let luminance = SRGB_RED_COEFF * (r as f32 / 255.0)
-                + SRGB_GREEN_COEFF * (g as f32 / 255.0)
-                + SRGB_BLUE_COEFF * (b as f32 / 255.0);
-            if luminance > LUMINANCE_LIGHT_THRESHOLD {
-                log::debug!("Background RGB({r},{g},{b}) luminance={luminance:.3} → light mode");
-                DefaultMode::Light
-            } else {
-                log::debug!("Background RGB({r},{g},{b}) luminance={luminance:.3} → dark mode");
-                DefaultMode::Dark
-            }
-        }
-        Ok(color) => {
-            log::debug!(
-                "Background color {:?} not an RGB value, defaulting to dark mode",
-                color
-            );
-            DefaultMode::Dark
-        }
-        Err(e) => {
-            log::debug!("Could not query background color: {e}, defaulting to dark mode");
-            DefaultMode::Dark
-        }
-    }
-}
-
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ExitState {
     WithCommand(String),
@@ -132,15 +93,6 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
-
-    // Resolve the colour palette before starting the TUI. When the theme is
-    // `Auto`, query the terminal background colour and apply the appropriate
-    // preset defaults; user-specified overrides inside the palette are preserved.
-    if settings.color_theme == ColorTheme::Auto {
-        let mode = detect_background_mode();
-        settings.color_palette.apply_theme(mode);
-        log::info!("Auto theme resolved to {:?}", mode);
-    }
 
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
 

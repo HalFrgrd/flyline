@@ -10,9 +10,7 @@ crate-type = ["cdylib"]
 clap = { version = "4.5.49", features = ["derive"] }
 clap_complete = "4.5.66"
 ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default"] }
-# Fork of crossterm that adds query_background_color() / query_foreground_color() (OSC 10/11).
-# Track upstream PR: https://github.com/crossterm-rs/crossterm/compare/master...nornagon:crossterm:nornagon/color-query
-crossterm = { git = "https://github.com/nornagon/crossterm", rev = "87db8bfa6dc99427fd3b071681b07fc31c6ce995" }
+crossterm ="0.29.0"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3.31"
 log = "0.4"

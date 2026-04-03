@@ -2,18 +2,16 @@ use std::collections::HashMap;
 
 use crate::app::actions;
 use crate::palette::Palette;
+use clap::ValueEnum;
 
 /// Which theme the user has configured for the colour palette.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum ColorTheme {
     /// Dark-terminal preset (the original flyline palette). This is the default.
     #[default]
     Dark,
     /// Light-terminal preset.
     Light,
-    /// Automatically detect dark or light mode by querying the terminal background
-    /// colour at startup.
-    Auto,
 }
 
 /// A single custom prompt animation registered with `flyline create-anim`.
@@ -87,7 +85,7 @@ pub struct Settings {
     pub send_shell_integration_codes: bool,
     /// Configurable colour palette for UI elements.
     pub color_palette: Palette,
-    /// Which colour theme the user has selected (dark, light, or auto).
+    /// Which colour theme the user has selected (dark or light).
     pub color_theme: ColorTheme,
     /// User defined keybindings
     pub keybindings: Vec<actions::Binding>,

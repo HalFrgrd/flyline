@@ -126,17 +126,6 @@ struct FlylineArgs {
     command: Option<Commands>,
 }
 
-#[derive(ValueEnum, Clone, Debug)]
-enum ColorDefault {
-    /// Dark-terminal colour preset (the original flyline palette).
-    Dark,
-    /// Light-terminal colour preset.
-    Light,
-    /// Automatically detect dark or light mode by querying the terminal background
-    /// colour at startup.
-    Auto,
-}
-
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Configure AI agent mode.
@@ -215,7 +204,7 @@ enum Commands {
         /// Apply a built-in colour preset for dark or light terminals, or `auto` to detect
         /// the terminal background colour at startup and choose automatically.
         #[arg(long = "default-theme", value_name = "MODE")]
-        default_theme: Option<ColorDefault>,
+        default_theme: Option<settings::ColorTheme>,
         /// Style for recognised (valid) commands (e.g. "green").
         #[arg(long = "recognised-command", value_name = "STYLE")]
         recognised_command: Option<String>,
@@ -546,21 +535,7 @@ impl Flyline {
                         markdown_code,
                     }) => {
                         if let Some(preset) = default_theme {
-                            self.settings.color_theme = match preset {
-                                ColorDefault::Dark => settings::ColorTheme::Dark,
-                                ColorDefault::Light => settings::ColorTheme::Light,
-                                ColorDefault::Auto => settings::ColorTheme::Auto,
-                            };
-                            // Apply the theme defaults immediately (leaving overrides intact)
-                            // unless the theme is Auto (resolved at app startup).
-                            if self.settings.color_theme != settings::ColorTheme::Auto {
-                                let mode = match self.settings.color_theme {
-                                    settings::ColorTheme::Dark => palette::DefaultMode::Dark,
-                                    settings::ColorTheme::Light => palette::DefaultMode::Light,
-                                    settings::ColorTheme::Auto => unreachable!(),
-                                };
-                                self.settings.color_palette.apply_theme(mode);
-                            }
+                            self.settings.color_palette.apply_theme(preset);
                             log::info!("Color theme set to {:?}", self.settings.color_theme);
                         }
 

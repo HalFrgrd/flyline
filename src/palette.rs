@@ -2,6 +2,8 @@ use itertools::Itertools;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::settings::ColorTheme;
+
 /// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
 /// Returns an error message if the string cannot be parsed.
 pub fn parse_str_to_style(s: &str) -> Result<ratatui::style::Style, String> {
@@ -46,14 +48,6 @@ fn parse_color_to_ratatui(c: parse_style::Color) -> ratatui::style::Color {
     }
 }
 
-/// Which built-in colour preset is active.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DefaultMode {
-    #[default]
-    Dark,
-    Light,
-}
-
 /// The colour palette. Holds theme-default styles and per-field user overrides.
 ///
 /// Each style is stored as a default (`field: Style`, from the active theme preset)
@@ -66,9 +60,6 @@ pub enum DefaultMode {
 /// user override.
 #[derive(Debug, Clone)]
 pub struct Palette {
-    /// Which built-in preset is active.
-    pub default_mode: DefaultMode,
-
     recognised_command: Style,
     pub recognised_command_override: Option<Style>,
 
@@ -199,7 +190,6 @@ impl Palette {
     /// Dark-terminal defaults (the original flyline palette).
     pub fn dark() -> Self {
         Palette {
-            default_mode: DefaultMode::Dark,
             recognised_command: Style::default().fg(Color::Green),
             recognised_command_override: None,
             unrecognised_command: Style::default().fg(Color::Red),
@@ -253,7 +243,6 @@ impl Palette {
     /// Light-terminal defaults.
     pub fn light() -> Self {
         Palette {
-            default_mode: DefaultMode::Light,
             recognised_command: Style::default().fg(Color::DarkGray),
             recognised_command_override: None,
             unrecognised_command: Style::default().fg(Color::Red),
@@ -306,12 +295,11 @@ impl Palette {
 
     /// Apply a new theme preset to the default style values, leaving any
     /// user-specified overrides intact.
-    pub fn apply_theme(&mut self, mode: DefaultMode) {
+    pub fn apply_theme(&mut self, mode: ColorTheme) {
         let template = match mode {
-            DefaultMode::Dark => Self::dark(),
-            DefaultMode::Light => Self::light(),
+            ColorTheme::Dark => Self::dark(),
+            ColorTheme::Light => Self::light(),
         };
-        self.default_mode = template.default_mode;
         self.recognised_command = template.recognised_command;
         self.unrecognised_command = template.unrecognised_command;
         self.single_quoted_text = template.single_quoted_text;
