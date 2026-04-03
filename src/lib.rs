@@ -291,12 +291,13 @@ enum KeySubcommands {
     /// Examples:
     ///   flyline key set Ctrl+Enter normal::submit_or_newline
     ///   flyline key set Alt+Left normal::move_one_word_left_whitespace
-    #[command(name = "set", verbatim_doc_comment)]
+    #[command(name = "set", verbatim_doc_comment, disable_help_flag = true)]
     Set {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
+        #[arg(num_args = 1, hide = true)]
         key_sequence: String,
         /// Action in the form scope::action_name (e.g. "normal::submit_or_newline").
-        #[arg(value_parser = possible_action_names())]
+        #[arg(value_parser = possible_action_names(), num_args = 1)]
         action: String,
     },
     /// List all keybindings from lowest to highest priority.
