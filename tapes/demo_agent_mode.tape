@@ -40,6 +40,5 @@ Sleep 500ms
 Type "ai: list files older than three days"
 Sleep 500ms
 Enter
-Sleep 4000ms
-Enter
+Sleep 5500ms
 
