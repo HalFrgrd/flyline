@@ -18,11 +18,12 @@ pub enum TutorialStep {
     FuzzyHistorySearch,
     Autocompletions,
     AutoClosing,
+    FineGrainDeletion,
     End,
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 9] = [
+    const STEPS_IN_ORDER: [TutorialStep; 10] = [
         TutorialStep::Welcome,
         TutorialStep::RecommendedSettings,
         TutorialStep::MouseMode,
@@ -30,6 +31,7 @@ impl TutorialStep {
         TutorialStep::FuzzyHistorySearch,
         TutorialStep::Autocompletions,
         TutorialStep::AutoClosing,
+        TutorialStep::FineGrainDeletion,
         TutorialStep::End,
         TutorialStep::NotRunning,
     ];
@@ -297,6 +299,25 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
                 "Toggle this feature with `flyline --auto-close-chars true/false`.",
+                hint_style,
+            )));
+        }
+        TutorialStep::FineGrainDeletion => {
+            lines.push(Line::from(Span::styled(
+                "Fine-Grain Deletion",
+                heading_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Flyline provides more granular deletion commands in addition to Backspace and Delete.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "Ctrl+Backspace deletes to the previous whitespace and Alt+Backspace deletes to the next punctuation character or, if you're editing a file path, the previous path segment.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "Similarly, use Alt+Delete or Ctrl+Delete to delete forward. Try it out!",
                 hint_style,
             )));
         }

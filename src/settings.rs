@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 
 use crate::app::actions;
@@ -63,7 +62,7 @@ pub struct Settings {
     /// Whether the interactive tutorial is active.
     pub run_tutorial: bool,
     /// Current tutorial step.
-    pub tutorial_step: Cell<TutorialStep>,
+    pub tutorial_step: TutorialStep,
     /// Whether to show all animations (cursor movement, cursor fading, dynamic time).
     pub show_animations: bool,
     /// Whether to show inline history suggestions.
@@ -103,7 +102,7 @@ impl Default for Settings {
         Self {
             zsh_history_path: None,
             run_tutorial: false,
-            tutorial_step: Cell::new(TutorialStep::NotRunning),
+            tutorial_step: TutorialStep::NotRunning,
             show_animations: true,
             show_inline_history: true,
             auto_close_chars: true,

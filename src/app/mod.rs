@@ -16,7 +16,7 @@ use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
-use crate::{bash_funcs, dparser};
+use crate::{bash_funcs, dparser, tutorial};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
@@ -24,7 +24,7 @@ use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::time::Duration;
@@ -226,7 +226,7 @@ pub(crate) struct App<'a> {
     last_contents: Option<DrawnContent>,
     last_mouse_over_cell: Option<Tag>,
     tooltip: Option<String>,
-    settings: &'a Settings,
+    settings: &'a mut Settings,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
@@ -235,7 +235,7 @@ pub(crate) struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn new(settings: &'a Settings) -> Self {
+    fn new(settings: &'a mut Settings) -> Self {
         // log::info!("fully_expand_path test:");
         // log::info!(
         //     "fully_expand_path(\"$PWD\") = {}",
@@ -262,7 +262,7 @@ impl<'a> App<'a> {
 
         bash_funcs::reset_caches();
 
-        App {
+        let mut app = App {
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
@@ -289,7 +289,14 @@ impl<'a> App<'a> {
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
             last_keypress_action: None,
+        };
+
+        if app.settings.tutorial_step == tutorial::TutorialStep::FineGrainDeletion {
+            app.buffer.replace_buffer("ls foo/bar_abc/qwe.txt oiu.txt");
+            app.on_possible_buffer_change();
         }
+
+        app
     }
 
     pub async fn run(
@@ -660,20 +667,22 @@ impl<'a> App<'a> {
             }
             Some(Tag::TutorialPrev) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                    let mut step = self.settings.tutorial_step.get();
-                    step.prev();
-                    self.settings.tutorial_step.set(step);
-                    log::info!("Tutorial navigated to prev: {:?}", step);
+                    self.settings.tutorial_step.prev();
+                    log::info!(
+                        "Tutorial navigated to prev: {:?}",
+                        self.settings.tutorial_step
+                    );
                     return true;
                 }
             }
             Some(Tag::TutorialNext) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                    let mut step = self.settings.tutorial_step.get();
-                    step.next();
-                    self.settings.tutorial_step.set(step);
-                    log::info!("Tutorial navigated to next: {:?}", step);
-                    if !step.is_active() {
+                    self.settings.tutorial_step.next();
+                    log::info!(
+                        "Tutorial navigated to next: {:?}",
+                        self.settings.tutorial_step
+                    );
+                    if !self.settings.tutorial_step.is_active() {
                         // Tutorial finished — but we can't set run_tutorial here since settings is &.
                         // The tutorial_step being NotRunning is sufficient.
                     }
@@ -1125,7 +1134,7 @@ impl<'a> App<'a> {
         // Render tutorial text above the prompt when a tutorial step is active.
         if self.mode.is_running() {
             if let Some(tutorial_lines) = crate::tutorial::generate_tutorial_text(
-                self.settings.tutorial_step.get(),
+                self.settings.tutorial_step,
                 &self.settings.color_palette,
             ) {
                 let buffer_rect = Rect {

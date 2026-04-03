@@ -426,13 +426,9 @@ impl Flyline {
                     log::info!("Run tutorial set to {}", enabled);
                     self.settings.run_tutorial = enabled;
                     if enabled {
-                        self.settings
-                            .tutorial_step
-                            .set(tutorial::TutorialStep::Welcome);
+                        self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
                     } else {
-                        self.settings
-                            .tutorial_step
-                            .set(tutorial::TutorialStep::NotRunning);
+                        self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
                     }
                 }
 
@@ -732,13 +728,13 @@ impl Flyline {
 
             self.content = match result {
                 Ok(app::ExitState::WithCommand(cmd)) => {
-                    let step = self.settings.tutorial_step.get();
-                    if step.is_active() {
-                        let mut new_step = step;
-                        new_step.next();
-                        self.settings.tutorial_step.set(new_step);
-                        log::info!("Tutorial step advanced to {:?}", new_step);
-                        if !new_step.is_active() {
+                    if self.settings.tutorial_step.is_active() {
+                        self.settings.tutorial_step.next();
+                        log::info!(
+                            "Tutorial step advanced to {:?}",
+                            self.settings.tutorial_step
+                        );
+                        if !self.settings.tutorial_step.is_active() {
                             self.settings.run_tutorial = false;
                         }
                     }
