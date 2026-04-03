@@ -253,7 +253,7 @@ impl DrawnContent {
     }
 }
 
-struct App<'a> {
+pub(crate) struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
     formatted_buffer_cache: FormattedBuffer,

@@ -4,7 +4,7 @@ use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
 
-use crate::app::actions;
+use crate::app::actions::{self, possible_action_names};
 
 mod active_suggestions;
 mod agent_mode;
@@ -296,6 +296,7 @@ enum KeySubcommands {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
         key_sequence: String,
         /// Action in the form scope::action_name (e.g. "normal::submit_or_newline").
+        #[arg(value_parser = possible_action_names())]
         action: String,
     },
     /// List all keybindings from lowest to highest priority.
