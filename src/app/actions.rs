@@ -1005,7 +1005,7 @@ pub fn print_bindings_table(user_bindings: &[Binding]) {
     for binding in DEFAULT_BINDINGS.iter().rev() {
         rows.extend(binding_to_rows(binding, false));
     }
-    for binding in user_bindings.iter().rev() {
+    for binding in user_bindings.iter() {
         rows.extend(binding_to_rows(binding, true));
     }
 
@@ -1086,7 +1086,7 @@ impl<'a> App<'a> {
         for binding in self
             .settings
             .keybindings
-            .iter()
+            .iter().rev()
             .chain(DEFAULT_BINDINGS.iter())
         {
             if binding.action.scope.is_active(self) && binding.matches(key) {
