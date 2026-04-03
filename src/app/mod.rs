@@ -832,14 +832,6 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self) {
-        self.inline_history_suggestion =
-            if !self.settings.show_inline_history || self.buffer.buffer().is_empty() {
-                None
-            } else {
-                self.history_manager
-                    .get_command_suggestion_suffix(self.buffer.buffer())
-            };
-
         // Apply fuzzy filtering to active tab completion suggestions
         if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
             let buffer: &str = self.buffer.buffer();
@@ -885,6 +877,15 @@ impl<'a> App<'a> {
 
         self.dparser_tokens_cache = new_tokens;
 
+        let history_buffer = self.buffer_for_history().to_owned();
+        self.inline_history_suggestion =
+            if !self.settings.show_inline_history || history_buffer.is_empty() {
+                None
+            } else {
+                self.history_manager
+                    .get_command_suggestion_suffix(&history_buffer)
+            };
+
         self.formatted_buffer_cache = format_buffer(
             &self.dparser_tokens_cache,
             self.buffer.cursor_byte_pos(),
@@ -909,6 +910,15 @@ impl<'a> App<'a> {
         }
 
         // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
+    }
+
+    /// Returns the buffer string with any trailing auto-inserted closing tokens stripped.
+    /// This is the string that should be used when searching history.
+    fn buffer_for_history(&self) -> &str {
+        dparser::DParser::buffer_without_auto_inserted_suffix(
+            &self.dparser_tokens_cache,
+            self.buffer.buffer(),
+        )
     }
 
     fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
@@ -1364,9 +1374,10 @@ impl<'a> App<'a> {
                     .saturating_sub(num_rows_for_instructions)
                     .clamp(2, 30);
 
+                let history_buffer = self.buffer_for_history().to_owned();
                 let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
                     .history_manager
-                    .get_fuzzy_search_results(self.buffer.buffer(), num_rows_for_results as usize);
+                    .get_fuzzy_search_results(&history_buffer, num_rows_for_results as usize);
 
                 let starting_row = content.cursor_position().row;
 

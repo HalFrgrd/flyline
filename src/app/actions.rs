@@ -551,8 +551,8 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 app.content_mode = ContentMode::Normal;
             } else {
                 app.content_mode = ContentMode::FuzzyHistorySearch;
-                app.history_manager
-                    .warm_fuzzy_search_cache(app.buffer.buffer());
+                let history_buffer = app.buffer_for_history().to_owned();
+                app.history_manager.warm_fuzzy_search_cache(&history_buffer);
             }
         },
     ),
@@ -663,9 +663,10 @@ const POSSIBLE_ACTIONS: &[Action] = &[
             if app.buffer.cursor_row() == 0 {
                 app.buffer_before_history_navigation
                     .get_or_insert_with(|| app.buffer.buffer().to_string());
+                let history_buffer = app.buffer_for_history().to_owned();
                 if let Some(entry) = app
                     .history_manager
-                    .search_in_history(app.buffer.buffer(), HistorySearchDirection::Backward)
+                    .search_in_history(&history_buffer, HistorySearchDirection::Backward)
                 {
                     app.buffer.replace_buffer(&entry.command);
                 }
@@ -680,9 +681,10 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         Scope::NORMAL,
         |app, _key| {
             if app.buffer.is_cursor_on_final_line() {
+                let history_buffer = app.buffer_for_history().to_owned();
                 match app
                     .history_manager
-                    .search_in_history(app.buffer.buffer(), HistorySearchDirection::Forward)
+                    .search_in_history(&history_buffer, HistorySearchDirection::Forward)
                 {
                     Some(entry) => {
                         app.buffer.replace_buffer(&entry.command);
