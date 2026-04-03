@@ -969,7 +969,17 @@ impl KeyEventMatch {
 /// Print all keybindings as a formatted table to stdout, ordered from lowest
 /// to highest priority.  User-defined bindings appear above the defaults and
 /// are marked with `*` in the rightmost column.
-pub fn print_bindings_table(user_bindings: &[Binding]) {
+pub fn print_bindings_table(user_bindings: &[Binding], filter_key: Option<&str>) {
+    let filter_event: Option<KeyEvent> = filter_key.and_then(|k| {
+        match KeyEventMatch::try_from(k) {
+            Ok(KeyEventMatch::Exact(ev)) => Some(ev),
+            _ => {
+                eprintln!("Warning: could not parse key sequence '{}'", k);
+                None
+            }
+        }
+    });
+
     struct Row {
         keys: String,
         action: String,
@@ -1003,10 +1013,14 @@ pub fn print_bindings_table(user_bindings: &[Binding]) {
     //      bindings have higher priority than all defaults)
     let mut rows: Vec<Row> = Vec::new();
     for binding in DEFAULT_BINDINGS.iter().rev() {
-        rows.extend(binding_to_rows(binding, false));
+        if filter_event.is_none_or(|ev| binding.matches(ev)) {
+            rows.extend(binding_to_rows(binding, false));
+        }
     }
     for binding in user_bindings.iter() {
-        rows.extend(binding_to_rows(binding, true));
+        if filter_event.is_none_or(|ev| binding.matches(ev)) {
+            rows.extend(binding_to_rows(binding, true));
+        }
     }
 
     const H_KEYS: &str = "Key(s)";

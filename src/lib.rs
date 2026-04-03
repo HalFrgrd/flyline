@@ -304,8 +304,14 @@ enum KeySubcommands {
     ///
     /// User-defined bindings are marked with * in the User column and have
     /// higher priority than the built-in defaults.
+    ///
+    /// Optionally supply a KEY_SEQUENCE (e.g. "Tab", "Ctrl+r") to show only
+    /// bindings that the given key would trigger.
     #[command(name = "list")]
-    List,
+    List {
+        /// Optional key sequence to filter by (e.g. "Tab", "Ctrl+r").
+        key_sequence: Option<String>,
+    },
 }
 
 // Global state for our custom input stream
@@ -652,8 +658,11 @@ impl Flyline {
                                 }
                             }
                         }
-                        KeySubcommands::List => {
-                            actions::print_bindings_table(&self.settings.keybindings);
+                        KeySubcommands::List { key_sequence } => {
+                            actions::print_bindings_table(
+                                &self.settings.keybindings,
+                                key_sequence.as_deref(),
+                            );
                         }
                     },
                     None => {}
