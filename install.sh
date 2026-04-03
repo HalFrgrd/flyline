@@ -50,7 +50,7 @@ detect_os() {
     os="$(uname -s)"
     case "$os" in
         Linux) echo "linux" ;;
-        Darwin) err "macOS is not supported. Flyline only supports Linux." ;;
+        Darwin) echo "darwin" ;;
         *) err "Unsupported OS: $os" ;;
     esac
 }
@@ -110,14 +110,51 @@ get_asset_url() {
 }
 
 # ---------------------------------------------------------------------------
+# Helpers for portability
+# ---------------------------------------------------------------------------
+
+# Portable checksum verification: supports sha256sum (Linux) and shasum (macOS).
+verify_sha256() {
+    sha256_file="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum -c "$sha256_file"
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 -c "$sha256_file"
+    else
+        err "No checksum tool found (sha256sum or shasum). Cannot verify download."
+    fi
+}
+
+# Portable in-place sed: BSD sed (macOS) requires an explicit empty backup
+# extension; GNU sed (Linux) does not.
+sed_inplace() {
+    if [ "$(uname -s)" = "Darwin" ]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 main() {
-    detect_os >/dev/null   # exits on non-Linux
+    OS="$(detect_os)"
     ARCH="$(detect_arch)"
-    LIBC="$(detect_libc)"
-    TARGET="${ARCH}-unknown-linux-${LIBC}"
+
+    if [ "$OS" = "darwin" ]; then
+        TARGET="${ARCH}-apple-darwin"
+        LIB_NAME="libflyline.dylib"
+        # On macOS, bash reads ~/.bash_profile by default; fall back to ~/.bashrc.
+        if [ ! -f "${HOME}/.bashrc" ] && [ -f "${HOME}/.bash_profile" ]; then
+            BASHRC="${HOME}/.bash_profile"
+        fi
+    else
+        LIBC="$(detect_libc)"
+        TARGET="${ARCH}-unknown-linux-${LIBC}"
+        LIB_NAME="libflyline.so"
+    fi
 
     say "Detected target: ${TARGET}"
 
@@ -159,20 +196,20 @@ Please check https://github.com/${REPO}/releases for available assets."
         download "$SHA256_URL" "${TMP_DIR}/${ARCHIVE_SHA256}"
 
         say "Verifying checksum..."
-        # sha256sum expects the file to be relative to the current directory.
-        (cd "$TMP_DIR" && sha256sum -c "$ARCHIVE_SHA256") \
+        # Run from TMP_DIR so the relative path in the checksum file resolves.
+        (cd "$TMP_DIR" && verify_sha256 "$ARCHIVE_SHA256") \
             || err "Checksum verification failed for ${ARCHIVE}."
     fi
 
     tar xzf "${TMP_DIR}/${ARCHIVE}" -C "$INSTALL_DIR"
 
-    LIB_PATH="${INSTALL_DIR}/libflyline.so"
+    LIB_PATH="${INSTALL_DIR}/${LIB_NAME}"
     say "Installed: ${LIB_PATH}"
 
-    # Update or add 'enable -f ... flyline' in ~/.bashrc.
+    # Update or add 'enable -f ... flyline' in ~/.bashrc (or ~/.bash_profile on macOS).
     ENABLE_CMD="enable -f ${LIB_PATH} flyline"
     if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
-        sed -i -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$(readlink -f "$BASHRC")"
+        sed_inplace -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC"
         say "Updated flyline configuration in ${BASHRC}"
     else
         printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
