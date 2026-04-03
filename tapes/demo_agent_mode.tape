@@ -38,6 +38,8 @@ Type "# If you set `--trigger-prefix`, then you can launch agent mode simply wit
 Enter
 Sleep 500ms
 Type "ai: list files older than three days"
+Sleep 500ms
+Enter
 Sleep 4000ms
 Enter
 
