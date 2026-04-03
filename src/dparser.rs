@@ -700,6 +700,31 @@ impl DParser {
         }
     }
 
+    /// Returns `buffer` with any trailing auto-inserted closing tokens stripped.
+    ///
+    /// Iterates the tokens from the end, collecting all consecutive trailing tokens
+    /// whose `closing.is_auto_inserted` flag is set, then strips the corresponding
+    /// suffix from `buffer`.  The result is the string that should be used when
+    /// searching history so that auto-inserted closing delimiters do not affect the
+    /// search query.
+    pub fn buffer_without_auto_inserted_suffix<'buf>(
+        tokens: &[AnnotatedToken],
+        buffer: &'buf str,
+    ) -> &'buf str {
+        let trailing_len: usize = tokens
+            .iter()
+            .rev()
+            .take_while(|t| {
+                t.annotations
+                    .closing
+                    .as_ref()
+                    .is_some_and(|c| c.is_auto_inserted)
+            })
+            .map(|t| t.token.value.len())
+            .sum();
+        &buffer[..buffer.len().saturating_sub(trailing_len)]
+    }
+
     pub fn transfer_auto_inserted_flags(
         old_tokens: &[AnnotatedToken],
         new_tokens: &mut [AnnotatedToken],
@@ -1427,6 +1452,80 @@ mod tests {
         assert_eq!(
             tokens[2].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
+        );
+    }
+
+    // ---- buffer_without_auto_inserted_suffix tests ----
+
+    /// Helper: build a token list for `input` and mark the last token as auto-inserted closing.
+    fn make_tokens_with_auto_inserted_suffix(input: &str) -> Vec<AnnotatedToken> {
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let mut tokens = parser.into_tokens();
+        // Mark the final token as auto-inserted closing (simulate what the editor does).
+        if let Some(last) = tokens.last_mut() {
+            last.annotations.closing = Some(ClosingAnnotation {
+                opening_idx: 0,
+                is_auto_inserted: true,
+            });
+        }
+        tokens
+    }
+
+    #[test]
+    fn buffer_without_auto_inserted_suffix_no_auto_inserted() {
+        // No auto-inserted tokens: buffer returned unchanged.
+        let input = "echo hello";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.into_tokens();
+        assert_eq!(
+            DParser::buffer_without_auto_inserted_suffix(&tokens, input),
+            input,
+        );
+    }
+
+    #[test]
+    fn buffer_without_auto_inserted_suffix_single_char_stripped() {
+        // Buffer `echo "hello"` where the last `"` is auto-inserted.
+        let input = r#"echo "hello""#;
+        let tokens = make_tokens_with_auto_inserted_suffix(input);
+        // The last token is `"` (one byte).
+        assert_eq!(
+            DParser::buffer_without_auto_inserted_suffix(&tokens, input),
+            r#"echo "hello"#,
+        );
+    }
+
+    #[test]
+    fn buffer_without_auto_inserted_suffix_multiple_chars_stripped() {
+        // Buffer `echo ({})` where both `}` and `)` are auto-inserted closing tokens.
+        let input = "echo ({})";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let mut tokens = parser.into_tokens();
+        // Verify there are at least 2 tokens and mark the last two as auto-inserted closing.
+        let len = tokens.len();
+        assert!(len >= 2);
+        for tok in tokens[len - 2..].iter_mut() {
+            tok.annotations.closing = Some(ClosingAnnotation {
+                opening_idx: 0,
+                is_auto_inserted: true,
+            });
+        }
+        // Both `}` and `)` (1 char each) are stripped from "echo ({})".
+        assert_eq!(
+            DParser::buffer_without_auto_inserted_suffix(&tokens, input),
+            "echo ({",
+        );
+    }
+
+    #[test]
+    fn buffer_without_auto_inserted_suffix_empty_tokens() {
+        // Empty token slice: buffer returned unchanged.
+        assert_eq!(
+            DParser::buffer_without_auto_inserted_suffix(&[], "echo hello"),
+            "echo hello",
         );
     }
 }
