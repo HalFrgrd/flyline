@@ -79,7 +79,14 @@ impl PathPatternExpansion {
                 _ => bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default()),
             };
             if self.raw_prefix.is_empty() {
-                quoted_suffix
+                // When there is no path prefix, still re-attach the opening
+                // quote character so the result stays in the same quoting
+                // context (e.g. `'many spac` → `'many spaces here/`).
+                match quote_type {
+                    Some(QuoteType::SingleQuote) => format!("'{}", quoted_suffix),
+                    Some(QuoteType::DoubleQuote) => format!("\"{}", quoted_suffix),
+                    _ => quoted_suffix,
+                }
             } else {
                 format!("{}/{}", self.raw_prefix, quoted_suffix)
             }
@@ -814,6 +821,20 @@ impl App<'_> {
         run_test_on(
             r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
             &[&Suggestion::new(r#""$PWD/many spaces here/"#, "", "")],
+        );
+
+        // Test single-quote context without a path prefix: the leading quote must
+        // be preserved in the result (e.g. `'many spac` → `'many spaces here/`).
+        run_test_on(
+            r#"fl_comp_util --fallback-to-default 'many spac"#,
+            &[&Suggestion::new(r#"'many spaces here/"#, "", "")],
+        );
+
+        // Same as above but with a trailing space inside the single-quoted
+        // argument, matching the `foo 'many spaces ` pattern from the issue.
+        run_test_on(
+            r#"fl_comp_util --fallback-to-default 'many spaces "#,
+            &[&Suggestion::new(r#"'many spaces here/"#, "", "")],
         );
 
         // Test that $HOME prefix is preserved (not backslash-escaped) while the
