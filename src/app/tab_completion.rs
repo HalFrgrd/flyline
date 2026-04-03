@@ -74,21 +74,52 @@ impl PathPatternExpansion {
         if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
             let suffix = suffix.trim_start_matches('/');
 
+            // For single- and double-quoted contexts, directories need their
+            // trailing '/' included *before* the closing quote so the slash
+            // ends up inside the quoted string
+            // (e.g. `'many spaces here/'` rather than `'many spaces here'/`).
+            let suffix = if matches!(
+                quote_type,
+                Some(QuoteType::SingleQuote | QuoteType::DoubleQuote)
+            ) && Path::new(expanded_match).is_dir()
+                && !suffix.ends_with('/')
+            {
+                format!("{}/", suffix)
+            } else {
+                suffix.to_string()
+            };
+
+            // Within a quoted context the suffix must be escaped appropriately.
+            // For single-quotes, no escaping is needed (all characters are literal).
+            // For double-quotes, shell-special characters ($, `, ", \, !, \n) need
+            // escaping.
             let quoted_suffix = match quote_type {
-                Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
-                _ => bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default()),
+                Some(QuoteType::SingleQuote) => suffix,
+                Some(QuoteType::DoubleQuote) => bash_funcs::escape_for_double_quote(&suffix),
+                _ => bash_funcs::quote_function_rust(&suffix, quote_type.unwrap_or_default()),
             };
             if self.raw_prefix.is_empty() {
-                // When there is no path prefix, still re-attach the opening
-                // quote character so the result stays in the same quoting
-                // context (e.g. `'many spac` → `'many spaces here/`).
+                // When there is no path prefix, wrap the suffix in the quote
+                // delimiters so the result stays in the same quoting context
+                // (e.g. `'many spac` → `'many spaces here/'`).
                 match quote_type {
-                    Some(QuoteType::SingleQuote) => format!("'{}", quoted_suffix),
-                    Some(QuoteType::DoubleQuote) => format!("\"{}", quoted_suffix),
+                    Some(QuoteType::SingleQuote) => format!("'{}'", quoted_suffix),
+                    Some(QuoteType::DoubleQuote) => format!("\"{}\"", quoted_suffix),
                     _ => quoted_suffix,
                 }
             } else {
-                format!("{}/{}", self.raw_prefix, quoted_suffix)
+                // The raw_prefix already includes the opening quote (e.g. `"$HOME/foo`).
+                // Add the closing quote after the full path so the result is properly
+                // closed (e.g. `"$HOME/foo/\$baz.txt"`).
+                match quote_type {
+                    Some(QuoteType::SingleQuote) => {
+                        format!("{}/{}'", self.raw_prefix, quoted_suffix)
+                    }
+                    Some(QuoteType::DoubleQuote) => {
+                        format!("{}/{}\"", self.raw_prefix, quoted_suffix)
+                    }
+                    _ => format!("{}/{}", self.raw_prefix, quoted_suffix),
+                }
             }
         } else {
             log::warn!(
@@ -820,21 +851,46 @@ impl App<'_> {
 
         run_test_on(
             r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
-            &[&Suggestion::new(r#""$PWD/many spaces here/"#, "", "")],
+            &[&Suggestion::new(r#""$PWD/many spaces here/""#, "", "")],
         );
 
-        // Test single-quote context without a path prefix: the leading quote must
-        // be preserved in the result (e.g. `'many spac` → `'many spaces here/`).
+        // Test single-quote context without a path prefix: the leading and
+        // closing quotes must be present and the directory marker must appear
+        // inside the quoted string (e.g. `'many spac` → `'many spaces here/'`).
         run_test_on(
             r#"fl_comp_util --fallback-to-default 'many spac"#,
-            &[&Suggestion::new(r#"'many spaces here/"#, "", "")],
+            &[&Suggestion::new(r#"'many spaces here/'"#, "", "")],
         );
 
-        // Same as above but with a trailing space inside the single-quoted
-        // argument, matching the `foo 'many spaces ` pattern from the issue.
+        // Closed single-quote with trailing space inside — same result.
         run_test_on(
-            r#"fl_comp_util --fallback-to-default 'many spaces "#,
-            &[&Suggestion::new(r#"'many spaces here/"#, "", "")],
+            r#"fl_comp_util --fallback-to-default 'many spaces '"#,
+            &[&Suggestion::new(r#"'many spaces here/'"#, "", "")],
+        );
+
+        // Double-quote context without a path prefix.
+        run_test_on(
+            r#"fl_comp_util --fallback-to-default "many spaces "#,
+            &[&Suggestion::new(r#""many spaces here/""#, "", "")],
+        );
+
+        // Closed double-quote with trailing space inside — same result.
+        run_test_on(
+            r#"fl_comp_util --fallback-to-default "many spaces ""#,
+            &[&Suggestion::new(r#""many spaces here/""#, "", "")],
+        );
+
+        // Double-quote context with $HOME path prefix and unclosed quote with
+        // trailing space.
+        run_test_on(
+            r#"fl_comp_util --env-var-test "$HOME/foo/ "#,
+            &[&Suggestion::new(r#""$HOME/foo/\$baz.txt""#, "", " ")],
+        );
+
+        // Same but with a closed trailing double-quote.
+        run_test_on(
+            r#"fl_comp_util --env-var-test "$HOME/foo/""#,
+            &[&Suggestion::new(r#""$HOME/foo/\$baz.txt""#, "", " ")],
         );
 
         // Test that $HOME prefix is preserved (not backslash-escaped) while the
