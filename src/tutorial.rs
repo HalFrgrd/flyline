@@ -18,10 +18,11 @@ pub enum TutorialStep {
     FuzzyHistorySearch,
     Autocompletions,
     AutoClosing,
+    End,
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 8] = [
+    const STEPS_IN_ORDER: [TutorialStep; 9] = [
         TutorialStep::Welcome,
         TutorialStep::RecommendedSettings,
         TutorialStep::MouseMode,
@@ -29,6 +30,7 @@ impl TutorialStep {
         TutorialStep::FuzzyHistorySearch,
         TutorialStep::Autocompletions,
         TutorialStep::AutoClosing,
+        TutorialStep::End,
         TutorialStep::NotRunning,
     ];
 
@@ -37,31 +39,21 @@ impl TutorialStep {
             return;
         }
 
-        let self_idx = self
-            .STEPS_IN_ORDER
+        let self_idx = Self::STEPS_IN_ORDER
             .iter()
             .position(|s| s == self)
             .unwrap_or(0);
-        let next_idx = (self_idx + 1) % self.steps_in_order.len();
-        *self = self.steps_in_order[next_idx];
+        let next_idx = (self_idx + 1) % Self::STEPS_IN_ORDER.len();
+        *self = Self::STEPS_IN_ORDER[next_idx];
     }
 
     pub fn prev(&mut self) {
-        if self == &TutorialStep::Welcome {
-            return;
-        }
-
-        let self_idx = self
-            .steps_in_order
+        let self_idx = Self::STEPS_IN_ORDER
             .iter()
             .position(|s| s == self)
             .unwrap_or(0);
-        let prev_idx = if self_idx == 0 {
-            0
-        } else {
-            self_idx - 1
-        };
-        *self = self.steps_in_order[prev_idx];
+
+        *self = Self::STEPS_IN_ORDER[self_idx.saturating_sub(1)];
     }
 
     /// Whether the tutorial is currently active (any step other than `NotRunning`).
@@ -181,6 +173,34 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 lines.push(line);
             }
         }
+        TutorialStep::MouseMode => {
+            lines.push(Line::from(Span::styled(
+                "Mouse Interaction Modes",
+                heading_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Flyline has three mouse interaction modes:",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "1. Smart: mouse interactions are enabled when they work well (recommended).",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "2. Always: mouse interactions are always enabled, but behaviour may be inconsistent in some terminals.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "3. Never: mouse interactions are disabled.",
+                hint_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Toggle mouse interaction modes with `flyline --mouse-mode smart/always/never`.",
+                hint_style,
+            )));
+        }
         TutorialStep::FuzzyHistorySearch => {
             lines.push(Line::from(Span::styled(
                 "Fuzzy History Search",
@@ -277,6 +297,21 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
                 "Toggle this feature with `flyline --auto-close-chars true/false`.",
+                hint_style,
+            )));
+        }
+        TutorialStep::End => {
+            lines.push(Line::from(Span::styled(
+                "You've reached the end of the tutorial!",
+                hint_style.add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Feel free to explore and experiment with flyline's features.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "For more information, check out the documentation and GitHub repo.",
                 hint_style,
             )));
         }
