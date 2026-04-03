@@ -791,6 +791,23 @@ const BACKSLASH_SPECIAL_CHARS: &[char] = &[
     '^', '`', '{', '|', '}',
 ];
 
+/// Escapes characters that are special inside a double-quoted string
+/// (`$`, `` ` ``, `"`, `\`, `!`, `\n`) with a leading backslash.
+///
+/// Unlike [`quote_function_rust`] with [`QuoteType::DoubleQuote`], this does
+/// **not** wrap the result in double-quote characters; the caller is
+/// responsible for adding the surrounding `"…"` delimiters.
+pub fn escape_for_double_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if DOUBLE_QUOTE_SPECIAL_CHARS.contains(&c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /* Filename quoting for completion. */
 /* A function to strip unquoted quote characters (single quotes, double
 quotes, and backslashes).  It allows single quotes to appear

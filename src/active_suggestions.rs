@@ -358,6 +358,60 @@ pub fn post_process_completion(
                 comp_resultflags.quote_type.unwrap_or_default(),
             );
             format!("{}{}", word_under_cursor, quoted_suffix)
+        } else if let Some(qt) = comp_resultflags.quote_type
+            && matches!(
+                qt,
+                bash_funcs::QuoteType::SingleQuote | bash_funcs::QuoteType::DoubleQuote
+            )
+            && !word_under_cursor.is_empty()
+        {
+            // word_under_cursor is quoted (starts with ' or ") but sug is the raw
+            // unquoted completion string.  Extract the path prefix from the
+            // word, match it against sug, then rebuild with proper escaping.
+            let opening_char = if qt == bash_funcs::QuoteType::SingleQuote {
+                '\''
+            } else {
+                '"'
+            };
+            if word_under_cursor.starts_with(opening_char) {
+                // Strip opening quote and any trailing closing quote.
+                let inner = &word_under_cursor[opening_char.len_utf8()..];
+                let inner = if inner.ends_with(opening_char) {
+                    &inner[..inner.len() - opening_char.len_utf8()]
+                } else {
+                    inner
+                };
+                // Use everything up to and including the last '/' as the
+                // match prefix (ignore any trailing non-path characters such
+                // as a space inside an unclosed quote).
+                let path_prefix = if let Some(slash_pos) = inner.rfind('/') {
+                    &inner[..slash_pos + 1]
+                } else {
+                    ""
+                };
+                if let Some(new_suffix) = sug.strip_prefix(path_prefix) {
+                    let escaped_suffix = match qt {
+                        bash_funcs::QuoteType::DoubleQuote => {
+                            bash_funcs::escape_for_double_quote(new_suffix)
+                        }
+                        _ => new_suffix.to_string(),
+                    };
+                    format!(
+                        "{}{}{}{}",
+                        opening_char, path_prefix, escaped_suffix, opening_char
+                    )
+                } else {
+                    bash_funcs::quote_function_rust(
+                        sug,
+                        comp_resultflags.quote_type.unwrap_or_default(),
+                    )
+                }
+            } else {
+                bash_funcs::quote_function_rust(
+                    sug,
+                    comp_resultflags.quote_type.unwrap_or_default(),
+                )
+            }
         } else {
             bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
         }
@@ -384,7 +438,17 @@ pub fn post_process_completion(
         };
 
         let appended = if path.is_dir() {
-            (format!("{}/", quoted), None)
+            // The directory marker '/' may already be present inside a closing
+            // quote (e.g. `'many spaces here/'` or `"path/here/"`).  Detect
+            // that by checking whether the suggestion string ends with `/'` or
+            // `/"`, which indicates the slash was baked in before the closing
+            // quote.  In that case don't append another '/'.
+            let already_closed_with_slash = quoted.ends_with("/'") || quoted.ends_with("/\"");
+            if already_closed_with_slash {
+                (quoted, None)
+            } else {
+                (format!("{}/", quoted), None)
+            }
         } else {
             (quoted, suffix)
         };
