@@ -667,8 +667,8 @@ That should help!"#;
         // Should produce 3 lines: header, separator, 2 body rows
         assert_eq!(
             text.lines.len(),
-            4,
-            "expected 4 lines (header + sep + 2 rows), got {}: {:#?}",
+            6,
+            "expected 6 lines (top border + header + sep + 2 rows + bottom border), got {}: {:#?}",
             text.lines.len(),
             text.lines
         );
@@ -684,17 +684,18 @@ That should help!"#;
                     .collect::<String>()
             })
             .collect();
-
+            
         // Header row contains the column names.
-        assert!(plain[0].contains("Command"), "header: {}", plain[0]);
-        assert!(plain[0].contains("Description"), "header: {}", plain[0]);
+        assert!(plain[0].contains("╭─"), "top_border: {}", plain[0]);
+        assert!(plain[1].contains("Command"), "header: {}", plain[1]);
+        assert!(plain[1].contains("Description"), "header: {}", plain[1]);
         // Separator row contains box-drawing dashes.
-        assert!(plain[1].contains('─'), "separator: {}", plain[1]);
+        assert!(plain[2].contains('─'), "separator: {}", plain[2]);
         // Body rows contain cell values.
-        assert!(plain[2].contains("ls"), "row1: {}", plain[2]);
-        assert!(plain[2].contains("List files"), "row1: {}", plain[2]);
-        assert!(plain[3].contains("pwd"), "row2: {}", plain[3]);
-        assert!(plain[3].contains("Print working dir"), "row2: {}", plain[3]);
+        assert!(plain[3].contains("ls"), "row1: {}", plain[3]);
+        assert!(plain[3].contains("List files"), "row1: {}", plain[3]);
+        assert!(plain[4].contains("pwd"), "row2: {}", plain[4]);
+        assert!(plain[4].contains("Print working dir"), "row2: {}", plain[4]);
     }
 
     #[test]
@@ -710,13 +711,13 @@ That should help!"#;
         // 3 lines: header + separator + 1 body row
         assert_eq!(
             text.lines.len(),
-            3,
-            "expected 3 lines, got {}: {:#?}",
+            5,
+            "expected 5 lines (header + sep + 1 body row + top border + bottom border), got {}: {:#?}",
             text.lines.len(),
             text.lines
         );
 
-        let sep: String = text.lines[1]
+        let sep: String = text.lines[2]
             .spans
             .iter()
             .map(|s| s.content.as_ref())
@@ -740,8 +741,8 @@ That should help!"#;
         // header + separator
         assert_eq!(
             text.lines.len(),
-            2,
-            "expected 2 lines (header + sep), got {}: {:#?}",
+            4,
+            "expected 4 lines (top border + header + sep + bottom border), got {}: {:#?}",
             text.lines.len(),
             text.lines
         );
