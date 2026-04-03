@@ -351,8 +351,11 @@ Options:
 
       --use-term-emulator-cursor [<USE_TERM_EMULATOR_CURSOR>]
           Use the terminal emulator's cursor instead of rendering a custom cursor
-          
-          [possible values: true, false]
+
+          Possible values:
+          - none:            Do not use the terminal emulator's cursor; flyline renders a custom cursor
+          - only-prompt-pos: Only send the escape codes that report the prompt start and end positions; flyline still renders a custom cursor for the active typing position
+          - full:            Fully use the terminal emulator's cursor: send prompt position codes and defer active cursor rendering to the terminal emulator. This is the default
 
       --matrix-animation [<MATRIX_ANIMATION>]
           Run matrix animation in the terminal background

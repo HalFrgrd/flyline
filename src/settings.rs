@@ -39,6 +39,20 @@ pub struct AgentModeCommand {
     pub system_prompt: Option<String>,
 }
 
+/// Controls how flyline uses the terminal emulator's cursor.
+#[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
+pub enum UseTermEmulatorCursor {
+    /// Do not use the terminal emulator's cursor; flyline renders a custom cursor.
+    None,
+    /// Only send the escape codes that report the prompt start and end positions;
+    /// flyline still renders a custom cursor for the active typing position.
+    OnlyPromptPos,
+    /// Fully use the terminal emulator's cursor: send prompt position codes and
+    /// defer active cursor rendering to the terminal emulator. This is the default.
+    #[default]
+    Full,
+}
+
 /// Controls how flyline manages mouse capture.
 #[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
 pub enum MouseMode {
@@ -67,7 +81,7 @@ pub struct Settings {
     /// Whether to automatically close opening characters (e.g., parentheses, brackets, quotes).
     pub auto_close_chars: bool,
     /// Whether to use the terminal emulator's cursor instead of rendering a custom cursor.
-    pub use_term_emulator_cursor: bool,
+    pub use_term_emulator_cursor: UseTermEmulatorCursor,
     /// Mouse capture mode.
     pub mouse_mode: MouseMode,
     /// Agent-mode commands keyed by optional trigger prefix.
@@ -102,7 +116,7 @@ impl Default for Settings {
             show_animations: true,
             show_inline_history: true,
             auto_close_chars: true,
-            use_term_emulator_cursor: false,
+            use_term_emulator_cursor: UseTermEmulatorCursor::Full,
             mouse_mode: MouseMode::Smart,
             agent_commands: HashMap::new(),
             custom_animations: HashMap::new(),
