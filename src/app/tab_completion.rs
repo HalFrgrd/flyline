@@ -2,6 +2,7 @@ use crate::active_suggestions::{ActiveSuggestions, Suggestion, UnprocessedSugges
 use crate::app::{App, ContentMode};
 use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
+use crate::text_buffer::SubString;
 use glob::glob;
 use std::path::Path;
 
@@ -191,6 +192,30 @@ fn expand_alias_for_completion(
     }
 }
 
+/// Find the longest string that is a prefix of every suggestion's match text.
+/// Returns `None` if there are no suggestions or the common prefix is empty.
+fn common_prefix_of_suggestions(suggestions: &[UnprocessedSuggestion]) -> Option<String> {
+    let mut iter = suggestions.iter();
+    let first_text = iter.next()?.match_text();
+
+    let prefix_byte_len = iter.fold(first_text.len(), |acc, sug| {
+        let text = sug.match_text();
+        let common: usize = first_text
+            .chars()
+            .zip(text.chars())
+            .take_while(|(a, b)| a == b)
+            .map(|(c, _)| c.len_utf8())
+            .sum();
+        acc.min(common)
+    });
+
+    if prefix_byte_len == 0 {
+        None
+    } else {
+        Some(first_text[..prefix_byte_len].to_string())
+    }
+}
+
 impl App<'_> {
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
         match opt_suggestion.and_then(|s| s.try_accept(&mut self.buffer)) {
@@ -204,26 +229,72 @@ impl App<'_> {
     }
 
     pub fn start_tab_complete(&mut self) {
-        let buffer: &str = self.buffer.buffer();
-        let completion_context =
-            tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos());
-
-        let suggestions = self.gen_completions_internal(&completion_context);
-        match suggestions {
-            Some(sugs) => {
-                self.try_accept_tab_completion(ActiveSuggestions::try_new(
-                    sugs,
-                    completion_context.word_under_cursor,
-                    &self.buffer,
-                ));
-            }
-            None => {
+        // Phase 1: compute the completion context and generate suggestions.
+        // We store word_under_cursor as an owned SubString so we can use it
+        // after the immutable-borrow block ends.
+        let (suggestions, wuc_substring) = {
+            let buffer: &str = self.buffer.buffer();
+            let completion_context = tab_completion_context::get_completion_context(
+                buffer,
+                self.buffer.cursor_byte_pos(),
+            );
+            // word_under_cursor is always a sub-slice of buffer, so SubString::new succeeds.
+            let wuc_substring = SubString::new(buffer, completion_context.word_under_cursor)
+                .unwrap_or_else(|_| SubString {
+                    s: String::new(),
+                    start: 0,
+                });
+            let suggestions = self.gen_completions_internal(&completion_context);
+            if suggestions.is_none() {
                 log::debug!(
                     "No suggestions generated for completion context: {:?}",
                     completion_context
                 );
             }
+            (suggestions, wuc_substring)
+        };
+
+        let Some(sugs) = suggestions else {
+            return;
+        };
+
+        // Phase 2: if there are fewer than 500 suggestions, find any common
+        // prefix and automatically insert it when it extends the word under
+        // cursor.
+        const MAX_FOR_COMMON_PREFIX: usize = 500;
+        if sugs.len() < MAX_FOR_COMMON_PREFIX {
+            if let Some(common_prefix) = common_prefix_of_suggestions(&sugs) {
+                if common_prefix.len() > wuc_substring.s.len()
+                    && common_prefix.starts_with(&*wuc_substring.s)
+                {
+                    log::debug!(
+                        "Inserting common prefix '{}' (word_under_cursor was '{}')",
+                        common_prefix,
+                        wuc_substring.s
+                    );
+                    if let Err(e) = self
+                        .buffer
+                        .replace_word_under_cursor(&common_prefix, &wuc_substring)
+                    {
+                        log::warn!(
+                            "Failed to replace word under cursor with common prefix: {}",
+                            e
+                        );
+                    }
+                }
+            }
         }
+
+        // Phase 3: re-derive the completion context from the (possibly updated)
+        // buffer and hand the suggestions off to the UI layer.
+        let buffer = self.buffer.buffer();
+        let completion_context =
+            tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos());
+        self.try_accept_tab_completion(ActiveSuggestions::try_new(
+            sugs,
+            completion_context.word_under_cursor,
+            &self.buffer,
+        ));
     }
 
     fn post_process_completions(
@@ -765,5 +836,83 @@ impl App<'_> {
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_ready(s: &str) -> UnprocessedSuggestion {
+        UnprocessedSuggestion::Ready(Suggestion::new(s, "", ""))
+    }
+
+    #[test]
+    fn common_prefix_empty_slice() {
+        assert_eq!(common_prefix_of_suggestions(&[]), None);
+    }
+
+    #[test]
+    fn common_prefix_single_suggestion() {
+        let sugs = vec![make_ready("foobar")];
+        assert_eq!(
+            common_prefix_of_suggestions(&sugs),
+            Some("foobar".to_string())
+        );
+    }
+
+    #[test]
+    fn common_prefix_identical_suggestions() {
+        let sugs = vec![make_ready("abc"), make_ready("abc"), make_ready("abc")];
+        assert_eq!(common_prefix_of_suggestions(&sugs), Some("abc".to_string()));
+    }
+
+    #[test]
+    fn common_prefix_shared_prefix() {
+        let sugs = vec![
+            make_ready("foobar"),
+            make_ready("foobaz"),
+            make_ready("foo"),
+        ];
+        assert_eq!(common_prefix_of_suggestions(&sugs), Some("foo".to_string()));
+    }
+
+    #[test]
+    fn common_prefix_no_shared_prefix() {
+        let sugs = vec![make_ready("apple"), make_ready("banana")];
+        assert_eq!(common_prefix_of_suggestions(&sugs), None);
+    }
+
+    #[test]
+    fn common_prefix_unicode() {
+        let sugs = vec![make_ready("café_au_lait"), make_ready("café_crème")];
+        assert_eq!(
+            common_prefix_of_suggestions(&sugs),
+            Some("café_".to_string())
+        );
+    }
+
+    #[test]
+    fn common_prefix_raw_suggestions() {
+        let flags = bash_funcs::CompletionFlags::default();
+        let sugs = vec![
+            UnprocessedSuggestion::Raw {
+                raw_text: "git-commit".to_string(),
+                expanded_path: None,
+                flags,
+                word_under_cursor: "git".to_string(),
+            },
+            UnprocessedSuggestion::Raw {
+                raw_text: "git-checkout".to_string(),
+                expanded_path: None,
+                flags,
+                word_under_cursor: "git".to_string(),
+            },
+        ];
+        // "git-commit" and "git-checkout" share "git-c" before diverging
+        assert_eq!(
+            common_prefix_of_suggestions(&sugs),
+            Some("git-c".to_string())
+        );
     }
 }
