@@ -186,6 +186,9 @@ impl PromptStringBuilder {
     /// Returns `None` when the string cannot be processed (e.g. contains
     /// interior NUL bytes or bash returns a null pointer).
     fn expand_prompt_string(&mut self, raw: String) -> Option<Vec<Line<'static>>> {
+        if raw.is_empty() {
+            return Some(vec![]);
+        }
         let modified = self.extract_time_codes(&raw);
 
         // Strip literal `\[` / `\]` non-printing-sequence markers before handing
@@ -197,6 +200,7 @@ impl PromptStringBuilder {
         let decoded = unsafe {
             let decoded_prompt_cstr = bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
             if decoded_prompt_cstr.is_null() {
+                log::warn!("decode_prompt_string returned null");
                 return None;
             }
 
@@ -279,17 +283,10 @@ impl PromptManager {
             // before handing the string to decode_prompt_string.  Fall back to
             // the already-expanded readline prompt when PS1 is not available.
             let ps1_raw = bash_funcs::get_envvar_value("PS1").or_else(get_current_readline_prompt);
+            log::info!("Raw PS1: {:?}", ps1_raw);
 
             let ps1 = ps1_raw
                 .and_then(|raw| builder.expand_prompt_string(raw))
-                .map(|lines| {
-                    if lines.is_empty() {
-                        log::warn!("Failed to parse PS1, defaulting to '{}'", PS1_DEFAULT);
-                        vec![Line::from(PS1_DEFAULT)]
-                    } else {
-                        lines
-                    }
-                })
                 .unwrap_or_else(|| {
                     log::warn!("Failed to parse PS1, defaulting to '{}'", PS1_DEFAULT);
                     vec![Line::from(PS1_DEFAULT)]
