@@ -23,12 +23,12 @@ cat <<'EOF'
 ## Finding Files Older Than 3 Days
 
 Use `find` with the `-mtime +3` flag (`+3` means **more than** 3 days since modification):
-
-Flags:
-- `-mtime +3` : Modified **more than** 3 days ago 
-- `-type f` : Regular files only 
-- `-type d` : Directories only 
-- `-ls` : Long listing with details 
+| Flag | Description |
+|------|-------------|
+| `-mtime +3` | Modified **more than** 3 days ago |
+| `-type f` | Regular files only |
+| `-type d` | Directories only |
+| `-ls` | Long listing with details |
 
 **Common options:**
 - `-atime` — last **access** time
