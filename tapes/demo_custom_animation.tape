@@ -7,7 +7,7 @@ Source demo_setup.tape
 
 Hide
 Sleep 50ms
-Type `export PS1="${PS1::-2} " && clear`
+Type `PS1="${PS1::-2} " && clear`
 Enter
 Show
 
@@ -16,7 +16,7 @@ Type "flyline create-anim --name MY_ANIMATION --fps 10 ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ �
 Enter
 Sleep 500ms
 
-Type `export PS1="${PS1}MY_ANIMATION "`
+Type `PS1="${PS1}MY_ANIMATION "`
 Enter
 Sleep 1500ms
 

@@ -605,7 +605,7 @@ impl ActiveSuggestions {
             return vec![];
         }
 
-        let mut grid: Vec<(Vec<(SuggestionFormatted, bool)>, usize)> = vec![];
+        let mut grid: Vec<(Vec<(SuggestionFormatted, bool)>, usize, bool)> = vec![];
         let mut total_width: usize = 0;
 
         let max_col_index = (n - 1) / max_rows;
@@ -616,9 +616,7 @@ impl ActiveSuggestions {
             .update_window_size(self.last_num_visible_cols.max(1));
         self.col_window_to_show.move_index_to(self.selected_col);
 
-        // log::info!("self.col_window_to_show: {:?}", self.col_window_to_show);
-        // log::info!("self.col_window_to_show.get_window_range(): {:?}", self.col_window_to_show.get_window_range());
-
+        // First round: try and fit as many columns as possible with their full untruncated width.
         for col_idx in self.col_window_to_show.get_window_range().start..=max_col_index {
             // Build the column, processing each item lazily.
             let start = col_idx * max_rows;
@@ -646,34 +644,71 @@ impl ActiveSuggestions {
                 .max()
                 .unwrap_or(0);
 
-            const MIN_COL_WIDTH: usize = 10;
-
-            let is_first = grid.is_empty();
-            let effective_cw = if is_first {
-                untruncated_col_width.min(max_width)
-            } else if total_width + COLUMN_PADDING + untruncated_col_width > max_width {
-                if max_width.saturating_sub(total_width + COLUMN_PADDING) > MIN_COL_WIDTH {
-                    // We can still MIN_COL_WIDTH chars of this col so it should be alright.
-                    max_width - total_width - COLUMN_PADDING
-                } else {
-                    break;
-                }
-            } else {
+            total_width += if grid.is_empty() {
                 untruncated_col_width
-            };
-
-            if is_first {
-                first_col_len = col_items.len();
-                total_width += effective_cw;
             } else {
-                total_width += COLUMN_PADDING + effective_cw;
+                COLUMN_PADDING + untruncated_col_width
+            };
+            grid.push((
+                col_items,
+                untruncated_col_width,
+                col_idx == self.selected_col,
+            ));
+            if total_width > max_width {
+                break;
             }
-            grid.push((col_items, effective_cw));
         }
 
-        self.last_num_visible_cols = grid.len();
+        // Second round,  try not to truncate the selected column, and truncate other columns if needed to fit within max_width.
+
+        let mut local_col_idx_to_grid = vec![0; grid.len()];
+
+        let mut total_width = 0;
+        for local_idx in 0..local_col_idx_to_grid.len() {
+            let is_selected = grid[local_idx].2;
+            let untruncated_col_width = grid[local_idx].1;
+            if is_selected {
+                // Don't truncate the selected column, so count its full width.
+                local_col_idx_to_grid[local_idx] = untruncated_col_width.min(max_width);
+            } else {
+                const MIN_COL_WIDTH: usize = 10;
+                let truncated_col_width =
+                    if total_width + COLUMN_PADDING + untruncated_col_width > max_width {
+                        if max_width.saturating_sub(total_width + COLUMN_PADDING) > MIN_COL_WIDTH {
+                            // We can still fit MIN_COL_WIDTH chars of this col so it should be alright.
+                            max_width - total_width - COLUMN_PADDING
+                        } else {
+                            break;
+                        }
+                    } else {
+                        untruncated_col_width
+                    };
+                local_col_idx_to_grid[local_idx] = truncated_col_width;
+            }
+
+            total_width += if local_idx == 0 {
+                local_col_idx_to_grid[local_idx]
+            } else {
+                COLUMN_PADDING + local_col_idx_to_grid[local_idx]
+            };
+        }
+
+        let mut final_grid: Vec<(Vec<(SuggestionFormatted, bool)>, usize)> = vec![];
+
+        for (local_idx, (col_items, _, _)) in grid.into_iter().enumerate() {
+            if local_idx == 0 {
+                first_col_len = col_items.len();
+            }
+            let col_width = local_col_idx_to_grid[local_idx];
+            if col_width == 0 {
+                break;
+            }
+            final_grid.push((col_items, col_width));
+        }
+
+        self.last_num_visible_cols = final_grid.len();
         self.last_num_rows_per_col = max_rows.min(first_col_len);
-        grid
+        final_grid
     }
 
     /// Number of suggestions currently shown (after fuzzy filtering).

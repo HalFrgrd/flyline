@@ -41,7 +41,7 @@ impl StatefulSlidingWindow {
             // Move window down so that index_of_interest is buffer away from the bottom, or at the bottom if that's not possible
             self.start_index = self
                 .index_of_interest
-                .saturating_sub(self.window_size - buffer - 1);
+                .saturating_sub(self.window_size.saturating_sub(buffer + 1));
         }
         if self.start_index + self.window_size > self.max_index {
             self.start_index = self.max_index.saturating_sub(self.window_size);

@@ -325,7 +325,7 @@ impl<'a> App<'a> {
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         let mut redraw = true;
-        let mut last_terminal_area = terminal.size().unwrap();
+        let mut last_terminal_size = terminal.size().unwrap();
 
         'main_loop: loop {
             // Poll AI background task: check if a result has arrived without blocking.
@@ -375,13 +375,13 @@ impl<'a> App<'a> {
                 let frame_area = terminal.get_frame().area();
 
                 let content =
-                    self.create_content(frame_area.width, frame_area.y, last_terminal_area.height);
+                    self.create_content(frame_area.width, frame_area.y, last_terminal_size.height);
 
                 let desired_height = if self.needs_screen_cleared {
                     self.needs_screen_cleared = false;
-                    last_terminal_area.height
+                    last_terminal_size.height
                 } else {
-                    content.height()
+                    content.height().min(last_terminal_size.height)
                 };
 
                 terminal
@@ -437,7 +437,7 @@ impl<'a> App<'a> {
                     CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
                     CrosstermEvent::Resize(new_cols, new_rows) => {
                         // log::trace!("Terminal resized to {}x{}", new_cols, new_rows);
-                        last_terminal_area = Size {
+                        last_terminal_size = Size {
                             width: new_cols,
                             height: new_rows,
                         };

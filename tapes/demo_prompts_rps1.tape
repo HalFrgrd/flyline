@@ -7,11 +7,11 @@ Source demo_setup.tape
 
 Hide
 Sleep 50ms
-Type@1ms `export PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ ' && clear`
+Type@1ms `PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ ' && clear`
 Enter
 Show
 
-Type `export RPS1="I'm on the right"`
+Type `RPS1="I'm on the right"`
 Enter
 Sleep 1500ms
 
@@ -19,7 +19,7 @@ Type `# let's set the right prompt to show the time`
 Enter
 Sleep 1500ms
 
-Type@100ms "export RPS1='\t'"
+Type@100ms "RPS1='\t'"
 Enter
 Sleep 1500ms
 
@@ -27,7 +27,7 @@ Type `# RPS1 can also span multiple lines`
 Enter
 Sleep 1500ms
 
-Type@100ms "export RPS1='\t\n<'"
+Type@100ms "RPS1='\t\n<'"
 Enter
 Sleep 1500ms
 
@@ -35,7 +35,7 @@ Type `# let's make it coloured`
 Enter
 Sleep 1500ms
 
-Type@100ms "export RPS1='\e[01;33m\t\n<\e[00m'"
+Type@100ms "RPS1='\e[01;33m\t\n<\e[00m'"
 Enter
 Sleep 1500ms
 

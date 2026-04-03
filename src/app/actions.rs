@@ -753,12 +753,6 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// From highest priority to lowest
 static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
     [
-        Binding::try_new(
-            &["Right", "End"],
-            Scope::INLINE_HISTORY_ACCEPTABLE,
-            "accept_suggestion",
-        )
-        .unwrap(),
         Binding::try_new(&["Down"], Scope::AGENT_OUTPUT_SELECTION, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AGENT_OUTPUT_SELECTION, "select_prev").unwrap(),
         Binding::try_new(&["Up"], Scope::TAB_COMPLETION, "move_up").unwrap(),
@@ -877,6 +871,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(&["Left"], Scope::NORMAL, "move_left").unwrap(),
+        Binding::try_new(
+            &["Right", "End"],
+            Scope::INLINE_HISTORY_ACCEPTABLE,
+            "accept_suggestion",
+        )
+        .unwrap(),
         Binding::try_new(
             &["End", "Super+Right", "Ctrl+E", "Super+E"],
             Scope::NORMAL,
