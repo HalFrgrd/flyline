@@ -121,6 +121,32 @@ fn render_table(accum: &TableAccum) -> Vec<Line<'static>> {
         *w = (*w).max(3);
     }
 
+    let build_top_border = || -> Line<'static> {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        spans.push(Span::raw("╭─"));
+        for (j, &width) in col_widths.iter().enumerate() {
+            spans.push(Span::raw("─".repeat(width)));
+            if j + 1 < col_widths.len() {
+                spans.push(Span::raw("─┬─"));
+            }
+        }
+        spans.push(Span::raw("─╮"));
+        Line::from(spans)
+    };
+
+    let build_bottom_border = || -> Line<'static> {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        spans.push(Span::raw("╰─"));
+        for (j, &width) in col_widths.iter().enumerate() {
+            spans.push(Span::raw("─".repeat(width)));
+            if j + 1 < col_widths.len() {
+                spans.push(Span::raw("─┴─"));
+            }
+        }
+        spans.push(Span::raw("─╯"));
+        Line::from(spans)
+    };
+
     let build_row = |cells: &[String], bold: bool| -> Line<'static> {
         let mut spans: Vec<Span<'static>> = Vec::new();
         spans.push(Span::raw("│ "));
@@ -176,6 +202,7 @@ fn render_table(accum: &TableAccum) -> Vec<Line<'static>> {
     };
 
     let mut lines: Vec<Line<'static>> = Vec::new();
+    lines.push(build_top_border());
     lines.push(build_row(&accum.header_cells, true));
     lines.push(build_separator());
     for row in &accum.body_rows {
@@ -186,6 +213,7 @@ fn render_table(accum: &TableAccum) -> Vec<Line<'static>> {
         }
         lines.push(build_row(&padded, false));
     }
+    lines.push(build_bottom_border());
     lines
 }
 
