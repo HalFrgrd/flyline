@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::palette::Palette;
 use crate::app::actions;
+use crate::palette::Palette;
 
 /// Which theme the user has configured for the colour palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

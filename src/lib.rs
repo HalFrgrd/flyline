@@ -265,14 +265,45 @@ enum Commands {
         #[arg(long = "markdown-code", value_name = "STYLE")]
         markdown_code: Option<String>,
     },
-    /// Keybidnings asdf
-    #[command(name = "bind", verbatim_doc_comment)]
-    Bind {
-        /// Key sequence to bind (e.g. "Ctrl+X Ctrl+S", "Alt+Enter", "Enter", "Tab").
+    /// Manage keybindings.
+    ///
+    /// Examples:
+    ///   flyline key set Ctrl+Enter normal::submit_or_newline
+    ///   flyline key list
+    #[command(name = "key", verbatim_doc_comment)]
+    Key {
+        #[command(subcommand)]
+        subcommand: KeySubcommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum KeySubcommands {
+    /// Bind a key sequence to an action.
+    ///
+    /// KEY_SEQUENCE is a key combination such as "Ctrl+Enter" or "Alt+Left".
+    /// ACTION has the form scope::action_name, e.g. "normal::submit_or_newline".
+    ///
+    /// Available scopes: normal, fuzzy_history_search, tab_completion,
+    ///   agent_mode_waiting, agent_output_selection, agent_error,
+    ///   inline_history_acceptable
+    ///
+    /// Examples:
+    ///   flyline key set Ctrl+Enter normal::submit_or_newline
+    ///   flyline key set Alt+Left normal::move_one_word_left_whitespace
+    #[command(name = "set", verbatim_doc_comment)]
+    Set {
+        /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
         key_sequence: String,
-        /// Action to perform (e.g. TODO).
+        /// Action in the form scope::action_name (e.g. "normal::submit_or_newline").
         action: String,
-    }
+    },
+    /// List all keybindings from lowest to highest priority.
+    ///
+    /// User-defined bindings are marked with * in the User column and have
+    /// higher priority than the built-in defaults.
+    #[command(name = "list")]
+    List,
 }
 
 // Global state for our custom input stream
@@ -438,8 +469,6 @@ impl Flyline {
                     self.settings.send_shell_integration_codes = enabled;
                 }
 
-
-
                 match parsed.command {
                     Some(Commands::AgentMode {
                         system_prompt,
@@ -596,22 +625,35 @@ impl Flyline {
                             }
                         }
                     }
-                    Some(Commands::Bind { key_sequence, action }) => {
-                        let binding = actions::Binding::try_new_from_strs(&key_sequence, &action);
-                        match binding {
-                            Ok(binding) => {
-                                log::info!("Registering key binding: {} -> {}", key_sequence, action);
-                                self.settings.keybindings.push(binding);
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "flyline bind: failed to parse key sequence '{}' or action '{}': {}",
-                                    key_sequence, action, e
-                                );
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                    Some(Commands::Key { subcommand }) => match subcommand {
+                        KeySubcommands::Set {
+                            key_sequence,
+                            action,
+                        } => {
+                            let binding =
+                                actions::Binding::try_new_from_strs(&key_sequence, &action);
+                            match binding {
+                                Ok(binding) => {
+                                    log::info!(
+                                        "Registering key binding: {} -> {}",
+                                        key_sequence,
+                                        action
+                                    );
+                                    self.settings.keybindings.push(binding);
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "flyline key set: failed to parse key sequence '{}' or action '{}': {}",
+                                        key_sequence, action, e
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
                             }
                         }
-                    }
+                        KeySubcommands::List => {
+                            actions::print_bindings_table(&self.settings.keybindings);
+                        }
+                    },
                     None => {}
                 }
 
