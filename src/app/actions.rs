@@ -376,32 +376,6 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         },
     ),
     Action::new(
-        "run_agent_error_suggestion",
-        "Run the agent error suggested command",
-        Scope::AGENT_ERROR,
-        |app, _key| match &app.content_mode {
-            ContentMode::AgentError {
-                suggested_buffer: Some(buf),
-                ..
-            } => {
-                let buf = buf.clone();
-                app.buffer.replace_buffer(&buf);
-                app.on_possible_buffer_change();
-                app.content_mode = ContentMode::Normal;
-                if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
-                    app.start_agent_mode(agent_cmd, &buffer);
-                }
-            }
-            ContentMode::AgentError { .. } => {
-                app.content_mode = ContentMode::Normal;
-                app.buffer.replace_buffer("flyline agent-mode --help");
-                app.on_possible_buffer_change();
-                app.try_submit_current_buffer();
-            }
-            _ => {}
-        },
-    ),
-    Action::new(
         "accept_entry",
         "Accept the currently selected entry",
         Scope::FUZZY_HISTORY_SEARCH,
@@ -424,11 +398,26 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         "run_help_command",
         "Run the agent mode help command",
         Scope::AGENT_ERROR,
-        |app, _key| {
-            app.content_mode = ContentMode::Normal;
-            app.buffer.replace_buffer("flyline agent-mode --help");
-            app.on_possible_buffer_change(); // TODO: is this needed?
-            app.try_submit_current_buffer();
+        |app, _key| match &app.content_mode {
+            ContentMode::AgentError {
+                suggested_buffer: Some(buf),
+                ..
+            } => {
+                let buf = buf.clone();
+                app.buffer.replace_buffer(&buf);
+                app.on_possible_buffer_change();
+                app.content_mode = ContentMode::Normal;
+                if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
+                    app.start_agent_mode(agent_cmd, &buffer);
+                }
+            }
+            ContentMode::AgentError { .. } => {
+                app.content_mode = ContentMode::Normal;
+                app.buffer.replace_buffer("flyline agent-mode --help");
+                app.on_possible_buffer_change();
+                app.try_submit_current_buffer();
+            }
+            _ => {}
         },
     ),
     Action::new(
