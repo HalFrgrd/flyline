@@ -246,7 +246,7 @@ For instance, you might want to select text above the current prompt with your m
 
 Flyline offers three mouse modes:
 - disabled: Never capture mouse events
-- simple:   Mouse capture is on by default; toggled when Escape is pressed or Alt is pressed/released
+- simple:   Mouse capture is on by default; toggled when Escape is pressed
 - smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
 
 `flyline --mouse-mode smart` is the default.
@@ -306,6 +306,7 @@ Commands:
   agent-mode   Configure AI agent mode.
   create-anim  Create a custom prompt animation.
   set-color    Configure the colour palette.
+  key          Manage keybindings.
   help         Print this message or the help of the given subcommand(s)
 
 Options:
@@ -364,7 +365,7 @@ Options:
 
           Possible values:
           - disabled: Never capture mouse events
-          - simple:   Mouse capture is on by default; toggled when Escape is pressed or Alt is pressed/released
+          - simple:   Mouse capture is on by default; toggled when Escape is pressed
           - smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
 
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]

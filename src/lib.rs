@@ -4,6 +4,8 @@ use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
 
+use crate::app::actions::{self, possible_action_names};
+
 mod active_suggestions;
 mod agent_mode;
 mod app;
@@ -263,6 +265,53 @@ enum Commands {
         #[arg(long = "markdown-code", value_name = "STYLE")]
         markdown_code: Option<String>,
     },
+    /// Manage keybindings.
+    ///
+    /// Examples:
+    ///   flyline key set Ctrl+Enter normal::submit_or_newline
+    ///   flyline key list
+    #[command(name = "key", verbatim_doc_comment)]
+    Key {
+        #[command(subcommand)]
+        subcommand: KeySubcommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum KeySubcommands {
+    /// Bind a key sequence to an action.
+    ///
+    /// KEY_SEQUENCE is a key combination such as "Ctrl+Enter" or "Alt+Left".
+    /// ACTION has the form scope::action_name, e.g. "normal::submit_or_newline".
+    ///
+    /// Available scopes: normal, fuzzy_history_search, tab_completion,
+    ///   agent_mode_waiting, agent_output_selection, agent_error,
+    ///   inline_history_acceptable
+    ///
+    /// Examples:
+    ///   flyline key set Ctrl+Enter normal::submit_or_newline
+    ///   flyline key set Alt+Left normal::move_one_word_left_whitespace
+    #[command(name = "set", verbatim_doc_comment, disable_help_flag = true)]
+    Set {
+        /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
+        #[arg(num_args = 1, hide = true)]
+        key_sequence: String,
+        /// Action in the form scope::action_name (e.g. "normal::submit_or_newline").
+        #[arg(value_parser = possible_action_names(), num_args = 1)]
+        action: String,
+    },
+    /// List all keybindings from lowest to highest priority.
+    ///
+    /// User-defined bindings are marked with * in the User column and have
+    /// higher priority than the built-in defaults.
+    ///
+    /// Optionally supply a KEY_SEQUENCE (e.g. "Tab", "Ctrl+r") to show only
+    /// bindings that the given key would trigger.
+    #[command(name = "list")]
+    List {
+        /// Optional key sequence to filter by (e.g. "Tab", "Ctrl+r").
+        key_sequence: Option<String>,
+    },
 }
 
 // Global state for our custom input stream
@@ -428,27 +477,25 @@ impl Flyline {
                     self.settings.send_shell_integration_codes = enabled;
                 }
 
-                if let Some(Commands::AgentMode {
-                    system_prompt,
-                    trigger_prefix,
-                    command,
-                }) = parsed.command.as_ref()
-                {
-                    log::info!(
-                        "AI command set: {:?} (trigger_prefix={:?})",
-                        command,
-                        trigger_prefix
-                    );
-                    self.settings.agent_commands.insert(
-                        trigger_prefix.clone(),
-                        settings::AgentModeCommand {
-                            command: command.clone(),
-                            system_prompt: system_prompt.clone(),
-                        },
-                    );
-                }
-
                 match parsed.command {
+                    Some(Commands::AgentMode {
+                        system_prompt,
+                        trigger_prefix,
+                        command,
+                    }) => {
+                        log::info!(
+                            "AI command set: {:?} (trigger_prefix={:?})",
+                            command,
+                            trigger_prefix
+                        );
+                        self.settings.agent_commands.insert(
+                            trigger_prefix.clone(),
+                            settings::AgentModeCommand {
+                                command: command.clone(),
+                                system_prompt: system_prompt.clone(),
+                            },
+                        );
+                    }
                     Some(Commands::CreateAnim {
                         name,
                         fps,
@@ -586,7 +633,39 @@ impl Flyline {
                             }
                         }
                     }
-                    _ => {}
+                    Some(Commands::Key { subcommand }) => match subcommand {
+                        KeySubcommands::Set {
+                            key_sequence,
+                            action,
+                        } => {
+                            let binding =
+                                actions::Binding::try_new_from_strs(&key_sequence, &action);
+                            match binding {
+                                Ok(binding) => {
+                                    log::info!(
+                                        "Registering key binding: {} -> {}",
+                                        key_sequence,
+                                        action
+                                    );
+                                    self.settings.keybindings.push(binding);
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "flyline key set: failed to parse key sequence '{}' or action '{}': {}",
+                                        key_sequence, action, e
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            }
+                        }
+                        KeySubcommands::List { key_sequence } => {
+                            actions::print_bindings_table(
+                                &self.settings.keybindings,
+                                key_sequence.as_deref(),
+                            );
+                        }
+                    },
+                    None => {}
                 }
 
                 #[cfg(feature = "integration-tests")]

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::app::actions;
 use crate::palette::Palette;
 
 /// Which theme the user has configured for the colour palette.
@@ -45,7 +46,7 @@ pub struct AgentModeCommand {
 pub enum MouseMode {
     /// Never capture mouse events.
     Disabled,
-    /// Mouse capture is on by default; toggled when Escape is pressed or Alt is pressed/released.
+    /// Mouse capture is on by default; toggled when Escape is pressed.
     Simple,
     /// Mouse capture is on by default with automatic management: disabled on scroll or when the
     /// user clicks above the viewport, re-enabled on any keypress or when focus is regained.
@@ -88,6 +89,8 @@ pub struct Settings {
     pub color_palette: Palette,
     /// Which colour theme the user has selected (dark, light, or auto).
     pub color_theme: ColorTheme,
+    /// User defined keybindings
+    pub keybindings: Vec<actions::Binding>,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -110,6 +113,7 @@ impl Default for Settings {
             send_shell_integration_codes: true,
             color_palette: Palette::default(),
             color_theme: ColorTheme::Dark,
+            keybindings: Vec::new(),
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }

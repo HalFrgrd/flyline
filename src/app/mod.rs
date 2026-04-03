@@ -1,3 +1,4 @@
+pub(crate) mod actions;
 mod auto_close;
 mod formated_buffer;
 mod tab_completion;
@@ -8,7 +9,7 @@ use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
-use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager, HistorySearchDirection};
+use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::{DefaultMode, Palette};
@@ -18,10 +19,7 @@ use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
-use crossterm::event::{
-    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode, MouseEvent,
-    MouseEventKind,
-};
+use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
@@ -124,12 +122,6 @@ impl AppRunningState {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub enum KeyPressReturnType {
-    None,
-    NeedScreenClear,
-}
-
-#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum LastKeyPressAction {
     InsertedAutoClosing { char: char, byte_pos: usize },
 }
@@ -183,7 +175,7 @@ enum ContentMode {
     TabCompletion(Box<ActiveSuggestions>),
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
-    AgentMode {
+    AgentModeWaiting {
         receiver: std::sync::mpsc::Receiver<Result<String, (String, String)>>,
         command_display: String,
         start_time: std::time::Instant,
@@ -261,7 +253,7 @@ impl DrawnContent {
     }
 }
 
-struct App<'a> {
+pub(crate) struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
     formatted_buffer_cache: FormattedBuffer,
@@ -273,7 +265,7 @@ struct App<'a> {
     /// Parsed bash history available at startup.
     history_manager: HistoryManager,
     buffer_before_history_navigation: Option<String>,
-    history_suggestion: Option<(HistoryEntry, String)>,
+    inline_history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
     content_mode: ContentMode,
     last_contents: Option<DrawnContent>,
@@ -283,6 +275,8 @@ struct App<'a> {
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
+    needs_screen_cleared: bool,
+    last_keypress_action: Option<LastKeyPressAction>,
 }
 
 impl<'a> App<'a> {
@@ -330,7 +324,7 @@ impl<'a> App<'a> {
             ),
             history_manager: HistoryManager::new(settings),
             buffer_before_history_navigation: None,
-            history_suggestion: None,
+            inline_history_suggestion: None,
             mouse_state: MouseState::initialize(&settings.mouse_mode),
             content_mode: ContentMode::Normal,
             last_contents: None,
@@ -338,6 +332,8 @@ impl<'a> App<'a> {
             tooltip: None,
             settings,
             last_draw_time: std::time::Instant::now(),
+            needs_screen_cleared: false,
+            last_keypress_action: None,
         }
     }
 
@@ -374,23 +370,23 @@ impl<'a> App<'a> {
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
 
         let mut redraw = true;
-        let mut needs_screen_cleared = false;
         let mut last_terminal_area = terminal.size().unwrap();
 
         'main_loop: loop {
             // Poll AI background task: check if a result has arrived without blocking.
-            let ai_result = if let ContentMode::AgentMode { ref receiver, .. } = self.content_mode {
-                match receiver.try_recv() {
-                    Ok(result) => Some(result),
-                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        log::warn!("AI task channel disconnected unexpectedly");
-                        Some(Err(("AI task disconnected".to_string(), String::new())))
+            let ai_result =
+                if let ContentMode::AgentModeWaiting { ref receiver, .. } = self.content_mode {
+                    match receiver.try_recv() {
+                        Ok(result) => Some(result),
+                        Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            log::warn!("AI task channel disconnected unexpectedly");
+                            Some(Err(("AI task disconnected".to_string(), String::new())))
+                        }
                     }
-                }
-            } else {
-                None
-            };
+                } else {
+                    None
+                };
             if let Some(result) = ai_result {
                 match result {
                     Ok(raw_output) => match parse_ai_output(&raw_output) {
@@ -424,13 +420,13 @@ impl<'a> App<'a> {
                 let content =
                     self.create_content(frame_area.width, frame_area.y, last_terminal_area.height);
 
-                let desired_height = if needs_screen_cleared {
+                let desired_height = if self.needs_screen_cleared {
+                    self.needs_screen_cleared = false;
                     last_terminal_area.height
                 } else {
                     content.height()
                 };
 
-                needs_screen_cleared = false;
                 terminal
                     .set_viewport_height(desired_height)
                     .unwrap_or_else(|e| {
@@ -457,7 +453,7 @@ impl<'a> App<'a> {
                                 self.mode.is_running(),
                             )
                             .unwrap_or_else(|e| {
-                                log::error!("Failed to write escape codes: {}", e);
+                                log::error!("Failed to write prompt position escape codes: {}", e);
                             });
                         }
                     }
@@ -478,9 +474,7 @@ impl<'a> App<'a> {
             redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
-                        if let KeyPressReturnType::NeedScreenClear = self.on_keypress(key) {
-                            needs_screen_cleared = true;
-                        }
+                        self.handle_key_event(key);
                         true
                     }
                     CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
@@ -512,7 +506,7 @@ impl<'a> App<'a> {
                         log::trace!("Pasted content: {}", pasted);
                         log::trace!("Pasted content as bytes: {:?}", pasted.as_bytes());
                         self.buffer.insert_str(&pasted);
-                        self.on_possible_buffer_change(None);
+                        self.on_possible_buffer_change();
                         true
                     }
                 }
@@ -705,478 +699,10 @@ impl<'a> App<'a> {
         }
 
         if update_buffer {
-            self.on_possible_buffer_change(None);
+            self.on_possible_buffer_change();
             true
         } else {
             false
-        }
-    }
-
-    /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
-    /// MacOs command keyboard shortcuts are not sent to terminal apps by default.
-    /// They are often captured by the terminal emulator itself for various commands
-    /// Try `ghostty +list-keybinds --default` on ghostty. Most
-    ///
-    /// META: this is similar to Alt. How are they different?
-    /// SUPER: Windows key or Mac Command key
-    /// HYPER: Often as as result of pressing Ctrl + Shift + Alt + Windows/Command key. rarely used.
-    ///
-    /// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
-    ///
-    /// Meta vs Alt:
-    /// On iterm2, there is a seetitng in Porfiles->Keys->Left option key.
-    /// Choices are Normal or  (Set high bit (not recommended) or Esc+).
-    /// Set high bit gives you a warning: "You have chosen to have an option key as Meta. This is
-    /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
-    /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
-    fn on_keypress(&mut self, key: KeyEvent) -> KeyPressReturnType {
-        log::trace!("Key event: {:?}", key);
-
-        let mut keypress_action: Option<LastKeyPressAction> = None;
-
-        // Smart mode: any keypress re-enables mouse capture, unless the user has
-        // explicitly disabled it via a toggle action.
-        if self.settings.mouse_mode == MouseMode::Smart
-            && !self.mouse_state.is_explicitly_disabled_by_user()
-        {
-            self.mouse_state.enable("smart mode: keypress detected");
-        }
-
-        match key {
-            KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                    active_suggestions.on_left_arrow();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                    active_suggestions.on_right_arrow();
-                }
-            }
-            // Handle Right/End with history suggestion logic
-            KeyEvent {
-                code: KeyCode::Right | KeyCode::End,
-                ..
-            } if self.buffer.is_cursor_at_end() && self.history_suggestion.is_some() => {
-                if let Some((_, suf)) = &self.history_suggestion {
-                    self.buffer.insert_str(suf);
-                    self.buffer.move_to_end();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                    active_suggestions.on_up_arrow();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } if matches!(self.content_mode, ContentMode::AgentOutputSelection(_)) => {
-                if let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode {
-                    selection.move_up();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            } if matches!(self.content_mode, ContentMode::AgentOutputSelection(_)) => {
-                if let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode {
-                    selection.move_down();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.history_manager
-                    .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
-            }
-            // Handle Up with history navigation when at first line
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } if self.buffer.cursor_row() == 0 => {
-                self.buffer_before_history_navigation
-                    .get_or_insert_with(|| self.buffer.buffer().to_string());
-                if let Some(entry) = self
-                    .history_manager
-                    .search_in_history(self.buffer.buffer(), HistorySearchDirection::Backward)
-                {
-                    self.buffer.replace_buffer(&entry.command);
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            } if matches!(self.content_mode, ContentMode::TabCompletion(_)) => {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                    active_suggestions.on_down_arrow();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('s'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.history_manager
-                    .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
-            }
-            // Page Up/Down - scroll by a full page in fuzzy history search
-            KeyEvent {
-                code: KeyCode::PageUp,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.history_manager
-                    .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
-            }
-            KeyEvent {
-                code: KeyCode::PageDown,
-                ..
-            } if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) => {
-                self.history_manager
-                    .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
-            }
-            // Handle Down with history navigation when at last line
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            } if self.buffer.is_cursor_on_final_line() => {
-                match self
-                    .history_manager
-                    .search_in_history(self.buffer.buffer(), HistorySearchDirection::Forward)
-                {
-                    Some(entry) => {
-                        self.buffer.replace_buffer(&entry.command);
-                    }
-                    None => {
-                        if let Some(original_buffer) = self.buffer_before_history_navigation.take()
-                        {
-                            self.buffer.replace_buffer(&original_buffer);
-                        }
-                    }
-                }
-            }
-            // Alt+Enter - activate Agent mode (requires --agent-mode to be configured)
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::ALT,
-                ..
-            } if matches!(self.content_mode, ContentMode::Normal) => {
-                if let Some((agent_cmd, buffer)) = self.resolve_agent_command(false) {
-                    self.start_agent_mode(agent_cmd, &buffer);
-                } else {
-                    self.show_agent_mode_not_configured_error();
-                }
-            }
-            // Enter key - accept suggestions or submit command
-            KeyEvent {
-                code: KeyCode::Enter,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('j'), // Without this, when I hold enter, sometimes 'j' is read as input
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => match &mut self.content_mode {
-                ContentMode::FuzzyHistorySearch => {
-                    self.accept_fuzzy_history_search();
-                    // TODO: allow someone to accept and run the command immediately
-                    // Instead of Enter+Enter
-                    // self.try_submit_current_buffer();
-                }
-                ContentMode::TabCompletion(active_suggestions) => {
-                    active_suggestions.accept_currently_selected(&mut self.buffer);
-                    self.content_mode = ContentMode::Normal;
-                }
-                ContentMode::Normal => {
-                    if let Some((agent_cmd, buffer)) = self.resolve_agent_command(true) {
-                        self.start_agent_mode(agent_cmd, &buffer);
-                    } else {
-                        self.try_submit_current_buffer();
-                    }
-                }
-                ContentMode::AgentMode { .. } => {}
-                ContentMode::AgentError { .. } => {
-                    self.content_mode = ContentMode::Normal;
-                    self.buffer.replace_buffer("flyline agent-mode --help");
-                    self.on_possible_buffer_change(None);
-                    self.try_submit_current_buffer();
-                }
-                ContentMode::AgentOutputSelection(selection) => {
-                    if let Some(cmd) = selection.selected_command() {
-                        let cmd = cmd.to_string();
-                        self.buffer.replace_buffer(&cmd);
-                        self.on_possible_buffer_change(None);
-                    }
-                    self.content_mode = ContentMode::Normal;
-                }
-            },
-            // Shift+Tab or BackTab - cycle suggestions backward
-            KeyEvent {
-                code: KeyCode::Tab,
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::BackTab,
-                ..
-            } => {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                    active_suggestions.on_tab(true);
-                }
-            }
-            // Tab - cycle suggestions or trigger completion
-            KeyEvent {
-                code: KeyCode::Tab, ..
-            } => match &mut self.content_mode {
-                ContentMode::FuzzyHistorySearch => {
-                    self.accept_fuzzy_history_search();
-                }
-                ContentMode::TabCompletion(active_suggestions) => {
-                    active_suggestions.on_tab(false);
-                }
-                ContentMode::Normal => {
-                    self.start_tab_complete();
-                }
-                ContentMode::AgentMode { .. } => {}
-                ContentMode::AgentOutputSelection(_) => {}
-                ContentMode::AgentError { .. } => {}
-            },
-
-            // Escape - clear suggestions or toggle mouse (Simple and Smart modes)
-            KeyEvent {
-                code: KeyCode::Esc, ..
-            } => match self.content_mode {
-                ContentMode::TabCompletion(_)
-                | ContentMode::FuzzyHistorySearch
-                | ContentMode::AgentMode { .. }
-                | ContentMode::AgentOutputSelection(_)
-                | ContentMode::AgentError { .. } => {
-                    self.content_mode = ContentMode::Normal;
-                }
-                ContentMode::Normal => {
-                    if matches!(
-                        self.settings.mouse_mode,
-                        MouseMode::Simple | MouseMode::Smart
-                    ) {
-                        self.toggle_mouse_state("Escape pressed");
-                    }
-                }
-            },
-            // Ctrl+D - exit
-            KeyEvent {
-                code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                if self.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
-                    self.mode = AppRunningState::Exiting(ExitState::EOF);
-                } else {
-                    self.buffer.delete_forwards();
-                }
-            }
-            // Ctrl+C - cancel
-            KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
-                ..
-            } => {
-                self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
-            }
-            // Ctrl+/ (shows as Ctrl+7) - comment out and execute
-            KeyEvent {
-                code: KeyCode::Char('7') | KeyCode::Char('/'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META | KeyModifiers::SUPER,
-                ..
-            } => {
-                self.buffer.move_to_start();
-                self.buffer.insert_str("#");
-                self.try_submit_current_buffer();
-            }
-            KeyEvent {
-                code: KeyCode::Char('r'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::META,
-                ..
-            } => {
-                match self.content_mode {
-                    ContentMode::FuzzyHistorySearch => {
-                        self.content_mode = ContentMode::Normal;
-                        // self.fuzzy_history_search_results.clear();
-                    }
-                    ContentMode::Normal | ContentMode::TabCompletion(_) => {
-                        self.content_mode = ContentMode::FuzzyHistorySearch;
-                        self.history_manager
-                            .warm_fuzzy_search_cache(self.buffer.buffer());
-                    }
-                    ContentMode::AgentMode { .. }
-                    | ContentMode::AgentOutputSelection(_)
-                    | ContentMode::AgentError { .. } => {}
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Char('l'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                // Clear screen
-                return KeyPressReturnType::NeedScreenClear;
-            }
-            KeyEvent {
-                code: KeyCode::Modifier(ModifierKeyCode::LeftAlt),
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                // In Simple mode: Alt press toggles mouse capture.
-                if self.settings.mouse_mode == MouseMode::Simple {
-                    self.toggle_mouse_state("simple mode: Alt pressed");
-                }
-            }
-            key @ KeyEvent {
-                code: KeyCode::Char(c),
-                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
-                ..
-            } if self.settings.auto_close_chars => {
-                keypress_action = self.handle_char_insertion(key, c);
-            }
-            // Backspace: if the char to the right of the cursor is an auto-inserted closing token
-            // paired with the char about to be deleted, remove it as well.
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } if self.settings.auto_close_chars => {
-                self.delete_auto_inserted_closing_if_present();
-                self.buffer.on_keypress(key);
-            }
-            _ => {
-                // Delegate basic text editing to TextBuffer
-                self.buffer.on_keypress(key);
-            }
-        }
-
-        self.on_possible_buffer_change(keypress_action);
-        KeyPressReturnType::None
-    }
-
-    fn would_overwrite_auto_inserted_closing(&self, c: char) -> bool {
-        let cursor_pos = self.buffer.cursor_byte_pos();
-        if cursor_pos == 0 {
-            return false;
-        }
-        if let Some(dparser_token) = self
-            .dparser_tokens_cache
-            .iter()
-            .find(|t| t.token.byte_range().contains(&cursor_pos))
-        {
-            if let Some(dparser::ClosingAnnotation {
-                is_auto_inserted: true,
-                ..
-            }) = &dparser_token.annotations.closing
-            {
-                return dparser_token.token.value.starts_with(c);
-            }
-        }
-        false
-    }
-
-    /// After a character `c` has been inserted into the buffer, insert the corresponding
-    /// closing character when `c` is an unmatched opening delimiter.
-    ///
-    /// The decision is made using `dparser_tokens_cache`, which represents the buffer state
-    /// *before* `c` was typed (one character out of date).  The cache is passed to
-    /// [`buffer_format::FormattedBuffer::closing_char_to_insert`] which uses the stale token
-    /// annotations to determine whether `c` opens a new pair or closes an existing one.
-    ///
-    /// Returns the byte position of the auto-inserted closing character, or `None` if no
-    /// closing character was inserted.
-    fn insert_closing_char(&mut self, c: char, initial_cursor_pos: usize) -> Option<(char, usize)> {
-        if let Some(closing) = dparser::DParser::closing_char_to_insert(
-            &self.dparser_tokens_cache,
-            c,
-            initial_cursor_pos,
-        ) {
-            self.buffer.insert_char(closing);
-            self.buffer.move_left();
-            // After move_left, cursor is at the start of the auto-inserted closing char.
-            log::info!(
-                "Inserted auto-closing char '{}' at byte position {}",
-                closing,
-                self.buffer.cursor_byte_pos()
-            );
-            Some((closing, self.buffer.cursor_byte_pos()))
-        } else {
-            None
-        }
-    }
-
-    /// Mark the dparser token at `byte_pos` as auto-inserted in the cache.
-    fn mark_auto_inserted_closing(
-        dparser_tokens: &mut [dparser::AnnotatedToken],
-        c: char,
-        byte_pos: usize,
-    ) {
-        for token in dparser_tokens {
-            if token.token.byte_range().start == byte_pos
-                && token.token.value.starts_with(c)
-                && let Some(dparser::ClosingAnnotation {
-                    is_auto_inserted, ..
-                }) = &mut token.annotations.closing
-            {
-                *is_auto_inserted = true;
-                log::info!(
-                    "Marked token '{}' at byte {} as auto-inserted",
-                    token.token.value,
-                    byte_pos
-                );
-                return;
-            }
-        }
-        log::warn!(
-            "Failed to mark auto-inserted closing char '{}' at byte position {}: no matching token found in cache",
-            c,
-            byte_pos
-        );
-    }
-
-    /// If the token immediately to the right of the cursor is an auto-inserted closing token
-    /// that is paired with the token the cursor is right after, delete it.
-    /// This is called before a simple Backspace so that deleting an auto-paired opener also
-    /// removes the auto-inserted closer.
-    fn delete_auto_inserted_closing_if_present(&mut self) {
-        let cursor_pos = self.buffer.cursor_byte_pos();
-        if cursor_pos == 0 {
-            return;
-        }
-
-        // Find the token that ends at cursor_pos (the one about to be deleted by Backspace).
-        let opening_annotation = self
-            .dparser_tokens_cache
-            .iter()
-            .find(|t| t.token.byte_range().contains(&(cursor_pos - 1)))
-            .map(|t| t.annotations.opening.clone());
-
-        if let Some(Some(dparser::OpeningState::Matched(closing_idx))) = opening_annotation {
-            // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
-            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx)
-                && closing_token.token.byte_range().start == cursor_pos
-                && let Some(dparser::ClosingAnnotation {
-                    is_auto_inserted: true,
-                    ..
-                }) = closing_token.annotations.closing
-            {
-                self.buffer.delete_forwards();
-            }
         }
     }
 
@@ -1294,7 +820,7 @@ impl<'a> App<'a> {
                 log::warn!("AI task: failed to send result (receiver dropped): {}", e);
             }
         });
-        self.content_mode = ContentMode::AgentMode {
+        self.content_mode = ContentMode::AgentModeWaiting {
             receiver: rx,
             command_display,
             start_time: std::time::Instant::now(),
@@ -1316,8 +842,8 @@ impl<'a> App<'a> {
         }
     }
 
-    fn on_possible_buffer_change(&mut self, last_keypress_action: Option<LastKeyPressAction>) {
-        self.history_suggestion =
+    fn on_possible_buffer_change(&mut self) {
+        self.inline_history_suggestion =
             if !self.settings.show_inline_history || self.buffer.buffer().is_empty() {
                 None
             } else {
@@ -1357,7 +883,7 @@ impl<'a> App<'a> {
         parser.walk_to_end();
         let mut new_tokens = parser.into_tokens();
         if let Some(LastKeyPressAction::InsertedAutoClosing { char, byte_pos }) =
-            last_keypress_action
+            self.last_keypress_action
         {
             // If the last keypress inserted an auto-closing char, mark the corresponding token in the new cache as auto-inserted.
             Self::mark_auto_inserted_closing(&mut new_tokens, char, byte_pos);
@@ -1740,7 +1266,7 @@ impl<'a> App<'a> {
             );
         }
 
-        if let Some((sug, suf)) = &self.history_suggestion
+        if let Some((sug, suf)) = &self.inline_history_suggestion
             && self.mode.is_running()
         {
             suf.lines()
@@ -1952,7 +1478,7 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            ContentMode::AgentMode {
+            ContentMode::AgentModeWaiting {
                 command_display,
                 start_time,
                 ..

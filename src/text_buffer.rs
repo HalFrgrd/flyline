@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use crossterm::event::KeyEvent;
 use unicode_segmentation::UnicodeSegmentation;
 // use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use itertools::Itertools;
@@ -68,219 +67,6 @@ impl TextBuffer {
             buf: starting_str.to_string(),
             cursor_byte: starting_str.len(),
             undo_redo: SnapshotManager::new(),
-        }
-    }
-
-    /// Handle basic text editing keypresses
-    /// Useful reference:
-    /// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
-    pub fn on_keypress(&mut self, key: KeyEvent) {
-        use crossterm::event::{KeyCode, KeyModifiers};
-
-        match key {
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.delete_backwards();
-            }
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers,
-                ..
-            } if modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
-                self.delete_until_start_of_line();
-            }
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::SUPER,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('u'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.delete_until_start_of_line();
-            }
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                self.delete_one_word_left(WordDelim::LessStrict);
-            }
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                // control backspace show up as these ones for me
-                code: KeyCode::Char('h'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('w'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                self.delete_one_word_left(WordDelim::WhiteSpace);
-            }
-            KeyEvent {
-                code: KeyCode::Delete,
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                self.delete_one_word_right(WordDelim::LessStrict);
-            }
-            KeyEvent {
-                code: KeyCode::Delete,
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('d'),
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                self.delete_one_word_right(WordDelim::WhiteSpace);
-            }
-            KeyEvent {
-                code: KeyCode::Delete,
-                modifiers,
-                ..
-            } if modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
-                self.delete_until_end_of_line();
-            }
-            KeyEvent {
-                code: KeyCode::Delete,
-                modifiers: KeyModifiers::SUPER,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('k'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.delete_until_end_of_line();
-            }
-            KeyEvent {
-                code: KeyCode::Delete,
-                ..
-            } => {
-                self.delete_forwards();
-            }
-            KeyEvent {
-                code: KeyCode::Home,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::SUPER,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('a'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
-                ..
-            } => {
-                self.move_start_of_line();
-            }
-            KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('b'), // Emacs-style. ghostty sends this for Alt+Left by default
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                self.move_one_word_left(WordDelim::WhiteSpace);
-            }
-            KeyEvent {
-                code: KeyCode::Left,
-                ..
-            } => {
-                self.move_left();
-            }
-            KeyEvent {
-                code: KeyCode::End, ..
-            }
-            | KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::SUPER,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('e'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
-                ..
-            } => {
-                self.move_end_of_line();
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('f'), // Emacs-style. ghostty sends this for Alt+Right by default
-                modifiers: KeyModifiers::ALT | KeyModifiers::META,
-                ..
-            } => {
-                self.move_one_word_right(WordDelim::WhiteSpace);
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                ..
-            } => {
-                self.move_right();
-            }
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } => {
-                if self.cursor_row() > 0 {
-                    self.move_line_up();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            } => {
-                if !self.is_cursor_on_final_line() {
-                    self.move_line_down();
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Char(c),
-                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
-                ..
-            } => {
-                self.insert_char(c);
-            }
-            KeyEvent {
-                code: KeyCode::Char('y'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
-                ..
-            } => {
-                self.redo();
-            }
-            KeyEvent {
-                code: KeyCode::Char('z'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::SUPER,
-                ..
-            } => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    self.redo();
-                } else {
-                    self.undo();
-                }
-            }
-            _ => {}
         }
     }
 }
@@ -1234,7 +1020,7 @@ impl TextBuffer {
         self.undo_redo.add_snapshot(snapshot, merge_with_recent);
     }
 
-    fn undo(&mut self) {
+    pub fn undo(&mut self) {
         let current_state = self.create_snapshot();
 
         if let Some(snapshot) = self.undo_redo.prev_snapshot(current_state) {
@@ -1243,7 +1029,7 @@ impl TextBuffer {
         }
     }
 
-    fn redo(&mut self) {
+    pub fn redo(&mut self) {
         let current_state = self.create_snapshot();
 
         if let Some(snapshot) = self.undo_redo.next_snapshot(current_state) {
