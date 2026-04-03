@@ -14,7 +14,7 @@ use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
-use crate::settings::{self, MouseMode, Settings};
+use crate::settings::{self, MouseMode, Settings, UseTermEmulatorCursor};
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
@@ -395,7 +395,12 @@ impl<'a> App<'a> {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
 
-                        if self.settings.send_shell_integration_codes {
+                        if self.settings.send_shell_integration_codes
+                            || matches!(
+                                self.settings.use_term_emulator_cursor,
+                                UseTermEmulatorCursor::OnlyPromptPos | UseTermEmulatorCursor::Full
+                            )
+                        {
                             shell_integration::write_after_rendering_codes(
                                 prev_contents
                                     .as_ref()
@@ -1202,7 +1207,7 @@ impl<'a> App<'a> {
                 cursor_pos
             };
             let cursor_style = {
-                if self.settings.use_term_emulator_cursor {
+                if self.settings.use_term_emulator_cursor == UseTermEmulatorCursor::Full {
                     None
                 } else {
                     let cursor_intensity = if self.settings.show_animations {
@@ -1649,7 +1654,8 @@ impl<'a> App<'a> {
         };
 
         if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
-            && (self.settings.use_term_emulator_cursor || !self.mode.is_running())
+            && (self.settings.use_term_emulator_cursor == UseTermEmulatorCursor::Full
+                || !self.mode.is_running())
         {
             frame.set_cursor_position(term_em_cursor);
         }

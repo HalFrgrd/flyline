@@ -104,8 +104,8 @@ struct FlylineArgs {
     #[arg(long = "auto-close-chars", default_missing_value = "true", num_args = 0..=1)]
     auto_close_chars: Option<bool>,
     /// Use the terminal emulator's cursor instead of rendering a custom cursor
-    #[arg(long = "use-term-emulator-cursor", default_missing_value = "true", num_args = 0..=1)]
-    use_term_emulator_cursor: Option<bool>,
+    #[arg(long = "use-term-emulator-cursor", default_missing_value = "full", num_args = 0..=1)]
+    use_term_emulator_cursor: Option<settings::UseTermEmulatorCursor>,
     /// Run matrix animation in the terminal background
     #[arg(long = "matrix-animation", default_missing_value = "true", num_args = 0..=1)]
     matrix_animation: Option<bool>,
@@ -441,9 +441,9 @@ impl Flyline {
                     self.settings.auto_close_chars = enabled;
                 }
 
-                if let Some(enabled) = parsed.use_term_emulator_cursor {
-                    log::info!("Using terminal emulator cursor: {}", enabled);
-                    self.settings.use_term_emulator_cursor = enabled;
+                if let Some(mode) = parsed.use_term_emulator_cursor {
+                    log::info!("Term emulator cursor mode: {:?}", mode);
+                    self.settings.use_term_emulator_cursor = mode;
                 }
 
                 if let Some(enabled) = parsed.matrix_animation {
