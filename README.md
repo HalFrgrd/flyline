@@ -306,6 +306,7 @@ Commands:
   agent-mode   Configure AI agent mode.
   create-anim  Create a custom prompt animation.
   set-color    Configure the colour palette.
+  key          Manage keybindings.
   help         Print this message or the help of the given subcommand(s)
 
 Options:

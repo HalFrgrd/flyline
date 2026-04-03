@@ -191,12 +191,7 @@ impl Binding {
         })
     }
 
-    pub fn try_new_from_strs(
-        key_event: &str,
-        scope_and_action: &str,
-    ) -> Result<Self> {
-
-
+    pub fn try_new_from_strs(key_event: &str, scope_and_action: &str) -> Result<Self> {
         let parts = scope_and_action.split("::").collect::<Vec<_>>();
         if parts.len() != 2 {
             return Err(anyhow::anyhow!(
@@ -208,7 +203,6 @@ impl Binding {
         let scope = Scope::try_from(scope_str)?;
 
         let action_str = parts[1];
-
 
         Ok(Self::try_new(&[key_event], scope, action_str)?)
     }
@@ -707,18 +701,8 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             "accept_suggestion",
         )
         .unwrap(),
-        Binding::try_new(
-            &["Down"],
-            Scope::AGENT_OUTPUT_SELECTION,
-            "select_next",
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Up"],
-            Scope::AGENT_OUTPUT_SELECTION,
-            "select_prev",
-        )
-        .unwrap(),
+        Binding::try_new(&["Down"], Scope::AGENT_OUTPUT_SELECTION, "select_next").unwrap(),
+        Binding::try_new(&["Up"], Scope::AGENT_OUTPUT_SELECTION, "select_prev").unwrap(),
         Binding::try_new(&["Up"], Scope::TAB_COMPLETION, "move_up").unwrap(),
         Binding::try_new(&["Down"], Scope::TAB_COMPLETION, "move_down").unwrap(),
         Binding::try_new(&["Left"], Scope::TAB_COMPLETION, "move_left").unwrap(),
@@ -856,6 +840,216 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
     ]
 });
 
+fn format_key_modifiers(modifiers: KeyModifiers) -> Vec<&'static str> {
+    let mut parts = Vec::new();
+    if modifiers.contains(KeyModifiers::CONTROL) {
+        parts.push("Ctrl");
+    }
+    if modifiers.contains(KeyModifiers::ALT) {
+        parts.push("Alt");
+    }
+    if modifiers.contains(KeyModifiers::META) {
+        parts.push("Meta");
+    }
+    if modifiers.contains(KeyModifiers::SHIFT) {
+        parts.push("Shift");
+    }
+    if modifiers.contains(KeyModifiers::SUPER) {
+        parts.push("Super");
+    }
+    parts
+}
+
+fn format_key_code(code: KeyCode) -> String {
+    match code {
+        KeyCode::Enter => "Enter".to_string(),
+        KeyCode::Backspace => "Backspace".to_string(),
+        KeyCode::Left => "Left".to_string(),
+        KeyCode::Right => "Right".to_string(),
+        KeyCode::Up => "Up".to_string(),
+        KeyCode::Down => "Down".to_string(),
+        KeyCode::Home => "Home".to_string(),
+        KeyCode::End => "End".to_string(),
+        KeyCode::PageUp => "PageUp".to_string(),
+        KeyCode::PageDown => "PageDown".to_string(),
+        KeyCode::Tab => "Tab".to_string(),
+        KeyCode::BackTab => "BackTab".to_string(),
+        KeyCode::Delete => "Delete".to_string(),
+        KeyCode::Insert => "Insert".to_string(),
+        KeyCode::Esc => "Esc".to_string(),
+        KeyCode::CapsLock => "CapsLock".to_string(),
+        KeyCode::ScrollLock => "ScrollLock".to_string(),
+        KeyCode::NumLock => "NumLock".to_string(),
+        KeyCode::PrintScreen => "PrintScreen".to_string(),
+        KeyCode::Pause => "Pause".to_string(),
+        KeyCode::Menu => "Menu".to_string(),
+        KeyCode::KeypadBegin => "KeypadBegin".to_string(),
+        KeyCode::Char(c) => c.to_string(),
+        KeyCode::F(n) => format!("F{}", n),
+        other => format!("{:?}", other),
+    }
+}
+
+fn format_key_event_match(kem: &KeyEventMatch) -> String {
+    match kem {
+        KeyEventMatch::Exact(ke) => {
+            let mut parts: Vec<String> = format_key_modifiers(ke.modifiers)
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
+            parts.push(format_key_code(ke.code));
+            parts.join("+")
+        }
+        KeyEventMatch::AnyCharEitherMod(mods) => mods
+            .iter()
+            .map(|m| {
+                let mut parts: Vec<&str> = format_key_modifiers(*m);
+                parts.push("AnyChar");
+                parts.join("+")
+            })
+            .collect::<Vec<_>>()
+            .join(" / "),
+    }
+}
+
+fn format_scope(scope: Scope) -> String {
+    let names: &[(Scope, &str)] = &[
+        (Scope::NORMAL, "normal"),
+        (Scope::FUZZY_HISTORY_SEARCH, "fuzzy_history_search"),
+        (Scope::TAB_COMPLETION, "tab_completion"),
+        (Scope::AGENT_MODE_WAITING, "agent_mode_waiting"),
+        (Scope::AGENT_OUTPUT_SELECTION, "agent_output_selection"),
+        (Scope::AGENT_ERROR, "agent_error"),
+        (
+            Scope::INLINE_HISTORY_ACCEPTABLE,
+            "inline_history_acceptable",
+        ),
+    ];
+    let active: Vec<&str> = names
+        .iter()
+        .filter(|(s, _)| scope.contains(*s))
+        .map(|(_, n)| *n)
+        .collect();
+    if active.is_empty() {
+        format!("0x{:04x}", scope.0)
+    } else {
+        active.join("|")
+    }
+}
+
+/// Print all keybindings as a formatted table to stdout, ordered from lowest
+/// to highest priority.  User-defined bindings appear above the defaults and
+/// are marked with `*` in the rightmost column.
+pub fn print_bindings_table(user_bindings: &[Binding]) {
+    struct Row {
+        keys: String,
+        scope: String,
+        action: String,
+        description: String,
+        is_user: bool,
+    }
+
+    let binding_to_row = |binding: &Binding, is_user: bool| -> Row {
+        let keys = binding
+            .key_events
+            .iter()
+            .map(format_key_event_match)
+            .collect::<Vec<_>>()
+            .join(" / ");
+        Row {
+            keys,
+            scope: format_scope(binding.action.scope),
+            action: binding.action.name.to_string(),
+            description: binding.action.description.to_string(),
+            is_user,
+        }
+    };
+
+    // Collect rows lowest-to-highest priority:
+    //   1. DEFAULT_BINDINGS in reverse (last entry = lowest default priority)
+    //   2. user_bindings in reverse (last entry = lowest user priority; all user
+    //      bindings have higher priority than all defaults)
+    let mut rows: Vec<Row> = Vec::new();
+    for binding in DEFAULT_BINDINGS.iter().rev() {
+        rows.push(binding_to_row(binding, false));
+    }
+    for binding in user_bindings.iter().rev() {
+        rows.push(binding_to_row(binding, true));
+    }
+
+    const H_KEYS: &str = "Key(s)";
+    const H_SCOPE: &str = "Scope";
+    const H_ACTION: &str = "Action";
+    const H_DESC: &str = "Description";
+    const H_USER: &str = "User";
+
+    let w_keys = rows
+        .iter()
+        .map(|r| r.keys.len())
+        .max()
+        .unwrap_or(0)
+        .max(H_KEYS.len());
+    let w_scope = rows
+        .iter()
+        .map(|r| r.scope.len())
+        .max()
+        .unwrap_or(0)
+        .max(H_SCOPE.len());
+    let w_action = rows
+        .iter()
+        .map(|r| r.action.len())
+        .max()
+        .unwrap_or(0)
+        .max(H_ACTION.len());
+    let w_desc = rows
+        .iter()
+        .map(|r| r.description.len())
+        .max()
+        .unwrap_or(0)
+        .max(H_DESC.len());
+
+    println!(
+        "{:<w_keys$}  {:<w_scope$}  {:<w_action$}  {:<w_desc$}  {}",
+        H_KEYS,
+        H_SCOPE,
+        H_ACTION,
+        H_DESC,
+        H_USER,
+        w_keys = w_keys,
+        w_scope = w_scope,
+        w_action = w_action,
+        w_desc = w_desc,
+    );
+    println!(
+        "{:-<w_keys$}  {:-<w_scope$}  {:-<w_action$}  {:-<w_desc$}  {:-<w_user$}",
+        "",
+        "",
+        "",
+        "",
+        "",
+        w_keys = w_keys,
+        w_scope = w_scope,
+        w_action = w_action,
+        w_desc = w_desc,
+        w_user = H_USER.len(),
+    );
+    for row in &rows {
+        let user_marker = if row.is_user { "*" } else { "" };
+        println!(
+            "{:<w_keys$}  {:<w_scope$}  {:<w_action$}  {:<w_desc$}  {}",
+            row.keys,
+            row.scope,
+            row.action,
+            row.description,
+            user_marker,
+            w_keys = w_keys,
+            w_scope = w_scope,
+            w_action = w_action,
+            w_desc = w_desc,
+        );
+    }
+}
+
 impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         log::trace!("Key event: {:?}", key);
@@ -870,7 +1064,12 @@ impl<'a> App<'a> {
             self.mouse_state.enable("smart mode: keypress detected");
         }
 
-        for binding in self.settings.keybindings.iter().chain(DEFAULT_BINDINGS.iter()) {
+        for binding in self
+            .settings
+            .keybindings
+            .iter()
+            .chain(DEFAULT_BINDINGS.iter())
+        {
             if binding.action.scope.is_active(self) && binding.matches(key) {
                 log::trace!("Matched binding: {}", binding.action.name);
                 (binding.action.action)(self, key);
