@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use crate::app::actions;
 use crate::palette::Palette;
-use clap::ValueEnum;
 use crate::tutorial::TutorialStep;
+use clap::ValueEnum;
 
 /// Which theme the user has configured for the colour palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]

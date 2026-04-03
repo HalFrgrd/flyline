@@ -428,7 +428,7 @@ impl Flyline {
                     if enabled {
                         self.settings
                             .tutorial_step
-                            .set(tutorial::TutorialStep::FirstStep);
+                            .set(tutorial::TutorialStep::Welcome);
                     } else {
                         self.settings
                             .tutorial_step

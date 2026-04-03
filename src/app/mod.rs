@@ -1135,30 +1135,41 @@ impl<'a> App<'a> {
                     height: 7,
                 };
 
-                
                 let [prev_block, text_block, next_block] =
                     buffer_rect.layout(&Layout::horizontal([
                         Constraint::Min(7),
                         Constraint::Percentage(90),
                         Constraint::Min(7),
-                        ]));
+                    ]));
                 let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
 
-
                 let para = Paragraph::new(tutorial_lines);
-                para.render(text_block.inner(Margin { horizontal: 2, vertical: 1 }), &mut text_buffer);
+                para.render(
+                    text_block.inner(Margin {
+                        horizontal: 2,
+                        vertical: 1,
+                    }),
+                    &mut text_buffer,
+                );
 
                 content.write_buffer(&text_buffer, Tag::Tutorial);
 
-
-
-                content.render_block(prev_block, "prev", Tag::TutorialPrev, self.last_mouse_over_cell == Some(Tag::TutorialPrev));
-                content.render_block(next_block, "next", Tag::TutorialNext, self.last_mouse_over_cell == Some(Tag::TutorialNext));
+                content.render_block(
+                    prev_block,
+                    "prev",
+                    Tag::TutorialPrev,
+                    self.last_mouse_over_cell == Some(Tag::TutorialPrev),
+                );
+                content.render_block(
+                    next_block,
+                    "next",
+                    Tag::TutorialNext,
+                    self.last_mouse_over_cell == Some(Tag::TutorialNext),
+                );
                 content.move_to_final_line();
                 content.newline();
             }
         }
-
 
         content.prompt_start = Some(content.cursor_position());
 

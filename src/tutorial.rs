@@ -11,40 +11,57 @@ pub enum TutorialStep {
     #[default]
     NotRunning,
     /// Welcome message and recommended settings.
-    FirstStep,
-    /// Fuzzy history search (Ctrl+R).
-    SecondStep,
-    /// Fuzzy autocompletions (Tab).
-    ThirdStep,
-    /// Setting theme colours.
-    FourthStep,
-    /// Auto-closing quotes, parentheses, and brackets.
-    FifthStep,
+    Welcome,
+    RecommendedSettings,
+    MouseMode,
+    ThemeColours,
+    FuzzyHistorySearch,
+    Autocompletions,
+    AutoClosing,
 }
 
 impl TutorialStep {
-    /// Advance to the next step. Wraps around to `FirstStep` after the last step.
+    const STEPS_IN_ORDER: [TutorialStep; 8] = [
+        TutorialStep::Welcome,
+        TutorialStep::RecommendedSettings,
+        TutorialStep::MouseMode,
+        TutorialStep::ThemeColours,
+        TutorialStep::FuzzyHistorySearch,
+        TutorialStep::Autocompletions,
+        TutorialStep::AutoClosing,
+        TutorialStep::NotRunning,
+    ];
+
     pub fn next(&mut self) {
-        *self = match self {
-            TutorialStep::NotRunning => TutorialStep::NotRunning,
-            TutorialStep::FirstStep => TutorialStep::SecondStep,
-            TutorialStep::SecondStep => TutorialStep::ThirdStep,
-            TutorialStep::ThirdStep => TutorialStep::FourthStep,
-            TutorialStep::FourthStep => TutorialStep::FifthStep,
-            TutorialStep::FifthStep => TutorialStep::NotRunning,
-        };
+        if self == &TutorialStep::NotRunning {
+            return;
+        }
+
+        let self_idx = self
+            .STEPS_IN_ORDER
+            .iter()
+            .position(|s| s == self)
+            .unwrap_or(0);
+        let next_idx = (self_idx + 1) % self.steps_in_order.len();
+        *self = self.steps_in_order[next_idx];
     }
 
-    /// Go back to the previous step. Stops at `FirstStep`.
     pub fn prev(&mut self) {
-        *self = match self {
-            TutorialStep::NotRunning => TutorialStep::NotRunning,
-            TutorialStep::FirstStep => TutorialStep::FirstStep,
-            TutorialStep::SecondStep => TutorialStep::FirstStep,
-            TutorialStep::ThirdStep => TutorialStep::SecondStep,
-            TutorialStep::FourthStep => TutorialStep::ThirdStep,
-            TutorialStep::FifthStep => TutorialStep::FourthStep,
+        if self == &TutorialStep::Welcome {
+            return;
+        }
+
+        let self_idx = self
+            .steps_in_order
+            .iter()
+            .position(|s| s == self)
+            .unwrap_or(0);
+        let prev_idx = if self_idx == 0 {
+            0
+        } else {
+            self_idx - 1
         };
+        *self = self.steps_in_order[prev_idx];
     }
 
     /// Whether the tutorial is currently active (any step other than `NotRunning`).
@@ -82,10 +99,6 @@ pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
     let hint_style = palette.tutorial_hint();
     let mut lines: Vec<Line> = Vec::new();
 
-    lines.push(Line::from(Span::styled(
-        "Recommended settings:",
-        hint_style,
-    )));
     lines.push(Line::from(""));
 
     if is_vscode() {
@@ -139,25 +152,39 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
     }
 
     let hint_style = palette.tutorial_hint();
+    let heading_style = palette.markdown_heading2();
     let mut lines: Vec<Line> = Vec::new();
 
     match step {
-        TutorialStep::FirstStep => {
+        TutorialStep::Welcome => {
             lines.push(Line::from(Span::styled(
                 "Welcome to flyline!",
                 hint_style.add_modifier(Modifier::BOLD),
             )));
             lines.push(Line::from(""));
-
+            lines.push(Line::from(Span::styled(
+                "Run `flyline --run-tutorial false` to disable the tutorial.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "To start the tutorial, press Enter. Navigate by clicking on the buttons.",
+                hint_style,
+            )));
+        }
+        TutorialStep::RecommendedSettings => {
+            lines.push(Line::from(Span::styled(
+                "Recommended settings:",
+                heading_style,
+            )));
             let settings_text = generate_recommended_settings(palette);
             for line in settings_text.lines {
                 lines.push(line);
             }
         }
-        TutorialStep::SecondStep => {
+        TutorialStep::FuzzyHistorySearch => {
             lines.push(Line::from(Span::styled(
                 "Fuzzy History Search",
-                hint_style.add_modifier(Modifier::BOLD),
+                heading_style,
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
@@ -177,10 +204,10 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 hint_style,
             )));
         }
-        TutorialStep::ThirdStep => {
+        TutorialStep::Autocompletions => {
             lines.push(Line::from(Span::styled(
                 "Fuzzy Autocompletions",
-                hint_style.add_modifier(Modifier::BOLD),
+                heading_style,
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
@@ -196,10 +223,10 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 hint_style,
             )));
         }
-        TutorialStep::FourthStep => {
+        TutorialStep::ThemeColours => {
             lines.push(Line::from(Span::styled(
                 "Setting Theme Colors",
-                hint_style.add_modifier(Modifier::BOLD),
+                heading_style,
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
@@ -229,10 +256,10 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 hint_style,
             )));
         }
-        TutorialStep::FifthStep => {
+        TutorialStep::AutoClosing => {
             lines.push(Line::from(Span::styled(
                 "Auto-Closing Quotes & Brackets",
-                hint_style.add_modifier(Modifier::BOLD),
+                heading_style,
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
@@ -255,13 +282,6 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
         }
         TutorialStep::NotRunning => unreachable!(),
     }
-
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "💡 Run `flyline --run-tutorial false` to disable the tutorial.",
-        hint_style,
-    )));
-    lines.push(Line::from(""));
 
     Some(lines)
 }

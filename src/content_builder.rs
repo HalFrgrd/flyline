@@ -426,13 +426,13 @@ impl Contents {
             (x, y) if x == area.right() - 1 && y == area.top() => '╮',
             (x, y) if x == area.left() && y == area.bottom() - 1 => '╰',
             (x, y) if x == area.right() - 1 && y == area.bottom() - 1 => '╯',
-            (_x,y) if y == area.bottom() - 1 => '─',
-            (_x,y) if y == area.top() => '─',
-            (x,_y) if x == area.left() => '│',
-            (x,_y) if x == area.right() - 1 => '│',
-                _ => ' '
-            };
-        
+            (_x, y) if y == area.bottom() - 1 => '─',
+            (_x, y) if y == area.top() => '─',
+            (x, _y) if x == area.left() => '│',
+            (x, _y) if x == area.right() - 1 => '│',
+            _ => ' ',
+        };
+
         if !is_selected {
             return char;
         }
@@ -482,23 +482,37 @@ impl Contents {
             // '╮' => '🬊',
             // '╰' => '🬱',
             // '╯' => '🬵',
-            '─' =>  if y == area.top() { '🮏' } else { '🮎' },
-            '│' =>  if x == area.left() { '🮍' } else { '🮌' },
+            '─' => {
+                if y == area.top() {
+                    '🮏'
+                } else {
+                    '🮎'
+                }
+            }
+            '│' => {
+                if x == area.left() {
+                    '🮍'
+                } else {
+                    '🮌'
+                }
+            }
             ' ' => '🮐', // 🮖 █
-            _ => char
+            _ => char,
         }
     }
 
-        pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, is_selected: bool) {
-            for y in area.top()..area.bottom() {
-                for x in area.left()..area.right() {
-                    if let Some(row) = self.buf.get_mut(y as usize)
-                        && let Some(tagged_cell) = row.get_mut(x as usize)
-                    {
-                    
+    pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, is_selected: bool) {
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                if let Some(row) = self.buf.get_mut(y as usize)
+                    && let Some(tagged_cell) = row.get_mut(x as usize)
+                {
                     let char = Self::get_char(x, y, area, is_selected);
 
-                    tagged_cell.cell.set_symbol(&char.to_string()).set_style(ratatui::style::Style::default());
+                    tagged_cell
+                        .cell
+                        .set_symbol(&char.to_string())
+                        .set_style(ratatui::style::Style::default());
                     tagged_cell.tag = tag;
                 }
             }

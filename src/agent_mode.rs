@@ -684,7 +684,7 @@ That should help!"#;
                     .collect::<String>()
             })
             .collect();
-            
+
         // Header row contains the column names.
         assert!(plain[0].contains("╭─"), "top_border: {}", plain[0]);
         assert!(plain[1].contains("Command"), "header: {}", plain[1]);
