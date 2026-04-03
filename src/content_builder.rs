@@ -419,6 +419,51 @@ impl Contents {
             }
         }
     }
+
+    fn get_char(x: u16, y: u16, area: Rect, is_selected: bool) -> char {
+        let char = match (x, y) {
+            (x, y) if x == area.left() && y == area.top() => '╭',
+            (x, y) if x == area.right() - 1 && y == area.top() => '╮',
+            (x, y) if x == area.left() && y == area.bottom() - 1 => '╰',
+            (x, y) if x == area.right() - 1 && y == area.bottom() - 1 => '╯',
+            (_x,y) if y == area.bottom() - 1 => '─',
+            (_x,y) if y == area.top() => '─',
+            (x,_y) if x == area.left() => '│',
+            (x,_y) if x == area.right() - 1 => '│',
+                _ => 'X'
+            };
+        
+        if !is_selected {
+            return char;
+        }
+
+        match char {
+            '╭' => '🯮',
+            '╮' => '🯭',
+            '╰' => '🯬',
+            '╯' => '🯯',
+            '─' => if y == area.top() { '▂' } else { '🬂' },
+            '│' => if x == area.left() { '🮇' } else { '🯏' },
+            'X' => '🮖', // 🮖 █
+            _ => char
+        }
+    }
+
+        pub fn render_block(&mut self, area: Rect, tag: Tag, is_selected: bool) {
+            for y in area.top()..area.bottom() {
+                for x in area.left()..area.right() {
+                    if let Some(row) = self.buf.get_mut(y as usize)
+                        && let Some(tagged_cell) = row.get_mut(x as usize)
+                    {
+                    
+                    let char = Self::get_char(x, y, area, is_selected);
+
+                    tagged_cell.cell.set_symbol(&char.to_string()).set_style(ratatui::style::Style::default());
+                    tagged_cell.tag = tag;
+                }
+            }
+        }
+    }
 }
 
 static MATRIX_ANIM_STATE: Mutex<Option<MatrixAnimState>> = Mutex::new(None);

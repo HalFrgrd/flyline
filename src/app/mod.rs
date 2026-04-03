@@ -1132,32 +1132,27 @@ impl<'a> App<'a> {
                     x: 0,
                     y: 0,
                     width,
-                    height: 8,
+                    height: 6,
                 };
 
-                let mut buffer = ratatui::buffer::Buffer::empty(buffer_rect);
-
+                
                 let [prev_block, text_block, next_block] =
-                    buffer.area().layout(&Layout::horizontal([
+                    buffer_rect.layout(&Layout::horizontal([
                         Constraint::Min(6),
                         Constraint::Percentage(90),
                         Constraint::Min(6),
-                    ]));
+                        ]));
+                let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
 
-                Block::bordered()
-                    .style(Style::default().bg(Color::Green))
-                    .border_type(ratatui::widgets::BorderType::Rounded)
-                    .render(prev_block.inner(Margin::new(0, 1)), &mut buffer);
-
-                Block::bordered()
-                    .style(Style::default().bg(Color::Green))
-                    .border_type(ratatui::widgets::BorderType::Double)
-                    .render(next_block.inner(Margin::new(0, 1)), &mut buffer);
 
                 let para = Paragraph::new(tutorial_lines);
-                para.render(text_block, &mut buffer);
+                para.render(text_block.inner(Margin { horizontal: 2, vertical: 1 }), &mut text_buffer);
 
-                content.write_buffer(&buffer, Tag::Tutorial);
+                content.write_buffer(&text_buffer, Tag::Tutorial);
+
+                content.render_block(prev_block, Tag::Tutorial, true);
+                content.render_block(next_block, Tag::Tutorial, false);
+                content.newline();
             }
         }
 
