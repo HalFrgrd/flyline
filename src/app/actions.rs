@@ -19,17 +19,6 @@ impl Scope {
     pub const AGENT_ERROR: Self = Self(1 << 5);
     pub const INLINE_HISTORY_ACCEPTABLE: Self = Self(1 << 6);
 
-    pub const fn values() -> [Self; 7] {
-        [
-            Self::NORMAL,
-            Self::FUZZY_HISTORY_SEARCH,
-            Self::TAB_COMPLETION,
-            Self::AGENT_MODE_WAITING,
-            Self::AGENT_OUTPUT_SELECTION,
-            Self::AGENT_ERROR,
-            Self::INLINE_HISTORY_ACCEPTABLE,
-        ]
-    }
 
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
@@ -72,39 +61,7 @@ impl Scope {
             false
         }
     }
-    // const fn strings(&self) ->  [&'static str; 7] {
-    //     let mut out = [""; 7];
-    //     let mut i = 0;
-    //     if self.contains(Scope::NORMAL) {
-    //         out[i] = "normal";
-    //         i += 1;
-    //     }
-    //     if self.contains(Scope::FUZZY_HISTORY_SEARCH) {
-    //         out[i] = "fuzzy_history_search";
-    //         i += 1;
-    //     }
-    //     if self.contains(Scope::TAB_COMPLETION) {
-    //         out[i] = "tab_completion";
-    //         i += 1;
-    //     }
-    //     if self.contains(Scope::AGENT_MODE_WAITING) {
-    //         out[i] = "agent_mode_waiting";
-    //         i += 1;
-    //     }
-    //     if self.contains(Scope::AGENT_OUTPUT_SELECTION) {
-    //         out[i] = "agent_output_selection";
-    //         i += 1;
-    //     }
-    //     if self.contains(Scope::AGENT_ERROR) {
-    //         out[i] = "agent_error";
-    //         i += 1;
-    //     }
-    //     if self.contains(Scope::INLINE_HISTORY_ACCEPTABLE) {
-    //         out[i] = "inline_history_acceptable";
-    //         i += 1;
-    //     }
-    //     out
-    // }
+
 }
 
 impl<'a> IntoIterator for Scope {
