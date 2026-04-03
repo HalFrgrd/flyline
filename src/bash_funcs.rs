@@ -798,15 +798,14 @@ const BACKSLASH_SPECIAL_CHARS: &[char] = &[
 /// **not** wrap the result in double-quote characters; the caller is
 /// responsible for adding the surrounding `"…"` delimiters.
 pub fn escape_for_double_quote(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            if DOUBLE_QUOTE_SPECIAL_CHARS.contains(&c) {
-                format!("\\{}", c)
-            } else {
-                c.to_string()
-            }
-        })
-        .collect()
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if DOUBLE_QUOTE_SPECIAL_CHARS.contains(&c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /* Filename quoting for completion. */

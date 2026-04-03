@@ -368,10 +368,10 @@ pub fn post_process_completion(
             // word_under_cursor is quoted (starts with ' or ") but sug is the raw
             // unquoted completion string.  Extract the path prefix from the
             // word, match it against sug, then rebuild with proper escaping.
-            let opening_char = match qt {
-                bash_funcs::QuoteType::SingleQuote => '\'',
-                bash_funcs::QuoteType::DoubleQuote => '"',
-                _ => unreachable!(),
+            let opening_char = if qt == bash_funcs::QuoteType::SingleQuote {
+                '\''
+            } else {
+                '"'
             };
             if word_under_cursor.starts_with(opening_char) {
                 // Strip opening quote and any trailing closing quote.
