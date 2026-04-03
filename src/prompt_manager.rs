@@ -283,7 +283,6 @@ impl PromptManager {
             // before handing the string to decode_prompt_string.  Fall back to
             // the already-expanded readline prompt when PS1 is not available.
             let ps1_raw = bash_funcs::get_envvar_value("PS1").or_else(get_current_readline_prompt);
-            log::info!("Raw PS1: {:?}", ps1_raw);
 
             let ps1 = ps1_raw
                 .and_then(|raw| builder.expand_prompt_string(raw))

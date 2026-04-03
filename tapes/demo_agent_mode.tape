@@ -12,7 +12,9 @@ Type `export PATH="/home/john/bin/:$PATH" && clear`
 Enter
 Show
 
-Type `flyline agent-mode --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \`
+Type `flyline agent-mode --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \`
+Enter
+Type `  --trigger-prefix "ai: " \`
 Enter
 Type `  --command claude --prompt --effort low`
 Enter
@@ -20,7 +22,6 @@ Sleep 500ms
 
 Type "list files older than three days"
 Sleep 500ms
-# special shortcut for agent mode
 Alt+Enter
 Sleep 4000ms
 Down
@@ -29,5 +30,14 @@ Down
 Sleep 1000ms
 Up
 Sleep 1000ms
+Enter
+Sleep 800ms
+Enter
+
+Type "# If you set `--trigger-prefix`, then you can launch agent mode simply with Enter:`
+Enter
+Sleep 500ms
+Type "ai: list files older than three days"
+Sleep 4000ms
 Enter
 

@@ -13,7 +13,7 @@ cat <<'EOF'
   },
   {
     "command": "find /path/to/dir -mtime +3 -type f -ls",
-    "description": "Find files older than 3 days and display detailed info (size, permissions, date)"
+    "description": "Find files older than 3 days and display details (size, permissions, date)"
   }
 ]
 ```

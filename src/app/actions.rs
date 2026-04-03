@@ -872,6 +872,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(&["Left"], Scope::NORMAL, "move_left").unwrap(),
         Binding::try_new(
+            &["Right", "End"],
+            Scope::INLINE_HISTORY_ACCEPTABLE,
+            "accept_suggestion",
+        )
+        .unwrap(),
+        Binding::try_new(
             &["End", "Super+Right", "Ctrl+E", "Super+E"],
             Scope::NORMAL,
             "move_end_of_line",
@@ -881,12 +887,6 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
             &["Ctrl+Right", "Alt+Right", "Meta+Right", "Alt+f", "Meta+f"], // Emacs-style. ghostty sends Alt+Right as Meta+Right by default
             Scope::NORMAL,
             "move_one_word_right_whitespace",
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Right", "End"],
-            Scope::INLINE_HISTORY_ACCEPTABLE,
-            "accept_suggestion",
         )
         .unwrap(),
         Binding::try_new(&["Right"], Scope::NORMAL, "move_right").unwrap(),

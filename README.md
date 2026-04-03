@@ -210,6 +210,8 @@ This allows you to write a command in plain English and your agent will convert 
 
 ![Agent mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
 
+After setting up your agent with flyline, you can pass the buffer to your agent with Alt+Enter or simply Enter when your command starts with your trigger prefix (e.g. `ai: list files older than three days`).
+
 [See the examples on how to set this up.](examples/agent_mode.sh)
 The agent should return a simple JSON array of commands as described by the example system prompt.
 
