@@ -261,56 +261,77 @@ impl App<'_> {
             tab_completion_context::CompType::CommandComp {
                 command_word: initial_command_word,
             } => {
-                // This isnt just for commands like `git`, `cargo`
-                // Because we call bash_symbols::programmable_completions
-                // Bash also completes env vars (`echo $HO`) and other useful completions.
-                // Bash doesnt handle alias expansion well:
-                // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
-                // Since aliases are the highest priority in command word resolution,
-                // If it is an alias, lets expand it here for better completion results.
-                let AliasExpandedCompletion {
-                    command_word,
-                    full_command,
-                    cursor_byte_pos,
-                    word_under_cursor_end,
-                } = expand_alias_for_completion(
-                    initial_command_word.to_string(),
-                    word_under_cursor,
-                    completion_context.context,
-                    completion_context.context_until_cursor,
-                );
+                // Glob patterns (e.g. `ls *`, `ls *.txt`) must be expanded as a
+                // unit — all matches joined with spaces — rather than offered as
+                // individual file completions.  Skip bash's programmable
+                // completions for these words: bash's own filename completion
+                // can return files (e.g. `compgen -f -- "*"` expands the glob
+                // and returns every file), which would cause flyline to present
+                // individual completions instead of the correct all-at-once glob
+                // expansion.  Letting flyline's secondary GlobExpansion path
+                // handle it consistently yields the right behaviour for both
+                // `ls *` and `ls ./*`.
+                if matches!(
+                    completion_context.comp_type_secondary,
+                    Some(tab_completion_context::SecondaryCompType::GlobExpansion)
+                ) {
+                    log::debug!(
+                        "Word '{}' is a glob pattern; skipping programmable completions and using secondary glob expansion.",
+                        word_under_cursor
+                    );
+                    // Fall through to gen_secondary_completions below.
+                } else {
+                    // This isnt just for commands like `git`, `cargo`
+                    // Because we call bash_symbols::programmable_completions
+                    // Bash also completes env vars (`echo $HO`) and other useful completions.
+                    // Bash doesnt handle alias expansion well:
+                    // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
+                    // Since aliases are the highest priority in command word resolution,
+                    // If it is an alias, lets expand it here for better completion results.
+                    let AliasExpandedCompletion {
+                        command_word,
+                        full_command,
+                        cursor_byte_pos,
+                        word_under_cursor_end,
+                    } = expand_alias_for_completion(
+                        initial_command_word.to_string(),
+                        word_under_cursor,
+                        completion_context.context,
+                        completion_context.context_until_cursor,
+                    );
 
-                let poss_completions = bash_funcs::run_programmable_completions(
-                    &full_command,
-                    &command_word,
-                    word_under_cursor,
-                    cursor_byte_pos,
-                    word_under_cursor_end,
-                );
+                    let poss_completions = bash_funcs::run_programmable_completions(
+                        &full_command,
+                        &command_word,
+                        word_under_cursor,
+                        cursor_byte_pos,
+                        word_under_cursor_end,
+                    );
 
-                match poss_completions {
-                    Ok(comp_result) if !comp_result.completions.is_empty() => {
-                        log::debug!(
-                            "Programmable completion results for command: {}",
-                            full_command
-                        );
-                        log::debug!("Completions: {:#?}", comp_result);
+                    match poss_completions {
+                        Ok(comp_result) if !comp_result.completions.is_empty() => {
+                            log::debug!(
+                                "Programmable completion results for command: {}",
+                                full_command
+                            );
+                            log::debug!("Completions: {:#?}", comp_result);
 
-                        let suggestions = Self::post_process_completions(
-                            comp_result.completions,
-                            comp_result.flags,
-                            word_under_cursor,
-                        );
-                        return Some(suggestions);
+                            let suggestions = Self::post_process_completions(
+                                comp_result.completions,
+                                comp_result.flags,
+                                word_under_cursor,
+                            );
+                            return Some(suggestions);
+                        }
+                        Ok(comp_result) => {
+                            // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
+                            // Always try to produce secondary completions
+                            return self
+                                .gen_secondary_completions(completion_context, comp_result.flags);
+                        }
+                        _ => {}
                     }
-                    Ok(comp_result) => {
-                        // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
-                        // Always try to produce secondary completions
-                        return self
-                            .gen_secondary_completions(completion_context, comp_result.flags);
-                    }
-                    _ => {}
-                }
+                } // end else (non-glob branch)
             }
         }
 
@@ -762,6 +783,22 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default abc/foo*/ba*",
             &[&Suggestion::new(r#"abc/foo/baz"#, "", " ")],
+        );
+
+        // Test that bare `*` glob expansion works for `ls *` (the word is a pure glob
+        // with no path prefix).  Previously flyline would let bash's programmable
+        // completion handle the word; bash's `compgen -f -- "*"` expands the glob and
+        // returns every file as an individual completion, so flyline never reached its
+        // own all-at-once glob expansion path.  Now flyline detects the GlobExpansion
+        // secondary type and bypasses bash's programmable completion, producing the
+        // correct joined result.
+        run_test_on(
+            "ls *",
+            &[&Suggestion::new(
+                r#"abc/ bar.txt file\ with\ spaces.txt foo/ many\ spaces\ here/ sym_link_to_foo/"#,
+                "",
+                "",
+            )],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
