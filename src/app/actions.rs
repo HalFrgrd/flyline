@@ -5,6 +5,7 @@ use crate::settings::MouseMode;
 use crate::text_buffer::WordDelim;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use serde_json::map::Iter;
 use std::sync::LazyLock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +63,37 @@ impl Scope {
         } else {
             false
         }
+    }
+}
+
+impl<'a> IntoIterator for Scope {
+    type Item = &'static str;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let mut scopes = Vec::new();
+        if self.contains(Scope::NORMAL) {
+            scopes.push("normal");
+        }
+        if self.contains(Scope::FUZZY_HISTORY_SEARCH) {
+            scopes.push("fuzzy_history_search");
+        }
+        if self.contains(Scope::TAB_COMPLETION) {
+            scopes.push("tab_completion");
+        }
+        if self.contains(Scope::AGENT_MODE_WAITING) {
+            scopes.push("agent_mode_waiting");
+        }
+        if self.contains(Scope::AGENT_OUTPUT_SELECTION) {
+            scopes.push("agent_output_selection");
+        }
+        if self.contains(Scope::AGENT_ERROR) {
+            scopes.push("agent_error");
+        }
+        if self.contains(Scope::INLINE_HISTORY_ACCEPTABLE) {
+            scopes.push("inline_history_acceptable");
+        }
+        scopes.into_iter()
     }
 }
 
@@ -388,7 +420,7 @@ static POSSIBLE_ACTIONS: LazyLock<Vec<Action>> = LazyLock::new(|| {
         ),
         Action::new(
             "submit_or_newline", // TODO name
-            "Submit the current command. Insert a newline if the buffer has unclosed quotes, brackets, or parentheses.",
+            "Submit the current command. Insert a newline if the buffer has unclosed \",',[,(.",
             Scope::NORMAL,
             |app, _key| {
                 if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
@@ -628,7 +660,7 @@ static POSSIBLE_ACTIONS: LazyLock<Vec<Action>> = LazyLock::new(|| {
         ),
         Action::new(
             "move_line_down_or_history_down",
-            "Move cursor down one line or navigate history if the on final buffer line",
+            "Move cursor down one line or navigate history if on the final buffer line",
             Scope::NORMAL,
             |app, _key| {
                 if app.buffer.is_cursor_on_final_line() {
@@ -869,8 +901,11 @@ impl Scope {
 
 impl Action {
     /// Returns a display string in the form `scope::action_name`.
-    fn display(&self) -> String {
-        format!("{}::{}", self.scope.display(), self.name)
+    fn display_each_scope(&self) -> Vec<String> {
+        self.scope
+            .into_iter()
+            .map(|s| format!("{}::{}", s, self.name))
+            .collect()
     }
 }
 
@@ -966,19 +1001,24 @@ pub fn print_bindings_table(user_bindings: &[Binding]) {
         is_user: bool,
     }
 
-    let binding_to_row = |binding: &Binding, is_user: bool| -> Row {
+    let binding_to_rows = |binding: &Binding, is_user: bool| -> Vec<Row> {
         let keys = binding
             .key_events
             .iter()
             .map(|k| k.display())
             .collect::<Vec<_>>()
-            .join(" / ");
-        Row {
-            keys,
-            action: binding.action.display(),
-            description: binding.action.description.to_string(),
-            is_user,
-        }
+            .join(", ");
+        binding
+            .action
+            .display_each_scope()
+            .into_iter()
+            .map(|action| Row {
+                keys: keys.clone(),
+                action,
+                description: binding.action.description.to_string(),
+                is_user,
+            })
+            .collect()
     };
 
     // Collect rows lowest-to-highest priority:
@@ -987,10 +1027,10 @@ pub fn print_bindings_table(user_bindings: &[Binding]) {
     //      bindings have higher priority than all defaults)
     let mut rows: Vec<Row> = Vec::new();
     for binding in DEFAULT_BINDINGS.iter().rev() {
-        rows.push(binding_to_row(binding, false));
+        rows.extend(binding_to_rows(binding, false));
     }
     for binding in user_bindings.iter().rev() {
-        rows.push(binding_to_row(binding, true));
+        rows.extend(binding_to_rows(binding, true));
     }
 
     const H_KEYS: &str = "Key(s)";
