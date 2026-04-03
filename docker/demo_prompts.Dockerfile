@@ -2,10 +2,10 @@ FROM demo-base AS gif-builder
 
 # Override PS1 with a minimal prompt – the demo will set prompts interactively
 RUN printf '%s\n' \
-    'export PS1="bash$ "' \
-    'export RPS1=""' \
+    'PS1="bash$ "' \
+    'RPS1=""' \
     'export RPROMPT=""' \
-    'export PS1_FILL=" "' \
+    'PS1_FILL=" "' \
     >> /home/john/.bashrc
 
 

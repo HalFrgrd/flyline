@@ -96,27 +96,27 @@ Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship integration](#starship-integration) for more information.
 ![PS1 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps1.gif)
 ```bash
-export PS1='\u@\h:\w$ '
-export PS1='\u@\h:\w\n$ '
-export PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
+PS1='\u@\h:\w$ '
+PS1='\u@\h:\w\n$ '
+PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
 ```
 
 ## RPS1 / RPROMPT
 The `RPS1` / `RPROMPT` variable sets the right prompt similarly to Zsh.
 ![RPS1 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_rps1.gif)
 ```bash
-export RPS1='\t'
-export RPS1='\t\n<'
-export RPS1='\e[01;33m\t\n<\e[00m'
+RPS1='\t'
+RPS1='\t\n<'
+RPS1='\e[01;33m\t\n<\e[00m'
 ```
 
 ## PS1_FILL
 `PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
 ![PS1_FILL demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps1_fill.gif)
 ```bash
-export PS1_FILL='-'
-export PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
-export PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
+PS1_FILL='-'
+PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
+PS1_FILL='🯁🯂🯃🮲🮳 \D{%.3f}'
 ```
 
 ## Dynamic time in prompts
@@ -135,10 +135,10 @@ These can be placed in any of the supported prompt variables:
 
 ```bash
 # Right prompt showing 24-hour time in green
-export RPS1='\e[01;32m\t\e[0m'
+RPS1='\e[01;32m\t\e[0m'
 
 # Right prompt showing 12-hour am/pm time
-export RPS1='\e[01;34m\@\e[0m'
+RPS1='\e[01;34m\@\e[0m'
 ```
 
 ### Custom time format with `\D{format}`
@@ -147,10 +147,10 @@ Use `\D{format}` with any [Chrono format string](https://docs.rs/chrono/latest/c
 
 ```bash
 # Show date and time
-export RPS1='\e[01;32m\D{%Y-%m-%d %H:%M:%S}\e[0m'
+RPS1='\e[01;32m\D{%Y-%m-%d %H:%M:%S}\e[0m'
 
 # Show only hours and minutes
-export RPS1='\D{%H:%M}'
+RPS1='\D{%H:%M}'
 ```
 
 ## Custom animations

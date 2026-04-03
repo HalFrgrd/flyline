@@ -113,7 +113,7 @@ Enter
 
 Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
 Enter
-Type `export RPS1='\t`
+Type `RPS1='\t`
 Enter
 
 Sleep 5s
