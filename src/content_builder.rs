@@ -7,6 +7,89 @@ use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+/// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpanTag {
+    /// Every grapheme in the span gets the same tag.
+    Constant(Tag),
+    /// One tag per grapheme in the span, indexed by grapheme position.
+    /// Falls back to [`Tag::Normal`] for out-of-range indices.
+    PerGrapheme(Vec<Tag>),
+}
+
+impl SpanTag {
+    /// Return the tag for the grapheme at `idx`.
+    pub fn get(&self, idx: usize) -> Tag {
+        match self {
+            SpanTag::Constant(tag) => *tag,
+            SpanTag::PerGrapheme(tags) => tags.get(idx).copied().unwrap_or(Tag::Normal),
+        }
+    }
+}
+
+/// A ratatui [`Span`] paired with a [`SpanTag`] that describes the semantic tag
+/// for each grapheme in the span.
+#[derive(Debug, Clone)]
+pub struct TaggedSpan<'a> {
+    pub span: Span<'a>,
+    pub tag: SpanTag,
+}
+
+impl<'a> TaggedSpan<'a> {
+    /// Create a `TaggedSpan` where every grapheme gets the same `tag`.
+    pub fn new(span: Span<'a>, tag: Tag) -> Self {
+        TaggedSpan {
+            span,
+            tag: SpanTag::Constant(tag),
+        }
+    }
+
+    /// Create a `TaggedSpan` with a per-grapheme tag vector.
+    pub fn per_grapheme(span: Span<'a>, tags: Vec<Tag>) -> Self {
+        TaggedSpan {
+            span,
+            tag: SpanTag::PerGrapheme(tags),
+        }
+    }
+}
+
+impl<'a> From<Span<'a>> for TaggedSpan<'a> {
+    /// Converts a [`Span`] into a [`TaggedSpan`] with [`Tag::Normal`] applied to all graphemes.
+    fn from(span: Span<'a>) -> Self {
+        TaggedSpan::new(span, Tag::Normal)
+    }
+}
+
+/// A sequence of [`TaggedSpan`]s forming a logical line, analogous to ratatui's [`Line`].
+#[derive(Debug, Clone, Default)]
+pub struct TaggedLine<'a> {
+    pub spans: Vec<TaggedSpan<'a>>,
+}
+
+impl<'a> TaggedLine<'a> {
+    /// Create a [`TaggedLine`] from a ratatui [`Line`], assigning `tag` to every span.
+    pub fn from_line(line: Line<'a>, tag: Tag) -> Self {
+        TaggedLine {
+            spans: line
+                .spans
+                .into_iter()
+                .map(|s| TaggedSpan::new(s, tag))
+                .collect(),
+        }
+    }
+
+    /// Return the total display width of all spans in the line, in terminal columns.
+    pub fn width(&self) -> u16 {
+        self.spans.iter().map(|ts| ts.span.width() as u16).sum()
+    }
+}
+
+impl<'a> From<Vec<TaggedSpan<'a>>> for TaggedLine<'a> {
+    fn from(spans: Vec<TaggedSpan<'a>>) -> Self {
+        TaggedLine { spans }
+    }
+}
+
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,16 +228,15 @@ impl Contents {
         }
     }
 
-    /// Write a single span at the current cursor position
-    /// Will automatically wrap to the next line if necessary
+    /// Write a single tagged span at the current cursor position.
+    /// Will automatically wrap to the next line if necessary.
     fn write_span_internal(
         &mut self,
-        span: &Span,
-        graph_idx_to_tag: impl Fn(usize) -> Tag,
+        tagged_span: &TaggedSpan,
         overwrite: bool,
         mark_nth_grapheme: Option<usize>,
     ) -> Option<Coord> {
-        let graphemes = span.styled_graphemes(span.style);
+        let graphemes = tagged_span.span.styled_graphemes(tagged_span.span.style);
         let mut marked_graph_coord = None;
 
         for (i, graph) in graphemes.enumerate() {
@@ -181,68 +263,86 @@ impl Contents {
                 marked_graph_coord = Some(self.cursor_pos);
             }
 
+            let tag = tagged_span.tag.get(i);
             self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
-                .update(&graph, graph_idx_to_tag(i));
+                .update(&graph, tag);
             self.cursor_pos.col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
             while self.cursor_pos.col < next_graph_x {
                 self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
                     .cell
                     .reset();
-                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag =
-                    graph_idx_to_tag(i);
+                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag = tag;
                 self.cursor_pos.col += 1;
             }
         }
         marked_graph_coord
     }
 
-    pub fn write_span_dont_overwrite(
+    /// Write a tagged span at the current cursor position, skipping cells that are already filled.
+    /// Returns the coordinate of the `mark_nth_grapheme`-th grapheme, if present.
+    pub fn write_tagged_span_dont_overwrite(
         &mut self,
-        span: &Span,
-        graph_idx_to_tag: impl Fn(usize) -> Tag,
+        tagged_span: &TaggedSpan,
         mark_nth_grapheme: Option<usize>,
     ) -> Option<Coord> {
-        self.write_span_internal(span, graph_idx_to_tag, false, mark_nth_grapheme)
+        self.write_span_internal(tagged_span, false, mark_nth_grapheme)
     }
 
-    pub fn write_span(&mut self, span: &Span, tag: Tag) {
-        self.write_span_internal(span, |_| tag, true, None);
+    /// Write a tagged span at the current cursor position, overwriting any existing content.
+    pub fn write_tagged_span(&mut self, tagged_span: &TaggedSpan) {
+        self.write_span_internal(tagged_span, true, None);
     }
 
-    /// Write a line at the current cursor position
-    /// If insert_new_line is true, moves to the next line after writing
-    pub fn write_line(&mut self, line: &Line, insert_new_line: bool, tag: Tag) {
-        for span in &line.spans {
-            self.write_span(span, tag);
+    /// Write a tagged line at the current cursor position.
+    /// If `insert_new_line` is true, moves to the next line after writing.
+    pub fn write_tagged_line(&mut self, line: &TaggedLine, insert_new_line: bool) {
+        for tagged_span in &line.spans {
+            self.write_tagged_span(tagged_span);
         }
         if insert_new_line {
             self.newline();
         }
     }
 
-    pub fn write_line_lrjustified(
+    /// Write a tagged line left-aligned, fill the gap, then write another tagged line
+    /// right-aligned — all on the same terminal row.
+    ///
+    /// If the left line wraps to a second row the fill and right line are skipped.
+    /// When `leave_cursor_after_l_line` is true the cursor is restored to the position
+    /// immediately after the left line once the function returns.
+    pub fn write_tagged_line_lrjustified(
         &mut self,
-        l_line: &Line,
-        fill_line: &Line,
-        r_line: &Line,
-        tag: Tag,
+        l_line: &TaggedLine,
+        fill_line: &TaggedLine,
+        r_line: &TaggedLine,
         leave_cursor_after_l_line: bool,
     ) {
-        let r_width = r_line.width() as u16;
+        let r_width = r_line.width();
         let starting_row = self.cursor_pos.row;
-        self.write_line(l_line, false, tag);
+        self.write_tagged_line(l_line, false);
 
         let cursor_after_l_line = self.cursor_pos.col;
 
         if self.cursor_pos.row == starting_row {
             let target_col = self.width.saturating_sub(r_width);
 
-            // Collect all styled graphemes from the fill line
+            // Collect styled graphemes and their tags from the fill line.
             let fill_graphemes: Vec<StyledGrapheme> = fill_line
                 .spans
                 .iter()
-                .flat_map(|span| span.styled_graphemes(span.style))
+                .flat_map(|ts| ts.span.styled_graphemes(ts.span.style))
+                .collect();
+            let fill_grapheme_tags: Vec<Tag> = fill_line
+                .spans
+                .iter()
+                .flat_map(|ts| {
+                    ts.span
+                        .content
+                        .graphemes(true)
+                        .enumerate()
+                        .map(|(i, _)| ts.tag.get(i))
+                })
                 .collect();
 
             let has_nonzero_width = fill_graphemes.iter().any(|g| g.symbol.width() > 0);
@@ -269,8 +369,9 @@ impl Contents {
                     if self.cursor_pos.col + graph_w > target_col {
                         break;
                     }
+                    let fill_tag = fill_grapheme_tags[idx % fill_grapheme_tags.len()];
                     let span = Span::styled(graph.symbol.to_string(), graph.style);
-                    self.write_span(&span, tag);
+                    self.write_tagged_span(&TaggedSpan::new(span, fill_tag));
                     idx += 1;
                 }
                 // Move cursor to where right-aligned content should start
@@ -278,7 +379,7 @@ impl Contents {
             }
         }
         if r_width > 0 {
-            self.write_line(r_line, false, tag);
+            self.write_tagged_line(r_line, false);
         }
 
         if leave_cursor_after_l_line {
@@ -298,7 +399,7 @@ impl Contents {
     pub fn fill_line(&mut self, tag: Tag) {
         let remaining = self.width.saturating_sub(self.cursor_pos.col) as usize;
         if remaining > 0 {
-            self.write_span(&Span::raw(" ".repeat(remaining)), tag);
+            self.write_tagged_span(&TaggedSpan::new(Span::raw(" ".repeat(remaining)), tag));
         }
     }
 
