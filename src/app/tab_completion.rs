@@ -3,8 +3,8 @@ use crate::app::{App, ContentMode};
 use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
 use crate::text_buffer::SubString;
+use crate::users;
 use glob::glob;
-use std::path::Path;
 
 #[derive(Debug)]
 struct PathPatternExpansion {
@@ -585,33 +585,17 @@ impl App<'_> {
             return vec![UnprocessedSuggestion::Ready(Suggestion::new("~/", "", ""))];
         }
 
-        // `~username` — find matching users by listing /home/ and checking /root
+        // `~username` — find matching users from the users module
         let mut suggestions = Vec::new();
 
-        if let Ok(entries) = std::fs::read_dir("/home") {
-            for entry in entries.flatten() {
-                if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if name_str.starts_with(user_pattern) {
-                        suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
-                            format!("~{}/", name_str),
-                            "",
-                            "",
-                        )));
-                    }
-                }
+        for user in users::get_all_users() {
+            if user.username.starts_with(user_pattern) {
+                suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
+                    format!("~{}/", user.username),
+                    "",
+                    "",
+                )));
             }
-        }
-
-        // Also check root (whose home is /root, not under /home/)
-        if "root".starts_with(user_pattern)
-            && Path::new("/root").is_dir()
-            && !suggestions.iter().any(|s| s.match_text() == "~root/")
-        {
-            suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
-                "~root/", "", "",
-            )));
         }
 
         suggestions.sort_by(|a, b| a.match_text().cmp(b.match_text()));
