@@ -369,15 +369,12 @@ impl PromptStringBuilder {
 
     /// Split a static [`Span`] at animation-name boundaries, producing
     /// `Static` and `Animation` segments.
+    ///
+    /// Runs a single greedy loop that always picks the earliest-occurring
+    /// animation name in the remaining text.  Returns at least one segment;
+    /// if no animation names are found the original span is returned unchanged
+    /// as a `Static` segment.
     fn split_static_span_by_animations(&self, span: Span<'static>) -> Vec<PromptSegment> {
-        let needs_split = self
-            .animations
-            .iter()
-            .any(|a| span.content.contains(a.name.as_str()));
-        if !needs_split {
-            return vec![PromptSegment::Static(span)];
-        }
-
         let style = span.style;
         let mut result: Vec<PromptSegment> = Vec::new();
         let mut remaining: String = span.content.into_owned();
@@ -416,6 +413,12 @@ impl PromptStringBuilder {
 
         if !remaining.is_empty() {
             result.push(PromptSegment::Static(Span::styled(remaining, style)));
+        }
+
+        // Ensure at least one segment is always returned (e.g. for an empty
+        // span with no matching animation name).
+        if result.is_empty() {
+            result.push(PromptSegment::Static(Span::styled(String::new(), style)));
         }
 
         result
