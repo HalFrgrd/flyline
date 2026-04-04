@@ -6,7 +6,7 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
-use crate::content_builder::{Contents, Tag, split_line_to_terminal_rows};
+use crate::content_builder::{Contents, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
@@ -1118,16 +1118,22 @@ impl<'a> App<'a> {
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
             let (l_line, r_line) = either_or_both.or(&empty_line, &empty_line);
+            let tagged_l = TaggedLine::from_line(l_line.clone(), Tag::Ps1Prompt);
+            let tagged_r = TaggedLine::from_line(r_line.clone(), Tag::Ps1Prompt);
             if is_last {
-                content.write_line_lrjustified(
-                    l_line,
-                    &Line::from(" "),
-                    r_line,
-                    Tag::Ps1Prompt,
+                content.write_tagged_line_lrjustified(
+                    &tagged_l,
+                    &TaggedLine::from_line(Line::from(" "), Tag::Ps1Prompt),
+                    &tagged_r,
                     true,
                 );
             } else {
-                content.write_line_lrjustified(l_line, &fill_span, r_line, Tag::Ps1Prompt, false);
+                content.write_tagged_line_lrjustified(
+                    &tagged_l,
+                    &TaggedLine::from_line(fill_span.clone(), Tag::Ps1Prompt),
+                    &tagged_r,
+                    false,
+                );
             }
             if !is_last {
                 content.newline();
@@ -1144,13 +1150,11 @@ impl<'a> App<'a> {
         for part in self.formatted_buffer_cache.parts.iter() {
             let span_to_draw = if part.token.token.kind == TokenKind::Newline {
                 // For newlines, draw a space instead so that we can have a place to put the cursor
-                &Span::from(" ")
+                Span::from(" ")
+            } else if self.mode.is_running() && self.settings.show_animations {
+                part.get_possible_animated_span(now)
             } else {
-                if self.mode.is_running() && self.settings.show_animations {
-                    &part.get_possible_animated_span(now)
-                } else {
-                    part.normal_span()
-                }
+                part.normal_span().clone()
             };
 
             let graph_idx_to_tag: Vec<Tag> = part
@@ -1164,14 +1168,8 @@ impl<'a> App<'a> {
                 })
                 .collect();
 
-            let poss_cursor_anim_pos = content.write_span_dont_overwrite(
-                span_to_draw,
-                move |graph_idx| {
-                    graph_idx_to_tag
-                        .get(graph_idx)
-                        .copied()
-                        .unwrap_or(Tag::Command(0))
-                },
+            let poss_cursor_anim_pos = content.write_tagged_span_dont_overwrite(
+                &TaggedSpan::per_grapheme(span_to_draw, graph_idx_to_tag),
                 part.cursor_grapheme_idx,
             );
             if cursor_pos_maybe.is_none() {
@@ -1185,7 +1183,7 @@ impl<'a> App<'a> {
                     format!("{}∙", line_idx + 1),
                     self.settings.color_palette.secondary_text(),
                 );
-                content.write_span(&ps2, Tag::Ps2Prompt);
+                content.write_tagged_span(&TaggedSpan::new(ps2, Tag::Ps2Prompt));
             }
         }
         if self.formatted_buffer_cache.draw_cursor_at_end {
@@ -1198,13 +1196,13 @@ impl<'a> App<'a> {
             self.mode,
             AppRunningState::Exiting(ExitState::WithoutCommand)
         ) {
-            content.write_span(
-                &Span::styled(
+            content.write_tagged_span(&TaggedSpan::new(
+                Span::styled(
                     "^C",
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
                 Tag::Normal,
-            );
+            ));
         }
 
         if self.mode.is_running()
@@ -1237,30 +1235,36 @@ impl<'a> App<'a> {
             && self.buffer.buffer().is_empty()
             && matches!(self.content_mode, ContentMode::Normal)
         {
-            content.write_span_dont_overwrite(
-                &Span::styled(
-                    " 💡 Start typing or search history with Ctrl+R",
-                    self.settings.color_palette.tutorial_hint(),
+            content.write_tagged_span_dont_overwrite(
+                &TaggedSpan::new(
+                    Span::styled(
+                        " 💡 Start typing or search history with Ctrl+R",
+                        self.settings.color_palette.tutorial_hint(),
+                    ),
+                    Tag::HistorySuggestion,
                 ),
-                |_| Tag::HistorySuggestion,
                 None,
             );
             content.newline();
-            content.write_span_dont_overwrite(
-                &Span::styled(
-                    TUTORIAL_HISTORY_PREFIX_HINT,
-                    self.settings.color_palette.tutorial_hint(),
+            content.write_tagged_span_dont_overwrite(
+                &TaggedSpan::new(
+                    Span::styled(
+                        TUTORIAL_HISTORY_PREFIX_HINT,
+                        self.settings.color_palette.tutorial_hint(),
+                    ),
+                    Tag::HistorySuggestion,
                 ),
-                |_| Tag::HistorySuggestion,
                 None,
             );
             content.newline();
-            content.write_span_dont_overwrite(
-                &Span::styled(
-                    TUTORIAL_DISABLE_HINT,
-                    self.settings.color_palette.tutorial_hint(),
+            content.write_tagged_span_dont_overwrite(
+                &TaggedSpan::new(
+                    Span::styled(
+                        TUTORIAL_DISABLE_HINT,
+                        self.settings.color_palette.tutorial_hint(),
+                    ),
+                    Tag::HistorySuggestion,
                 ),
-                |_| Tag::HistorySuggestion,
                 None,
             );
         }
@@ -1277,10 +1281,12 @@ impl<'a> App<'a> {
                         content.newline();
                     }
 
-                    content.write_span_dont_overwrite(
-                        &Span::from(line.to_owned())
-                            .style(self.settings.color_palette.secondary_text()),
-                        |_| Tag::HistorySuggestion,
+                    content.write_tagged_span_dont_overwrite(
+                        &TaggedSpan::new(
+                            Span::from(line.to_owned())
+                                .style(self.settings.color_palette.secondary_text()),
+                            Tag::HistorySuggestion,
+                        ),
                         None,
                     );
 
@@ -1291,20 +1297,24 @@ impl<'a> App<'a> {
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
-                        content.write_span_dont_overwrite(
-                            &Span::from(extra_info_text)
-                                .style(self.settings.color_palette.inline_suggestion()),
-                            |_| Tag::HistorySuggestion,
+                        content.write_tagged_span_dont_overwrite(
+                            &TaggedSpan::new(
+                                Span::from(extra_info_text)
+                                    .style(self.settings.color_palette.inline_suggestion()),
+                                Tag::HistorySuggestion,
+                            ),
                             None,
                         );
 
                         if self.settings.tutorial_mode {
-                            content.write_span_dont_overwrite(
-                                &Span::styled(
-                                    " 💡 Press → or End to accept",
-                                    self.settings.color_palette.tutorial_hint(),
+                            content.write_tagged_span_dont_overwrite(
+                                &TaggedSpan::new(
+                                    Span::styled(
+                                        " 💡 Press → or End to accept",
+                                        self.settings.color_palette.tutorial_hint(),
+                                    ),
+                                    Tag::HistorySuggestion,
                                 ),
-                                |_| Tag::HistorySuggestion,
                                 None,
                             );
                         }
@@ -1321,13 +1331,13 @@ impl<'a> App<'a> {
 
                 // Early exit when there are no suggestions to display.
                 if active_suggestions.filtered_suggestions_len() == 0 {
-                    content.write_span(
-                        &Span::styled(
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(
                             "No suggestions",
                             self.settings.color_palette.secondary_text(),
                         ),
                         Tag::TabSuggestion,
-                    );
+                    ));
                 } else {
                     let grid_start_row = content.cursor_position().row;
                     let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
@@ -1344,16 +1354,16 @@ impl<'a> App<'a> {
                         for (is_first, _, (col, col_width)) in grid.iter().flag_first_last() {
                             if let Some((formatted, is_selected)) = col.get(row_idx) {
                                 if !is_first {
-                                    content.write_span(
-                                        &Span::raw(" ".repeat(COLUMN_PADDING)),
+                                    content.write_tagged_span(&TaggedSpan::new(
+                                        Span::raw(" ".repeat(COLUMN_PADDING)),
                                         Tag::TabSuggestion,
-                                    );
+                                    ));
                                 }
                                 let formatted_suggestion =
                                     formatted.render(*col_width, *is_selected);
                                 let tag = Tag::Suggestion(formatted.suggestion_idx);
                                 for span in formatted_suggestion {
-                                    content.write_span(&span, tag);
+                                    content.write_tagged_span(&TaggedSpan::new(span, tag));
                                 }
                                 if *is_selected && selected_grid_row.is_none() {
                                     selected_grid_row = Some(row_idx as u16);
@@ -1414,7 +1424,10 @@ impl<'a> App<'a> {
                         &self.settings.color_palette,
                     ) {
                         content.newline();
-                        content.write_line(&line, false, Tag::HistoryResult(entry_idx));
+                        content.write_tagged_line(
+                            &TaggedLine::from_line(line, Tag::HistoryResult(entry_idx)),
+                            false,
+                        );
                         content.fill_line(Tag::HistoryResult(entry_idx));
                         if content.cursor_position().row.saturating_sub(starting_row)
                             >= num_rows_for_results
@@ -1424,22 +1437,22 @@ impl<'a> App<'a> {
                     }
                 }
                 content.newline();
-                content.write_span(
-                    &Span::styled(
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
                         format!("# Fuzzy search: {}/{}", num_results, num_searched),
                         self.settings.color_palette.secondary_text(),
                     ),
                     Tag::FuzzySearch,
-                );
+                ));
                 if self.settings.tutorial_mode {
                     content.newline();
-                    content.write_span(
-                        &Span::styled(
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(
                             TUTORIAL_FUZZY_SEARCH_HINT,
                             self.settings.color_palette.tutorial_hint(),
                         ),
                         Tag::FuzzySearch,
-                    );
+                    ));
                 }
             }
             ContentMode::Normal if self.mode.is_running() => {
@@ -1463,7 +1476,7 @@ impl<'a> App<'a> {
                             content.newline();
                         }
                         for span in &row.spans {
-                            content.write_span(span, Tag::Tooltip);
+                            content.write_tagged_span(&TaggedSpan::new(span.clone(), Tag::Tooltip));
                         }
                     }
                     if truncated && max_tool_tip_rows > 0 {
@@ -1471,10 +1484,10 @@ impl<'a> App<'a> {
                         if content.cursor_position().col >= last_col {
                             content.set_cursor_col(last_col);
                         }
-                        content.write_span(
-                            &Span::styled("…", self.settings.color_palette.secondary_text()),
+                        content.write_tagged_span(&TaggedSpan::new(
+                            Span::styled("…", self.settings.color_palette.secondary_text()),
                             Tag::Tooltip,
-                        );
+                        ));
                     }
                 }
             }
@@ -1485,18 +1498,19 @@ impl<'a> App<'a> {
             } if self.mode.is_running() => {
                 content.newline();
                 let elapsed_secs = start_time.elapsed().as_secs();
-                content.write_span(
-                    &Span::styled(
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
                         format!("Running: {} [{}s]", command_display, elapsed_secs),
                         self.settings.color_palette.secondary_text(),
                     ),
                     Tag::Normal,
-                );
+                ));
             }
             ContentMode::AgentOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
                 for line in &selection.header_text {
-                    content.write_line(line, true, Tag::Normal);
+                    content
+                        .write_tagged_line(&TaggedLine::from_line(line.clone(), Tag::Normal), true);
                 }
                 for (row_idx, suggestion) in selection.suggestions.iter().enumerate() {
                     let is_selected = selection.selected_idx == row_idx;
@@ -1509,27 +1523,27 @@ impl<'a> App<'a> {
                     } else {
                         self.settings.color_palette.secondary_text()
                     };
-                    content.write_span(
-                        &Span::styled(indicator, indicator_style),
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(indicator, indicator_style),
                         Tag::AiResult(row_idx),
-                    );
+                    ));
                     // Description line
                     let desc_style = if is_selected {
                         Palette::convert_to_selected(self.settings.color_palette.secondary_text())
                     } else {
                         self.settings.color_palette.secondary_text()
                     };
-                    content.write_span(
-                        &Span::styled(suggestion.description.clone(), desc_style),
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(suggestion.description.clone(), desc_style),
                         Tag::AiResult(row_idx),
-                    );
+                    ));
                     content.fill_line(Tag::AiResult(row_idx));
                     content.newline();
                     // Command line: gutter char + syntax-highlighted command via dparser
-                    content.write_span(
-                        &Span::styled(indicator, indicator_style),
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(indicator, indicator_style),
                         Tag::AiResult(row_idx),
-                    );
+                    ));
                     let cmd = &suggestion.command;
                     let mut parser = dparser::DParser::from(cmd.as_str());
                     parser.walk_to_end();
@@ -1557,13 +1571,17 @@ impl<'a> App<'a> {
                         } else {
                             span.clone()
                         };
-                        content.write_span(&styled_span, Tag::AiResult(row_idx));
+                        content.write_tagged_span(&TaggedSpan::new(
+                            styled_span,
+                            Tag::AiResult(row_idx),
+                        ));
                     }
                     content.fill_line(Tag::AiResult(row_idx));
                     content.newline();
                 }
                 for line in &selection.footer_text {
-                    content.write_line(line, true, Tag::Normal);
+                    content
+                        .write_tagged_line(&TaggedLine::from_line(line.clone(), Tag::Normal), true);
                 }
             }
             ContentMode::AgentError {
@@ -1572,48 +1590,48 @@ impl<'a> App<'a> {
                 suggested_buffer,
             } if self.mode.is_running() => {
                 content.newline();
-                content.write_span(
-                    &Span::styled(message.clone(), Style::default().fg(Color::Red)),
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(message.clone(), Style::default().fg(Color::Red)),
                     Tag::Normal,
-                );
+                ));
                 if let Some(suggested) = suggested_buffer {
                     content.newline();
-                    content.write_span(
-                        &Span::styled(
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(
                             format!("Buffer with prefix: {}", suggested),
                             self.settings.color_palette.secondary_text(),
                         ),
                         Tag::Normal,
-                    );
+                    ));
                     content.newline();
-                    content.write_span(
-                        &Span::styled(
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(
                             "Press Enter to launch agent mode with this buffer.",
                             self.settings.color_palette.secondary_text(),
                         ),
                         Tag::Blank,
-                    );
+                    ));
                 } else {
                     if !raw_output.is_empty() {
                         for line in raw_output.lines().take(5) {
                             content.newline();
-                            content.write_span(
-                                &Span::styled(
+                            content.write_tagged_span(&TaggedSpan::new(
+                                Span::styled(
                                     line.to_string(),
                                     self.settings.color_palette.secondary_text(),
                                 ),
                                 Tag::Normal,
-                            );
+                            ));
                         }
                     }
                     content.newline();
-                    content.write_span(
-                        &Span::styled(
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(
                             "Press Enter to run `flyline agent-mode --help`.",
                             self.settings.color_palette.secondary_text(),
                         ),
                         Tag::Blank,
-                    );
+                    ));
                 }
             }
             _ => {}
