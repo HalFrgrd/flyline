@@ -5,6 +5,26 @@ use ansi_to_tui::IntoText;
 use ratatui::text::{Line, Span};
 use std::collections::HashMap;
 
+/// A segment of a rendered prompt line.
+///
+/// Prompt strings are parsed into sequences of `PromptSegment`s at
+/// construction time.  At render time each segment is cheaply converted to a
+/// ratatui [`Span`]: static segments are used as-is, while dynamic-time
+/// segments are formatted with the current wall-clock time.
+#[derive(Debug, Clone)]
+enum PromptSegment {
+    /// A fully-resolved span (text + style).  May still contain animation-name
+    /// placeholders that are substituted at render time.
+    Static(Span<'static>),
+    /// A bash time escape sequence (`\t`, `\T`, `\@`, `\A`, `\D{…}`).
+    /// Rendered by formatting the current time with the stored chrono
+    /// format string and applying the span's style.
+    DynamicTime {
+        strftime: String,
+        style: ratatui::style::Style,
+    },
+}
+
 /// An animation whose frames have already been processed through
 /// [`PromptStringBuilder::expand_prompt_string`].  Stored in [`PromptManager`]
 /// and used at render time to substitute the animation's `name` wherever it
@@ -17,22 +37,17 @@ struct ProcessedAnimation {
     fps: f64,
     /// Pre-processed frames.  Each frame has been run through
     /// `expand_prompt_string` so bash prompt escapes (e.g. `\u`, `\w`) and
-    /// ANSI colour codes are already resolved into ratatui [`Span`]s.
-    frames: Vec<Vec<Span<'static>>>,
+    /// ANSI colour codes are already resolved into [`PromptSegment`]s.
+    frames: Vec<Vec<PromptSegment>>,
     /// When true the animation reverses direction at each end instead of
     /// wrapping around (ping-pong / bounce mode).
     ping_pong: bool,
 }
 
 pub struct PromptManager {
-    prompt: Vec<Line<'static>>,
-    rprompt: Vec<Line<'static>>,
-    fill_span: Line<'static>,
-    /// Maps 8-character placeholder identifiers (e.g. `FLYT0000`) to the
-    /// chrono format string they represent.  Populated from bash time escape
-    /// sequences found in PS1 / RPS1 / PS1_FILL at construction time and
-    /// applied on every render in `get_ps1_lines`.
-    time_map: HashMap<String, String>,
+    prompt: Vec<Vec<PromptSegment>>,
+    rprompt: Vec<Vec<PromptSegment>>,
+    fill_span: Vec<PromptSegment>,
     /// Custom animations with pre-processed frames.
     processed_animations: Vec<ProcessedAnimation>,
     /// Time captured at construction; used when animations are disabled so
@@ -59,18 +74,19 @@ fn get_current_readline_prompt() -> Option<String> {
     }
 }
 
-/// Builds expanded ratatui prompt lines from raw bash prompt strings while
+/// Builds expanded prompt segment lines from raw bash prompt strings while
 /// accumulating a shared map of time-placeholder identifiers to chrono format
 /// strings.
 ///
 /// A single `PromptStringBuilder` should be used for all prompt variables
 /// (PS1, RPS1 / RPROMPT, PS1_FILL) so that placeholder identifiers are unique
-/// across all of them and can be safely merged into one `HashMap` stored in
-/// [`PromptManager`].
+/// across all of them.
 struct PromptStringBuilder {
     /// Monotonically increasing counter used to generate unique placeholder IDs.
     counter: u32,
     /// Accumulated map of placeholder → chrono format string.
+    /// Used during `expand_prompt_string` to recognise which spans contain
+    /// time placeholders and convert them into [`PromptSegment::DynamicTime`].
     time_map: HashMap<String, String>,
 }
 
@@ -185,7 +201,7 @@ impl PromptStringBuilder {
     ///
     /// Returns `None` when the string cannot be processed (e.g. contains
     /// interior NUL bytes or bash returns a null pointer).
-    fn expand_prompt_string(&mut self, raw: String) -> Option<Vec<Line<'static>>> {
+    fn expand_prompt_string(&mut self, raw: String) -> Option<Vec<Vec<PromptSegment>>> {
         if raw.is_empty() {
             return Some(vec![]);
         }
@@ -221,14 +237,87 @@ impl PromptStringBuilder {
                 let raw = span.content.as_ref();
                 let stripped = raw.trim_end_matches(&['\n', '\r'][..]);
                 if stripped.len() != raw.len() {
-                    // `Span<'static>` can't hold a borrowed slice with a shorter lifetime, so
-                    // store an owned String.
                     log::debug!("Stripping trailing newline/carriage return from prompt line span");
                     span.content = stripped.to_owned().into();
                 }
             }
         }
-        Some(lines)
+
+        let result = lines
+            .into_iter()
+            .map(|line| {
+                line.spans
+                    .into_iter()
+                    .flat_map(|span| self.expand_span_to_segments(span))
+                    .collect()
+            })
+            .collect();
+        Some(result)
+    }
+
+    /// Split a single decoded [`Span`] into a sequence of [`PromptSegment`]s by
+    /// recognising any time-placeholder strings embedded in the span's text.
+    ///
+    /// Portions of the text that do not match a placeholder become
+    /// [`PromptSegment::Static`]; portions that match become
+    /// [`PromptSegment::DynamicTime`], carrying the chrono format string and
+    /// the span's style so that they can be rendered with the current time at
+    /// display time.
+    fn expand_span_to_segments(&self, span: Span<'static>) -> Vec<PromptSegment> {
+        let raw = span.content.as_ref();
+
+        let has_placeholder =
+            !self.time_map.is_empty() && self.time_map.keys().any(|id| raw.contains(id.as_str()));
+
+        if !has_placeholder {
+            return vec![PromptSegment::Static(span)];
+        }
+
+        let style = span.style;
+        let mut result: Vec<PromptSegment> = Vec::new();
+        let mut remaining = raw.to_owned();
+
+        loop {
+            // Find the placeholder that appears earliest in `remaining`.
+            let next = self
+                .time_map
+                .iter()
+                .filter_map(|(id, fmt)| {
+                    remaining
+                        .find(id.as_str())
+                        .map(|pos| (pos, id.len(), fmt.clone()))
+                })
+                .min_by_key(|(pos, _, _)| *pos);
+
+            let (pos, id_len, fmt) = match next {
+                None => break,
+                Some(t) => t,
+            };
+
+            if pos > 0 {
+                result.push(PromptSegment::Static(Span::styled(
+                    remaining[..pos].to_owned(),
+                    style,
+                )));
+            }
+
+            result.push(PromptSegment::DynamicTime {
+                strftime: fmt,
+                style,
+            });
+
+            remaining = remaining[pos + id_len..].to_owned();
+        }
+
+        if !remaining.is_empty() {
+            result.push(PromptSegment::Static(Span::styled(remaining, style)));
+        }
+
+        if result.is_empty() {
+            result.push(PromptSegment::Static(Span::styled(String::new(), style)));
+        }
+
+        result
     }
 
     /// Allocate the next placeholder identifier and advance the counter.
@@ -236,11 +325,6 @@ impl PromptStringBuilder {
         let id = format!("FLYT{:04X}", self.counter);
         self.counter += 1;
         id
-    }
-
-    /// Consume the builder and return the accumulated time map.
-    fn into_time_map(self) -> HashMap<String, String> {
-        self.time_map
     }
 }
 
@@ -255,19 +339,24 @@ impl PromptManager {
 
             PromptManager {
                 prompt: vec![
-                    Line::from(vec![
-                        Span::styled("Bash needs more input to finish the command. ", style),
-                        Span::styled("Flyline thought the previous command was complete. ", style),
-                        Span::styled(
+                    vec![
+                        PromptSegment::Static(Span::styled(
+                            "Bash needs more input to finish the command. ",
+                            style,
+                        )),
+                        PromptSegment::Static(Span::styled(
+                            "Flyline thought the previous command was complete. ",
+                            style,
+                        )),
+                        PromptSegment::Static(Span::styled(
                             "Please open an issue on GitHub with the command that caused this message. ",
                             style,
-                        ),
-                    ]),
-                    Line::from("> "),
+                        )),
+                    ],
+                    vec![PromptSegment::Static(Span::raw("> "))],
                 ],
                 rprompt: vec![],
-                fill_span: Line::from(" "),
-                time_map: HashMap::new(),
+                fill_span: vec![PromptSegment::Static(Span::raw(" "))],
                 processed_animations: vec![],
                 construction_time: chrono::Local::now(),
             }
@@ -275,8 +364,7 @@ impl PromptManager {
             const PS1_DEFAULT: &str = "bad ps1> ";
 
             // A single builder is shared across all prompt variables so that
-            // placeholder IDs are unique and the resulting time_map can be
-            // merged without collisions.
+            // placeholder IDs are unique.
             let mut builder = PromptStringBuilder::new();
 
             // Read the raw PS1 env var so we can intercept time format codes
@@ -288,7 +376,7 @@ impl PromptManager {
                 .and_then(|raw| builder.expand_prompt_string(raw))
                 .unwrap_or_else(|| {
                     log::warn!("Failed to parse PS1, defaulting to '{}'", PS1_DEFAULT);
-                    vec![Line::from(PS1_DEFAULT)]
+                    vec![vec![PromptSegment::Static(Span::raw(PS1_DEFAULT))]]
                 });
 
             // Examples:
@@ -301,14 +389,10 @@ impl PromptManager {
 
             log::debug!("Parsed RPS1: {:?}", rps1);
 
-            let fill_lines = bash_funcs::get_envvar_value("PS1_FILL")
+            let fill_span = bash_funcs::get_envvar_value("PS1_FILL")
                 .and_then(|raw| builder.expand_prompt_string(raw))
-                .unwrap_or_else(|| vec![Line::from(" ")]);
-
-            let fill_span = fill_lines
-                .into_iter()
-                .next()
-                .unwrap_or_else(|| Line::from(" "));
+                .and_then(|lines| lines.into_iter().next())
+                .unwrap_or_else(|| vec![PromptSegment::Static(Span::raw(" "))]);
 
             // Process each animation frame through the same expand_prompt_string
             // pipeline used for PS1/RPS1/PS1_FILL.  A single builder is reused
@@ -319,7 +403,7 @@ impl PromptManager {
             let processed_animations: Vec<ProcessedAnimation> = animations
                 .iter()
                 .map(|anim| {
-                    let frames: Vec<Vec<Span<'static>>> = anim
+                    let frames: Vec<Vec<PromptSegment>> = anim
                         .frames
                         .iter()
                         .map(|raw_frame| {
@@ -327,7 +411,7 @@ impl PromptManager {
                                 .expand_prompt_string(raw_frame.clone())
                                 .unwrap_or_default()
                                 .into_iter()
-                                .flat_map(|line| line.spans)
+                                .flatten()
                                 .collect()
                         })
                         .collect();
@@ -340,48 +424,49 @@ impl PromptManager {
                 })
                 .collect();
 
-            let time_map = builder.into_time_map();
-            log::debug!(
-                "Time map entries: {}, animation count: {}",
-                time_map.len(),
-                processed_animations.len()
-            );
+            log::debug!("Animation count: {}", processed_animations.len());
 
             PromptManager {
                 prompt: ps1,
                 rprompt: rps1,
                 fill_span,
-                time_map,
                 processed_animations,
                 construction_time: chrono::Local::now(),
             }
         }
     }
 
+    /// Convert a line of [`PromptSegment`]s into a ratatui [`Line`] by
+    /// resolving each segment against the current time and expanding any
+    /// animation-name placeholders found in static segments.
     fn format_prompt_line(
         &self,
-        line: Line<'static>,
+        segments: Vec<PromptSegment>,
         now: &chrono::DateTime<chrono::Local>,
     ) -> Line<'static> {
-        if self.time_map.is_empty() && self.processed_animations.is_empty() {
-            return line;
-        }
-        let spans: Vec<Span<'static>> = line
-            .spans
+        let spans: Vec<Span<'static>> = segments
             .into_iter()
-            .flat_map(|span| self.expand_span(span, now))
+            .flat_map(|segment| match segment {
+                PromptSegment::Static(span) => self.expand_span(span, now),
+                PromptSegment::DynamicTime { strftime, style } => {
+                    vec![Span::styled(now.format(&strftime).to_string(), style)]
+                }
+            })
             .collect();
         Line::from(spans)
     }
 
-    /// Expand a single [`Span`] by substituting any time-code placeholders and
-    /// animation names it contains.
+    /// Expand a single static [`Span`] by substituting any animation-name
+    /// placeholders it contains.
     ///
-    /// Time-code substitution is a simple in-place string replacement that
-    /// preserves the span's existing style.  Animation substitution may expand
-    /// one span into several because each frame was pre-processed through
-    /// `expand_prompt_string` and may carry its own ANSI-derived styles.  The
-    /// surrounding text retains the original span style.
+    /// Animation substitution may expand one span into several because each
+    /// frame was pre-processed through `expand_prompt_string` and may carry its
+    /// own ANSI-derived styles.  The surrounding text retains the original span
+    /// style.
+    ///
+    /// Time-code placeholders are no longer present here: they were converted to
+    /// [`PromptSegment::DynamicTime`] during `expand_prompt_string` and are
+    /// handled by `format_prompt_line` before `expand_span` is called.
     fn expand_span(
         &self,
         span: Span<'static>,
@@ -389,37 +474,21 @@ impl PromptManager {
     ) -> Vec<Span<'static>> {
         let raw = span.content.as_ref();
 
-        let needs_time =
-            !self.time_map.is_empty() && self.time_map.keys().any(|id| raw.contains(id.as_str()));
         let needs_anim = !self.processed_animations.is_empty()
             && self
                 .processed_animations
                 .iter()
                 .any(|a| raw.contains(a.name.as_str()));
 
-        if !needs_time && !needs_anim {
+        if !needs_anim {
             return vec![span];
         }
 
         let style = span.style;
 
-        // --- time-code replacement (plain string substitution) ---------------
-        let mut content = raw.to_owned();
-        if needs_time {
-            for (id, fmt) in &self.time_map {
-                if content.contains(id.as_str()) {
-                    content = content.replace(id.as_str(), &now.format(fmt).to_string());
-                }
-            }
-        }
-
-        if !needs_anim {
-            return vec![Span::styled(content, style)];
-        }
-
         // --- animation replacement (may introduce ANSI-styled sub-spans) -----
         let mut result: Vec<Span<'static>> = vec![];
-        let mut remaining = content;
+        let mut remaining = raw.to_owned();
 
         loop {
             // Find the animation whose name appears earliest in `remaining`.
@@ -440,10 +509,18 @@ impl PromptManager {
             };
 
             let anim = &self.processed_animations[anim_idx];
-            let frame_spans = Self::get_frame_spans(anim, now).iter().map(|s| Span {
-                content: s.content.clone(),
-                style: style.patch(s.style),
-            });
+            let frame_spans = Self::get_frame_segments(anim, now)
+                .iter()
+                .map(|seg| match seg {
+                    PromptSegment::Static(s) => Span {
+                        content: s.content.clone(),
+                        style: style.patch(s.style),
+                    },
+                    PromptSegment::DynamicTime {
+                        strftime,
+                        style: seg_style,
+                    } => Span::styled(now.format(strftime).to_string(), style.patch(*seg_style)),
+                });
 
             if pos > 0 {
                 result.push(Span::styled(remaining[..pos].to_owned(), style));
@@ -465,7 +542,7 @@ impl PromptManager {
         }
     }
 
-    /// Return the pre-processed spans for the current animation frame.
+    /// Return the pre-processed segments for the current animation frame.
     ///
     /// The frame index is derived from the wall-clock milliseconds in `now`,
     /// so it automatically respects the `disable_animations` flag: when
@@ -475,10 +552,10 @@ impl PromptManager {
     /// When `ping_pong` is enabled the animation bounces: it plays forward to
     /// the last frame and then reverses back to the first, rather than
     /// wrapping around.
-    fn get_frame_spans<'a>(
+    fn get_frame_segments<'a>(
         anim: &'a ProcessedAnimation,
         now: &chrono::DateTime<chrono::Local>,
-    ) -> &'a [Span<'static>] {
+    ) -> &'a [PromptSegment] {
         if anim.frames.is_empty() {
             return &[];
         }
@@ -544,7 +621,7 @@ mod tests {
         chrono::Local.timestamp_millis_opt(ms).unwrap()
     }
 
-    /// Build a `ProcessedAnimation` where each frame is a single plain span,
+    /// Build a `ProcessedAnimation` where each frame is a single static segment,
     /// suitable for unit-testing without any bash FFI calls.
     fn make_processed_anim(name: &str, fps: f64, frames: &[&str]) -> ProcessedAnimation {
         ProcessedAnimation {
@@ -552,7 +629,7 @@ mod tests {
             fps,
             frames: frames
                 .iter()
-                .map(|s| vec![Span::raw(s.to_string())])
+                .map(|s| vec![PromptSegment::Static(Span::raw(s.to_string()))])
                 .collect(),
             ping_pong: false,
         }
@@ -565,31 +642,45 @@ mod tests {
             fps,
             frames: frames
                 .iter()
-                .map(|s| vec![Span::raw(s.to_string())])
+                .map(|s| vec![PromptSegment::Static(Span::raw(s.to_string()))])
                 .collect(),
             ping_pong: true,
         }
     }
 
-    // --- get_frame_spans (frame index selection) -----------------------------
+    /// Extract the text content of the first segment of a frame, panicking if it
+    /// is not a `Static` segment.
+    fn first_static_content(segments: &[PromptSegment]) -> std::borrow::Cow<'static, str> {
+        match &segments[0] {
+            PromptSegment::Static(s) => s.content.clone(),
+            PromptSegment::DynamicTime { strftime, .. } => {
+                panic!(
+                    "expected Static segment at index 0, got DynamicTime(strftime='{}')",
+                    strftime
+                )
+            }
+        }
+    }
+
+    // --- get_frame_segments (frame index selection) --------------------------
 
     #[test]
     fn test_get_frame_spans_empty_frames() {
         let anim = make_processed_anim("A", 10.0, &[]);
-        assert!(PromptManager::get_frame_spans(&anim, &fixed_time(0)).is_empty());
+        assert!(PromptManager::get_frame_segments(&anim, &fixed_time(0)).is_empty());
     }
 
     #[test]
     fn test_get_frame_spans_single_frame() {
         let anim = make_processed_anim("A", 10.0, &["only"]);
         // Always returns the single frame regardless of time.
-        let spans_at_0 = PromptManager::get_frame_spans(&anim, &fixed_time(0));
-        assert!(!spans_at_0.is_empty(), "expected at least one span");
-        assert_eq!(spans_at_0[0].content, "only");
+        let segs_at_0 = PromptManager::get_frame_segments(&anim, &fixed_time(0));
+        assert!(!segs_at_0.is_empty(), "expected at least one segment");
+        assert_eq!(first_static_content(segs_at_0), "only");
 
-        let spans_at_999 = PromptManager::get_frame_spans(&anim, &fixed_time(999));
-        assert!(!spans_at_999.is_empty(), "expected at least one span");
-        assert_eq!(spans_at_999[0].content, "only");
+        let segs_at_999 = PromptManager::get_frame_segments(&anim, &fixed_time(999));
+        assert!(!segs_at_999.is_empty(), "expected at least one segment");
+        assert_eq!(first_static_content(segs_at_999), "only");
     }
 
     #[test]
@@ -597,9 +688,13 @@ mod tests {
         // fps=10 → 100 ms per frame
         let anim = make_processed_anim("A", 10.0, &["f0", "f1", "f2"]);
         let frame_content = |ms| {
-            let spans = PromptManager::get_frame_spans(&anim, &fixed_time(ms));
-            assert!(!spans.is_empty(), "expected at least one span at {}ms", ms);
-            spans[0].content.clone()
+            let segs = PromptManager::get_frame_segments(&anim, &fixed_time(ms));
+            assert!(
+                !segs.is_empty(),
+                "expected at least one segment at {}ms",
+                ms
+            );
+            first_static_content(segs)
         };
         assert_eq!(frame_content(0), "f0");
         assert_eq!(frame_content(100), "f1");
@@ -613,9 +708,13 @@ mod tests {
         // ping-pong sequence: f0, f1, f2, f1, f0, f1, f2, ...  (period = 4)
         let anim = make_ping_pong_anim("A", 10.0, &["f0", "f1", "f2"]);
         let frame_content = |ms| {
-            let spans = PromptManager::get_frame_spans(&anim, &fixed_time(ms));
-            assert!(!spans.is_empty(), "expected at least one span at {}ms", ms);
-            spans[0].content.clone()
+            let segs = PromptManager::get_frame_segments(&anim, &fixed_time(ms));
+            assert!(
+                !segs.is_empty(),
+                "expected at least one segment at {}ms",
+                ms
+            );
+            first_static_content(segs)
         };
         assert_eq!(frame_content(0), "f0"); // tick 0
         assert_eq!(frame_content(100), "f1"); // tick 1
@@ -631,9 +730,13 @@ mod tests {
         // period = 2*(2-1) = 2 → same as normal cycling for two frames
         let anim = make_ping_pong_anim("A", 10.0, &["f0", "f1"]);
         let frame_content = |ms| {
-            let spans = PromptManager::get_frame_spans(&anim, &fixed_time(ms));
-            assert!(!spans.is_empty(), "expected at least one span at {}ms", ms);
-            spans[0].content.clone()
+            let segs = PromptManager::get_frame_segments(&anim, &fixed_time(ms));
+            assert!(
+                !segs.is_empty(),
+                "expected at least one segment at {}ms",
+                ms
+            );
+            first_static_content(segs)
         };
         assert_eq!(frame_content(0), "f0");
         assert_eq!(frame_content(100), "f1");
@@ -645,9 +748,9 @@ mod tests {
         // A single-frame ping-pong animation should always return that frame.
         let anim = make_ping_pong_anim("A", 10.0, &["only"]);
         for ms in [0, 100, 200, 999] {
-            let spans = PromptManager::get_frame_spans(&anim, &fixed_time(ms));
-            assert!(!spans.is_empty(), "expected at least one span");
-            assert_eq!(spans[0].content, "only");
+            let segs = PromptManager::get_frame_segments(&anim, &fixed_time(ms));
+            assert!(!segs.is_empty(), "expected at least one segment");
+            assert_eq!(first_static_content(segs), "only");
         }
     }
 
@@ -657,13 +760,13 @@ mod tests {
         // for every render.  Verify that the same time always yields the same frame.
         let anim = make_processed_anim("A", 10.0, &["f0", "f1", "f2"]);
         let frozen = fixed_time(50); // 50 ms → frame 0 (0..100 ms range)
-        let spans1 = PromptManager::get_frame_spans(&anim, &frozen);
-        assert!(!spans1.is_empty(), "expected at least one span");
-        assert_eq!(spans1[0].content, "f0");
+        let segs1 = PromptManager::get_frame_segments(&anim, &frozen);
+        assert!(!segs1.is_empty(), "expected at least one segment");
+        assert_eq!(first_static_content(segs1), "f0");
 
-        let spans2 = PromptManager::get_frame_spans(&anim, &frozen);
-        assert!(!spans2.is_empty(), "expected at least one span");
-        assert_eq!(spans2[0].content, "f0");
+        let segs2 = PromptManager::get_frame_segments(&anim, &frozen);
+        assert!(!segs2.is_empty(), "expected at least one segment");
+        assert_eq!(first_static_content(segs2), "f0");
     }
 
     // --- expand_span (animation name substitution) ---------------------------
@@ -673,8 +776,7 @@ mod tests {
         let pm = PromptManager {
             prompt: vec![],
             rprompt: vec![],
-            fill_span: Line::from(""),
-            time_map: HashMap::new(),
+            fill_span: vec![],
             processed_animations: vec![make_processed_anim("SPIN", 10.0, &["f0", "f1"])],
             construction_time: fixed_time(0),
         };
@@ -692,8 +794,7 @@ mod tests {
         let pm = PromptManager {
             prompt: vec![],
             rprompt: vec![],
-            fill_span: Line::from(""),
-            time_map: HashMap::new(),
+            fill_span: vec![],
             processed_animations: vec![make_processed_anim("SPIN", 10.0, &["f0", "f1"])],
             construction_time: fixed_time(0),
         };
@@ -710,8 +811,7 @@ mod tests {
         let pm = PromptManager {
             prompt: vec![],
             rprompt: vec![],
-            fill_span: Line::from(""),
-            time_map: HashMap::new(),
+            fill_span: vec![],
             processed_animations: vec![],
             construction_time: fixed_time(0),
         };
@@ -720,5 +820,90 @@ mod tests {
         let spans = pm.expand_span(span.clone(), &now);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content, span.content);
+    }
+
+    // --- expand_span_to_segments (time-code splitting) -----------------------
+
+    #[test]
+    fn test_expand_span_to_segments_no_placeholders() {
+        let builder = PromptStringBuilder::new();
+        let span = Span::raw("hello world");
+        let segs = builder.expand_span_to_segments(span);
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content, "hello world"),
+            _ => panic!("expected Static"),
+        }
+    }
+
+    #[test]
+    fn test_expand_span_to_segments_single_placeholder() {
+        let mut builder = PromptStringBuilder::new();
+        let id = builder.next_id();
+        builder.time_map.insert(id.clone(), "%H:%M:%S".to_string());
+
+        let span = Span::raw(id.clone());
+        let segs = builder.expand_span_to_segments(span);
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            PromptSegment::DynamicTime { strftime, .. } => {
+                assert_eq!(strftime, "%H:%M:%S");
+            }
+            _ => panic!("expected DynamicTime"),
+        }
+    }
+
+    #[test]
+    fn test_expand_span_to_segments_placeholder_surrounded_by_text() {
+        let mut builder = PromptStringBuilder::new();
+        let id = builder.next_id();
+        builder.time_map.insert(id.clone(), "%H:%M".to_string());
+
+        let span = Span::raw(format!("prefix {} suffix", id));
+        let segs = builder.expand_span_to_segments(span);
+        assert_eq!(segs.len(), 3);
+        match &segs[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content, "prefix "),
+            _ => panic!("expected Static at index 0"),
+        }
+        match &segs[1] {
+            PromptSegment::DynamicTime { strftime, .. } => assert_eq!(strftime, "%H:%M"),
+            _ => panic!("expected DynamicTime at index 1"),
+        }
+        match &segs[2] {
+            PromptSegment::Static(s) => assert_eq!(s.content, " suffix"),
+            _ => panic!("expected Static at index 2"),
+        }
+    }
+
+    // --- format_prompt_line (DynamicTime rendering) --------------------------
+
+    #[test]
+    fn test_format_prompt_line_dynamic_time() {
+        let pm = PromptManager {
+            prompt: vec![],
+            rprompt: vec![],
+            fill_span: vec![],
+            processed_animations: vec![],
+            construction_time: fixed_time(0),
+        };
+
+        // Use a fixed time to produce a predictable formatted string.  The actual
+        // HH:MM:SS value is timezone-dependent, so we compute the expected value
+        // with the same `now` and format string rather than hard-coding a literal.
+        let now = fixed_time(0);
+        let formatted_time = now.format("%H:%M:%S").to_string();
+
+        let segments = vec![
+            PromptSegment::Static(Span::raw("[")),
+            PromptSegment::DynamicTime {
+                strftime: "%H:%M:%S".to_string(),
+                style: ratatui::style::Style::default(),
+            },
+            PromptSegment::Static(Span::raw("]")),
+        ];
+        let line = pm.format_prompt_line(segments, &now);
+        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(content, format!("[{}]", formatted_time));
     }
 }
