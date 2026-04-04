@@ -1203,24 +1203,31 @@ impl KeyEventMatch {
         if remappings.is_empty() {
             return self.display();
         }
+
+        // Build the display strings for all active modifier bits in `mods`,
+        // pushing each result (or its [INACCESSIBLE:…] marker) into `parts`.
+        let push_modifiers = |mods: KeyModifiers, parts: &mut Vec<String>| {
+            for &bit in &[
+                KeyModifiers::CONTROL,
+                KeyModifiers::ALT,
+                KeyModifiers::META,
+                KeyModifiers::SHIFT,
+                KeyModifiers::SUPER,
+            ] {
+                if !mods.contains(bit) {
+                    continue;
+                }
+                match inverse_modifier_display(bit, remappings) {
+                    Ok(name) => parts.push(name),
+                    Err(name) => parts.push(format!("[INACCESSIBLE: {}]", name)),
+                }
+            }
+        };
+
         match self {
             KeyEventMatch::Exact(ke) => {
                 let mut parts: Vec<String> = Vec::new();
-                for &bit in &[
-                    KeyModifiers::CONTROL,
-                    KeyModifiers::ALT,
-                    KeyModifiers::META,
-                    KeyModifiers::SHIFT,
-                    KeyModifiers::SUPER,
-                ] {
-                    if !ke.modifiers.contains(bit) {
-                        continue;
-                    }
-                    match inverse_modifier_display(bit, remappings) {
-                        Ok(name) => parts.push(name),
-                        Err(name) => parts.push(format!("[INACCESSIBLE: {}]", name)),
-                    }
-                }
+                push_modifiers(ke.modifiers, &mut parts);
                 match inverse_keycode_display(ke.code, remappings) {
                     Ok(name) => parts.push(name),
                     Err(name) => parts.push(format!("[INACCESSIBLE: {}]", name)),
@@ -1232,21 +1239,7 @@ impl KeyEventMatch {
                 .iter()
                 .map(|m| {
                     let mut parts: Vec<String> = Vec::new();
-                    for &bit in &[
-                        KeyModifiers::CONTROL,
-                        KeyModifiers::ALT,
-                        KeyModifiers::META,
-                        KeyModifiers::SHIFT,
-                        KeyModifiers::SUPER,
-                    ] {
-                        if !m.contains(bit) {
-                            continue;
-                        }
-                        match inverse_modifier_display(bit, remappings) {
-                            Ok(name) => parts.push(name),
-                            Err(name) => parts.push(format!("[INACCESSIBLE: {}]", name)),
-                        }
-                    }
+                    push_modifiers(*m, &mut parts);
                     parts.push("AnyChar".to_string());
                     parts.join("+")
                 })
