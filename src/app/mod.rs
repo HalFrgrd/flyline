@@ -9,7 +9,7 @@ use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{
     Contents, SpanTag, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows,
 };
-use crate::cursor_animation::{CURSOR_INTENSITY_UNFOCUSED, CursorAnimation};
+use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
@@ -220,6 +220,8 @@ pub(crate) struct App<'a> {
     /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
     dparser_tokens_cache: Vec<AnnotatedToken>,
     cursor_animation: CursorAnimation,
+    /// Whether the terminal currently has focus. Used to control cursor animation intensity.
+    term_has_focus: bool,
     unfinished_from_prev_command: bool,
     prompt_manager: PromptManager,
     /// Parsed bash history available at startup.
@@ -273,6 +275,7 @@ impl<'a> App<'a> {
             formatted_buffer_cache,
             dparser_tokens_cache: Vec::new(),
             cursor_animation: CursorAnimation::new(),
+            term_has_focus: true,
             unfinished_from_prev_command,
             prompt_manager: PromptManager::new(
                 unfinished_from_prev_command,
@@ -456,12 +459,12 @@ impl<'a> App<'a> {
                     }
                     CrosstermEvent::FocusLost => {
                         // log::trace!("Terminal focus lost");
-                        self.cursor_animation.term_has_focus = false;
+                        self.term_has_focus = false;
                         false
                     }
                     CrosstermEvent::FocusGained => {
                         // log::trace!("Terminal focus gained");
-                        self.cursor_animation.term_has_focus = true;
+                        self.term_has_focus = true;
                         if self.settings.mouse_mode == MouseMode::Smart
                             && !self.mouse_state.is_explicitly_disabled_by_user()
                         {
@@ -1236,15 +1239,13 @@ impl<'a> App<'a> {
                 if self.settings.use_term_emulator_cursor == UseTermEmulatorCursor::Full {
                     None
                 } else {
-                    let cursor_intensity =
-                        if matches!(self.content_mode, ContentMode::PromptCwdEdit(_)) {
-                            // Non-fading cursor, same as when the terminal has lost focus.
-                            CURSOR_INTENSITY_UNFOCUSED
-                        } else if self.settings.show_animations {
-                            self.cursor_animation.get_intensity()
-                        } else {
-                            255
-                        };
+                    let cursor_intensity = if self.settings.show_animations {
+                        let focused = self.term_has_focus
+                            && !matches!(self.content_mode, ContentMode::PromptCwdEdit(_));
+                        self.cursor_animation.get_intensity(focused)
+                    } else {
+                        255
+                    };
                     Some(Palette::cursor_style(cursor_intensity))
                 }
             };
