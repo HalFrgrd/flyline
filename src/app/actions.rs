@@ -677,9 +677,9 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         |app, _key| {
             let buf = app.buffer.buffer().to_string();
             if buf.is_empty() {
-                let history_buffer = app.buffer_for_history().to_owned();
+                // Warm with "" to display all cancelled commands regardless of buffer.
                 app.cancelled_command_history_manager
-                    .warm_fuzzy_search_cache(&history_buffer);
+                    .warm_fuzzy_search_cache("");
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             } else {

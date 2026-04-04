@@ -817,9 +817,9 @@ impl<'a> App<'a> {
     /// If `buffer_str` is empty, opens the agent-prompts fuzzy history search instead.
     fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
         if buffer_str.is_empty() {
-            let history_buffer = self.buffer_for_history().to_owned();
+            // Warm with "" to display all agent prompts regardless of the current buffer.
             self.agent_prompt_history_manager
-                .warm_fuzzy_search_cache(&history_buffer);
+                .warm_fuzzy_search_cache("");
             self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
             return;
         }

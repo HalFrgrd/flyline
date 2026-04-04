@@ -224,7 +224,9 @@ impl HistoryManager {
         }
     }
 
-    /// Push a new entry to the front of the history (most-recent first).
+    /// Push a new entry to the history list.
+    /// `self.index` is kept at `entries.len()` (past-the-end), matching the
+    /// invariant established by `new()` and `HistoryManager::search_in_history`.
     /// Resets the fuzzy search cache so the new entry is visible immediately.
     pub fn push_entry(&mut self, command: String) {
         if command.trim().is_empty() {
