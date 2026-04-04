@@ -879,6 +879,9 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         |app, _key| {
             if let ContentMode::PromptCwdEdit(index) = app.content_mode {
                 if let Some(path) = app.prompt_manager.cwd_path_for_index(index) {
+                    // Single-quote the path to handle spaces and most shell metacharacters.
+                    // Embedded single quotes are escaped with the standard '\'' idiom.
+                    // This is safe for CWD paths returned by the OS (no NUL bytes).
                     let quoted = format!("'{}'", path.replace('\'', r"'\''"));
                     app.buffer.replace_buffer(&format!("cd {}", quoted));
                 }

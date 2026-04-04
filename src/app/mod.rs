@@ -9,7 +9,7 @@ use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{
     Contents, SpanTag, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows,
 };
-use crate::cursor_animation::CursorAnimation;
+use crate::cursor_animation::{CURSOR_INTENSITY_UNFOCUSED, CursorAnimation};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
@@ -1238,8 +1238,8 @@ impl<'a> App<'a> {
                 } else {
                     let cursor_intensity =
                         if matches!(self.content_mode, ContentMode::PromptCwdEdit(_)) {
-                            // Non-fading cursor, like when the terminal has lost focus.
-                            80
+                            // Non-fading cursor, same as when the terminal has lost focus.
+                            CURSOR_INTENSITY_UNFOCUSED
                         } else if self.settings.show_animations {
                             self.cursor_animation.get_intensity()
                         } else {
