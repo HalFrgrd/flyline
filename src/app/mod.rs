@@ -6,7 +6,9 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
-use crate::content_builder::{Contents, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows};
+use crate::content_builder::{
+    Contents, SpanTag, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows,
+};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
@@ -142,6 +144,9 @@ enum ContentMode {
         raw_output: String,
         suggested_buffer: Option<String>,
     },
+    /// User is navigating the CWD path segments displayed in the prompt.
+    /// The inner value is the currently highlighted segment index (0 = rightmost/current dir).
+    PromptCwdEdit(usize),
 }
 
 struct DrawnContent {
@@ -832,6 +837,14 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self) {
+        // Exit PromptCwdEdit mode if the cursor has moved away from position 0,
+        // which happens when a buffer-modifying normal action fires (e.g. insert_char).
+        if matches!(self.content_mode, ContentMode::PromptCwdEdit(_))
+            && self.buffer.cursor_byte_pos() != 0
+        {
+            self.content_mode = ContentMode::Normal;
+        }
+
         // Apply fuzzy filtering to active tab completion suggestions
         if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
             let buffer: &str = self.buffer.buffer();
@@ -1110,9 +1123,21 @@ impl<'a> App<'a> {
 
         content.prompt_start = Some(content.cursor_position());
 
-        let (lprompt, rprompt, fill_span) = self
+        let (mut lprompt, rprompt, fill_span) = self
             .prompt_manager
             .get_ps1_lines(self.settings.show_animations);
+
+        // When in PromptCwdEdit mode, highlight the selected CWD path segment.
+        if let ContentMode::PromptCwdEdit(cwd_index) = self.content_mode {
+            for line in &mut lprompt {
+                for span in &mut line.spans {
+                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
+                        span.span.style = Palette::convert_to_selected(span.span.style);
+                    }
+                }
+            }
+        }
+
         let empty_tagged_line = TaggedLine::default();
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
@@ -1211,11 +1236,15 @@ impl<'a> App<'a> {
                 if self.settings.use_term_emulator_cursor == UseTermEmulatorCursor::Full {
                     None
                 } else {
-                    let cursor_intensity = if self.settings.show_animations {
-                        self.cursor_animation.get_intensity()
-                    } else {
-                        255
-                    };
+                    let cursor_intensity =
+                        if matches!(self.content_mode, ContentMode::PromptCwdEdit(_)) {
+                            // Non-fading cursor, like when the terminal has lost focus.
+                            80
+                        } else if self.settings.show_animations {
+                            self.cursor_animation.get_intensity()
+                        } else {
+                            255
+                        };
                     Some(Palette::cursor_style(cursor_intensity))
                 }
             };
