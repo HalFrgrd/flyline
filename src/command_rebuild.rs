@@ -185,13 +185,28 @@ pub fn parse_help_clap(help: &str) -> Command {
     let lines: Vec<&str> = help.lines().collect();
     let mut cmd = Command::default();
 
-    // Extract name + description from "Usage:" line.
-    if let Some(usage_line) = lines.iter().find(|l| l.trim_start().starts_with("Usage:")) {
-        let after = usage_line.trim_start_matches(|c: char| c.is_whitespace());
+    // Extract name from "Usage:" line; handles both "Usage: name ..." (clap/commander)
+    // and "Usage:\n  name ..." (cobra/docopt) styles.
+    if let Some(usage_pos) = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with("Usage:"))
+    {
+        let after = lines[usage_pos].trim_start_matches(|c: char| c.is_whitespace());
         let after = after.strip_prefix("Usage:").unwrap_or(after).trim();
-        // First token is the command name (possibly "cmd subcommand").
         if let Some(name_part) = after.split_whitespace().next() {
+            // Standard "Usage: name ..." form.
             cmd.name = Some(name_part.to_string());
+        } else {
+            // Cobra/docopt form: "Usage:" is alone on its own line; name is on the next.
+            for next_line in &lines[usage_pos + 1..] {
+                let t = next_line.trim();
+                if !t.is_empty() {
+                    if let Some(name_part) = t.split_whitespace().next() {
+                        cmd.name = Some(name_part.to_string());
+                    }
+                    break;
+                }
+            }
         }
     }
 
@@ -214,7 +229,7 @@ pub fn parse_help_clap(help: &str) -> Command {
         let trimmed = lines[i].trim();
 
         // ── Commands / Subcommands section ──────────────────────────────────
-        if trimmed == "Commands:" || trimmed == "Subcommands:" {
+        if trimmed == "Commands:" || trimmed == "Subcommands:" || trimmed == "Available Commands:" {
             i += 1;
             while i < lines.len() {
                 let line = lines[i];
@@ -243,8 +258,13 @@ pub fn parse_help_clap(help: &str) -> Command {
             continue;
         }
 
-        // ── Options / Arguments section ─────────────────────────────────────
-        if trimmed == "Options:" || trimmed == "Arguments:" {
+        // ── Options / Arguments / Flags section ────────────────────────────
+        if trimmed == "Options:"
+            || trimmed == "Arguments:"
+            || trimmed == "Flags:"
+            || trimmed == "Global Flags:"
+            || trimmed == "Global Options:"
+        {
             i += 1;
             while i < lines.len() {
                 let line = lines[i];
@@ -885,6 +905,210 @@ optional arguments:
         let longs = long_names(&cmd);
         assert!(longs.contains(&"--help"), "missing --help");
         assert!(longs.contains(&"--verbose"), "missing --verbose");
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-h"), "missing -h");
+    }
+
+    // ── Click (Python) ────────────────────────────────────────────────────────
+
+    const CLICK_HELP: &str = r#"Usage: cli [OPTIONS] COMMAND [ARGS]...
+
+  A simple CLI built with Click.
+
+Options:
+  --name TEXT      The person to greet.
+  --count INTEGER  Number of greetings.  [default: 1]
+  -v, --verbose    Enable verbose output.
+  --help           Show this message and exit.
+
+Commands:
+  hello    Greet someone.
+  goodbye  Say goodbye.
+"#;
+
+    #[test]
+    fn test_click_help() {
+        let cmd = parse_help(CLICK_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("cli"));
+        let subs = subcommand_names(&cmd);
+        assert!(subs.contains(&"hello"), "missing subcommand hello");
+        assert!(subs.contains(&"goodbye"), "missing subcommand goodbye");
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--name"), "missing --name");
+        assert!(longs.contains(&"--count"), "missing --count");
+        assert!(longs.contains(&"--verbose"), "missing --verbose");
+        assert!(longs.contains(&"--help"), "missing --help");
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-v"), "missing -v");
+    }
+
+    // ── argh (Python) ─────────────────────────────────────────────────────────
+
+    const ARGH_HELP: &str = r#"usage: myapp [-h] [--verbose] name
+
+A program using argh.
+
+positional arguments:
+  name         the name argument
+
+optional arguments:
+  -h, --help   show this help message and exit
+  --verbose    enable verbose output
+"#;
+
+    #[test]
+    fn test_argh_help() {
+        let cmd = parse_help(ARGH_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("myapp"));
+        assert!(
+            cmd.description.as_deref().unwrap_or("").contains("argh"),
+            "description should mention argh"
+        );
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"name"), "missing positional arg 'name'");
+        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--verbose"), "missing --verbose");
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-h"), "missing -h");
+    }
+
+    // ── yargs (JavaScript) ────────────────────────────────────────────────────
+
+    const YARGS_HELP: &str = r#"my-cli [options]
+
+Commands:
+  serve  Start the development server
+  build  Build the project for production
+  test   Run the test suite
+
+Options:
+      --help     Show help                 [boolean]
+      --version  Show version number       [boolean]
+  -p, --port     Port to listen on         [number]
+"#;
+
+    #[test]
+    fn test_yargs_help() {
+        let cmd = parse_help(YARGS_HELP);
+        // No "Usage:" line in this yargs output; name is not extracted.
+        let subs = subcommand_names(&cmd);
+        assert!(subs.contains(&"serve"), "missing subcommand serve");
+        assert!(subs.contains(&"build"), "missing subcommand build");
+        assert!(subs.contains(&"test"), "missing subcommand test");
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--version"), "missing --version");
+        assert!(longs.contains(&"--port"), "missing --port");
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-p"), "missing -p");
+    }
+
+    // ── commander (JavaScript) ────────────────────────────────────────────────
+
+    const COMMANDER_HELP: &str = r#"Usage: program [options] [command]
+
+Options:
+  -V, --version  output the version number
+  -h, --help     display help for command
+
+Commands:
+  start          Start the server
+  stop           Stop the server
+  status         Show the server status
+"#;
+
+    #[test]
+    fn test_commander_help() {
+        let cmd = parse_help(COMMANDER_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("program"));
+        let subs = subcommand_names(&cmd);
+        assert!(subs.contains(&"start"), "missing subcommand start");
+        assert!(subs.contains(&"stop"), "missing subcommand stop");
+        assert!(subs.contains(&"status"), "missing subcommand status");
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--version"), "missing --version");
+        assert!(longs.contains(&"--help"), "missing --help");
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-V"), "missing -V");
+        assert!(shorts.contains(&"-h"), "missing -h");
+    }
+
+    // ── cobra (Go) ────────────────────────────────────────────────────────────
+
+    const COBRA_HELP: &str = r#"A brief description of your application.
+
+Usage:
+  myapp [command]
+
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  help        Help about any command
+  serve       Start the server
+  version     Print the version number
+
+Flags:
+  -h, --help     help for myapp
+  -t, --toggle   Help message for toggle
+
+Global Flags:
+      --config string      config file (default "$HOME/.myapp.yaml")
+      --log-level string   Log level (default "info")
+
+Use "myapp [command] --help" for more information about a command.
+"#;
+
+    #[test]
+    fn test_cobra_help() {
+        let cmd = parse_help(COBRA_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("myapp"));
+        assert!(
+            cmd.description
+                .as_deref()
+                .unwrap_or("")
+                .contains("application"),
+            "description should mention application"
+        );
+        let subs = subcommand_names(&cmd);
+        assert!(subs.contains(&"serve"), "missing subcommand serve");
+        assert!(subs.contains(&"version"), "missing subcommand version");
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--toggle"), "missing --toggle");
+        assert!(longs.contains(&"--config"), "missing --config");
+        assert!(longs.contains(&"--log-level"), "missing --log-level");
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-t"), "missing -t");
+    }
+
+    // ── docopt (Python) ───────────────────────────────────────────────────────
+
+    const DOCOPT_HELP: &str = r#"Usage:
+  naval_fate ship <name> move <x> <y> [--speed=<kn>]
+  naval_fate ship shoot <x> <y>
+  naval_fate mine (set|remove) <x> <y> [--moored|--drifting]
+  naval_fate (-h | --help)
+  naval_fate --version
+
+Options:
+  -h --help     Show this screen.
+  --version     Show version.
+  --speed=<kn>  Speed in knots [default: 10].
+  --moored      Moored (anchored) mine.
+  --drifting    Drifting mine.
+"#;
+
+    #[test]
+    fn test_docopt_help() {
+        let cmd = parse_help(DOCOPT_HELP);
+        // Name extracted from the first usage pattern line.
+        assert_eq!(cmd.name.as_deref(), Some("naval_fate"));
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--version"), "missing --version");
+        assert!(longs.contains(&"--speed"), "missing --speed");
+        assert!(longs.contains(&"--moored"), "missing --moored");
+        assert!(longs.contains(&"--drifting"), "missing --drifting");
         let shorts = short_names(&cmd);
         assert!(shorts.contains(&"-h"), "missing -h");
     }
