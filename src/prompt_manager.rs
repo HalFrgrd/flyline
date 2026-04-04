@@ -64,6 +64,9 @@ pub struct PromptManager {
     /// that time-based prompt fields show the session-start time rather than
     /// updating on every render.
     construction_time: chrono::DateTime<chrono::Local>,
+    /// The current working directory at the time the prompt was constructed.
+    /// Used by `PromptCwdEdit` mode to compute the path for a given CWD segment index.
+    cwd: String,
 }
 
 fn get_current_readline_prompt() -> Option<String> {
@@ -760,6 +763,7 @@ impl PromptManager {
                 rprompt: vec![],
                 fill_span: vec![PromptSegment::Static(Span::raw(" "))],
                 construction_time: chrono::Local::now(),
+                cwd: String::new(),
             }
         } else {
             const PS1_DEFAULT: &str = "bad ps1> ";
@@ -797,7 +801,8 @@ impl PromptManager {
             let cwd = bash_funcs::get_cwd();
             let home = bash_funcs::get_envvar_value("HOME");
             log::debug!("CWD for prompt detection: {:?}, HOME: {:?}", cwd, home);
-            let mut builder = PromptStringBuilder::new(processed_animations).with_cwd(cwd, home);
+            let mut builder =
+                PromptStringBuilder::new(processed_animations).with_cwd(cwd.clone(), home);
 
             // Read the raw PS1 env var so we can intercept time format codes
             // before handing the string to decode_prompt_string.  Fall back to
@@ -831,6 +836,7 @@ impl PromptManager {
                 rprompt: rps1,
                 fill_span,
                 construction_time: chrono::Local::now(),
+                cwd,
             }
         }
     }
@@ -867,6 +873,47 @@ impl PromptManager {
         let formatted_fill = format_prompt_line(self.fill_span.clone(), &now);
 
         (formatted_prompt, formatted_rprompt, formatted_fill)
+    }
+
+    /// Return the number of CWD display segments in the left prompt.
+    ///
+    /// This is the total count of path segments that have been tagged with
+    /// [`Tag::Ps1PromptCwd`] in the rendered prompt (e.g. `~/foo/bar` has 3
+    /// segments).  Returns 0 when no CWD segments are present.
+    pub fn cwd_display_segment_count(&self) -> usize {
+        self.prompt
+            .iter()
+            .flat_map(|line| line.iter())
+            .find_map(|seg| {
+                if let PromptSegment::Cwd(spans) = seg {
+                    Some(spans.len())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0)
+    }
+
+    /// Return the filesystem path corresponding to the CWD segment at `index`.
+    ///
+    /// Index 0 is the rightmost (current) directory; each increment steps one
+    /// level toward the root.  Returns `None` when no CWD is available.
+    pub fn cwd_path_for_index(&self, index: usize) -> Option<String> {
+        if self.cwd.is_empty() {
+            return None;
+        }
+        let components: Vec<_> = std::path::Path::new(&self.cwd).components().collect();
+        if components.is_empty() {
+            return None;
+        }
+        let keep = components.len().saturating_sub(index);
+        if keep == 0 {
+            // Clamp to root.
+            let root: std::path::PathBuf = components[..1].iter().collect();
+            return Some(root.to_string_lossy().into_owned());
+        }
+        let result: std::path::PathBuf = components[..keep].iter().collect();
+        Some(result.to_string_lossy().into_owned())
     }
 }
 
@@ -1371,5 +1418,79 @@ mod tests {
             line.spans[0].tag,
             crate::content_builder::SpanTag::Constant(Tag::Ps1Prompt)
         );
+    }
+
+    // --- cwd_path_for_index / cwd_display_segment_count -------------------
+
+    /// Build a minimal `PromptManager` for testing the CWD helper methods.
+    fn make_pm_with_cwd(cwd: &str, cwd_text: &str) -> PromptManager {
+        let spans = split_cwd_text_into_spans(cwd_text, ratatui::style::Style::default());
+        PromptManager {
+            prompt: vec![vec![PromptSegment::Cwd(spans)]],
+            rprompt: vec![],
+            fill_span: vec![],
+            construction_time: chrono::Local::now(),
+            cwd: cwd.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_cwd_display_segment_count_no_cwd() {
+        let pm = PromptManager {
+            prompt: vec![vec![PromptSegment::Static(Span::raw("$ "))]],
+            rprompt: vec![],
+            fill_span: vec![],
+            construction_time: chrono::Local::now(),
+            cwd: String::new(),
+        };
+        assert_eq!(pm.cwd_display_segment_count(), 0);
+    }
+
+    #[test]
+    fn test_cwd_display_segment_count_three_segments() {
+        let pm = make_pm_with_cwd("/home/foo/bar", "~/bar");
+        // "~/bar" splits into ["~", "/bar"] → 2 display segments
+        assert_eq!(pm.cwd_display_segment_count(), 2);
+    }
+
+    #[test]
+    fn test_cwd_display_segment_count_absolute_three_segments() {
+        let pm = make_pm_with_cwd("/home/foo/bar", "/home/foo/bar");
+        // "/home/foo/bar" splits into ["/home", "/foo", "/bar"] → 3 display segments
+        assert_eq!(pm.cwd_display_segment_count(), 3);
+    }
+
+    #[test]
+    fn test_cwd_path_for_index_no_cwd() {
+        let pm = make_pm_with_cwd("", "");
+        assert_eq!(pm.cwd_path_for_index(0), None);
+    }
+
+    #[test]
+    fn test_cwd_path_for_index_zero() {
+        let pm = make_pm_with_cwd("/home/foo/bar", "~/bar");
+        // index 0 → current dir
+        assert_eq!(pm.cwd_path_for_index(0), Some("/home/foo/bar".to_string()));
+    }
+
+    #[test]
+    fn test_cwd_path_for_index_one() {
+        let pm = make_pm_with_cwd("/home/foo/bar", "~/bar");
+        // index 1 → parent dir
+        assert_eq!(pm.cwd_path_for_index(1), Some("/home/foo".to_string()));
+    }
+
+    #[test]
+    fn test_cwd_path_for_index_root() {
+        let pm = make_pm_with_cwd("/home/foo/bar", "/home/foo/bar");
+        // index 3 → root "/"
+        assert_eq!(pm.cwd_path_for_index(3), Some("/".to_string()));
+    }
+
+    #[test]
+    fn test_cwd_path_for_index_clamped_to_root() {
+        let pm = make_pm_with_cwd("/home/foo/bar", "/home/foo/bar");
+        // index beyond path depth → root
+        assert_eq!(pm.cwd_path_for_index(100), Some("/".to_string()));
     }
 }

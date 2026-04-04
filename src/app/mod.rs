@@ -6,7 +6,9 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
-use crate::content_builder::{Contents, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows};
+use crate::content_builder::{
+    Contents, SpanTag, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows,
+};
 use crate::cursor_animation::CursorAnimation;
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
@@ -142,6 +144,9 @@ enum ContentMode {
         raw_output: String,
         suggested_buffer: Option<String>,
     },
+    /// User is navigating the CWD path segments displayed in the prompt.
+    /// The inner value is the currently highlighted segment index (0 = rightmost/current dir).
+    PromptCwdEdit(usize),
 }
 
 struct DrawnContent {
@@ -215,6 +220,8 @@ pub(crate) struct App<'a> {
     /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
     dparser_tokens_cache: Vec<AnnotatedToken>,
     cursor_animation: CursorAnimation,
+    /// Whether the terminal currently has focus. Used to control cursor animation intensity.
+    term_has_focus: bool,
     unfinished_from_prev_command: bool,
     prompt_manager: PromptManager,
     /// Parsed bash history available at startup.
@@ -268,6 +275,7 @@ impl<'a> App<'a> {
             formatted_buffer_cache,
             dparser_tokens_cache: Vec::new(),
             cursor_animation: CursorAnimation::new(),
+            term_has_focus: true,
             unfinished_from_prev_command,
             prompt_manager: PromptManager::new(
                 unfinished_from_prev_command,
@@ -451,12 +459,12 @@ impl<'a> App<'a> {
                     }
                     CrosstermEvent::FocusLost => {
                         // log::trace!("Terminal focus lost");
-                        self.cursor_animation.term_has_focus = false;
+                        self.term_has_focus = false;
                         false
                     }
                     CrosstermEvent::FocusGained => {
                         // log::trace!("Terminal focus gained");
-                        self.cursor_animation.term_has_focus = true;
+                        self.term_has_focus = true;
                         if self.settings.mouse_mode == MouseMode::Smart
                             && !self.mouse_state.is_explicitly_disabled_by_user()
                         {
@@ -832,6 +840,14 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self) {
+        // Exit PromptCwdEdit mode if the cursor has moved away from position 0,
+        // which happens when a buffer-modifying normal action fires (e.g. insert_char).
+        if matches!(self.content_mode, ContentMode::PromptCwdEdit(_))
+            && self.buffer.cursor_byte_pos() != 0
+        {
+            self.content_mode = ContentMode::Normal;
+        }
+
         // Apply fuzzy filtering to active tab completion suggestions
         if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
             let buffer: &str = self.buffer.buffer();
@@ -1110,9 +1126,21 @@ impl<'a> App<'a> {
 
         content.prompt_start = Some(content.cursor_position());
 
-        let (lprompt, rprompt, fill_span) = self
+        let (mut lprompt, rprompt, fill_span) = self
             .prompt_manager
             .get_ps1_lines(self.settings.show_animations);
+
+        // When in PromptCwdEdit mode, highlight the selected CWD path segment.
+        if let ContentMode::PromptCwdEdit(cwd_index) = self.content_mode {
+            for line in &mut lprompt {
+                for span in &mut line.spans {
+                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
+                        span.span.style = Palette::convert_to_selected(span.span.style);
+                    }
+                }
+            }
+        }
+
         let empty_tagged_line = TaggedLine::default();
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
@@ -1212,7 +1240,9 @@ impl<'a> App<'a> {
                     None
                 } else {
                     let cursor_intensity = if self.settings.show_animations {
-                        self.cursor_animation.get_intensity()
+                        let focused = self.term_has_focus
+                            && !matches!(self.content_mode, ContentMode::PromptCwdEdit(_));
+                        self.cursor_animation.get_intensity(focused)
                     } else {
                         255
                     };

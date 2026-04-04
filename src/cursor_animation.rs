@@ -1,11 +1,14 @@
 use crate::content_builder::Coord;
 use std::time::Instant;
 
+/// Cursor intensity used when the terminal has lost focus (or in modes where
+/// the cursor should appear dimmed without animation).
+pub const CURSOR_INTENSITY_UNFOCUSED: u8 = 80;
+
 pub struct CursorAnimation {
     target_pos: Coord,
     prev_pos: Coord,
     time_of_change: Instant,
-    pub term_has_focus: bool,
 }
 
 impl CursorAnimation {
@@ -15,7 +18,6 @@ impl CursorAnimation {
             target_pos: Coord::new(0, 0),
             prev_pos: Coord::new(0, 0),
             time_of_change: now,
-            term_has_focus: true,
         }
     }
 
@@ -44,15 +46,18 @@ impl CursorAnimation {
         self.prev_pos.interpolate(&self.target_pos, factor.min(1.0))
     }
 
-    pub fn get_intensity(&self) -> u8 {
-        if self.term_has_focus {
+    /// Return the cursor intensity. When `focused` is false the cursor is
+    /// rendered at [`CURSOR_INTENSITY_UNFOCUSED`] (a steady dim level) instead
+    /// of the normal animated value.
+    pub fn get_intensity(&self, focused: bool) -> u8 {
+        if focused {
             // using time_of_change means the intensity is full right after movement
             let elapsed = self.time_of_change.elapsed().as_secs_f32();
             let intensity_f32 = (elapsed * 4.0).sin() * 0.4 + 0.6;
 
             (intensity_f32 * 255.0) as u8
         } else {
-            80
+            CURSOR_INTENSITY_UNFOCUSED
         }
     }
 }
