@@ -120,12 +120,15 @@ fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>, Option<Str
             // Short flag like -v or -v,
             short = Some(piece.trim_end_matches(',').to_string());
         } else if piece.starts_with('<') || piece.starts_with('[') {
-            // Meta-variable
-            value_type = Some(
-                piece
-                    .trim_matches(|c| c == '<' || c == '>' || c == '[' || c == ']')
-                    .to_string(),
-            );
+            // Meta-variable — only capture the first one found so that description
+            // text like `[default: 10]` does not overwrite an already-parsed hint.
+            if value_type.is_none() {
+                value_type = Some(
+                    piece
+                        .trim_matches(|c| c == '<' || c == '>' || c == '[' || c == ']')
+                        .to_string(),
+                );
+            }
         }
     }
     (short, long, value_type)
@@ -148,6 +151,11 @@ fn collect_continuation<'a>(
         }
         let ind = indent_of(line);
         if ind <= base_indent {
+            break;
+        }
+        // A deeper-indented line that starts with `-` is another flag entry,
+        // not description text (e.g. cargo mixes indent levels in Options:).
+        if line.trim().starts_with('-') {
             break;
         }
         desc_parts.push(line.trim().to_string());
@@ -552,7 +560,7 @@ pub fn parse_help_generic(help: &str) -> Command {
 mod tests {
     use super::*;
 
-    // ── helper ───────────────────────────────────────────────────────────────
+    // ── helpers ──────────────────────────────────────────────────────────────
 
     /// Returns the long names of all args in `cmd`.
     fn long_names(cmd: &Command) -> Vec<&str> {
@@ -570,6 +578,18 @@ mod tests {
             .iter()
             .filter_map(|s| s.name.as_deref())
             .collect()
+    }
+
+    /// Looks up an arg by its long name.
+    fn arg_by_long<'a>(cmd: &'a Command, long: &str) -> Option<&'a Arg> {
+        cmd.args.iter().find(|a| a.long.as_deref() == Some(long))
+    }
+
+    /// Looks up a subcommand by name.
+    fn subcommand_by_name<'a>(cmd: &'a Command, name: &str) -> Option<&'a Command> {
+        cmd.subcommands
+            .iter()
+            .find(|s| s.name.as_deref() == Some(name))
     }
 
     // ── flyline --help (clap) ────────────────────────────────────────────────
@@ -649,28 +669,60 @@ Read more at https://github.com/HalFrgrd/flyline
     #[test]
     fn test_flyline_help_clap() {
         let cmd = parse_help(FLYLINE_HELP);
-        // Command name
         assert_eq!(cmd.name.as_deref(), Some("flyline"));
-        // Key subcommands present
+
+        // Subcommands and their descriptions.
         let subs = subcommand_names(&cmd);
-        assert!(
-            subs.contains(&"agent-mode"),
-            "missing subcommand agent-mode"
+        assert!(subs.contains(&"agent-mode"));
+        assert!(subs.contains(&"create-anim"));
+        assert!(subs.contains(&"set-color"));
+        assert!(subs.contains(&"key"));
+        assert_eq!(
+            subcommand_by_name(&cmd, "agent-mode").and_then(|s| s.description.as_deref()),
+            Some("Configure AI agent mode.")
         );
-        assert!(
-            subs.contains(&"create-anim"),
-            "missing subcommand create-anim"
+        assert_eq!(
+            subcommand_by_name(&cmd, "create-anim").and_then(|s| s.description.as_deref()),
+            Some("Create a custom prompt animation.")
         );
-        assert!(subs.contains(&"set-color"), "missing subcommand set-color");
-        assert!(subs.contains(&"key"), "missing subcommand key");
-        // Key flags present
+
+        // Flag names.
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--version"), "missing --version");
-        assert!(longs.contains(&"--dump-logs"), "missing --dump-logs");
-        assert!(longs.contains(&"--log-level"), "missing --log-level");
-        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--version"));
+        assert!(longs.contains(&"--dump-logs"));
+        assert!(longs.contains(&"--log-level"));
+        assert!(longs.contains(&"--frame-rate"));
+        assert!(longs.contains(&"--mouse-mode"));
+        assert!(longs.contains(&"--help"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-h"));
+
+        // Value types (meta-variable hints).
+        assert_eq!(
+            arg_by_long(&cmd, "--log-level").and_then(|a| a.value_type.as_deref()),
+            Some("LEVEL")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--frame-rate").and_then(|a| a.value_type.as_deref()),
+            Some("FPS")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--mouse-mode").and_then(|a| a.value_type.as_deref()),
+            Some("MODE")
+        );
+
+        // Descriptions on continuation lines.
+        assert_eq!(
+            arg_by_long(&cmd, "--version").and_then(|a| a.description.as_deref()),
+            Some("Show version information")
+        );
+        assert!(
+            arg_by_long(&cmd, "--log-level")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("logging level"),
+            "description should mention 'logging level'"
+        );
     }
 
     // ── flyline create-anim --help (clap) ────────────────────────────────────
@@ -710,9 +762,7 @@ Options:
     #[test]
     fn test_flyline_create_anim_help_clap() {
         let cmd = parse_help(FLYLINE_CREATE_ANIM_HELP);
-        // Name parsed from Usage line
         assert_eq!(cmd.name.as_deref(), Some("flyline"));
-        // Description from first line
         assert!(
             cmd.description
                 .as_deref()
@@ -720,13 +770,47 @@ Options:
                 .contains("animation"),
             "description should mention animation"
         );
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--name"), "missing --name");
-        assert!(longs.contains(&"--fps"), "missing --fps");
-        assert!(longs.contains(&"--ping-pong"), "missing --ping-pong");
-        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--name"));
+        assert!(longs.contains(&"--fps"));
+        assert!(longs.contains(&"--ping-pong"));
+        assert!(longs.contains(&"--help"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-h"));
+
+        // Value types.
+        assert_eq!(
+            arg_by_long(&cmd, "--name").and_then(|a| a.value_type.as_deref()),
+            Some("NAME")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--fps").and_then(|a| a.value_type.as_deref()),
+            Some("FPS")
+        );
+
+        // Descriptions on continuation lines.
+        assert!(
+            arg_by_long(&cmd, "--name")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("animation placeholder"),
+            "description should mention 'animation placeholder'"
+        );
+        assert!(
+            arg_by_long(&cmd, "--fps")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("frames per second"),
+            "description should mention 'frames per second'"
+        );
+        assert!(
+            arg_by_long(&cmd, "--ping-pong")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("Reverse direction"),
+            "description should mention 'Reverse direction'"
+        );
     }
 
     // ── cargo --help (clap) ──────────────────────────────────────────────────
@@ -772,15 +856,28 @@ See 'cargo help <command>' for more information on a specific command.
     fn test_cargo_help_clap() {
         let cmd = parse_help(CARGO_HELP);
         assert_eq!(cmd.name.as_deref(), Some("cargo"));
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--version"), "missing --version");
-        assert!(longs.contains(&"--verbose"), "missing --verbose");
-        assert!(longs.contains(&"--quiet"), "missing --quiet");
-        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--version"));
+        assert!(longs.contains(&"--verbose"));
+        assert!(longs.contains(&"--quiet"));
+        assert!(longs.contains(&"--explain"));
+        assert!(longs.contains(&"--color"));
+        assert!(longs.contains(&"--help"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-V"), "missing -V");
-        assert!(shorts.contains(&"-v"), "missing -v");
-        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-V"));
+        assert!(shorts.contains(&"-v"));
+        assert!(shorts.contains(&"-h"));
+
+        // Value types inferred from inline meta-variables.
+        assert_eq!(
+            arg_by_long(&cmd, "--explain").and_then(|a| a.value_type.as_deref()),
+            Some("CODE")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--color").and_then(|a| a.value_type.as_deref()),
+            Some("WHEN")
+        );
     }
 
     // ── python --help (argparse-like, but actually custom) ───────────────────
@@ -831,14 +928,24 @@ PYTHONPATH   : ':'-separated list of directories prefixed to the
     fn test_python_help_generic() {
         // python --help doesn't follow argparse or clap exactly; falls through to generic.
         let cmd = parse_help(PYTHON_HELP);
-        // Name from usage line
         assert_eq!(cmd.name.as_deref(), Some("python3"));
-        // Key short flags
+
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"), "missing -h");
-        assert!(shorts.contains(&"-v"), "missing -v");
-        assert!(shorts.contains(&"-V"), "missing -V");
-        assert!(shorts.contains(&"-q"), "missing -q");
+        assert!(shorts.contains(&"-h"));
+        assert!(shorts.contains(&"-v"));
+        assert!(shorts.contains(&"-V"));
+        assert!(shorts.contains(&"-q"));
+
+        // Descriptions captured inline (separator is ` : `).
+        assert!(
+            cmd.args
+                .iter()
+                .find(|a| a.short.as_deref() == Some("-h"))
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("help message"),
+            "description should mention 'help message'"
+        );
     }
 
     // ── Python argparse example ───────────────────────────────────────────────
@@ -859,7 +966,6 @@ optional arguments:
     fn test_argparse_example() {
         let cmd = parse_help(ARGPARSE_EXAMPLE);
         assert_eq!(cmd.name.as_deref(), Some("prog.py"));
-        // Description
         assert!(
             cmd.description
                 .as_deref()
@@ -867,13 +973,29 @@ optional arguments:
                 .contains("argparse"),
             "description should mention argparse"
         );
-        // Positional arg
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"bar"), "missing positional arg 'bar'");
-        assert!(longs.contains(&"--foo"), "missing --foo");
-        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"bar"));
+        assert!(longs.contains(&"--foo"));
+        assert!(longs.contains(&"--help"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-h"));
+
+        // Inline descriptions captured by the argparse parser.
+        assert!(
+            arg_by_long(&cmd, "bar")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("bar argument"),
+            "description should mention 'bar argument'"
+        );
+        assert!(
+            arg_by_long(&cmd, "--foo")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("foo value"),
+            "description should mention 'foo value'"
+        );
     }
 
     // ── Python argparse with subparsers ──────────────────────────────────────
@@ -901,12 +1023,21 @@ optional arguments:
             cmd.description.as_deref().unwrap_or("").contains("My"),
             "description should mention 'My'"
         );
-        // Key flags
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--help"), "missing --help");
-        assert!(longs.contains(&"--verbose"), "missing --verbose");
+        assert!(longs.contains(&"--help"));
+        assert!(longs.contains(&"--verbose"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-h"));
+
+        // Inline description on --verbose.
+        assert!(
+            arg_by_long(&cmd, "--verbose")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("verbose output"),
+            "description should mention 'verbose output'"
+        );
     }
 
     // ── Click (Python) ────────────────────────────────────────────────────────
@@ -930,16 +1061,28 @@ Commands:
     fn test_click_help() {
         let cmd = parse_help(CLICK_HELP);
         assert_eq!(cmd.name.as_deref(), Some("cli"));
+
         let subs = subcommand_names(&cmd);
-        assert!(subs.contains(&"hello"), "missing subcommand hello");
-        assert!(subs.contains(&"goodbye"), "missing subcommand goodbye");
+        assert!(subs.contains(&"hello"));
+        assert!(subs.contains(&"goodbye"));
+
+        // Subcommand descriptions.
+        assert_eq!(
+            subcommand_by_name(&cmd, "hello").and_then(|s| s.description.as_deref()),
+            Some("Greet someone.")
+        );
+        assert_eq!(
+            subcommand_by_name(&cmd, "goodbye").and_then(|s| s.description.as_deref()),
+            Some("Say goodbye.")
+        );
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--name"), "missing --name");
-        assert!(longs.contains(&"--count"), "missing --count");
-        assert!(longs.contains(&"--verbose"), "missing --verbose");
-        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--name"));
+        assert!(longs.contains(&"--count"));
+        assert!(longs.contains(&"--verbose"));
+        assert!(longs.contains(&"--help"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-v"), "missing -v");
+        assert!(shorts.contains(&"-v"));
     }
 
     // ── argh (Python) ─────────────────────────────────────────────────────────
@@ -964,12 +1107,29 @@ optional arguments:
             cmd.description.as_deref().unwrap_or("").contains("argh"),
             "description should mention argh"
         );
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"name"), "missing positional arg 'name'");
-        assert!(longs.contains(&"--help"), "missing --help");
-        assert!(longs.contains(&"--verbose"), "missing --verbose");
+        assert!(longs.contains(&"name"));
+        assert!(longs.contains(&"--help"));
+        assert!(longs.contains(&"--verbose"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-h"));
+
+        // Inline descriptions from argparse format.
+        assert!(
+            arg_by_long(&cmd, "name")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("name argument"),
+            "description should mention 'name argument'"
+        );
+        assert!(
+            arg_by_long(&cmd, "--verbose")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("verbose output"),
+            "description should mention 'verbose output'"
+        );
     }
 
     // ── yargs (JavaScript) ────────────────────────────────────────────────────
@@ -992,15 +1152,32 @@ Options:
         let cmd = parse_help(YARGS_HELP);
         // No "Usage:" line in this yargs output; name is not extracted.
         let subs = subcommand_names(&cmd);
-        assert!(subs.contains(&"serve"), "missing subcommand serve");
-        assert!(subs.contains(&"build"), "missing subcommand build");
-        assert!(subs.contains(&"test"), "missing subcommand test");
+        assert!(subs.contains(&"serve"));
+        assert!(subs.contains(&"build"));
+        assert!(subs.contains(&"test"));
+
+        // Subcommand descriptions.
+        assert!(
+            subcommand_by_name(&cmd, "serve")
+                .and_then(|s| s.description.as_deref())
+                .unwrap_or("")
+                .contains("development server"),
+            "description should mention 'development server'"
+        );
+        assert!(
+            subcommand_by_name(&cmd, "build")
+                .and_then(|s| s.description.as_deref())
+                .unwrap_or("")
+                .contains("production"),
+            "description should mention 'production'"
+        );
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--help"), "missing --help");
-        assert!(longs.contains(&"--version"), "missing --version");
-        assert!(longs.contains(&"--port"), "missing --port");
+        assert!(longs.contains(&"--help"));
+        assert!(longs.contains(&"--version"));
+        assert!(longs.contains(&"--port"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-p"), "missing -p");
+        assert!(shorts.contains(&"-p"));
     }
 
     // ── commander (JavaScript) ────────────────────────────────────────────────
@@ -1021,16 +1198,28 @@ Commands:
     fn test_commander_help() {
         let cmd = parse_help(COMMANDER_HELP);
         assert_eq!(cmd.name.as_deref(), Some("program"));
+
         let subs = subcommand_names(&cmd);
-        assert!(subs.contains(&"start"), "missing subcommand start");
-        assert!(subs.contains(&"stop"), "missing subcommand stop");
-        assert!(subs.contains(&"status"), "missing subcommand status");
+        assert!(subs.contains(&"start"));
+        assert!(subs.contains(&"stop"));
+        assert!(subs.contains(&"status"));
+
+        // Subcommand descriptions.
+        assert_eq!(
+            subcommand_by_name(&cmd, "start").and_then(|s| s.description.as_deref()),
+            Some("Start the server")
+        );
+        assert_eq!(
+            subcommand_by_name(&cmd, "stop").and_then(|s| s.description.as_deref()),
+            Some("Stop the server")
+        );
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--version"), "missing --version");
-        assert!(longs.contains(&"--help"), "missing --help");
+        assert!(longs.contains(&"--version"));
+        assert!(longs.contains(&"--help"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-V"), "missing -V");
-        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-V"));
+        assert!(shorts.contains(&"-h"));
     }
 
     // ── cobra (Go) ────────────────────────────────────────────────────────────
@@ -1068,17 +1257,32 @@ Use "myapp [command] --help" for more information about a command.
                 .contains("application"),
             "description should mention application"
         );
+
         let subs = subcommand_names(&cmd);
-        assert!(subs.contains(&"serve"), "missing subcommand serve");
-        assert!(subs.contains(&"version"), "missing subcommand version");
+        assert!(subs.contains(&"serve"));
+        assert!(subs.contains(&"version"));
+
+        // Subcommand descriptions.
+        assert_eq!(
+            subcommand_by_name(&cmd, "serve").and_then(|s| s.description.as_deref()),
+            Some("Start the server")
+        );
+        assert!(
+            subcommand_by_name(&cmd, "completion")
+                .and_then(|s| s.description.as_deref())
+                .unwrap_or("")
+                .contains("autocompletion"),
+            "description should mention 'autocompletion'"
+        );
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--help"), "missing --help");
-        assert!(longs.contains(&"--toggle"), "missing --toggle");
-        assert!(longs.contains(&"--config"), "missing --config");
-        assert!(longs.contains(&"--log-level"), "missing --log-level");
+        assert!(longs.contains(&"--help"));
+        assert!(longs.contains(&"--toggle"));
+        assert!(longs.contains(&"--config"));
+        assert!(longs.contains(&"--log-level"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"), "missing -h");
-        assert!(shorts.contains(&"-t"), "missing -t");
+        assert!(shorts.contains(&"-h"));
+        assert!(shorts.contains(&"-t"));
     }
 
     // ── docopt (Python) ───────────────────────────────────────────────────────
@@ -1103,13 +1307,20 @@ Options:
         let cmd = parse_help(DOCOPT_HELP);
         // Name extracted from the first usage pattern line.
         assert_eq!(cmd.name.as_deref(), Some("naval_fate"));
+
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--help"), "missing --help");
-        assert!(longs.contains(&"--version"), "missing --version");
-        assert!(longs.contains(&"--speed"), "missing --speed");
-        assert!(longs.contains(&"--moored"), "missing --moored");
-        assert!(longs.contains(&"--drifting"), "missing --drifting");
+        assert!(longs.contains(&"--help"));
+        assert!(longs.contains(&"--version"));
+        assert!(longs.contains(&"--speed"));
+        assert!(longs.contains(&"--moored"));
+        assert!(longs.contains(&"--drifting"));
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"), "missing -h");
+        assert!(shorts.contains(&"-h"));
+
+        // --speed=<kn> carries a value-type hint.
+        assert_eq!(
+            arg_by_long(&cmd, "--speed").and_then(|a| a.value_type.as_deref()),
+            Some("kn")
+        );
     }
 }
