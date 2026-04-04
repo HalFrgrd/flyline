@@ -620,7 +620,8 @@ fn split_cwd_text_into_spans(text: &str, style: ratatui::style::Style) -> Vec<Sp
         // Find the first slash after '~', if any.
         if let Some(rel_slash) = text[1..].find('/') {
             let slash_pos = 1 + rel_slash;
-            result.push(Span::styled(text[..1].to_owned(), style));
+            // We know text starts with '~' so we can emit it as a literal.
+            result.push(Span::styled("~".to_owned(), style));
             split_slash_prefixed_into_spans(&text[slash_pos..], style, &mut result);
         } else {
             // Bare "~" or "~something" with no slash — emit as a single segment.
