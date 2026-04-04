@@ -103,6 +103,8 @@ pub struct Settings {
     pub color_theme: ColorTheme,
     /// User defined keybindings
     pub keybindings: Vec<actions::Binding>,
+    /// User defined key remappings (applied before matching bindings).
+    pub key_remappings: Vec<actions::KeyRemap>,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -126,6 +128,7 @@ impl Default for Settings {
             color_palette: Palette::default(),
             color_theme: ColorTheme::Dark,
             keybindings: Vec::new(),
+            key_remappings: Vec::new(),
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }
