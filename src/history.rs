@@ -212,6 +212,34 @@ impl HistoryManager {
         }
     }
 
+    /// Create an empty `HistoryManager` that starts with no entries.
+    /// New entries are added at runtime via `push_entry`.
+    pub fn new_empty() -> HistoryManager {
+        HistoryManager {
+            entries: Vec::new(),
+            index: 0,
+            last_search_prefix: None,
+            last_buffered_command: None,
+            fuzzy_search: FuzzyHistorySearch::new(),
+        }
+    }
+
+    /// Push a new entry to the front of the history (most-recent first).
+    /// Resets the fuzzy search cache so the new entry is visible immediately.
+    pub fn push_entry(&mut self, command: String) {
+        if command.trim().is_empty() {
+            return;
+        }
+        let index = self.entries.len();
+        self.entries.push(HistoryEntry {
+            timestamp: None,
+            index,
+            command,
+        });
+        self.index = self.entries.len();
+        self.fuzzy_search.clear_cache();
+    }
+
     fn parse_timestamp(line: &str) -> Option<u64> {
         if let Some(stripped) = line.strip_prefix('#') {
             stripped.trim().parse::<u64>().ok()
@@ -497,6 +525,14 @@ impl FuzzyHistorySearch {
             cache_index: 0,
             window: StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0),
         }
+    }
+
+    fn clear_cache(&mut self) {
+        self.cache.clear();
+        self.cache_command = None;
+        self.global_index = 0;
+        self.cache_index = 0;
+        self.window = StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0);
     }
 
     fn get_fuzzy_search_results(

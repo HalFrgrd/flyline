@@ -122,10 +122,41 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
     end_state
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FuzzyHistorySource {
+    PastCommands,
+    CancelledCommands,
+    AgentPrompts,
+}
+
+/// Return a mutable reference to the history manager for the given fuzzy source.
+pub(crate) fn select_fuzzy_manager_mut<'mgr>(
+    history_manager: &'mgr mut HistoryManager,
+    cancelled_manager: &'mgr mut HistoryManager,
+    agent_manager: &'mgr mut HistoryManager,
+    source: &FuzzyHistorySource,
+) -> &'mgr mut HistoryManager {
+    match source {
+        FuzzyHistorySource::PastCommands => history_manager,
+        FuzzyHistorySource::CancelledCommands => cancelled_manager,
+        FuzzyHistorySource::AgentPrompts => agent_manager,
+    }
+}
+
+impl FuzzyHistorySource {
+    fn label(&self) -> &'static str {
+        match self {
+            FuzzyHistorySource::PastCommands => "Fuzzy search",
+            FuzzyHistorySource::CancelledCommands => "Cancelled commands",
+            FuzzyHistorySource::AgentPrompts => "Agent prompts",
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ContentMode {
     Normal,
-    FuzzyHistorySearch,
+    FuzzyHistorySearch(FuzzyHistorySource),
     TabCompletion(Box<ActiveSuggestions>),
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
@@ -226,6 +257,10 @@ pub(crate) struct App<'a> {
     prompt_manager: PromptManager,
     /// Parsed bash history available at startup.
     history_manager: HistoryManager,
+    /// Tracks commands that were cancelled via Ctrl+C (non-empty buffer).
+    cancelled_command_history_manager: HistoryManager,
+    /// Tracks prompts that were submitted to agent mode.
+    agent_prompt_history_manager: HistoryManager,
     buffer_before_history_navigation: Option<String>,
     inline_history_suggestion: Option<(HistoryEntry, String)>,
     mouse_state: MouseState,
@@ -286,6 +321,8 @@ impl<'a> App<'a> {
                     .collect::<Vec<_>>(),
             ),
             history_manager: HistoryManager::new(settings),
+            cancelled_command_history_manager: HistoryManager::new_empty(),
+            agent_prompt_history_manager: HistoryManager::new_empty(),
             buffer_before_history_navigation: None,
             inline_history_suggestion: None,
             mouse_state: MouseState::initialize(&settings.mouse_mode),
@@ -593,8 +630,15 @@ impl<'a> App<'a> {
             }
             Some((tag @ Tag::HistoryResult(idx), true)) => {
                 self.last_mouse_over_cell = Some(tag);
-                if matches!(self.content_mode, ContentMode::FuzzyHistorySearch) {
-                    self.history_manager.fuzzy_search_set_idx(idx);
+                if let ContentMode::FuzzyHistorySearch(ref source) = self.content_mode {
+                    let source = source.clone();
+                    select_fuzzy_manager_mut(
+                        &mut self.history_manager,
+                        &mut self.cancelled_command_history_manager,
+                        &mut self.agent_prompt_history_manager,
+                        &source,
+                    )
+                    .fuzzy_search_set_idx(idx);
                 }
             }
             Some((tag @ Tag::AiResult(idx), true)) => {
@@ -635,9 +679,19 @@ impl<'a> App<'a> {
             }
             Some(Tag::HistoryResult(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
-                    && matches!(self.content_mode, ContentMode::FuzzyHistorySearch)
+                    && matches!(self.content_mode, ContentMode::FuzzyHistorySearch(_))
                 {
-                    self.history_manager.fuzzy_search_set_idx(idx);
+                    let source = match &self.content_mode {
+                        ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                        _ => unreachable!(),
+                    };
+                    select_fuzzy_manager_mut(
+                        &mut self.history_manager,
+                        &mut self.cancelled_command_history_manager,
+                        &mut self.agent_prompt_history_manager,
+                        &source,
+                    )
+                    .fuzzy_search_set_idx(idx);
                     self.accept_fuzzy_history_search();
                     update_buffer = true;
                 }
@@ -677,7 +731,17 @@ impl<'a> App<'a> {
     }
 
     fn accept_fuzzy_history_search(&mut self) {
-        if let Some(entry) = self.history_manager.accept_fuzzy_search_result() {
+        let source = match &self.content_mode {
+            ContentMode::FuzzyHistorySearch(s) => s.clone(),
+            _ => return,
+        };
+        let manager = select_fuzzy_manager_mut(
+            &mut self.history_manager,
+            &mut self.cancelled_command_history_manager,
+            &mut self.agent_prompt_history_manager,
+            &source,
+        );
+        if let Some(entry) = manager.accept_fuzzy_search_result() {
             let new_command = entry.command.clone();
             self.buffer.replace_buffer(new_command.as_str());
         }
@@ -750,7 +814,17 @@ impl<'a> App<'a> {
 
     /// Spawn the configured AI command in a background thread and transition to `AiMode`.
     /// Words that contain a space are quoted with single quotes in the display string.
+    /// If `buffer_str` is empty, opens the agent-prompts fuzzy history search instead.
     fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
+        if buffer_str.is_empty() {
+            let history_buffer = self.buffer_for_history().to_owned();
+            self.agent_prompt_history_manager
+                .warm_fuzzy_search_cache(&history_buffer);
+            self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
+            return;
+        }
+        self.agent_prompt_history_manager
+            .push_entry(buffer_str.to_string());
         let cmd_args = agent_cmd.command;
         let final_arg = match agent_cmd.system_prompt.as_deref() {
             Some(prompt) => format!("{}\n{}", prompt, buffer_str),
@@ -1348,6 +1422,14 @@ impl<'a> App<'a> {
         let rows_before = content.cursor_position().row;
         let rows_left_before_end_of_screen: u16 = terminal_height.saturating_sub(rows_before + 1);
 
+        // Pre-extract the fuzzy history source (owned) before the mutable match below,
+        // so we can still access other fields (e.g. individual history managers) inside
+        // the FuzzyHistorySearch arm without borrow-checker conflicts.
+        let fuzzy_source_for_render: Option<FuzzyHistorySource> = match &self.content_mode {
+            ContentMode::FuzzyHistorySearch(s) => Some(s.clone()),
+            _ => None,
+        };
+
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
@@ -1401,15 +1483,21 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            ContentMode::FuzzyHistorySearch if self.mode.is_running() => {
+            ContentMode::FuzzyHistorySearch(_) if self.mode.is_running() => {
+                let source = fuzzy_source_for_render.as_ref().unwrap();
                 let num_rows_for_instructions = if self.settings.tutorial_mode { 2 } else { 1 };
                 let num_rows_for_results = rows_left_before_end_of_screen
                     .saturating_sub(num_rows_for_instructions)
                     .clamp(2, 30);
 
                 let history_buffer = self.buffer_for_history().to_owned();
-                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = self
-                    .history_manager
+                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) =
+                    select_fuzzy_manager_mut(
+                        &mut self.history_manager,
+                        &mut self.cancelled_command_history_manager,
+                        &mut self.agent_prompt_history_manager,
+                        source,
+                    )
                     .get_fuzzy_search_results(&history_buffer, num_rows_for_results as usize);
 
                 let starting_row = content.cursor_position().row;
@@ -1462,7 +1550,7 @@ impl<'a> App<'a> {
                 content.newline();
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
-                        format!("# Fuzzy search: {}/{}", num_results, num_searched),
+                        format!("# {}: {}/{}", source.label(), num_results, num_searched),
                         self.settings.color_palette.secondary_text(),
                     ),
                     Tag::FuzzySearch,
