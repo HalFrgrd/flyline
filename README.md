@@ -176,6 +176,8 @@ Examples:
   flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
   flyline create-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
 
+See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
+
 Usage: flyline create-anim [OPTIONS] --name <NAME> [FRAMES]...
 
 Arguments:
