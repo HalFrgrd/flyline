@@ -13,7 +13,7 @@
 
 </div>
 
-When you write a command in Bash, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have to come expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
+When you write a command in Bash, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
 - Fuzzy history suggestions
@@ -415,5 +415,5 @@ hex code (`#ff5500`) or `rgb(r,g,b)` form.
 flyline set-color --inline-suggestion "dim italic"
 flyline set-color --default-theme light --matching-char "bold blue"
 flyline set-color --recognised-command "green" --unrecognised-command "bold red"
-flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"overrides
+flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
 ```
