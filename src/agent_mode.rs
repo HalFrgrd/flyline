@@ -1,9 +1,11 @@
 use anyhow::{anyhow, bail};
-use pulldown_cmark::{Alignment, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::prelude::*;
 use ratatui::text::Text;
 use regex::Regex;
 use std::sync::OnceLock;
+
+use crate::table::{TableAccum, compute_natural_col_widths, render_table};
 
 /// A single AI-suggested command with a human-readable description.
 #[derive(Debug, Clone)]
@@ -63,158 +65,6 @@ fn strip_leading_fence(s: &str) -> &str {
             }
         }
     }
-}
-
-/// Accumulated data for a single markdown table being parsed.
-struct TableAccum {
-    alignments: Vec<Alignment>,
-    /// Cells of the header row.
-    header_cells: Vec<String>,
-    /// Body rows (each row is a list of cell strings).
-    body_rows: Vec<Vec<String>>,
-    /// Cells of the row currently being built.
-    current_cells: Vec<String>,
-    /// Text content being accumulated for the current cell.
-    current_cell_buf: String,
-    /// True while processing the `<thead>` row.
-    in_header: bool,
-}
-
-impl TableAccum {
-    fn new(alignments: Vec<Alignment>) -> Self {
-        TableAccum {
-            alignments,
-            header_cells: Vec::new(),
-            body_rows: Vec::new(),
-            current_cells: Vec::new(),
-            current_cell_buf: String::new(),
-            in_header: false,
-        }
-    }
-}
-
-/// Render a collected [`TableAccum`] into ratatui [`Line`]s.
-///
-/// Produces an ASCII-box table:
-/// ```text
-/// | Header1   | Header2   |
-/// |-----------|-----------|
-/// | cell      | cell      |
-/// ```
-fn render_table(accum: &TableAccum) -> Vec<Line<'static>> {
-    let ncols = accum.header_cells.len();
-    if ncols == 0 {
-        return Vec::new();
-    }
-
-    // Calculate minimum column widths from cell contents.
-    let mut col_widths: Vec<usize> = accum.header_cells.iter().map(|s| s.len()).collect();
-    for row in &accum.body_rows {
-        for (j, cell) in row.iter().enumerate() {
-            if j < ncols {
-                col_widths[j] = col_widths[j].max(cell.len());
-            }
-        }
-    }
-    // Ensure a minimum column width of 3 so short separator dashes look reasonable.
-    for w in &mut col_widths {
-        *w = (*w).max(3);
-    }
-
-    let build_top_border = || -> Line<'static> {
-        let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("╭─"));
-        for (j, &width) in col_widths.iter().enumerate() {
-            spans.push(Span::raw("─".repeat(width)));
-            if j + 1 < col_widths.len() {
-                spans.push(Span::raw("─┬─"));
-            }
-        }
-        spans.push(Span::raw("─╮"));
-        Line::from(spans)
-    };
-
-    let build_bottom_border = || -> Line<'static> {
-        let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("╰─"));
-        for (j, &width) in col_widths.iter().enumerate() {
-            spans.push(Span::raw("─".repeat(width)));
-            if j + 1 < col_widths.len() {
-                spans.push(Span::raw("─┴─"));
-            }
-        }
-        spans.push(Span::raw("─╯"));
-        Line::from(spans)
-    };
-
-    let build_row = |cells: &[String], bold: bool| -> Line<'static> {
-        let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("│ "));
-        for (j, cell) in cells.iter().enumerate() {
-            let width = col_widths.get(j).copied().unwrap_or(0);
-            let padded = format!("{:<width$}", cell, width = width);
-            if bold {
-                spans.push(Span::styled(
-                    padded,
-                    Style::default().add_modifier(Modifier::BOLD),
-                ));
-            } else {
-                spans.push(Span::raw(padded));
-            }
-            spans.push(Span::raw(" │ "));
-        }
-        // Remove the trailing " │ " so the line ends with " │".
-        if spans.len() > 1 {
-            let last = spans.pop().unwrap();
-            // last is " │ " — push " │" instead
-            let trimmed = last.content.trim_end().to_string();
-            spans.push(Span::raw(trimmed));
-        }
-        Line::from(spans)
-    };
-
-    let build_separator = || -> Line<'static> {
-        let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("├─"));
-        for (j, &width) in col_widths.iter().enumerate() {
-            let dashes = match accum.alignments.get(j) {
-                Some(Alignment::Center) => {
-                    let inner = "─".repeat(width.saturating_sub(2));
-                    format!(":{inner}:")
-                }
-                Some(Alignment::Right) => {
-                    let inner = "─".repeat(width.saturating_sub(1));
-                    format!("{inner}:")
-                }
-                Some(Alignment::Left) => {
-                    let inner = "─".repeat(width.saturating_sub(1));
-                    format!(":{inner}")
-                }
-                _ => "─".repeat(width),
-            };
-            spans.push(Span::raw(dashes));
-            if j + 1 < col_widths.len() {
-                spans.push(Span::raw("─┼─"));
-            }
-        }
-        spans.push(Span::raw("─┤"));
-        Line::from(spans)
-    };
-
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    lines.push(build_top_border());
-    lines.push(build_row(&accum.header_cells, true));
-    lines.push(build_separator());
-    for row in &accum.body_rows {
-        // Pad row to the expected number of columns.
-        let mut padded = row.clone();
-        while padded.len() < ncols {
-            padded.push(String::new());
-        }
-        lines.push(build_row(&padded, false));
-    }
-    lines.push(build_bottom_border());
-    lines
 }
 
 /// Convert a markdown string to a ratatui [`Text`] object.
@@ -285,7 +135,8 @@ fn markdown_to_text(markdown: &str, palette: &crate::palette::Palette) -> Text<'
             }
             Event::End(TagEnd::Table) => {
                 if let Some(accum) = table_accum.take() {
-                    lines.extend(render_table(&accum));
+                    let col_widths = compute_natural_col_widths(&accum);
+                    lines.extend(render_table(&accum, &col_widths));
                 }
             }
             Event::Start(Tag::TableHead) => {

@@ -22,10 +22,6 @@ impl Scope {
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
-
-    pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
-    }
 }
 
 impl Scope {
@@ -157,48 +153,12 @@ impl TryFrom<&str> for KeyEventMatch {
             .pop()
             .ok_or_else(|| anyhow::anyhow!("Invalid key event string: '{}'", s))?;
         for mod_part in parts {
-            match mod_part.to_lowercase().as_str() {
-                "ctrl" | "control" => modifiers |= KeyModifiers::CONTROL,
-                "shift" => modifiers |= KeyModifiers::SHIFT,
-                "alt" => modifiers |= KeyModifiers::ALT,
-                "meta" => modifiers |= KeyModifiers::META,
-                "super" | "cmd" | "win" => modifiers |= KeyModifiers::SUPER,
-                _ => return Err(anyhow::anyhow!("Unknown modifier: '{}'", mod_part)),
-            }
+            modifiers |= parse_single_modifier(mod_part)?;
         }
-        let code = if key_part.len() == 1 {
-            KeyCode::Char(key_part.chars().next().unwrap())
-        } else {
-            match key_part.to_lowercase().as_str() {
-                "enter" => KeyCode::Enter,
-                "backspace" => KeyCode::Backspace,
-                "left" => KeyCode::Left,
-                "right" => KeyCode::Right,
-                "up" => KeyCode::Up,
-                "down" => KeyCode::Down,
-                "home" => KeyCode::Home,
-                "end" => KeyCode::End,
-                "pageup" => KeyCode::PageUp,
-                "pagedown" => KeyCode::PageDown,
-                "tab" => KeyCode::Tab,
-                "backtab" => KeyCode::BackTab,
-                "delete" => KeyCode::Delete,
-                "insert" => KeyCode::Insert,
-                // "f"
-                "esc" | "escape" => KeyCode::Esc,
-                "capslock" => KeyCode::CapsLock,
-                "scrolllock" => KeyCode::ScrollLock,
-                "numlock" => KeyCode::NumLock,
-                "printscreen" => KeyCode::PrintScreen,
-                "pause" => KeyCode::Pause,
-                "menu" => KeyCode::Menu,
-                "keypadbegin" => KeyCode::KeypadBegin,
-                // media
-                // modifers?
-                "anychar" => return Ok(KeyEventMatch::AnyCharEitherMod(vec![modifiers])),
-                other => return Err(anyhow::anyhow!("Unknown key code: '{}'", other)),
-            }
-        };
+        if key_part.trim().eq_ignore_ascii_case("anychar") {
+            return Ok(KeyEventMatch::AnyCharEitherMod(vec![modifiers]));
+        }
+        let code = parse_single_keycode(key_part)?;
         Ok(KeyEventMatch::Exact(KeyEvent::new(code, modifiers)))
     }
 }
@@ -685,17 +645,21 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         },
     ),
     Action::new(
-        "toggle_fuzzy_history_search",
-        "Toggle fuzzy search through command history",
-        Scope::NORMAL.union(Scope::FUZZY_HISTORY_SEARCH), // TODO: allow multiple scopes her
+        "start_fuzzy_history_search",
+        "Start fuzzy search through command history",
+        Scope::NORMAL,
         |app, _key| {
-            if matches!(app.content_mode, ContentMode::FuzzyHistorySearch) {
-                app.content_mode = ContentMode::Normal;
-            } else {
-                app.content_mode = ContentMode::FuzzyHistorySearch;
-                let history_buffer = app.buffer_for_history().to_owned();
-                app.history_manager.warm_fuzzy_search_cache(&history_buffer);
-            }
+            app.content_mode = ContentMode::FuzzyHistorySearch;
+            let history_buffer = app.buffer_for_history().to_owned();
+            app.history_manager.warm_fuzzy_search_cache(&history_buffer);
+        },
+    ),
+    Action::new(
+        "stop_fuzzy_history_search",
+        "Stop fuzzy search through command history",
+        Scope::FUZZY_HISTORY_SEARCH,
+        |app, _key| {
+            app.content_mode = ContentMode::Normal;
         },
     ),
     Action::new(
@@ -895,7 +859,7 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 49]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AGENT_OUTPUT_SELECTION, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AGENT_OUTPUT_SELECTION, "select_prev").unwrap(),
@@ -912,6 +876,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(&["PageUp"], Scope::FUZZY_HISTORY_SEARCH, "page_up").unwrap(),
         Binding::try_new(&["PageDown"], Scope::FUZZY_HISTORY_SEARCH, "page_down").unwrap(),
+        Binding::try_new(
+            &["ctrl+r", "meta+r"],
+            Scope::FUZZY_HISTORY_SEARCH,
+            "stop_fuzzy_history_search",
+        )
+        .unwrap(),
         Binding::try_new(&["Alt+Enter"], Scope::NORMAL, "run_agent_mode").unwrap(),
         Binding::try_new(
             &[
@@ -959,8 +929,8 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            Scope::NORMAL.union(Scope::FUZZY_HISTORY_SEARCH),
-            "toggle_fuzzy_history_search",
+            Scope::NORMAL,
+            "start_fuzzy_history_search",
         )
         .unwrap(),
         Binding::try_new(&["Ctrl+l"], Scope::NORMAL, "clear_screen").unwrap(),
@@ -1142,50 +1112,31 @@ fn inverse_keycode_display(code: KeyCode, remappings: &[KeyRemap]) -> Result<Str
 
 impl KeyEventMatch {
     fn display(&self) -> String {
+        let display_modifiers = |mods: KeyModifiers| -> Vec<String> {
+            [
+                KeyModifiers::CONTROL,
+                KeyModifiers::ALT,
+                KeyModifiers::META,
+                KeyModifiers::SHIFT,
+                KeyModifiers::SUPER,
+            ]
+            .iter()
+            .filter(|&&bit| mods.contains(bit))
+            .map(|&bit| display_modifier_bit(bit).to_string())
+            .collect()
+        };
+
         match self {
             KeyEventMatch::Exact(ke) => {
-                let mut parts: Vec<String> = {
-                    let mut p = Vec::new();
-                    if ke.modifiers.contains(KeyModifiers::CONTROL) {
-                        p.push("Ctrl".to_string());
-                    }
-                    if ke.modifiers.contains(KeyModifiers::ALT) {
-                        p.push("Alt".to_string());
-                    }
-                    if ke.modifiers.contains(KeyModifiers::META) {
-                        p.push("Meta".to_string());
-                    }
-                    if ke.modifiers.contains(KeyModifiers::SHIFT) {
-                        p.push("Shift".to_string());
-                    }
-                    if ke.modifiers.contains(KeyModifiers::SUPER) {
-                        p.push("Super".to_string());
-                    }
-                    p
-                };
+                let mut parts = display_modifiers(ke.modifiers);
                 parts.push(display_keycode(ke.code));
                 parts.join("+")
             }
             KeyEventMatch::AnyCharEitherMod(mods) => mods
                 .iter()
                 .map(|m| {
-                    let mut parts: Vec<&str> = Vec::new();
-                    if m.contains(KeyModifiers::CONTROL) {
-                        parts.push("Ctrl");
-                    }
-                    if m.contains(KeyModifiers::ALT) {
-                        parts.push("Alt");
-                    }
-                    if m.contains(KeyModifiers::META) {
-                        parts.push("Meta");
-                    }
-                    if m.contains(KeyModifiers::SHIFT) {
-                        parts.push("Shift");
-                    }
-                    if m.contains(KeyModifiers::SUPER) {
-                        parts.push("Super");
-                    }
-                    parts.push("AnyChar");
+                    let mut parts = display_modifiers(*m);
+                    parts.push("AnyChar".to_string());
                     parts.join("+")
                 })
                 .collect::<Vec<_>>()
@@ -1257,6 +1208,9 @@ pub fn print_bindings_table(
     filter_key: Option<&str>,
     remappings: &[KeyRemap],
 ) {
+    use crate::table::{TableAccum, render_table};
+    use ratatui::layout::{Constraint, Layout, Rect};
+
     let filter_event: Option<KeyEvent> =
         filter_key.and_then(|k| match KeyEventMatch::try_from(k) {
             Ok(KeyEventMatch::Exact(ev)) => Some(ev),
@@ -1309,63 +1263,51 @@ pub fn print_bindings_table(
         }
     }
 
-    const H_KEYS: &str = "Key(s)";
-    const H_ACTION: &str = "Action";
-    const H_DESC: &str = "Description";
-    const H_USER: &str = "User";
+    // Retrieve the terminal width; fall back to 120 columns if unavailable.
+    let term_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(120);
 
-    let w_keys = rows
-        .iter()
-        .map(|r| r.keys.len())
-        .max()
-        .unwrap_or(0)
-        .max(H_KEYS.len());
-    let w_action = rows
-        .iter()
-        .map(|r| r.action.len())
-        .max()
-        .unwrap_or(0)
-        .max(H_ACTION.len());
-    let w_desc = rows
-        .iter()
-        .map(|r| r.description.len())
-        .max()
-        .unwrap_or(0)
-        .max(H_DESC.len());
+    // The table border overhead for 4 columns is: 2 + 3*3 + 2 = 13 characters.
+    // (leading "│ " + three " │ " separators + trailing " │")
+    const NCOLS: u16 = 4;
+    let overhead: u16 = 3 * NCOLS + 1;
+    let available = term_width.saturating_sub(overhead);
 
-    println!(
-        "{:<w_keys$}  {:<w_action$}  {:<w_desc$}  {}",
-        H_KEYS,
-        H_ACTION,
-        H_DESC,
-        H_USER,
-        w_keys = w_keys,
-        w_action = w_action,
-        w_desc = w_desc,
-    );
-    println!(
-        "{:-<w_keys$}  {:-<w_action$}  {:-<w_desc$}  {:-<w_user$}",
-        "",
-        "",
-        "",
-        "",
-        w_keys = w_keys,
-        w_action = w_action,
-        w_desc = w_desc,
-        w_user = H_USER.len(),
-    );
+    // Use ratatui Layout to distribute the available width across columns.
+    let chunks = Layout::horizontal([
+        Constraint::Min(6),  // Key(s)
+        Constraint::Min(10), // Action
+        Constraint::Fill(1), // Description – gets the remaining space
+        Constraint::Min(4),  // User
+    ])
+    .split(Rect::new(0, 0, available, 1));
+
+    let col_widths: Vec<usize> = chunks.iter().map(|r| r.width as usize).collect();
+
+    // Build the TableAccum for the bindings.
+    let mut accum = TableAccum::default();
+    accum.header_cells = vec![
+        "Key(s)".to_string(),
+        "Action".to_string(),
+        "Description".to_string(),
+        "User".to_string(),
+    ];
     for row in &rows {
-        let user_marker = if row.is_user { "*" } else { "" };
-        println!(
-            "{:<w_keys$}  {:<w_action$}  {:<w_desc$}  {}",
-            row.keys,
-            row.action,
-            row.description,
-            user_marker,
-            w_keys = w_keys,
-            w_action = w_action,
-            w_desc = w_desc,
-        );
+        accum.body_rows.push(vec![
+            row.keys.clone(),
+            row.action.clone(),
+            row.description.clone(),
+            if row.is_user {
+                "*".to_string()
+            } else {
+                String::new()
+            },
+        ]);
+    }
+
+    // Render and print the table, converting each ratatui Line to plain text.
+    for line in render_table(&accum, &col_widths) {
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        println!("{}", text);
     }
 
     // Print remappings table after keybindings.
