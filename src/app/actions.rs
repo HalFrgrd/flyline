@@ -1377,8 +1377,7 @@ pub fn print_bindings_table(
 
     // Print remappings table after keybindings.
     if !remappings.is_empty() {
-        println!();
-        println!("Key Remappings:");
+        println!("\nKey Remappings:");
         for remap in remappings {
             match remap {
                 KeyRemap::Key { from, to } => {
