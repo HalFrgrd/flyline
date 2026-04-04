@@ -48,6 +48,10 @@ enum PromptSegment {
     ///
     /// Boxed to keep the `PromptSegment` enum size small.
     Animation(Box<ProcessedAnimation>),
+    /// The detected current-working-directory substring in the prompt.
+    /// Holds the original span from the decoded prompt; at render time it is
+    /// emitted as-is so it can be styled or replaced in the future.
+    Cwd(Span<'static>),
 }
 
 pub struct PromptManager {
@@ -151,6 +155,10 @@ struct PromptStringBuilder {
     /// recognise animation-name placeholders and produce
     /// [`PromptSegment::Animation`] segments in the same pass.
     animations: Vec<ProcessedAnimation>,
+    /// Current working directory, used to detect CWD substrings in prompt spans.
+    cwd: Option<String>,
+    /// Home directory, used to recognise `~`-prefixed path representations.
+    home: Option<String>,
 }
 
 impl PromptStringBuilder {
@@ -159,7 +167,16 @@ impl PromptStringBuilder {
             counter: 0,
             time_map: HashMap::new(),
             animations,
+            cwd: None,
+            home: None,
         }
+    }
+
+    /// Set the current working directory and home directory for CWD detection.
+    fn with_cwd(mut self, cwd: String, home: Option<String>) -> Self {
+        self.cwd = Some(cwd);
+        self.home = home;
+        self
     }
 
     /// Scan a raw bash prompt string and replace every time format escape
@@ -355,16 +372,31 @@ impl PromptStringBuilder {
         };
 
         // Pass 2: split any remaining Static segments on animation names.
-        if self.animations.is_empty() {
-            return time_segs;
+        let animation_segs: Vec<PromptSegment> = if self.animations.is_empty() {
+            time_segs
+        } else {
+            time_segs
+                .into_iter()
+                .flat_map(|seg| match seg {
+                    PromptSegment::Static(s) => self.split_static_span_by_animations(s),
+                    other => vec![other],
+                })
+                .collect()
+        };
+
+        // Pass 3: split any remaining Static segments on CWD.
+        if let Some(cwd) = self.cwd.as_deref() {
+            let home = self.home.as_deref();
+            animation_segs
+                .into_iter()
+                .flat_map(|seg| match seg {
+                    PromptSegment::Static(s) => split_static_span_by_cwd(s, cwd, home),
+                    other => vec![other],
+                })
+                .collect()
+        } else {
+            animation_segs
         }
-        time_segs
-            .into_iter()
-            .flat_map(|seg| match seg {
-                PromptSegment::Static(s) => self.split_static_span_by_animations(s),
-                other => vec![other],
-            })
-            .collect()
     }
 
     /// Split a static [`Span`] at animation-name boundaries, producing
@@ -432,6 +464,140 @@ impl PromptStringBuilder {
     }
 }
 
+/// Find the longest substring of `text` that looks like the current working
+/// directory or any contiguous sub-path of it.
+///
+/// * `cwd` – the current working directory (absolute or relative path string).
+/// * `home` – optionally the user's home directory; when provided the function
+///   also searches for `~`-prefixed representations such as `~`, `~/`, or
+///   `~/subdir/…`.
+///
+/// The function generates all contiguous subsequences of cwd path segments
+/// (e.g. for `/home/foo/bar` it tries `home`, `foo`, `bar`, `home/foo`,
+/// `foo/bar`, `home/foo/bar`, plus tilde variants when `home` is supplied)
+/// and returns the byte range of the longest one found in `text`.
+///
+/// Returns `Some((start, end))` so that `text[start..end]` is the matched
+/// substring, or `None` if no path-like substring is found.
+fn find_cwd_in_span(text: &str, cwd: &str, home: Option<&str>) -> Option<(usize, usize)> {
+    let cwd_trimmed = cwd.trim_end_matches('/');
+
+    // Collect non-empty path segments.
+    let segments: Vec<&str> = cwd_trimmed.split('/').filter(|s| !s.is_empty()).collect();
+
+    if segments.is_empty() {
+        return None;
+    }
+
+    let mut best: Option<(usize, usize)> = None;
+
+    // Update `best` if `candidate` is found in `text` and is longer than the
+    // current best match.
+    let mut try_candidate = |candidate: &str| {
+        if candidate.is_empty() {
+            return;
+        }
+        if let Some(pos) = text.find(candidate) {
+            let end = pos + candidate.len();
+            if best.map_or(true, |(bs, be)| end - pos > be - bs) {
+                best = Some((pos, end));
+            }
+        }
+    };
+
+    // --- Tilde representations ---
+    if let Some(home_dir) = home {
+        let home_trimmed = home_dir.trim_end_matches('/');
+        if !home_trimmed.is_empty() && cwd_trimmed.starts_with(home_trimmed) {
+            let after_home = &cwd_trimmed[home_trimmed.len()..];
+            // after_home is "" or "/seg1/seg2/…"
+            let rest_segments: Vec<&str> = after_home
+                .trim_start_matches('/')
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            // "~" alone (home dir exact match) and "~/" (with trailing slash)
+            try_candidate("~");
+            try_candidate("~/");
+
+            // Build "~/seg1", "~/seg1/seg2", … trying both with and without
+            // a trailing slash at each level.
+            let mut tilde_path = String::from("~");
+            for seg in &rest_segments {
+                tilde_path.push('/');
+                tilde_path.push_str(seg);
+                let with_slash = tilde_path.clone() + "/";
+                try_candidate(&with_slash);
+                try_candidate(&tilde_path);
+            }
+        }
+    }
+
+    // --- All contiguous subsequences of cwd segments ---
+    // For each starting segment index, build paths of increasing length.
+    for start_idx in 0..segments.len() {
+        let mut path = String::new();
+        for (j, seg) in segments[start_idx..].iter().enumerate() {
+            if j > 0 {
+                path.push('/');
+            }
+            path.push_str(seg);
+            let with_slash = path.clone() + "/";
+            try_candidate(&with_slash);
+            try_candidate(&path);
+        }
+    }
+
+    // Also try the full absolute path (with leading "/").
+    if !segments.is_empty() {
+        let full = "/".to_string() + &segments.join("/");
+        let with_slash = full.clone() + "/";
+        try_candidate(&with_slash);
+        try_candidate(&full);
+    }
+
+    best
+}
+
+/// Split a static [`Span`] at the first (longest) detected CWD substring,
+/// producing up to three segments: an optional `Static` prefix, a `Cwd`
+/// segment for the matched path text, and an optional `Static` suffix.
+///
+/// If no CWD-like substring is found the original span is returned unchanged
+/// as a single `Static` segment.
+fn split_static_span_by_cwd(
+    span: Span<'static>,
+    cwd: &str,
+    home: Option<&str>,
+) -> Vec<PromptSegment> {
+    let text = span.content.as_ref().to_owned();
+    let style = span.style;
+
+    let Some((start, end)) = find_cwd_in_span(&text, cwd, home) else {
+        return vec![PromptSegment::Static(span)];
+    };
+
+    let mut result = Vec::new();
+    if start > 0 {
+        result.push(PromptSegment::Static(Span::styled(
+            text[..start].to_owned(),
+            style,
+        )));
+    }
+    result.push(PromptSegment::Cwd(Span::styled(
+        text[start..end].to_owned(),
+        style,
+    )));
+    if end < text.len() {
+        result.push(PromptSegment::Static(Span::styled(
+            text[end..].to_owned(),
+            style,
+        )));
+    }
+    result
+}
+
 /// Convert a slice of [`PromptSegment`]s to a [`Line`] by resolving each
 /// segment against `now`.
 fn format_prompt_line(
@@ -442,6 +608,7 @@ fn format_prompt_line(
         .into_iter()
         .flat_map(|segment| match segment {
             PromptSegment::Static(span) => vec![span],
+            PromptSegment::Cwd(span) => vec![span],
             PromptSegment::DynamicTime { strftime, style } => {
                 vec![Span::styled(now.format(&strftime).to_string(), style)]
             }
@@ -550,7 +717,10 @@ impl PromptManager {
             // A single builder is shared across all prompt variables so that
             // placeholder IDs are unique.  Animations are passed in so that
             // expand_span_to_segments can produce Animation segments directly.
-            let mut builder = PromptStringBuilder::new(processed_animations);
+            let cwd = bash_funcs::get_cwd();
+            let home = bash_funcs::get_envvar_value("HOME");
+            log::debug!("CWD for prompt detection: {:?}, HOME: {:?}", cwd, home);
+            let mut builder = PromptStringBuilder::new(processed_animations).with_cwd(cwd, home);
 
             // Read the raw PS1 env var so we can intercept time format codes
             // before handing the string to decode_prompt_string.  Fall back to
@@ -895,6 +1065,100 @@ mod tests {
         match &segs[2] {
             PromptSegment::Static(s) => assert_eq!(s.content, " suffix"),
             _ => panic!("expected Static at index 2"),
+        }
+    }
+
+    // --- find_cwd_in_span ----------------------------------------------------
+
+    /// Helper: cwd = /home/foo/qwe/try/ooh/lkj, home = /home/foo
+    fn cwd() -> &'static str {
+        "/home/foo/qwe/try/ooh/lkj"
+    }
+    fn home() -> &'static str {
+        "/home/foo"
+    }
+
+    #[test]
+    fn test_find_cwd_tilde_only() {
+        // "~" alone should be detected as the home dir representation
+        let text = "otherpartofheprompt~:$";
+        let result = find_cwd_in_span(text, cwd(), Some(home()));
+        let (start, end) = result.expect("should find a match");
+        assert_eq!(&text[start..end], "~");
+    }
+
+    #[test]
+    fn test_find_cwd_tilde_slash() {
+        // "~/" should be preferred over bare "~"
+        let text = "otherpartofheprompt~/:$";
+        let result = find_cwd_in_span(text, cwd(), Some(home()));
+        let (start, end) = result.expect("should find a match");
+        assert_eq!(&text[start..end], "~/");
+    }
+
+    #[test]
+    fn test_find_cwd_tilde_one_segment() {
+        let text = "otherpartofheprompt~/qwe:$";
+        let result = find_cwd_in_span(text, cwd(), Some(home()));
+        let (start, end) = result.expect("should find a match");
+        assert_eq!(&text[start..end], "~/qwe");
+    }
+
+    #[test]
+    fn test_find_cwd_tilde_two_segments() {
+        let text = "otherpartofheprompt~/qwe/try:$";
+        let result = find_cwd_in_span(text, cwd(), Some(home()));
+        let (start, end) = result.expect("should find a match");
+        assert_eq!(&text[start..end], "~/qwe/try");
+    }
+
+    #[test]
+    fn test_find_cwd_partial_path_no_tilde() {
+        // "qwe/try/ooh" is a contiguous sub-path; no tilde in the text
+        let text = "otherpartofhepromptqwe/try/ooh:$";
+        let result = find_cwd_in_span(text, cwd(), Some(home()));
+        let (start, end) = result.expect("should find a match");
+        assert_eq!(&text[start..end], "qwe/try/ooh");
+    }
+
+    #[test]
+    fn test_find_cwd_partial_path_trailing_slash() {
+        // trailing slash is part of the detected match
+        let text = "otherpartofheprompt try/ooh/lkj/:$";
+        let result = find_cwd_in_span(text, cwd(), Some(home()));
+        let (start, end) = result.expect("should find a match");
+        assert_eq!(&text[start..end], "try/ooh/lkj/");
+    }
+
+    // --- expand_span_to_segments with CWD detection --------------------------
+
+    #[test]
+    fn test_expand_span_cwd_tilde_only() {
+        let builder = PromptStringBuilder::new(vec![]).with_cwd(
+            "/home/foo/qwe/try/ooh/lkj".to_string(),
+            Some("/home/foo".to_string()),
+        );
+        let span = Span::raw("otherpartofheprompt~:$");
+        let segs = builder.expand_span_to_segments(span);
+        let cwd_seg = segs.iter().find(|s| matches!(s, PromptSegment::Cwd(_)));
+        match cwd_seg.expect("expected a Cwd segment") {
+            PromptSegment::Cwd(s) => assert_eq!(s.content, "~"),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_expand_span_cwd_partial_no_tilde() {
+        let builder = PromptStringBuilder::new(vec![]).with_cwd(
+            "/home/foo/qwe/try/ooh/lkj".to_string(),
+            Some("/home/foo".to_string()),
+        );
+        let span = Span::raw("otherpartofhepromptqwe/try/ooh:$");
+        let segs = builder.expand_span_to_segments(span);
+        let cwd_seg = segs.iter().find(|s| matches!(s, PromptSegment::Cwd(_)));
+        match cwd_seg.expect("expected a Cwd segment") {
+            PromptSegment::Cwd(s) => assert_eq!(s.content, "qwe/try/ooh"),
+            _ => unreachable!(),
         }
     }
 }
