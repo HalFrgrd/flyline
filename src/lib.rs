@@ -302,6 +302,23 @@ enum KeySubcommands {
         /// Optional key sequence to filter by (e.g. "Tab", "Ctrl+r").
         key_sequence: Option<String>,
     },
+    /// Remap a key or modifier to another key or modifier.
+    ///
+    /// When a key event arrives, FROM is translated to TO before being matched
+    /// against bindings.  Keys can only be remapped to keys; modifiers can only
+    /// be remapped to modifiers.
+    ///
+    /// Examples:
+    ///   flyline key remap tab z       # pressing Tab acts like pressing z
+    ///   flyline key remap alt ctrl    # pressing Alt acts like pressing Ctrl
+    ///   flyline key remap ctrl alt    # combined with above: swap Ctrl and Alt
+    #[command(name = "remap", verbatim_doc_comment)]
+    Remap {
+        /// The key or modifier to remap from (e.g. "tab", "alt").
+        from: String,
+        /// The key or modifier to remap to (e.g. "z", "ctrl").
+        to: String,
+    },
 }
 
 // Global state for our custom input stream
@@ -638,7 +655,23 @@ impl Flyline {
                             actions::print_bindings_table(
                                 &self.settings.keybindings,
                                 key_sequence.as_deref(),
+                                &self.settings.key_remappings,
                             );
+                        }
+                        KeySubcommands::Remap { from, to } => {
+                            match actions::try_parse_remap(&from, &to) {
+                                Ok(remap) => {
+                                    log::info!("Registering key remap: {} -> {}", from, to);
+                                    self.settings.key_remappings.push(remap);
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "flyline key remap: failed to parse remap '{}' -> '{}': {}",
+                                        from, to, e
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            }
                         }
                     },
                     None => {}

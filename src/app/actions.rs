@@ -203,6 +203,148 @@ impl TryFrom<&str> for KeyEventMatch {
     }
 }
 
+/// A key code remapping or modifier remapping registered with `flyline key remap`.
+///
+/// Keys can only be remapped to keys, and modifiers can only be remapped to
+/// modifiers.  When a key event arrives it is first transformed by
+/// [`apply_remappings`] before being matched against bindings.
+#[derive(Debug, Clone, PartialEq)]
+pub enum KeyRemap {
+    /// Remap one non-modifier key to another (e.g. Tab → z).
+    Key { from: KeyCode, to: KeyCode },
+    /// Remap one modifier bit to another (e.g. Alt → Ctrl).
+    Modifier {
+        from: KeyModifiers,
+        to: KeyModifiers,
+    },
+}
+
+/// Parse a single key-code name (no modifiers) into a [`KeyCode`].
+fn parse_single_keycode(s: &str) -> Result<KeyCode> {
+    let s = s.trim();
+    if s.len() == 1 {
+        return Ok(KeyCode::Char(s.chars().next().unwrap()));
+    }
+    match s.to_lowercase().as_str() {
+        "enter" => Ok(KeyCode::Enter),
+        "backspace" => Ok(KeyCode::Backspace),
+        "left" => Ok(KeyCode::Left),
+        "right" => Ok(KeyCode::Right),
+        "up" => Ok(KeyCode::Up),
+        "down" => Ok(KeyCode::Down),
+        "home" => Ok(KeyCode::Home),
+        "end" => Ok(KeyCode::End),
+        "pageup" => Ok(KeyCode::PageUp),
+        "pagedown" => Ok(KeyCode::PageDown),
+        "tab" => Ok(KeyCode::Tab),
+        "backtab" => Ok(KeyCode::BackTab),
+        "delete" => Ok(KeyCode::Delete),
+        "insert" => Ok(KeyCode::Insert),
+        "esc" | "escape" => Ok(KeyCode::Esc),
+        "capslock" => Ok(KeyCode::CapsLock),
+        "scrolllock" => Ok(KeyCode::ScrollLock),
+        "numlock" => Ok(KeyCode::NumLock),
+        "printscreen" => Ok(KeyCode::PrintScreen),
+        "pause" => Ok(KeyCode::Pause),
+        "menu" => Ok(KeyCode::Menu),
+        "keypadbegin" => Ok(KeyCode::KeypadBegin),
+        other => Err(anyhow::anyhow!("Unknown key code: '{}'", other)),
+    }
+}
+
+/// Parse a single modifier name into a single-bit [`KeyModifiers`] value.
+fn parse_single_modifier(s: &str) -> Result<KeyModifiers> {
+    match s.to_lowercase().as_str() {
+        "ctrl" | "control" => Ok(KeyModifiers::CONTROL),
+        "shift" => Ok(KeyModifiers::SHIFT),
+        "alt" => Ok(KeyModifiers::ALT),
+        "meta" => Ok(KeyModifiers::META),
+        "super" | "cmd" | "win" => Ok(KeyModifiers::SUPER),
+        _ => Err(anyhow::anyhow!("Unknown modifier: '{}'", s)),
+    }
+}
+
+/// Parse and validate a remap pair (from, to).  Modifiers may only be remapped
+/// to modifiers; keys may only be remapped to keys.
+pub fn try_parse_remap(from: &str, to: &str) -> Result<KeyRemap> {
+    let from_mod = parse_single_modifier(from);
+    let to_mod = parse_single_modifier(to);
+    match (&from_mod, &to_mod) {
+        (Ok(f), Ok(t)) => return Ok(KeyRemap::Modifier { from: *f, to: *t }),
+        (Ok(_), Err(_)) => {
+            return Err(anyhow::anyhow!(
+                "'{}' is a modifier but '{}' is not; modifiers can only be remapped to modifiers",
+                from,
+                to
+            ));
+        }
+        (Err(_), Ok(_)) => {
+            return Err(anyhow::anyhow!(
+                "'{}' is not a modifier but '{}' is; keys can only be remapped to keys",
+                from,
+                to
+            ));
+        }
+        (Err(_), Err(_)) => {}
+    }
+    let from_key = parse_single_keycode(from)
+        .map_err(|_| anyhow::anyhow!("'{}' is not a recognised key or modifier name", from))?;
+    let to_key = parse_single_keycode(to)
+        .map_err(|_| anyhow::anyhow!("'{}' is not a recognised key or modifier name", to))?;
+    Ok(KeyRemap::Key {
+        from: from_key,
+        to: to_key,
+    })
+}
+
+/// Apply all remappings to a raw key event and return the logical key event
+/// that should be matched against bindings.
+///
+/// All modifier remaps are applied simultaneously (based on the original
+/// modifier bits) so that swapping two modifiers works correctly.
+pub fn apply_remappings(key: KeyEvent, remappings: &[KeyRemap]) -> KeyEvent {
+    if remappings.is_empty() {
+        return key;
+    }
+
+    // Modifier remaps are applied simultaneously from the original modifier set.
+    let original_modifiers = key.modifiers;
+    let mut new_modifiers = KeyModifiers::empty();
+    for &bit in &[
+        KeyModifiers::CONTROL,
+        KeyModifiers::SHIFT,
+        KeyModifiers::ALT,
+        KeyModifiers::META,
+        KeyModifiers::SUPER,
+    ] {
+        if !original_modifiers.contains(bit) {
+            continue;
+        }
+        let remapped = remappings.iter().find_map(|r| {
+            if let KeyRemap::Modifier { from, to } = r {
+                if *from == bit { Some(*to) } else { None }
+            } else {
+                None
+            }
+        });
+        new_modifiers |= remapped.unwrap_or(bit);
+    }
+
+    // Key-code remap: at most one remap applies.
+    let new_code = remappings
+        .iter()
+        .find_map(|r| {
+            if let KeyRemap::Key { from, to } = r {
+                if *from == key.code { Some(*to) } else { None }
+            } else {
+                None
+            }
+        })
+        .unwrap_or(key.code);
+
+    KeyEvent::new(new_code, new_modifiers)
+}
+
 #[derive(Debug, Clone)]
 pub struct Binding {
     key_events: Vec<KeyEventMatch>,
@@ -900,6 +1042,104 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 48]> = LazyLock::new(|| {
     ]
 });
 
+/// Return the display name for a [`KeyCode`].
+fn display_keycode(code: KeyCode) -> String {
+    match code {
+        KeyCode::Enter => "Enter".to_string(),
+        KeyCode::Backspace => "Backspace".to_string(),
+        KeyCode::Left => "Left".to_string(),
+        KeyCode::Right => "Right".to_string(),
+        KeyCode::Up => "Up".to_string(),
+        KeyCode::Down => "Down".to_string(),
+        KeyCode::Home => "Home".to_string(),
+        KeyCode::End => "End".to_string(),
+        KeyCode::PageUp => "PageUp".to_string(),
+        KeyCode::PageDown => "PageDown".to_string(),
+        KeyCode::Tab => "Tab".to_string(),
+        KeyCode::BackTab => "BackTab".to_string(),
+        KeyCode::Delete => "Delete".to_string(),
+        KeyCode::Insert => "Insert".to_string(),
+        KeyCode::Esc => "Esc".to_string(),
+        KeyCode::CapsLock => "CapsLock".to_string(),
+        KeyCode::ScrollLock => "ScrollLock".to_string(),
+        KeyCode::NumLock => "NumLock".to_string(),
+        KeyCode::PrintScreen => "PrintScreen".to_string(),
+        KeyCode::Pause => "Pause".to_string(),
+        KeyCode::Menu => "Menu".to_string(),
+        KeyCode::KeypadBegin => "KeypadBegin".to_string(),
+        KeyCode::Char(c) => c.to_string(),
+        KeyCode::F(n) => format!("F{}", n),
+        other => format!("{:?}", other),
+    }
+}
+
+/// Return the display name for a single modifier bit.
+fn display_modifier_bit(bit: KeyModifiers) -> &'static str {
+    if bit.contains(KeyModifiers::CONTROL) {
+        "Ctrl"
+    } else if bit.contains(KeyModifiers::ALT) {
+        "Alt"
+    } else if bit.contains(KeyModifiers::META) {
+        "Meta"
+    } else if bit.contains(KeyModifiers::SHIFT) {
+        "Shift"
+    } else if bit.contains(KeyModifiers::SUPER) {
+        "Super"
+    } else {
+        "Unknown"
+    }
+}
+
+/// Given a logical modifier bit and the current remappings, return what the
+/// user must physically press to produce that logical modifier.
+///
+/// Returns `Ok(display_name)` when accessible, `Err(logical_name)` when
+/// inaccessible (the bit is consumed by a remap and nothing maps back to it).
+fn inverse_modifier_display(bit: KeyModifiers, remappings: &[KeyRemap]) -> Result<String, String> {
+    // Something maps TO this bit → that something is what the user presses.
+    for remap in remappings {
+        if let KeyRemap::Modifier { from, to } = remap {
+            if *to == bit {
+                return Ok(display_modifier_bit(*from).to_string());
+            }
+        }
+    }
+    // This bit is the source of a remap → pressing it produces something else.
+    for remap in remappings {
+        if let KeyRemap::Modifier { from, to: _ } = remap {
+            if *from == bit {
+                return Err(display_modifier_bit(bit).to_string());
+            }
+        }
+    }
+    Ok(display_modifier_bit(bit).to_string())
+}
+
+/// Given a logical key code and the current remappings, return what the user
+/// must physically press to produce that logical key code.
+///
+/// Returns `Ok(display_name)` when accessible, `Err(logical_name)` when
+/// inaccessible.
+fn inverse_keycode_display(code: KeyCode, remappings: &[KeyRemap]) -> Result<String, String> {
+    // Something maps TO this code → that something is what the user presses.
+    for remap in remappings {
+        if let KeyRemap::Key { from, to } = remap {
+            if *to == code {
+                return Ok(display_keycode(*from));
+            }
+        }
+    }
+    // This code is the source of a remap → pressing it produces something else.
+    for remap in remappings {
+        if let KeyRemap::Key { from, to: _ } = remap {
+            if *from == code {
+                return Err(display_keycode(code));
+            }
+        }
+    }
+    Ok(display_keycode(code))
+}
+
 impl KeyEventMatch {
     fn display(&self) -> String {
         match self {
@@ -923,34 +1163,7 @@ impl KeyEventMatch {
                     }
                     p
                 };
-                let code = match ke.code {
-                    KeyCode::Enter => "Enter".to_string(),
-                    KeyCode::Backspace => "Backspace".to_string(),
-                    KeyCode::Left => "Left".to_string(),
-                    KeyCode::Right => "Right".to_string(),
-                    KeyCode::Up => "Up".to_string(),
-                    KeyCode::Down => "Down".to_string(),
-                    KeyCode::Home => "Home".to_string(),
-                    KeyCode::End => "End".to_string(),
-                    KeyCode::PageUp => "PageUp".to_string(),
-                    KeyCode::PageDown => "PageDown".to_string(),
-                    KeyCode::Tab => "Tab".to_string(),
-                    KeyCode::BackTab => "BackTab".to_string(),
-                    KeyCode::Delete => "Delete".to_string(),
-                    KeyCode::Insert => "Insert".to_string(),
-                    KeyCode::Esc => "Esc".to_string(),
-                    KeyCode::CapsLock => "CapsLock".to_string(),
-                    KeyCode::ScrollLock => "ScrollLock".to_string(),
-                    KeyCode::NumLock => "NumLock".to_string(),
-                    KeyCode::PrintScreen => "PrintScreen".to_string(),
-                    KeyCode::Pause => "Pause".to_string(),
-                    KeyCode::Menu => "Menu".to_string(),
-                    KeyCode::KeypadBegin => "KeypadBegin".to_string(),
-                    KeyCode::Char(c) => c.to_string(),
-                    KeyCode::F(n) => format!("F{}", n),
-                    other => format!("{:?}", other),
-                };
-                parts.push(code);
+                parts.push(display_keycode(ke.code));
                 parts.join("+")
             }
             KeyEventMatch::AnyCharEitherMod(mods) => mods
@@ -979,12 +1192,71 @@ impl KeyEventMatch {
                 .join(" / "),
         }
     }
+
+    /// Display this key event match, applying the inverse of the given
+    /// remappings so the output shows what the user physically needs to press.
+    ///
+    /// If a key or modifier required by the binding is not reachable via any
+    /// physical key (because it has been remapped away), it is shown as
+    /// `[INACCESSIBLE: X]`.
+    fn display_with_remapping(&self, remappings: &[KeyRemap]) -> String {
+        if remappings.is_empty() {
+            return self.display();
+        }
+
+        // Build the display strings for all active modifier bits in `mods`,
+        // pushing each result (or its [INACCESSIBLE:…] marker) into `parts`.
+        let push_modifiers = |mods: KeyModifiers, parts: &mut Vec<String>| {
+            for &bit in &[
+                KeyModifiers::CONTROL,
+                KeyModifiers::ALT,
+                KeyModifiers::META,
+                KeyModifiers::SHIFT,
+                KeyModifiers::SUPER,
+            ] {
+                if !mods.contains(bit) {
+                    continue;
+                }
+                match inverse_modifier_display(bit, remappings) {
+                    Ok(name) => parts.push(name),
+                    Err(name) => parts.push(format!("[INACCESSIBLE: {}]", name)),
+                }
+            }
+        };
+
+        match self {
+            KeyEventMatch::Exact(ke) => {
+                let mut parts: Vec<String> = Vec::new();
+                push_modifiers(ke.modifiers, &mut parts);
+                match inverse_keycode_display(ke.code, remappings) {
+                    Ok(name) => parts.push(name),
+                    Err(name) => parts.push(format!("[INACCESSIBLE: {}]", name)),
+                }
+                parts.join("+")
+            }
+            // AnyChar bindings: apply inverse modifier display per modifier set.
+            KeyEventMatch::AnyCharEitherMod(mods) => mods
+                .iter()
+                .map(|m| {
+                    let mut parts: Vec<String> = Vec::new();
+                    push_modifiers(*m, &mut parts);
+                    parts.push("AnyChar".to_string());
+                    parts.join("+")
+                })
+                .collect::<Vec<_>>()
+                .join(" / "),
+        }
+    }
 }
 
 /// Print all keybindings as a formatted table to stdout, ordered from lowest
 /// to highest priority.  User-defined bindings appear above the defaults and
 /// are marked with `*` in the rightmost column.
-pub fn print_bindings_table(user_bindings: &[Binding], filter_key: Option<&str>) {
+pub fn print_bindings_table(
+    user_bindings: &[Binding],
+    filter_key: Option<&str>,
+    remappings: &[KeyRemap],
+) {
     let filter_event: Option<KeyEvent> =
         filter_key.and_then(|k| match KeyEventMatch::try_from(k) {
             Ok(KeyEventMatch::Exact(ev)) => Some(ev),
@@ -1005,7 +1277,7 @@ pub fn print_bindings_table(user_bindings: &[Binding], filter_key: Option<&str>)
         let keys = binding
             .key_events
             .iter()
-            .map(|k| k.display())
+            .map(|k| k.display_with_remapping(remappings))
             .collect::<Vec<_>>()
             .join(", ");
         binding
@@ -1095,6 +1367,25 @@ pub fn print_bindings_table(user_bindings: &[Binding], filter_key: Option<&str>)
             w_desc = w_desc,
         );
     }
+
+    // Print remappings table after keybindings.
+    if !remappings.is_empty() {
+        println!("\nKey Remappings:");
+        for remap in remappings {
+            match remap {
+                KeyRemap::Key { from, to } => {
+                    println!("  {} -> {}", display_keycode(*from), display_keycode(*to));
+                }
+                KeyRemap::Modifier { from, to } => {
+                    println!(
+                        "  {} -> {}",
+                        display_modifier_bit(*from),
+                        display_modifier_bit(*to)
+                    );
+                }
+            }
+        }
+    }
 }
 
 impl<'a> App<'a> {
@@ -1111,6 +1402,9 @@ impl<'a> App<'a> {
             self.mouse_state.enable("smart mode: keypress detected");
         }
 
+        let key = apply_remappings(key, &self.settings.key_remappings);
+        log::trace!("Key event after remapping: {:?}", key);
+
         for binding in self
             .settings
             .keybindings
@@ -1126,5 +1420,206 @@ impl<'a> App<'a> {
         }
 
         self.on_possible_buffer_change();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::empty())
+    }
+
+    fn key_with_mods(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, mods)
+    }
+
+    // --- try_parse_remap ---
+
+    #[test]
+    fn test_parse_remap_key_to_key() {
+        let r = try_parse_remap("tab", "z").unwrap();
+        assert_eq!(
+            r,
+            KeyRemap::Key {
+                from: KeyCode::Tab,
+                to: KeyCode::Char('z')
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_remap_modifier_to_modifier() {
+        let r = try_parse_remap("alt", "ctrl").unwrap();
+        assert_eq!(
+            r,
+            KeyRemap::Modifier {
+                from: KeyModifiers::ALT,
+                to: KeyModifiers::CONTROL
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_remap_key_to_modifier_fails() {
+        assert!(try_parse_remap("tab", "ctrl").is_err());
+    }
+
+    #[test]
+    fn test_parse_remap_modifier_to_key_fails() {
+        assert!(try_parse_remap("ctrl", "tab").is_err());
+    }
+
+    #[test]
+    fn test_parse_remap_unknown_fails() {
+        assert!(try_parse_remap("unknownkey", "z").is_err());
+    }
+
+    // --- apply_remappings ---
+
+    #[test]
+    fn test_apply_remappings_empty() {
+        let k = key(KeyCode::Tab);
+        assert_eq!(apply_remappings(k, &[]), k);
+    }
+
+    #[test]
+    fn test_apply_remappings_key_remap() {
+        let remappings = vec![KeyRemap::Key {
+            from: KeyCode::Tab,
+            to: KeyCode::Char('z'),
+        }];
+        let result = apply_remappings(key(KeyCode::Tab), &remappings);
+        assert_eq!(result.code, KeyCode::Char('z'));
+        assert_eq!(result.modifiers, KeyModifiers::empty());
+    }
+
+    #[test]
+    fn test_apply_remappings_key_remap_no_match() {
+        let remappings = vec![KeyRemap::Key {
+            from: KeyCode::Tab,
+            to: KeyCode::Char('z'),
+        }];
+        let result = apply_remappings(key(KeyCode::Enter), &remappings);
+        assert_eq!(result.code, KeyCode::Enter);
+    }
+
+    #[test]
+    fn test_apply_remappings_modifier_remap() {
+        let remappings = vec![KeyRemap::Modifier {
+            from: KeyModifiers::ALT,
+            to: KeyModifiers::CONTROL,
+        }];
+        let k = key_with_mods(KeyCode::Char('a'), KeyModifiers::ALT);
+        let result = apply_remappings(k, &remappings);
+        assert_eq!(result.code, KeyCode::Char('a'));
+        assert!(result.modifiers.contains(KeyModifiers::CONTROL));
+        assert!(!result.modifiers.contains(KeyModifiers::ALT));
+    }
+
+    #[test]
+    fn test_apply_remappings_swap_modifiers() {
+        // Remap alt→ctrl and ctrl→alt simultaneously (swap).
+        let remappings = vec![
+            KeyRemap::Modifier {
+                from: KeyModifiers::ALT,
+                to: KeyModifiers::CONTROL,
+            },
+            KeyRemap::Modifier {
+                from: KeyModifiers::CONTROL,
+                to: KeyModifiers::ALT,
+            },
+        ];
+
+        // Alt-only → should become Ctrl-only.
+        let k = key_with_mods(KeyCode::Char('a'), KeyModifiers::ALT);
+        let result = apply_remappings(k, &remappings);
+        assert!(result.modifiers.contains(KeyModifiers::CONTROL));
+        assert!(!result.modifiers.contains(KeyModifiers::ALT));
+
+        // Ctrl-only → should become Alt-only.
+        let k = key_with_mods(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        let result = apply_remappings(k, &remappings);
+        assert!(result.modifiers.contains(KeyModifiers::ALT));
+        assert!(!result.modifiers.contains(KeyModifiers::CONTROL));
+    }
+
+    // --- inverse display ---
+
+    #[test]
+    fn test_display_no_remapping() {
+        let kem = KeyEventMatch::Exact(key(KeyCode::Tab));
+        assert_eq!(kem.display_with_remapping(&[]), "Tab");
+    }
+
+    #[test]
+    fn test_display_remapped_key_shows_physical_key() {
+        // Tab → z: a binding expecting 'z' should display as "Tab" (what user presses).
+        let remappings = vec![KeyRemap::Key {
+            from: KeyCode::Tab,
+            to: KeyCode::Char('z'),
+        }];
+        let kem = KeyEventMatch::Exact(key(KeyCode::Char('z')));
+        assert_eq!(kem.display_with_remapping(&remappings), "Tab");
+    }
+
+    #[test]
+    fn test_display_inaccessible_key() {
+        // Tab → z: a binding expecting Tab is now inaccessible.
+        let remappings = vec![KeyRemap::Key {
+            from: KeyCode::Tab,
+            to: KeyCode::Char('z'),
+        }];
+        let kem = KeyEventMatch::Exact(key(KeyCode::Tab));
+        assert_eq!(
+            kem.display_with_remapping(&remappings),
+            "[INACCESSIBLE: Tab]"
+        );
+    }
+
+    #[test]
+    fn test_display_escape_remapped_to_tab() {
+        // Escape → Tab: a binding expecting Tab should display as "Esc".
+        let remappings = vec![KeyRemap::Key {
+            from: KeyCode::Esc,
+            to: KeyCode::Tab,
+        }];
+        let kem = KeyEventMatch::Exact(key(KeyCode::Tab));
+        assert_eq!(kem.display_with_remapping(&remappings), "Esc");
+    }
+
+    #[test]
+    fn test_display_unaffected_key() {
+        // Tab → z: Enter is unaffected.
+        let remappings = vec![KeyRemap::Key {
+            from: KeyCode::Tab,
+            to: KeyCode::Char('z'),
+        }];
+        let kem = KeyEventMatch::Exact(key(KeyCode::Enter));
+        assert_eq!(kem.display_with_remapping(&remappings), "Enter");
+    }
+
+    #[test]
+    fn test_display_inaccessible_modifier() {
+        // Alt → Ctrl: a binding expecting Ctrl+a is accessible; expecting Alt+a is inaccessible.
+        let remappings = vec![KeyRemap::Modifier {
+            from: KeyModifiers::ALT,
+            to: KeyModifiers::CONTROL,
+        }];
+
+        let kem_ctrl =
+            KeyEventMatch::Exact(key_with_mods(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        // Ctrl+a is not targeted by any remap, but Alt is remapped away TO Ctrl.
+        // So the inverse: Ctrl was produced by Alt → show Alt.
+        assert_eq!(kem_ctrl.display_with_remapping(&remappings), "Alt+a");
+
+        let kem_alt = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('a'), KeyModifiers::ALT));
+        // Alt+a: Alt is remapped away → inaccessible.
+        assert_eq!(
+            kem_alt.display_with_remapping(&remappings),
+            "[INACCESSIBLE: Alt]+a"
+        );
     }
 }
