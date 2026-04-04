@@ -122,6 +122,8 @@ fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>, Option<Str
         } else if piece.starts_with('<') || piece.starts_with('[') {
             // Meta-variable — only capture the first one found so that description
             // text like `[default: 10]` does not overwrite an already-parsed hint.
+            // Subsequent bracketed tokens (e.g. `[boolean]`, `[default: …]`) are
+            // intentionally ignored once a value-type has been established.
             if value_type.is_none() {
                 value_type = Some(
                     piece
@@ -154,7 +156,9 @@ fn collect_continuation<'a>(
             break;
         }
         // A deeper-indented line that starts with `-` is another flag entry,
-        // not description text (e.g. cargo mixes indent levels in Options:).
+        // not description text.  This handles tools like cargo that mix indent
+        // levels within a single Options section (e.g. indent-2 for short+long
+        // flags and indent-6 for long-only flags).
         if line.trim().starts_with('-') {
             break;
         }
