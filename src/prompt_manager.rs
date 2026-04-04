@@ -1,5 +1,6 @@
 use crate::bash_funcs;
 use crate::bash_symbols;
+use crate::content_builder::{Tag, TaggedLine, TaggedSpan};
 use crate::settings::PromptAnimation;
 use ansi_to_tui::IntoText;
 use ratatui::text::{Line, Span};
@@ -49,9 +50,10 @@ enum PromptSegment {
     /// Boxed to keep the `PromptSegment` enum size small.
     Animation(Box<ProcessedAnimation>),
     /// The detected current-working-directory substring in the prompt.
-    /// Holds the original span from the decoded prompt; at render time it is
-    /// emitted as-is so it can be styled or replaced in the future.
-    Cwd(Span<'static>),
+    /// Holds one span per path segment, where each segment owns the slash
+    /// to its left.  E.g. `~/foo/bar` is stored as `["~", "/foo", "/bar"]`.
+    /// At render time the spans are emitted in order with per-segment tags.
+    Cwd(Vec<Span<'static>>),
 }
 
 pub struct PromptManager {
@@ -585,8 +587,8 @@ fn split_static_span_by_cwd(
             style,
         )));
     }
-    result.push(PromptSegment::Cwd(Span::styled(
-        text[start..end].to_owned(),
+    result.push(PromptSegment::Cwd(split_cwd_text_into_spans(
+        &text[start..end],
         style,
     )));
     if end < text.len() {
@@ -598,24 +600,98 @@ fn split_static_span_by_cwd(
     result
 }
 
-/// Convert a slice of [`PromptSegment`]s to a [`Line`] by resolving each
-/// segment against `now`.
+/// Split a CWD text string into one [`Span`] per path segment, where each
+/// segment "owns" the slash immediately to its left.
+///
+/// Examples:
+/// - `"~/foo/bar"` → `["~", "/foo", "/bar"]`
+/// - `"/home/foo/bar"` → `["/home", "/foo", "/bar"]`
+/// - `"~"` → `["~"]`
+/// - `"qwe/try/ooh"` → `["qwe", "/try", "/ooh"]`
+fn split_cwd_text_into_spans(text: &str, style: ratatui::style::Style) -> Vec<Span<'static>> {
+    if text.is_empty() {
+        return vec![];
+    }
+
+    let mut result: Vec<Span<'static>> = Vec::new();
+
+    if text.starts_with('~') {
+        // The tilde segment never has a leading slash.
+        // Find the first slash after '~', if any.
+        if let Some(rel_slash) = text[1..].find('/') {
+            let slash_pos = 1 + rel_slash;
+            result.push(Span::styled(text[..1].to_owned(), style));
+            split_slash_prefixed_into_spans(&text[slash_pos..], style, &mut result);
+        } else {
+            // Bare "~" or "~something" with no slash — emit as a single segment.
+            result.push(Span::styled(text.to_owned(), style));
+        }
+    } else {
+        split_slash_prefixed_into_spans(text, style, &mut result);
+    }
+
+    result
+}
+
+/// Append segments from `path` to `result`, where each segment includes the
+/// leading `/` (if present).  Handles paths like `/home/foo/bar` as well as
+/// relative paths like `qwe/try/ooh`.
+fn split_slash_prefixed_into_spans(
+    path: &str,
+    style: ratatui::style::Style,
+    result: &mut Vec<Span<'static>>,
+) {
+    let mut remaining = path;
+    while !remaining.is_empty() {
+        // Skip the leading '/' so we don't find it as "the next slash".
+        let skip = if remaining.starts_with('/') { 1 } else { 0 };
+        if let Some(next_slash_rel) = remaining[skip..].find('/') {
+            let end = skip + next_slash_rel;
+            result.push(Span::styled(remaining[..end].to_owned(), style));
+            remaining = &remaining[end..];
+        } else {
+            result.push(Span::styled(remaining.to_owned(), style));
+            break;
+        }
+    }
+}
+
+/// Convert a slice of [`PromptSegment`]s to a [`TaggedLine`] by resolving each
+/// segment against `now` and attaching an appropriate [`Tag`] to each span.
 fn format_prompt_line(
     segments: Vec<PromptSegment>,
     now: &chrono::DateTime<chrono::Local>,
-) -> Line<'static> {
-    let spans: Vec<Span<'static>> = segments
+) -> TaggedLine<'static> {
+    let tagged_spans: Vec<TaggedSpan<'static>> = segments
         .into_iter()
-        .flat_map(|segment| match segment {
-            PromptSegment::Static(span) => vec![span],
-            PromptSegment::Cwd(span) => vec![span],
-            PromptSegment::DynamicTime { strftime, style } => {
-                vec![Span::styled(now.format(&strftime).to_string(), style)]
+        .flat_map(|segment| -> Vec<TaggedSpan<'static>> {
+            match segment {
+                PromptSegment::Static(span) => {
+                    vec![TaggedSpan::new(span, Tag::Ps1Prompt)]
+                }
+                PromptSegment::Cwd(spans) => {
+                    // Assign Ps1PromptCwd(n) tags: rightmost segment is n=0.
+                    let n = spans.len();
+                    spans
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, span)| TaggedSpan::new(span, Tag::Ps1PromptCwd(n - 1 - i)))
+                        .collect()
+                }
+                PromptSegment::DynamicTime { strftime, style } => {
+                    vec![TaggedSpan::new(
+                        Span::styled(now.format(&strftime).to_string(), style),
+                        Tag::Ps1PromptDynamicTime,
+                    )]
+                }
+                PromptSegment::Animation(anim) => get_frame_spans(&anim, now)
+                    .iter()
+                    .map(|span| TaggedSpan::new(span.clone(), Tag::Ps1PromptAnimation))
+                    .collect(),
             }
-            PromptSegment::Animation(anim) => get_frame_spans(&anim, now).to_vec(),
         })
         .collect();
-    Line::from(spans)
+    TaggedLine::from(tagged_spans)
 }
 
 /// Return the pre-processed [`Span`]s for the current animation frame.
@@ -761,7 +837,11 @@ impl PromptManager {
     pub fn get_ps1_lines(
         &mut self,
         show_animations: bool,
-    ) -> (Vec<Line<'static>>, Vec<Line<'static>>, Line<'static>) {
+    ) -> (
+        Vec<TaggedLine<'static>>,
+        Vec<TaggedLine<'static>>,
+        TaggedLine<'static>,
+    ) {
         use chrono::Local;
         let now = if show_animations {
             Local::now()
@@ -769,14 +849,14 @@ impl PromptManager {
             self.construction_time
         };
 
-        let formatted_prompt: Vec<Line<'static>> = self
+        let formatted_prompt: Vec<TaggedLine<'static>> = self
             .prompt
             .clone()
             .into_iter()
             .map(|line| format_prompt_line(line, &now))
             .collect();
 
-        let formatted_rprompt: Vec<Line<'static>> = self
+        let formatted_rprompt: Vec<TaggedLine<'static>> = self
             .rprompt
             .clone()
             .into_iter()
@@ -977,7 +1057,7 @@ mod tests {
         ];
         let now = fixed_time(0);
         let line = format_prompt_line(segments, &now);
-        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "before f0 after");
     }
 
@@ -987,8 +1067,20 @@ mod tests {
         let anim = make_processed_anim("SPIN", 10.0, &["f0", "f1"]);
         let segments = vec![PromptSegment::Animation(Box::new(anim))];
         let line = format_prompt_line(segments, &fixed_time(100));
-        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "f1");
+    }
+
+    #[test]
+    fn test_format_prompt_line_animation_tag() {
+        let anim = make_processed_anim("SPIN", 10.0, &["f0"]);
+        let segments = vec![PromptSegment::Animation(Box::new(anim))];
+        let line = format_prompt_line(segments, &fixed_time(0));
+        assert!(
+            line.spans.iter().all(
+                |s| s.tag == crate::content_builder::SpanTag::Constant(Tag::Ps1PromptAnimation)
+            )
+        );
     }
 
     // --- format_prompt_line (DynamicTime rendering) --------------------------
@@ -1010,7 +1102,7 @@ mod tests {
             PromptSegment::Static(Span::raw("]")),
         ];
         let line = format_prompt_line(segments, &now);
-        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, format!("[{}]", formatted_time));
     }
 
@@ -1142,7 +1234,10 @@ mod tests {
         let segs = builder.expand_span_to_segments(span);
         let cwd_seg = segs.iter().find(|s| matches!(s, PromptSegment::Cwd(_)));
         match cwd_seg.expect("expected a Cwd segment") {
-            PromptSegment::Cwd(s) => assert_eq!(s.content, "~"),
+            PromptSegment::Cwd(spans) => {
+                assert_eq!(spans.len(), 1);
+                assert_eq!(spans[0].content, "~");
+            }
             _ => unreachable!(),
         }
     }
@@ -1157,8 +1252,123 @@ mod tests {
         let segs = builder.expand_span_to_segments(span);
         let cwd_seg = segs.iter().find(|s| matches!(s, PromptSegment::Cwd(_)));
         match cwd_seg.expect("expected a Cwd segment") {
-            PromptSegment::Cwd(s) => assert_eq!(s.content, "qwe/try/ooh"),
+            PromptSegment::Cwd(spans) => {
+                let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+                assert_eq!(text, "qwe/try/ooh");
+            }
             _ => unreachable!(),
         }
+    }
+
+    // --- split_cwd_text_into_spans -------------------------------------------
+
+    fn span_contents<'a>(spans: &'a [Span<'static>]) -> Vec<&'a str> {
+        spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn test_split_cwd_tilde_only() {
+        let style = ratatui::style::Style::default();
+        let spans = split_cwd_text_into_spans("~", style);
+        assert_eq!(span_contents(&spans), vec!["~"]);
+    }
+
+    #[test]
+    fn test_split_cwd_tilde_with_segments() {
+        let style = ratatui::style::Style::default();
+        let spans = split_cwd_text_into_spans("~/foo/bar/baz", style);
+        assert_eq!(span_contents(&spans), vec!["~", "/foo", "/bar", "/baz"]);
+    }
+
+    #[test]
+    fn test_split_cwd_absolute_path() {
+        let style = ratatui::style::Style::default();
+        let spans = split_cwd_text_into_spans("/home/foo/bar", style);
+        assert_eq!(span_contents(&spans), vec!["/home", "/foo", "/bar"]);
+    }
+
+    #[test]
+    fn test_split_cwd_relative_path() {
+        let style = ratatui::style::Style::default();
+        let spans = split_cwd_text_into_spans("qwe/try/ooh", style);
+        assert_eq!(span_contents(&spans), vec!["qwe", "/try", "/ooh"]);
+    }
+
+    #[test]
+    fn test_split_cwd_single_segment() {
+        let style = ratatui::style::Style::default();
+        let spans = split_cwd_text_into_spans("/home", style);
+        assert_eq!(span_contents(&spans), vec!["/home"]);
+    }
+
+    #[test]
+    fn test_split_cwd_trailing_slash() {
+        let style = ratatui::style::Style::default();
+        let spans = split_cwd_text_into_spans("~/foo/", style);
+        // trailing slash: "/foo/" splits as "/foo" and "/"
+        assert_eq!(span_contents(&spans), vec!["~", "/foo", "/"]);
+    }
+
+    // --- format_prompt_line (CWD tagging) ------------------------------------
+
+    #[test]
+    fn test_format_prompt_line_cwd_tags() {
+        // "~/foo/bar" → 3 segments; rightmost (/bar) gets index 0.
+        let spans = split_cwd_text_into_spans("~/foo/bar", ratatui::style::Style::default());
+        let segments = vec![PromptSegment::Cwd(spans)];
+        let line = format_prompt_line(segments, &fixed_time(0));
+        assert_eq!(line.spans.len(), 3);
+        // "~" is leftmost → index 2
+        assert_eq!(
+            line.spans[0].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(2))
+        );
+        // "/foo" → index 1
+        assert_eq!(
+            line.spans[1].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(1))
+        );
+        // "/bar" is rightmost → index 0
+        assert_eq!(
+            line.spans[2].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(0))
+        );
+    }
+
+    #[test]
+    fn test_format_prompt_line_cwd_single_segment_tag() {
+        let spans = split_cwd_text_into_spans("~", ratatui::style::Style::default());
+        let segments = vec![PromptSegment::Cwd(spans)];
+        let line = format_prompt_line(segments, &fixed_time(0));
+        assert_eq!(line.spans.len(), 1);
+        assert_eq!(
+            line.spans[0].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(0))
+        );
+    }
+
+    #[test]
+    fn test_format_prompt_line_dynamic_time_tag() {
+        let segments = vec![PromptSegment::DynamicTime {
+            strftime: "%H:%M".to_string(),
+            style: ratatui::style::Style::default(),
+        }];
+        let line = format_prompt_line(segments, &fixed_time(0));
+        assert_eq!(line.spans.len(), 1);
+        assert_eq!(
+            line.spans[0].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptDynamicTime)
+        );
+    }
+
+    #[test]
+    fn test_format_prompt_line_static_tag() {
+        let segments = vec![PromptSegment::Static(Span::raw("$ "))];
+        let line = format_prompt_line(segments, &fixed_time(0));
+        assert_eq!(line.spans.len(), 1);
+        assert_eq!(
+            line.spans[0].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1Prompt)
+        );
     }
 }

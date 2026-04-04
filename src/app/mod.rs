@@ -1107,33 +1107,26 @@ impl<'a> App<'a> {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
-        let empty_line = Line::from(vec![]);
 
         content.prompt_start = Some(content.cursor_position());
 
         let (lprompt, rprompt, fill_span) = self
             .prompt_manager
             .get_ps1_lines(self.settings.show_animations);
+        let empty_tagged_line = TaggedLine::default();
         for (_, is_last, either_or_both) in
             lprompt.iter().zip_longest(rprompt.iter()).flag_first_last()
         {
-            let (l_line, r_line) = either_or_both.or(&empty_line, &empty_line);
-            let tagged_l = TaggedLine::from_line(l_line.clone(), Tag::Ps1Prompt);
-            let tagged_r = TaggedLine::from_line(r_line.clone(), Tag::Ps1Prompt);
+            let (tagged_l, tagged_r) = either_or_both.or(&empty_tagged_line, &empty_tagged_line);
             if is_last {
                 content.write_tagged_line_lrjustified(
-                    &tagged_l,
+                    tagged_l,
                     &TaggedLine::from_line(Line::from(" "), Tag::Ps1Prompt),
-                    &tagged_r,
+                    tagged_r,
                     true,
                 );
             } else {
-                content.write_tagged_line_lrjustified(
-                    &tagged_l,
-                    &TaggedLine::from_line(fill_span.clone(), Tag::Ps1Prompt),
-                    &tagged_r,
-                    false,
-                );
+                content.write_tagged_line_lrjustified(tagged_l, &fill_span, tagged_r, false);
             }
             if !is_last {
                 content.newline();
