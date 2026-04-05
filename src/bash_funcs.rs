@@ -941,9 +941,9 @@ impl ExecutablesOnPath {
         }
     }
 
-    /// Return all `(full_path, name)` pairs for executables reachable via the
-    /// current `PATH`, refreshing the per-directory cache where necessary.
-    fn get(&mut self) -> Vec<(PathBuf, String)> {
+    /// Update the cache in-place: evict removed PATH dirs, add new ones, and
+    /// re-scan any directory whose mtime has changed.
+    fn update_cache(&mut self) {
         let current_dirs: Vec<PathBuf> = get_envvar_value("PATH")
             .map(|p| p.split(':').map(PathBuf::from).collect())
             .unwrap_or_default();
@@ -979,21 +979,11 @@ impl ExecutablesOnPath {
             // If the directory's mtime is not readable we skip caching its
             // executables; it will be re-scanned on the next access.
         }
+    }
 
-        // Flatten the cache in PATH order.
-        current_dirs
-            .iter()
-            .flat_map(|dir| {
-                self.cache.get(dir).map(|entry| {
-                    entry
-                        .names
-                        .iter()
-                        .map(|name| (dir.join(name), name.clone()))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .flatten()
-            .collect()
+    /// Iterate over the names of all cached executables.
+    fn iter_names(&self) -> impl Iterator<Item = &String> + '_ {
+        self.cache.values().flat_map(|entry| entry.names.iter())
     }
 
     /// Scan `dir` and return the names of all executable files it contains.
@@ -1043,14 +1033,15 @@ pub fn get_first_word_completions(command: &str) -> Vec<String> {
     let reserved_words = get_cached_reserved_words();
     let shell_functions = get_cached_shell_functions();
     let builtins = get_cached_builtins();
-    let executables = EXECUTABLES_ON_PATH.lock().unwrap().get();
+    let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
+    exe_guard.update_cache();
 
     for poss_completion in aliases
         .iter()
         .chain(reserved_words.iter())
         .chain(shell_functions.iter())
         .chain(builtins.iter())
-        .chain(executables.iter().map(|(_, name)| name))
+        .chain(exe_guard.iter_names())
     {
         if poss_completion.starts_with(command) && seen.insert(poss_completion.as_str()) {
             res.push(poss_completion.to_string());
@@ -1070,7 +1061,8 @@ pub fn get_fuzzy_first_word_completions(command: &str) -> Vec<String> {
     let reserved_words = get_cached_reserved_words();
     let shell_functions = get_cached_shell_functions();
     let builtins = get_cached_builtins();
-    let executables = EXECUTABLES_ON_PATH.lock().unwrap().get();
+    let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
+    exe_guard.update_cache();
 
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
     let mut scored: Vec<(i64, String)> = aliases
@@ -1078,7 +1070,7 @@ pub fn get_fuzzy_first_word_completions(command: &str) -> Vec<String> {
         .chain(reserved_words.iter())
         .chain(shell_functions.iter())
         .chain(builtins.iter())
-        .chain(executables.iter().map(|(_, name)| name))
+        .chain(exe_guard.iter_names())
         .filter_map(|poss_completion| {
             matcher
                 .fuzzy_match(poss_completion, command)
