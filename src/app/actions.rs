@@ -19,6 +19,7 @@ impl Scope {
     pub const AGENT_ERROR: Self = Self(1 << 5);
     pub const INLINE_HISTORY_ACCEPTABLE: Self = Self(1 << 6);
     pub const PROMPT_CWD_EDIT: Self = Self(1 << 7);
+    pub const TAB_COMPLETION_WAITING: Self = Self(1 << 8);
 
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
@@ -55,6 +56,11 @@ impl Scope {
             app.buffer.is_cursor_at_end() && app.inline_history_suggestion.is_some()
         } else if self.contains(Scope::PROMPT_CWD_EDIT) {
             matches!(app.content_mode, crate::app::ContentMode::PromptCwdEdit(_))
+        } else if self.contains(Scope::TAB_COMPLETION_WAITING) {
+            matches!(
+                app.content_mode,
+                crate::app::ContentMode::TabCompletionWaiting { .. }
+            )
         } else {
             false
         }
@@ -91,6 +97,9 @@ impl<'a> IntoIterator for Scope {
         if self.contains(Scope::PROMPT_CWD_EDIT) {
             scopes.push("prompt_cwd_edit");
         }
+        if self.contains(Scope::TAB_COMPLETION_WAITING) {
+            scopes.push("tab_completion_waiting");
+        }
         scopes.into_iter()
     }
 }
@@ -108,6 +117,7 @@ impl TryFrom<&str> for Scope {
             "agent_error" => Ok(Scope::AGENT_ERROR),
             "inline_history_acceptable" => Ok(Scope::INLINE_HISTORY_ACCEPTABLE),
             "prompt_cwd_edit" => Ok(Scope::PROMPT_CWD_EDIT),
+            "tab_completion_waiting" => Ok(Scope::TAB_COMPLETION_WAITING),
             other => Err(anyhow::anyhow!("Unknown scope: '{}'", other)),
         }
     }

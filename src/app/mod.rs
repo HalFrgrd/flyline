@@ -3,7 +3,7 @@ mod auto_close;
 mod formated_buffer;
 mod tab_completion;
 
-use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING};
+use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, UnprocessedSuggestion};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{
@@ -144,6 +144,13 @@ enum ContentMode {
     Normal,
     FuzzyHistorySearch(FuzzyHistorySource),
     TabCompletion(Box<ActiveSuggestions>),
+    /// Tab completion is running in a background thread. Stores the channel
+    /// receiver and the word-under-cursor snapshot needed to finish the
+    /// completion once the thread produces results.
+    TabCompletionWaiting {
+        receiver: std::sync::mpsc::Receiver<Option<Vec<UnprocessedSuggestion>>>,
+        wuc_substring: SubString,
+    },
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
     AgentModeWaiting {
@@ -424,6 +431,37 @@ impl<'a> App<'a> {
                 redraw = true;
             }
 
+            // Poll tab-completion background thread: check if results have arrived.
+            if let ContentMode::TabCompletionWaiting { ref receiver, .. } = self.content_mode {
+                match receiver.try_recv() {
+                    Ok(Some(sugs)) => {
+                        // Take ownership of wuc_substring from the waiting state.
+                        let wuc =
+                            match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
+                                ContentMode::TabCompletionWaiting { wuc_substring, .. } => {
+                                    wuc_substring
+                                }
+                                _ => unreachable!(),
+                            };
+                        self.finish_tab_complete(sugs, wuc);
+                        redraw = true;
+                    }
+                    Ok(None) => {
+                        // No suggestions generated.
+                        self.content_mode = ContentMode::Normal;
+                        redraw = true;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        // Still waiting; keep TabCompletionWaiting mode.
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        log::warn!("Tab completion thread disconnected unexpectedly");
+                        self.content_mode = ContentMode::Normal;
+                        redraw = true;
+                    }
+                }
+            }
+
             if redraw {
                 let frame_area = terminal.get_frame().area();
 
@@ -486,7 +524,16 @@ impl<'a> App<'a> {
             let min_refresh_rate: Duration =
                 Duration::from_millis((1000.0 / (self.settings.frame_rate as f64)) as u64);
 
-            redraw = if event::poll(min_refresh_rate).unwrap() {
+            // Use a shorter poll interval when waiting on tab completion so we
+            // can pick up the result promptly (every 20ms).
+            let poll_duration =
+                if matches!(self.content_mode, ContentMode::TabCompletionWaiting { .. }) {
+                    Duration::from_millis(20)
+                } else {
+                    min_refresh_rate
+                };
+
+            redraw = if event::poll(poll_duration).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
                         self.handle_key_event(key);
@@ -916,6 +963,11 @@ impl<'a> App<'a> {
         if matches!(self.content_mode, ContentMode::PromptCwdEdit(_))
             && self.buffer.cursor_byte_pos() != 0
         {
+            self.content_mode = ContentMode::Normal;
+        }
+
+        // Cancel a pending tab-completion background thread when the buffer changes.
+        if matches!(self.content_mode, ContentMode::TabCompletionWaiting { .. }) {
             self.content_mode = ContentMode::Normal;
         }
 
@@ -1479,6 +1531,16 @@ impl<'a> App<'a> {
                         content.set_focus_row(grid_start_row + sel_row);
                     }
                 }
+            }
+            ContentMode::TabCompletionWaiting { .. } if self.mode.is_running() => {
+                content.newline();
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        "Loading completions…",
+                        self.settings.color_palette.secondary_text(),
+                    ),
+                    Tag::Normal,
+                ));
             }
             ContentMode::FuzzyHistorySearch(_) if self.mode.is_running() => {
                 let source = fuzzy_source_for_render.as_ref().unwrap();
