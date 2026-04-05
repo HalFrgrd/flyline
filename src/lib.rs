@@ -12,6 +12,7 @@ mod app;
 mod bash_funcs;
 mod bash_symbols;
 mod command_acceptance;
+mod command_rebuild;
 mod content_builder;
 mod cursor_animation;
 mod dparser;
