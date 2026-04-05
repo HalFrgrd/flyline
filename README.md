@@ -155,14 +155,14 @@ RPS1='\D{%H:%M}'
 
 ## Custom animations
 
-Create your own animations with `flyline create-anim --name [your animation name here]`.
+Create your own animations with `flyline create-prompt-anim --name [your animation name here]`.
 Flyline will replace strings in the prompt matching the animation name with the animation:
 
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
 
 More examples can be found in [examples/animations.sh](examples/animations.sh).
 
-The block below is auto-generated from `flyline create-anim --help`:
+The block below is auto-generated from `flyline create-prompt-anim --help`:
 
 <!-- FLYLINE_CREATE_ANIM_HELP_START -->
 ```
@@ -173,10 +173,10 @@ with the current animation frame on every render.  Frames may include
 ANSI colour sequences written as `\e` (e.g. `\e[33m`).
 
 Examples:
-  flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
-  flyline create-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
+  flyline create-prompt-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
+  flyline create-prompt-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
 
-Usage: flyline create-anim [OPTIONS] --name <NAME> [FRAMES]...
+Usage: flyline create-prompt-anim [OPTIONS] --name <NAME> [FRAMES]...
 
 Arguments:
   [FRAMES]...
@@ -198,6 +198,44 @@ Options:
           Print help (see a summary with '-h')
 ```
 <!-- FLYLINE_CREATE_ANIM_HELP_END -->
+
+## Custom prompt widgets
+
+Create custom prompt widgets with `flyline create-prompt-widget`.
+Flyline will replace strings in the prompt matching the widget name with the widget's output.
+
+### Mouse-mode widget
+
+Shows different text depending on whether mouse capture is currently enabled:
+
+```bash
+flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
+# Now use FLYLINE_MOUSE_MODE in your prompt:
+PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
+```
+
+### Custom command widget
+
+Runs a shell command and displays its output in the prompt.  The output is
+passed through bash's `decode_prompt_string` so bash prompt escape sequences
+(e.g. `\u`, `\w`, ANSI colour codes) are fully supported.
+
+```bash
+# Non-blocking (default): spawns the command in the background; shows a
+# placeholder of 10 spaces while the command is running.
+flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
+  --command 'run_something.sh' --placeholder-length 10
+# PS1 usage:
+PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
+
+# Blocking: waits for the command to finish before showing the prompt.
+flyline create-prompt-widget custom --name CUSTOM_WIDGET2 \
+  --command 'run_something.sh' --blocking
+```
+
+If the command exits with a non-zero exit code, **command failed** is shown in
+bold red blinking text.  The command's stdout and stderr are written to the
+flyline log.
 
 ## Starship integration
 TODO:
