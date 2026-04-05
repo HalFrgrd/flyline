@@ -250,10 +250,10 @@ pub(crate) fn gen_completions_internal(
         tab_completion_context::CompType::CommandComp {
             command_word: initial_command_word,
         } => {
-            // This isnt just for commands like `git`, `cargo`
+            // This isn't just for commands like `git`, `cargo`
             // Because we call bash_symbols::programmable_completions
             // Bash also completes env vars (`echo $HO`) and other useful completions.
-            // Bash doesnt handle alias expansion well:
+            // Bash doesn't handle alias expansion well:
             // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
             // Since aliases are the highest priority in command word resolution,
             // If it is an alias, lets expand it here for better completion results.
