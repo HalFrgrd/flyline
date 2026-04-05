@@ -1033,7 +1033,7 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 54]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AGENT_OUTPUT_SELECTION, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AGENT_OUTPUT_SELECTION, "select_prev").unwrap(),
@@ -1092,8 +1092,14 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         Binding::try_new(&["Tab"], Scope::AGENT_OUTPUT_SELECTION, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::TAB_COMPLETION, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::NORMAL, "trigger_tab_completion").unwrap(),
-        // PromptCwdEdit Esc must appear before the Normal Esc binding.
+        // Scoped Esc bindings must appear before the Normal Esc binding.
         Binding::try_new(&["Esc"], Scope::PROMPT_CWD_EDIT, "cancel").unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            Scope::TAB_COMPLETION_WAITING,
+            "escape_to_normal_mode",
+        )
+        .unwrap(),
         Binding::try_new(&["Esc"], Scope::NORMAL, "escape_to_normal_mode").unwrap(),
         Binding::try_new(&["Esc"], Scope::NORMAL, "toggle_mouse").unwrap(),
         Binding::try_new(&["Ctrl+d"], Scope::NORMAL, "exit").unwrap(),
