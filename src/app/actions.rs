@@ -1,4 +1,3 @@
-use super::select_fuzzy_manager_mut;
 use crate::app::{App, ContentMode, FuzzyHistorySource};
 use crate::bash_symbols;
 use crate::history::HistorySearchDirection;
@@ -446,13 +445,8 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
                 _ => return,
             };
-            select_fuzzy_manager_mut(
-                &mut app.history_manager,
-                &mut app.cancelled_command_history_manager,
-                &mut app.agent_prompt_history_manager,
-                &source,
-            )
-            .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
+            app.select_fuzzy_history_manager_mut(&source)
+                .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
         },
     ),
     Action::new(
@@ -464,13 +458,8 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
                 _ => return,
             };
-            select_fuzzy_manager_mut(
-                &mut app.history_manager,
-                &mut app.cancelled_command_history_manager,
-                &mut app.agent_prompt_history_manager,
-                &source,
-            )
-            .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
+            app.select_fuzzy_history_manager_mut(&source)
+                .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
         },
     ),
     Action::new(
@@ -482,13 +471,8 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
                 _ => return,
             };
-            select_fuzzy_manager_mut(
-                &mut app.history_manager,
-                &mut app.cancelled_command_history_manager,
-                &mut app.agent_prompt_history_manager,
-                &source,
-            )
-            .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
+            app.select_fuzzy_history_manager_mut(&source)
+                .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
         },
     ),
     Action::new(
@@ -500,13 +484,8 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
                 _ => return,
             };
-            select_fuzzy_manager_mut(
-                &mut app.history_manager,
-                &mut app.cancelled_command_history_manager,
-                &mut app.agent_prompt_history_manager,
-                &source,
-            )
-            .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
+            app.select_fuzzy_history_manager_mut(&source)
+                .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
         },
     ),
     Action::new(
@@ -678,12 +657,15 @@ const POSSIBLE_ACTIONS: &[Action] = &[
             let buf = app.buffer.buffer().to_string();
             if buf.is_empty() {
                 // Warm with "" to display all cancelled commands regardless of buffer.
-                app.cancelled_command_history_manager
+                app.settings
+                    .cancelled_command_history_manager
                     .warm_fuzzy_search_cache("");
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             } else {
-                app.cancelled_command_history_manager.push_entry(buf);
+                app.settings
+                    .cancelled_command_history_manager
+                    .push_entry(buf);
                 app.mode =
                     crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
             }
