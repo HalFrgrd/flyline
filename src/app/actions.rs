@@ -188,33 +188,92 @@ pub enum KeyRemap {
 
 /// Parse a single key-code name (no modifiers) into a [`KeyCode`].
 fn parse_single_keycode(s: &str) -> Result<KeyCode> {
+    use crossterm::event::{MediaKeyCode, ModifierKeyCode};
     let s = s.trim();
     if s.len() == 1 {
         return Ok(KeyCode::Char(s.chars().next().unwrap()));
     }
-    match s.to_lowercase().as_str() {
-        "enter" => Ok(KeyCode::Enter),
-        "backspace" => Ok(KeyCode::Backspace),
+    let lower = s.to_lowercase();
+    // F-key: "f1" … "f255"
+    if let Some(rest) = lower.strip_prefix('f') {
+        if let Ok(n) = rest.parse::<u8>() {
+            return Ok(KeyCode::F(n));
+        }
+    }
+    // Media key: "media:play", "media:pause", …
+    if let Some(rest) = lower.strip_prefix("media:") {
+        let mk = match rest {
+            "play" => MediaKeyCode::Play,
+            "pause" => MediaKeyCode::Pause,
+            "playpause" | "play_pause" => MediaKeyCode::PlayPause,
+            "reverse" => MediaKeyCode::Reverse,
+            "stop" => MediaKeyCode::Stop,
+            "fastforward" | "fast_forward" => MediaKeyCode::FastForward,
+            "rewind" => MediaKeyCode::Rewind,
+            "tracknext" | "track_next" | "nexttrack" | "next_track" => MediaKeyCode::TrackNext,
+            "trackprevious" | "track_previous" | "prevtrack" | "prev_track" => {
+                MediaKeyCode::TrackPrevious
+            }
+            "record" => MediaKeyCode::Record,
+            "lowervolume" | "lower_volume" | "volumedown" | "volume_down" => {
+                MediaKeyCode::LowerVolume
+            }
+            "raisevolume" | "raise_volume" | "volumeup" | "volume_up" => MediaKeyCode::RaiseVolume,
+            "mutevolume" | "mute_volume" | "mute" => MediaKeyCode::MuteVolume,
+            other => return Err(anyhow::anyhow!("Unknown media key: '{}'", other)),
+        };
+        return Ok(KeyCode::Media(mk));
+    }
+    // Standalone modifier key: "modifier:leftshift", "modifier:rightctrl", …
+    if let Some(rest) = lower.strip_prefix("modifier:") {
+        let mk = match rest {
+            "leftshift" | "left_shift" => ModifierKeyCode::LeftShift,
+            "leftcontrol" | "left_control" | "leftctrl" | "left_ctrl" => {
+                ModifierKeyCode::LeftControl
+            }
+            "leftalt" | "left_alt" => ModifierKeyCode::LeftAlt,
+            "leftsuper" | "left_super" => ModifierKeyCode::LeftSuper,
+            "lefthyper" | "left_hyper" => ModifierKeyCode::LeftHyper,
+            "leftmeta" | "left_meta" => ModifierKeyCode::LeftMeta,
+            "rightshift" | "right_shift" => ModifierKeyCode::RightShift,
+            "rightcontrol" | "right_control" | "rightctrl" | "right_ctrl" => {
+                ModifierKeyCode::RightControl
+            }
+            "rightalt" | "right_alt" => ModifierKeyCode::RightAlt,
+            "rightsuper" | "right_super" => ModifierKeyCode::RightSuper,
+            "righthyper" | "right_hyper" => ModifierKeyCode::RightHyper,
+            "rightmeta" | "right_meta" => ModifierKeyCode::RightMeta,
+            "isolevel3shift" | "iso_level3_shift" => ModifierKeyCode::IsoLevel3Shift,
+            "isolevel5shift" | "iso_level5_shift" => ModifierKeyCode::IsoLevel5Shift,
+            other => return Err(anyhow::anyhow!("Unknown modifier key: '{}'", other)),
+        };
+        return Ok(KeyCode::Modifier(mk));
+    }
+    match lower.as_str() {
+        "enter" | "ret" | "return" => Ok(KeyCode::Enter),
+        "backspace" | "bkspc" | "bs" => Ok(KeyCode::Backspace),
         "left" => Ok(KeyCode::Left),
         "right" => Ok(KeyCode::Right),
         "up" => Ok(KeyCode::Up),
         "down" => Ok(KeyCode::Down),
         "home" => Ok(KeyCode::Home),
         "end" => Ok(KeyCode::End),
-        "pageup" => Ok(KeyCode::PageUp),
-        "pagedown" => Ok(KeyCode::PageDown),
+        "pageup" | "pgup" => Ok(KeyCode::PageUp),
+        "pagedown" | "pgdown" | "pgdn" => Ok(KeyCode::PageDown),
         "tab" => Ok(KeyCode::Tab),
         "backtab" => Ok(KeyCode::BackTab),
-        "delete" => Ok(KeyCode::Delete),
-        "insert" => Ok(KeyCode::Insert),
+        "delete" | "del" => Ok(KeyCode::Delete),
+        "insert" | "ins" => Ok(KeyCode::Insert),
         "esc" | "escape" => Ok(KeyCode::Esc),
-        "capslock" => Ok(KeyCode::CapsLock),
-        "scrolllock" => Ok(KeyCode::ScrollLock),
-        "numlock" => Ok(KeyCode::NumLock),
-        "printscreen" => Ok(KeyCode::PrintScreen),
+        "space" | "spc" => Ok(KeyCode::Char(' ')),
+        "null" => Ok(KeyCode::Null),
+        "capslock" | "caps_lock" | "caps" => Ok(KeyCode::CapsLock),
+        "scrolllock" | "scroll_lock" => Ok(KeyCode::ScrollLock),
+        "numlock" | "num_lock" => Ok(KeyCode::NumLock),
+        "printscreen" | "print_screen" | "prtscn" => Ok(KeyCode::PrintScreen),
         "pause" => Ok(KeyCode::Pause),
         "menu" => Ok(KeyCode::Menu),
-        "keypadbegin" => Ok(KeyCode::KeypadBegin),
+        "keypadbegin" | "keypad_begin" => Ok(KeyCode::KeypadBegin),
         other => Err(anyhow::anyhow!("Unknown key code: '{}'", other)),
     }
 }
@@ -224,9 +283,10 @@ fn parse_single_modifier(s: &str) -> Result<KeyModifiers> {
     match s.to_lowercase().as_str() {
         "ctrl" | "control" => Ok(KeyModifiers::CONTROL),
         "shift" => Ok(KeyModifiers::SHIFT),
-        "alt" => Ok(KeyModifiers::ALT),
+        "alt" | "option" => Ok(KeyModifiers::ALT),
         "meta" => Ok(KeyModifiers::META),
-        "super" | "cmd" | "win" => Ok(KeyModifiers::SUPER),
+        "super" | "cmd" | "command" | "gui" | "win" => Ok(KeyModifiers::SUPER),
+        "hyper" => Ok(KeyModifiers::HYPER),
         _ => Err(anyhow::anyhow!("Unknown modifier: '{}'", s)),
     }
 }
@@ -1149,9 +1209,12 @@ fn display_keycode(code: KeyCode) -> String {
         KeyCode::Pause => "Pause".to_string(),
         KeyCode::Menu => "Menu".to_string(),
         KeyCode::KeypadBegin => "KeypadBegin".to_string(),
+        KeyCode::Null => "Null".to_string(),
+        KeyCode::Char(' ') => "Space".to_string(),
         KeyCode::Char(c) => c.to_string(),
         KeyCode::F(n) => format!("F{}", n),
-        other => format!("{:?}", other),
+        KeyCode::Media(mk) => format!("Media:{:?}", mk),
+        KeyCode::Modifier(mk) => format!("Modifier:{:?}", mk),
     }
 }
 
@@ -1167,6 +1230,8 @@ fn display_modifier_bit(bit: KeyModifiers) -> &'static str {
         "Shift"
     } else if bit.contains(KeyModifiers::SUPER) {
         "Super"
+    } else if bit.contains(KeyModifiers::HYPER) {
+        "Hyper"
     } else {
         "Unknown"
     }
@@ -1675,5 +1740,103 @@ mod tests {
             kem_alt.display_with_remapping(&remappings),
             "[INACCESSIBLE: Alt]+a"
         );
+    }
+
+    // --- parse_single_keycode aliases ---
+
+    #[test]
+    fn test_parse_keycode_aliases() {
+        assert_eq!(parse_single_keycode("bkspc").unwrap(), KeyCode::Backspace);
+        assert_eq!(parse_single_keycode("bs").unwrap(), KeyCode::Backspace);
+        assert_eq!(parse_single_keycode("ret").unwrap(), KeyCode::Enter);
+        assert_eq!(parse_single_keycode("return").unwrap(), KeyCode::Enter);
+        assert_eq!(parse_single_keycode("del").unwrap(), KeyCode::Delete);
+        assert_eq!(parse_single_keycode("ins").unwrap(), KeyCode::Insert);
+        assert_eq!(parse_single_keycode("pgup").unwrap(), KeyCode::PageUp);
+        assert_eq!(parse_single_keycode("pgdown").unwrap(), KeyCode::PageDown);
+        assert_eq!(parse_single_keycode("pgdn").unwrap(), KeyCode::PageDown);
+        assert_eq!(parse_single_keycode("space").unwrap(), KeyCode::Char(' '));
+        assert_eq!(parse_single_keycode("spc").unwrap(), KeyCode::Char(' '));
+        assert_eq!(parse_single_keycode("null").unwrap(), KeyCode::Null);
+        assert_eq!(parse_single_keycode("caps").unwrap(), KeyCode::CapsLock);
+        assert_eq!(
+            parse_single_keycode("prtscn").unwrap(),
+            KeyCode::PrintScreen
+        );
+        assert_eq!(
+            parse_single_keycode("keypad_begin").unwrap(),
+            KeyCode::KeypadBegin
+        );
+    }
+
+    #[test]
+    fn test_parse_keycode_f_keys() {
+        assert_eq!(parse_single_keycode("f1").unwrap(), KeyCode::F(1));
+        assert_eq!(parse_single_keycode("F1").unwrap(), KeyCode::F(1));
+        assert_eq!(parse_single_keycode("f12").unwrap(), KeyCode::F(12));
+        assert_eq!(parse_single_keycode("f255").unwrap(), KeyCode::F(255));
+    }
+
+    #[test]
+    fn test_parse_keycode_media() {
+        use crossterm::event::MediaKeyCode;
+        assert_eq!(
+            parse_single_keycode("media:play").unwrap(),
+            KeyCode::Media(MediaKeyCode::Play)
+        );
+        assert_eq!(
+            parse_single_keycode("media:pause").unwrap(),
+            KeyCode::Media(MediaKeyCode::Pause)
+        );
+        assert_eq!(
+            parse_single_keycode("media:playpause").unwrap(),
+            KeyCode::Media(MediaKeyCode::PlayPause)
+        );
+        assert_eq!(
+            parse_single_keycode("media:mute").unwrap(),
+            KeyCode::Media(MediaKeyCode::MuteVolume)
+        );
+        assert_eq!(
+            parse_single_keycode("media:volumeup").unwrap(),
+            KeyCode::Media(MediaKeyCode::RaiseVolume)
+        );
+        assert_eq!(
+            parse_single_keycode("media:volumedown").unwrap(),
+            KeyCode::Media(MediaKeyCode::LowerVolume)
+        );
+        assert_eq!(
+            parse_single_keycode("media:tracknext").unwrap(),
+            KeyCode::Media(MediaKeyCode::TrackNext)
+        );
+    }
+
+    #[test]
+    fn test_parse_keycode_modifier_key() {
+        use crossterm::event::ModifierKeyCode;
+        assert_eq!(
+            parse_single_keycode("modifier:leftshift").unwrap(),
+            KeyCode::Modifier(ModifierKeyCode::LeftShift)
+        );
+        assert_eq!(
+            parse_single_keycode("modifier:rightctrl").unwrap(),
+            KeyCode::Modifier(ModifierKeyCode::RightControl)
+        );
+        assert_eq!(
+            parse_single_keycode("modifier:leftsuper").unwrap(),
+            KeyCode::Modifier(ModifierKeyCode::LeftSuper)
+        );
+    }
+
+    // --- parse_single_modifier aliases ---
+
+    #[test]
+    fn test_parse_modifier_aliases() {
+        assert_eq!(
+            parse_single_modifier("command").unwrap(),
+            KeyModifiers::SUPER
+        );
+        assert_eq!(parse_single_modifier("gui").unwrap(), KeyModifiers::SUPER);
+        assert_eq!(parse_single_modifier("option").unwrap(), KeyModifiers::ALT);
+        assert_eq!(parse_single_modifier("hyper").unwrap(), KeyModifiers::HYPER);
     }
 }
