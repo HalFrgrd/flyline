@@ -1,4 +1,4 @@
-use crate::app::{App, ContentMode};
+use crate::app::{App, ContentMode, FuzzyHistorySource};
 use crate::bash_symbols;
 use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
@@ -32,7 +32,7 @@ impl Scope {
         } else if self.contains(Scope::FUZZY_HISTORY_SEARCH) {
             matches!(
                 app.content_mode,
-                crate::app::ContentMode::FuzzyHistorySearch
+                crate::app::ContentMode::FuzzyHistorySearch(_)
             )
         } else if self.contains(Scope::TAB_COMPLETION) {
             matches!(
@@ -441,7 +441,11 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         "Scroll up through fuzzy history search results",
         Scope::FUZZY_HISTORY_SEARCH,
         |app, _key| {
-            app.history_manager
+            let source = match &app.content_mode {
+                ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                _ => return,
+            };
+            app.select_fuzzy_history_manager_mut(&source)
                 .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
         },
     ),
@@ -450,7 +454,11 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         "Scroll down through fuzzy history search results",
         Scope::FUZZY_HISTORY_SEARCH,
         |app, _key| {
-            app.history_manager
+            let source = match &app.content_mode {
+                ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                _ => return,
+            };
+            app.select_fuzzy_history_manager_mut(&source)
                 .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
         },
     ),
@@ -459,7 +467,11 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         "Scroll up one page",
         Scope::FUZZY_HISTORY_SEARCH,
         |app, _key| {
-            app.history_manager
+            let source = match &app.content_mode {
+                ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                _ => return,
+            };
+            app.select_fuzzy_history_manager_mut(&source)
                 .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
         },
     ),
@@ -468,7 +480,11 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         "Scroll down one page",
         Scope::FUZZY_HISTORY_SEARCH,
         |app, _key| {
-            app.history_manager
+            let source = match &app.content_mode {
+                ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                _ => return,
+            };
+            app.select_fuzzy_history_manager_mut(&source)
                 .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
         },
     ),
@@ -638,7 +654,21 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         "Cancel the current command or exit if no command is running",
         Scope::NORMAL,
         |app, _key| {
-            app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
+            let buf = app.buffer.buffer().to_string();
+            if buf.is_empty() {
+                // Warm with "" to display all cancelled commands regardless of buffer.
+                app.settings
+                    .cancelled_command_history_manager
+                    .warm_fuzzy_search_cache("");
+                app.content_mode =
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
+            } else {
+                app.settings
+                    .cancelled_command_history_manager
+                    .push_entry(buf);
+                app.mode =
+                    crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
+            }
         },
     ),
     Action::new(
@@ -656,9 +686,9 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         "Start fuzzy search through command history",
         Scope::NORMAL,
         |app, _key| {
-            app.content_mode = ContentMode::FuzzyHistorySearch;
             let history_buffer = app.buffer_for_history().to_owned();
             app.history_manager.warm_fuzzy_search_cache(&history_buffer);
+            app.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
         },
     ),
     Action::new(
