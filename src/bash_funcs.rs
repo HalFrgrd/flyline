@@ -15,6 +15,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
+use std::time::SystemTime;
 
 fn with_redirected_stdout<F, R>(func: F) -> (R, String)
 where
@@ -229,6 +230,11 @@ pub fn reset_caches() {
 
     let mut cache_guard = SHELL_VAR_CACHE.lock().unwrap();
     *cache_guard = None;
+
+    *DEFINED_ALIASES.lock().unwrap() = None;
+    *DEFINED_RESERVED_WORDS.lock().unwrap() = None;
+    *DEFINED_SHELL_FUNCTIONS.lock().unwrap() = None;
+    *DEFINED_BUILTINS.lock().unwrap() = None;
 }
 
 pub fn get_all_aliases() -> Vec<String> {
@@ -884,17 +890,126 @@ pub fn find_quote_type(s: &str) -> Option<QuoteType> {
 // Cached environment lookups (moved from BashEnvManager)
 // ---------------------------------------------------------------------------
 
-static DEFINED_ALIASES: LazyLock<Vec<String>> = LazyLock::new(get_all_aliases);
-static DEFINED_RESERVED_WORDS: LazyLock<Vec<String>> = LazyLock::new(get_all_reserved_words);
-static DEFINED_SHELL_FUNCTIONS: LazyLock<Vec<String>> = LazyLock::new(get_all_shell_functions);
-static DEFINED_BUILTINS: LazyLock<Vec<String>> = LazyLock::new(get_all_shell_builtins);
-static DEFINED_EXECUTABLES: LazyLock<Vec<(PathBuf, String)>> = LazyLock::new(|| {
-    if let Some(path_str) = get_envvar_value("PATH") {
-        get_executables_from_path(&path_str)
-    } else {
-        Vec::new()
+static DEFINED_ALIASES: Mutex<Option<Vec<String>>> = Mutex::new(None);
+static DEFINED_RESERVED_WORDS: Mutex<Option<Vec<String>>> = Mutex::new(None);
+static DEFINED_SHELL_FUNCTIONS: Mutex<Option<Vec<String>>> = Mutex::new(None);
+static DEFINED_BUILTINS: Mutex<Option<Vec<String>>> = Mutex::new(None);
+
+fn get_cached_aliases() -> Vec<String> {
+    let mut guard = DEFINED_ALIASES.lock().unwrap();
+    guard.get_or_insert_with(get_all_aliases).clone()
+}
+
+fn get_cached_reserved_words() -> Vec<String> {
+    let mut guard = DEFINED_RESERVED_WORDS.lock().unwrap();
+    guard.get_or_insert_with(get_all_reserved_words).clone()
+}
+
+fn get_cached_shell_functions() -> Vec<String> {
+    let mut guard = DEFINED_SHELL_FUNCTIONS.lock().unwrap();
+    guard.get_or_insert_with(get_all_shell_functions).clone()
+}
+
+fn get_cached_builtins() -> Vec<String> {
+    let mut guard = DEFINED_BUILTINS.lock().unwrap();
+    guard.get_or_insert_with(get_all_shell_builtins).clone()
+}
+
+/// Per-directory executable cache entry: the directory's last-modified time and
+/// the list of executable filenames found in that directory.
+struct DirExecutables {
+    mtime: SystemTime,
+    names: Vec<String>,
+}
+
+/// Global cache that maps each directory on `PATH` to its executable names and
+/// the directory's last-modified timestamp.  The cache is **never** invalidated
+/// on app startup; instead it is updated lazily on every access:
+///
+/// 1. Directories that have been removed from `PATH` are evicted from the cache.
+/// 2. Newly-added directories are scanned and inserted.
+/// 3. For each remaining directory the last-modified time is compared to the
+///    cached value; if it has changed the directory is re-scanned.
+struct ExecutablesOnPath {
+    cache: HashMap<PathBuf, DirExecutables>,
+}
+
+impl ExecutablesOnPath {
+    fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+        }
     }
-});
+
+    /// Update the cache in-place: evict removed PATH dirs, add new ones, and
+    /// re-scan any directory whose mtime has changed.
+    fn update_cache(&mut self) {
+        let current_dirs: Vec<PathBuf> = get_envvar_value("PATH")
+            .map(|p| p.split(':').map(PathBuf::from).collect())
+            .unwrap_or_default();
+
+        let current_dir_set: HashSet<&PathBuf> = current_dirs.iter().collect();
+
+        // Evict directories that are no longer on PATH.
+        self.cache.retain(|dir, _| current_dir_set.contains(dir));
+
+        // Refresh (or populate) each directory that is currently on PATH.
+        for dir in &current_dirs {
+            // Only call `metadata()` when we need to compare or store an mtime.
+            let current_mtime = match self.cache.get(dir) {
+                None => {
+                    // Not cached; scan unconditionally.
+                    dir.metadata().ok().and_then(|m| m.modified().ok())
+                }
+                Some(entry) => {
+                    let mtime = dir.metadata().ok().and_then(|m| m.modified().ok());
+                    // If the mtime is unchanged, nothing to do for this dir.
+                    if mtime.as_ref() == Some(&entry.mtime) {
+                        continue;
+                    }
+                    mtime
+                }
+            };
+
+            let names = Self::scan_dir(dir);
+            if let Some(mtime) = current_mtime {
+                self.cache
+                    .insert(dir.clone(), DirExecutables { mtime, names });
+            }
+            // If the directory's mtime is not readable we skip caching its
+            // executables; it will be re-scanned on the next access.
+        }
+    }
+
+    /// Iterate over the names of all cached executables.
+    fn iter_names(&self) -> impl Iterator<Item = &String> + '_ {
+        self.cache.values().flat_map(|entry| entry.names.iter())
+    }
+
+    /// Scan `dir` and return the names of all executable files it contains.
+    fn scan_dir(dir: &Path) -> Vec<String> {
+        let mut names = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if let Ok(metadata) = entry.metadata()
+                    && metadata.is_file()
+                {
+                    let permissions = metadata.permissions();
+                    if permissions.mode() & 0o111 != 0 {
+                        if let Some(file_name) = entry.file_name().to_str() {
+                            names.push(file_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        names
+    }
+}
+
+static EXECUTABLES_ON_PATH: LazyLock<Mutex<ExecutablesOnPath>> =
+    LazyLock::new(|| Mutex::new(ExecutablesOnPath::new()));
+
 static LS_COLORS: LazyLock<Option<LsColors>> =
     LazyLock::new(|| get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s)));
 
@@ -914,12 +1029,19 @@ pub fn get_first_word_completions(command: &str) -> Vec<String> {
         return res;
     }
 
-    for poss_completion in DEFINED_ALIASES
+    let aliases = get_cached_aliases();
+    let reserved_words = get_cached_reserved_words();
+    let shell_functions = get_cached_shell_functions();
+    let builtins = get_cached_builtins();
+    let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
+    exe_guard.update_cache();
+
+    for poss_completion in aliases
         .iter()
-        .chain(DEFINED_RESERVED_WORDS.iter())
-        .chain(DEFINED_SHELL_FUNCTIONS.iter())
-        .chain(DEFINED_BUILTINS.iter())
-        .chain(DEFINED_EXECUTABLES.iter().map(|(_, name)| name))
+        .chain(reserved_words.iter())
+        .chain(shell_functions.iter())
+        .chain(builtins.iter())
+        .chain(exe_guard.iter_names())
     {
         if poss_completion.starts_with(command) && seen.insert(poss_completion.as_str()) {
             res.push(poss_completion.to_string());
@@ -935,13 +1057,20 @@ pub fn get_fuzzy_first_word_completions(command: &str) -> Vec<String> {
         return vec![];
     }
 
+    let aliases = get_cached_aliases();
+    let reserved_words = get_cached_reserved_words();
+    let shell_functions = get_cached_shell_functions();
+    let builtins = get_cached_builtins();
+    let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
+    exe_guard.update_cache();
+
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
-    let mut scored: Vec<(i64, String)> = DEFINED_ALIASES
+    let mut scored: Vec<(i64, String)> = aliases
         .iter()
-        .chain(DEFINED_RESERVED_WORDS.iter())
-        .chain(DEFINED_SHELL_FUNCTIONS.iter())
-        .chain(DEFINED_BUILTINS.iter())
-        .chain(DEFINED_EXECUTABLES.iter().map(|(_, name)| name))
+        .chain(reserved_words.iter())
+        .chain(shell_functions.iter())
+        .chain(builtins.iter())
+        .chain(exe_guard.iter_names())
         .filter_map(|poss_completion| {
             matcher
                 .fuzzy_match(poss_completion, command)
@@ -951,27 +1080,6 @@ pub fn get_fuzzy_first_word_completions(command: &str) -> Vec<String> {
 
     scored.sort_by(|a, b| b.0.cmp(&a.0));
     scored.into_iter().map(|(_, s)| s).collect()
-}
-
-fn get_executables_from_path(path_str: &str) -> Vec<(PathBuf, String)> {
-    let mut executables = Vec::new();
-    for path_dir in path_str.split(':') {
-        if let Ok(entries) = std::fs::read_dir(path_dir) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata()
-                    && metadata.is_file()
-                {
-                    let permissions = metadata.permissions();
-                    if permissions.mode() & 0o111 != 0 {
-                        if let Some(file_name) = entry.file_name().to_str() {
-                            executables.push((entry.path(), file_name.to_string()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    executables
 }
 
 /// Convert an `lscolors::Color` to a `ratatui::style::Color`.
