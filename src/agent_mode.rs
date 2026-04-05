@@ -2,8 +2,6 @@ use anyhow::{anyhow, bail};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::prelude::*;
 use ratatui::text::Text;
-use regex::Regex;
-use std::sync::OnceLock;
 
 use crate::table::{TableAccum, compute_natural_col_widths, render_table};
 
@@ -299,114 +297,77 @@ impl AiOutputSelection {
     }
 }
 
+/// Intermediate struct for deserializing a single suggestion from JSON.
+#[derive(serde::Deserialize)]
+struct AiSuggestionRaw {
+    #[serde(default)]
+    command: String,
+    #[serde(default)]
+    description: String,
+}
+
 /// Parse AI command output into an [`AiOutputParsed`].
 ///
 /// The output may contain prose before and/or after the JSON array.
-/// We use a regex to locate the start of the JSON array and then attempt to
-/// parse it with `serde_json`.  Text before the array is stored as the
-/// `header` and text after the array is stored as the `footer`.
+/// We look for the first `[` at the start of a line and use a streaming
+/// JSON deserializer to parse the array, stopping after the first complete
+/// array without scanning the rest of the text.
+/// Text before the array is stored as the `header` and text after as the
+/// `footer`.
 /// Returns `Err` if no valid JSON array with at least one non-empty command
 /// can be found.  The raw output is always logged at DEBUG level.
 pub fn parse_ai_output(raw: &str) -> anyhow::Result<AiOutputParsed> {
     log::debug!("AI raw output: {}", raw);
 
-    // Find the first `[` that begins a JSON array using a regex.
-    static JSON_ARRAY_RE: OnceLock<Regex> = OnceLock::new();
-    let re = JSON_ARRAY_RE.get_or_init(|| Regex::new(r"\[").expect("static regex is valid"));
-    let start = match re.find(raw) {
-        Some(m) => m.start(),
-        None => {
-            log::warn!("AI output contained no JSON array (no '[' found)");
-            bail!("AI output contained no JSON array");
-        }
-    };
+    // Find the first `[` that appears at the start of a line (position 0 or
+    // immediately after a `\n`).
+    let start = raw
+        .starts_with('[')
+        .then_some(0)
+        .or_else(|| raw.find("\n[").map(|i| i + 1))
+        .ok_or_else(|| {
+            log::warn!("AI output contained no JSON array (no '[' at start of line)");
+            anyhow!("AI output contained no JSON array")
+        })?;
 
-    // Walk forward from `start` to find the matching closing `]`, respecting
-    // nested array brackets and JSON string literals (so brackets inside strings
-    // are not counted).
-    let bytes = raw.as_bytes();
-    let mut depth: i32 = 0;
-    let mut in_string = false;
-    let mut escape_next = false;
-    let mut end = None;
-    for (i, &b) in bytes.iter().enumerate().skip(start) {
-        if escape_next {
-            escape_next = false;
-            continue;
-        }
-        if in_string {
-            match b {
-                b'\\' => escape_next = true,
-                b'"' => in_string = false,
-                _ => {}
-            }
-        } else {
-            match b {
-                b'"' => in_string = true,
-                b'[' => depth += 1,
-                b']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = Some(i + 1);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
+    // Use a streaming deserializer: parse exactly one JSON array starting at
+    // `start` and stop as soon as it is complete, without reading further.
+    let substr = &raw[start..];
+    let mut json_stream =
+        serde_json::Deserializer::from_str(substr).into_iter::<Vec<AiSuggestionRaw>>();
+    let items: Vec<AiSuggestionRaw> = json_stream
+        .next()
+        .ok_or_else(|| {
+            log::warn!("AI output contained no JSON array");
+            anyhow!("AI output contained no JSON array")
+        })?
+        .map_err(|e| {
+            log::warn!("Failed to parse AI output as JSON: {}", e);
+            anyhow!("Failed to parse AI output as JSON: {}", e)
+        })?;
+    let array_end = start + json_stream.byte_offset();
 
-    let array_end = match end {
-        Some(e) => e,
-        None => {
-            log::warn!("AI output JSON array is not terminated");
-            bail!("AI output JSON array is not terminated");
-        }
-    };
-
-    let candidate = &raw[start..array_end];
     let header = raw[..start].trim().to_string();
     let footer = raw[array_end..].trim().to_string();
 
-    match serde_json::from_str::<serde_json::Value>(candidate) {
-        Ok(serde_json::Value::Array(arr)) => {
-            let mut suggestions = Vec::with_capacity(arr.len());
-            for item in arr {
-                let command = item
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let description = item
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                if !command.is_empty() {
-                    suggestions.push(AiSuggestion {
-                        command,
-                        description,
-                    });
-                }
-            }
-            if suggestions.is_empty() {
-                bail!("AI output JSON array contained no valid commands");
-            }
-            Ok(AiOutputParsed {
-                suggestions,
-                header,
-                footer,
-            })
-        }
-        Ok(_) => {
-            log::warn!("AI output JSON was not an array");
-            Err(anyhow!("AI output JSON was not an array"))
-        }
-        Err(e) => {
-            log::warn!("Failed to parse AI output as JSON: {}", e);
-            Err(anyhow!("Failed to parse AI output as JSON: {}", e))
-        }
+    let suggestions: Vec<AiSuggestion> = items
+        .into_iter()
+        .filter(|s| !s.command.is_empty())
+        .map(|s| AiSuggestion {
+            command: s.command,
+            description: s.description,
+        })
+        .collect();
+
+    if suggestions.is_empty() {
+        bail!("AI output JSON array contained no valid commands");
     }
+
+    Ok(AiOutputParsed {
+        suggestions,
+        header,
+        footer,
+    })
 }
 
 #[cfg(test)]

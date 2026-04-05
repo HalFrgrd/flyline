@@ -11,8 +11,8 @@ clap = { version = "4.5.49", features = ["derive"] }
 clap_complete = "4.5.66"
 ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default"] }
 crossterm ="0.29.0"
-chrono = { version = "0.4", features = ["serde"] }
-futures = "0.3.31"
+chrono = { version = "0.4" }
+serde = { version = "1", features = ["derive"] }
 log = "0.4"
 ansi-to-tui = { git = "https://github.com/HalFrgrd/ansi-to-tui.git", rev = "9101076f8e23010515ff6fe1571bf87a2d0d4abc"}
 libc = "0.2.177"
@@ -28,14 +28,13 @@ skim = { version = "3.6.0", default-features =  false, features = []}
 lscolors = "0.21.0"
 serde_json = "1.0"
 pulldown-cmark = { version = "0.13", default-features = false }
-regex = "1"
 rand = "0.10.0"
 parse-style = { version = "0.2.0" }
 
 
 [dependencies.tokio]
 version = "1.47.1"
-features = ["full"]
+features = ["rt"]
 default-features = false
 
 [features]
