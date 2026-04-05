@@ -390,7 +390,7 @@ impl PromptStringBuilder {
         };
 
         // Pass 3: split any remaining Static segments on CWD.
-        if let Some(cwd) = self.cwd.as_deref() {
+        let cwd_segs: Vec<PromptSegment> = if let Some(cwd) = self.cwd.as_deref() {
             let home = self.home.as_deref();
             animation_segs
                 .into_iter()
@@ -401,7 +401,22 @@ impl PromptStringBuilder {
                 .collect()
         } else {
             animation_segs
-        }
+        };
+
+        // Pass 4: replace STARSHIP_GIT_METRICS placeholder with the live output
+        // of starship's git_metrics module.
+        let cwd_for_starship = self.cwd.as_deref().unwrap_or(".");
+        cwd_segs
+            .into_iter()
+            .flat_map(|seg| match seg {
+                PromptSegment::Static(s)
+                    if s.content.contains(STARSHIP_GIT_METRICS_PLACEHOLDER) =>
+                {
+                    split_static_span_by_starship_git_metrics(s, cwd_for_starship)
+                }
+                other => vec![other],
+            })
+            .collect()
     }
 
     /// Split a static [`Span`] at animation-name boundaries, producing
@@ -467,6 +482,101 @@ impl PromptStringBuilder {
         self.counter += 1;
         id
     }
+}
+
+/// Literal placeholder that users embed in their PS1/RPS1/PS1_FILL to request
+/// the starship `git_metrics` module output at that position.
+const STARSHIP_GIT_METRICS_PLACEHOLDER: &str = "STARSHIP_GIT_METRICS";
+
+/// Call starship's `git_metrics` module for `cwd` and return the result as a
+/// (possibly empty) list of styled [`Span`]s.
+///
+/// A minimal [`starship::context::Context`] is constructed: the current
+/// directory is set to `cwd`, and the `git_metrics` module is force-enabled by
+/// injecting an in-memory TOML config so that starship's default `disabled =
+/// true` setting is overridden.
+///
+/// Returns an empty `Vec` when the module produces no output (e.g. not a git
+/// repository, no uncommitted changes) or when any step fails.
+fn call_starship_git_metrics(cwd: &str) -> Vec<Span<'static>> {
+    use clap::Parser as _;
+
+    // Set the path via `parse_from` so starship uses the directory flyline
+    // knows about rather than the process's `env::current_dir()`.  When the
+    // path is empty, fall back to `Properties::default()` which causes
+    // `Context::new` to call `env::current_dir()` internally.
+    let props = if cwd.is_empty() {
+        starship::context::Properties::default()
+    } else {
+        starship::context::Properties::parse_from(["starship", "--path", cwd])
+    };
+
+    let mut git_metrics_cfg = toml::Table::new();
+    git_metrics_cfg.insert("disabled".to_string(), toml::Value::Boolean(false));
+    let mut config = toml::Table::new();
+    config.insert(
+        "git_metrics".to_string(),
+        toml::Value::Table(git_metrics_cfg),
+    );
+
+    let context =
+        starship::context::Context::new(props, starship::context::Target::Main).set_config(config);
+
+    let output = match starship::print::get_module("git_metrics", context) {
+        Some(s) if !s.is_empty() => s,
+        _ => return vec![],
+    };
+
+    output
+        .into_text()
+        .ok()
+        .map(|text| text.lines.into_iter().flat_map(|line| line.spans).collect())
+        .unwrap_or_default()
+}
+
+/// Split a static [`Span`] at the first occurrence of
+/// [`STARSHIP_GIT_METRICS_PLACEHOLDER`], replacing that token with the live
+/// git-metrics spans produced by [`call_starship_git_metrics`].
+///
+/// Portions of the original span before and after the placeholder are kept as
+/// [`PromptSegment::Static`] segments; the placeholder itself is replaced by
+/// one `Static` segment per span in the starship output.  If the placeholder
+/// is not present the original span is returned unchanged.
+fn split_static_span_by_starship_git_metrics(span: Span<'static>, cwd: &str) -> Vec<PromptSegment> {
+    let text = span.content.as_ref().to_owned();
+    let style = span.style;
+
+    let Some(pos) = text.find(STARSHIP_GIT_METRICS_PLACEHOLDER) else {
+        return vec![PromptSegment::Static(span)];
+    };
+
+    let git_spans = call_starship_git_metrics(cwd);
+    let mut result: Vec<PromptSegment> = Vec::new();
+
+    if pos > 0 {
+        result.push(PromptSegment::Static(Span::styled(
+            text[..pos].to_owned(),
+            style,
+        )));
+    }
+
+    for git_span in git_spans {
+        result.push(PromptSegment::Static(git_span));
+    }
+
+    let after = pos + STARSHIP_GIT_METRICS_PLACEHOLDER.len();
+    if after < text.len() {
+        result.push(PromptSegment::Static(Span::styled(
+            text[after..].to_owned(),
+            style,
+        )));
+    }
+
+    if result.is_empty() {
+        result.push(PromptSegment::Static(Span::styled(String::new(), style)));
+    }
+
+    result
 }
 
 /// Find the longest substring of `text` that looks like the current working
@@ -1492,5 +1602,61 @@ mod tests {
         let pm = make_pm_with_cwd("/home/foo/bar", "/home/foo/bar");
         // index beyond path depth → root
         assert_eq!(pm.cwd_path_for_index(100), Some("/".to_string()));
+    }
+
+    // --- STARSHIP_GIT_METRICS placeholder --------------------------------
+
+    #[test]
+    fn test_starship_git_metrics_placeholder_not_present_passthrough() {
+        let builder = PromptStringBuilder::new(vec![]);
+        let span = Span::raw("no metrics here");
+        let segs = builder.expand_span_to_segments(span);
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content, "no metrics here"),
+            _ => panic!("expected Static"),
+        }
+    }
+
+    #[test]
+    fn test_split_static_span_by_starship_git_metrics_placeholder_absent() {
+        let span = Span::raw("hello world");
+        let result = split_static_span_by_starship_git_metrics(span, ".");
+        assert_eq!(result.len(), 1);
+        match &result[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content, "hello world"),
+            _ => panic!("expected Static"),
+        }
+    }
+
+    #[test]
+    fn test_split_static_span_by_starship_git_metrics_only_placeholder() {
+        // When the span contains ONLY the placeholder the function should not
+        // panic.  Outside of a real git repo starship returns no output, so the
+        // result is either an empty vec or a single empty-content Static span
+        // (the guard at the end ensures at least one segment is always returned
+        // when no prefix/suffix and no git spans are produced).
+        let span = Span::raw(STARSHIP_GIT_METRICS_PLACEHOLDER);
+        // Must not panic regardless of whether we are in a git repo.
+        let _result = split_static_span_by_starship_git_metrics(span, ".");
+    }
+
+    #[test]
+    fn test_split_static_span_by_starship_git_metrics_placeholder_with_prefix_suffix() {
+        // With no git repo at "." starship should return None/empty, so the
+        // result should have the prefix and suffix but no git-metrics spans.
+        let text = format!("before {} after", STARSHIP_GIT_METRICS_PLACEHOLDER);
+        let span = Span::raw(text);
+        let result = split_static_span_by_starship_git_metrics(span, ".");
+        // The "before " prefix must be the first segment.
+        match &result[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content, "before "),
+            _ => panic!("expected Static prefix"),
+        }
+        // The " after" suffix must be the last segment.
+        match result.last().expect("at least one segment") {
+            PromptSegment::Static(s) => assert_eq!(s.content, " after"),
+            _ => panic!("expected Static suffix"),
+        }
     }
 }
