@@ -258,6 +258,28 @@ enum Commands {
     },
     /// Manage keybindings.
     ///
+    /// Use 'flyline key set <KEY> <SCOPE::ACTION>' to bind a key sequence to an action.
+    /// Use 'flyline key list' to view all current bindings.
+    /// Use 'flyline key remap <FROM> <TO>' to translate one key or modifier to another before
+    /// bindings are matched.
+    ///
+    /// KEY is a combination like "Ctrl+Enter", "Alt+Left", or "F1".
+    /// Modifiers: Ctrl (Control), Shift, Alt (Option), Meta,
+    ///   Super (Cmd, Command, Gui, Win), Hyper.
+    /// Keys: Enter (Ret, Return), Backspace (Bkspc, Bs), Tab, BackTab, Esc (Escape),
+    ///   Space (Spc), Delete (Del), Insert (Ins), Left, Right, Up, Down, Home, End,
+    ///   PageUp (PgUp), PageDown (PgDown, PgDn), Null,
+    ///   CapsLock (Caps, Caps_Lock), ScrollLock (Scroll_Lock), NumLock (Num_Lock),
+    ///   PrintScreen (PrtScn, Print_Screen), Pause, Menu, KeypadBegin (Keypad_Begin),
+    ///   F1-F255, Media:<name> (e.g. Media:Play, Media:Pause, Media:Stop,
+    ///   Media:FastForward, Media:Rewind, Media:TrackNext, Media:TrackPrevious,
+    ///   Media:RaiseVolume, Media:LowerVolume, Media:Mute),
+    ///   Modifier:<name> (e.g. Modifier:LeftShift, Modifier:RightCtrl,
+    ///   Modifier:LeftAlt, Modifier:LeftSuper).
+    ///
+    /// Tab completion is available: type 'flyline key set <KEY> <Tab>' to browse
+    /// all available actions interactively.
+    ///
     /// Examples:
     ///   flyline key set Ctrl+Enter normal::submit_or_newline
     ///   flyline key list
