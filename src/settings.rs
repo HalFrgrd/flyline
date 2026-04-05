@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::actions;
+use crate::history::HistoryManager;
 use crate::palette::Palette;
 use clap::ValueEnum;
 
@@ -105,6 +106,10 @@ pub struct Settings {
     pub keybindings: Vec<actions::Binding>,
     /// User defined key remappings (applied before matching bindings).
     pub key_remappings: Vec<actions::KeyRemap>,
+    /// Tracks commands that were cancelled via Ctrl+C (non-empty buffer).
+    pub cancelled_command_history_manager: HistoryManager,
+    /// Tracks prompts that were submitted to agent mode.
+    pub agent_prompt_history_manager: HistoryManager,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -129,6 +134,8 @@ impl Default for Settings {
             color_theme: ColorTheme::Dark,
             keybindings: Vec::new(),
             key_remappings: Vec::new(),
+            cancelled_command_history_manager: HistoryManager::new_empty(),
+            agent_prompt_history_manager: HistoryManager::new_empty(),
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }
