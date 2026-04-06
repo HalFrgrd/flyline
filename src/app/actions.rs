@@ -1005,7 +1005,7 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 54]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
@@ -1061,12 +1061,6 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 54]> = LazyLock::new(|| {
         )
         .unwrap(),
         // Scoped Esc bindings must appear before the Normal Esc binding.
-        Binding::try_new(
-            &["Esc"],
-            Scope::TabCompletionWaiting,
-            "escape_to_normal_mode",
-        )
-        .unwrap(),
         Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
         Binding::try_new(&["Tab"], Scope::AgentOutputSelection, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::TabCompletion, "next_suggestion").unwrap(),
