@@ -1,12 +1,11 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 
 use crate::app::actions;
 use crate::cursor::CursorConfig;
 use crate::history::HistoryManager;
 use crate::palette::Palette;
-use clap::ValueEnum;
 use crate::tutorial::TutorialStep;
+use clap::ValueEnum;
 
 /// Which theme the user has configured for the colour palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
@@ -118,10 +117,10 @@ pub struct Settings {
     /// When `Some`, Zsh history is loaded in addition to Bash history; an empty string or no
     /// value means use the default path (`$HOME/.zsh_history`).
     pub zsh_history_path: Option<String>,
-    /// Whether to show tutorial hints for first-time users.
-    pub tutorial_mode: bool,
+    /// Whether the interactive tutorial is active.
+    pub run_tutorial: bool,
     /// Current tutorial step.
-    pub tutorial_step: Cell<TutorialStep>,
+    pub tutorial_step: TutorialStep,
     /// Whether to show all animations (cursor movement, cursor fading, dynamic time).
     pub show_animations: bool,
     /// Whether to show inline history suggestions.
@@ -168,8 +167,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             zsh_history_path: None,
-            tutorial_mode: false,
-            tutorial_step: Cell::new(TutorialStep::NotRunning),
+            run_tutorial: false,
+            tutorial_step: TutorialStep::NotRunning,
             show_animations: true,
             show_inline_history: true,
             auto_close_chars: true,

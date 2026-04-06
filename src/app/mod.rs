@@ -18,7 +18,7 @@ use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
-use crate::{bash_funcs, dparser};
+use crate::{bash_funcs, dparser, tutorial};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
@@ -26,18 +26,13 @@ use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
+use ratatui::widgets::Paragraph;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::time::Duration;
 use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-
-const TUTORIAL_FUZZY_SEARCH_HINT: &str = "💡 Type to search, press arrow keys / Page Up/Down to browse, Enter to run the command, Alt+Enter to accept the command for editing";
-const TUTORIAL_HISTORY_PREFIX_HINT: &str =
-    "💡 ↑/↓ to scroll through history entries whose prefix matches your current command";
-const TUTORIAL_DISABLE_HINT: &str =
-    "💡 Run `flyline --tutorial-mode false` to disable tutorial mode";
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -298,7 +293,7 @@ impl<'a> App<'a> {
 
         bash_funcs::reset_caches();
 
-        App {
+        let mut app = App {
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
@@ -331,7 +326,14 @@ impl<'a> App<'a> {
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
             last_keypress_action: None,
+        };
+
+        if app.settings.tutorial_step == tutorial::TutorialStep::FineGrainDeletion {
+            app.buffer.replace_buffer("ls foo/bar_abc/qwe.txt oiu.txt");
+            app.on_possible_buffer_change();
         }
+
+        app
     }
 
     /// Return a mutable reference to the history manager for the given fuzzy source.
@@ -785,21 +787,23 @@ impl<'a> App<'a> {
             }
             Some(Tag::TutorialPrev) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                    let mut step = self.settings.tutorial_step.get();
-                    step.prev();
-                    self.settings.tutorial_step.set(step);
-                    log::info!("Tutorial navigated to prev: {:?}", step);
+                    self.settings.tutorial_step.prev();
+                    log::info!(
+                        "Tutorial navigated to prev: {:?}",
+                        self.settings.tutorial_step
+                    );
                     return true;
                 }
             }
             Some(Tag::TutorialNext) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                    let mut step = self.settings.tutorial_step.get();
-                    step.next();
-                    self.settings.tutorial_step.set(step);
-                    log::info!("Tutorial navigated to next: {:?}", step);
-                    if !step.is_active() {
-                        // Tutorial finished — but we can't set tutorial_mode here since settings is &.
+                    self.settings.tutorial_step.next();
+                    log::info!(
+                        "Tutorial navigated to next: {:?}",
+                        self.settings.tutorial_step
+                    );
+                    if !self.settings.tutorial_step.is_active() {
+                        // Tutorial finished — but we can't set run_tutorial here since settings is &.
                         // The tutorial_step being NotRunning is sufficient.
                     }
                     return true;
@@ -1306,24 +1310,49 @@ impl<'a> App<'a> {
         // Render tutorial text above the prompt when a tutorial step is active.
         if self.mode.is_running() {
             if let Some(tutorial_lines) = crate::tutorial::generate_tutorial_text(
-                self.settings.tutorial_step.get(),
+                self.settings.tutorial_step,
                 &self.settings.color_palette,
-                width,
             ) {
-                for line in &tutorial_lines {
-                    // Tag spans: detect prev/next navigation boxes for mouse click handling.
-                    for span in &line.spans {
-                        let tag = if span.content.contains("prev") {
-                            Tag::TutorialPrev
-                        } else if span.content.contains("next") {
-                            Tag::TutorialNext
-                        } else {
-                            Tag::Normal
-                        };
-                        content.write_span(span, tag);
-                    }
-                    content.newline();
-                }
+                let buffer_rect = Rect {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height: 7,
+                };
+
+                let [prev_block, text_block, next_block] =
+                    buffer_rect.layout(&Layout::horizontal([
+                        Constraint::Min(7),
+                        Constraint::Percentage(90),
+                        Constraint::Min(7),
+                    ]));
+                let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
+
+                let para = Paragraph::new(tutorial_lines);
+                para.render(
+                    text_block.inner(Margin {
+                        horizontal: 2,
+                        vertical: 1,
+                    }),
+                    &mut text_buffer,
+                );
+
+                content.write_buffer(&text_buffer, Tag::Tutorial);
+
+                content.render_block(
+                    prev_block,
+                    "prev",
+                    Tag::TutorialPrev,
+                    self.last_mouse_over_cell == Some(Tag::TutorialPrev),
+                );
+                content.render_block(
+                    next_block,
+                    "next",
+                    Tag::TutorialNext,
+                    self.last_mouse_over_cell == Some(Tag::TutorialNext),
+                );
+                content.move_to_final_line();
+                content.newline();
             }
         }
 
@@ -1455,45 +1484,6 @@ impl<'a> App<'a> {
             content.set_term_cursor_pos(cursor_anim_pos, cursor_style);
         }
 
-        if self.mode.is_running()
-            && self.settings.tutorial_mode
-            && self.buffer.buffer().is_empty()
-            && matches!(self.content_mode, ContentMode::Normal)
-        {
-            content.write_tagged_span_dont_overwrite(
-                &TaggedSpan::new(
-                    Span::styled(
-                        " 💡 Start typing or search history with Ctrl+R",
-                        self.settings.color_palette.tutorial_hint(),
-                    ),
-                    Tag::HistorySuggestion,
-                ),
-                None,
-            );
-            content.newline();
-            content.write_tagged_span_dont_overwrite(
-                &TaggedSpan::new(
-                    Span::styled(
-                        TUTORIAL_HISTORY_PREFIX_HINT,
-                        self.settings.color_palette.tutorial_hint(),
-                    ),
-                    Tag::HistorySuggestion,
-                ),
-                None,
-            );
-            content.newline();
-            content.write_tagged_span_dont_overwrite(
-                &TaggedSpan::new(
-                    Span::styled(
-                        TUTORIAL_DISABLE_HINT,
-                        self.settings.color_palette.tutorial_hint(),
-                    ),
-                    Tag::HistorySuggestion,
-                ),
-                None,
-            );
-        }
-
         if let Some((sug, suf)) = &self.inline_history_suggestion
             && self.mode.is_running()
         {
@@ -1531,14 +1521,14 @@ impl<'a> App<'a> {
                             None,
                         );
 
-                        if self.settings.tutorial_mode {
+                        if self.settings.run_tutorial {
                             content.write_tagged_span_dont_overwrite(
                                 &TaggedSpan::new(
                                     Span::styled(
                                         " 💡 Press → or End to accept",
                                         self.settings.color_palette.tutorial_hint(),
                                     ),
-                                    Tag::HistorySuggestion,
+                                    Tag::Tutorial,
                                 ),
                                 None,
                             );
@@ -1623,9 +1613,9 @@ impl<'a> App<'a> {
             }
             ContentMode::FuzzyHistorySearch(_) if self.mode.is_running() => {
                 let source = fuzzy_source_for_render.as_ref().unwrap();
-                let num_rows_for_instructions = if self.settings.tutorial_mode { 2 } else { 1 };
+                let num_rows_footer = 1;
                 let num_rows_for_results = rows_left_before_end_of_screen
-                    .saturating_sub(num_rows_for_instructions)
+                    .saturating_sub(num_rows_footer)
                     .clamp(2, 30);
 
                 let history_buffer = self.buffer_for_history().to_owned();
@@ -1698,16 +1688,6 @@ impl<'a> App<'a> {
                     ),
                     Tag::FuzzySearch,
                 ));
-                if self.settings.tutorial_mode {
-                    content.newline();
-                    content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(
-                            TUTORIAL_FUZZY_SEARCH_HINT,
-                            self.settings.color_palette.tutorial_hint(),
-                        ),
-                        Tag::FuzzySearch,
-                    ));
-                }
             }
             ContentMode::Normal if self.mode.is_running() => {
                 if let Some(tooltip) = &self.tooltip {

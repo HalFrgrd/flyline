@@ -11,36 +11,51 @@ pub enum TutorialStep {
     #[default]
     NotRunning,
     /// Welcome message and recommended settings.
-    FirstStep,
-    /// Fuzzy history search (Ctrl+R).
-    SecondStep,
-    /// Fuzzy autocompletions (Tab).
-    ThirdStep,
-    /// Setting theme colours.
-    FourthStep,
+    Welcome,
+    RecommendedSettings,
+    MouseMode,
+    ThemeColours,
+    FuzzyHistorySearch,
+    Autocompletions,
+    AutoClosing,
+    FineGrainDeletion,
+    End,
 }
 
 impl TutorialStep {
-    /// Advance to the next step. Wraps around to `FirstStep` after the last step.
+    const STEPS_IN_ORDER: [TutorialStep; 10] = [
+        TutorialStep::Welcome,
+        TutorialStep::RecommendedSettings,
+        TutorialStep::MouseMode,
+        TutorialStep::ThemeColours,
+        TutorialStep::FuzzyHistorySearch,
+        TutorialStep::Autocompletions,
+        TutorialStep::AutoClosing,
+        TutorialStep::FineGrainDeletion,
+        TutorialStep::End,
+        TutorialStep::NotRunning,
+    ];
+
     pub fn next(&mut self) {
-        *self = match self {
-            TutorialStep::NotRunning => TutorialStep::NotRunning,
-            TutorialStep::FirstStep => TutorialStep::SecondStep,
-            TutorialStep::SecondStep => TutorialStep::ThirdStep,
-            TutorialStep::ThirdStep => TutorialStep::FourthStep,
-            TutorialStep::FourthStep => TutorialStep::NotRunning,
-        };
+        if self == &TutorialStep::NotRunning {
+            return;
+        }
+
+        let self_idx = Self::STEPS_IN_ORDER
+            .iter()
+            .position(|s| s == self)
+            .unwrap_or(0);
+        let next_idx = (self_idx + 1) % Self::STEPS_IN_ORDER.len();
+        *self = Self::STEPS_IN_ORDER[next_idx];
     }
 
-    /// Go back to the previous step. Stops at `FirstStep`.
     pub fn prev(&mut self) {
-        *self = match self {
-            TutorialStep::NotRunning => TutorialStep::NotRunning,
-            TutorialStep::FirstStep => TutorialStep::FirstStep,
-            TutorialStep::SecondStep => TutorialStep::FirstStep,
-            TutorialStep::ThirdStep => TutorialStep::SecondStep,
-            TutorialStep::FourthStep => TutorialStep::ThirdStep,
-        };
+        let self_idx = Self::STEPS_IN_ORDER
+            .iter()
+            .position(|s| s == self)
+            .unwrap_or(0);
+
+        *self = Self::STEPS_IN_ORDER[self_idx.saturating_sub(1)];
     }
 
     /// Whether the tutorial is currently active (any step other than `NotRunning`).
@@ -53,6 +68,7 @@ impl TutorialStep {
 ///
 /// This checks the `TERM` and `TERM_PROGRAM` environment variables for terminals known to
 /// support the protocol.
+/// TODO: https://sw.kovidgoyal.net/kitty/keyboard-protocol/#detection-of-support-for-this-protocol
 fn detect_kitty_keyboard_support() -> bool {
     let term = bash_funcs::get_envvar_value("TERM").unwrap_or_default();
     let term_program = bash_funcs::get_envvar_value("TERM_PROGRAM").unwrap_or_default();
@@ -74,34 +90,26 @@ fn is_vscode() -> bool {
 
 /// Generate recommended settings text for the first tutorial step.
 pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
-    let hint_style = palette.tutorial_hint;
+    let hint_style = palette.tutorial_hint();
     let mut lines: Vec<Line> = Vec::new();
 
-    lines.push(Line::from(Span::styled(
-        "Recommended settings:",
-        hint_style,
-    )));
     lines.push(Line::from(""));
 
     if is_vscode() {
         lines.push(Line::from(Span::styled(
-            "You are running in VS Code. For the best experience, set these in settings.json:",
+            "You are running in VS Code. For the best experience, set these in settings.json (try ctrl+clicking the links):",
             hint_style,
         )));
         lines.push(Line::from(Span::styled(
-            "  • terminal.integrated.minimumContrastRatio = 1",
+            "  • vscode://settings/terminal.integrated.minimumContrastRatio = 1",
             hint_style,
         )));
         lines.push(Line::from(Span::styled(
-            "  • terminal.integrated.enableKittyKeyboardProtocol = true",
+            "  • vscode://settings/terminal.integrated.enableKittyKeyboardProtocol = true",
             hint_style,
         )));
         lines.push(Line::from(Span::styled(
-            "  • workbench.settings.alwaysShowAdvancedSettings = 1",
-            hint_style,
-        )));
-        lines.push(Line::from(Span::styled(
-            "  • terminal.integrated.macOptionIsMeta (if on macOS)",
+            "  • vscode://settings/terminal.integrated.macOptionIsMeta (if on macOS)",
             hint_style,
         )));
         lines.push(Line::from(""));
@@ -132,40 +140,75 @@ pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
 
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
-pub fn generate_tutorial_text(
-    step: TutorialStep,
-    palette: &Palette,
-    width: u16,
-) -> Option<Vec<Line<'static>>> {
+pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<Vec<Line<'static>>> {
     if !step.is_active() {
         return None;
     }
 
-    let hint_style = palette.tutorial_hint;
+    let hint_style = palette.tutorial_hint();
+    let heading_style = palette.markdown_heading2();
     let mut lines: Vec<Line> = Vec::new();
 
-    // Navigation bar with prev/next boxes
-    let nav_line = build_nav_line(step, palette, width);
-    lines.push(nav_line);
-    lines.push(Line::from(""));
-
     match step {
-        TutorialStep::FirstStep => {
+        TutorialStep::Welcome => {
+            lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
                 "Welcome to flyline!",
                 hint_style.add_modifier(Modifier::BOLD),
             )));
             lines.push(Line::from(""));
-
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "To start the tutorial, press Enter. Navigate by clicking on the buttons.",
+                hint_style,
+            )));
+        }
+        TutorialStep::RecommendedSettings => {
+            lines.push(Line::from(Span::styled(
+                "Recommended Settings",
+                heading_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "Flyline will detect your terminal and suggest optimal settings for the best experience:",
+                hint_style,
+            )));
             let settings_text = generate_recommended_settings(palette);
             for line in settings_text.lines {
                 lines.push(line);
             }
         }
-        TutorialStep::SecondStep => {
+        TutorialStep::MouseMode => {
+            lines.push(Line::from(Span::styled(
+                "Mouse Interaction Modes",
+                heading_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Flyline has three mouse interaction modes:",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "1. Smart: mouse interactions are enabled when they work well (recommended).",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "2. Always: mouse interactions are always enabled, but behaviour may be inconsistent in some terminals.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "3. Never: mouse interactions are disabled.",
+                hint_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Toggle mouse interaction modes with `flyline --mouse-mode smart/always/never`.",
+                hint_style,
+            )));
+        }
+        TutorialStep::FuzzyHistorySearch => {
             lines.push(Line::from(Span::styled(
                 "Fuzzy History Search",
-                hint_style.add_modifier(Modifier::BOLD),
+                heading_style,
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
@@ -185,18 +228,18 @@ pub fn generate_tutorial_text(
                 hint_style,
             )));
         }
-        TutorialStep::ThirdStep => {
+        TutorialStep::Autocompletions => {
             lines.push(Line::from(Span::styled(
                 "Fuzzy Autocompletions",
-                hint_style.add_modifier(Modifier::BOLD),
+                heading_style,
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "Press Tab to trigger autocompletions.",
+                "Type `grep --` and press Tab to trigger autocompletions. If nothing comes up, first set normal Bash completions (https://github.com/scop/bash-completion).",
                 hint_style,
             )));
             lines.push(Line::from(Span::styled(
-                "Type to filter suggestions, use arrow keys to navigate.",
+                "Type to filter suggestions, use arrow keys or your mouse to navigate.",
                 hint_style,
             )));
             lines.push(Line::from(Span::styled(
@@ -204,10 +247,10 @@ pub fn generate_tutorial_text(
                 hint_style,
             )));
         }
-        TutorialStep::FourthStep => {
+        TutorialStep::ThemeColours => {
             lines.push(Line::from(Span::styled(
                 "Setting Theme Colors",
-                hint_style.add_modifier(Modifier::BOLD),
+                heading_style,
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
@@ -237,48 +280,66 @@ pub fn generate_tutorial_text(
                 hint_style,
             )));
         }
+        TutorialStep::AutoClosing => {
+            lines.push(Line::from(Span::styled(
+                "Auto-Closing Quotes & Brackets",
+                heading_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Flyline automatically inserts closing characters when you type an opening one.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "Try typing: echo $(\" — watch how the closing \" ) are inserted for you.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "This works for parentheses (), square brackets [], curly braces {}, and quotes \" \".",
+                hint_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Toggle this feature with `flyline --auto-close-chars true/false`.",
+                hint_style,
+            )));
+        }
+        TutorialStep::FineGrainDeletion => {
+            lines.push(Line::from(Span::styled(
+                "Fine-Grain Deletion",
+                heading_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Flyline provides more granular deletion commands in addition to Backspace and Delete.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "Ctrl+Backspace deletes to the previous whitespace and Alt+Backspace deletes to the next punctuation character or, if you're editing a file path, the previous path segment.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "Similarly, use Alt+Delete or Ctrl+Delete to delete forward. Try it out!",
+                hint_style,
+            )));
+        }
+        TutorialStep::End => {
+            lines.push(Line::from(Span::styled(
+                "You've reached the end of the tutorial!",
+                hint_style.add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Feel free to explore and experiment with flyline's features.",
+                hint_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "For more information, check out the documentation and GitHub repo.",
+                hint_style,
+            )));
+        }
         TutorialStep::NotRunning => unreachable!(),
     }
 
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "💡 Run `flyline --tutorial-mode false` to disable the tutorial.",
-        hint_style,
-    )));
-    lines.push(Line::from(""));
-
     Some(lines)
-}
-
-/// Build the navigation line with [prev] and [next] boxes.
-fn build_nav_line(step: TutorialStep, palette: &Palette, width: u16) -> Line<'static> {
-    let hint_style = palette.tutorial_hint;
-    let step_label = match step {
-        TutorialStep::FirstStep => "Step 1/4",
-        TutorialStep::SecondStep => "Step 2/4",
-        TutorialStep::ThirdStep => "Step 3/4",
-        TutorialStep::FourthStep => "Step 4/4",
-        TutorialStep::NotRunning => "",
-    };
-
-    let prev_text = " ◀ prev ";
-    let next_text = " next ▶ ";
-    let step_text = format!(" {} ", step_label);
-
-    // Total width of nav content: prev + step + next + spaces
-    let content_width = prev_text.len() + step_text.len() + next_text.len() + 2; // 2 spaces between parts
-    let padding = if (width as usize) > content_width {
-        " ".repeat(width as usize - content_width)
-    } else {
-        String::new()
-    };
-
-    Line::from(vec![
-        Span::styled(prev_text, hint_style.add_modifier(Modifier::REVERSED)),
-        Span::styled(" ", hint_style),
-        Span::styled(step_text, hint_style),
-        Span::styled(" ", hint_style),
-        Span::styled(next_text, hint_style.add_modifier(Modifier::REVERSED)),
-        Span::styled(padding, hint_style),
-    ])
 }
