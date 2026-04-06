@@ -1511,12 +1511,12 @@ dependencies = [
 
 [[package]]
 name = "parse-style"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8db29c66969a494e1f0411a7bce6ab98ce910b350371f05e2c5ddddc83dd8cf6"
+checksum = "380673a91efbd63aef163c25649edd9152aef293115418b57b522e76d82505bf"
 dependencies = [
  "phf 0.13.1",
- "strum",
+ "strum 0.28.0",
  "thiserror 2.0.18",
  "unicase",
 ]
@@ -1816,7 +1816,7 @@ dependencies = [
  "itertools",
  "kasuari",
  "lru 0.14.0",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "unicode-segmentation",
  "unicode-truncate",
@@ -1836,7 +1836,7 @@ dependencies = [
  "itertools",
  "kasuari",
  "lru 0.16.3",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "unicode-segmentation",
  "unicode-truncate",
@@ -1915,7 +1915,7 @@ dependencies = [
  "itertools",
  "line-clipping",
  "ratatui-core 0.1.0-beta.0",
- "strum",
+ "strum 0.27.2",
  "time",
  "unicode-segmentation",
  "unicode-width",
@@ -1934,7 +1934,7 @@ dependencies = [
  "itertools",
  "line-clipping",
  "ratatui-core 0.1.0",
- "strum",
+ "strum 0.27.2",
  "time",
  "unicode-segmentation",
  "unicode-width",
@@ -2315,7 +2315,16 @@ version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.27.2",
+]
+
+[[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros 0.28.0",
 ]
 
 [[package]]
@@ -2328,6 +2337,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]

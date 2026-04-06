@@ -29,7 +29,7 @@ lscolors = "0.21.0"
 serde_json = "1.0"
 pulldown-cmark = { version = "0.13", default-features = false }
 rand = "0.10.0"
-parse-style = { version = "0.2.0" }
+parse-style = { version = "0.4.0" }
 
 
 [dependencies.tokio]
