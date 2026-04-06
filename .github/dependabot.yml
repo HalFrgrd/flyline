@@ -11,12 +11,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     commit-message:
       prefix: "cargo"
     labels:
       - "dependencies"
-      - "rust"
+      - "ci"
     groups:
       cargo-minor-and-patch:
         patterns:
@@ -30,7 +30,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     commit-message:
       prefix: "gha"
     labels:
@@ -49,12 +49,12 @@ updates:
     directory: "docker/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
     commit-message:
       prefix: "docker"
     labels:
       - "dependencies"
-      - "docker"
+      - "ci"
     groups:
       docker-minor-and-patch:
         patterns:
