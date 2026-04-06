@@ -133,6 +133,9 @@ pub enum Tag {
     HistoryResult(usize),
     Tooltip,
     AiResult(usize),
+    TutorialPrev,
+    TutorialNext,
+    Tutorial,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -255,11 +258,6 @@ impl Contents {
                 // cold_path();
                 // If the grapheme is still too wide after wrapping, skip it
                 // We probably start at cursor_pos_x=0 here, so very unlikely to happen
-                log::warn!(
-                    "Grapheme too wide for line: '{}' (width {})",
-                    graph.symbol,
-                    graph_w
-                );
                 continue;
             }
             if Some(i) == mark_nth_grapheme {
@@ -504,6 +502,134 @@ impl Contents {
                         .set_symbol(styled_graph.symbol)
                         .set_style(styled_graph.style);
                 }
+            }
+        }
+    }
+
+    pub fn write_buffer(&mut self, buffer: &ratatui::buffer::Buffer, tag: Tag) {
+        for pos in buffer.area().positions() {
+            for _ in self.buf.len()..=pos.y as usize {
+                self.increase_buf_single_row();
+            }
+            if let Some(cell) = buffer.cell(pos) {
+                if let Some(row) = self.buf.get_mut(pos.y as usize)
+                    && let Some(tagged_cell) = row.get_mut(pos.x as usize)
+                {
+                    tagged_cell.cell = cell.clone();
+                    tagged_cell.tag = tag;
+
+                    self.cursor_pos = Coord::new(pos.y, pos.x);
+                }
+            }
+        }
+    }
+
+    fn get_char(x: u16, y: u16, area: Rect, is_selected: bool) -> char {
+        let char = match (x, y) {
+            (x, y) if x == area.left() && y == area.top() => '╭',
+            (x, y) if x == area.right() - 1 && y == area.top() => '╮',
+            (x, y) if x == area.left() && y == area.bottom() - 1 => '╰',
+            (x, y) if x == area.right() - 1 && y == area.bottom() - 1 => '╯',
+            (_x, y) if y == area.bottom() - 1 => '─',
+            (_x, y) if y == area.top() => '─',
+            (x, _y) if x == area.left() => '│',
+            (x, _y) if x == area.right() - 1 => '│',
+            _ => ' ',
+        };
+
+        if !is_selected {
+            return char;
+        }
+
+        // match char {
+        //     '╭' => '╔',
+        //     '╮' => '╗',
+        //     '╰' => '╚',
+        //     '╯' => '╝',
+        //     '─' => '═', // if y == area.top() { '▂' } else { '🬂' },
+        //     '│' => '║', // if x == area.left() { '🮇' } else { '🯏' },
+        //     ' ' => '🮖', // 🮖 █
+        //     _ => char
+        // }
+        // match char {
+        //     '╭' => '▗',
+        //     '╮' => '▖',
+        //     '╰' => '▝',
+        //     '╯' => '▘',
+        //     '─' =>  if y == area.top() { '▄' } else { '▀' },
+        //     '│' =>  if x == area.left() { '▐' } else { '▌' },
+        //     ' ' => '🮖', // 🮖 █
+        //     _ => char
+        // }
+        // match char {
+        //     '╭' => '▗',
+        //     '╮' => '▖',
+        //     '╰' => '🯬',
+        //     '╯' => '▘',
+        //     '─' =>  if y == area.top() { '🮏' } else { '🮎' },
+        //     '│' =>  if x == area.left() { '🮍' } else { '🮌' },
+        //     ' ' => '🮐', // 🮖 █
+        //     _ => char
+        // }
+        // match char {
+        //     '╭' => '🬆',
+        //     '╮' => '🬊',
+        //     '╰' => '🬱',
+        //     '╯' => '🬵',
+        //     '─' =>  if y == area.top() { '🮏' } else { '🮎' },
+        //     '│' =>  if x == area.left() { '🮍' } else { '🮌' },
+        //     ' ' => '🮐', // 🮖 █
+        //     _ => char
+        // }
+        match char {
+            // '╭' => '🬆',
+            // '╮' => '🬊',
+            // '╰' => '🬱',
+            // '╯' => '🬵',
+            '─' => {
+                if y == area.top() {
+                    '🮏'
+                } else {
+                    '🮎'
+                }
+            }
+            '│' => {
+                if x == area.left() {
+                    '🮍'
+                } else {
+                    '🮌'
+                }
+            }
+            ' ' => '🮐', // 🮖 █
+            _ => char,
+        }
+    }
+
+    pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, is_selected: bool) {
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                if let Some(row) = self.buf.get_mut(y as usize)
+                    && let Some(tagged_cell) = row.get_mut(x as usize)
+                {
+                    let char = Self::get_char(x, y, area, is_selected);
+
+                    tagged_cell
+                        .cell
+                        .set_symbol(&char.to_string())
+                        .set_style(ratatui::style::Style::default());
+                    tagged_cell.tag = tag;
+                }
+            }
+
+            // write label in center of block:
+            let label_span = Span::styled(label.to_string(), ratatui::style::Style::default());
+            let label_width = label_span.width() as u16;
+            if label_width < area.width {
+                let label_x = area.left() + (area.width - label_width) / 2;
+                let label_y = area.top() + (area.height / 2);
+                self.set_cursor_col(label_x);
+                self.cursor_pos.row = label_y;
+                self.write_tagged_span(&TaggedSpan::new(label_span, tag));
             }
         }
     }
