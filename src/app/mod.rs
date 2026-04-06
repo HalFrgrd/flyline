@@ -524,16 +524,7 @@ impl<'a> App<'a> {
             let min_refresh_rate: Duration =
                 Duration::from_millis((1000.0 / (self.settings.frame_rate as f64)) as u64);
 
-            // Use a shorter poll interval when waiting on tab completion so we
-            // can pick up the result promptly (every 20ms).
-            let poll_duration =
-                if matches!(self.content_mode, ContentMode::TabCompletionWaiting { .. }) {
-                    Duration::from_millis(20)
-                } else {
-                    min_refresh_rate
-                };
-
-            redraw = if event::poll(poll_duration).unwrap() {
+            redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
                         self.handle_key_event(key);
@@ -966,9 +957,24 @@ impl<'a> App<'a> {
             self.content_mode = ContentMode::Normal;
         }
 
-        // Cancel a pending tab-completion background thread when the buffer changes.
-        if matches!(self.content_mode, ContentMode::TabCompletionWaiting { .. }) {
-            self.content_mode = ContentMode::Normal;
+        // Cancel a pending tab-completion background thread when the word under
+        // cursor has changed in a way that invalidates the in-flight completion.
+        // Keep waiting if the new word is a prefix of the old one or vice-versa
+        // (the user is just typing more characters or deleting some).
+        if let ContentMode::TabCompletionWaiting {
+            ref wuc_substring, ..
+        } = self.content_mode
+        {
+            let buffer: &str = self.buffer.buffer();
+            let completion_context = tab_completion_context::get_completion_context(
+                buffer,
+                self.buffer.cursor_byte_pos(),
+            );
+            let new_wuc = completion_context.word_under_cursor;
+            let old_wuc = &wuc_substring.s;
+            if !new_wuc.starts_with(old_wuc.as_str()) && !old_wuc.starts_with(new_wuc) {
+                self.content_mode = ContentMode::Normal;
+            }
         }
 
         // Apply fuzzy filtering to active tab completion suggestions
