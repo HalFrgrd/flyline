@@ -106,9 +106,6 @@ struct FlylineArgs {
     /// Enable automatic closing character insertion (e.g. insert `)` after `(`)
     #[arg(long = "auto-close-chars", default_missing_value = "true", num_args = 0..=1)]
     auto_close_chars: Option<bool>,
-    /// Use the terminal emulator's cursor instead of rendering a custom cursor
-    #[arg(long = "use-term-emulator-cursor", default_missing_value = "full", num_args = 0..=1)]
-    use_term_emulator_cursor: Option<settings::UseTermEmulatorCursor>,
     /// Run matrix animation in the terminal background
     #[arg(long = "matrix-animation", default_missing_value = "true", num_args = 0..=1)]
     matrix_animation: Option<bool>,
@@ -262,9 +259,6 @@ enum Commands {
     /// Controls which backend renders the cursor, how it moves (interpolation),
     /// what it looks like (style), and any blinking/fading effect.
     ///
-    /// The `--backend terminal` option is equivalent to the legacy
-    /// `--use-term-emulator-cursor full` flag.
-    ///
     /// Style strings follow rich's syntax: a space-separated list of colours
     /// and attributes.  For cursor styles a single colour (e.g. `red`) is
     /// interpreted as the **background** colour of the cursor cell.
@@ -284,16 +278,16 @@ enum Commands {
     #[command(name = "set-cursor", verbatim_doc_comment)]
     SetCursor {
         /// Cursor rendering backend.  `flyline` renders a custom cursor;
-        /// `terminal` defers to the terminal emulator (default when unset).
+        /// `terminal` defers to the terminal emulator (the default).
         #[arg(long)]
-        backend: Option<settings::CursorBackend>,
+        backend: Option<cursor::CursorBackend>,
         /// Interpolation speed in cells per second, or `none` to disable
         /// interpolation.  Default is `16`.
         #[arg(long, value_name = "SPEED|none")]
         interpolate: Option<String>,
         /// Easing function for position interpolation.  Default is `linear`.
         #[arg(long, value_name = "EASING")]
-        interpolate_easing: Option<settings::CursorEasing>,
+        interpolate_easing: Option<cursor::CursorEasing>,
         /// Cursor style.  A single colour (e.g. `red`) is the cursor background.
         /// `"pink on white"` sets foreground and background.  `"reverse"` inverts
         /// the cell colours.  Default is a white block modulated by the effect.
@@ -301,13 +295,13 @@ enum Commands {
         style: Option<String>,
         /// Visual effect applied to the cursor: `fade`, `blink`, or `none`.
         #[arg(long)]
-        effect: Option<settings::CursorEffect>,
+        effect: Option<cursor::CursorEffect>,
         /// Speed multiplier for the cursor effect (default is `1.0`).
         #[arg(long, value_name = "SPEED")]
         effect_speed: Option<f32>,
         /// Easing function for the cursor effect intensity.  Default is `linear`.
         #[arg(long, value_name = "EASING")]
-        effect_easing: Option<settings::CursorEasing>,
+        effect_easing: Option<cursor::CursorEasing>,
     },
     /// Manage keybindings.
     ///
@@ -535,11 +529,6 @@ impl Flyline {
                     self.settings.auto_close_chars = enabled;
                 }
 
-                if let Some(mode) = parsed.use_term_emulator_cursor {
-                    log::info!("Term emulator cursor mode: {:?}", mode);
-                    self.settings.use_term_emulator_cursor = mode;
-                }
-
                 if let Some(enabled) = parsed.matrix_animation {
                     log::info!("Matrix animation enabled: {}", enabled);
                     self.settings.matrix_animation = enabled;
@@ -762,16 +751,6 @@ impl Flyline {
                     }) => {
                         if let Some(b) = backend {
                             log::info!("Cursor backend set to {:?}", b);
-                            match b {
-                                settings::CursorBackend::Terminal => {
-                                    self.settings.use_term_emulator_cursor =
-                                        settings::UseTermEmulatorCursor::Full;
-                                }
-                                settings::CursorBackend::Flyline => {
-                                    self.settings.use_term_emulator_cursor =
-                                        settings::UseTermEmulatorCursor::None;
-                                }
-                            }
                             self.settings.cursor_config.backend = b;
                         }
 

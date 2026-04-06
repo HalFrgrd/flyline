@@ -2,7 +2,8 @@ use itertools::Itertools;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::settings::{ColorTheme, CursorStyleConfig};
+use crate::cursor::CursorStyleConfig;
+use crate::settings::ColorTheme;
 
 /// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
 /// Returns an error message if the string cannot be parsed.
