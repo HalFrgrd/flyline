@@ -32,6 +32,7 @@ macro_rules! bash_integration_test {
 // #[test]
 // bash_integration_test!(test_bash_4_3_30, "4.3.30");
 
+bash_integration_test!(test_bash_3_2_57, "3.2.57");
 bash_integration_test!(test_bash_4_4_rc1, "4.4-rc1");
 bash_integration_test!(test_bash_4_4_18, "4.4.18");
 bash_integration_test!(test_bash_5_0, "5.0");
