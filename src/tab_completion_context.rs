@@ -1,4 +1,5 @@
 use flash::lexer::TokenKind;
+use std::borrow::{Cow, ToOwned};
 
 use crate::{
     dparser::{DParser, ToInclusiveRange},
@@ -39,28 +40,17 @@ impl SecondaryCompType {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CompletionContext<'a> {
-    pub buffer: &'a str,
-    pub context: &'a str,
-    pub context_until_cursor: &'a str,
+    pub buffer: Cow<'a, str>,
+    pub context: Cow<'a, str>,
+    pub context_until_cursor: Cow<'a, str>,
     pub word_under_cursor: SubString,
     pub comp_type: CompType,
     pub comp_type_secondary: Option<SecondaryCompType>,
 }
 
 impl<'a> CompletionContext<'a> {
-    pub fn dummy(buffer: &'a str) -> Self {
-        CompletionContext {
-            buffer,
-            context: "",
-            context_until_cursor: "",
-            word_under_cursor: SubString::new(buffer, &buffer[0..0]).unwrap(),
-            comp_type: CompType::FirstWord,
-            comp_type_secondary: None,
-        }
-    }
-
     pub fn new(
         buffer: &'a str,
         context_until_cursor: &'a str,
@@ -87,14 +77,37 @@ impl<'a> CompletionContext<'a> {
         let secondary_comp_type = SecondaryCompType::from(word_under_cursor.as_ref());
 
         CompletionContext {
-            buffer,
-            context_until_cursor,
-            context,
+            buffer: Cow::Borrowed(buffer),
+            context_until_cursor: Cow::Borrowed(context_until_cursor),
+            context: Cow::Borrowed(context),
             word_under_cursor,
             comp_type,
             comp_type_secondary: secondary_comp_type,
         }
     }
+
+    pub fn dummy(buffer: &'a str) -> Self {
+        CompletionContext {
+            buffer: Cow::Borrowed(buffer),
+            context: Cow::Borrowed(""),
+            context_until_cursor: Cow::Borrowed(""),
+            word_under_cursor: SubString::new(buffer, &buffer[0..0]).unwrap(),
+            comp_type: CompType::FirstWord,
+            comp_type_secondary: None,
+        }
+    }
+
+    pub fn into_owned(self) -> CompletionContext<'static> {
+        CompletionContext {
+            buffer: Cow::Owned(self.buffer.into_owned()),
+            context: Cow::Owned(self.context.into_owned()),
+            context_until_cursor: Cow::Owned(self.context_until_cursor.into_owned()),
+            word_under_cursor: self.word_under_cursor.to_owned(),
+            comp_type: self.comp_type,
+            comp_type_secondary: self.comp_type_secondary,
+        }
+    }
+
 }
 
 pub fn get_completion_context<'a>(

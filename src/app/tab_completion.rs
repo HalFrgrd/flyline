@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::active_suggestions::{ActiveSuggestions, Suggestion, UnprocessedSuggestion};
 use crate::app::{App, ContentMode};
 use crate::bash_funcs::{self, QuoteType};
@@ -267,8 +265,8 @@ pub(crate) fn gen_completions_internal(
             } = expand_alias_for_completion(
                 initial_command_word.to_string(),
                 word_under_cursor.as_ref(),
-                completion_context.context,
-                completion_context.context_until_cursor,
+                completion_context.context.as_ref(),
+                completion_context.context_until_cursor.as_ref(),
             );
 
             let poss_completions = bash_funcs::run_programmable_completions(
@@ -576,28 +574,23 @@ impl App<'_> {
         // We store word_under_cursor as an owned SubString so we can use it
         // after the immutable-borrow block ends.
 
-        // Capture owned copies of the buffer state for the background thread.
-        let buffer_owned = Arc::new(self.buffer.buffer().to_string());
-        let cursor_byte_pos = self.buffer.cursor_byte_pos();
-
-        let completion_context =
-            tab_completion_context::get_completion_context(&buffer_owned, cursor_byte_pos);
+        let completion_context = tab_completion_context::get_completion_context(
+            self.buffer.buffer(),
+            self.buffer.cursor_byte_pos(),
+        );
 
         let wuc_substring = completion_context.word_under_cursor.clone();
 
         let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<UnprocessedSuggestion>>>();
-        // Clone the Arc for the thread (cheap, just increments refcount)
-        let buffer_owned_clone = Arc::clone(&buffer_owned);
 
+        let completion_context_owned = completion_context.into_owned();
 
         std::thread::spawn(move || {
-            let _buffer = buffer_owned_clone; // Keep the Arc alive in this thread
-
-            let suggestions = gen_completions_internal(&completion_context);
+            let suggestions = gen_completions_internal(&completion_context_owned);
             if suggestions.is_none() {
                 log::debug!(
                     "No suggestions generated for completion context: {:?}",
-                    completion_context
+                    completion_context_owned
                 );
             }
             if let Err(e) = tx.send(suggestions) {
@@ -607,7 +600,6 @@ impl App<'_> {
                 );
             }
         });
-
 
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
