@@ -1,8 +1,10 @@
 use crate::bash_funcs;
 use crate::bash_symbols;
 use crate::content_builder::{Tag, TaggedLine, TaggedSpan};
-use crate::settings::PromptAnimation;
+use crate::settings::{PromptAnimation, PromptWidget};
+#[cfg(not(test))]
 use ansi_to_tui::IntoText;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::collections::HashMap;
 
@@ -26,6 +28,63 @@ struct ProcessedAnimation {
     ping_pong: bool,
 }
 
+/// State of a running custom widget command.
+///
+/// Held directly inside `PromptSegment::WidgetCustom`.  Each segment is fully
+/// independent: the same widget name appearing in PS1 and RPS1 produces two
+/// independent segments that each run the command separately.
+enum WidgetCustomState {
+    /// Command is still running (or has not yet been polled).
+    Pending {
+        placeholder: String,
+        receiver: std::sync::mpsc::Receiver<Result<String, WidgetFailure>>,
+    },
+    /// Command finished successfully; pre-tagged output spans are stored here
+    /// so that the tag is applied only once rather than on every render.
+    Done(Vec<TaggedSpan<'static>>),
+    /// Command exited with a non-zero exit code or could not be spawned.
+    Failed(WidgetFailure),
+}
+
+impl std::fmt::Debug for WidgetCustomState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WidgetCustomState::Pending { .. } => f.write_str("WidgetCustomState::Pending"),
+            WidgetCustomState::Done(_) => f.write_str("WidgetCustomState::Done"),
+            WidgetCustomState::Failed(_) => f.write_str("WidgetCustomState::Failed"),
+        }
+    }
+}
+
+/// Failure details returned by a custom widget command.
+struct WidgetFailure {
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+impl WidgetFailure {
+    /// Build a set of error [`TaggedSpan`]s that visualise this failure in the
+    /// prompt.  The label is `"command failed (exit N)"` when an exit code is
+    /// available, or `"command failed"` for spawn errors.  The full stdout and
+    /// stderr are emitted at `debug` level.
+    fn to_error_spans(&self) -> Vec<TaggedSpan<'static>> {
+        let style = Style::default()
+            .fg(Color::Red)
+            .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK);
+        let label = match self.exit_code {
+            Some(code) => format!("command failed (exit {})", code),
+            None => "command failed".to_string(),
+        };
+        log::debug!(
+            "Custom widget failed — stdout: {:?}  stderr: {:?}",
+            self.stdout,
+            self.stderr
+        );
+        vec![TaggedSpan::new(Span::styled(label, style), Tag::Ps1Prompt)]
+    }
+}
+
 /// A segment of a rendered prompt line.
 ///
 /// Prompt strings are parsed into sequences of `PromptSegment`s at
@@ -33,7 +92,7 @@ struct ProcessedAnimation {
 /// ratatui [`Span`]: static segments are used as-is, dynamic-time segments are
 /// formatted with the current wall-clock time, and animation segments render
 /// the appropriate frame for the current time.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum PromptSegment {
     /// A fully-resolved span (text + style) with no further substitution needed.
     Static(Span<'static>),
@@ -54,6 +113,23 @@ enum PromptSegment {
     /// to its left.  E.g. `~/foo/bar` is stored as `["~", "/foo", "/bar"]`.
     /// At render time the spans are emitted in order with per-segment tags.
     Cwd(Vec<Span<'static>>),
+    /// A mouse-mode widget.  Rendered as `enabled_text` when mouse capture is
+    /// active, otherwise `disabled_text`.
+    ///
+    /// Both texts are stored as pre-tagged [`TaggedSpan`]s so that the tag is
+    /// applied once at construction rather than on every render.
+    WidgetMouseMode {
+        enabled_text: Vec<TaggedSpan<'static>>,
+        disabled_text: Vec<TaggedSpan<'static>>,
+    },
+    /// A custom-command widget.  On first render the background-thread result
+    /// is polled; once available the command output (processed through
+    /// `expand_prompt_through_bash`) is shown.  While still pending the
+    /// placeholder string is shown.
+    ///
+    /// Each segment is fully independent: two occurrences of the same widget
+    /// name in a prompt string each run their own process.
+    WidgetCustom(WidgetCustomState),
 }
 
 pub struct PromptManager {
@@ -98,6 +174,7 @@ fn get_current_readline_prompt() -> Option<String> {
 ///
 /// Returns `None` when the string cannot be processed (e.g. contains interior
 /// NUL bytes or bash returns a null pointer).
+#[cfg(not(test))]
 fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
     if raw.is_empty() {
         return Some(vec![]);
@@ -145,6 +222,18 @@ fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
     Some(lines)
 }
 
+/// In test builds the bash FFI symbols are not linked; this function returns
+/// the raw string unchanged (wrapped in a single [`Line`]) so that unit tests
+/// can exercise the prompt-rendering logic without requiring a live bash
+/// process.
+#[cfg(test)]
+fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
+    if raw.is_empty() {
+        return Some(vec![]);
+    }
+    Some(vec![Line::raw(raw)])
+}
+
 /// Builds expanded prompt segment lines from raw bash prompt strings while
 /// accumulating a shared map of time-placeholder identifiers to chrono format
 /// strings and holding pre-processed animation data.
@@ -152,7 +241,7 @@ fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
 /// A single `PromptStringBuilder` should be used for all prompt variables
 /// (PS1, RPS1 / RPROMPT, PS1_FILL) so that placeholder identifiers are unique
 /// across all of them.
-struct PromptStringBuilder {
+struct PromptStringBuilder<'a> {
     /// Monotonically increasing counter used to generate unique placeholder IDs.
     counter: u32,
     /// Accumulated map of placeholder → chrono format string.
@@ -163,18 +252,25 @@ struct PromptStringBuilder {
     /// recognise animation-name placeholders and produce
     /// [`PromptSegment::Animation`] segments in the same pass.
     animations: Vec<ProcessedAnimation>,
+    /// Raw prompt widget definitions.  Used by [`expand_span_to_segments`] to
+    /// recognise widget-name placeholders and produce the appropriate
+    /// `PromptSegment::Widget*` segments.  Each occurrence of a widget name in
+    /// the prompt text produces a fully independent segment (and, for custom
+    /// widgets, a separate process invocation).
+    widgets: &'a [PromptWidget],
     /// Current working directory, used to detect CWD substrings in prompt spans.
     cwd: Option<String>,
     /// Home directory, used to recognise `~`-prefixed path representations.
     home: Option<String>,
 }
 
-impl PromptStringBuilder {
-    fn new(animations: Vec<ProcessedAnimation>) -> Self {
+impl<'a> PromptStringBuilder<'a> {
+    fn new(animations: Vec<ProcessedAnimation>, widgets: &'a [PromptWidget]) -> Self {
         Self {
             counter: 0,
             time_map: HashMap::new(),
             animations,
+            widgets,
             cwd: None,
             home: None,
         }
@@ -392,10 +488,23 @@ impl PromptStringBuilder {
                 .collect()
         };
 
-        // Pass 3: split any remaining Static segments on CWD.
+        // Pass 3: split any remaining Static segments on widget names.
+        let widget_segs: Vec<PromptSegment> = if self.widgets.is_empty() {
+            animation_segs
+        } else {
+            animation_segs
+                .into_iter()
+                .flat_map(|seg| match seg {
+                    PromptSegment::Static(s) => self.split_static_span_by_widgets(s),
+                    other => vec![other],
+                })
+                .collect()
+        };
+
+        // Pass 4: split any remaining Static segments on CWD.
         if let Some(cwd) = self.cwd.as_deref() {
             let home = self.home.as_deref();
-            animation_segs
+            widget_segs
                 .into_iter()
                 .flat_map(|seg| match seg {
                     PromptSegment::Static(s) => split_static_span_by_cwd(s, cwd, home),
@@ -403,7 +512,7 @@ impl PromptStringBuilder {
                 })
                 .collect()
         } else {
-            animation_segs
+            widget_segs
         }
     }
 
@@ -464,11 +573,115 @@ impl PromptStringBuilder {
         result
     }
 
+    /// Split a static [`Span`] at widget-name boundaries, producing
+    /// `Static` and `Widget*` segments.
+    ///
+    /// Runs a single greedy loop that always picks the earliest-occurring
+    /// widget name in the remaining text.  Returns at least one segment;
+    /// if no widget names are found the original span is returned unchanged
+    /// as a `Static` segment.
+    ///
+    /// For each occurrence of a custom-widget name the widget command is
+    /// either run synchronously (blocking) or launched in a background thread
+    /// (non-blocking).  Multiple occurrences of the same name each produce an
+    /// independent `WidgetCustom` segment with their own process.
+    fn split_static_span_by_widgets(&self, span: Span<'static>) -> Vec<PromptSegment> {
+        let style = span.style;
+        let mut result: Vec<PromptSegment> = Vec::new();
+        let mut remaining: String = span.content.into_owned();
+
+        loop {
+            // Find the widget whose name appears earliest in `remaining`.
+            // Custom widgets with an empty command are excluded (they have no
+            // valid name to match) so their placeholder text stays literal.
+            let next = self
+                .widgets
+                .iter()
+                .enumerate()
+                .filter_map(|(i, widget)| {
+                    let name = match widget {
+                        PromptWidget::MouseMode(w) => w.name.as_str(),
+                        PromptWidget::Custom(w) if !w.command.is_empty() => w.name.as_str(),
+                        PromptWidget::Custom(_) => return None,
+                    };
+                    remaining.find(name).map(|pos| (pos, i, name.len()))
+                })
+                .min_by_key(|(pos, _, _)| *pos);
+
+            let (pos, widget_idx, name_len) = match next {
+                None => break,
+                Some(m) => m,
+            };
+
+            if pos > 0 {
+                result.push(PromptSegment::Static(Span::styled(
+                    remaining[..pos].to_owned(),
+                    style,
+                )));
+            }
+
+            result.push(make_widget_segment(&self.widgets[widget_idx]));
+
+            remaining = remaining[pos + name_len..].to_owned();
+        }
+
+        if !remaining.is_empty() {
+            result.push(PromptSegment::Static(Span::styled(remaining, style)));
+        }
+
+        // Ensure at least one segment is always returned.
+        if result.is_empty() {
+            result.push(PromptSegment::Static(Span::styled(String::new(), style)));
+        }
+
+        result
+    }
+
     /// Allocate the next placeholder identifier and advance the counter.
     fn next_id(&mut self) -> String {
         let id = format!("FLYT{:04X}", self.counter);
         self.counter += 1;
         id
+    }
+}
+
+/// Build a [`PromptSegment`] for the given [`PromptWidget`].
+///
+/// For mouse-mode widgets the enabled/disabled texts are expanded through
+/// bash and stored as pre-tagged [`TaggedSpan`]s.
+///
+/// For custom widgets the command is either run synchronously (blocking) or
+/// launched in a background thread.  No sharing between segments occurs.
+fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
+    match widget {
+        PromptWidget::MouseMode(w) => PromptSegment::WidgetMouseMode {
+            enabled_text: stdout_to_tagged_spans(w.enabled_text.clone()),
+            disabled_text: stdout_to_tagged_spans(w.disabled_text.clone()),
+        },
+        PromptWidget::Custom(w) => {
+            let state = if w.blocking {
+                match run_widget_command(&w.command) {
+                    Ok(stdout) => WidgetCustomState::Done(stdout_to_tagged_spans(stdout)),
+                    Err(failure) => WidgetCustomState::Failed(failure),
+                }
+            } else {
+                let placeholder = " ".repeat(w.placeholder_length.unwrap_or(0));
+                let command = w.command.clone();
+                let name = w.name.clone();
+                let (tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
+                std::thread::spawn(move || {
+                    let result = run_widget_command(&command);
+                    if let Err(e) = tx.send(result) {
+                        log::warn!("Custom widget '{}': failed to send result: {}", name, e);
+                    }
+                });
+                WidgetCustomState::Pending {
+                    placeholder,
+                    receiver: rx,
+                }
+            };
+            PromptSegment::WidgetCustom(state)
+        }
     }
 }
 
@@ -663,38 +876,121 @@ fn split_slash_prefixed_into_spans(
     }
 }
 
+/// Expand `stdout` through bash prompt processing and return pre-tagged spans.
+///
+/// This is the common conversion used whenever a custom widget command
+/// completes successfully: the raw stdout string is passed through
+/// [`expand_prompt_through_bash`] and each resulting span is wrapped in a
+/// [`TaggedSpan`] with [`Tag::Ps1Prompt`].
+fn stdout_to_tagged_spans(stdout: String) -> Vec<TaggedSpan<'static>> {
+    expand_prompt_through_bash(stdout)
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| TaggedSpan::new(span, Tag::Ps1Prompt))
+        })
+        .collect()
+}
+
 /// Convert a slice of [`PromptSegment`]s to a [`TaggedLine`] by resolving each
 /// segment against `now` and attaching an appropriate [`Tag`] to each span.
+///
+/// `mouse_enabled` is used by [`PromptSegment::WidgetMouseMode`] to choose
+/// between the enabled and disabled text.
+///
+/// Segments are passed as a mutable slice so that `WidgetCustom` segments can
+/// advance their internal state (polling the background-thread result) without
+/// requiring a `RefCell`.
 fn format_prompt_line(
-    segments: Vec<PromptSegment>,
+    segments: &mut [PromptSegment],
     now: &chrono::DateTime<chrono::Local>,
+    mouse_enabled: bool,
 ) -> TaggedLine<'static> {
+    // First pass: advance any Pending WidgetCustom segments that have received
+    // their result.  We need a mutable pass before the immutable render pass.
+    for segment in segments.iter_mut() {
+        if let PromptSegment::WidgetCustom(state) = segment {
+            let new_state: Option<WidgetCustomState> = match state {
+                WidgetCustomState::Pending { receiver, .. } => match receiver.try_recv() {
+                    Ok(Ok(stdout)) => {
+                        log::info!("Custom prompt widget command completed successfully");
+                        Some(WidgetCustomState::Done(stdout_to_tagged_spans(stdout)))
+                    }
+                    Ok(Err(failure)) => {
+                        log::warn!("Custom prompt widget command failed");
+                        Some(WidgetCustomState::Failed(failure))
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        let msg =
+                            "Custom prompt widget channel disconnected without result".to_string();
+                        log::warn!("{}", msg);
+                        Some(WidgetCustomState::Failed(WidgetFailure {
+                            exit_code: None,
+                            stdout: String::new(),
+                            stderr: msg,
+                        }))
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                },
+                _ => None,
+            };
+            if let Some(s) = new_state {
+                *state = s;
+            }
+        }
+    }
+
     let tagged_spans: Vec<TaggedSpan<'static>> = segments
-        .into_iter()
+        .iter()
         .flat_map(|segment| -> Vec<TaggedSpan<'static>> {
             match segment {
                 PromptSegment::Static(span) => {
-                    vec![TaggedSpan::new(span, Tag::Ps1Prompt)]
+                    vec![TaggedSpan::new(span.clone(), Tag::Ps1Prompt)]
                 }
                 PromptSegment::Cwd(spans) => {
                     // Assign Ps1PromptCwd(n) tags: rightmost segment is n=0.
                     let n = spans.len();
                     spans
-                        .into_iter()
+                        .iter()
                         .enumerate()
-                        .map(|(i, span)| TaggedSpan::new(span, Tag::Ps1PromptCwd(n - 1 - i)))
+                        .map(|(i, span)| {
+                            TaggedSpan::new(span.clone(), Tag::Ps1PromptCwd(n - 1 - i))
+                        })
                         .collect()
                 }
                 PromptSegment::DynamicTime { strftime, style } => {
                     vec![TaggedSpan::new(
-                        Span::styled(now.format(&strftime).to_string(), style),
+                        Span::styled(now.format(strftime).to_string(), *style),
                         Tag::Ps1PromptDynamicTime,
                     )]
                 }
-                PromptSegment::Animation(anim) => get_frame_spans(&anim, now)
+                PromptSegment::Animation(anim) => get_frame_spans(anim, now)
                     .iter()
                     .map(|span| TaggedSpan::new(span.clone(), Tag::Ps1PromptAnimation))
                     .collect(),
+                PromptSegment::WidgetMouseMode {
+                    enabled_text,
+                    disabled_text,
+                } => {
+                    let tagged: &Vec<TaggedSpan<'static>> = if mouse_enabled {
+                        enabled_text
+                    } else {
+                        disabled_text
+                    };
+                    tagged.clone()
+                }
+                PromptSegment::WidgetCustom(state) => match state {
+                    WidgetCustomState::Pending { placeholder, .. } => {
+                        vec![TaggedSpan::new(
+                            Span::raw(placeholder.clone()),
+                            Tag::Ps1Prompt,
+                        )]
+                    }
+                    WidgetCustomState::Done(tagged_spans) => tagged_spans.clone(),
+                    WidgetCustomState::Failed(failure) => failure.to_error_spans(),
+                },
             }
         })
         .collect();
@@ -736,8 +1032,99 @@ fn get_frame_spans<'a>(
     &anim.frames[frame_index]
 }
 
+/// Run a widget command as a subprocess and return its stdout on success.
+///
+/// Returns `Ok(stdout)` when the command exits with status 0, or
+/// `Err(WidgetFailure)` (carrying exit code, stdout, and stderr) when the
+/// command fails or cannot be spawned.  Both stdout and stderr are logged.
+///
+/// Temporarily restores `SIGCHLD` to `SIG_DFL` so that the internal `wait()`
+/// call in `std::process::Command::output()` is not perturbed by Bash setting
+/// `SIGCHLD` to `SIG_IGN`.
+fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
+    let (prog, args) = match command.split_first() {
+        Some(parts) => parts,
+        None => {
+            let msg = "run_widget_command: empty command".to_string();
+            log::warn!("{}", msg);
+            return Err(WidgetFailure {
+                exit_code: None,
+                stdout: String::new(),
+                stderr: msg,
+            });
+        }
+    };
+
+    // Bash sets SIGCHLD to SIG_IGN, causing the kernel to auto-reap child
+    // processes. This makes output()'s internal wait() fail with ECHILD.
+    // Temporarily restore SIG_DFL so we can wait on our child, then put
+    // the original disposition back.
+    // SAFETY: signal(2) only modifies signal disposition; no other thread
+    // depends on SIGCHLD disposition at this exact instant.
+    let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+
+    let output = std::process::Command::new(prog)
+        .args(args)
+        .output()
+        .inspect(|_| unsafe {
+            libc::signal(libc::SIGCHLD, prev_sigchld);
+        })
+        .inspect_err(|_| unsafe {
+            libc::signal(libc::SIGCHLD, prev_sigchld);
+        });
+
+    match output {
+        Err(e) => {
+            log::error!(
+                "Custom prompt widget: failed to spawn command {:?}: {}",
+                command,
+                e
+            );
+            Err(WidgetFailure {
+                exit_code: None,
+                stdout: String::new(),
+                stderr: e.to_string(),
+            })
+        }
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            log::info!(
+                "Custom prompt widget command {:?} exited with {}",
+                command,
+                out.status
+            );
+            if !stdout.is_empty() {
+                log::debug!("Custom prompt widget stdout: {}", stdout);
+            }
+            if !stderr.is_empty() {
+                log::debug!("Custom prompt widget stderr: {}", stderr);
+            }
+            if out.status.success() {
+                Ok(stdout)
+            } else {
+                log::warn!(
+                    "Custom prompt widget: command {:?} failed with {}; stderr: {}",
+                    command,
+                    out.status,
+                    stderr
+                );
+                Err(WidgetFailure {
+                    exit_code: out.status.code(),
+                    stdout,
+                    stderr,
+                })
+            }
+        }
+    }
+}
+
 impl PromptManager {
-    pub fn new(unfinished_from_prev_command: bool, animations: &[PromptAnimation]) -> Self {
+    pub fn new(
+        unfinished_from_prev_command: bool,
+        animations: &[PromptAnimation],
+        widgets: &[PromptWidget],
+    ) -> Self {
         if unfinished_from_prev_command {
             // If the previous command was unfinished, use a simple prompt to avoid confusion
 
@@ -799,13 +1186,16 @@ impl PromptManager {
             log::debug!("Animation count: {}", processed_animations.len());
 
             // A single builder is shared across all prompt variables so that
-            // placeholder IDs are unique.  Animations are passed in so that
-            // expand_span_to_segments can produce Animation segments directly.
+            // placeholder IDs are unique.  Animations and widgets are passed in
+            // so that expand_span_to_segments can produce the right segments.
+            // Widget segments (including process spawning) are created lazily
+            // inside split_static_span_by_widgets as each widget name is found.
+            log::debug!("Widget count: {}", widgets.len());
             let cwd = bash_funcs::get_cwd();
             let home = bash_funcs::get_envvar_value("HOME");
             log::debug!("CWD for prompt detection: {:?}, HOME: {:?}", cwd, home);
             let mut builder =
-                PromptStringBuilder::new(processed_animations).with_cwd(cwd.clone(), home);
+                PromptStringBuilder::new(processed_animations, widgets).with_cwd(cwd.clone(), home);
 
             // Read the raw PS1 env var so we can intercept time format codes
             // before handing the string to decode_prompt_string.  Fall back to
@@ -847,6 +1237,7 @@ impl PromptManager {
     pub fn get_ps1_lines(
         &mut self,
         show_animations: bool,
+        mouse_enabled: bool,
     ) -> (
         Vec<TaggedLine<'static>>,
         Vec<TaggedLine<'static>>,
@@ -861,19 +1252,17 @@ impl PromptManager {
 
         let formatted_prompt: Vec<TaggedLine<'static>> = self
             .prompt
-            .clone()
-            .into_iter()
-            .map(|line| format_prompt_line(line, &now))
+            .iter_mut()
+            .map(|line| format_prompt_line(line, &now, mouse_enabled))
             .collect();
 
         let formatted_rprompt: Vec<TaggedLine<'static>> = self
             .rprompt
-            .clone()
-            .into_iter()
-            .map(|line| format_prompt_line(line, &now))
+            .iter_mut()
+            .map(|line| format_prompt_line(line, &now, mouse_enabled))
             .collect();
 
-        let formatted_fill = format_prompt_line(self.fill_span.clone(), &now);
+        let formatted_fill = format_prompt_line(&mut self.fill_span, &now, mouse_enabled);
 
         (formatted_prompt, formatted_rprompt, formatted_fill)
     }
@@ -923,6 +1312,7 @@ impl PromptManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::{PromptWidgetCustom, PromptWidgetMouseMode};
     use chrono::TimeZone;
 
     fn fixed_time(ms: i64) -> chrono::DateTime<chrono::Local> {
@@ -1051,7 +1441,7 @@ mod tests {
     #[test]
     fn test_expand_span_animation_not_present() {
         let anim = make_processed_anim("SPIN", 10.0, &["f0"]);
-        let builder = PromptStringBuilder::new(vec![anim]);
+        let builder = PromptStringBuilder::new(vec![anim], &[]);
         let span = Span::raw("no spinner here");
         let segs = builder.expand_span_to_segments(span);
         assert_eq!(segs.len(), 1);
@@ -1064,7 +1454,7 @@ mod tests {
     #[test]
     fn test_expand_span_animation_name_only() {
         let anim = make_processed_anim("SPIN", 10.0, &["f0", "f1"]);
-        let builder = PromptStringBuilder::new(vec![anim]);
+        let builder = PromptStringBuilder::new(vec![anim], &[]);
         let span = Span::raw("SPIN");
         let segs = builder.expand_span_to_segments(span);
         assert_eq!(segs.len(), 1);
@@ -1077,7 +1467,7 @@ mod tests {
     #[test]
     fn test_expand_span_animation_name_surrounded_by_text() {
         let anim = make_processed_anim("SPIN", 10.0, &["f0"]);
-        let builder = PromptStringBuilder::new(vec![anim]);
+        let builder = PromptStringBuilder::new(vec![anim], &[]);
         let span = Span::raw("before SPIN after");
         let segs = builder.expand_span_to_segments(span);
         assert_eq!(segs.len(), 3);
@@ -1101,13 +1491,13 @@ mod tests {
     fn test_format_prompt_line_animation_substitution() {
         // At t=0 ms, fps=10 → 100 ms/frame → frame 0 ("f0").
         let anim = make_processed_anim("SPIN", 10.0, &["f0", "f1"]);
-        let segments = vec![
+        let mut segments = vec![
             PromptSegment::Static(Span::raw("before ")),
             PromptSegment::Animation(Box::new(anim)),
             PromptSegment::Static(Span::raw(" after")),
         ];
         let now = fixed_time(0);
-        let line = format_prompt_line(segments, &now);
+        let line = format_prompt_line(&mut segments, &now, false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "before f0 after");
     }
@@ -1116,8 +1506,8 @@ mod tests {
     fn test_format_prompt_line_animation_frame_advances() {
         // At t=100 ms, fps=10 → frame 1 ("f1").
         let anim = make_processed_anim("SPIN", 10.0, &["f0", "f1"]);
-        let segments = vec![PromptSegment::Animation(Box::new(anim))];
-        let line = format_prompt_line(segments, &fixed_time(100));
+        let mut segments = vec![PromptSegment::Animation(Box::new(anim))];
+        let line = format_prompt_line(&mut segments, &fixed_time(100), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "f1");
     }
@@ -1125,8 +1515,8 @@ mod tests {
     #[test]
     fn test_format_prompt_line_animation_tag() {
         let anim = make_processed_anim("SPIN", 10.0, &["f0"]);
-        let segments = vec![PromptSegment::Animation(Box::new(anim))];
-        let line = format_prompt_line(segments, &fixed_time(0));
+        let mut segments = vec![PromptSegment::Animation(Box::new(anim))];
+        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
         assert!(
             line.spans.iter().all(
                 |s| s.tag == crate::content_builder::SpanTag::Constant(Tag::Ps1PromptAnimation)
@@ -1144,7 +1534,7 @@ mod tests {
         let now = fixed_time(0);
         let formatted_time = now.format("%H:%M:%S").to_string();
 
-        let segments = vec![
+        let mut segments = vec![
             PromptSegment::Static(Span::raw("[")),
             PromptSegment::DynamicTime {
                 strftime: "%H:%M:%S".to_string(),
@@ -1152,7 +1542,7 @@ mod tests {
             },
             PromptSegment::Static(Span::raw("]")),
         ];
-        let line = format_prompt_line(segments, &now);
+        let line = format_prompt_line(&mut segments, &now, false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, format!("[{}]", formatted_time));
     }
@@ -1161,7 +1551,7 @@ mod tests {
 
     #[test]
     fn test_expand_span_to_segments_no_placeholders() {
-        let builder = PromptStringBuilder::new(vec![]);
+        let builder = PromptStringBuilder::new(vec![], &[]);
         let span = Span::raw("hello world");
         let segs = builder.expand_span_to_segments(span);
         assert_eq!(segs.len(), 1);
@@ -1173,7 +1563,7 @@ mod tests {
 
     #[test]
     fn test_expand_span_to_segments_single_placeholder() {
-        let mut builder = PromptStringBuilder::new(vec![]);
+        let mut builder = PromptStringBuilder::new(vec![], &[]);
         let id = builder.next_id();
         builder.time_map.insert(id.clone(), "%H:%M:%S".to_string());
 
@@ -1190,7 +1580,7 @@ mod tests {
 
     #[test]
     fn test_expand_span_to_segments_placeholder_surrounded_by_text() {
-        let mut builder = PromptStringBuilder::new(vec![]);
+        let mut builder = PromptStringBuilder::new(vec![], &[]);
         let id = builder.next_id();
         builder.time_map.insert(id.clone(), "%H:%M".to_string());
 
@@ -1277,7 +1667,7 @@ mod tests {
 
     #[test]
     fn test_expand_span_cwd_tilde_only() {
-        let builder = PromptStringBuilder::new(vec![]).with_cwd(
+        let builder = PromptStringBuilder::new(vec![], &[]).with_cwd(
             "/home/foo/qwe/try/ooh/lkj".to_string(),
             Some("/home/foo".to_string()),
         );
@@ -1295,7 +1685,7 @@ mod tests {
 
     #[test]
     fn test_expand_span_cwd_partial_no_tilde() {
-        let builder = PromptStringBuilder::new(vec![]).with_cwd(
+        let builder = PromptStringBuilder::new(vec![], &[]).with_cwd(
             "/home/foo/qwe/try/ooh/lkj".to_string(),
             Some("/home/foo".to_string()),
         );
@@ -1366,8 +1756,8 @@ mod tests {
     fn test_format_prompt_line_cwd_tags() {
         // "~/foo/bar" → 3 segments; rightmost (/bar) gets index 0.
         let spans = split_cwd_text_into_spans("~/foo/bar", ratatui::style::Style::default());
-        let segments = vec![PromptSegment::Cwd(spans)];
-        let line = format_prompt_line(segments, &fixed_time(0));
+        let mut segments = vec![PromptSegment::Cwd(spans)];
+        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 3);
         // "~" is leftmost → index 2
         assert_eq!(
@@ -1389,8 +1779,8 @@ mod tests {
     #[test]
     fn test_format_prompt_line_cwd_single_segment_tag() {
         let spans = split_cwd_text_into_spans("~", ratatui::style::Style::default());
-        let segments = vec![PromptSegment::Cwd(spans)];
-        let line = format_prompt_line(segments, &fixed_time(0));
+        let mut segments = vec![PromptSegment::Cwd(spans)];
+        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
@@ -1400,11 +1790,11 @@ mod tests {
 
     #[test]
     fn test_format_prompt_line_dynamic_time_tag() {
-        let segments = vec![PromptSegment::DynamicTime {
+        let mut segments = vec![PromptSegment::DynamicTime {
             strftime: "%H:%M".to_string(),
             style: ratatui::style::Style::default(),
         }];
-        let line = format_prompt_line(segments, &fixed_time(0));
+        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
@@ -1414,8 +1804,8 @@ mod tests {
 
     #[test]
     fn test_format_prompt_line_static_tag() {
-        let segments = vec![PromptSegment::Static(Span::raw("$ "))];
-        let line = format_prompt_line(segments, &fixed_time(0));
+        let mut segments = vec![PromptSegment::Static(Span::raw("$ "))];
+        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
@@ -1495,5 +1885,168 @@ mod tests {
         let pm = make_pm_with_cwd("/home/foo/bar", "/home/foo/bar");
         // index beyond path depth → root
         assert_eq!(pm.cwd_path_for_index(100), Some("/".to_string()));
+    }
+
+    // --- WidgetMouseMode rendering -------------------------------------------
+
+    #[test]
+    fn test_format_prompt_line_widget_mouse_mode_enabled() {
+        let mut segments = vec![PromptSegment::WidgetMouseMode {
+            enabled_text: vec![TaggedSpan::new(Span::raw("mouse on"), Tag::Ps1Prompt)],
+            disabled_text: vec![TaggedSpan::new(Span::raw("mouse off"), Tag::Ps1Prompt)],
+        }];
+        let line = format_prompt_line(&mut segments, &fixed_time(0), true);
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
+        assert_eq!(content, "mouse on");
+    }
+
+    #[test]
+    fn test_format_prompt_line_widget_mouse_mode_disabled() {
+        let mut segments = vec![PromptSegment::WidgetMouseMode {
+            enabled_text: vec![TaggedSpan::new(Span::raw("mouse on"), Tag::Ps1Prompt)],
+            disabled_text: vec![TaggedSpan::new(Span::raw("mouse off"), Tag::Ps1Prompt)],
+        }];
+        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
+        assert_eq!(content, "mouse off");
+    }
+
+    #[test]
+    fn test_expand_span_widget_mouse_mode_name_only() {
+        let widget = PromptWidget::MouseMode(PromptWidgetMouseMode {
+            name: "MOUSE_WIDGET".to_string(),
+            enabled_text: "on".to_string(),
+            disabled_text: "off".to_string(),
+        });
+        let widgets = [widget];
+        let builder = PromptStringBuilder::new(vec![], &widgets);
+        let span = Span::raw("MOUSE_WIDGET");
+        let segs = builder.expand_span_to_segments(span);
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            PromptSegment::WidgetMouseMode {
+                enabled_text,
+                disabled_text,
+            } => {
+                // In test builds expand_prompt_through_bash returns the text unchanged.
+                assert_eq!(enabled_text[0].span.content, "on");
+                assert_eq!(disabled_text[0].span.content, "off");
+            }
+            _ => panic!("expected WidgetMouseMode"),
+        }
+    }
+
+    #[test]
+    fn test_expand_span_widget_mouse_mode_surrounded_by_text() {
+        let widget = PromptWidget::MouseMode(PromptWidgetMouseMode {
+            name: "MMODE".to_string(),
+            enabled_text: "on".to_string(),
+            disabled_text: "off".to_string(),
+        });
+        let widgets = [widget];
+        let builder = PromptStringBuilder::new(vec![], &widgets);
+        let span = Span::raw("before MMODE after");
+        let segs = builder.expand_span_to_segments(span);
+        assert_eq!(segs.len(), 3);
+        match &segs[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content, "before "),
+            _ => panic!("expected Static at index 0"),
+        }
+        match &segs[1] {
+            PromptSegment::WidgetMouseMode { .. } => {}
+            _ => panic!("expected WidgetMouseMode at index 1"),
+        }
+        match &segs[2] {
+            PromptSegment::Static(s) => assert_eq!(s.content, " after"),
+            _ => panic!("expected Static at index 2"),
+        }
+    }
+
+    // --- WidgetCustom rendering ---------------------------------------------
+
+    #[test]
+    fn test_format_prompt_line_widget_custom_pending() {
+        // A pending custom widget should render its placeholder.
+        let (_tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
+        let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Pending {
+            placeholder: "   ".to_string(),
+            receiver: rx,
+        })];
+        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
+        assert_eq!(content, "   ");
+    }
+
+    #[test]
+    fn test_format_prompt_line_widget_custom_done() {
+        // A done custom widget renders the pre-tagged result spans.
+        let result_spans = vec![TaggedSpan::new(Span::raw("output"), Tag::Ps1Prompt)];
+        let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Done(
+            result_spans,
+        ))];
+        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
+        assert_eq!(content, "output");
+    }
+
+    #[test]
+    fn test_format_prompt_line_widget_custom_failed() {
+        // A failed custom widget renders the "command failed (exit N)" error text.
+        let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Failed(
+            WidgetFailure {
+                exit_code: Some(1),
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        ))];
+        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
+        assert_eq!(content, "command failed (exit 1)");
+    }
+
+    #[test]
+    fn test_format_prompt_line_widget_custom_failed_no_exit_code() {
+        // When there's no exit code (spawn failure), renders "command failed".
+        let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Failed(
+            WidgetFailure {
+                exit_code: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        ))];
+        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
+        assert_eq!(content, "command failed");
+    }
+
+    #[test]
+    fn test_expand_span_widget_custom_name() {
+        // When a custom widget name appears in a span it should produce a
+        // WidgetCustom segment. Non-blocking variant is used so the test
+        // doesn't wait for the command; the background thread will fail
+        // silently since the command doesn't exist.
+        let widget = PromptWidget::Custom(PromptWidgetCustom {
+            name: "MY_WIDGET".to_string(),
+            command: vec!["nonexistent_test_command".to_string()],
+            blocking: false,
+            placeholder_length: Some(0),
+        });
+        let widgets = [widget];
+        let builder = PromptStringBuilder::new(vec![], &widgets);
+        let span = Span::raw("before MY_WIDGET after");
+        let segs = builder.expand_span_to_segments(span);
+        assert_eq!(segs.len(), 3);
+        match &segs[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content, "before "),
+            _ => panic!("expected Static at 0"),
+        }
+        match &segs[1] {
+            PromptSegment::WidgetCustom(_) => {}
+            _ => panic!("expected WidgetCustom at 1"),
+        }
+        match &segs[2] {
+            PromptSegment::Static(s) => assert_eq!(s.content, " after"),
+            _ => panic!("expected Static at 2"),
+        }
     }
 }

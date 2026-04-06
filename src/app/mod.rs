@@ -308,6 +308,11 @@ impl<'a> App<'a> {
                     .values()
                     .cloned()
                     .collect::<Vec<_>>(),
+                &settings
+                    .custom_prompt_widgets
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>(),
             ),
             history_manager: HistoryManager::new(settings),
             buffer_before_history_navigation: None,
@@ -1266,7 +1271,7 @@ impl<'a> App<'a> {
 
         let (mut lprompt, rprompt, fill_span) = self
             .prompt_manager
-            .get_ps1_lines(self.settings.show_animations);
+            .get_ps1_lines(self.settings.show_animations, self.mouse_state.enabled());
 
         // When in PromptCwdEdit mode, highlight the selected CWD path segment.
         if let ContentMode::PromptCwdEdit(cwd_index) = self.content_mode {

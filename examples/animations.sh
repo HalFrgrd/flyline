@@ -1,13 +1,13 @@
 # Feel free to add your own animations here!
 
 
-flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
+flyline create-prompt-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
 
 # Now you can use this animation in your prompt. For example:
 # PS1='\u@\h:\w MY_ANIMATION'
 
 # This replaces any instance of "john" with the animation, so it will animate every time "john" appears in the prompt.
-flyline create-anim --name "john" --ping-pong --fps 8 \
+flyline create-prompt-anim --name "john" --ping-pong --fps 8 \
     john \
     john \
     john \
@@ -29,7 +29,7 @@ MAGENTA='\e[35m'
 CYAN='\e[36m'
 WHITE='\e[37m'
 
-flyline create-anim --name "john" --ping-pong --fps 3 \
+flyline create-prompt-anim --name "john" --ping-pong --fps 3 \
     "${YELLOW}\u" \
     "${RED}\u" \
     "${MAGENTA}\u" \
@@ -40,7 +40,7 @@ flyline create-anim --name "john" --ping-pong --fps 3 \
 
 
 # Experiment with higher frame rates for smooth transitions:
-flyline create-anim --name "john" --fps 30 \
+flyline create-prompt-anim --name "john" --fps 30 \
     '\e[38;2;255;0;0m\u' \
     '\e[38;2;255;16;0m\u' \
     '\e[38;2;255;32;0m\u' \
