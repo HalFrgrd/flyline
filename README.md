@@ -162,7 +162,7 @@ More examples can be found in [examples/animations.sh](examples/animations.sh).
 
 The block below is auto-generated from `flyline create-prompt-anim --help`:
 
-<!-- FLYLINE_CREATE_ANIM_HELP_START -->
+<!-- FLYLINE_CREATE_PROMPT_ANIM_HELP_START -->
 ```
 Create a custom prompt animation.
 
@@ -195,7 +195,7 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 ```
-<!-- FLYLINE_CREATE_ANIM_HELP_END -->
+<!-- FLYLINE_CREATE_PROMPT_ANIM_HELP_END -->
 
 ## Custom prompt widgets
 
