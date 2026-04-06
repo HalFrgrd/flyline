@@ -451,13 +451,10 @@ impl std::fmt::Debug for ActiveSuggestions {
 }
 
 impl ActiveSuggestions {
-    pub fn try_new<'underlying_buffer>(
+    pub fn new<'underlying_buffer>(
         suggestions: Vec<UnprocessedSuggestion>,
-        word_under_cursor: &'underlying_buffer str,
-        buffer: &'underlying_buffer TextBuffer,
-    ) -> Option<Self> {
-        let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).ok()?;
-
+        word_under_cursor: SubString,
+    ) -> Self {
         let filtered_suggestions = vec![];
         let sug_len = suggestions.len();
 
@@ -474,7 +471,7 @@ impl ActiveSuggestions {
         };
 
         active_sug.apply_fuzzy_filter(word_under_cursor);
-        Some(active_sug)
+        active_sug
     }
 
     pub fn on_tab(&mut self, shift_tab: bool) {
@@ -755,13 +752,26 @@ impl ActiveSuggestions {
     }
 
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
+        match self.all_unprocessed_suggestions.as_slice() {
+            [] => {
+                log::debug!("No completions found");
+                return None;
+            }
+            [single_suggestion] => {
+                self.accept_item(single_suggestion, buffer);
+                log::debug!("Only one completion found: auto-accepted");
+                return None;
+            }
+            _ => {}
+        }
+
         match self.filtered_suggestions.as_slice() {
             [] => {
                 log::debug!("No completions found");
                 None
             }
-            [_] => {
-                self.accept_currently_selected(buffer);
+            [_filtered_item] => {
+                self.accept_selected_filtered_item(buffer);
                 log::debug!("Only one completion found for first word: auto-accepted");
                 None
             }
@@ -775,7 +785,7 @@ impl ActiveSuggestions {
         }
     }
 
-    pub fn accept_currently_selected(&mut self, buffer: &mut TextBuffer) {
+    pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
         let filtered_item = match self.filtered_suggestions.get(self.current_1d_index()) {
             Some(s) => s,
             None => {
@@ -802,7 +812,11 @@ impl ActiveSuggestions {
             }
         };
 
-        let suggestion = completion_item.to_suggestion();
+        self.accept_item(completion_item, buffer);
+    }
+
+    fn accept_item(&self, item: &UnprocessedSuggestion, buffer: &mut TextBuffer) {
+        let suggestion = item.to_suggestion();
         if let Err(e) =
             buffer.replace_word_under_cursor(&suggestion.formatted(), &self.word_under_cursor)
         {

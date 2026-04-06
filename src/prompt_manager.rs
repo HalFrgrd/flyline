@@ -28,6 +28,17 @@ struct ProcessedAnimation {
     ping_pong: bool,
 }
 
+impl ProcessedAnimation {
+    pub fn patch_style(mut self, style: Style) -> Self {
+        for frame in &mut self.frames {
+            for span in frame {
+                span.style = span.style.patch(style);
+            }
+        }
+        self
+    }
+}
+
 /// State of a running custom widget command.
 ///
 /// Held directly inside `PromptSegment::WidgetCustom`.  Each segment is fully
@@ -553,9 +564,9 @@ impl<'a> PromptStringBuilder<'a> {
                 )));
             }
 
-            result.push(PromptSegment::Animation(Box::new(
-                self.animations[anim_idx].clone(),
-            )));
+            let anim = self.animations[anim_idx].clone().patch_style(style);
+
+            result.push(PromptSegment::Animation(Box::new(anim)));
 
             remaining = remaining[pos + name_len..].to_owned();
         }
@@ -620,6 +631,7 @@ impl<'a> PromptStringBuilder<'a> {
                 )));
             }
 
+            // TODO: patch the widget style here
             result.push(make_widget_segment(&self.widgets[widget_idx]));
 
             remaining = remaining[pos + name_len..].to_owned();

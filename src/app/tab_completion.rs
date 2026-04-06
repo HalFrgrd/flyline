@@ -4,7 +4,7 @@ use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
 use crate::text_buffer::SubString;
 use crate::users;
-use glob::glob;
+use glob;
 
 #[derive(Debug)]
 struct PathPatternExpansion {
@@ -43,13 +43,13 @@ impl PathPatternExpansion {
         } else {
             (String::new(), pattern.to_string())
         };
-        let fully_expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
+        let expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
 
         let rhs_pattern = bash_funcs::dequoting_function_rust(&rhs_pattern);
 
         PathPatternExpansion {
             raw_prefix,
-            expanded_prefix: fully_expanded_prefix,
+            expanded_prefix,
             rhs_pattern,
         }
     }
@@ -62,34 +62,48 @@ impl PathPatternExpansion {
         }
     }
 
+    fn prefix_with_trailing_slash(&self) -> String {
+        let mut prefix = self.expanded_prefix.clone();
+        if prefix.is_empty() {
+            return prefix;
+        }
+        if !prefix.ends_with('/') {
+            prefix.push('/');
+        }
+        prefix
+    }
+
+    fn wants_hidden(&self) -> bool {
+        self.rhs_pattern.starts_with('.') && !self.rhs_pattern.starts_with("./")
+    }
+
     fn convert_expanded_match_to_unexpanded(
         &self,
         expanded_match: &str,
         quote_type: Option<QuoteType>,
-    ) -> String {
+    ) -> (String, String) {
         // Compute the relative path of the result compared to
         // expanded_prefix, then reconstruct using raw_prefix so the
         // suggestion preserves the user's original prefix spelling
         // (e.g. `~/`, `$HOME/`, or a relative path segment).
-        if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
-            let suffix = suffix.trim_start_matches('/');
-
+        if let Some(suffix) = expanded_match.strip_prefix(&self.prefix_with_trailing_slash()) {
             let quoted_suffix = match quote_type {
                 Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
                 _ => bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default()),
             };
             if self.raw_prefix.is_empty() {
-                quoted_suffix
+                (quoted_suffix.clone(), quoted_suffix)
             } else {
-                format!("{}/{}", self.raw_prefix, quoted_suffix)
+                let combined = format!("{}/{}", self.raw_prefix, quoted_suffix);
+                (combined.clone(), quoted_suffix)
             }
         } else {
             log::warn!(
                 "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
                 expanded_match,
-                self.expanded_prefix
+                self.prefix_with_trailing_slash()
             );
-            expanded_match.to_string()
+            (expanded_match.to_string(), expanded_match.to_string())
         }
     }
 }
@@ -141,19 +155,19 @@ struct AliasExpandedCompletion {
 /// `word_under_cursor` must be a sub-slice of `context`.
 fn expand_alias_for_completion(
     command_word: String,
-    word_under_cursor: &str,
+    word_under_cursor: &SubString,
     context: &str,
     context_until_cursor: &str,
 ) -> AliasExpandedCompletion {
+    // Capture the original length before potentially moving `command_word`.
+    let command_word_len = command_word.len();
+
     let poss_alias = bash_funcs::find_alias(&command_word);
     log::debug!(
         "Checking for alias for command word '{}': {:?}",
         command_word,
         poss_alias
     );
-
-    // Capture the original length before potentially moving `command_word`.
-    let command_word_len = command_word.len();
 
     let alias = if let Some(a) = poss_alias
         && !a.is_empty()
@@ -164,13 +178,7 @@ fn expand_alias_for_completion(
     };
 
     let len_delta = alias.len() as isize - command_word_len as isize;
-    let word_under_cursor_end = {
-        // Safety: `word_under_cursor` is guaranteed by the caller to be a
-        // sub-slice of `context`, so this pointer subtraction is valid.
-        let word_start_offset_in_context =
-            word_under_cursor.as_ptr() as usize - context.as_ptr() as usize;
-        (word_start_offset_in_context + word_under_cursor.len()).saturating_add_signed(len_delta)
-    };
+    let word_under_cursor_end = word_under_cursor.end().saturating_add_signed(len_delta);
 
     // cursor position relative to the start of the completion context
     let cursor_byte_pos = context_until_cursor.len().saturating_add_signed(len_delta);
@@ -237,11 +245,11 @@ pub(crate) fn gen_completions_internal(
 ) -> Option<Vec<UnprocessedSuggestion>> {
     log::debug!("Completion context: {:#?}", completion_context);
 
-    let word_under_cursor = completion_context.word_under_cursor;
+    let word_under_cursor = &completion_context.word_under_cursor;
 
     match &completion_context.comp_type {
         tab_completion_context::CompType::FirstWord => {
-            let completions = tab_complete_first_word(word_under_cursor);
+            let completions = tab_complete_first_word(word_under_cursor.as_ref());
             log::debug!("Primary completions for first word: {:?}", completions);
             if !completions.is_empty() {
                 return Some(completions);
@@ -265,14 +273,14 @@ pub(crate) fn gen_completions_internal(
             } = expand_alias_for_completion(
                 initial_command_word.to_string(),
                 word_under_cursor,
-                completion_context.context,
-                completion_context.context_until_cursor,
+                completion_context.context.as_ref(),
+                completion_context.context_until_cursor.as_ref(),
             );
 
             let poss_completions = bash_funcs::run_programmable_completions(
                 &full_command,
                 &command_word,
-                word_under_cursor,
+                word_under_cursor.as_ref(),
                 cursor_byte_pos,
                 word_under_cursor_end,
             );
@@ -288,7 +296,7 @@ pub(crate) fn gen_completions_internal(
                     let suggestions = post_process_completions(
                         comp_result.completions,
                         comp_result.flags,
-                        word_under_cursor,
+                        word_under_cursor.as_ref(),
                     );
                     return Some(suggestions);
                 }
@@ -314,7 +322,7 @@ fn gen_secondary_completions(
     completion_context: &tab_completion_context::CompletionContext,
     comp_resultflags: bash_funcs::CompletionFlags,
 ) -> Option<Vec<UnprocessedSuggestion>> {
-    let word_under_cursor = completion_context.word_under_cursor;
+    let word_under_cursor = completion_context.word_under_cursor.as_ref();
     match completion_context.comp_type_secondary {
         Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
             log::debug!("Environment variable completion {:?}", word_under_cursor);
@@ -454,7 +462,9 @@ fn tab_complete_glob_expansion(
 
     const MAX_GLOB_RESULTS: usize = 1_000;
 
-    if let Ok(paths) = glob(&expanded.expanded_pattern()) {
+    let glob_pattern = expanded.expanded_pattern();
+
+    if let Ok(paths) = glob::glob(&glob_pattern) {
         for (idx, path_result) in paths.enumerate() {
             if idx >= MAX_GLOB_RESULTS {
                 log::debug!(
@@ -463,11 +473,25 @@ fn tab_complete_glob_expansion(
                 );
                 break;
             }
+
             if let Ok(path) = path_result {
-                let unexpanded = expanded.convert_expanded_match_to_unexpanded(
+                let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
                     &path.to_string_lossy(),
                     comp_resultflags.quote_type,
                 );
+
+                // Tab completion ignores "." and ".."
+                if globbed_suffix == "." || globbed_suffix == ".." {
+                    continue;
+                }
+
+                // Only include hidden if the pattern explicitly requested it
+                if !expanded.wants_hidden()
+                    && globbed_suffix.starts_with('.')
+                    && !globbed_suffix.starts_with("./")
+                {
+                    continue;
+                }
 
                 results.push(UnprocessedSuggestion::Raw {
                     raw_text: unexpanded,
@@ -517,8 +541,8 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<UnprocessedSuggestion> {
 }
 
 impl App<'_> {
-    fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
-        match opt_suggestion.and_then(|s| s.try_accept(&mut self.buffer)) {
+    fn try_accept_tab_completion(&mut self, suggs: ActiveSuggestions) {
+        match suggs.try_accept(&mut self.buffer) {
             None => {
                 self.content_mode = ContentMode::Normal;
             }
@@ -535,6 +559,7 @@ impl App<'_> {
         sugs: Vec<UnprocessedSuggestion>,
         wuc_substring: SubString,
     ) {
+        let mut final_wuc = wuc_substring.clone();
         // Phase 2: if there are fewer than 500 suggestions, find any common
         // prefix and automatically insert it when it extends the word under
         // cursor.
@@ -544,69 +569,52 @@ impl App<'_> {
                 if common_prefix.len() > wuc_substring.s.len()
                     && common_prefix.starts_with(&*wuc_substring.s)
                 {
-                    log::debug!(
-                        "Inserting common prefix '{}' (word_under_cursor was '{}')",
-                        common_prefix,
-                        wuc_substring.s
-                    );
-                    if let Err(e) = self
+                    match self
                         .buffer
                         .replace_word_under_cursor(&common_prefix, &wuc_substring)
                     {
-                        log::warn!(
+                        Ok(new_wuc) => {
+                            log::info!(
+                                "New word under cursor after inserting common prefix: '{:?}'",
+                                new_wuc
+                            );
+                            final_wuc = new_wuc;
+                        }
+                        Err(e) => log::warn!(
                             "Failed to replace word under cursor with common prefix: {}",
                             e
-                        );
+                        ),
                     }
                 }
             }
         }
 
-        // Phase 3: re-derive the completion context from the (possibly updated)
-        // buffer and hand the suggestions off to the UI layer.
-        let buffer = self.buffer.buffer();
-        let completion_context =
-            tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos());
-        self.try_accept_tab_completion(ActiveSuggestions::try_new(
-            sugs,
-            completion_context.word_under_cursor,
-            &self.buffer,
-        ));
+        // Phase 3: hand the suggestions off to the UI layer.
+        self.try_accept_tab_completion(ActiveSuggestions::new(sugs, final_wuc));
     }
 
     pub fn start_tab_complete(&mut self) {
         // Phase 1: compute the completion context and generate suggestions.
         // We store word_under_cursor as an owned SubString so we can use it
         // after the immutable-borrow block ends.
-        let wuc_substring = {
-            let buffer: &str = self.buffer.buffer();
-            let completion_context = tab_completion_context::get_completion_context(
-                buffer,
-                self.buffer.cursor_byte_pos(),
-            );
-            // word_under_cursor is always a sub-slice of buffer, so SubString::new succeeds.
-            SubString::new(buffer, completion_context.word_under_cursor).unwrap_or_else(|_| {
-                SubString {
-                    s: String::new(),
-                    start: 0,
-                }
-            })
-        };
 
-        // Capture owned copies of the buffer state for the background thread.
-        let buffer_owned = self.buffer.buffer().to_string();
-        let cursor_byte_pos = self.buffer.cursor_byte_pos();
+        let completion_context = tab_completion_context::get_completion_context(
+            self.buffer.buffer(),
+            self.buffer.cursor_byte_pos(),
+        );
+
+        let wuc_substring = completion_context.word_under_cursor.clone();
 
         let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<UnprocessedSuggestion>>>();
 
+        let completion_context_owned = completion_context.into_owned();
+
         std::thread::spawn(move || {
-            let completion_context =
-                tab_completion_context::get_completion_context(&buffer_owned, cursor_byte_pos);
-            let suggestions = gen_completions_internal(&completion_context);
+            let suggestions = gen_completions_internal(&completion_context_owned);
             if suggestions.is_none() {
                 log::debug!(
                     "No suggestions generated for completion context: {:?}",
-                    completion_context
+                    completion_context_owned
                 );
             }
             if let Err(e) = tx.send(suggestions) {
@@ -856,6 +864,33 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default abc/foo*/ba*",
             &[&Suggestion::new(r#"abc/foo/baz"#, "", " ")],
+        );
+
+        // move to foo/glob_stuff dir:
+        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff").unwrap();
+
+        // .* matches hidden files only. and should ignore . and ..
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default .*",
+            &[&Suggestion::new(r#".dotfile"#, "", " ")],
+        );
+
+        // ./.* matches hidden files only. and should ignore . and ..
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default ./.*",
+            &[&Suggestion::new(r#"./.dotfile"#, "", " ")],
+        );
+
+        // ./* matches all non hidden
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default ./*",
+            &[&Suggestion::new(r#"./a.txt"#, "", " ")],
+        );
+
+        // * matches all non hidden
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default *",
+            &[&Suggestion::new(r#"a.txt"#, "", " ")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");

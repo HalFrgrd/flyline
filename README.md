@@ -17,8 +17,6 @@ When you write a command in Bash, a library called [readline](https://www.gnu.or
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
 - Fuzzy history suggestions
-- Fuzzy autocompletions
-- Integration with Bash autocomplete
 - [Mouse support](#mouse-support)
 - [Improvements on Bash's tab completion](#tab-completion-improvements)
 - Tooltips
@@ -93,7 +91,7 @@ Then you can simply run `enable flyline`.
 Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
 ## PS1
-The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship integration](#starship-integration) for more information.
+The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship ](https://starship.rs/) for more information.
 ![PS1 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps1.gif)
 ```bash
 PS1='\u@\h:\w$ '
@@ -209,7 +207,7 @@ Flyline will replace strings in the prompt matching the widget name with the wid
 Shows different text depending on whether mouse capture is currently enabled:
 
 ```bash
-flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
+flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE '🖱️' '🔴'
 # Now use FLYLINE_MOUSE_MODE in your prompt:
 PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
 ```
@@ -217,14 +215,14 @@ PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
 ### Custom command widget
 
 Runs a shell command and displays its output in the prompt.  The output is
-passed through bash's `decode_prompt_string` so bash prompt escape sequences
+passed through Bash's `decode_prompt_string` so Bash prompt escape sequences
 (e.g. `\u`, `\w`, ANSI colour codes) are fully supported.
 
 ```bash
 # Non-blocking (default): spawns the command in the background; shows a
 # placeholder of 10 spaces while the command is running.
 flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
-  --command 'run_something.sh' --placeholder-length 10
+  --command 'run_slow_git_metrics.sh' --placeholder-length 10
 # PS1 usage:
 PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 
@@ -232,14 +230,6 @@ PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 flyline create-prompt-widget custom --name CUSTOM_WIDGET2 \
   --command 'run_something.sh' --blocking
 ```
-
-If the command exits with a non-zero exit code, **command failed** is shown in
-bold red blinking text.  The command's stdout and stderr are written to the
-flyline log.
-
-## Starship integration
-TODO:
-Starship provides customizable prompts for any shell. The git metrics prompt part is very useful but can slow down the time it takes to generate the prompt. Because Flyline can redraw the prompt, it can asynchronously load the slower widgets in the background to keep the shell feeling snappy.
 
 
 # Agent mode

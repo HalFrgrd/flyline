@@ -5,11 +5,12 @@ use crate::{
 
 impl<'a> App<'a> {
     pub(crate) fn handle_char_insertion(&mut self, c: char) -> Option<LastKeyPressAction> {
-        if self.would_overwrite_auto_inserted_closing(c) {
+        if let Some(closing_annotation) = self.would_overwrite_auto_inserted_closing(c) {
             log::info!(
                 "Not inserting char '{}' to avoid overwriting auto-inserted closing token",
                 c
             );
+            closing_annotation.is_auto_inserted = false;
             self.buffer.move_right();
         } else {
             let initial_cursor_pos = self.buffer.cursor_byte_pos();
@@ -24,25 +25,30 @@ impl<'a> App<'a> {
         None
     }
 
-    pub(crate) fn would_overwrite_auto_inserted_closing(&self, c: char) -> bool {
+    pub(crate) fn would_overwrite_auto_inserted_closing(
+        &mut self,
+        c: char,
+    ) -> Option<&mut dparser::ClosingAnnotation> {
         let cursor_pos = self.buffer.cursor_byte_pos();
         if cursor_pos == 0 {
-            return false;
+            return None;
         }
         if let Some(dparser_token) = self
             .dparser_tokens_cache
-            .iter()
+            .iter_mut()
             .find(|t| t.token.byte_range().contains(&cursor_pos))
         {
             if let Some(dparser::ClosingAnnotation {
                 is_auto_inserted: true,
                 ..
-            }) = &dparser_token.annotations.closing
+            }) = &mut dparser_token.annotations.closing
             {
-                return dparser_token.token.value.starts_with(c);
+                if dparser_token.token.value.starts_with(c) {
+                    return Some(dparser_token.annotations.closing.as_mut().unwrap());
+                }
             }
         }
-        false
+        None
     }
 
     /// After a character `c` has been inserted into the buffer, insert the corresponding
