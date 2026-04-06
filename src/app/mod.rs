@@ -165,7 +165,7 @@ enum ContentMode {
     },
     /// User is navigating the CWD path segments displayed in the prompt.
     /// The inner value is the currently highlighted segment index (0 = rightmost/current dir).
-    PromptCwdEdit(usize),
+    PromptDirSelect(usize),
 }
 
 struct DrawnContent {
@@ -1005,7 +1005,7 @@ impl<'a> App<'a> {
     fn on_possible_buffer_change(&mut self) {
         // Exit PromptCwdEdit mode if the cursor has moved away from position 0,
         // which happens when a buffer-modifying normal action fires (e.g. insert_char).
-        if matches!(self.content_mode, ContentMode::PromptCwdEdit(_))
+        if matches!(self.content_mode, ContentMode::PromptDirSelect(_))
             && self.buffer.cursor_byte_pos() != 0
         {
             self.content_mode = ContentMode::Normal;
@@ -1363,7 +1363,7 @@ impl<'a> App<'a> {
             .get_ps1_lines(self.settings.show_animations, self.mouse_state.enabled());
 
         // When in PromptCwdEdit mode, highlight the selected CWD path segment.
-        if let ContentMode::PromptCwdEdit(cwd_index) = self.content_mode {
+        if let ContentMode::PromptDirSelect(cwd_index) = self.content_mode {
             for line in &mut lprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
@@ -1472,7 +1472,7 @@ impl<'a> App<'a> {
                     None
                 } else if self.settings.show_animations {
                     let focused = self.term_has_focus
-                        && !matches!(self.content_mode, ContentMode::PromptCwdEdit(_));
+                        && !matches!(self.content_mode, ContentMode::PromptDirSelect(_));
                     self.cursor.get_style(focused, &self.settings.cursor_config)
                 } else {
                     Some(Palette::cursor_style(255))

@@ -17,7 +17,7 @@ pub enum Scope {
     AgentOutputSelection,
     AgentError,
     InlineHistoryAcceptable,
-    PromptCwdEdit,
+    PromptDirSelect,
 }
 
 impl Scope {
@@ -50,8 +50,11 @@ impl Scope {
             Scope::InlineHistoryAcceptable => {
                 app.buffer.is_cursor_at_end() && app.inline_history_suggestion.is_some()
             }
-            Scope::PromptCwdEdit => {
-                matches!(app.content_mode, crate::app::ContentMode::PromptCwdEdit(_))
+            Scope::PromptDirSelect => {
+                matches!(
+                    app.content_mode,
+                    crate::app::ContentMode::PromptDirSelect(_)
+                )
             }
         }
     }
@@ -68,7 +71,7 @@ impl AsRef<str> for Scope {
             Scope::AgentOutputSelection => "agent_output_selection",
             Scope::AgentError => "agent_error",
             Scope::InlineHistoryAcceptable => "inline_history_acceptable",
-            Scope::PromptCwdEdit => "prompt_cwd_edit",
+            Scope::PromptDirSelect => "prompt_dir_select",
         }
     }
 }
@@ -86,7 +89,7 @@ impl TryFrom<&str> for Scope {
             "agent_output_selection" => Ok(Scope::AgentOutputSelection),
             "agent_error" => Ok(Scope::AgentError),
             "inline_history_acceptable" => Ok(Scope::InlineHistoryAcceptable),
-            "prompt_cwd_edit" => Ok(Scope::PromptCwdEdit),
+            "prompt_dir_select" => Ok(Scope::PromptDirSelect),
             other => Err(anyhow::anyhow!("Unknown scope: '{}'", other)),
         }
     }
@@ -807,7 +810,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     ),
     Action::new("move_left", "Move cursor left", Scope::Any, |app, _key| {
         if app.buffer.cursor_byte_pos() == 0 && app.prompt_manager.cwd_display_segment_count() > 0 {
-            app.content_mode = ContentMode::PromptCwdEdit(0);
+            app.content_mode = ContentMode::PromptDirSelect(0);
         } else {
             app.buffer.move_left();
         }
@@ -894,9 +897,9 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_left",
         "Navigate to the parent directory segment in the prompt",
-        Scope::PromptCwdEdit,
+        Scope::PromptDirSelect,
         |app, _key| {
-            if let ContentMode::PromptCwdEdit(ref mut index) = app.content_mode {
+            if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
                 let max_index = app
                     .prompt_manager
                     .cwd_display_segment_count()
@@ -910,12 +913,12 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_right",
         "Navigate to the child directory segment or exit prompt CWD edit mode",
-        Scope::PromptCwdEdit,
+        Scope::PromptDirSelect,
         |app, _key| match app.content_mode {
-            ContentMode::PromptCwdEdit(0) => {
+            ContentMode::PromptDirSelect(0) => {
                 app.content_mode = ContentMode::Normal;
             }
-            ContentMode::PromptCwdEdit(ref mut index) => {
+            ContentMode::PromptDirSelect(ref mut index) => {
                 *index -= 1;
             }
             _ => {}
@@ -924,9 +927,9 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "accept_entry",
         "Replace the buffer with `cd <selected path>` and exit prompt CWD edit mode",
-        Scope::PromptCwdEdit,
+        Scope::PromptDirSelect,
         |app, _key| {
-            if let ContentMode::PromptCwdEdit(index) = app.content_mode {
+            if let ContentMode::PromptDirSelect(index) = app.content_mode {
                 if let Some(path) = app.prompt_manager.cwd_path_for_index(index) {
                     // Single-quote the path to handle spaces and most shell metacharacters.
                     // Embedded single quotes are escaped with the standard '\'' idiom.
@@ -936,15 +939,16 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 }
                 app.content_mode = ContentMode::Normal;
                 app.on_possible_buffer_change();
+                app.try_submit_current_buffer();
             }
         },
     ),
     Action::new(
         "cancel",
         "Exit prompt CWD edit mode without changing the buffer",
-        Scope::PromptCwdEdit,
+        Scope::PromptDirSelect,
         |app, _key| {
-            if matches!(app.content_mode, ContentMode::PromptCwdEdit(_)) {
+            if matches!(app.content_mode, ContentMode::PromptDirSelect(_)) {
                 app.content_mode = ContentMode::Normal;
             }
         },
@@ -1022,7 +1026,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         )
         .unwrap(),
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
-        Binding::try_new(&["Enter", "Ctrl+j"], Scope::PromptCwdEdit, "accept_entry").unwrap(),
+        Binding::try_new(&["Enter", "Ctrl+j"], Scope::PromptDirSelect, "accept_entry").unwrap(),
         Binding::try_new(
             &["Enter", "Ctrl+j"],
             Scope::Any,
@@ -1041,7 +1045,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         Binding::try_new(&["Tab"], Scope::TabCompletion, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::Any, "trigger_tab_completion").unwrap(),
         // PromptCwdEdit Esc must appear before the Normal Esc binding.
-        Binding::try_new(&["Esc"], Scope::PromptCwdEdit, "cancel").unwrap(),
+        Binding::try_new(&["Esc"], Scope::PromptDirSelect, "cancel").unwrap(),
         Binding::try_new(&["Esc"], Scope::Any, "escape_to_normal_mode").unwrap(),
         Binding::try_new(&["Esc"], Scope::Any, "toggle_mouse").unwrap(),
         Binding::try_new(&["Ctrl+d"], Scope::Any, "exit").unwrap(),
@@ -1111,7 +1115,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
-        Binding::try_new(&["Left"], Scope::PromptCwdEdit, "move_left").unwrap(),
+        Binding::try_new(&["Left"], Scope::PromptDirSelect, "move_left").unwrap(),
         Binding::try_new(&["Left"], Scope::Any, "move_left").unwrap(),
         Binding::try_new(
             &["Right", "End"],
@@ -1132,7 +1136,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         )
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
-        Binding::try_new(&["Right"], Scope::PromptCwdEdit, "move_right").unwrap(),
+        Binding::try_new(&["Right"], Scope::PromptDirSelect, "move_right").unwrap(),
         Binding::try_new(&["Right"], Scope::Any, "move_right").unwrap(),
         Binding::try_new(&["Up"], Scope::Any, "move_line_up_or_history_up").unwrap(),
         Binding::try_new(&["Down"], Scope::Any, "move_line_down_or_history_down").unwrap(),
