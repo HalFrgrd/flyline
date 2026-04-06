@@ -24,7 +24,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build flyline library and extract help text
-        uses: docker/bake-action@v6
+        uses: docker/bake-action@v7
         with:
           files: docker/docker-bake.hcl
           targets: extract-help-text
