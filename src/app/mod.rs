@@ -9,14 +9,14 @@ use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{
     Contents, SpanTag, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows,
 };
-use crate::cursor::Cursor;
+use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
-use crate::settings::{self, MouseMode, Settings, UseTermEmulatorCursor};
+use crate::settings::{self, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
@@ -449,10 +449,7 @@ impl<'a> App<'a> {
                         self.last_draw_time = std::time::Instant::now();
 
                         if self.settings.send_shell_integration_codes
-                            || matches!(
-                                self.settings.use_term_emulator_cursor,
-                                UseTermEmulatorCursor::OnlyPromptPos | UseTermEmulatorCursor::Full
-                            )
+                            || self.settings.cursor_config.backend == CursorBackend::Terminal
                         {
                             shell_integration::write_after_rendering_codes(
                                 prev_contents
@@ -1308,7 +1305,7 @@ impl<'a> App<'a> {
                 cursor_pos
             };
             let cursor_style = {
-                if self.settings.use_term_emulator_cursor == UseTermEmulatorCursor::Full {
+                if self.settings.cursor_config.backend == CursorBackend::Terminal {
                     None
                 } else if self.settings.show_animations {
                     let focused = self.term_has_focus
@@ -1795,7 +1792,7 @@ impl<'a> App<'a> {
         };
 
         if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
-            && (self.settings.use_term_emulator_cursor == UseTermEmulatorCursor::Full
+            && (self.settings.cursor_config.backend == CursorBackend::Terminal
                 || !self.mode.is_running())
         {
             frame.set_cursor_position(term_em_cursor);
