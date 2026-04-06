@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::active_suggestions::{ActiveSuggestions, Suggestion, UnprocessedSuggestion};
 use crate::app::{App, ContentMode};
 use crate::bash_funcs::{self, QuoteType};
@@ -237,11 +239,11 @@ pub(crate) fn gen_completions_internal(
 ) -> Option<Vec<UnprocessedSuggestion>> {
     log::debug!("Completion context: {:#?}", completion_context);
 
-    let word_under_cursor = completion_context.word_under_cursor;
+    let word_under_cursor = &completion_context.word_under_cursor;
 
     match &completion_context.comp_type {
         tab_completion_context::CompType::FirstWord => {
-            let completions = tab_complete_first_word(word_under_cursor);
+            let completions = tab_complete_first_word(word_under_cursor.as_ref());
             log::debug!("Primary completions for first word: {:?}", completions);
             if !completions.is_empty() {
                 return Some(completions);
@@ -264,7 +266,7 @@ pub(crate) fn gen_completions_internal(
                 word_under_cursor_end,
             } = expand_alias_for_completion(
                 initial_command_word.to_string(),
-                word_under_cursor,
+                word_under_cursor.as_ref(),
                 completion_context.context,
                 completion_context.context_until_cursor,
             );
@@ -272,7 +274,7 @@ pub(crate) fn gen_completions_internal(
             let poss_completions = bash_funcs::run_programmable_completions(
                 &full_command,
                 &command_word,
-                word_under_cursor,
+                word_under_cursor.as_ref(),
                 cursor_byte_pos,
                 word_under_cursor_end,
             );
@@ -288,7 +290,7 @@ pub(crate) fn gen_completions_internal(
                     let suggestions = post_process_completions(
                         comp_result.completions,
                         comp_result.flags,
-                        word_under_cursor,
+                        word_under_cursor.as_ref(),
                     );
                     return Some(suggestions);
                 }
@@ -314,7 +316,7 @@ fn gen_secondary_completions(
     completion_context: &tab_completion_context::CompletionContext,
     comp_resultflags: bash_funcs::CompletionFlags,
 ) -> Option<Vec<UnprocessedSuggestion>> {
-    let word_under_cursor = completion_context.word_under_cursor;
+    let word_under_cursor = completion_context.word_under_cursor.as_ref();
     match completion_context.comp_type_secondary {
         Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
             log::debug!("Environment variable completion {:?}", word_under_cursor);
@@ -573,30 +575,24 @@ impl App<'_> {
         // Phase 1: compute the completion context and generate suggestions.
         // We store word_under_cursor as an owned SubString so we can use it
         // after the immutable-borrow block ends.
-        let wuc_substring = {
-            let buffer: &str = self.buffer.buffer();
-            let completion_context = tab_completion_context::get_completion_context(
-                buffer,
-                self.buffer.cursor_byte_pos(),
-            );
-            // word_under_cursor is always a sub-slice of buffer, so SubString::new succeeds.
-            SubString::new(buffer, completion_context.word_under_cursor).unwrap_or_else(|_| {
-                SubString {
-                    s: String::new(),
-                    start: 0,
-                }
-            })
-        };
 
         // Capture owned copies of the buffer state for the background thread.
-        let buffer_owned = self.buffer.buffer().to_string();
+        let buffer_owned = Arc::new(self.buffer.buffer().to_string());
         let cursor_byte_pos = self.buffer.cursor_byte_pos();
 
+        let completion_context =
+            tab_completion_context::get_completion_context(&buffer_owned, cursor_byte_pos);
+
+        let wuc_substring = completion_context.word_under_cursor.clone();
+
         let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<UnprocessedSuggestion>>>();
+        // Clone the Arc for the thread (cheap, just increments refcount)
+        let buffer_owned_clone = Arc::clone(&buffer_owned);
+
 
         std::thread::spawn(move || {
-            let completion_context =
-                tab_completion_context::get_completion_context(&buffer_owned, cursor_byte_pos);
+            let _buffer = buffer_owned_clone; // Keep the Arc alive in this thread
+
             let suggestions = gen_completions_internal(&completion_context);
             if suggestions.is_none() {
                 log::debug!(
@@ -611,6 +607,7 @@ impl App<'_> {
                 );
             }
         });
+
 
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {

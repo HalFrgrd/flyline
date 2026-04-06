@@ -1290,3 +1290,9 @@ impl SubString {
             || (other.start..=other.end()).contains(&self.start)
     }
 }
+
+impl AsRef<str> for SubString {
+    fn as_ref(&self) -> &str {
+        &self.s
+    }
+}

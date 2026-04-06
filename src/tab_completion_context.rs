@@ -1,6 +1,9 @@
 use flash::lexer::TokenKind;
 
-use crate::dparser::{DParser, ToInclusiveRange};
+use crate::{
+    dparser::{DParser, ToInclusiveRange},
+    text_buffer::SubString,
+};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
@@ -41,17 +44,28 @@ pub struct CompletionContext<'a> {
     pub buffer: &'a str,
     pub context: &'a str,
     pub context_until_cursor: &'a str,
-    pub word_under_cursor: &'a str,
+    pub word_under_cursor: SubString,
     pub comp_type: CompType,
     pub comp_type_secondary: Option<SecondaryCompType>,
 }
 
 impl<'a> CompletionContext<'a> {
+    pub fn dummy(buffer: &'a str) -> Self {
+        CompletionContext {
+            buffer,
+            context: "",
+            context_until_cursor: "",
+            word_under_cursor: SubString::new(buffer, &buffer[0..0]).unwrap(),
+            comp_type: CompType::FirstWord,
+            comp_type_secondary: None,
+        }
+    }
+
     pub fn new(
         buffer: &'a str,
         context_until_cursor: &'a str,
         context: &'a str,
-        word_under_cursor: &'a str,
+        word_under_cursor: SubString,
     ) -> Self {
         if cfg!(test) {
             dbg!(&buffer);
@@ -70,7 +84,7 @@ impl<'a> CompletionContext<'a> {
             }
         };
 
-        let secondary_comp_type = SecondaryCompType::from(word_under_cursor);
+        let secondary_comp_type = SecondaryCompType::from(word_under_cursor.as_ref());
 
         CompletionContext {
             buffer,
@@ -164,7 +178,7 @@ pub fn get_completion_context<'a>(
         }
         Some((_, cursor_node)) => cursor_node.token.byte_range(),
         None if context_tokens.is_empty() => {
-            return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
+            return CompletionContext::dummy(buffer);
         }
         None => {
             log::error!(
@@ -173,7 +187,7 @@ pub fn get_completion_context<'a>(
             for t in context_tokens.iter() {
                 log::error!("  Token: {:?} byte_range={:?}", t, t.token.byte_range());
             }
-            return CompletionContext::new(buffer, &buffer[0..0], &buffer[0..0], &buffer[0..0]);
+            return CompletionContext::dummy(buffer);
         }
     };
 
@@ -193,7 +207,7 @@ pub fn get_completion_context<'a>(
     let context_until_cursor = &buffer[comp_context_range.start..cursor_byte_pos];
     let context = &buffer[comp_context_range];
 
-    let word_under_cursor = &buffer[word_under_cursor_range];
+    let word_under_cursor = SubString::new(&buffer, &buffer[word_under_cursor_range]).unwrap();
 
     CompletionContext::new(buffer, context_until_cursor, context, word_under_cursor)
 }
@@ -225,7 +239,7 @@ mod tests {
         match res.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "git");
-                assert_eq!(res.word_under_cursor, "commi");
+                assert_eq!(res.word_under_cursor.as_ref(), "commi");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -240,7 +254,7 @@ mod tests {
         match res.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(res.word_under_cursor, "a");
+                assert_eq!(res.word_under_cursor.as_ref(), "a");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -255,7 +269,7 @@ mod tests {
         match res.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(res.word_under_cursor, "");
+                assert_eq!(res.word_under_cursor.as_ref(), "");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -268,7 +282,7 @@ mod tests {
         assert_eq!(res.context_until_cursor, "");
         match res.comp_type {
             CompType::FirstWord => {
-                assert_eq!(res.word_under_cursor, "ls");
+                assert_eq!(res.word_under_cursor.as_ref(), "ls");
             }
             _ => panic!("Expected FirstWord"),
         }
@@ -286,7 +300,7 @@ mod tests {
         let res = run_inline(r#"█"#);
         assert_eq!(res.context, "");
         assert_eq!(res.context_until_cursor, "");
-        assert_eq!(res.word_under_cursor, "");
+        assert_eq!(res.word_under_cursor.as_ref(), "");
     }
 
     #[test]
@@ -294,7 +308,7 @@ mod tests {
         let res = run_inline(r#"   █   "#);
         assert_eq!(res.context, "");
         assert_eq!(res.context_until_cursor, "");
-        assert_eq!(res.word_under_cursor, "");
+        assert_eq!(res.word_under_cursor.as_ref(), "");
     }
 
     #[test]
@@ -316,7 +330,7 @@ mod tests {
         let res = run_inline(r#"git █commit"#);
         assert_eq!(res.context, "git commit");
         assert_eq!(res.context_until_cursor, "git ");
-        assert_eq!(res.word_under_cursor, "commit");
+        assert_eq!(res.word_under_cursor.as_ref(), "commit");
     }
 
     #[test]
@@ -324,7 +338,7 @@ mod tests {
         let res = run_inline(r#"echo $█"#);
         assert_eq!(res.context, "echo $");
         assert_eq!(res.context_until_cursor, "echo $");
-        assert_eq!(res.word_under_cursor, "$");
+        assert_eq!(res.word_under_cursor.as_ref(), "$");
     }
 
     #[test]
@@ -332,7 +346,7 @@ mod tests {
         let res = run_inline(r#"echo $A█"#);
         assert_eq!(res.context, "echo $A");
         assert_eq!(res.context_until_cursor, "echo $A");
-        assert_eq!(res.word_under_cursor, "$A");
+        assert_eq!(res.word_under_cursor.as_ref(), "$A");
     }
 
     #[test]
@@ -340,12 +354,12 @@ mod tests {
         let res = run_inline(r#"echo $A█$B"#);
         assert_eq!(res.context, "echo $A$B");
         assert_eq!(res.context_until_cursor, "echo $A");
-        assert_eq!(res.word_under_cursor, "$A");
+        assert_eq!(res.word_under_cursor.as_ref(), "$A");
 
         let res = run_inline(r#"echo $A$█B"#);
         assert_eq!(res.context, "echo $A$B");
         assert_eq!(res.context_until_cursor, "echo $A$");
-        assert_eq!(res.word_under_cursor, "$");
+        assert_eq!(res.word_under_cursor.as_ref(), "$");
     }
 
     #[test]
@@ -376,7 +390,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
                 assert_eq!(command_word, "echo");
-                assert_eq!(res.word_under_cursor, "résumé");
+                assert_eq!(res.word_under_cursor.as_ref(), "résumé");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -610,7 +624,7 @@ mod tests {
         let res = run_inline(r#"x█ <( echo too )"#);
         assert_eq!(res.context, "x <( echo too )");
         assert_eq!(res.context_until_cursor, "x");
-        assert_eq!(res.word_under_cursor, "x");
+        assert_eq!(res.word_under_cursor.as_ref(), "x");
         match res.comp_type {
             CompType::FirstWord => {}
             _ => panic!("Expected FirstWord"),
@@ -623,7 +637,7 @@ mod tests {
         let res = run_inline(r#"diff█ <(cat a) <(cat b)"#);
         assert_eq!(res.context, "diff <(cat a) <(cat b)");
         assert_eq!(res.context_until_cursor, "diff");
-        assert_eq!(res.word_under_cursor, "diff");
+        assert_eq!(res.word_under_cursor.as_ref(), "diff");
         match res.comp_type {
             CompType::FirstWord => {}
             _ => panic!("Expected FirstWord"),
@@ -636,7 +650,7 @@ mod tests {
         let res = run_inline(r#"echo█ $(git rev-parse HEAD)"#);
         assert_eq!(res.context, "echo $(git rev-parse HEAD)");
         assert_eq!(res.context_until_cursor, "echo");
-        assert_eq!(res.word_under_cursor, "echo");
+        assert_eq!(res.word_under_cursor.as_ref(), "echo");
         match res.comp_type {
             CompType::FirstWord => {}
             _ => panic!("Expected FirstWord"),
@@ -649,7 +663,7 @@ mod tests {
         let res = run_inline(r#"tee█ >(gzip > file.gz)"#);
         assert_eq!(res.context, "tee >(gzip > file.gz)");
         assert_eq!(res.context_until_cursor, "tee");
-        assert_eq!(res.word_under_cursor, "tee");
+        assert_eq!(res.word_under_cursor.as_ref(), "tee");
         match res.comp_type {
             CompType::FirstWord => {}
             _ => panic!("Expected FirstWord"),
@@ -662,7 +676,7 @@ mod tests {
         let res = run_inline(r#"diff file█ <(echo too)"#);
         assert_eq!(res.context, "diff file <(echo too)");
         assert_eq!(res.context_until_cursor, "diff file");
-        assert_eq!(res.word_under_cursor, "file");
+        assert_eq!(res.word_under_cursor.as_ref(), "file");
         match res.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "diff");
@@ -704,7 +718,7 @@ mod tests {
             res.context_until_cursor,
             "if [[ -f file.txt ]]; then echo found; fi"
         );
-        assert_eq!(res.word_under_cursor, "fi");
+        assert_eq!(res.word_under_cursor.as_ref(), "fi");
     }
 
     #[test]
@@ -771,7 +785,7 @@ mod tests {
         let ctx = run_inline("█café --option 🎯");
         match ctx.comp_type {
             CompType::FirstWord => {
-                assert_eq!(ctx.word_under_cursor, "café");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "café");
             }
             _ => panic!("Expected FirstWord"),
         }
@@ -783,7 +797,7 @@ mod tests {
         let ctx = run_inline("caf█é --option 🎯");
         match ctx.comp_type {
             CompType::FirstWord => {
-                assert_eq!(ctx.word_under_cursor, "café");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "café");
             }
             _ => panic!("Expected FirstWord"),
         }
@@ -796,7 +810,7 @@ mod tests {
         dbg!(&ctx);
         match ctx.comp_type {
             CompType::FirstWord => {
-                assert_eq!(ctx.word_under_cursor, "🚀rocket");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "🚀rocket");
             }
             _ => panic!("Expected FirstWord"),
         }
@@ -811,7 +825,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "echo 'Tëst message' résumé 📄");
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "📄");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "📄");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -826,7 +840,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "ls --sïze café 日本語");
                 assert_eq!(command_word, "ls");
-                assert_eq!(ctx.word_under_cursor, "café");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "café");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -838,7 +852,7 @@ mod tests {
         let ctx = run_inline("█文件 --option värde");
         match ctx.comp_type {
             CompType::FirstWord => {
-                assert_eq!(ctx.word_under_cursor, "文件");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "文件");
             }
             _ => panic!("Expected FirstWord"),
         }
@@ -853,7 +867,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "git 提交 --mëssage 'hëllo'");
                 assert_eq!(command_word, "git");
-                assert_eq!(ctx.word_under_cursor, "提交");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "提交");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -868,7 +882,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "cat مرحبا --öption 🔥");
                 assert_eq!(command_word, "cat");
-                assert_eq!(ctx.word_under_cursor, "🔥");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "🔥");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -883,7 +897,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "ls файл --süze привет 🎯");
                 assert_eq!(command_word, "ls");
-                assert_eq!(ctx.word_under_cursor, "файл");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "файл");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -898,7 +912,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "grep 'pättërn' файл.txt 日本語 🚀");
                 assert_eq!(command_word, "grep");
-                assert_eq!(ctx.word_under_cursor, "файл.txt");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "файл.txt");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -910,7 +924,7 @@ mod tests {
         let ctx = run_inline("█🎉 🎊 🎈 --flâg");
         match ctx.comp_type {
             CompType::FirstWord => {
-                assert_eq!(ctx.word_under_cursor, "🎉");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "🎉");
             }
             _ => panic!("Expected FirstWord"),
         }
@@ -925,7 +939,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "find . -näme 'fîlé' -type f 🔍");
                 assert_eq!(command_word, "find");
-                assert_eq!(ctx.word_under_cursor, "🔍");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "🔍");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -940,7 +954,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "écho 'mëssagé' 文件 🎨");
                 assert_eq!(command_word, "écho");
-                assert_eq!(ctx.word_under_cursor, "文件");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "文件");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -955,7 +969,7 @@ mod tests {
             CompType::CommandComp { command_word } => {
                 assert_eq!(ctx.context, "cat ไฟล์ --öption วันนี้ 🌟");
                 assert_eq!(command_word, "cat");
-                assert_eq!(ctx.word_under_cursor, "ไฟล์");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "ไฟล์");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -971,7 +985,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "fo");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "fo");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -985,7 +999,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "foo");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "foo");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -998,7 +1012,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "\"foo");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "\"foo");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1012,7 +1026,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "\"foo   asdf");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "\"foo   asdf");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1025,7 +1039,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "\"foo ");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "\"foo ");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1038,7 +1052,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "\"foo ");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "\"foo ");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1051,7 +1065,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "'foo");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "'foo");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1064,7 +1078,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "'foo   asdf");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "'foo   asdf");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1077,7 +1091,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "'foo   asdf");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "'foo   asdf");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1090,7 +1104,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "foo\\");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "foo\\");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1103,7 +1117,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor, "foo\\ ");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "foo\\ ");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1116,7 +1130,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1129,7 +1143,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "$HOM");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1147,7 +1161,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "$HOM");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1165,7 +1179,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "\"$HOME/abc");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "\"$HOME/abc");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1183,7 +1197,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "$HOM");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1201,7 +1215,7 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor, "$HOM");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1218,7 +1232,7 @@ mod tests {
 
         match ctx.comp_type {
             CompType::FirstWord => {
-                assert_eq!(ctx.word_under_cursor, "$HOME/");
+                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOME/");
             }
             _ => panic!("Expected FirstWord"),
         }

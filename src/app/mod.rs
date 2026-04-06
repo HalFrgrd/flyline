@@ -1025,9 +1025,9 @@ impl<'a> App<'a> {
                 buffer,
                 self.buffer.cursor_byte_pos(),
             );
-            let new_wuc = completion_context.word_under_cursor;
+            let new_wuc = completion_context.word_under_cursor.s;
             let old_wuc = &wuc_substring.s;
-            if !new_wuc.starts_with(old_wuc.as_str()) && !old_wuc.starts_with(new_wuc) {
+            if !new_wuc.starts_with(old_wuc.as_str()) && !old_wuc.starts_with(&new_wuc) {
                 self.content_mode = ContentMode::Normal;
             }
         }
@@ -1039,24 +1039,22 @@ impl<'a> App<'a> {
                 buffer,
                 self.buffer.cursor_byte_pos(),
             );
-            let word_under_cursor_str = completion_context.word_under_cursor;
-            if let Ok(word_under_cursor) = SubString::new(buffer, word_under_cursor_str) {
-                if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
-                    log::debug!(
-                        "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
-                        active_suggestions.word_under_cursor.s,
-                        word_under_cursor.s
-                    );
-                    active_suggestions.apply_fuzzy_filter(word_under_cursor);
-                } else {
-                    log::debug!(
-                        "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
-                        active_suggestions.word_under_cursor,
-                        word_under_cursor
-                    );
-                    // If the word under cursor has changed significantly, discard suggestions
-                    self.content_mode = ContentMode::Normal;
-                }
+            let word_under_cursor = completion_context.word_under_cursor;
+            if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
+                log::debug!(
+                    "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
+                    active_suggestions.word_under_cursor.s,
+                    word_under_cursor.s
+                );
+                active_suggestions.apply_fuzzy_filter(word_under_cursor);
+            } else {
+                log::debug!(
+                    "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
+                    active_suggestions.word_under_cursor,
+                    word_under_cursor
+                );
+                // If the word under cursor has changed significantly, discard suggestions
+                self.content_mode = ContentMode::Normal;
             }
         }
 
