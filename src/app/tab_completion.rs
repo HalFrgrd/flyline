@@ -41,10 +41,6 @@ impl PathPatternExpansion {
                 pattern[slash_pos + 1..].to_string(),
             )
         } else {
-            log::debug!(
-                "No slash found before first glob metacharacter in pattern '{}', using empty prefix",
-                pattern
-            );
             (String::new(), pattern.to_string())
         };
         let expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
@@ -346,7 +342,6 @@ fn gen_secondary_completions(
         Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
             log::debug!("Glob expansion for: {:?}", word_under_cursor);
             let completions = tab_complete_glob_expansion(word_under_cursor, comp_resultflags);
-            log::debug!("Glob expansion completions: {:#?}", completions);
 
             // Unlike other completions, if there are multiple glob completions,
             // we join them with spaces and insert them all at once.
@@ -468,8 +463,6 @@ fn tab_complete_glob_expansion(
     const MAX_GLOB_RESULTS: usize = 1_000;
 
     let glob_pattern = expanded.expanded_pattern();
-    log::debug!("Glob pattern to expand: '{}'", glob_pattern);
-    log::debug!("wants hidden: {}", expanded.wants_hidden());
 
     if let Ok(paths) = glob::glob(&glob_pattern) {
         for (idx, path_result) in paths.enumerate() {
@@ -482,20 +475,13 @@ fn tab_complete_glob_expansion(
             }
 
             if let Ok(path) = path_result {
-                log::debug!("Glob matched path: {:?}", path);
                 let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
                     &path.to_string_lossy(),
                     comp_resultflags.quote_type,
                 );
 
                 // Tab completion ignores "." and ".."
-                log::debug!(
-                    "Processing glob match: '{}', suffix: '{}'",
-                    unexpanded,
-                    globbed_suffix
-                );
                 if globbed_suffix == "." || globbed_suffix == ".." {
-                    log::debug!("Skipping '{}' since it is '.' or '..'", unexpanded);
                     continue;
                 }
 
@@ -504,10 +490,6 @@ fn tab_complete_glob_expansion(
                     && globbed_suffix.starts_with('.')
                     && !globbed_suffix.starts_with("./")
                 {
-                    log::debug!(
-                        "Skipping '{}' since it is hidden and pattern does not request hidden files",
-                        unexpanded
-                    );
                     continue;
                 }
 
