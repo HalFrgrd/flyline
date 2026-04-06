@@ -97,7 +97,20 @@ impl Cursor {
                 Style::new().bg(Color::Rgb(v, v, v))
             }
             CursorStyleConfig::Reverse => Style::new().add_modifier(Modifier::REVERSED),
-            CursorStyleConfig::Custom(style) => *style,
+            CursorStyleConfig::Custom(style) => {
+                // For Rgb background colours, modulate the brightness by intensity so
+                // that Fade/Blink effects are visually consistent with the Default style.
+                // Named/indexed colours cannot be scaled, so they are used as-is.
+                let bg = match style.bg {
+                    Some(Color::Rgb(r, g, b)) => Some(Color::Rgb(
+                        (r as f32 * intensity) as u8,
+                        (g as f32 * intensity) as u8,
+                        (b as f32 * intensity) as u8,
+                    )),
+                    other => other,
+                };
+                Style { bg, ..*style }
+            }
         }
     }
 }
