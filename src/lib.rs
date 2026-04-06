@@ -14,7 +14,7 @@ mod bash_symbols;
 mod command_acceptance;
 mod command_rebuild;
 mod content_builder;
-mod cursor_animation;
+mod cursor;
 mod dparser;
 mod history;
 mod iter_first_last;
@@ -256,6 +256,58 @@ enum Commands {
         /// Style for markdown inline/block code (e.g. "dim").
         #[arg(long = "markdown-code", value_name = "STYLE")]
         markdown_code: Option<String>,
+    },
+    /// Configure the cursor appearance and animation.
+    ///
+    /// Controls which backend renders the cursor, how it moves (interpolation),
+    /// what it looks like (style), and any blinking/fading effect.
+    ///
+    /// The `--backend terminal` option is equivalent to the legacy
+    /// `--use-term-emulator-cursor full` flag.
+    ///
+    /// Style strings follow rich's syntax: a space-separated list of colours
+    /// and attributes.  For cursor styles a single colour (e.g. `red`) is
+    /// interpreted as the **background** colour of the cursor cell.
+    /// Use `"pink on white"` for an explicit foreground and background.
+    /// The special value `"reverse"` inverts the colours of the cell under
+    /// the cursor.
+    ///
+    /// Examples:
+    ///   flyline set-cursor --backend flyline
+    ///   flyline set-cursor --style "reverse"
+    ///   flyline set-cursor --style "red"
+    ///   flyline set-cursor --style "pink on white"
+    ///   flyline set-cursor --interpolate 16 --interpolate-easing out-cubic
+    ///   flyline set-cursor --effect blink --effect-speed 2.0
+    ///   flyline set-cursor --effect fade --effect-easing in-out-sine
+    ///   flyline set-cursor --interpolate none
+    #[command(name = "set-cursor", verbatim_doc_comment)]
+    SetCursor {
+        /// Cursor rendering backend.  `flyline` renders a custom cursor;
+        /// `terminal` defers to the terminal emulator (default when unset).
+        #[arg(long)]
+        backend: Option<settings::CursorBackend>,
+        /// Interpolation speed in cells per second, or `none` to disable
+        /// interpolation.  Default is `16`.
+        #[arg(long, value_name = "SPEED|none")]
+        interpolate: Option<String>,
+        /// Easing function for position interpolation.  Default is `linear`.
+        #[arg(long, value_name = "EASING")]
+        interpolate_easing: Option<settings::CursorEasing>,
+        /// Cursor style.  A single colour (e.g. `red`) is the cursor background.
+        /// `"pink on white"` sets foreground and background.  `"reverse"` inverts
+        /// the cell colours.  Default is a white block modulated by the effect.
+        #[arg(long, value_name = "STYLE")]
+        style: Option<String>,
+        /// Visual effect applied to the cursor: `fade`, `blink`, or `none`.
+        #[arg(long)]
+        effect: Option<settings::CursorEffect>,
+        /// Speed multiplier for the cursor effect (default is `1.0`).
+        #[arg(long, value_name = "SPEED")]
+        effect_speed: Option<f32>,
+        /// Easing function for the cursor effect intensity.  Default is `linear`.
+        #[arg(long, value_name = "EASING")]
+        effect_easing: Option<settings::CursorEasing>,
     },
     /// Manage keybindings.
     ///
@@ -699,6 +751,95 @@ impl Flyline {
                         }
                     },
                     None => {}
+                    Some(Commands::SetCursor {
+                        backend,
+                        interpolate,
+                        interpolate_easing,
+                        style,
+                        effect,
+                        effect_speed,
+                        effect_easing,
+                    }) => {
+                        if let Some(b) = backend {
+                            log::info!("Cursor backend set to {:?}", b);
+                            match b {
+                                settings::CursorBackend::Terminal => {
+                                    self.settings.use_term_emulator_cursor =
+                                        settings::UseTermEmulatorCursor::Full;
+                                }
+                                settings::CursorBackend::Flyline => {
+                                    self.settings.use_term_emulator_cursor =
+                                        settings::UseTermEmulatorCursor::None;
+                                }
+                            }
+                            self.settings.cursor_config.backend = b;
+                        }
+
+                        if let Some(interp_str) = interpolate {
+                            if interp_str.eq_ignore_ascii_case("none") {
+                                log::info!("Cursor interpolation disabled");
+                                self.settings.cursor_config.interpolate = None;
+                            } else {
+                                match interp_str.parse::<f32>() {
+                                    Ok(speed) if speed > 0.0 => {
+                                        log::info!("Cursor interpolation speed set to {}", speed);
+                                        self.settings.cursor_config.interpolate = Some(speed);
+                                    }
+                                    _ => {
+                                        eprintln!(
+                                            "flyline set-cursor: --interpolate must be a positive number or 'none' (got {:?})",
+                                            interp_str
+                                        );
+                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(easing) = interpolate_easing {
+                            log::info!("Cursor interpolation easing set to {:?}", easing);
+                            self.settings.cursor_config.interpolate_easing = easing;
+                        }
+
+                        if let Some(style_str) = style {
+                            match palette::parse_cursor_style_str(&style_str) {
+                                Ok(s) => {
+                                    log::info!("Cursor style set to {:?}", s);
+                                    self.settings.cursor_config.style = s;
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "flyline set-cursor: invalid --style {:?}: {}",
+                                        style_str, e
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            }
+                        }
+
+                        if let Some(eff) = effect {
+                            log::info!("Cursor effect set to {:?}", eff);
+                            self.settings.cursor_config.effect = eff;
+                        }
+
+                        if let Some(speed) = effect_speed {
+                            if speed > 0.0 {
+                                log::info!("Cursor effect speed set to {}", speed);
+                                self.settings.cursor_config.effect_speed = speed;
+                            } else {
+                                eprintln!(
+                                    "flyline set-cursor: --effect-speed must be positive (got {})",
+                                    speed
+                                );
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
+                        }
+
+                        if let Some(easing) = effect_easing {
+                            log::info!("Cursor effect easing set to {:?}", easing);
+                            self.settings.cursor_config.effect_easing = easing;
+                        }
+                    }
                 }
 
                 #[cfg(feature = "integration-tests")]
