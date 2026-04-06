@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 //! Parse a `--help` string into a [`Command`] structure.
 //!
 //! The entry point is [`parse_help`].  It tries to identify which help format

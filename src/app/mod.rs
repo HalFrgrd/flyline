@@ -574,11 +574,20 @@ impl<'a> App<'a> {
             }
 
             unsafe {
-                // Bash will set this to a function when it receives a terminating signal.
-                // The function is readline specific so we don't call it here.
-                // But the act of it being set is a signal that we should exit immediately
-                if let Some(_) = crate::bash_symbols::rl_signal_event_hook {
-                    let sig = crate::bash_symbols::terminating_signal;
+                // TODO: I might be able to get away with just checking terminating_signals for both versions
+                // Check if a terminating signal has been received.
+                // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
+                // bash receives a terminating signal. In older versions, we fall
+                // back to checking the terminating_signal global directly.
+                #[cfg(not(feature = "pre_bash_4_4"))]
+                let got_signal = (&raw const crate::bash_symbols::rl_signal_event_hook)
+                    .read()
+                    .is_some();
+                #[cfg(feature = "pre_bash_4_4")]
+                let got_signal = (&raw const crate::bash_symbols::terminating_signal).read() != 0;
+
+                if got_signal {
+                    let sig = (&raw const crate::bash_symbols::terminating_signal).read();
 
                     log::info!(
                         "Signal {} received, exiting immediately",

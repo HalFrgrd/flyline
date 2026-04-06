@@ -361,28 +361,33 @@ pub fn get_all_shell_builtins() -> Vec<String> {
 }
 
 /* Values for COMPSPEC options field. */
-// #define COPT_RESERVED	(1<<0)		/* reserved for other use */
-// #define COPT_DEFAULT	(1<<1)
-// #define COPT_FILENAMES	(1<<2)
-// #define COPT_DIRNAMES	(1<<3)
-// #define COPT_NOQUOTE	(1<<4)
-// #define COPT_NOSPACE	(1<<5)
-// #define COPT_BASHDEFAULT (1<<6)
-// #define COPT_PLUSDIRS	(1<<7)
-// #define COPT_NOSORT	(1<<8)
-// #define COPT_FULLQUOTE	(1<<9)
+// In bash >= 4.4, COPT_NOQUOTE was inserted at (1<<4), shifting later values.
+// In bash < 4.4: NOSPACE=(1<<4), BASHDEFAULT=(1<<5), PLUSDIRS=(1<<6)
+// In bash >= 4.4: NOQUOTE=(1<<4), NOSPACE=(1<<5), BASHDEFAULT=(1<<6), PLUSDIRS=(1<<7), NOSORT=(1<<8), FULLQUOTE=(1<<9)
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CompspecOption {
     Reserved = 1 << 0,
     Default = 1 << 1,
     Filenames = 1 << 2,
     Dirnames = 1 << 3,
+    #[cfg(not(feature = "pre_bash_4_4"))]
     NoQuote = 1 << 4,
+    #[cfg(not(feature = "pre_bash_4_4"))]
     NoSpace = 1 << 5,
+    #[cfg(not(feature = "pre_bash_4_4"))]
     BashDefault = 1 << 6,
+    #[cfg(not(feature = "pre_bash_4_4"))]
     PlusDirs = 1 << 7,
+    #[cfg(not(feature = "pre_bash_4_4"))]
     NoSort = 1 << 8,
+    #[cfg(not(feature = "pre_bash_4_4"))]
     FullQuote = 1 << 9,
+    #[cfg(feature = "pre_bash_4_4")]
+    NoSpace = 1 << 4,
+    #[cfg(feature = "pre_bash_4_4")]
+    BashDefault = 1 << 5,
+    #[cfg(feature = "pre_bash_4_4")]
+    PlusDirs = 1 << 6,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -406,12 +411,18 @@ impl CompletionFlags {
         Self {
             quote_type,
             readline_default_fallback_desired: foundcs & (CompspecOption::Default as c_int) != 0,
+            #[cfg(not(feature = "pre_bash_4_4"))]
             filename_quoting_desired: foundcs & (CompspecOption::NoQuote as c_int) == 0,
+            #[cfg(feature = "pre_bash_4_4")]
+            filename_quoting_desired: true,
             filename_completion_desired: foundcs & (CompspecOption::Filenames as c_int) != 0,
             no_suffix_desired: foundcs & (CompspecOption::NoSpace as c_int) != 0,
             suffix_character: char::from_u32(append_char as u32).unwrap_or(' '),
             bash_default_fallback_desired: foundcs & (CompspecOption::BashDefault as c_int) != 0,
+            #[cfg(not(feature = "pre_bash_4_4"))]
             nosort_desired: foundcs & (CompspecOption::NoSort as c_int) != 0,
+            #[cfg(feature = "pre_bash_4_4")]
+            nosort_desired: false,
         }
     }
 }
@@ -543,9 +554,15 @@ pub fn run_programmable_completions(
         // similar to set_completion_defaults
         bash_symbols::rl_filename_completion_desired = 0;
         bash_symbols::rl_filename_quoting_desired = 1;
-        bash_symbols::rl_completion_suppress_append = 0;
+        #[cfg(not(feature = "pre_bash_4_4"))]
+        {
+            bash_symbols::rl_completion_suppress_append = 0;
+        }
         bash_symbols::rl_completion_append_character = ' ' as c_int;
-        bash_symbols::rl_sort_completion_matches = 1;
+        #[cfg(not(feature = "pre_bash_4_4"))]
+        {
+            bash_symbols::rl_sort_completion_matches = 1;
+        }
 
         let foundcs: std::ffi::c_int = 0;
 
@@ -565,6 +582,7 @@ pub fn run_programmable_completions(
             // Copying logic from bashline.c:attempt_shell_completion
             // This is to pickup the filename desire from calls like `complete -o filenames`
             // This probably isn't necessary since I am reading the values from foundcs directly but it doesn't hurt to be safe
+            #[cfg(not(feature = "pre_bash_4_4"))]
             bash_symbols::pcomp_set_readline_variables(foundcs, 1);
         }
 
@@ -602,18 +620,22 @@ pub fn run_programmable_completions(
 
 pub fn print_copt_flags(flag: c_int) {
     log::debug!("COMPSPEC options flags set for flag {}:", flag);
-    for option in &[
+    let options: &[CompspecOption] = &[
         CompspecOption::Reserved,
         CompspecOption::Default,
         CompspecOption::Filenames,
         CompspecOption::Dirnames,
+        #[cfg(not(feature = "pre_bash_4_4"))]
         CompspecOption::NoQuote,
         CompspecOption::NoSpace,
         CompspecOption::BashDefault,
         CompspecOption::PlusDirs,
+        #[cfg(not(feature = "pre_bash_4_4"))]
         CompspecOption::NoSort,
+        #[cfg(not(feature = "pre_bash_4_4"))]
         CompspecOption::FullQuote,
-    ] {
+    ];
+    for option in options {
         if flag & (*option as c_int) != 0 {
             log::debug!(" - {:?}", option);
         }

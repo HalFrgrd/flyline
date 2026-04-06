@@ -7,6 +7,7 @@ pub const BUILTIN_ENABLED: c_int = 0x01;
 
 // common.h seval flags
 pub const SEVAL_NOHIST: c_int = 0x004;
+#[cfg(not(feature = "pre_bash_4_4"))]
 pub const SEVAL_NOOPTIMIZE: c_int = 0x400; /* don't try to set optimization flags */
 
 /* A structure which represents a word. */
@@ -270,6 +271,7 @@ unsafe extern "C" {
     possible closing quote.  This is set to 0 by rl_complete_internal and
     may be changed by an application-specific completion function. */
     // int rl_completion_suppress_append = 0;
+    #[cfg(not(feature = "pre_bash_4_4"))]
     #[link_name = "rl_completion_suppress_append"]
     pub static mut rl_completion_suppress_append: c_int;
 
@@ -281,6 +283,7 @@ unsafe extern "C" {
 
     /* If non-zero, sort the completion matches.  On by default. */
     // int rl_sort_completion_matches = 1;
+    #[cfg(not(feature = "pre_bash_4_4"))]
     #[link_name = "rl_sort_completion_matches"]
     pub static mut rl_sort_completion_matches: c_int;
 
@@ -295,6 +298,7 @@ unsafe extern "C" {
         Option<extern "C" fn(*const c_char, c_int, *const c_char) -> *mut c_char>;
 
     // void pcomp_set_readline_variables (int flags, int nval)
+    #[cfg(not(feature = "pre_bash_4_4"))]
     pub fn pcomp_set_readline_variables(flags: c_int, nval: c_int);
 
     // alias.h
@@ -341,11 +345,21 @@ unsafe extern "C" {
 
     // common.h
     // int evalstring (char *string, const char *from_file, int flags)
+    #[cfg(not(feature = "pre_bash_4_4"))]
     pub fn evalstring(string: *mut c_char, from_file: *const c_char, flags: c_int) -> c_int;
 
+    // common.h (pre-4.4 fallback: evalstring did not exist as a separate symbol)
+    // int parse_and_execute (char *string, const char *from_file, int flags)
+    #[cfg(feature = "pre_bash_4_4")]
+    pub fn parse_and_execute(string: *mut c_char, from_file: *const c_char, flags: c_int) -> c_int;
+
     // y.tab.c
-    // char * decode_prompt_string (char *string, int is_prompt)
+    // In bash >= 4.4: char * decode_prompt_string (char *string, int is_prompt)
+    // In bash < 4.4:  char * decode_prompt_string (char *string)
+    #[cfg(not(feature = "pre_bash_4_4"))]
     pub fn decode_prompt_string(string: *const c_char, is_prompt: c_int) -> *mut c_char;
+    #[cfg(feature = "pre_bash_4_4")]
+    pub fn decode_prompt_string(string: *const c_char) -> *mut c_char;
 
     // char *expand_string_to_string (string, quoted)
     pub fn expand_string_to_string(string: *const c_char, quoted: c_int) -> *mut c_char;
@@ -365,6 +379,7 @@ unsafe extern "C" {
     pub fn termsig_handler(sig: c_int);
 
     // rl_hook_func_t *rl_signal_event_hook = (rl_hook_func_t *)NULL;
+    #[cfg(not(feature = "pre_bash_4_4"))]
     pub static mut rl_signal_event_hook: Option<extern "C" fn()>;
 
     /* If this is non-zero, do job control. */
@@ -442,6 +457,7 @@ pub struct CompSpec {
     pub suffix: *mut c_char,
     pub funcname: *mut c_char,
     pub command: *mut c_char,
+    #[cfg(not(feature = "pre_bash_4_4"))]
     pub lcommand: *mut c_char,
     pub filterpat: *mut c_char,
 }
