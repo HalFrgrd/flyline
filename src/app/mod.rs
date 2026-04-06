@@ -903,7 +903,8 @@ impl<'a> App<'a> {
     /// Words that contain a space are quoted with single quotes in the display string.
     /// If `buffer_str` is empty, opens the agent-prompts fuzzy history search instead.
     fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
-        if buffer_str.is_empty() {
+        if false && buffer_str.is_empty() {
+            // TOOD think through UX for this
             // Warm with "" to display all agent prompts regardless of the current buffer.
             self.settings
                 .agent_prompt_history_manager

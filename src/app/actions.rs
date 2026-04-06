@@ -689,7 +689,8 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         Scope::Any,
         |app, _key| {
             let buf = app.buffer.buffer().to_string();
-            if buf.is_empty() {
+            if false && buf.is_empty() {
+                // TODO think of good UX for this
                 // Warm with "" to display all cancelled commands regardless of buffer.
                 app.settings
                     .cancelled_command_history_manager
@@ -697,9 +698,11 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 app.content_mode =
                     ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
             } else {
-                app.settings
-                    .cancelled_command_history_manager
-                    .push_entry(buf);
+                if false {
+                    app.settings
+                        .cancelled_command_history_manager
+                        .push_entry(buf);
+                }
                 app.mode =
                     crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
             }
