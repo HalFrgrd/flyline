@@ -553,7 +553,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         Scope::TabCompletion,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                active_suggestions.accept_currently_selected(&mut app.buffer);
+                active_suggestions.accept_selected_filtered_item(&mut app.buffer);
                 app.content_mode = ContentMode::Normal;
             }
         },

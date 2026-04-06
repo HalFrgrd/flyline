@@ -743,7 +743,7 @@ impl<'a> App<'a> {
                     && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
                 {
                     active_suggestions.set_selected_by_idx(idx);
-                    active_suggestions.accept_currently_selected(&mut self.buffer);
+                    active_suggestions.accept_selected_filtered_item(&mut self.buffer);
                     self.content_mode = ContentMode::Normal;
                     update_buffer = true;
                 }

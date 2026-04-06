@@ -4,7 +4,7 @@ use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
 use crate::text_buffer::SubString;
 use crate::users;
-use glob::glob;
+use glob;
 
 #[derive(Debug)]
 struct PathPatternExpansion {
@@ -41,15 +41,19 @@ impl PathPatternExpansion {
                 pattern[slash_pos + 1..].to_string(),
             )
         } else {
+            log::debug!(
+                "No slash found before first glob metacharacter in pattern '{}', using empty prefix",
+                pattern
+            );
             (String::new(), pattern.to_string())
         };
-        let fully_expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
+        let expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
 
         let rhs_pattern = bash_funcs::dequoting_function_rust(&rhs_pattern);
 
         PathPatternExpansion {
             raw_prefix,
-            expanded_prefix: fully_expanded_prefix,
+            expanded_prefix,
             rhs_pattern,
         }
     }
@@ -62,34 +66,49 @@ impl PathPatternExpansion {
         }
     }
 
+    fn prefix_with_trailing_slash(&self) -> String {
+        let mut prefix = self.expanded_prefix.clone();
+        if prefix.is_empty() {
+            return prefix;
+        } 
+        if !prefix.ends_with('/') {
+            prefix.push('/');
+        }
+        prefix
+    }
+
+    fn wants_hidden(&self) -> bool {
+        self.rhs_pattern.starts_with('.') && !self.rhs_pattern.starts_with("./")
+    }
+
     fn convert_expanded_match_to_unexpanded(
         &self,
         expanded_match: &str,
         quote_type: Option<QuoteType>,
-    ) -> String {
+    ) -> (String, String) {
         // Compute the relative path of the result compared to
         // expanded_prefix, then reconstruct using raw_prefix so the
         // suggestion preserves the user's original prefix spelling
         // (e.g. `~/`, `$HOME/`, or a relative path segment).
-        if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
-            let suffix = suffix.trim_start_matches('/');
+        if let Some(suffix) = expanded_match.strip_prefix(&self.prefix_with_trailing_slash()) {
 
             let quoted_suffix = match quote_type {
                 Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
                 _ => bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default()),
             };
             if self.raw_prefix.is_empty() {
-                quoted_suffix
+                (quoted_suffix.clone(), quoted_suffix)
             } else {
-                format!("{}/{}", self.raw_prefix, quoted_suffix)
+                let combined = format!("{}/{}", self.raw_prefix, quoted_suffix);
+                (combined.clone(), quoted_suffix)
             }
         } else {
             log::warn!(
                 "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
                 expanded_match,
-                self.expanded_prefix
+                self.prefix_with_trailing_slash()
             );
-            expanded_match.to_string()
+            (expanded_match.to_string(), expanded_match.to_string())
         }
     }
 }
@@ -328,6 +347,7 @@ fn gen_secondary_completions(
         Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
             log::debug!("Glob expansion for: {:?}", word_under_cursor);
             let completions = tab_complete_glob_expansion(word_under_cursor, comp_resultflags);
+            log::debug!("Glob expansion completions: {:#?}", completions);
 
             // Unlike other completions, if there are multiple glob completions,
             // we join them with spaces and insert them all at once.
@@ -448,7 +468,11 @@ fn tab_complete_glob_expansion(
 
     const MAX_GLOB_RESULTS: usize = 1_000;
 
-    if let Ok(paths) = glob(&expanded.expanded_pattern()) {
+    let glob_pattern = expanded.expanded_pattern();
+    log::debug!("Glob pattern to expand: '{}'", glob_pattern);
+    log::debug!("wants hidden: {}", expanded.wants_hidden());
+
+    if let Ok(paths) = glob::glob(&glob_pattern) {
         for (idx, path_result) in paths.enumerate() {
             if idx >= MAX_GLOB_RESULTS {
                 log::debug!(
@@ -457,11 +481,34 @@ fn tab_complete_glob_expansion(
                 );
                 break;
             }
+
             if let Ok(path) = path_result {
-                let unexpanded = expanded.convert_expanded_match_to_unexpanded(
+                log::debug!("Glob matched path: {:?}", path);
+                let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
                     &path.to_string_lossy(),
                     comp_resultflags.quote_type,
                 );
+
+                // Tab completion ignores "." and ".."
+                log::debug!(
+                    "Processing glob match: '{}', suffix: '{}'",
+                    unexpanded,
+                    globbed_suffix
+                );
+                if globbed_suffix == "." || globbed_suffix == ".." {
+                    log::debug!("Skipping '{}' since it is '.' or '..'", unexpanded);
+                    continue;
+                }
+                
+
+                // Only include hidden if the pattern explicitly requested it
+                if !expanded.wants_hidden() && globbed_suffix.starts_with('.') && !globbed_suffix.starts_with("./") {
+                    log::debug!(
+                        "Skipping '{}' since it is hidden and pattern does not request hidden files",
+                        unexpanded
+                    );
+                    continue;
+                }
 
                 results.push(UnprocessedSuggestion::Raw {
                     raw_text: unexpanded,
@@ -834,6 +881,34 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default abc/foo*/ba*",
             &[&Suggestion::new(r#"abc/foo/baz"#, "", " ")],
+        );
+
+        // move to foo/glob_stuff dir:
+        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff").unwrap();
+
+        // .* matches hidden files only. and should ignore . and ..
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default .*",
+            &[&Suggestion::new(r#".dotfile"#, "", " ")],
+        );
+
+        // .* matches hidden files only. and should ignore . and ..
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default .*",
+            &[&Suggestion::new(r#".dotfile"#, "", " ")],
+        );
+
+
+        // ./* matches all non hidden
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default ./*",
+            &[&Suggestion::new(r#"./a.txt"#, "", " ")],
+        );
+
+        // * matches all non hidden
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default *",
+            &[&Suggestion::new(r#"a.txt"#, "", " ")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
