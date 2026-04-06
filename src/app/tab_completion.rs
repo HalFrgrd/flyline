@@ -70,7 +70,7 @@ impl PathPatternExpansion {
         let mut prefix = self.expanded_prefix.clone();
         if prefix.is_empty() {
             return prefix;
-        } 
+        }
         if !prefix.ends_with('/') {
             prefix.push('/');
         }
@@ -91,7 +91,6 @@ impl PathPatternExpansion {
         // suggestion preserves the user's original prefix spelling
         // (e.g. `~/`, `$HOME/`, or a relative path segment).
         if let Some(suffix) = expanded_match.strip_prefix(&self.prefix_with_trailing_slash()) {
-
             let quoted_suffix = match quote_type {
                 Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
                 _ => bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default()),
@@ -499,10 +498,12 @@ fn tab_complete_glob_expansion(
                     log::debug!("Skipping '{}' since it is '.' or '..'", unexpanded);
                     continue;
                 }
-                
 
                 // Only include hidden if the pattern explicitly requested it
-                if !expanded.wants_hidden() && globbed_suffix.starts_with('.') && !globbed_suffix.starts_with("./") {
+                if !expanded.wants_hidden()
+                    && globbed_suffix.starts_with('.')
+                    && !globbed_suffix.starts_with("./")
+                {
                     log::debug!(
                         "Skipping '{}' since it is hidden and pattern does not request hidden files",
                         unexpanded
@@ -892,12 +893,11 @@ impl App<'_> {
             &[&Suggestion::new(r#".dotfile"#, "", " ")],
         );
 
-        // .* matches hidden files only. and should ignore . and ..
+        // ./.* matches hidden files only. and should ignore . and ..
         run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default .*",
-            &[&Suggestion::new(r#".dotfile"#, "", " ")],
+            "fl_comp_util_bashdefault --fallback-to-default ./.*",
+            &[&Suggestion::new(r#"./.dotfile"#, "", " ")],
         );
-
 
         // ./* matches all non hidden
         run_test_on(
