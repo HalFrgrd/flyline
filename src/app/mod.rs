@@ -1037,15 +1037,40 @@ impl<'a> App<'a> {
     }
 
     fn ts_to_timeago_string_5chars(ts: u64) -> String {
-        let duration = std::time::Duration::from_secs(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                .saturating_sub(ts),
-        );
-        let s = timeago::format_5chars(duration);
-        format!("{:>5}", s.trim_start_matches('0'))
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .saturating_sub(ts);
+        // Format as a compact 5-char relative time string (e.g. " 2h3m", "15sec", " 3day")
+        let s = if secs < 60 {
+            format!("{:>4}s", secs)
+        } else if secs < 3600 {
+            let m = secs / 60;
+            let s2 = secs % 60;
+            if s2 == 0 {
+                format!("{:>4}m", m)
+            } else {
+                format!("{:>2}m{:02}s", m, s2)
+            }
+        } else if secs < 86400 {
+            let h = secs / 3600;
+            let m = (secs % 3600) / 60;
+            if m == 0 {
+                format!("{:>4}h", h)
+            } else {
+                format!("{:>2}h{:02}m", h, m)
+            }
+        } else {
+            let d = secs / 86400;
+            let h = (secs % 86400) / 3600;
+            if h == 0 {
+                format!("{:>4}d", d)
+            } else {
+                format!("{:>2}d{:02}h", d, h)
+            }
+        };
+        format!("{:>5}", s)
     }
 
     /// Build the display lines for a single fuzzy-history entry.

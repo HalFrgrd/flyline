@@ -298,12 +298,126 @@ impl AiOutputSelection {
 }
 
 /// Intermediate struct for deserializing a single suggestion from JSON.
-#[derive(serde::Deserialize)]
 struct AiSuggestionRaw {
-    #[serde(default)]
     command: String,
-    #[serde(default)]
     description: String,
+}
+
+/// Minimal hand-rolled JSON array parser for `[{"command":...,"description":...}, ...]`.
+/// Returns parsed items and byte offset after the closing `]`.
+fn parse_ai_json(s: &str) -> anyhow::Result<(Vec<AiSuggestionRaw>, usize)> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    // skip whitespace
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if i >= bytes.len() || bytes[i] != b'[' {
+        return Err(anyhow!("expected '['"));
+    }
+    i += 1;
+    let mut items = Vec::new();
+    loop {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            return Err(anyhow!("unterminated array"));
+        }
+        if bytes[i] == b']' {
+            i += 1;
+            break;
+        }
+        if bytes[i] == b',' {
+            i += 1;
+            continue;
+        }
+        if bytes[i] != b'{' {
+            return Err(anyhow!("expected object"));
+        }
+        i += 1;
+        let mut command = String::new();
+        let mut description = String::new();
+        loop {
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            if i >= bytes.len() {
+                return Err(anyhow!("unterminated object"));
+            }
+            if bytes[i] == b'}' {
+                i += 1;
+                break;
+            }
+            if bytes[i] == b',' {
+                i += 1;
+                continue;
+            }
+            // parse key
+            let key = parse_json_string(s, &mut i)?;
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            if i >= bytes.len() || bytes[i] != b':' {
+                return Err(anyhow!("expected ':'"));
+            }
+            i += 1;
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            let val = parse_json_string(s, &mut i)?;
+            match key.as_str() {
+                "command" => command = val,
+                "description" => description = val,
+                _ => {}
+            }
+        }
+        items.push(AiSuggestionRaw {
+            command,
+            description,
+        });
+    }
+    Ok((items, i))
+}
+
+fn parse_json_string(s: &str, i: &mut usize) -> anyhow::Result<String> {
+    let bytes = s.as_bytes();
+    if *i >= bytes.len() || bytes[*i] != b'"' {
+        return Err(anyhow!("expected '\"'"));
+    }
+    *i += 1;
+    let mut out = String::new();
+    while *i < bytes.len() {
+        match bytes[*i] {
+            b'"' => {
+                *i += 1;
+                return Ok(out);
+            }
+            b'\\' => {
+                *i += 1;
+                if *i < bytes.len() {
+                    match bytes[*i] {
+                        b'"' => out.push('"'),
+                        b'\\' => out.push('\\'),
+                        b'/' => out.push('/'),
+                        b'n' => out.push('\n'),
+                        b'r' => out.push('\r'),
+                        b't' => out.push('\t'),
+                        _ => {
+                            out.push('\\');
+                            out.push(bytes[*i] as char);
+                        }
+                    }
+                    *i += 1;
+                }
+            }
+            c => {
+                out.push(c as char);
+                *i += 1;
+            }
+        }
+    }
+    Err(anyhow!("unterminated string"))
 }
 
 /// Parse AI command output into an [`AiOutputParsed`].
@@ -330,22 +444,13 @@ pub fn parse_ai_output(raw: &str) -> anyhow::Result<AiOutputParsed> {
             anyhow!("AI output contained no JSON array")
         })?;
 
-    // Use a streaming deserializer: parse exactly one JSON array starting at
-    // `start` and stop as soon as it is complete, without reading further.
+    // Use a hand-rolled JSON parser
     let substr = &raw[start..];
-    let mut json_stream =
-        serde_json::Deserializer::from_str(substr).into_iter::<Vec<AiSuggestionRaw>>();
-    let items: Vec<AiSuggestionRaw> = json_stream
-        .next()
-        .ok_or_else(|| {
-            log::warn!("AI output contained no JSON array");
-            anyhow!("AI output contained no JSON array")
-        })?
-        .map_err(|e| {
-            log::warn!("Failed to parse AI output as JSON: {}", e);
-            anyhow!("Failed to parse AI output as JSON: {}", e)
-        })?;
-    let array_end = start + json_stream.byte_offset();
+    let (items, byte_offset) = parse_ai_json(substr).map_err(|e| {
+        log::warn!("Failed to parse AI output as JSON: {}", e);
+        anyhow!("Failed to parse AI output as JSON: {}", e)
+    })?;
+    let array_end = start + byte_offset;
 
     let header = raw[..start].trim().to_string();
     let footer = raw[array_end..].trim().to_string();

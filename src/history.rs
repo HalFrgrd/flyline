@@ -520,7 +520,7 @@ impl FuzzyHistorySearch {
 
     fn new() -> Self {
         FuzzyHistorySearch {
-            matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
+            matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true, false),
             cache: Vec::new(),
             cache_command: None,
             global_index: 0,
