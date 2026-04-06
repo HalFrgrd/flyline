@@ -243,7 +243,7 @@ pub(crate) struct App<'a> {
     formatted_buffer_cache: FormattedBuffer,
     /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
     dparser_tokens_cache: Vec<AnnotatedToken>,
-    cursor_animation: Cursor,
+    cursor: Cursor,
     /// Whether the terminal currently has focus. Used to control cursor animation intensity.
     term_has_focus: bool,
     unfinished_from_prev_command: bool,
@@ -298,7 +298,7 @@ impl<'a> App<'a> {
             buffer,
             formatted_buffer_cache,
             dparser_tokens_cache: Vec::new(),
-            cursor_animation: Cursor::new(),
+            cursor: Cursor::new(),
             term_has_focus: true,
             unfinished_from_prev_command,
             prompt_manager: PromptManager::new(
@@ -1461,10 +1461,9 @@ impl<'a> App<'a> {
         if self.mode.is_running()
             && let Some(cursor_pos) = cursor_pos_maybe
         {
-            self.cursor_animation.update_logical_pos(cursor_pos);
-            let cursor_anim_pos = if self.settings.show_animations {
-                self.cursor_animation
-                    .get_render_pos(&self.settings.cursor_config)
+            self.cursor.update_logical_pos(cursor_pos);
+            let cursor_render_pos = if self.settings.show_animations {
+                self.cursor.get_render_pos(&self.settings.cursor_config)
             } else {
                 cursor_pos
             };
@@ -1474,14 +1473,13 @@ impl<'a> App<'a> {
                 } else if self.settings.show_animations {
                     let focused = self.term_has_focus
                         && !matches!(self.content_mode, ContentMode::PromptCwdEdit(_));
-                    self.cursor_animation
-                        .get_style(focused, &self.settings.cursor_config)
+                    self.cursor.get_style(focused, &self.settings.cursor_config)
                 } else {
                     Some(Palette::cursor_style(255))
                 }
             };
 
-            content.set_term_cursor_pos(cursor_anim_pos, cursor_style);
+            content.set_term_cursor_pos(cursor_render_pos, cursor_style);
         }
 
         if let Some((sug, suf)) = &self.inline_history_suggestion

@@ -13,9 +13,9 @@ pub const CURSOR_INTENSITY_UNFOCUSED: u8 = 80;
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CursorBackend {
     /// Flyline renders a custom cursor.
+    #[default]
     Flyline,
     /// Leave cursor rendering entirely to the terminal emulator.
-    #[default]
     Terminal,
 }
 
@@ -152,7 +152,7 @@ pub struct CursorConfig {
 impl Default for CursorConfig {
     fn default() -> Self {
         Self {
-            backend: CursorBackend::Terminal,
+            backend: CursorBackend::Flyline,
             interpolate: Some(16.0),
             interpolate_easing: CursorEasing::Linear,
             style: CursorStyleConfig::Default,
@@ -227,6 +227,8 @@ impl Cursor {
             return Some(CURSOR_INTENSITY_UNFOCUSED as f32 / 255.0);
         }
 
+        // log::info!("Computing cursor intensity for effect {:?} at time {:.2?}", config.effect, self.time_of_change.elapsed());
+
         match config.effect {
             CursorEffect::None => Some(1.0),
             CursorEffect::Fade => {
@@ -238,8 +240,17 @@ impl Cursor {
                 Some(eased * 0.8 + 0.2)
             }
             CursorEffect::Blink => {
+                log::info!(
+                    "Computing blink effect with speed multiplier {:.2}",
+                    config.effect_speed
+                );
                 let elapsed = self.time_of_change.elapsed().as_secs_f32();
+                log::info!(
+                    "elapsed * config.effect_speed: {:.2?}",
+                    elapsed * config.effect_speed
+                );
                 let phase = (elapsed * config.effect_speed).fract();
+                log::info!("Blink phase: {:.2}", phase);
                 if phase < 0.5 { Some(1.0) } else { None }
             }
         }
@@ -247,6 +258,7 @@ impl Cursor {
 
     /// Build a ratatui `Style` from a normalised intensity and the cursor style config.
     fn build_style(intensity: f32, style_config: &CursorStyleConfig) -> Style {
+        // log::info!("Building cursor style with intensity {:.2} and config {:?}", intensity, style_config);
         match style_config {
             CursorStyleConfig::Default => {
                 let v = (intensity * 255.0) as u8;

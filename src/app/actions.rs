@@ -123,7 +123,7 @@ impl Action {
 #[derive(Debug, Clone)]
 pub enum KeyEventMatch {
     Exact(KeyEvent),
-    AnyCharEitherMod(Vec<KeyModifiers>),
+    AnyCharAndMods(Vec<KeyModifiers>),
 }
 
 impl TryFrom<&str> for KeyEventMatch {
@@ -139,7 +139,7 @@ impl TryFrom<&str> for KeyEventMatch {
             modifiers |= parse_single_modifier(mod_part)?;
         }
         if key_part.trim().eq_ignore_ascii_case("anychar") {
-            return Ok(KeyEventMatch::AnyCharEitherMod(vec![modifiers]));
+            return Ok(KeyEventMatch::AnyCharAndMods(vec![modifiers]));
         }
         let code = parse_single_keycode(key_part)?;
         Ok(KeyEventMatch::Exact(KeyEvent::new(code, modifiers)))
@@ -392,7 +392,7 @@ impl Binding {
             KeyEventMatch::Exact(action_binding) => {
                 action_binding.code == key.code && key.modifiers.contains(action_binding.modifiers)
             }
-            KeyEventMatch::AnyCharEitherMod(mods) => {
+            KeyEventMatch::AnyCharAndMods(mods) => {
                 matches!(key.code, KeyCode::Char(_))
                     && mods.iter().any(|m| key.modifiers.contains(*m))
             }
@@ -1267,7 +1267,7 @@ impl KeyEventMatch {
                 parts.push(display_keycode(ke.code));
                 parts.join("+")
             }
-            KeyEventMatch::AnyCharEitherMod(mods) => mods
+            KeyEventMatch::AnyCharAndMods(mods) => mods
                 .iter()
                 .map(|m| {
                     let mut parts = display_modifiers(*m);
@@ -1321,7 +1321,7 @@ impl KeyEventMatch {
                 parts.join("+")
             }
             // AnyChar bindings: apply inverse modifier display per modifier set.
-            KeyEventMatch::AnyCharEitherMod(mods) => mods
+            KeyEventMatch::AnyCharAndMods(mods) => mods
                 .iter()
                 .map(|m| {
                     let mut parts: Vec<String> = Vec::new();
