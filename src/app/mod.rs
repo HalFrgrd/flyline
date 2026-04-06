@@ -9,14 +9,14 @@ use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{
     Contents, SpanTag, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows,
 };
-use crate::cursor_animation::CursorAnimation;
+use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
-use crate::settings::{self, MouseMode, Settings, UseTermEmulatorCursor};
+use crate::settings::{self, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
@@ -243,7 +243,7 @@ pub(crate) struct App<'a> {
     formatted_buffer_cache: FormattedBuffer,
     /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
     dparser_tokens_cache: Vec<AnnotatedToken>,
-    cursor_animation: CursorAnimation,
+    cursor_animation: Cursor,
     /// Whether the terminal currently has focus. Used to control cursor animation intensity.
     term_has_focus: bool,
     unfinished_from_prev_command: bool,
@@ -298,7 +298,7 @@ impl<'a> App<'a> {
             buffer,
             formatted_buffer_cache,
             dparser_tokens_cache: Vec::new(),
-            cursor_animation: CursorAnimation::new(),
+            cursor_animation: Cursor::new(),
             term_has_focus: true,
             unfinished_from_prev_command,
             prompt_manager: PromptManager::new(
@@ -368,7 +368,7 @@ impl<'a> App<'a> {
         }
 
         // Send execution finished escape codes (previous command has completed).
-        if self.settings.send_shell_integration_codes {
+        if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
             let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
             let hostname = bash_funcs::get_hostname();
             let cwd = bash_funcs::get_cwd();
@@ -491,12 +491,11 @@ impl<'a> App<'a> {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
 
-                        if self.settings.send_shell_integration_codes
-                            || matches!(
-                                self.settings.use_term_emulator_cursor,
-                                UseTermEmulatorCursor::OnlyPromptPos | UseTermEmulatorCursor::Full
-                            )
-                        {
+                        if matches!(
+                            self.settings.send_shell_integration_codes,
+                            settings::ShellIntegrationLevel::OnlyPromptPos
+                                | settings::ShellIntegrationLevel::Full
+                        ) {
                             shell_integration::write_after_rendering_codes(
                                 prev_contents
                                     .as_ref()
@@ -609,7 +608,9 @@ impl<'a> App<'a> {
 
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
-                if self.settings.send_shell_integration_codes {
+                if self.settings.send_shell_integration_codes
+                    == settings::ShellIntegrationLevel::Full
+                {
                     shell_integration::write_on_exit_codes(Some(&cmd)).unwrap_or_else(|e| {
                         log::error!("Failed to write pre-execution escape codes: {}", e);
                     });
@@ -619,7 +620,9 @@ impl<'a> App<'a> {
                 ExitState::WithCommand(cmd)
             }
             _ => {
-                if self.settings.send_shell_integration_codes {
+                if self.settings.send_shell_integration_codes
+                    == settings::ShellIntegrationLevel::Full
+                {
                     shell_integration::write_on_exit_codes(None).unwrap_or_else(|e| {
                         log::error!("Failed to write pre-execution escape codes: {}", e);
                     });
@@ -1372,24 +1375,23 @@ impl<'a> App<'a> {
         if self.mode.is_running()
             && let Some(cursor_pos) = cursor_pos_maybe
         {
-            self.cursor_animation.update_position(cursor_pos);
+            self.cursor_animation.update_logical_pos(cursor_pos);
             let cursor_anim_pos = if self.settings.show_animations {
-                self.cursor_animation.get_position()
+                self.cursor_animation
+                    .get_render_pos(&self.settings.cursor_config)
             } else {
                 cursor_pos
             };
             let cursor_style = {
-                if self.settings.use_term_emulator_cursor == UseTermEmulatorCursor::Full {
+                if self.settings.cursor_config.backend == CursorBackend::Terminal {
                     None
+                } else if self.settings.show_animations {
+                    let focused = self.term_has_focus
+                        && !matches!(self.content_mode, ContentMode::PromptCwdEdit(_));
+                    self.cursor_animation
+                        .get_style(focused, &self.settings.cursor_config)
                 } else {
-                    let cursor_intensity = if self.settings.show_animations {
-                        let focused = self.term_has_focus
-                            && !matches!(self.content_mode, ContentMode::PromptCwdEdit(_));
-                        self.cursor_animation.get_intensity(focused)
-                    } else {
-                        255
-                    };
-                    Some(Palette::cursor_style(cursor_intensity))
+                    Some(Palette::cursor_style(255))
                 }
             };
 
@@ -1878,7 +1880,7 @@ impl<'a> App<'a> {
         };
 
         if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
-            && (self.settings.use_term_emulator_cursor == UseTermEmulatorCursor::Full
+            && (self.settings.cursor_config.backend == CursorBackend::Terminal
                 || !self.mode.is_running())
         {
             frame.set_cursor_position(term_em_cursor);

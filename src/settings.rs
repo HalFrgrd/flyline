@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::actions;
+use crate::cursor::CursorConfig;
 use crate::history::HistoryManager;
 use crate::palette::Palette;
 use clap::ValueEnum;
@@ -83,20 +84,6 @@ pub struct AgentModeCommand {
     pub system_prompt: Option<String>,
 }
 
-/// Controls how flyline uses the terminal emulator's cursor.
-#[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
-pub enum UseTermEmulatorCursor {
-    /// Do not use the terminal emulator's cursor; flyline renders a custom cursor.
-    None,
-    /// Only send the escape codes that report the prompt start and end positions;
-    /// flyline still renders a custom cursor for the active typing position.
-    OnlyPromptPos,
-    /// Fully use the terminal emulator's cursor: send prompt position codes and
-    /// defer active cursor rendering to the terminal emulator. This is the default.
-    #[default]
-    Full,
-}
-
 /// Controls how flyline manages mouse capture.
 #[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
 pub enum MouseMode {
@@ -108,6 +95,19 @@ pub enum MouseMode {
     /// user clicks above the viewport, re-enabled on any keypress or when focus is regained.
     #[default]
     Smart,
+}
+
+/// How many shell integration escape codes (OSC 133 / OSC 633) flyline sends.
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShellIntegrationLevel {
+    /// Send no shell integration codes.
+    None,
+    /// Only send the escape codes that report prompt start/end positions.
+    OnlyPromptPos,
+    /// Send the full set of shell integration codes: prompt positions, execution
+    /// start/end codes, and cursor-position reporting.  This is the default.
+    #[default]
+    Full,
 }
 
 #[derive(Debug)]
@@ -124,8 +124,8 @@ pub struct Settings {
     pub show_inline_history: bool,
     /// Whether to automatically close opening characters (e.g., parentheses, brackets, quotes).
     pub auto_close_chars: bool,
-    /// Whether to use the terminal emulator's cursor instead of rendering a custom cursor.
-    pub use_term_emulator_cursor: UseTermEmulatorCursor,
+    /// Cursor appearance and animation settings (set via `flyline set-cursor`).
+    pub cursor_config: CursorConfig,
     /// Mouse capture mode.
     pub mouse_mode: MouseMode,
     /// Agent-mode commands keyed by optional trigger prefix.
@@ -141,8 +141,8 @@ pub struct Settings {
     pub matrix_animation: bool,
     /// Render frame rate in frames per second (1–120).
     pub frame_rate: u8,
-    /// Whether to send shell integration escape codes (OSC 133 / OSC 633).
-    pub send_shell_integration_codes: bool,
+    /// Shell integration escape codes level (OSC 133 / OSC 633).
+    pub send_shell_integration_codes: ShellIntegrationLevel,
     /// Configurable colour palette for UI elements.
     pub color_palette: Palette,
     /// Which colour theme the user has selected (dark or light).
@@ -168,14 +168,14 @@ impl Default for Settings {
             show_animations: true,
             show_inline_history: true,
             auto_close_chars: true,
-            use_term_emulator_cursor: UseTermEmulatorCursor::Full,
+            cursor_config: CursorConfig::default(),
             mouse_mode: MouseMode::Smart,
             agent_commands: HashMap::new(),
             custom_animations: HashMap::new(),
             custom_prompt_widgets: HashMap::new(),
             matrix_animation: false,
             frame_rate: 30,
-            send_shell_integration_codes: true,
+            send_shell_integration_codes: ShellIntegrationLevel::Full,
             color_palette: Palette::default(),
             color_theme: ColorTheme::Dark,
             keybindings: Vec::new(),

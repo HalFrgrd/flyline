@@ -694,6 +694,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 
 [[package]]
+name = "easing-function"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ff18235504129e34c411871066cfa4ad108ed6a28d5fb2417057aff7f99bee4"
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -807,6 +813,7 @@ dependencies = [
  "clap_complete",
  "color-eyre",
  "crossterm",
+ "easing-function",
  "flash",
  "glob",
  "itertools",
