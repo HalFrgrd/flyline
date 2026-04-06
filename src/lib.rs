@@ -849,10 +849,20 @@ fn setup_autocompletion() {
         }
     };
     let from_file = c"flyline_setup_autocompletion";
+    #[cfg(not(feature = "pre_bash_4_4"))]
     let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
+    #[cfg(feature = "pre_bash_4_4")]
+    let flags = bash_symbols::SEVAL_NOHIST;
     unsafe {
-        // `evalstring` will free the string we pass to it, so we use `xmalloc` to allocate it on the heap.
+        // The called function will free the string we pass to it, so we use `xmalloc` to allocate it on the heap.
+        #[cfg(not(feature = "pre_bash_4_4"))]
         bash_symbols::evalstring(
+            bash_symbols::xmalloc_cstr(&completion_str),
+            from_file.as_ptr(),
+            flags,
+        );
+        #[cfg(feature = "pre_bash_4_4")]
+        bash_symbols::parse_and_execute(
             bash_symbols::xmalloc_cstr(&completion_str),
             from_file.as_ptr(),
             flags,

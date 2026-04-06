@@ -39,6 +39,7 @@ default-features = false
 
 [features]
 integration-tests = []
+pre_bash_4_4 = []
 
 [build-dependencies]
 chrono = { version = "0.4" }

@@ -110,7 +110,10 @@ fn expand_prompt_through_bash(raw: String) -> Option<Vec<Line<'static>>> {
     let c_prompt = std::ffi::CString::new(raw).ok()?;
 
     let decoded = unsafe {
+        #[cfg(not(feature = "pre_bash_4_4"))]
         let decoded_prompt_cstr = bash_symbols::decode_prompt_string(c_prompt.as_ptr(), 1);
+        #[cfg(feature = "pre_bash_4_4")]
+        let decoded_prompt_cstr = bash_symbols::decode_prompt_string(c_prompt.as_ptr());
         if decoded_prompt_cstr.is_null() {
             log::warn!("decode_prompt_string returned null");
             return None;
