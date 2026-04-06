@@ -356,7 +356,7 @@ impl<'a> App<'a> {
         }
 
         // Send execution finished escape codes (previous command has completed).
-        if self.settings.send_shell_integration_codes {
+        if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
             let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
             let hostname = bash_funcs::get_hostname();
             let cwd = bash_funcs::get_cwd();
@@ -448,9 +448,11 @@ impl<'a> App<'a> {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
 
-                        if self.settings.send_shell_integration_codes
-                            || self.settings.cursor_config.backend == CursorBackend::Terminal
-                        {
+                        if matches!(
+                            self.settings.send_shell_integration_codes,
+                            settings::ShellIntegrationLevel::OnlyPromptPos
+                                | settings::ShellIntegrationLevel::Full
+                        ) {
                             shell_integration::write_after_rendering_codes(
                                 prev_contents
                                     .as_ref()
@@ -554,7 +556,9 @@ impl<'a> App<'a> {
 
         match self.mode {
             AppRunningState::Exiting(ExitState::WithCommand(cmd)) => {
-                if self.settings.send_shell_integration_codes {
+                if self.settings.send_shell_integration_codes
+                    == settings::ShellIntegrationLevel::Full
+                {
                     shell_integration::write_on_exit_codes(Some(&cmd)).unwrap_or_else(|e| {
                         log::error!("Failed to write pre-execution escape codes: {}", e);
                     });
@@ -564,7 +568,9 @@ impl<'a> App<'a> {
                 ExitState::WithCommand(cmd)
             }
             _ => {
-                if self.settings.send_shell_integration_codes {
+                if self.settings.send_shell_integration_codes
+                    == settings::ShellIntegrationLevel::Full
+                {
                     shell_integration::write_on_exit_codes(None).unwrap_or_else(|e| {
                         log::error!("Failed to write pre-execution escape codes: {}", e);
                     });
@@ -1297,10 +1303,10 @@ impl<'a> App<'a> {
         if self.mode.is_running()
             && let Some(cursor_pos) = cursor_pos_maybe
         {
-            self.cursor_animation.update_position(cursor_pos);
+            self.cursor_animation.update_logical_pos(cursor_pos);
             let cursor_anim_pos = if self.settings.show_animations {
                 self.cursor_animation
-                    .get_position(&self.settings.cursor_config)
+                    .get_render_pos(&self.settings.cursor_config)
             } else {
                 cursor_pos
             };
