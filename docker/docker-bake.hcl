@@ -109,6 +109,7 @@ target "bash-integration-tests-pre-4-4" {
         specific-bash-version = "target:specific-bash-version-${replace(docker_bash_version, ".", "_")}"
     }
     name = "bash-integration-test-${replace(docker_bash_version, ".", "_")}"
+    tags = ["bash-integration-test-pre-4-4-${docker_bash_version}"]
     matrix = {
         docker_bash_version = PRE_BASH_4_4_VERSION_MATRIX
     }

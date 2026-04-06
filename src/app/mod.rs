@@ -536,6 +536,7 @@ impl<'a> App<'a> {
             }
 
             unsafe {
+                // TODO: I might be able to get away with just checking terminating_signals for both versions
                 // Check if a terminating signal has been received.
                 // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
                 // bash receives a terminating signal. In older versions, we fall
