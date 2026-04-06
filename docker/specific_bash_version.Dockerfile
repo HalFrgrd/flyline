@@ -8,6 +8,8 @@ RUN apt update && apt install -y \
   curl \
   libreadline-dev \
   libncurses-dev \
+  bison \
+  yacc \
   && rm -rf /var/lib/apt/lists/*
 
 
