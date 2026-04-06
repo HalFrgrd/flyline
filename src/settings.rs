@@ -15,7 +15,7 @@ pub enum ColorTheme {
     Light,
 }
 
-/// A single custom prompt animation registered with `flyline create-anim`.
+/// A single custom prompt animation registered with `flyline create-prompt-anim`.
 #[derive(Debug, Clone)]
 pub struct PromptAnimation {
     /// Name used as placeholder in prompt strings (e.g., `COOL_SPINNER`).
@@ -27,6 +27,49 @@ pub struct PromptAnimation {
     /// When true the animation reverses direction at each end instead of
     /// wrapping around (ping-pong / bounce mode).
     pub ping_pong: bool,
+}
+
+/// A prompt widget that shows different text depending on whether mouse capture is enabled.
+#[derive(Debug, Clone)]
+pub struct PromptWidgetMouseMode {
+    /// Name used as placeholder in prompt strings (e.g., `FLYLINE_MOUSE_MODE`).
+    pub name: String,
+    /// Text shown when mouse capture is enabled.
+    pub enabled_text: String,
+    /// Text shown when mouse capture is disabled.
+    pub disabled_text: String,
+}
+
+/// A prompt widget that runs a shell command and displays its output.
+#[derive(Debug, Clone)]
+pub struct PromptWidgetCustom {
+    /// Name used as placeholder in prompt strings (e.g., `CUSTOM_WIDGET1`).
+    pub name: String,
+    /// Command (and arguments) to run.
+    pub command: Vec<String>,
+    /// When true, wait for the command to finish at prompt construction time.
+    /// When false (default), spawn the process in the background.
+    pub blocking: bool,
+    /// Number of spaces to use as a placeholder while the command is running.
+    /// Defaults to 0 (empty placeholder).
+    pub placeholder_length: Option<usize>,
+}
+
+/// A custom prompt widget registered with `flyline create-prompt-widget`.
+#[derive(Debug, Clone)]
+pub enum PromptWidget {
+    MouseMode(PromptWidgetMouseMode),
+    Custom(PromptWidgetCustom),
+}
+
+impl PromptWidget {
+    /// Return the name used as the placeholder in prompt strings.
+    pub fn name(&self) -> &str {
+        match self {
+            PromptWidget::MouseMode(w) => &w.name,
+            PromptWidget::Custom(w) => &w.name,
+        }
+    }
 }
 
 /// A configured agent-mode command with its optional system prompt.
@@ -90,8 +133,10 @@ pub struct Settings {
     /// - `Some(prefix)` key: activated when the user presses Enter and the buffer starts
     ///   with `prefix`; the prefix is stripped before the buffer is sent to the command.
     pub agent_commands: HashMap<Option<String>, AgentModeCommand>,
-    /// Custom prompt animations registered with `flyline create-anim`.
+    /// Custom prompt animations registered with `flyline create-prompt-anim`.
     pub custom_animations: HashMap<String, PromptAnimation>,
+    /// Custom prompt widgets registered with `flyline create-prompt-widget`.
+    pub custom_prompt_widgets: HashMap<String, PromptWidget>,
     /// Run matrix animation in the terminal background.
     pub matrix_animation: bool,
     /// Render frame rate in frames per second (1–120).
@@ -127,6 +172,7 @@ impl Default for Settings {
             mouse_mode: MouseMode::Smart,
             agent_commands: HashMap::new(),
             custom_animations: HashMap::new(),
+            custom_prompt_widgets: HashMap::new(),
             matrix_animation: false,
             frame_rate: 30,
             send_shell_integration_codes: true,

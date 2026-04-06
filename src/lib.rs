@@ -170,12 +170,12 @@ enum Commands {
     /// ANSI colour sequences written as `\e` (e.g. `\e[33m`).
     ///
     /// Examples:
-    ///   flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
-    ///   flyline create-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
+    ///   flyline create-prompt-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
+    ///   flyline create-prompt-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
     ///
     /// See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
-    #[command(name = "create-anim", verbatim_doc_comment)]
-    CreateAnim {
+    #[command(name = "create-prompt-anim", verbatim_doc_comment)]
+    CreatePromptAnim {
         /// Name to embed in prompt strings as the animation placeholder.
         #[arg(long)]
         name: String,
@@ -187,6 +187,24 @@ enum Commands {
         ping_pong: bool,
         /// One or more animation frames (positional).  Use `\e` for the ESC character.
         frames: Vec<String>,
+    },
+    /// Create a custom prompt widget.
+    ///
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// with the widget output on every render.
+    ///
+    /// Widget types:
+    ///   mouse-mode  Shows different text depending on whether mouse capture is enabled.
+    ///   custom      Runs a shell command and displays its output.
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder-length 10
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --blocking
+    #[command(name = "create-prompt-widget", verbatim_doc_comment)]
+    CreatePromptWidget {
+        #[command(subcommand)]
+        subcommand: PromptWidgetSubcommands,
     },
     /// Configure the colour palette.
     ///
@@ -342,6 +360,45 @@ enum KeySubcommands {
         from: String,
         /// The key or modifier to remap to (e.g. "z", "ctrl").
         to: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum PromptWidgetSubcommands {
+    /// Show different text depending on whether mouse capture is enabled.
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
+    #[command(name = "mouse-mode", verbatim_doc_comment)]
+    MouseMode {
+        /// Name to embed in prompt strings as the widget placeholder.
+        #[arg(long)]
+        name: String,
+        /// Text to display when mouse capture is enabled.
+        enabled_text: String,
+        /// Text to display when mouse capture is disabled.
+        disabled_text: String,
+    },
+    /// Run a shell command and display its output in the prompt.
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder-length 10
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --blocking
+    #[command(name = "custom", verbatim_doc_comment)]
+    Custom {
+        /// Name to embed in prompt strings as the widget placeholder.
+        #[arg(long)]
+        name: String,
+        /// Command (and arguments) to run.
+        #[arg(long, num_args = 1.., allow_hyphen_values = true, required = true)]
+        command: Vec<String>,
+        /// Wait for the command to finish before rendering the prompt.
+        /// When omitted, the command runs in the background.
+        #[arg(long)]
+        blocking: bool,
+        /// Number of spaces to show as a placeholder while the command runs.
+        #[arg(long = "placeholder-length")]
+        placeholder_length: Option<usize>,
     },
 }
 
@@ -527,7 +584,7 @@ impl Flyline {
                             },
                         );
                     }
-                    Some(Commands::CreateAnim {
+                    Some(Commands::CreatePromptAnim {
                         name,
                         fps,
                         frames,
@@ -535,7 +592,7 @@ impl Flyline {
                     }) => {
                         if fps <= 0.0 {
                             eprintln!(
-                                "flyline create-anim: --fps must be greater than 0 (got {}); animation '{}' not registered",
+                                "flyline create-prompt-anim: --fps must be greater than 0 (got {}); animation '{}' not registered",
                                 fps, name
                             );
                             return bash_symbols::BuiltinExitCode::Usage as c_int;
@@ -557,6 +614,59 @@ impl Flyline {
                             },
                         );
                     }
+                    Some(Commands::CreatePromptWidget { subcommand }) => match subcommand {
+                        PromptWidgetSubcommands::MouseMode {
+                            name,
+                            enabled_text,
+                            disabled_text,
+                        } => {
+                            log::info!(
+                                "Registering mouse-mode widget '{}' (enabled={:?}, disabled={:?})",
+                                name,
+                                enabled_text,
+                                disabled_text
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::MouseMode(
+                                    settings::PromptWidgetMouseMode {
+                                        name,
+                                        enabled_text,
+                                        disabled_text,
+                                    },
+                                ),
+                            );
+                        }
+                        PromptWidgetSubcommands::Custom {
+                            name,
+                            command,
+                            blocking,
+                            placeholder_length,
+                        } => {
+                            if command.is_empty() {
+                                eprintln!(
+                                    "flyline create-prompt-widget custom: --command must not be empty"
+                                );
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
+                            log::info!(
+                                "Registering custom widget '{}' (command={:?}, blocking={}, placeholder_length={:?})",
+                                name,
+                                command,
+                                blocking,
+                                placeholder_length
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::Custom(settings::PromptWidgetCustom {
+                                    name,
+                                    command,
+                                    blocking,
+                                    placeholder_length,
+                                }),
+                            );
+                        }
+                    },
                     Some(Commands::SetColor {
                         default_theme,
                         recognised_command,
