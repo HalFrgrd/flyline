@@ -2,7 +2,7 @@ use itertools::Itertools;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::settings::ColorTheme;
+use crate::settings::{ColorTheme, CursorStyleConfig};
 
 /// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
 /// Returns an error message if the string cannot be parsed.
@@ -37,6 +37,64 @@ pub fn parse_str_to_style(s: &str) -> Result<ratatui::style::Style, String> {
         }
     }
     Ok(style)
+}
+
+/// Parse a cursor style string into a [`CursorStyleConfig`].
+///
+/// Special values:
+/// - `"reverse"` (case-insensitive): returns [`CursorStyleConfig::Reverse`].
+/// - `"default"` (case-insensitive): returns [`CursorStyleConfig::Default`].
+///
+/// Otherwise the string is parsed as a rich-style expression with one difference
+/// from [`parse_str_to_style`]: a **single colour with no `on` keyword** is
+/// treated as the **background** colour of the cursor cell (e.g. `"red"` →
+/// `bg(red)`).  When an explicit `on` is present (e.g. `"pink on white"`) the
+/// foreground and background are used as-is.
+pub fn parse_cursor_style_str(s: &str) -> Result<CursorStyleConfig, String> {
+    use parse_style::{Attribute, Style as ParseStyle};
+    use ratatui::style::Modifier;
+
+    if s.eq_ignore_ascii_case("reverse") {
+        return Ok(CursorStyleConfig::Reverse);
+    }
+    if s.eq_ignore_ascii_case("default") {
+        return Ok(CursorStyleConfig::Default);
+    }
+
+    let parsed: ParseStyle = s.parse().map_err(|e| format!("{e}"))?;
+    let mut style = Style::default();
+
+    match (parsed.get_foreground(), parsed.get_background()) {
+        (None, None) => {}
+        // Single colour → treat as background
+        (Some(fg), None) => {
+            style = style.bg(parse_color_to_ratatui(fg));
+        }
+        (fg, Some(bg)) => {
+            if let Some(f) = fg {
+                style = style.fg(parse_color_to_ratatui(f));
+            }
+            style = style.bg(parse_color_to_ratatui(bg));
+        }
+    }
+
+    let attr_map: &[(Attribute, Modifier)] = &[
+        (Attribute::Bold, Modifier::BOLD),
+        (Attribute::Dim, Modifier::DIM),
+        (Attribute::Italic, Modifier::ITALIC),
+        (Attribute::Underline, Modifier::UNDERLINED),
+        (Attribute::Blink, Modifier::SLOW_BLINK),
+        (Attribute::Blink2, Modifier::RAPID_BLINK),
+        (Attribute::Reverse, Modifier::REVERSED),
+        (Attribute::Conceal, Modifier::HIDDEN),
+        (Attribute::Strike, Modifier::CROSSED_OUT),
+    ];
+    for &(attr, modifier) in attr_map {
+        if parsed.is_enabled(attr) {
+            style = style.add_modifier(modifier);
+        }
+    }
+    Ok(CursorStyleConfig::Custom(style))
 }
 
 fn parse_color_to_ratatui(c: parse_style::Color) -> ratatui::style::Color {
