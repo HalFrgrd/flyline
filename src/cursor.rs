@@ -197,7 +197,7 @@ impl Cursor {
             None => self.target_pos,
             Some(speed) => {
                 let time_since_change = self.time_of_change.elapsed().as_secs_f32();
-                let mut factor = time_since_change * speed + 0.2;
+                let mut factor = time_since_change * speed;
 
                 // Adjust factor for small movements
                 if self.prev_pos.abs_diff(&self.target_pos) <= 2 {

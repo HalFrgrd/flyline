@@ -517,8 +517,8 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<UnprocessedSuggestion> {
 }
 
 impl App<'_> {
-    fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
-        match opt_suggestion.and_then(|s| s.try_accept(&mut self.buffer)) {
+    fn try_accept_tab_completion(&mut self, suggs: ActiveSuggestions) {
+        match suggs.try_accept(&mut self.buffer) {
             None => {
                 self.content_mode = ContentMode::Normal;
             }
@@ -535,6 +535,7 @@ impl App<'_> {
         sugs: Vec<UnprocessedSuggestion>,
         wuc_substring: SubString,
     ) {
+        let mut final_wuc = wuc_substring.clone();
         // Phase 2: if there are fewer than 500 suggestions, find any common
         // prefix and automatically insert it when it extends the word under
         // cursor.
@@ -544,34 +545,28 @@ impl App<'_> {
                 if common_prefix.len() > wuc_substring.s.len()
                     && common_prefix.starts_with(&*wuc_substring.s)
                 {
-                    log::debug!(
-                        "Inserting common prefix '{}' (word_under_cursor was '{}')",
-                        common_prefix,
-                        wuc_substring.s
-                    );
-                    if let Err(e) = self
+                    match self
                         .buffer
                         .replace_word_under_cursor(&common_prefix, &wuc_substring)
                     {
-                        log::warn!(
+                        Ok(new_wuc) => {
+                            log::info!(
+                                "New word under cursor after inserting common prefix: '{:?}'",
+                                new_wuc
+                            );
+                            final_wuc = new_wuc;
+                        }
+                        Err(e) => log::warn!(
                             "Failed to replace word under cursor with common prefix: {}",
                             e
-                        );
+                        ),
                     }
                 }
             }
         }
 
-        // Phase 3: re-derive the completion context from the (possibly updated)
-        // buffer and hand the suggestions off to the UI layer.
-        let buffer = self.buffer.buffer();
-        let completion_context =
-            tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos());
-        self.try_accept_tab_completion(ActiveSuggestions::try_new(
-            sugs,
-            completion_context.word_under_cursor,
-            &self.buffer,
-        ));
+        // Phase 3: hand the suggestions off to the UI layer.
+        self.try_accept_tab_completion(ActiveSuggestions::new(sugs, final_wuc));
     }
 
     pub fn start_tab_complete(&mut self) {

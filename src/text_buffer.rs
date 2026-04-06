@@ -580,7 +580,7 @@ impl TextBuffer {
         &mut self,
         new_word: &str,
         sub_string: &SubString,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<SubString> {
         let end = sub_string.start + sub_string.s.len();
 
         match self.buf.get(sub_string.start..end) {
@@ -590,7 +590,10 @@ impl TextBuffer {
                 self.buf.drain(sub_string.start..end);
                 self.cursor_byte = sub_string.start;
                 self.insert_str_no_snapshot(new_word);
-                Ok(())
+                Ok(SubString {
+                    s: new_word.to_string(),
+                    start: sub_string.start,
+                })
             }
             Some(s) => Err(anyhow::anyhow!(
                 "Expected word '{}' at position {}, but found '{}'",

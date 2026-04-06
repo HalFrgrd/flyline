@@ -215,14 +215,14 @@ PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
 ### Custom command widget
 
 Runs a shell command and displays its output in the prompt.  The output is
-passed through bash's `decode_prompt_string` so bash prompt escape sequences
+passed through Bash's `decode_prompt_string` so Bash prompt escape sequences
 (e.g. `\u`, `\w`, ANSI colour codes) are fully supported.
 
 ```bash
 # Non-blocking (default): spawns the command in the background; shows a
 # placeholder of 10 spaces while the command is running.
 flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
-  --command 'run_something.sh' --placeholder-length 10
+  --command 'run_slow_git_metrics.sh' --placeholder-length 10
 # PS1 usage:
 PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 

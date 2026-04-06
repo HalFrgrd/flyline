@@ -451,13 +451,10 @@ impl std::fmt::Debug for ActiveSuggestions {
 }
 
 impl ActiveSuggestions {
-    pub fn try_new<'underlying_buffer>(
+    pub fn new<'underlying_buffer>(
         suggestions: Vec<UnprocessedSuggestion>,
-        word_under_cursor: &'underlying_buffer str,
-        buffer: &'underlying_buffer TextBuffer,
-    ) -> Option<Self> {
-        let word_under_cursor = SubString::new(buffer.buffer(), word_under_cursor).ok()?;
-
+        word_under_cursor: SubString,
+    ) -> Self {
         let filtered_suggestions = vec![];
         let sug_len = suggestions.len();
 
@@ -474,7 +471,7 @@ impl ActiveSuggestions {
         };
 
         active_sug.apply_fuzzy_filter(word_under_cursor);
-        Some(active_sug)
+        active_sug
     }
 
     pub fn on_tab(&mut self, shift_tab: bool) {
