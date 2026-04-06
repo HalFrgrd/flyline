@@ -2,6 +2,10 @@ variable "BASH_VERSION_MATRIX" {
     default = ["4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
 }
 
+variable "PRE_BASH_4_4_VERSION_MATRIX" {
+    default = ["3.2.57"]
+}
+
 variable "FLYLINE_RELEASE_VERSION" {
     default = null
 }
@@ -37,6 +41,16 @@ target "extract-integration-test-build-artifact" {
     }
 }
 
+target "extract-pre-bash-4-4-integration-test-build-artifact" {
+    context = "."
+    output = ["type=local,dest=docker/build-pre-bash-4-4-integration-test"]
+    dockerfile = "docker/builder.Dockerfile"
+    target = "flyline-built-artifact"
+    args = {
+        CARGO_FEATURES = "integration-tests,pre_bash_4_4"
+    }
+}
+
 target "lib-tests" {
     context = "."
     dockerfile = "docker/builder.Dockerfile"
@@ -59,6 +73,19 @@ target "specific-bash-version" {
     tags = ["bash-${docker_bash_version}"]
 }
 
+target "specific-bash-version-pre-4-4" {
+    context = "."
+    dockerfile = "docker/specific_bash_version.Dockerfile"
+    name = "specific-bash-version-${replace(docker_bash_version, ".", "_")}"
+    matrix = {
+        docker_bash_version = PRE_BASH_4_4_VERSION_MATRIX
+    }
+    args = {
+        DOCKER_BASH_VERSION = docker_bash_version
+    }
+    tags = ["bash-${docker_bash_version}"]
+}
+
 target "bash-integration-tests" {
     context = "."
     contexts = {
@@ -68,6 +95,22 @@ target "bash-integration-tests" {
     name = "bash-integration-test-${replace(docker_bash_version, ".", "_")}"
     matrix = {
         docker_bash_version = BASH_VERSION_MATRIX
+    }
+    dockerfile = "docker/bash_integration_test.Dockerfile"
+    args = {
+        DOCKER_BASH_VERSION = docker_bash_version
+    }
+}
+
+target "bash-integration-tests-pre-4-4" {
+    context = "."
+    contexts = {
+        built-artifact = "target:extract-pre-bash-4-4-integration-test-build-artifact",
+        specific-bash-version = "target:specific-bash-version-${replace(docker_bash_version, ".", "_")}"
+    }
+    name = "bash-integration-test-${replace(docker_bash_version, ".", "_")}"
+    matrix = {
+        docker_bash_version = PRE_BASH_4_4_VERSION_MATRIX
     }
     dockerfile = "docker/bash_integration_test.Dockerfile"
     args = {

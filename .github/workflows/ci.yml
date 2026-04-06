@@ -29,9 +29,11 @@ jobs:
           files: docker/docker-bake.hcl
           targets: |
             extract-integration-test-build-artifact
+            extract-pre-bash-4-4-integration-test-build-artifact
             lib-tests
           set: |
             extract-integration-test-build-artifact.output=type=local,dest=${{ runner.temp }}/docker/build
+            extract-pre-bash-4-4-integration-test-build-artifact.output=type=local,dest=${{ runner.temp }}/docker/build-pre-bash-4-4
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
@@ -51,6 +53,46 @@ jobs:
       fail-fast: false
       matrix:
         bash_version_slug: [ "4_4-rc1", "4_4_18", "5_0", "5_1_16", "5_2", "5_3" ]
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set lower case owner name
+        run: |
+          echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
+        env:
+          OWNER: '${{ github.repository_owner }}'
+
+      - name: Run integration tests
+        uses: docker/bake-action@v6
+        with:
+          files: docker/docker-bake.hcl
+          targets: bash-integration-test-${{ matrix.bash_version_slug }}
+          set: |
+            specific-bash-version-${{ matrix.bash_version_slug }}.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version_slug }}:cache
+            specific-bash-version-${{ matrix.bash_version_slug }}.cache-to=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version_slug }}:cache,mode=min
+            bash-integration-test-${{ matrix.bash_version_slug }}.cache-from=type=gha
+            bash-integration-test-${{ matrix.bash_version_slug }}.cache-to=type=gha,mode=max
+            built-artifact.cache-from=type=gha
+            built-artifact.cache-to=type=gha,mode=max
+
+  bash-integration-tests-pre-4-4:
+    name: Bash integration tests (pre-4.4) using built library
+    runs-on: ubuntu-latest
+    needs:
+      - build-ubuntu-1604
+    strategy:
+      fail-fast: false
+      matrix:
+        bash_version_slug: [ "3_2_57" ]
 
     steps:
       - name: Set up Docker Buildx
