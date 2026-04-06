@@ -115,9 +115,9 @@ struct FlylineArgs {
     /// Mouse capture mode (disabled, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
-    /// Send shell integration escape codes (OSC 133 / OSC 633)
-    #[arg(long = "send-shell-integration-codes", default_missing_value = "true", num_args = 0..=1)]
-    send_shell_integration_codes: Option<bool>,
+    /// Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
+    #[arg(long = "send-shell-integration-codes", default_missing_value = "full", num_args = 0..=1)]
+    send_shell_integration_codes: Option<settings::ShellIntegrationLevel>,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
@@ -544,9 +544,9 @@ impl Flyline {
                     self.settings.mouse_mode = mode;
                 }
 
-                if let Some(enabled) = parsed.send_shell_integration_codes {
-                    log::info!("Shell integration codes set to {}", enabled);
-                    self.settings.send_shell_integration_codes = enabled;
+                if let Some(level) = parsed.send_shell_integration_codes {
+                    log::info!("Shell integration codes set to {:?}", level);
+                    self.settings.send_shell_integration_codes = level;
                 }
 
                 match parsed.command {

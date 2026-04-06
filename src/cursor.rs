@@ -179,7 +179,7 @@ impl Cursor {
         }
     }
 
-    pub fn update_position(&mut self, new_pos: Coord) {
+    pub fn update_logical_pos(&mut self, new_pos: Coord) {
         if new_pos != self.target_pos {
             self.time_of_change = Instant::now();
             self.prev_pos = self.target_pos;
@@ -192,7 +192,7 @@ impl Cursor {
     }
 
     /// Return the (possibly interpolated) cursor position based on the given config.
-    pub fn get_position(&self, config: &CursorConfig) -> Coord {
+    pub fn get_render_pos(&self, config: &CursorConfig) -> Coord {
         match config.interpolate {
             None => self.target_pos,
             Some(speed) => {
