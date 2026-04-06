@@ -141,19 +141,19 @@ struct AliasExpandedCompletion {
 /// `word_under_cursor` must be a sub-slice of `context`.
 fn expand_alias_for_completion(
     command_word: String,
-    word_under_cursor: &str,
+    word_under_cursor: &SubString,
     context: &str,
     context_until_cursor: &str,
 ) -> AliasExpandedCompletion {
+    // Capture the original length before potentially moving `command_word`.
+    let command_word_len = command_word.len();
+
     let poss_alias = bash_funcs::find_alias(&command_word);
     log::debug!(
         "Checking for alias for command word '{}': {:?}",
         command_word,
         poss_alias
     );
-
-    // Capture the original length before potentially moving `command_word`.
-    let command_word_len = command_word.len();
 
     let alias = if let Some(a) = poss_alias
         && !a.is_empty()
@@ -164,13 +164,7 @@ fn expand_alias_for_completion(
     };
 
     let len_delta = alias.len() as isize - command_word_len as isize;
-    let word_under_cursor_end = {
-        // Safety: `word_under_cursor` is guaranteed by the caller to be a
-        // sub-slice of `context`, so this pointer subtraction is valid.
-        let word_start_offset_in_context =
-            word_under_cursor.as_ptr() as usize - context.as_ptr() as usize;
-        (word_start_offset_in_context + word_under_cursor.len()).saturating_add_signed(len_delta)
-    };
+    let word_under_cursor_end = word_under_cursor.end().saturating_add_signed(len_delta);
 
     // cursor position relative to the start of the completion context
     let cursor_byte_pos = context_until_cursor.len().saturating_add_signed(len_delta);
@@ -264,7 +258,7 @@ pub(crate) fn gen_completions_internal(
                 word_under_cursor_end,
             } = expand_alias_for_completion(
                 initial_command_word.to_string(),
-                word_under_cursor.as_ref(),
+                word_under_cursor,
                 completion_context.context.as_ref(),
                 completion_context.context_until_cursor.as_ref(),
             );

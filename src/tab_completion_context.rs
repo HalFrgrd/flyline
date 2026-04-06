@@ -107,7 +107,6 @@ impl<'a> CompletionContext<'a> {
             comp_type_secondary: self.comp_type_secondary,
         }
     }
-
 }
 
 pub fn get_completion_context<'a>(
