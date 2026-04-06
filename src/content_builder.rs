@@ -629,7 +629,7 @@ impl Contents {
                 let label_y = area.top() + (area.height / 2);
                 self.set_cursor_col(label_x);
                 self.cursor_pos.row = label_y;
-                self.write_span(&label_span, tag);
+                self.write_tagged_span(&TaggedSpan::new(label_span, tag));
             }
         }
     }
