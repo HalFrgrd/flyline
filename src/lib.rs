@@ -29,8 +29,8 @@ mod stateful_sliding_window;
 mod tab_completion_context;
 mod table;
 mod text_buffer;
-mod users;
 mod tutorial;
+mod users;
 
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
