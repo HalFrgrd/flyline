@@ -8,99 +8,71 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::LazyLock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Scope(u16);
-
-impl Scope {
-    pub const NORMAL: Self = Self(1 << 0);
-    pub const FUZZY_HISTORY_SEARCH: Self = Self(1 << 1);
-    pub const TAB_COMPLETION: Self = Self(1 << 2);
-    pub const AGENT_MODE_WAITING: Self = Self(1 << 3);
-    pub const AGENT_OUTPUT_SELECTION: Self = Self(1 << 4);
-    pub const AGENT_ERROR: Self = Self(1 << 5);
-    pub const INLINE_HISTORY_ACCEPTABLE: Self = Self(1 << 6);
-    pub const PROMPT_CWD_EDIT: Self = Self(1 << 7);
-    pub const TAB_COMPLETION_WAITING: Self = Self(1 << 8);
-
-    pub const fn contains(self, other: Self) -> bool {
-        self.0 & other.0 == other.0
-    }
+pub enum Scope {
+    Normal,
+    FuzzyHistorySearch,
+    TabCompletionWaiting,
+    TabCompletion,
+    AgentModeWaiting,
+    AgentOutputSelection,
+    AgentError,
+    InlineHistoryAcceptable,
+    PromptCwdEdit,
 }
 
 impl Scope {
     pub fn is_active(&self, app: &App) -> bool {
-        if self.contains(Scope::NORMAL) {
-            true
-        } else if self.contains(Scope::FUZZY_HISTORY_SEARCH) {
-            matches!(
+        match self {
+            Scope::Normal => true,
+            Scope::FuzzyHistorySearch => matches!(
                 app.content_mode,
                 crate::app::ContentMode::FuzzyHistorySearch(_)
-            )
-        } else if self.contains(Scope::TAB_COMPLETION) {
-            matches!(
-                app.content_mode,
-                crate::app::ContentMode::TabCompletion { .. }
-            )
-        } else if self.contains(Scope::AGENT_MODE_WAITING) {
-            matches!(
-                app.content_mode,
-                crate::app::ContentMode::AgentModeWaiting { .. }
-            )
-        } else if self.contains(Scope::AGENT_OUTPUT_SELECTION) {
-            matches!(
-                app.content_mode,
-                crate::app::ContentMode::AgentOutputSelection { .. }
-            )
-        } else if self.contains(Scope::AGENT_ERROR) {
-            matches!(app.content_mode, crate::app::ContentMode::AgentError { .. })
-        } else if self.contains(Scope::INLINE_HISTORY_ACCEPTABLE) {
-            app.buffer.is_cursor_at_end() && app.inline_history_suggestion.is_some()
-        } else if self.contains(Scope::PROMPT_CWD_EDIT) {
-            matches!(app.content_mode, crate::app::ContentMode::PromptCwdEdit(_))
-        } else if self.contains(Scope::TAB_COMPLETION_WAITING) {
-            matches!(
+            ),
+            Scope::TabCompletionWaiting => matches!(
                 app.content_mode,
                 crate::app::ContentMode::TabCompletionWaiting { .. }
-            )
-        } else {
-            false
+            ),
+            Scope::TabCompletion => matches!(
+                app.content_mode,
+                crate::app::ContentMode::TabCompletion { .. }
+            ),
+            Scope::AgentModeWaiting => matches!(
+                app.content_mode,
+                crate::app::ContentMode::AgentModeWaiting { .. }
+            ),
+            Scope::AgentOutputSelection => matches!(
+                app.content_mode,
+                crate::app::ContentMode::AgentOutputSelection { .. }
+            ),
+            Scope::AgentError => {
+                matches!(app.content_mode, crate::app::ContentMode::AgentError { .. })
+            }
+            Scope::InlineHistoryAcceptable => {
+                app.buffer.is_cursor_at_end() && app.inline_history_suggestion.is_some()
+            }
+            Scope::PromptCwdEdit => {
+                matches!(app.content_mode, crate::app::ContentMode::PromptCwdEdit(_))
+            }
         }
     }
 }
 
-impl<'a> IntoIterator for Scope {
+impl IntoIterator for Scope {
     type Item = &'static str;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
+    type IntoIter = std::iter::Once<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut scopes = Vec::new();
-        if self.contains(Scope::NORMAL) {
-            scopes.push("normal");
-        }
-        if self.contains(Scope::FUZZY_HISTORY_SEARCH) {
-            scopes.push("fuzzy_history_search");
-        }
-        if self.contains(Scope::TAB_COMPLETION) {
-            scopes.push("tab_completion");
-        }
-        if self.contains(Scope::AGENT_MODE_WAITING) {
-            scopes.push("agent_mode_waiting");
-        }
-        if self.contains(Scope::AGENT_OUTPUT_SELECTION) {
-            scopes.push("agent_output_selection");
-        }
-        if self.contains(Scope::AGENT_ERROR) {
-            scopes.push("agent_error");
-        }
-        if self.contains(Scope::INLINE_HISTORY_ACCEPTABLE) {
-            scopes.push("inline_history_acceptable");
-        }
-        if self.contains(Scope::PROMPT_CWD_EDIT) {
-            scopes.push("prompt_cwd_edit");
-        }
-        if self.contains(Scope::TAB_COMPLETION_WAITING) {
-            scopes.push("tab_completion_waiting");
-        }
-        scopes.into_iter()
+        std::iter::once(match self {
+            Scope::Normal => "normal",
+            Scope::FuzzyHistorySearch => "fuzzy_history_search",
+            Scope::TabCompletionWaiting => "tab_completion_waiting",
+            Scope::TabCompletion => "tab_completion",
+            Scope::AgentModeWaiting => "agent_mode_waiting",
+            Scope::AgentOutputSelection => "agent_output_selection",
+            Scope::AgentError => "agent_error",
+            Scope::InlineHistoryAcceptable => "inline_history_acceptable",
+            Scope::PromptCwdEdit => "prompt_cwd_edit",
+        })
     }
 }
 
@@ -109,15 +81,15 @@ impl TryFrom<&str> for Scope {
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         match s.to_lowercase().as_str() {
-            "normal" => Ok(Scope::NORMAL),
-            "fuzzy_history_search" => Ok(Scope::FUZZY_HISTORY_SEARCH),
-            "tab_completion" => Ok(Scope::TAB_COMPLETION),
-            "agent_mode_waiting" => Ok(Scope::AGENT_MODE_WAITING),
-            "agent_output_selection" => Ok(Scope::AGENT_OUTPUT_SELECTION),
-            "agent_error" => Ok(Scope::AGENT_ERROR),
-            "inline_history_acceptable" => Ok(Scope::INLINE_HISTORY_ACCEPTABLE),
-            "prompt_cwd_edit" => Ok(Scope::PROMPT_CWD_EDIT),
-            "tab_completion_waiting" => Ok(Scope::TAB_COMPLETION_WAITING),
+            "normal" => Ok(Scope::Normal),
+            "fuzzy_history_search" => Ok(Scope::FuzzyHistorySearch),
+            "tab_completion_waiting" => Ok(Scope::TabCompletionWaiting),
+            "tab_completion" => Ok(Scope::TabCompletion),
+            "agent_mode_waiting" => Ok(Scope::AgentModeWaiting),
+            "agent_output_selection" => Ok(Scope::AgentOutputSelection),
+            "agent_error" => Ok(Scope::AgentError),
+            "inline_history_acceptable" => Ok(Scope::InlineHistoryAcceptable),
+            "prompt_cwd_edit" => Ok(Scope::PromptCwdEdit),
             other => Err(anyhow::anyhow!("Unknown scope: '{}'", other)),
         }
     }
@@ -438,7 +410,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "accept_suggestion",
         "Accept inline history suggestion",
-        Scope::INLINE_HISTORY_ACCEPTABLE,
+        Scope::InlineHistoryAcceptable,
         |app, _key| {
             if let Some((_, suf)) = &app.inline_history_suggestion {
                 app.buffer.insert_str(suf);
@@ -449,7 +421,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "select_next",
         "Move down in agent output selection",
-        Scope::AGENT_OUTPUT_SELECTION,
+        Scope::AgentOutputSelection,
         |app, _key| {
             if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                 selection.move_down();
@@ -459,7 +431,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "select_prev",
         "Move up in agent output selection",
-        Scope::AGENT_OUTPUT_SELECTION,
+        Scope::AgentOutputSelection,
         |app, _key| {
             if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                 selection.move_up();
@@ -469,7 +441,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_up",
         "Move up in tab completion suggestions",
-        Scope::TAB_COMPLETION,
+        Scope::TabCompletion,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_up_arrow();
@@ -479,7 +451,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_down",
         "Move down in tab completion suggestions",
-        Scope::TAB_COMPLETION,
+        Scope::TabCompletion,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_down_arrow(); // TODO combine this with tab?
@@ -489,7 +461,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_left",
         "Move left in tab completion suggestions",
-        Scope::TAB_COMPLETION,
+        Scope::TabCompletion,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_left_arrow();
@@ -499,7 +471,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_right",
         "Move right in tab completion suggestions",
-        Scope::TAB_COMPLETION,
+        Scope::TabCompletion,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_right_arrow();
@@ -509,7 +481,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "select_prev",
         "Scroll up through fuzzy history search results",
-        Scope::FUZZY_HISTORY_SEARCH,
+        Scope::FuzzyHistorySearch,
         |app, _key| {
             let source = match &app.content_mode {
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
@@ -522,7 +494,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "select_next",
         "Scroll down through fuzzy history search results",
-        Scope::FUZZY_HISTORY_SEARCH,
+        Scope::FuzzyHistorySearch,
         |app, _key| {
             let source = match &app.content_mode {
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
@@ -535,7 +507,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "page_up",
         "Scroll up one page",
-        Scope::FUZZY_HISTORY_SEARCH,
+        Scope::FuzzyHistorySearch,
         |app, _key| {
             let source = match &app.content_mode {
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
@@ -548,7 +520,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "page_down",
         "Scroll down one page",
-        Scope::FUZZY_HISTORY_SEARCH,
+        Scope::FuzzyHistorySearch,
         |app, _key| {
             let source = match &app.content_mode {
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
@@ -561,7 +533,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "run_agent_mode",
         "Run the agent mode command",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
                 app.start_agent_mode(agent_cmd, &buffer);
@@ -573,7 +545,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "accept_entry",
         "Accept the currently selected entry",
-        Scope::FUZZY_HISTORY_SEARCH,
+        Scope::FuzzyHistorySearch,
         |app, _key| {
             app.accept_fuzzy_history_search();
         },
@@ -581,7 +553,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "accept_entry",
         "Accept the currently selected suggestion",
-        Scope::TAB_COMPLETION,
+        Scope::TabCompletion,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.accept_currently_selected(&mut app.buffer);
@@ -592,7 +564,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "run_help_command",
         "Run the agent mode help command",
-        Scope::AGENT_ERROR,
+        Scope::AgentError,
         |app, _key| match &app.content_mode {
             ContentMode::AgentError {
                 suggested_buffer: Some(buf),
@@ -618,7 +590,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "accept_entry",
         "Accept the currently selected agent output",
-        Scope::AGENT_OUTPUT_SELECTION,
+        Scope::AgentOutputSelection,
         |app, _key| {
             if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                 if let Some(cmd) = selection.selected_command() {
@@ -633,7 +605,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "submit_or_newline", // TODO name
         "Submit the current command. Insert a newline if the buffer has unclosed \",',[,(.",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
                 app.start_agent_mode(agent_cmd, &buffer);
@@ -645,7 +617,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "prev_suggestion",
         "Move to the previous tab completion suggestion",
-        Scope::TAB_COMPLETION,
+        Scope::TabCompletion,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_tab(true);
@@ -655,7 +627,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "accept_and_edit",
         "Accept the current fuzzy history search suggestion for editing",
-        Scope::FUZZY_HISTORY_SEARCH,
+        Scope::FuzzyHistorySearch,
         |app, _key| {
             app.accept_fuzzy_history_search();
         },
@@ -663,7 +635,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "next_suggestion",
         "Move to the next tab completion suggestion",
-        Scope::AGENT_OUTPUT_SELECTION,
+        Scope::AgentOutputSelection,
         |app, _key| {
             if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                 selection.move_down(); // TODO: cycle through
@@ -673,7 +645,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "next_suggestion",
         "Move to the next tab completion suggestion",
-        Scope::TAB_COMPLETION,
+        Scope::TabCompletion,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_tab(false);
@@ -683,13 +655,13 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "trigger_tab_completion",
         "Trigger tab completion or cycle through suggestions if already active",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.start_tab_complete(),
     ),
     Action::new(
         "escape_to_normal_mode",
         "Escape - clear suggestions or toggle mouse (Simple and Smart modes)",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             app.content_mode = ContentMode::Normal;
         },
@@ -697,7 +669,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "toggle_mouse",
         "Toggle mouse state (Simple and Smart modes)",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             if matches!(
                 app.settings.mouse_mode,
@@ -710,7 +682,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "exit",
         "Exit the application",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
                 app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
@@ -722,7 +694,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "cancel",
         "Cancel the current command or exit if no command is running",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             let buf = app.buffer.buffer().to_string();
             if buf.is_empty() {
@@ -744,7 +716,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "comment_line",
         "Comment out the current line and submit",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             app.buffer.move_to_start();
             app.buffer.insert_str("#");
@@ -754,7 +726,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "start_fuzzy_history_search",
         "Start fuzzy search through command history",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             let history_buffer = app.buffer_for_history().to_owned();
             app.history_manager.warm_fuzzy_search_cache(&history_buffer);
@@ -764,7 +736,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "stop_fuzzy_history_search",
         "Stop fuzzy search through command history",
-        Scope::FUZZY_HISTORY_SEARCH,
+        Scope::FuzzyHistorySearch,
         |app, _key| {
             app.content_mode = ContentMode::Normal;
         },
@@ -772,7 +744,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "clear_screen",
         "Clear the screen",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             app.needs_screen_cleared = true;
         },
@@ -780,25 +752,25 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "delete_until_start_of_line",
         "Delete until start of line",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.delete_until_start_of_line(),
     ),
     Action::new(
         "delete_one_word_left",
         "Delete one word to the left",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.delete_one_word_left(WordDelim::LessStrict),
     ),
     Action::new(
         "delete_one_word_left_whitespace",
         "Delete one word to the left, using whitespace as delimiter",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.delete_one_word_left(WordDelim::WhiteSpace),
     ),
     Action::new(
         "delete_backwards",
         "Delete character before cursor",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             if app.settings.auto_close_chars {
                 // Backspace: if the char to the right of the cursor is an auto-inserted closing token
@@ -811,43 +783,43 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "delete_until_end_of_line",
         "Delete until end of line",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.delete_until_end_of_line(),
     ),
     Action::new(
         "delete_one_word_right",
         "Delete one word to the right",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.delete_one_word_right(WordDelim::LessStrict),
     ),
     Action::new(
         "delete_one_word_right_whitespace",
         "Delete one word to the right, using whitespace as delimiter",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.delete_one_word_right(WordDelim::WhiteSpace),
     ),
     Action::new(
         "delete_forwards",
         "Delete character after cursor",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.delete_forwards(),
     ),
     Action::new(
         "move_start_of_line",
         "Move cursor to start of line",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.move_start_of_line(),
     ),
     Action::new(
         "move_one_word_left_whitespace",
         "Move one word left, using whitespace as delimiter",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.move_one_word_left(WordDelim::WhiteSpace),
     ),
     Action::new(
         "move_left",
         "Move cursor left",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             if app.buffer.cursor_byte_pos() == 0
                 && app.prompt_manager.cwd_display_segment_count() > 0
@@ -861,25 +833,25 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_end_of_line",
         "Move cursor to end of line",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.move_end_of_line(),
     ),
     Action::new(
         "move_one_word_right_whitespace",
         "Move one word right, using whitespace as delimiter",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
     ),
     Action::new(
         "move_right",
         "Move cursor right",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| app.buffer.move_right(),
     ),
     Action::new(
         "move_line_up_or_history_up",
         "Move cursor up one line or navigate history if on the first buffer line",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             if app.buffer.cursor_row() == 0 {
                 app.buffer_before_history_navigation
@@ -899,7 +871,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_line_down_or_history_down",
         "Move cursor down one line or navigate history if on the final buffer line",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, _key| {
             if app.buffer.is_cursor_on_final_line() {
                 let history_buffer = app.buffer_for_history().to_owned();
@@ -921,16 +893,16 @@ const POSSIBLE_ACTIONS: &[Action] = &[
             }
         },
     ),
-    Action::new("undo", "Undo last action", Scope::NORMAL, |app, _key| {
+    Action::new("undo", "Undo last action", Scope::Normal, |app, _key| {
         app.buffer.undo()
     }),
-    Action::new("redo", "Redo last action", Scope::NORMAL, |app, _key| {
+    Action::new("redo", "Redo last action", Scope::Normal, |app, _key| {
         app.buffer.redo()
     }),
     Action::new(
         "insert_char",
         "Insert character",
-        Scope::NORMAL,
+        Scope::Normal,
         |app, key| {
             if let KeyCode::Char(c) = key.code {
                 if app.settings.auto_close_chars {
@@ -945,7 +917,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_left",
         "Navigate to the parent directory segment in the prompt",
-        Scope::PROMPT_CWD_EDIT,
+        Scope::PromptCwdEdit,
         |app, _key| {
             if let ContentMode::PromptCwdEdit(ref mut index) = app.content_mode {
                 let max_index = app
@@ -961,7 +933,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "move_right",
         "Navigate to the child directory segment or exit prompt CWD edit mode",
-        Scope::PROMPT_CWD_EDIT,
+        Scope::PromptCwdEdit,
         |app, _key| match app.content_mode {
             ContentMode::PromptCwdEdit(0) => {
                 app.content_mode = ContentMode::Normal;
@@ -975,7 +947,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "accept_entry",
         "Replace the buffer with `cd <selected path>` and exit prompt CWD edit mode",
-        Scope::PROMPT_CWD_EDIT,
+        Scope::PromptCwdEdit,
         |app, _key| {
             if let ContentMode::PromptCwdEdit(index) = app.content_mode {
                 if let Some(path) = app.prompt_manager.cwd_path_for_index(index) {
@@ -993,7 +965,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
         "cancel",
         "Exit prompt CWD edit mode without changing the buffer",
-        Scope::PROMPT_CWD_EDIT,
+        Scope::PromptCwdEdit,
         |app, _key| {
             if matches!(app.content_mode, ContentMode::PromptCwdEdit(_)) {
                 app.content_mode = ContentMode::Normal;
@@ -1035,168 +1007,169 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// From highest priority to lowest
 static DEFAULT_BINDINGS: LazyLock<[Binding; 54]> = LazyLock::new(|| {
     [
-        Binding::try_new(&["Down"], Scope::AGENT_OUTPUT_SELECTION, "select_next").unwrap(),
-        Binding::try_new(&["Up"], Scope::AGENT_OUTPUT_SELECTION, "select_prev").unwrap(),
-        Binding::try_new(&["Up"], Scope::TAB_COMPLETION, "move_up").unwrap(),
-        Binding::try_new(&["Down"], Scope::TAB_COMPLETION, "move_down").unwrap(),
-        Binding::try_new(&["Left"], Scope::TAB_COMPLETION, "move_left").unwrap(),
-        Binding::try_new(&["Right"], Scope::TAB_COMPLETION, "move_right").unwrap(),
-        Binding::try_new(&["Up"], Scope::FUZZY_HISTORY_SEARCH, "select_prev").unwrap(),
+        Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
+        Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
+        Binding::try_new(&["Up"], Scope::TabCompletion, "move_up").unwrap(),
+        Binding::try_new(&["Down"], Scope::TabCompletion, "move_down").unwrap(),
+        Binding::try_new(&["Left"], Scope::TabCompletion, "move_left").unwrap(),
+        Binding::try_new(&["Right"], Scope::TabCompletion, "move_right").unwrap(),
+        Binding::try_new(&["Up"], Scope::FuzzyHistorySearch, "select_prev").unwrap(),
         Binding::try_new(
             &["Down", "Ctrl+s"],
-            Scope::FUZZY_HISTORY_SEARCH,
+            Scope::FuzzyHistorySearch,
             "select_next",
         )
         .unwrap(),
-        Binding::try_new(&["PageUp"], Scope::FUZZY_HISTORY_SEARCH, "page_up").unwrap(),
-        Binding::try_new(&["PageDown"], Scope::FUZZY_HISTORY_SEARCH, "page_down").unwrap(),
+        Binding::try_new(&["PageUp"], Scope::FuzzyHistorySearch, "page_up").unwrap(),
+        Binding::try_new(&["PageDown"], Scope::FuzzyHistorySearch, "page_down").unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            Scope::FUZZY_HISTORY_SEARCH,
+            Scope::FuzzyHistorySearch,
             "stop_fuzzy_history_search",
         )
         .unwrap(),
-        Binding::try_new(&["Alt+Enter"], Scope::NORMAL, "run_agent_mode").unwrap(),
+        Binding::try_new(&["Alt+Enter"], Scope::Normal, "run_agent_mode").unwrap(),
         Binding::try_new(
             &[
                 "Enter",
                 "Ctrl+j", // Without this, when I hold enter, sometimes 'j' is read as input
             ],
-            Scope::FUZZY_HISTORY_SEARCH,
+            Scope::FuzzyHistorySearch,
             "accept_entry",
         )
         .unwrap(),
-        Binding::try_new(&["Enter", "Ctrl+j"], Scope::TAB_COMPLETION, "accept_entry").unwrap(),
-        Binding::try_new(&["Enter", "Ctrl+j"], Scope::AGENT_ERROR, "run_help_command").unwrap(),
+        Binding::try_new(&["Enter", "Ctrl+j"], Scope::TabCompletion, "accept_entry").unwrap(),
+        Binding::try_new(&["Enter", "Ctrl+j"], Scope::AgentError, "run_help_command").unwrap(),
         Binding::try_new(
             &["Enter", "Ctrl+j"],
-            Scope::AGENT_OUTPUT_SELECTION,
+            Scope::AgentOutputSelection,
             "accept_entry",
         )
         .unwrap(),
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
-        Binding::try_new(&["Enter", "Ctrl+j"], Scope::PROMPT_CWD_EDIT, "accept_entry").unwrap(),
+        Binding::try_new(&["Enter", "Ctrl+j"], Scope::PromptCwdEdit, "accept_entry").unwrap(),
         Binding::try_new(
             &["Enter", "Ctrl+j"],
-            Scope::NORMAL,
+            Scope::Normal,
             "submit_or_newline", // TODO name
         )
         .unwrap(),
         Binding::try_new(
             &["Shift+Tab", "Backtab"], // TODO backtab and shift tab for agent output selection
-            Scope::TAB_COMPLETION,
+            Scope::TabCompletion,
             "prev_suggestion",
         )
         .unwrap(),
-        Binding::try_new(&["Tab"], Scope::FUZZY_HISTORY_SEARCH, "accept_and_edit").unwrap(),
-        Binding::try_new(&["Tab"], Scope::AGENT_OUTPUT_SELECTION, "next_suggestion").unwrap(),
-        Binding::try_new(&["Tab"], Scope::TAB_COMPLETION, "next_suggestion").unwrap(),
-        Binding::try_new(&["Tab"], Scope::NORMAL, "trigger_tab_completion").unwrap(),
         // Scoped Esc bindings must appear before the Normal Esc binding.
-        Binding::try_new(&["Esc"], Scope::PROMPT_CWD_EDIT, "cancel").unwrap(),
         Binding::try_new(
             &["Esc"],
-            Scope::TAB_COMPLETION_WAITING,
+            Scope::TabCompletionWaiting,
             "escape_to_normal_mode",
         )
         .unwrap(),
-        Binding::try_new(&["Esc"], Scope::NORMAL, "escape_to_normal_mode").unwrap(),
-        Binding::try_new(&["Esc"], Scope::NORMAL, "toggle_mouse").unwrap(),
-        Binding::try_new(&["Ctrl+d"], Scope::NORMAL, "exit").unwrap(),
-        Binding::try_new(&["Ctrl+c", "Meta+c"], Scope::NORMAL, "cancel").unwrap(),
+        Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
+        Binding::try_new(&["Tab"], Scope::AgentOutputSelection, "next_suggestion").unwrap(),
+        Binding::try_new(&["Tab"], Scope::TabCompletion, "next_suggestion").unwrap(),
+        Binding::try_new(&["Tab"], Scope::Normal, "trigger_tab_completion").unwrap(),
+        // PromptCwdEdit Esc must appear before the Normal Esc binding.
+        Binding::try_new(&["Esc"], Scope::PromptCwdEdit, "cancel").unwrap(),
+        Binding::try_new(&["Esc"], Scope::Normal, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(&["Esc"], Scope::Normal, "toggle_mouse").unwrap(),
+        Binding::try_new(&["Ctrl+d"], Scope::Normal, "exit").unwrap(),
+        Binding::try_new(&["Ctrl+c", "Meta+c"], Scope::Normal, "cancel").unwrap(),
         Binding::try_new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             &["Ctrl+/", "Meta+/", "Super+/", "Ctrl+7"],
-            Scope::NORMAL,
+            Scope::Normal,
             "comment_line",
         )
         .unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            Scope::NORMAL,
+            Scope::Normal,
             "start_fuzzy_history_search",
         )
         .unwrap(),
-        Binding::try_new(&["Ctrl+l"], Scope::NORMAL, "clear_screen").unwrap(),
+        Binding::try_new(&["Ctrl+l"], Scope::Normal, "clear_screen").unwrap(),
         Binding::try_new(
             &["Super+Backspace", "Ctrl+u", "Ctrl+Shift+Backspace"],
-            Scope::NORMAL,
+            Scope::Normal,
             "delete_until_start_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Backspace", "Meta+Backspace"],
-            Scope::NORMAL,
+            Scope::Normal,
             "delete_one_word_left",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Backspace", "Ctrl+H", "Alt+W", "Ctrl+w", "Meta+W"],
-            Scope::NORMAL,
+            Scope::Normal,
             "delete_one_word_left_whitespace",
         )
         .unwrap(),
-        Binding::try_new(&["Backspace"], Scope::NORMAL, "delete_backwards").unwrap(),
+        Binding::try_new(&["Backspace"], Scope::Normal, "delete_backwards").unwrap(),
         Binding::try_new(
             &["Super+Delete", "Ctrl+Shift+Delete", "Ctrl+k"],
-            Scope::NORMAL,
+            Scope::Normal,
             "delete_until_end_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Delete", "Meta+Delete"],
-            Scope::NORMAL,
+            Scope::Normal,
             "delete_one_word_right",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Delete", "Alt+D", "Meta+D"],
-            Scope::NORMAL,
+            Scope::Normal,
             "delete_one_word_right_whitespace",
         )
         .unwrap(),
-        Binding::try_new(&["Delete"], Scope::NORMAL, "delete_forwards").unwrap(),
+        Binding::try_new(&["Delete"], Scope::Normal, "delete_forwards").unwrap(),
         Binding::try_new(
             &["Home", "Super+Left", "Ctrl+A", "Super+A"],
-            Scope::NORMAL,
+            Scope::Normal,
             "move_start_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Left", "Alt+Left", "Meta+Left", "Alt+b", "Meta+b"], // Emacs-style. ghostty sends this for Alt+Left by default
-            Scope::NORMAL,
+            Scope::Normal,
             "move_one_word_left_whitespace",
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
-        Binding::try_new(&["Left"], Scope::PROMPT_CWD_EDIT, "move_left").unwrap(),
-        Binding::try_new(&["Left"], Scope::NORMAL, "move_left").unwrap(),
+        Binding::try_new(&["Left"], Scope::PromptCwdEdit, "move_left").unwrap(),
+        Binding::try_new(&["Left"], Scope::Normal, "move_left").unwrap(),
         Binding::try_new(
             &["Right", "End"],
-            Scope::INLINE_HISTORY_ACCEPTABLE,
+            Scope::InlineHistoryAcceptable,
             "accept_suggestion",
         )
         .unwrap(),
         Binding::try_new(
             &["End", "Super+Right", "Ctrl+E", "Super+E"],
-            Scope::NORMAL,
+            Scope::Normal,
             "move_end_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Right", "Alt+Right", "Meta+Right", "Alt+f", "Meta+f"], // Emacs-style. ghostty sends Alt+Right as Meta+Right by default
-            Scope::NORMAL,
+            Scope::Normal,
             "move_one_word_right_whitespace",
         )
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
-        Binding::try_new(&["Right"], Scope::PROMPT_CWD_EDIT, "move_right").unwrap(),
-        Binding::try_new(&["Right"], Scope::NORMAL, "move_right").unwrap(),
-        Binding::try_new(&["Up"], Scope::NORMAL, "move_line_up_or_history_up").unwrap(),
-        Binding::try_new(&["Down"], Scope::NORMAL, "move_line_down_or_history_down").unwrap(),
-        Binding::try_new(&["Ctrl+z", "Super+Shift+Z"], Scope::NORMAL, "undo").unwrap(),
-        Binding::try_new(&["Ctrl+y", "Super+Shift+Z"], Scope::NORMAL, "redo").unwrap(),
-        Binding::try_new(&["AnyChar", "Shift+AnyChar"], Scope::NORMAL, "insert_char").unwrap(),
+        Binding::try_new(&["Right"], Scope::PromptCwdEdit, "move_right").unwrap(),
+        Binding::try_new(&["Right"], Scope::Normal, "move_right").unwrap(),
+        Binding::try_new(&["Up"], Scope::Normal, "move_line_up_or_history_up").unwrap(),
+        Binding::try_new(&["Down"], Scope::Normal, "move_line_down_or_history_down").unwrap(),
+        Binding::try_new(&["Ctrl+z", "Super+Shift+Z"], Scope::Normal, "undo").unwrap(),
+        Binding::try_new(&["Ctrl+y", "Super+Shift+Z"], Scope::Normal, "redo").unwrap(),
+        Binding::try_new(&["AnyChar", "Shift+AnyChar"], Scope::Normal, "insert_char").unwrap(),
     ]
 });
 
