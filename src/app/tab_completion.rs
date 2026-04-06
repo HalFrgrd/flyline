@@ -216,6 +216,306 @@ fn common_prefix_of_suggestions(suggestions: &[UnprocessedSuggestion]) -> Option
     }
 }
 
+fn post_process_completions(
+    completions: Vec<String>,
+    comp_resultflags: bash_funcs::CompletionFlags,
+    word_under_cursor: &str,
+) -> Vec<UnprocessedSuggestion> {
+    completions
+        .into_iter()
+        .map(|sug| UnprocessedSuggestion::Raw {
+            raw_text: sug,
+            expanded_path: None,
+            flags: comp_resultflags,
+            word_under_cursor: word_under_cursor.to_string(),
+        })
+        .collect()
+}
+
+pub(crate) fn gen_completions_internal(
+    completion_context: &tab_completion_context::CompletionContext,
+) -> Option<Vec<UnprocessedSuggestion>> {
+    log::debug!("Completion context: {:#?}", completion_context);
+
+    let word_under_cursor = completion_context.word_under_cursor;
+
+    match &completion_context.comp_type {
+        tab_completion_context::CompType::FirstWord => {
+            let completions = tab_complete_first_word(word_under_cursor);
+            log::debug!("Primary completions for first word: {:?}", completions);
+            if !completions.is_empty() {
+                return Some(completions);
+            }
+        }
+        tab_completion_context::CompType::CommandComp {
+            command_word: initial_command_word,
+        } => {
+            // This isn't just for commands like `git`, `cargo`
+            // Because we call bash_symbols::programmable_completions
+            // Bash also completes env vars (`echo $HO`) and other useful completions.
+            // Bash doesn't handle alias expansion well:
+            // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
+            // Since aliases are the highest priority in command word resolution,
+            // If it is an alias, lets expand it here for better completion results.
+            let AliasExpandedCompletion {
+                command_word,
+                full_command,
+                cursor_byte_pos,
+                word_under_cursor_end,
+            } = expand_alias_for_completion(
+                initial_command_word.to_string(),
+                word_under_cursor,
+                completion_context.context,
+                completion_context.context_until_cursor,
+            );
+
+            let poss_completions = bash_funcs::run_programmable_completions(
+                &full_command,
+                &command_word,
+                word_under_cursor,
+                cursor_byte_pos,
+                word_under_cursor_end,
+            );
+
+            match poss_completions {
+                Ok(comp_result) if !comp_result.completions.is_empty() => {
+                    log::debug!(
+                        "Programmable completion results for command: {}",
+                        full_command
+                    );
+                    log::debug!("Completions: {:#?}", comp_result);
+
+                    let suggestions = post_process_completions(
+                        comp_result.completions,
+                        comp_result.flags,
+                        word_under_cursor,
+                    );
+                    return Some(suggestions);
+                }
+                Ok(comp_result) => {
+                    // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
+                    // Always try to produce secondary completions
+                    return gen_secondary_completions(completion_context, comp_result.flags);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    log::debug!(
+        "No programmable completions found completion_context: {:#?}. Falling back to secondary completions.",
+        completion_context
+    );
+
+    gen_secondary_completions(completion_context, bash_funcs::CompletionFlags::default())
+}
+
+fn gen_secondary_completions(
+    completion_context: &tab_completion_context::CompletionContext,
+    comp_resultflags: bash_funcs::CompletionFlags,
+) -> Option<Vec<UnprocessedSuggestion>> {
+    let word_under_cursor = completion_context.word_under_cursor;
+    match completion_context.comp_type_secondary {
+        Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
+            log::debug!("Environment variable completion {:?}", word_under_cursor);
+            let matching_vars = bash_funcs::get_all_variables_with_prefix(word_under_cursor);
+            return Some(
+                Suggestion::from_string_vec(matching_vars, "", " ")
+                    .into_iter()
+                    .map(UnprocessedSuggestion::Ready)
+                    .collect(),
+            );
+        }
+        Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
+            log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
+            let completions = tab_complete_tilde_expansion(word_under_cursor);
+            return Some(completions);
+        }
+        Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
+            log::debug!("Glob expansion for: {:?}", word_under_cursor);
+            let completions = tab_complete_glob_expansion(word_under_cursor, comp_resultflags);
+
+            // Unlike other completions, if there are multiple glob completions,
+            // we join them with spaces and insert them all at once.
+            // Process each item eagerly here since we need the final text.
+            let completions_as_string = completions.iter().map(|item| item.to_suggestion().s).fold(
+                String::new(),
+                |mut acc, s| {
+                    if !acc.is_empty() {
+                        acc.push(' ');
+                    }
+                    acc.push_str(&s);
+                    acc
+                },
+            );
+            if completions_as_string.is_empty() {
+                log::debug!(
+                    "No glob expansion completions found for pattern: {}",
+                    word_under_cursor
+                );
+            } else {
+                // If the last completion is a directory (ends with '/'), don't
+                // append a trailing space so the cursor stays right after the slash.
+                let suffix = if completions_as_string.ends_with('/') {
+                    ""
+                } else {
+                    " "
+                };
+                return Some(
+                    Suggestion::from_string_vec(vec![completions_as_string], "", suffix)
+                        .into_iter()
+                        .map(UnprocessedSuggestion::Ready)
+                        .collect(),
+                );
+            }
+        }
+        Some(tab_completion_context::SecondaryCompType::FilenameExpansion) => {
+            log::debug!("Filename expansion for: {:?}", word_under_cursor);
+            let completions = tab_complete_glob_expansion(
+                &(word_under_cursor.to_string() + "*"),
+                comp_resultflags,
+            );
+
+            if completions.is_empty() {
+                log::debug!(
+                    "No filename expansion completions found for pattern: {}",
+                    word_under_cursor
+                );
+            } else {
+                return Some(completions);
+            }
+        }
+        None => {
+            log::debug!(
+                "No secondary completion type detected for: {:?}",
+                word_under_cursor
+            );
+        }
+    }
+
+    None
+}
+
+fn tab_complete_first_word(command: &str) -> Vec<UnprocessedSuggestion> {
+    log::debug!("Generating first word completions for: '{}'", command);
+    if command.is_empty() {
+        return vec![];
+    }
+
+    if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
+        // Path to executable
+        return tab_complete_glob_expansion(
+            &(command.to_string() + "*"),
+            bash_funcs::CompletionFlags::default(),
+        );
+    }
+
+    let mut res = bash_funcs::get_first_word_completions(command);
+
+    if res.is_empty() {
+        // No prefix matches found, fall back to fuzzy search
+        log::debug!("No prefix matches for '{}', trying fuzzy search", command);
+        res = bash_funcs::get_fuzzy_first_word_completions(command);
+        return Suggestion::from_string_vec(res, "", " ")
+            .into_iter()
+            .map(UnprocessedSuggestion::Ready)
+            .collect();
+    }
+
+    // TODO: could prioritize based on frequency of use
+    res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
+    res.dedup();
+    Suggestion::from_string_vec(res, "", " ")
+        .into_iter()
+        .map(UnprocessedSuggestion::Ready)
+        .collect()
+}
+
+fn tab_complete_glob_expansion(
+    pattern: &str,
+    mut comp_resultflags: bash_funcs::CompletionFlags,
+) -> Vec<UnprocessedSuggestion> {
+    // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
+    // e.g. my_command $PWD/fi<TAB> should expand to:
+    // my_command $PWD/file\ with\ spaces.txt
+    // not
+    // my_command \$PWD/file\ with\ spaces.txt
+    comp_resultflags.filename_quoting_desired = false;
+    comp_resultflags.filename_completion_desired = true;
+
+    comp_resultflags.quote_type = bash_funcs::find_quote_type(pattern);
+    log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
+
+    let expanded = PathPatternExpansion::new(pattern);
+    log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
+
+    // Use glob to find matching paths
+    let mut results = Vec::new();
+
+    const MAX_GLOB_RESULTS: usize = 1_000;
+
+    if let Ok(paths) = glob(&expanded.expanded_pattern()) {
+        for (idx, path_result) in paths.enumerate() {
+            if idx >= MAX_GLOB_RESULTS {
+                log::debug!(
+                    "Reached maximum glob results limit of {}. Stopping further processing.",
+                    MAX_GLOB_RESULTS
+                );
+                break;
+            }
+            if let Ok(path) = path_result {
+                let unexpanded = expanded.convert_expanded_match_to_unexpanded(
+                    &path.to_string_lossy(),
+                    comp_resultflags.quote_type,
+                );
+
+                results.push(UnprocessedSuggestion::Raw {
+                    raw_text: unexpanded,
+                    expanded_path: Some(path),
+                    flags: comp_resultflags,
+                    // The glob expansion path already preserves the raw prefix in
+                    // `unexpanded` via PathPatternExpansion; pass "" here so
+                    // post_process_completion doesn't attempt a second
+                    // prefix split (filename_quoting_desired is false anyway).
+                    word_under_cursor: String::new(),
+                });
+            }
+        }
+    }
+
+    results.sort_by(|a, b| a.match_text().cmp(b.match_text()));
+    results
+}
+
+fn tab_complete_tilde_expansion(pattern: &str) -> Vec<UnprocessedSuggestion> {
+    let user_pattern = if let Some(stripped) = pattern.strip_prefix('~') {
+        stripped
+    } else {
+        return vec![];
+    };
+
+    // `~` alone — suggest the current user's home directory as `~/`
+    if user_pattern.is_empty() {
+        return vec![UnprocessedSuggestion::Ready(Suggestion::new("~/", "", ""))];
+    }
+
+    // `~username` — find matching users from the users module
+    let mut suggestions = Vec::new();
+
+    for user in users::get_all_users() {
+        if user.username.starts_with(user_pattern) {
+            suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
+                format!("~{}/", user.username),
+                "",
+                "",
+            )));
+        }
+    }
+
+    suggestions.sort_by(|a, b| a.match_text().cmp(b.match_text()));
+    suggestions
+}
+
 impl App<'_> {
     fn try_accept_tab_completion(&mut self, opt_suggestion: Option<ActiveSuggestions>) {
         match opt_suggestion.and_then(|s| s.try_accept(&mut self.buffer)) {
@@ -228,36 +528,13 @@ impl App<'_> {
         }
     }
 
-    pub fn start_tab_complete(&mut self) {
-        // Phase 1: compute the completion context and generate suggestions.
-        // We store word_under_cursor as an owned SubString so we can use it
-        // after the immutable-borrow block ends.
-        let (suggestions, wuc_substring) = {
-            let buffer: &str = self.buffer.buffer();
-            let completion_context = tab_completion_context::get_completion_context(
-                buffer,
-                self.buffer.cursor_byte_pos(),
-            );
-            // word_under_cursor is always a sub-slice of buffer, so SubString::new succeeds.
-            let wuc_substring = SubString::new(buffer, completion_context.word_under_cursor)
-                .unwrap_or_else(|_| SubString {
-                    s: String::new(),
-                    start: 0,
-                });
-            let suggestions = self.gen_completions_internal(&completion_context);
-            if suggestions.is_none() {
-                log::debug!(
-                    "No suggestions generated for completion context: {:?}",
-                    completion_context
-                );
-            }
-            (suggestions, wuc_substring)
-        };
-
-        let Some(sugs) = suggestions else {
-            return;
-        };
-
+    /// Apply the results of tab completion generation (Phase 2 & 3: common
+    /// prefix insertion and handing suggestions to the UI).
+    pub(crate) fn finish_tab_complete(
+        &mut self,
+        sugs: Vec<UnprocessedSuggestion>,
+        wuc_substring: SubString,
+    ) {
         // Phase 2: if there are fewer than 500 suggestions, find any common
         // prefix and automatically insert it when it extends the word under
         // cursor.
@@ -297,309 +574,71 @@ impl App<'_> {
         ));
     }
 
-    fn post_process_completions(
-        completions: Vec<String>,
-        comp_resultflags: bash_funcs::CompletionFlags,
-        word_under_cursor: &str,
-    ) -> Vec<UnprocessedSuggestion> {
-        completions
-            .into_iter()
-            .map(|sug| UnprocessedSuggestion::Raw {
-                raw_text: sug,
-                expanded_path: None,
-                flags: comp_resultflags,
-                word_under_cursor: word_under_cursor.to_string(),
-            })
-            .collect()
-    }
-
-    pub fn gen_completions_internal(
-        &self,
-        completion_context: &tab_completion_context::CompletionContext,
-    ) -> Option<Vec<UnprocessedSuggestion>> {
-        log::debug!("Completion context: {:#?}", completion_context);
-
-        let word_under_cursor = completion_context.word_under_cursor;
-
-        match &completion_context.comp_type {
-            tab_completion_context::CompType::FirstWord => {
-                let completions = self.tab_complete_first_word(word_under_cursor);
-                log::debug!("Primary completions for first word: {:?}", completions);
-                if !completions.is_empty() {
-                    return Some(completions);
-                }
-            }
-            tab_completion_context::CompType::CommandComp {
-                command_word: initial_command_word,
-            } => {
-                // This isnt just for commands like `git`, `cargo`
-                // Because we call bash_symbols::programmable_completions
-                // Bash also completes env vars (`echo $HO`) and other useful completions.
-                // Bash doesnt handle alias expansion well:
-                // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
-                // Since aliases are the highest priority in command word resolution,
-                // If it is an alias, lets expand it here for better completion results.
-                let AliasExpandedCompletion {
-                    command_word,
-                    full_command,
-                    cursor_byte_pos,
-                    word_under_cursor_end,
-                } = expand_alias_for_completion(
-                    initial_command_word.to_string(),
-                    word_under_cursor,
-                    completion_context.context,
-                    completion_context.context_until_cursor,
-                );
-
-                let poss_completions = bash_funcs::run_programmable_completions(
-                    &full_command,
-                    &command_word,
-                    word_under_cursor,
-                    cursor_byte_pos,
-                    word_under_cursor_end,
-                );
-
-                match poss_completions {
-                    Ok(comp_result) if !comp_result.completions.is_empty() => {
-                        log::debug!(
-                            "Programmable completion results for command: {}",
-                            full_command
-                        );
-                        log::debug!("Completions: {:#?}", comp_result);
-
-                        let suggestions = Self::post_process_completions(
-                            comp_result.completions,
-                            comp_result.flags,
-                            word_under_cursor,
-                        );
-                        return Some(suggestions);
-                    }
-                    Ok(comp_result) => {
-                        // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
-                        // Always try to produce secondary completions
-                        return self
-                            .gen_secondary_completions(completion_context, comp_result.flags);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        log::debug!(
-            "No programmable completions found completion_context: {:#?}. Falling back to secondary completions.",
-            completion_context
-        );
-
-        self.gen_secondary_completions(completion_context, bash_funcs::CompletionFlags::default())
-    }
-
-    fn gen_secondary_completions(
-        &self,
-        completion_context: &tab_completion_context::CompletionContext,
-        comp_resultflags: bash_funcs::CompletionFlags,
-    ) -> Option<Vec<UnprocessedSuggestion>> {
-        let word_under_cursor = completion_context.word_under_cursor;
-        match completion_context.comp_type_secondary {
-            Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
-                log::debug!("Environment variable completion {:?}", word_under_cursor);
-                let matching_vars = bash_funcs::get_all_variables_with_prefix(word_under_cursor);
-                return Some(
-                    Suggestion::from_string_vec(matching_vars, "", " ")
-                        .into_iter()
-                        .map(UnprocessedSuggestion::Ready)
-                        .collect(),
-                );
-            }
-            Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
-                log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
-                let completions = self.tab_complete_tilde_expansion(word_under_cursor);
-                return Some(completions);
-            }
-            Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
-                log::debug!("Glob expansion for: {:?}", word_under_cursor);
-                let completions =
-                    self.tab_complete_glob_expansion(word_under_cursor, comp_resultflags);
-
-                // Unlike other completions, if there are multiple glob completions,
-                // we join them with spaces and insert them all at once.
-                // Process each item eagerly here since we need the final text.
-                let completions_as_string = completions
-                    .iter()
-                    .map(|item| item.to_suggestion().s)
-                    .fold(String::new(), |mut acc, s| {
-                        if !acc.is_empty() {
-                            acc.push(' ');
-                        }
-                        acc.push_str(&s);
-                        acc
-                    });
-                if completions_as_string.is_empty() {
-                    log::debug!(
-                        "No glob expansion completions found for pattern: {}",
-                        word_under_cursor
-                    );
-                } else {
-                    // If the last completion is a directory (ends with '/'), don't
-                    // append a trailing space so the cursor stays right after the slash.
-                    let suffix = if completions_as_string.ends_with('/') {
-                        ""
-                    } else {
-                        " "
-                    };
-                    return Some(
-                        Suggestion::from_string_vec(vec![completions_as_string], "", suffix)
-                            .into_iter()
-                            .map(UnprocessedSuggestion::Ready)
-                            .collect(),
-                    );
-                }
-            }
-            Some(tab_completion_context::SecondaryCompType::FilenameExpansion) => {
-                log::debug!("Filename expansion for: {:?}", word_under_cursor);
-                let completions = self.tab_complete_glob_expansion(
-                    &(word_under_cursor.to_string() + "*"),
-                    comp_resultflags,
-                );
-
-                if completions.is_empty() {
-                    log::debug!(
-                        "No filename expansion completions found for pattern: {}",
-                        word_under_cursor
-                    );
-                } else {
-                    return Some(completions);
-                }
-            }
-            None => {
-                log::debug!(
-                    "No secondary completion type detected for: {:?}",
-                    word_under_cursor
-                );
-            }
-        }
-
-        None
-    }
-
-    fn tab_complete_first_word(&self, command: &str) -> Vec<UnprocessedSuggestion> {
-        log::debug!("Generating first word completions for: '{}'", command);
-        if command.is_empty() {
-            return vec![];
-        }
-
-        if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
-            // Path to executable
-            return self.tab_complete_glob_expansion(
-                &(command.to_string() + "*"),
-                bash_funcs::CompletionFlags::default(),
+    pub fn start_tab_complete(&mut self) {
+        // Phase 1: compute the completion context and generate suggestions.
+        // We store word_under_cursor as an owned SubString so we can use it
+        // after the immutable-borrow block ends.
+        let wuc_substring = {
+            let buffer: &str = self.buffer.buffer();
+            let completion_context = tab_completion_context::get_completion_context(
+                buffer,
+                self.buffer.cursor_byte_pos(),
             );
-        }
-
-        let mut res = bash_funcs::get_first_word_completions(command);
-
-        if res.is_empty() {
-            // No prefix matches found, fall back to fuzzy search
-            log::debug!("No prefix matches for '{}', trying fuzzy search", command);
-            res = bash_funcs::get_fuzzy_first_word_completions(command);
-            return Suggestion::from_string_vec(res, "", " ")
-                .into_iter()
-                .map(UnprocessedSuggestion::Ready)
-                .collect();
-        }
-
-        // TODO: could prioritize based on frequency of use
-        res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
-        res.dedup();
-        Suggestion::from_string_vec(res, "", " ")
-            .into_iter()
-            .map(UnprocessedSuggestion::Ready)
-            .collect()
-    }
-
-    fn tab_complete_glob_expansion(
-        &self,
-        pattern: &str,
-        mut comp_resultflags: bash_funcs::CompletionFlags,
-    ) -> Vec<UnprocessedSuggestion> {
-        // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
-        // e.g. my_command $PWD/fi<TAB> should expand to:
-        // my_command $PWD/file\ with\ spaces.txt
-        // not
-        // my_command \$PWD/file\ with\ spaces.txt
-        comp_resultflags.filename_quoting_desired = false;
-        comp_resultflags.filename_completion_desired = true;
-
-        comp_resultflags.quote_type = bash_funcs::find_quote_type(pattern);
-        log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
-
-        let expanded = PathPatternExpansion::new(pattern);
-        log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
-
-        // Use glob to find matching paths
-        let mut results = Vec::new();
-
-        const MAX_GLOB_RESULTS: usize = 1_000;
-
-        if let Ok(paths) = glob(&expanded.expanded_pattern()) {
-            for (idx, path_result) in paths.enumerate() {
-                if idx >= MAX_GLOB_RESULTS {
-                    log::debug!(
-                        "Reached maximum glob results limit of {}. Stopping further processing.",
-                        MAX_GLOB_RESULTS
-                    );
-                    break;
+            // word_under_cursor is always a sub-slice of buffer, so SubString::new succeeds.
+            SubString::new(buffer, completion_context.word_under_cursor).unwrap_or_else(|_| {
+                SubString {
+                    s: String::new(),
+                    start: 0,
                 }
-                if let Ok(path) = path_result {
-                    let unexpanded = expanded.convert_expanded_match_to_unexpanded(
-                        &path.to_string_lossy(),
-                        comp_resultflags.quote_type,
-                    );
-
-                    results.push(UnprocessedSuggestion::Raw {
-                        raw_text: unexpanded,
-                        expanded_path: Some(path),
-                        flags: comp_resultflags,
-                        // The glob expansion path already preserves the raw prefix in
-                        // `unexpanded` via PathPatternExpansion; pass "" here so
-                        // post_process_completion doesn't attempt a second
-                        // prefix split (filename_quoting_desired is false anyway).
-                        word_under_cursor: String::new(),
-                    });
-                }
-            }
-        }
-
-        results.sort_by(|a, b| a.match_text().cmp(b.match_text()));
-        results
-    }
-
-    fn tab_complete_tilde_expansion(&self, pattern: &str) -> Vec<UnprocessedSuggestion> {
-        let user_pattern = if let Some(stripped) = pattern.strip_prefix('~') {
-            stripped
-        } else {
-            return vec![];
+            })
         };
 
-        // `~` alone — suggest the current user's home directory as `~/`
-        if user_pattern.is_empty() {
-            return vec![UnprocessedSuggestion::Ready(Suggestion::new("~/", "", ""))];
-        }
+        // Capture owned copies of the buffer state for the background thread.
+        let buffer_owned = self.buffer.buffer().to_string();
+        let cursor_byte_pos = self.buffer.cursor_byte_pos();
 
-        // `~username` — find matching users from the users module
-        let mut suggestions = Vec::new();
+        let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<UnprocessedSuggestion>>>();
 
-        for user in users::get_all_users() {
-            if user.username.starts_with(user_pattern) {
-                suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
-                    format!("~{}/", user.username),
-                    "",
-                    "",
-                )));
+        std::thread::spawn(move || {
+            let completion_context =
+                tab_completion_context::get_completion_context(&buffer_owned, cursor_byte_pos);
+            let suggestions = gen_completions_internal(&completion_context);
+            if suggestions.is_none() {
+                log::debug!(
+                    "No suggestions generated for completion context: {:?}",
+                    completion_context
+                );
+            }
+            if let Err(e) = tx.send(suggestions) {
+                log::warn!(
+                    "Tab completion: failed to send result (receiver dropped): {:?}",
+                    e
+                );
+            }
+        });
+
+        // Block for up to 100ms waiting for the thread to finish.
+        match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(Some(sugs)) => {
+                self.finish_tab_complete(sugs, wuc_substring);
+            }
+            Ok(None) => {
+                // No suggestions generated.
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Thread hasn't finished yet; enter waiting mode.
+                log::debug!(
+                    "Tab completion thread not finished after 100ms, entering waiting mode"
+                );
+                self.content_mode = ContentMode::TabCompletionWaiting {
+                    receiver: rx,
+                    wuc_substring,
+                };
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                log::warn!("Tab completion thread disconnected unexpectedly");
             }
         }
-
-        suggestions.sort_by(|a, b| a.match_text().cmp(b.match_text()));
-        suggestions
     }
 
     #[cfg(feature = "integration-tests")]
@@ -623,7 +662,7 @@ impl App<'_> {
                 self.buffer.buffer(),
                 self.buffer.cursor_byte_pos(),
             );
-            let some_suggestions = self.gen_completions_internal(&comp_context);
+            let some_suggestions = gen_completions_internal(&comp_context);
 
             if some_suggestions.is_none() {
                 if expected_suggestions.is_empty() {

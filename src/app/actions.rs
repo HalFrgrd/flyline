@@ -19,6 +19,7 @@ impl Scope {
     pub const AGENT_ERROR: Self = Self(1 << 5);
     pub const INLINE_HISTORY_ACCEPTABLE: Self = Self(1 << 6);
     pub const PROMPT_CWD_EDIT: Self = Self(1 << 7);
+    pub const TAB_COMPLETION_WAITING: Self = Self(1 << 8);
 
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
@@ -55,6 +56,11 @@ impl Scope {
             app.buffer.is_cursor_at_end() && app.inline_history_suggestion.is_some()
         } else if self.contains(Scope::PROMPT_CWD_EDIT) {
             matches!(app.content_mode, crate::app::ContentMode::PromptCwdEdit(_))
+        } else if self.contains(Scope::TAB_COMPLETION_WAITING) {
+            matches!(
+                app.content_mode,
+                crate::app::ContentMode::TabCompletionWaiting { .. }
+            )
         } else {
             false
         }
@@ -91,6 +97,9 @@ impl<'a> IntoIterator for Scope {
         if self.contains(Scope::PROMPT_CWD_EDIT) {
             scopes.push("prompt_cwd_edit");
         }
+        if self.contains(Scope::TAB_COMPLETION_WAITING) {
+            scopes.push("tab_completion_waiting");
+        }
         scopes.into_iter()
     }
 }
@@ -108,6 +117,7 @@ impl TryFrom<&str> for Scope {
             "agent_error" => Ok(Scope::AGENT_ERROR),
             "inline_history_acceptable" => Ok(Scope::INLINE_HISTORY_ACCEPTABLE),
             "prompt_cwd_edit" => Ok(Scope::PROMPT_CWD_EDIT),
+            "tab_completion_waiting" => Ok(Scope::TAB_COMPLETION_WAITING),
             other => Err(anyhow::anyhow!("Unknown scope: '{}'", other)),
         }
     }
@@ -1023,7 +1033,7 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 54]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AGENT_OUTPUT_SELECTION, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AGENT_OUTPUT_SELECTION, "select_prev").unwrap(),
@@ -1082,8 +1092,14 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         Binding::try_new(&["Tab"], Scope::AGENT_OUTPUT_SELECTION, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::TAB_COMPLETION, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::NORMAL, "trigger_tab_completion").unwrap(),
-        // PromptCwdEdit Esc must appear before the Normal Esc binding.
+        // Scoped Esc bindings must appear before the Normal Esc binding.
         Binding::try_new(&["Esc"], Scope::PROMPT_CWD_EDIT, "cancel").unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            Scope::TAB_COMPLETION_WAITING,
+            "escape_to_normal_mode",
+        )
+        .unwrap(),
         Binding::try_new(&["Esc"], Scope::NORMAL, "escape_to_normal_mode").unwrap(),
         Binding::try_new(&["Esc"], Scope::NORMAL, "toggle_mouse").unwrap(),
         Binding::try_new(&["Ctrl+d"], Scope::NORMAL, "exit").unwrap(),
