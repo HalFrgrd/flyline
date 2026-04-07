@@ -75,6 +75,19 @@ pub struct AgentModeCommand {
     pub system_prompt: Option<String>,
 }
 
+/// Controls whether and when the matrix animation is shown.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum MatrixAnimation {
+    /// Never show the matrix animation.
+    #[default]
+    Off,
+    /// Always show the matrix animation.
+    On,
+    /// Show the matrix animation only after the given number of seconds of inactivity
+    /// (no keypress or mouse event).
+    IdleSecs(u64),
+}
+
 /// Controls how flyline manages mouse capture.
 #[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq, Default)]
 pub enum MouseMode {
@@ -131,7 +144,7 @@ pub struct Settings {
     /// Custom prompt widgets registered with `flyline create-prompt-widget`.
     pub custom_prompt_widgets: HashMap<String, PromptWidget>,
     /// Run matrix animation in the terminal background.
-    pub matrix_animation: bool,
+    pub matrix_animation: MatrixAnimation,
     /// Render frame rate in frames per second (1–120).
     pub frame_rate: u8,
     /// Shell integration escape codes level (OSC 133 / OSC 633).
@@ -167,7 +180,7 @@ impl Default for Settings {
             agent_commands: HashMap::new(),
             custom_animations: HashMap::new(),
             custom_prompt_widgets: HashMap::new(),
-            matrix_animation: false,
+            matrix_animation: MatrixAnimation::Off,
             frame_rate: 30,
             send_shell_integration_codes: ShellIntegrationLevel::Full,
             color_palette: Palette::default(),

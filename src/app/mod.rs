@@ -16,7 +16,7 @@ use crate::iter_first_last::FirstLast;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
-use crate::settings::{self, MouseMode, Settings};
+use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser, tutorial};
 use crate::{bash_symbols, command_acceptance};
@@ -263,6 +263,8 @@ pub(crate) struct App<'a> {
     last_draw_time: std::time::Instant,
     needs_screen_cleared: bool,
     last_keypress_action: Option<LastKeyPressAction>,
+    /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
+    last_activity_time: std::time::Instant,
 }
 
 impl<'a> App<'a> {
@@ -326,6 +328,7 @@ impl<'a> App<'a> {
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
             last_keypress_action: None,
+            last_activity_time: std::time::Instant::now(),
         };
 
         if app.settings.tutorial_step == tutorial::TutorialStep::FineGrainDeletion {
@@ -538,10 +541,14 @@ impl<'a> App<'a> {
             redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
+                        self.last_activity_time = std::time::Instant::now();
                         self.handle_key_event(key);
                         true
                     }
-                    CrosstermEvent::Mouse(mouse) => self.on_mouse(mouse),
+                    CrosstermEvent::Mouse(mouse) => {
+                        self.last_activity_time = std::time::Instant::now();
+                        self.on_mouse(mouse)
+                    }
                     CrosstermEvent::Resize(new_cols, new_rows) => {
                         // log::trace!("Terminal resized to {}x{}", new_cols, new_rows);
                         last_terminal_size = Size {
@@ -1871,7 +1878,15 @@ impl<'a> App<'a> {
             _ => {}
         }
 
-        if self.mode.is_running() && self.settings.matrix_animation {
+        let show_matrix = self.mode.is_running()
+            && match &self.settings.matrix_animation {
+                MatrixAnimation::Off => false,
+                MatrixAnimation::On => true,
+                MatrixAnimation::IdleSecs(secs) => {
+                    self.last_activity_time.elapsed().as_secs() >= *secs
+                }
+            };
+        if show_matrix {
             content.apply_matrix_anim(now, viewport_top, terminal_height);
         }
 

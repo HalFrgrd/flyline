@@ -70,6 +70,17 @@ enum LogLevel {
     Trace,
 }
 
+fn parse_matrix_animation(s: &str) -> Result<settings::MatrixAnimation, String> {
+    match s {
+        "on" => Ok(settings::MatrixAnimation::On),
+        "off" => Ok(settings::MatrixAnimation::Off),
+        _ => s
+            .parse::<u64>()
+            .map(settings::MatrixAnimation::IdleSecs)
+            .map_err(|_| format!("expected `on`, `off`, or a non-negative integer, got `{s}`")),
+  }
+}
+
 fn parse_effect_speed(s: &str) -> Result<f32, String> {
     let val: f32 = s.parse().map_err(|e| format!("invalid float: {e}"))?;
     if (0.0..=10.0).contains(&val) {
@@ -116,9 +127,12 @@ struct FlylineArgs {
     /// Enable automatic closing character insertion (e.g. insert `)` after `(`)
     #[arg(long = "auto-close-chars", default_missing_value = "true", num_args = 0..=1)]
     auto_close_chars: Option<bool>,
-    /// Run matrix animation in the terminal background
-    #[arg(long = "matrix-animation", default_missing_value = "true", num_args = 0..=1)]
-    matrix_animation: Option<bool>,
+    /// Run matrix animation in the terminal background. Use `on` to always show it, `off` to
+    /// disable it, or an integer number of seconds to show it after that many seconds of
+    /// inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a
+    /// value is equivalent to `on`.
+    #[arg(long = "matrix-animation", default_missing_value = "on", num_args = 0..=1, value_parser = parse_matrix_animation)]
+    matrix_animation: Option<settings::MatrixAnimation>,
     /// Render frame rate in frames per second (1–120, default 30)
     #[arg(long = "frame-rate", value_name = "FPS", value_parser = clap::value_parser!(u8).range(1..=120))]
     frame_rate: Option<u8>,
@@ -601,9 +615,9 @@ impl Flyline {
                     self.settings.auto_close_chars = enabled;
                 }
 
-                if let Some(enabled) = parsed.matrix_animation {
-                    log::info!("Matrix animation enabled: {}", enabled);
-                    self.settings.matrix_animation = enabled;
+                if let Some(val) = parsed.matrix_animation {
+                    log::info!("Matrix animation set to {:?}", val);
+                    self.settings.matrix_animation = val;
                 }
 
                 if let Some(fps) = parsed.frame_rate {
