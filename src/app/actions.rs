@@ -1366,21 +1366,22 @@ pub fn print_bindings_table(
         keys: String,
         scoped_action: String,
         description: String,
-        is_user: bool,
     }
 
     let binding_to_row = |binding: &Binding, is_user: bool| -> Row {
-        let keys = binding
+        let mut keys = binding
             .key_events
             .iter()
             .map(|k| k.display_with_remapping(remappings))
             .collect::<Vec<_>>()
             .join(", ");
+        if is_user {
+            keys = format!("User keybinding: {}", keys);  
+        }
         Row {
             keys: keys.clone(),
             scoped_action: binding.action.scoped_action_name(),
             description: binding.action.description.to_string(),
-            is_user,
         }
     };
 
@@ -1403,20 +1404,10 @@ pub fn print_bindings_table(
     // Retrieve the terminal width; fall back to 120 columns if unavailable.
     let term_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(120);
 
-    // The table border overhead for 4 columns is: 2 + 3*3 + 2 = 13 characters.
-    // (leading "│ " + three " │ " separators + trailing " │")
-    const NCOLS: u16 = 4;
-    let overhead: u16 = 3 * NCOLS + 1;
-    let available = term_width.saturating_sub(overhead);
-
-    // Use ratatui Layout constraints: the User column is exactly 1 character
-    // wide (just the `*` marker), and the remaining space is split 1:1:2
-    // across Key(s), Action, and Description.
     let constraints = [
         Constraint::Fill(1),   // Key(s)
-        Constraint::Fill(1),   // Action
+        Constraint::Fill(2),   // Action
         Constraint::Fill(2),   // Description
-        Constraint::Length(1), // User
     ];
 
     // Build the TableAccum for the bindings.
@@ -1425,24 +1416,18 @@ pub fn print_bindings_table(
         "Key(s)".to_string(),
         "Action".to_string(),
         "Description".to_string(),
-        "User".to_string(),
     ];
     for row in &rows {
         accum.body_rows.push(vec![
             row.keys.clone(),
             row.scoped_action.clone(),
             row.description.clone(),
-            if row.is_user {
-                "*".to_string()
-            } else {
-                String::new()
-            },
         ]);
     }
 
     // Render and print the table, converting each ratatui Line to plain text.
     let options = TableOptions { row_dividers: true };
-    for line in render_table_constrained(&accum, &constraints, available, &options) {
+    for line in render_table_constrained(&accum, &constraints, term_width, &options) {
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         println!("{}", text);
     }
