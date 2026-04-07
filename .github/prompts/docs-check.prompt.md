@@ -5,6 +5,7 @@ Check the following documentation sources for consistency with the actual source
 - Doc comments in src/lib.rs that clap uses to generate CLI help messages
   (look for #[arg(...)], #[command(...)], and /// comments on FlylineArgs fields and Commands variants)
 - Shell scripts in examples/
+- Tutorial in tutorial.rs
 
 The source code is the source of truth. Specifically verify:
 1. Default values mentioned in the documentation match the actual defaults in the code
