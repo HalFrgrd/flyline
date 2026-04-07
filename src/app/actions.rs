@@ -1350,8 +1350,8 @@ pub fn print_bindings_table(
     filter_key: Option<&str>,
     remappings: &[KeyRemap],
 ) {
-    use crate::table::{TableAccum, render_table};
-    use ratatui::layout::{Constraint, Layout, Rect};
+    use crate::table::{TableAccum, TableOptions, render_table_constrained};
+    use ratatui::layout::Constraint;
 
     let filter_event: Option<KeyEvent> =
         filter_key.and_then(|k| match KeyEventMatch::try_from(k) {
@@ -1409,16 +1409,15 @@ pub fn print_bindings_table(
     let overhead: u16 = 3 * NCOLS + 1;
     let available = term_width.saturating_sub(overhead);
 
-    // Use ratatui Layout to distribute the available width across columns.
-    let chunks = Layout::horizontal([
-        Constraint::Min(6),  // Key(s)
-        Constraint::Min(10), // Action
-        Constraint::Fill(1), // Description – gets the remaining space
-        Constraint::Min(4),  // User
-    ])
-    .split(Rect::new(0, 0, available, 1));
-
-    let col_widths: Vec<usize> = chunks.iter().map(|r| r.width as usize).collect();
+    // Use ratatui Layout constraints: the User column is exactly 1 character
+    // wide (just the `*` marker), and the remaining space is split 1:1:2
+    // across Key(s), Action, and Description.
+    let constraints = [
+        Constraint::Fill(1),   // Key(s)
+        Constraint::Fill(1),   // Action
+        Constraint::Fill(2),   // Description
+        Constraint::Length(1), // User
+    ];
 
     // Build the TableAccum for the bindings.
     let mut accum = TableAccum::default();
@@ -1442,7 +1441,8 @@ pub fn print_bindings_table(
     }
 
     // Render and print the table, converting each ratatui Line to plain text.
-    for line in render_table(&accum, &col_widths) {
+    let options = TableOptions { row_dividers: true };
+    for line in render_table_constrained(&accum, &constraints, available, &options) {
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         println!("{}", text);
     }

@@ -1,5 +1,6 @@
 use crate::content_builder::split_line_to_terminal_rows;
 use pulldown_cmark::Alignment;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::prelude::*;
 
 /// Accumulated data for a single table being built.
@@ -73,6 +74,14 @@ fn wrap_cell(cell: &str, col_width: usize) -> Vec<String> {
         .collect()
 }
 
+/// Options for [`render_table_with_options`] and [`render_table_constrained`].
+#[derive(Debug, Clone, Default)]
+pub struct TableOptions {
+    /// When `true`, a horizontal divider line is rendered between every pair
+    /// of body rows (in addition to the header separator).
+    pub row_dividers: bool,
+}
+
 /// Render a collected [`TableAccum`] into ratatui [`Line`]s using the given
 /// column widths.  Cells wider than their column are wrapped with
 /// [`split_line_to_terminal_rows`].
@@ -85,7 +94,21 @@ fn wrap_cell(cell: &str, col_width: usize) -> Vec<String> {
 /// │ cell   │ cell     │
 /// ╰────────┴──────────╯
 /// ```
+///
+/// Use [`render_table_with_options`] to enable optional row dividers, or
+/// [`render_table_constrained`] to specify column widths via ratatui
+/// [`Constraint`]s.
 pub fn render_table(accum: &TableAccum, col_widths: &[usize]) -> Vec<Line<'static>> {
+    render_table_with_options(accum, col_widths, &TableOptions::default())
+}
+
+/// Like [`render_table`] but accepts [`TableOptions`] to control rendering
+/// behaviour (e.g. optional row dividers between body rows).
+pub fn render_table_with_options(
+    accum: &TableAccum,
+    col_widths: &[usize],
+    options: &TableOptions,
+) -> Vec<Line<'static>> {
     let ncols = accum.header_cells.len();
     if ncols == 0 {
         return Vec::new();
@@ -170,6 +193,19 @@ pub fn render_table(accum: &TableAccum, col_widths: &[usize]) -> Vec<Line<'stati
         Line::from(spans)
     };
 
+    let build_row_divider = || -> Line<'static> {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        spans.push(Span::raw("├─"));
+        for (j, &width) in col_widths.iter().enumerate() {
+            spans.push(Span::raw("─".repeat(width)));
+            if j + 1 < col_widths.len() {
+                spans.push(Span::raw("─┼─"));
+            }
+        }
+        spans.push(Span::raw("─┤"));
+        Line::from(spans)
+    };
+
     // Render a logical table row (whose cells may wrap) into one or more
     // display lines. The first display line uses the given `bold` style;
     // subsequent continuation lines are always plain.
@@ -208,14 +244,32 @@ pub fn render_table(accum: &TableAccum, col_widths: &[usize]) -> Vec<Line<'stati
     lines.push(build_top_border());
     lines.extend(build_multiline_row(&accum.header_cells, true));
     lines.push(build_separator());
-    for row in &accum.body_rows {
+    for (i, row) in accum.body_rows.iter().enumerate() {
         // Pad row to the expected number of columns.
         let mut padded = row.clone();
         while padded.len() < ncols {
             padded.push(String::new());
         }
         lines.extend(build_multiline_row(&padded, false));
+        if options.row_dividers && i + 1 < accum.body_rows.len() {
+            lines.push(build_row_divider());
+        }
     }
     lines.push(build_bottom_border());
     lines
+}
+
+/// Like [`render_table_with_options`] but computes column widths from the
+/// provided ratatui [`Constraint`]s applied to `available_width`.
+///
+/// The number of constraints must match the number of columns in `accum`.
+pub fn render_table_constrained(
+    accum: &TableAccum,
+    constraints: &[Constraint],
+    available_width: u16,
+    options: &TableOptions,
+) -> Vec<Line<'static>> {
+    let chunks = Layout::horizontal(constraints).split(Rect::new(0, 0, available_width, 1));
+    let col_widths: Vec<usize> = chunks.iter().map(|r| r.width as usize).collect();
+    render_table_with_options(accum, &col_widths, options)
 }
