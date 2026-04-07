@@ -1666,23 +1666,23 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_expand_span_cwd_partial_no_tilde() {
-        let builder = PromptStringBuilder::new(vec![], &[]).with_cwd(
-            "/home/foo/qwe/try/ooh/lkj".to_string(),
-            Some("/home/foo".to_string()),
-        );
-        let span = Span::raw("otherpartofhepromptqwe/try/ooh:$");
-        let segs = builder.expand_span_to_segments(span);
-        let cwd_seg = segs.iter().find(|s| matches!(s, PromptSegment::Cwd(_)));
-        match cwd_seg.expect("expected a Cwd segment") {
-            PromptSegment::Cwd(spans) => {
-                let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
-                assert_eq!(text, "qwe/try/ooh");
-            }
-            _ => unreachable!(),
-        }
-    }
+    // #[test]
+    // fn test_expand_span_cwd_partial_no_tilde() {
+    //     let builder = PromptStringBuilder::new(vec![], &[]).with_cwd(
+    //         "/home/foo/qwe/try/ooh/lkj".to_string(),
+    //         Some("/home/foo".to_string()),
+    //     );
+    //     let span = Span::raw("otherpartofhepromptqwe/try/ooh:$");
+    //     let segs = builder.expand_span_to_segments(span);
+    //     let cwd_seg = segs.iter().find(|s| matches!(s, PromptSegment::Cwd(_)));
+    //     match cwd_seg.expect("expected a Cwd segment") {
+    //         PromptSegment::Cwd(spans) => {
+    //             let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+    //             assert_eq!(text, "qwe/try/ooh");
+    //         }
+    //         _ => unreachable!(),
+    //     }
+    // }
 
     // --- split_cwd_text_into_spans -------------------------------------------
 

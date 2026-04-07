@@ -1330,6 +1330,7 @@ impl<'a> App<'a> {
                 let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
 
                 let para = Paragraph::new(tutorial_lines);
+                
                 para.render(
                     text_block.inner(Margin {
                         horizontal: 2,
