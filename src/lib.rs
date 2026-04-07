@@ -78,6 +78,15 @@ fn parse_matrix_animation(s: &str) -> Result<settings::MatrixAnimation, String> 
             .parse::<u64>()
             .map(settings::MatrixAnimation::IdleSecs)
             .map_err(|_| format!("expected `on`, `off`, or a non-negative integer, got `{s}`")),
+  }
+}
+
+fn parse_effect_speed(s: &str) -> Result<f32, String> {
+    let val: f32 = s.parse().map_err(|e| format!("invalid float: {e}"))?;
+    if (0.0..=10.0).contains(&val) {
+        Ok(val)
+    } else {
+        Err(format!("value {val} not in range 0.0..=10.0"))
     }
 }
 
@@ -330,7 +339,7 @@ enum Commands {
         #[arg(long)]
         effect: Option<cursor::CursorEffect>,
         /// Speed multiplier for the cursor effect (default is `1.0`).
-        #[arg(long, value_name = "SPEED")]
+        #[arg(long, value_name = "SPEED", value_parser = parse_effect_speed)]
         effect_speed: Option<f32>,
         /// Easing function for the cursor effect intensity.  Default is `linear`.
         #[arg(long, value_name = "EASING")]
@@ -882,6 +891,20 @@ impl Flyline {
                         if let Some(b) = backend {
                             log::info!("Cursor backend set to {:?}", b);
                             self.settings.cursor_config.backend = b;
+                            if b == cursor::CursorBackend::Terminal {
+                                if interpolate.is_some()
+                                    || interpolate_easing.is_some()
+                                    || style.is_some()
+                                    || effect.is_some()
+                                    || effect_speed.is_some()
+                                    || effect_easing.is_some()
+                                {
+                                    eprintln!(
+                                        "flyline set-cursor: interpolation, style, and effect options are ignored when --backend is set to 'terminal'"
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            }
                         }
 
                         if let Some(interp_str) = interpolate {

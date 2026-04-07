@@ -165,7 +165,7 @@ enum ContentMode {
     },
     /// User is navigating the CWD path segments displayed in the prompt.
     /// The inner value is the currently highlighted segment index (0 = rightmost/current dir).
-    PromptCwdEdit(usize),
+    PromptDirSelect(usize),
 }
 
 struct DrawnContent {
@@ -243,7 +243,7 @@ pub(crate) struct App<'a> {
     formatted_buffer_cache: FormattedBuffer,
     /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
     dparser_tokens_cache: Vec<AnnotatedToken>,
-    cursor_animation: Cursor,
+    cursor: Cursor,
     /// Whether the terminal currently has focus. Used to control cursor animation intensity.
     term_has_focus: bool,
     unfinished_from_prev_command: bool,
@@ -300,7 +300,7 @@ impl<'a> App<'a> {
             buffer,
             formatted_buffer_cache,
             dparser_tokens_cache: Vec::new(),
-            cursor_animation: Cursor::new(),
+            cursor: Cursor::new(),
             term_has_focus: true,
             unfinished_from_prev_command,
             prompt_manager: PromptManager::new(
@@ -750,7 +750,7 @@ impl<'a> App<'a> {
                     && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
                 {
                     active_suggestions.set_selected_by_idx(idx);
-                    active_suggestions.accept_currently_selected(&mut self.buffer);
+                    active_suggestions.accept_selected_filtered_item(&mut self.buffer);
                     self.content_mode = ContentMode::Normal;
                     update_buffer = true;
                 }
@@ -910,7 +910,8 @@ impl<'a> App<'a> {
     /// Words that contain a space are quoted with single quotes in the display string.
     /// If `buffer_str` is empty, opens the agent-prompts fuzzy history search instead.
     fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
-        if buffer_str.is_empty() {
+        if false && buffer_str.is_empty() {
+            // TOOD think through UX for this
             // Warm with "" to display all agent prompts regardless of the current buffer.
             self.settings
                 .agent_prompt_history_manager
@@ -1012,7 +1013,7 @@ impl<'a> App<'a> {
     fn on_possible_buffer_change(&mut self) {
         // Exit PromptCwdEdit mode if the cursor has moved away from position 0,
         // which happens when a buffer-modifying normal action fires (e.g. insert_char).
-        if matches!(self.content_mode, ContentMode::PromptCwdEdit(_))
+        if matches!(self.content_mode, ContentMode::PromptDirSelect(_))
             && self.buffer.cursor_byte_pos() != 0
         {
             self.content_mode = ContentMode::Normal;
@@ -1031,9 +1032,9 @@ impl<'a> App<'a> {
                 buffer,
                 self.buffer.cursor_byte_pos(),
             );
-            let new_wuc = completion_context.word_under_cursor;
+            let new_wuc = completion_context.word_under_cursor.s;
             let old_wuc = &wuc_substring.s;
-            if !new_wuc.starts_with(old_wuc.as_str()) && !old_wuc.starts_with(new_wuc) {
+            if !new_wuc.starts_with(old_wuc.as_str()) && !old_wuc.starts_with(&new_wuc) {
                 self.content_mode = ContentMode::Normal;
             }
         }
@@ -1045,24 +1046,22 @@ impl<'a> App<'a> {
                 buffer,
                 self.buffer.cursor_byte_pos(),
             );
-            let word_under_cursor_str = completion_context.word_under_cursor;
-            if let Ok(word_under_cursor) = SubString::new(buffer, word_under_cursor_str) {
-                if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
-                    log::debug!(
-                        "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
-                        active_suggestions.word_under_cursor.s,
-                        word_under_cursor.s
-                    );
-                    active_suggestions.apply_fuzzy_filter(word_under_cursor);
-                } else {
-                    log::debug!(
-                        "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
-                        active_suggestions.word_under_cursor,
-                        word_under_cursor
-                    );
-                    // If the word under cursor has changed significantly, discard suggestions
-                    self.content_mode = ContentMode::Normal;
-                }
+            let word_under_cursor = completion_context.word_under_cursor;
+            if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
+                log::debug!(
+                    "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
+                    active_suggestions.word_under_cursor.s,
+                    word_under_cursor.s
+                );
+                active_suggestions.apply_fuzzy_filter(word_under_cursor);
+            } else {
+                log::debug!(
+                    "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
+                    active_suggestions.word_under_cursor,
+                    word_under_cursor
+                );
+                // If the word under cursor has changed significantly, discard suggestions
+                self.content_mode = ContentMode::Normal;
             }
         }
 
@@ -1121,10 +1120,12 @@ impl<'a> App<'a> {
     /// Returns the buffer string with any trailing auto-inserted closing tokens stripped.
     /// This is the string that should be used when searching history.
     fn buffer_for_history(&self) -> &str {
-        dparser::DParser::buffer_without_auto_inserted_suffix(
-            &self.dparser_tokens_cache,
-            self.buffer.buffer(),
-        )
+        // TODO: figure out good UX for this
+        // dparser::DParser::buffer_without_auto_inserted_suffix(
+        //     &self.dparser_tokens_cache,
+        //     self.buffer.buffer(),
+        // )
+        self.buffer.buffer()
     }
 
     fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
@@ -1336,6 +1337,7 @@ impl<'a> App<'a> {
                 let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
 
                 let para = Paragraph::new(tutorial_lines);
+                
                 para.render(
                     text_block.inner(Margin {
                         horizontal: 2,
@@ -1370,7 +1372,7 @@ impl<'a> App<'a> {
             .get_ps1_lines(self.settings.show_animations, self.mouse_state.enabled());
 
         // When in PromptCwdEdit mode, highlight the selected CWD path segment.
-        if let ContentMode::PromptCwdEdit(cwd_index) = self.content_mode {
+        if let ContentMode::PromptDirSelect(cwd_index) = self.content_mode {
             for line in &mut lprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
@@ -1468,10 +1470,9 @@ impl<'a> App<'a> {
         if self.mode.is_running()
             && let Some(cursor_pos) = cursor_pos_maybe
         {
-            self.cursor_animation.update_logical_pos(cursor_pos);
-            let cursor_anim_pos = if self.settings.show_animations {
-                self.cursor_animation
-                    .get_render_pos(&self.settings.cursor_config)
+            self.cursor.update_logical_pos(cursor_pos);
+            let cursor_render_pos = if self.settings.show_animations {
+                self.cursor.get_render_pos(&self.settings.cursor_config)
             } else {
                 cursor_pos
             };
@@ -1480,15 +1481,14 @@ impl<'a> App<'a> {
                     None
                 } else if self.settings.show_animations {
                     let focused = self.term_has_focus
-                        && !matches!(self.content_mode, ContentMode::PromptCwdEdit(_));
-                    self.cursor_animation
-                        .get_style(focused, &self.settings.cursor_config)
+                        && !matches!(self.content_mode, ContentMode::PromptDirSelect(_));
+                    self.cursor.get_style(focused, &self.settings.cursor_config)
                 } else {
                     Some(Palette::cursor_style(255))
                 }
             };
 
-            content.set_term_cursor_pos(cursor_anim_pos, cursor_style);
+            content.set_term_cursor_pos(cursor_render_pos, cursor_style);
         }
 
         if let Some((sug, suf)) = &self.inline_history_suggestion

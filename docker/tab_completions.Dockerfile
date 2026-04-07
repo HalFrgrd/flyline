@@ -10,12 +10,15 @@ COPY tests/completion_util.sh /opt/flyline/completion_util.sh
 RUN set -eux; \
     mkdir -p \
     /tmp/example_fs/foo \
+    /tmp/example_fs/foo/glob_stuff \
     "/tmp/example_fs/many spaces here" \
     /tmp/example_fs/abc/foo; \
     printf '%s' content > /tmp/example_fs/bar.txt; \
     printf '%s' content > "/tmp/example_fs/file with spaces.txt"; \
     printf '%s' content > /tmp/example_fs/foo/baz; \
     printf '%s' content > /tmp/example_fs/abc/foo/baz; \
+    printf '%s' content > /tmp/example_fs/foo/glob_stuff/.dotfile; \
+    printf '%s' content > /tmp/example_fs/foo/glob_stuff/a.txt; \
     ln -s foo /tmp/example_fs/sym_link_to_foo; \
     mkdir -p /root/foo; \
     printf '%s' content > '/root/foo/$baz.txt'

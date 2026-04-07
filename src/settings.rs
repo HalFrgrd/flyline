@@ -64,16 +64,6 @@ pub enum PromptWidget {
     Custom(PromptWidgetCustom),
 }
 
-impl PromptWidget {
-    /// Return the name used as the placeholder in prompt strings.
-    pub fn name(&self) -> &str {
-        match self {
-            PromptWidget::MouseMode(w) => &w.name,
-            PromptWidget::Custom(w) => &w.name,
-        }
-    }
-}
-
 /// A configured agent-mode command with its optional system prompt.
 #[derive(Debug, Clone)]
 pub struct AgentModeCommand {

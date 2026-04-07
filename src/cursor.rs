@@ -13,9 +13,9 @@ pub const CURSOR_INTENSITY_UNFOCUSED: u8 = 80;
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CursorBackend {
     /// Flyline renders a custom cursor.
+    #[default]
     Flyline,
     /// Leave cursor rendering entirely to the terminal emulator.
-    #[default]
     Terminal,
 }
 
@@ -152,7 +152,7 @@ pub struct CursorConfig {
 impl Default for CursorConfig {
     fn default() -> Self {
         Self {
-            backend: CursorBackend::Terminal,
+            backend: CursorBackend::Flyline,
             interpolate: Some(16.0),
             interpolate_easing: CursorEasing::Linear,
             style: CursorStyleConfig::Default,
@@ -197,7 +197,7 @@ impl Cursor {
             None => self.target_pos,
             Some(speed) => {
                 let time_since_change = self.time_of_change.elapsed().as_secs_f32();
-                let mut factor = time_since_change * speed + 0.2;
+                let mut factor = time_since_change * speed;
 
                 // Adjust factor for small movements
                 if self.prev_pos.abs_diff(&self.target_pos) <= 2 {
