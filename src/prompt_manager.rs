@@ -795,14 +795,17 @@ fn split_static_span_by_cwd(span: Span<'static>, cwd: &str) -> Vec<PromptSegment
     result
 }
 
-/// Split a CWD text string into one [`Span`] per path segment, where each
-/// segment "owns" the slash immediately to its left.
+/// Split a CWD text string into individual [`Span`]s, with each `/` separator
+/// as its own span distinct from the path segments on either side.
+///
+/// The leftmost span is the tilde or root `/`; each subsequent alternating pair
+/// is a `"/"` separator followed by a directory name.
 ///
 /// Examples:
-/// - `"~/foo/bar"` → `["~", "/foo", "/bar"]`
-/// - `"/home/foo/bar"` → `["/home", "/foo", "/bar"]`
+/// - `"~/foo/bar"` → `["~", "/", "foo", "/", "bar"]`
+/// - `"/home/foo/bar"` → `["/", "home", "/", "foo", "/", "bar"]`
 /// - `"~"` → `["~"]`
-/// - `"qwe/try/ooh"` → `["qwe", "/try", "/ooh"]`
+/// - `"qwe/try/ooh"` → `["qwe", "/", "try", "/", "ooh"]`
 fn split_cwd_text_into_spans(text: &str, style: ratatui::style::Style) -> Vec<Span<'static>> {
     if text.is_empty() {
         return vec![];
@@ -815,36 +818,31 @@ fn split_cwd_text_into_spans(text: &str, style: ratatui::style::Style) -> Vec<Sp
         // Find the first slash after '~', if any.
         if let Some(rel_slash) = text[1..].find('/') {
             let slash_pos = 1 + rel_slash;
-            // We know text starts with '~' so we can emit it as a literal.
             result.push(Span::styled("~".to_owned(), style));
-            split_slash_prefixed_into_spans(&text[slash_pos..], style, &mut result);
+            split_into_spans(&text[slash_pos..], style, &mut result);
         } else {
             // Bare "~" or "~something" with no slash — emit as a single segment.
             result.push(Span::styled(text.to_owned(), style));
         }
     } else {
-        split_slash_prefixed_into_spans(text, style, &mut result);
+        split_into_spans(text, style, &mut result);
     }
 
     result
 }
 
-/// Append segments from `path` to `result`, where each segment includes the
-/// leading `/` (if present).  Handles paths like `/home/foo/bar` as well as
-/// relative paths like `qwe/try/ooh`.
-fn split_slash_prefixed_into_spans(
-    path: &str,
-    style: ratatui::style::Style,
-    result: &mut Vec<Span<'static>>,
-) {
+/// Append spans from `path` to `result`, emitting each `/` separator and each
+/// directory name as a separate span.  Handles absolute paths (starting with
+/// `/`) as well as relative paths.
+fn split_into_spans(path: &str, style: ratatui::style::Style, result: &mut Vec<Span<'static>>) {
     let mut remaining = path;
     while !remaining.is_empty() {
-        // Skip the leading '/' so we don't find it as "the next slash".
-        let skip = if remaining.starts_with('/') { 1 } else { 0 };
-        if let Some(next_slash_rel) = remaining[skip..].find('/') {
-            let end = skip + next_slash_rel;
-            result.push(Span::styled(remaining[..end].to_owned(), style));
-            remaining = &remaining[end..];
+        if remaining.starts_with('/') {
+            result.push(Span::styled("/".to_owned(), style));
+            remaining = &remaining[1..];
+        } else if let Some(slash_pos) = remaining.find('/') {
+            result.push(Span::styled(remaining[..slash_pos].to_owned(), style));
+            remaining = &remaining[slash_pos..];
         } else {
             result.push(Span::styled(remaining.to_owned(), style));
             break;
@@ -926,15 +924,30 @@ fn format_prompt_line(
                     vec![TaggedSpan::new(span.clone(), Tag::Ps1Prompt)]
                 }
                 PromptSegment::Cwd(spans) => {
-                    // Assign Ps1PromptCwd(n) tags: rightmost segment is n=0.
-                    let n = spans.len();
-                    spans
+                    // Only selectable spans get a Ps1PromptCwd(n) tag.
+                    // A span is selectable when it is not a "/" separator, or
+                    // when it is the very first span (the leading "/" of an
+                    // absolute path).  Internal "/" separators get Ps1Prompt so
+                    // they are rendered normally and never highlighted.
+                    let selectable_count = spans
                         .iter()
                         .enumerate()
-                        .map(|(i, span)| {
-                            TaggedSpan::new(span.clone(), Tag::Ps1PromptCwd(n - 1 - i))
-                        })
-                        .collect()
+                        .filter(|(i, s)| s.content.as_ref() != "/" || *i == 0)
+                        .count();
+                    let mut sel_idx = 0usize;
+                    let mut tagged: Vec<TaggedSpan<'static>> = Vec::with_capacity(spans.len());
+                    for (i, span) in spans.iter().enumerate() {
+                        let is_selectable = span.content.as_ref() != "/" || i == 0;
+                        let tag = if is_selectable {
+                            let t = Tag::Ps1PromptCwd(selectable_count - 1 - sel_idx);
+                            sel_idx += 1;
+                            t
+                        } else {
+                            Tag::Ps1Prompt
+                        };
+                        tagged.push(TaggedSpan::new(span.clone(), tag));
+                    }
+                    tagged
                 }
                 PromptSegment::DynamicTime { strftime, style } => {
                     vec![TaggedSpan::new(
@@ -1242,16 +1255,22 @@ impl PromptManager {
 
     /// Return the number of CWD display segments in the left prompt.
     ///
-    /// This is the total count of path segments that have been tagged with
-    /// [`Tag::Ps1PromptCwd`] in the rendered prompt (e.g. `~/foo/bar` has 3
-    /// segments).  Returns 0 when no CWD segments are present.
+    /// This is the count of *selectable* path spans tagged with
+    /// [`Tag::Ps1PromptCwd`]: every non-`"/"` span, plus the leading `"/"` of
+    /// an absolute path (index 0).  Internal `"/"` separator spans are not
+    /// counted.  Returns 0 when no CWD segments are present.
     pub fn cwd_display_segment_count(&self) -> usize {
         self.prompt
             .iter()
             .flat_map(|line| line.iter())
             .find_map(|seg| {
                 if let PromptSegment::Cwd(spans) = seg {
-                    Some(spans.len())
+                    let count = spans
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, s)| s.content.as_ref() != "/" || *i == 0)
+                        .count();
+                    Some(count)
                 } else {
                     None
                 }
@@ -1698,60 +1717,79 @@ mod tests {
     fn test_split_cwd_tilde_with_segments() {
         let style = ratatui::style::Style::default();
         let spans = split_cwd_text_into_spans("~/foo/bar/baz", style);
-        assert_eq!(span_contents(&spans), vec!["~", "/foo", "/bar", "/baz"]);
+        assert_eq!(
+            span_contents(&spans),
+            vec!["~", "/", "foo", "/", "bar", "/", "baz"]
+        );
     }
 
     #[test]
     fn test_split_cwd_absolute_path() {
         let style = ratatui::style::Style::default();
         let spans = split_cwd_text_into_spans("/home/foo/bar", style);
-        assert_eq!(span_contents(&spans), vec!["/home", "/foo", "/bar"]);
+        assert_eq!(
+            span_contents(&spans),
+            vec!["/", "home", "/", "foo", "/", "bar"]
+        );
     }
 
     #[test]
     fn test_split_cwd_relative_path() {
         let style = ratatui::style::Style::default();
         let spans = split_cwd_text_into_spans("qwe/try/ooh", style);
-        assert_eq!(span_contents(&spans), vec!["qwe", "/try", "/ooh"]);
+        assert_eq!(span_contents(&spans), vec!["qwe", "/", "try", "/", "ooh"]);
     }
 
     #[test]
     fn test_split_cwd_single_segment() {
         let style = ratatui::style::Style::default();
         let spans = split_cwd_text_into_spans("/home", style);
-        assert_eq!(span_contents(&spans), vec!["/home"]);
+        assert_eq!(span_contents(&spans), vec!["/", "home"]);
     }
 
     #[test]
     fn test_split_cwd_trailing_slash() {
         let style = ratatui::style::Style::default();
         let spans = split_cwd_text_into_spans("~/foo/", style);
-        // trailing slash: "/foo/" splits as "/foo" and "/"
-        assert_eq!(span_contents(&spans), vec!["~", "/foo", "/"]);
+        // trailing slash becomes its own "/" span
+        assert_eq!(span_contents(&spans), vec!["~", "/", "foo", "/"]);
     }
 
     // --- format_prompt_line (CWD tagging) ------------------------------------
 
     #[test]
     fn test_format_prompt_line_cwd_tags() {
-        // "~/foo/bar" → 3 segments; rightmost (/bar) gets index 0.
+        // "~/foo/bar" → 5 spans ["~", "/", "foo", "/", "bar"];
+        // selectable spans are "~", "foo", "bar" (3 total).
+        // "~" is leftmost selectable → index 2, "foo" → index 1, "bar" → index 0.
+        // "/" separators get Ps1Prompt (not selectable).
         let spans = split_cwd_text_into_spans("~/foo/bar", ratatui::style::Style::default());
         let mut segments = vec![PromptSegment::Cwd(spans)];
         let line = format_prompt_line(&mut segments, &fixed_time(0), false);
-        assert_eq!(line.spans.len(), 3);
-        // "~" is leftmost → index 2
+        assert_eq!(line.spans.len(), 5);
+        // "~" → index 2
         assert_eq!(
             line.spans[0].tag,
             crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(2))
         );
-        // "/foo" → index 1
+        // "/" separator → Ps1Prompt
         assert_eq!(
             line.spans[1].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(1))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1Prompt)
         );
-        // "/bar" is rightmost → index 0
+        // "foo" → index 1
         assert_eq!(
             line.spans[2].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(1))
+        );
+        // "/" separator → Ps1Prompt
+        assert_eq!(
+            line.spans[3].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1Prompt)
+        );
+        // "bar" is rightmost → index 0
+        assert_eq!(
+            line.spans[4].tag,
             crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(0))
         );
     }
@@ -1829,8 +1867,9 @@ mod tests {
     #[test]
     fn test_cwd_display_segment_count_absolute_three_segments() {
         let pm = make_pm_with_cwd("/home/foo/bar", "/home/foo/bar");
-        // "/home/foo/bar" splits into ["/home", "/foo", "/bar"] → 3 display segments
-        assert_eq!(pm.cwd_display_segment_count(), 3);
+        // "/home/foo/bar" → ["/", "home", "/", "foo", "/", "bar"]
+        // selectable: "/", "home", "foo", "bar" → 4 display segments
+        assert_eq!(pm.cwd_display_segment_count(), 4);
     }
 
     #[test]

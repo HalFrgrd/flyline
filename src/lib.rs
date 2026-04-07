@@ -81,7 +81,7 @@ fn parse_matrix_animation(s: &str) -> Result<settings::MatrixAnimation, String> 
             .parse::<u64>()
             .map(settings::MatrixAnimation::IdleSecs)
             .map_err(|_| format!("expected `on`, `off`, or a non-negative integer, got `{s}`")),
-  }
+    }
 }
 
 fn parse_effect_speed(s: &str) -> Result<f32, String> {
