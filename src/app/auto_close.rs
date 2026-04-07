@@ -140,7 +140,7 @@ impl<'a> App<'a> {
                     ..
                 }) = closing_token.annotations.closing
             {
-                self.buffer.delete_forwards();
+                self.buffer.delete_right();
             }
         }
     }
