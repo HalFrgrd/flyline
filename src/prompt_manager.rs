@@ -1070,12 +1070,9 @@ fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
                 command,
                 out.status
             );
-            if !stdout.is_empty() {
-                log::debug!("Custom prompt widget stdout: {}", stdout);
-            }
-            if !stderr.is_empty() {
-                log::debug!("Custom prompt widget stderr: {}", stderr);
-            }
+            log::debug!("Custom prompt widget stdout: {}", stdout);
+            log::debug!("Custom prompt widget stderr: {}", stderr);
+
             if out.status.success() {
                 Ok(stdout)
             } else {

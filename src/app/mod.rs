@@ -911,7 +911,7 @@ impl<'a> App<'a> {
     /// If `buffer_str` is empty, opens the agent-prompts fuzzy history search instead.
     fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
         if false && buffer_str.is_empty() {
-            // TOOD think through UX for this
+            // TODO think through UX for this
             // Warm with "" to display all agent prompts regardless of the current buffer.
             self.settings
                 .agent_prompt_history_manager
@@ -1321,30 +1321,37 @@ impl<'a> App<'a> {
                 self.settings.tutorial_step,
                 &self.settings.color_palette,
             ) {
-                let buffer_rect = Rect {
+                let para = Paragraph::new(tutorial_lines);
+
+                let layout = Layout::horizontal([
+                    Constraint::Min(7),
+                    Constraint::Percentage(90),
+                    Constraint::Min(7),
+                ]);
+
+                let [mut prev_block, mut text_block, mut next_block] = Rect {
                     x: 0,
                     y: 0,
                     width,
-                    height: 7,
-                };
+                    height: 1,
+                }
+                .layout(&layout);
 
-                let [prev_block, text_block, next_block] =
-                    buffer_rect.layout(&Layout::horizontal([
-                        Constraint::Min(7),
-                        Constraint::Percentage(90),
-                        Constraint::Min(7),
-                    ]));
+                text_block = text_block.inner(Margin {
+                    horizontal: 2,
+                    vertical: 0,
+                });
+
+                let para_len = para.line_count(text_block.width);
+                let final_len = para_len.max(7) as u16;
+
+                prev_block.height = final_len;
+                text_block.height = final_len;
+                next_block.height = final_len;
+
                 let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
 
-                let para = Paragraph::new(tutorial_lines);
-                
-                para.render(
-                    text_block.inner(Margin {
-                        horizontal: 2,
-                        vertical: 1,
-                    }),
-                    &mut text_buffer,
-                );
+                para.render(text_block, &mut text_buffer);
 
                 content.write_buffer(&text_buffer, Tag::Tutorial);
 

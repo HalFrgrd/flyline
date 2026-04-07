@@ -270,7 +270,7 @@ impl Palette {
                 .add_modifier(Modifier::BOLD),
             matching_char_override: None,
             opening_and_closing_pair: Style::default()
-                .fg(Color::Green)
+                .fg(Color::Red)
                 .add_modifier(Modifier::BOLD)
                 .add_modifier(Modifier::UNDERLINED),
             opening_and_closing_pair_override: None,

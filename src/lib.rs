@@ -4,7 +4,10 @@ use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
 
-use crate::app::actions::{self, possible_action_names};
+use crate::{
+    app::actions::{self, possible_action_names},
+    cursor::CursorStyleConfig,
+};
 
 mod active_suggestions;
 mod agent_mode;
@@ -950,6 +953,20 @@ impl Flyline {
                         }
 
                         if let Some(eff) = effect {
+                            if eff == cursor::CursorEffect::Fade
+                                && let CursorStyleConfig::Custom(style) =
+                                    self.settings.cursor_config.style
+                            {
+                                match style.bg {
+                                    Some(ratatui::style::Color::Rgb(..)) => {}
+                                    _ => {
+                                        eprintln!(
+                                            "flyline set-cursor: --effect fade requires a custom style with an RGB background color (e.g. '#ff0000')",
+                                        );
+                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                    }
+                                }
+                            }
                             log::info!("Cursor effect set to {:?}", eff);
                             self.settings.cursor_config.effect = eff;
                         }

@@ -811,7 +811,6 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
- "color-eyre",
  "crossterm",
  "easing-function",
  "flash",
