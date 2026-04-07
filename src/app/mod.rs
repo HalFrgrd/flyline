@@ -1113,10 +1113,12 @@ impl<'a> App<'a> {
     /// Returns the buffer string with any trailing auto-inserted closing tokens stripped.
     /// This is the string that should be used when searching history.
     fn buffer_for_history(&self) -> &str {
-        dparser::DParser::buffer_without_auto_inserted_suffix(
-            &self.dparser_tokens_cache,
-            self.buffer.buffer(),
-        )
+        // TODO: figure out good UX for this
+        // dparser::DParser::buffer_without_auto_inserted_suffix(
+        //     &self.dparser_tokens_cache,
+        //     self.buffer.buffer(),
+        // )
+        self.buffer.buffer()
     }
 
     fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
@@ -1328,6 +1330,7 @@ impl<'a> App<'a> {
                 let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
 
                 let para = Paragraph::new(tutorial_lines);
+                
                 para.render(
                     text_block.inner(Margin {
                         horizontal: 2,

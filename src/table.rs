@@ -266,9 +266,10 @@ pub fn render_table_with_options(
 pub fn render_table_constrained(
     accum: &TableAccum,
     constraints: &[Constraint],
-    available_width: u16,
+    max_width: u16,
     options: &TableOptions,
 ) -> Vec<Line<'static>> {
+    let available_width = max_width.saturating_sub(3 * (constraints.len() as u16) + 1);
     let chunks = Layout::horizontal(constraints).split(Rect::new(0, 0, available_width, 1));
     let col_widths: Vec<usize> = chunks.iter().map(|r| r.width as usize).collect();
     render_table_with_options(accum, &col_widths, options)

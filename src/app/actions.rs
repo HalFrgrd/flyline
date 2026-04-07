@@ -367,7 +367,15 @@ impl Binding {
             .iter()
             .find(|a| a.scope == scope && a.name == action_name)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Unknown action: '{}'", action_name))?;
+            .ok_or_else(|| {
+                println!(
+                    "Unknown action name '{}' for scope '{}'",
+                    action_name,
+                    scope.as_ref()
+                );
+                anyhow::anyhow!("Unknown action: '{}'", action_name)
+            })?;
+
         Ok(Self {
             key_events: events,
             action,
@@ -502,7 +510,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         },
     ),
     Action::new(
-        "page_up",
+        "scroll_page_up",
         "Scroll up one page",
         Scope::FuzzyHistorySearch,
         |app, _key| {
@@ -515,7 +523,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         },
     ),
     Action::new(
-        "page_down",
+        "scroll_page_down",
         "Scroll down one page",
         Scope::FuzzyHistorySearch,
         |app, _key| {
@@ -650,8 +658,8 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         },
     ),
     Action::new(
-        "trigger_tab_completion",
-        "Trigger tab completion or cycle through suggestions if already active",
+        "run_tab_completion",
+        "Start tab completion",
         Scope::Any,
         |app, _key| app.start_tab_complete(),
     ),
@@ -680,7 +688,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
             app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
         } else {
-            app.buffer.delete_forwards();
+            app.buffer.delete_right();
         }
     }),
     Action::new(
@@ -709,7 +717,7 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         },
     ),
     Action::new(
-        "comment_line",
+        "comment_line_submit",
         "Comment out the current line and submit",
         Scope::Any,
         |app, _key| {
@@ -719,21 +727,13 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         },
     ),
     Action::new(
-        "start_fuzzy_history_search",
+        "run_fuzzy_history_search",
         "Start fuzzy search through command history",
         Scope::Any,
         |app, _key| {
             let history_buffer = app.buffer_for_history().to_owned();
             app.history_manager.warm_fuzzy_search_cache(&history_buffer);
             app.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
-        },
-    ),
-    Action::new(
-        "stop_fuzzy_history_search",
-        "Stop fuzzy search through command history",
-        Scope::FuzzyHistorySearch,
-        |app, _key| {
-            app.content_mode = ContentMode::Normal;
         },
     ),
     Action::new(
@@ -745,25 +745,25 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         },
     ),
     Action::new(
-        "delete_until_start_of_line",
+        "delete_left_until_start_of_line",
         "Delete until start of line",
         Scope::Any,
         |app, _key| app.buffer.delete_until_start_of_line(),
     ),
     Action::new(
-        "delete_one_word_left",
-        "Delete one word to the left",
+        "delete_left_one_word_fine_grained",
+        "Delete one word to the left stopping at punctuation or path segment boundaries",
         Scope::Any,
-        |app, _key| app.buffer.delete_one_word_left(WordDelim::LessStrict),
+        |app, _key| app.buffer.delete_one_word_left(WordDelim::FineGrained),
     ),
     Action::new(
-        "delete_one_word_left_whitespace",
+        "delete_left_one_word_whitespace",
         "Delete one word to the left, using whitespace as delimiter",
         Scope::Any,
         |app, _key| app.buffer.delete_one_word_left(WordDelim::WhiteSpace),
     ),
     Action::new(
-        "delete_backwards",
+        "delete_left",
         "Delete character before cursor",
         Scope::Any,
         |app, _key| {
@@ -772,41 +772,41 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 // paired with the char about to be deleted, remove it as well.
                 app.delete_auto_inserted_closing_if_present();
             }
-            app.buffer.delete_backwards()
+            app.buffer.delete_left()
         },
     ),
     Action::new(
-        "delete_until_end_of_line",
+        "delete_right_until_end_of_line",
         "Delete until end of line",
         Scope::Any,
         |app, _key| app.buffer.delete_until_end_of_line(),
     ),
     Action::new(
-        "delete_one_word_right",
-        "Delete one word to the right",
+        "delete_right_one_word_fine_grained",
+        "Delete one word to the right stopping at punctuation or path segment boundaries",
         Scope::Any,
-        |app, _key| app.buffer.delete_one_word_right(WordDelim::LessStrict),
+        |app, _key| app.buffer.delete_right_one_word(WordDelim::FineGrained),
     ),
     Action::new(
-        "delete_one_word_right_whitespace",
+        "delete_right_one_word_whitespace",
         "Delete one word to the right, using whitespace as delimiter",
         Scope::Any,
-        |app, _key| app.buffer.delete_one_word_right(WordDelim::WhiteSpace),
+        |app, _key| app.buffer.delete_right_one_word(WordDelim::WhiteSpace),
     ),
     Action::new(
-        "delete_forwards",
+        "delete_right",
         "Delete character after cursor",
         Scope::Any,
-        |app, _key| app.buffer.delete_forwards(),
+        |app, _key| app.buffer.delete_right(),
     ),
     Action::new(
-        "move_start_of_line",
+        "move_left_start_of_line",
         "Move cursor to start of line",
         Scope::Any,
         |app, _key| app.buffer.move_start_of_line(),
     ),
     Action::new(
-        "move_one_word_left_whitespace",
+        "move_left_one_word_whitespace",
         "Move one word left, using whitespace as delimiter",
         Scope::Any,
         |app, _key| app.buffer.move_one_word_left(WordDelim::WhiteSpace),
@@ -819,13 +819,13 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         }
     }),
     Action::new(
-        "move_end_of_line",
+        "move_right_end_of_line",
         "Move cursor to end of line",
         Scope::Any,
         |app, _key| app.buffer.move_end_of_line(),
     ),
     Action::new(
-        "move_one_word_right_whitespace",
+        "move_right_one_word_whitespace",
         "Move one word right, using whitespace as delimiter",
         Scope::Any,
         |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
@@ -1002,12 +1002,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
             "select_next",
         )
         .unwrap(),
-        Binding::try_new(&["PageUp"], Scope::FuzzyHistorySearch, "page_up").unwrap(),
-        Binding::try_new(&["PageDown"], Scope::FuzzyHistorySearch, "page_down").unwrap(),
+        Binding::try_new(&["PageUp"], Scope::FuzzyHistorySearch, "scroll_page_up").unwrap(),
+        Binding::try_new(&["PageDown"], Scope::FuzzyHistorySearch, "scroll_page_down").unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            Scope::FuzzyHistorySearch,
-            "stop_fuzzy_history_search",
+            Scope::Any,
+            "escape_to_normal_mode", // Stop fuzzy history search if active, otherwise escape to normal mode
         )
         .unwrap(),
         Binding::try_new(&["Alt+Enter"], Scope::Any, "run_agent_mode").unwrap(),
@@ -1046,7 +1046,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
         Binding::try_new(&["Tab"], Scope::AgentOutputSelection, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::TabCompletion, "next_suggestion").unwrap(),
-        Binding::try_new(&["Tab"], Scope::Any, "trigger_tab_completion").unwrap(),
+        Binding::try_new(&["Tab"], Scope::Any, "run_tab_completion").unwrap(),
         // PromptCwdEdit Esc must appear before the Normal Esc binding.
         Binding::try_new(&["Esc"], Scope::PromptDirSelect, "cancel").unwrap(),
         Binding::try_new(&["Esc"], Scope::Any, "escape_to_normal_mode").unwrap(),
@@ -1057,64 +1057,64 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             &["Ctrl+/", "Meta+/", "Super+/", "Ctrl+7"],
             Scope::Any,
-            "comment_line",
+            "comment_line_submit",
         )
         .unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
             Scope::Any,
-            "start_fuzzy_history_search",
+            "run_fuzzy_history_search",
         )
         .unwrap(),
         Binding::try_new(&["Ctrl+l"], Scope::Any, "clear_screen").unwrap(),
         Binding::try_new(
             &["Super+Backspace", "Ctrl+u", "Ctrl+Shift+Backspace"],
             Scope::Any,
-            "delete_until_start_of_line",
+            "delete_left_until_start_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Backspace", "Meta+Backspace"],
             Scope::Any,
-            "delete_one_word_left",
+            "delete_left_one_word_fine_grained",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Backspace", "Ctrl+H", "Alt+W", "Ctrl+w", "Meta+W"],
             Scope::Any,
-            "delete_one_word_left_whitespace",
+            "delete_left_one_word_whitespace",
         )
         .unwrap(),
-        Binding::try_new(&["Backspace"], Scope::Any, "delete_backwards").unwrap(),
+        Binding::try_new(&["Backspace"], Scope::Any, "delete_left").unwrap(),
         Binding::try_new(
             &["Super+Delete", "Ctrl+Shift+Delete", "Ctrl+k"],
             Scope::Any,
-            "delete_until_end_of_line",
+            "delete_right_until_end_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Delete", "Meta+Delete"],
             Scope::Any,
-            "delete_one_word_right",
+            "delete_right_one_word_fine_grained",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Delete", "Alt+D", "Meta+D"],
             Scope::Any,
-            "delete_one_word_right_whitespace",
+            "delete_right_one_word_whitespace",
         )
         .unwrap(),
-        Binding::try_new(&["Delete"], Scope::Any, "delete_forwards").unwrap(),
+        Binding::try_new(&["Delete"], Scope::Any, "delete_right").unwrap(),
         Binding::try_new(
             &["Home", "Super+Left", "Ctrl+A", "Super+A"],
             Scope::Any,
-            "move_start_of_line",
+            "move_left_start_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Left", "Alt+Left", "Meta+Left", "Alt+b", "Meta+b"], // Emacs-style. ghostty sends this for Alt+Left by default
             Scope::Any,
-            "move_one_word_left_whitespace",
+            "move_left_one_word_whitespace",
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
@@ -1129,13 +1129,13 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         Binding::try_new(
             &["End", "Super+Right", "Ctrl+E", "Super+E"],
             Scope::Any,
-            "move_end_of_line",
+            "move_right_end_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Right", "Alt+Right", "Meta+Right", "Alt+f", "Meta+f"], // Emacs-style. ghostty sends Alt+Right as Meta+Right by default
             Scope::Any,
-            "move_one_word_right_whitespace",
+            "move_right_one_word_whitespace",
         )
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
@@ -1366,21 +1366,22 @@ pub fn print_bindings_table(
         keys: String,
         scoped_action: String,
         description: String,
-        is_user: bool,
     }
 
     let binding_to_row = |binding: &Binding, is_user: bool| -> Row {
-        let keys = binding
+        let mut keys = binding
             .key_events
             .iter()
             .map(|k| k.display_with_remapping(remappings))
             .collect::<Vec<_>>()
             .join(", ");
+        if is_user {
+            keys = format!("User keybinding: {}", keys);
+        }
         Row {
             keys: keys.clone(),
             scoped_action: binding.action.scoped_action_name(),
             description: binding.action.description.to_string(),
-            is_user,
         }
     };
 
@@ -1403,20 +1404,10 @@ pub fn print_bindings_table(
     // Retrieve the terminal width; fall back to 120 columns if unavailable.
     let term_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(120);
 
-    // The table border overhead for 4 columns is: 2 + 3*3 + 2 = 13 characters.
-    // (leading "│ " + three " │ " separators + trailing " │")
-    const NCOLS: u16 = 4;
-    let overhead: u16 = 3 * NCOLS + 1;
-    let available = term_width.saturating_sub(overhead);
-
-    // Use ratatui Layout constraints: the User column is exactly 1 character
-    // wide (just the `*` marker), and the remaining space is split 1:1:2
-    // across Key(s), Action, and Description.
     let constraints = [
-        Constraint::Fill(1),   // Key(s)
-        Constraint::Fill(1),   // Action
-        Constraint::Fill(2),   // Description
-        Constraint::Length(1), // User
+        Constraint::Fill(1), // Key(s)
+        Constraint::Fill(2), // Action
+        Constraint::Fill(2), // Description
     ];
 
     // Build the TableAccum for the bindings.
@@ -1425,24 +1416,18 @@ pub fn print_bindings_table(
         "Key(s)".to_string(),
         "Action".to_string(),
         "Description".to_string(),
-        "User".to_string(),
     ];
     for row in &rows {
         accum.body_rows.push(vec![
             row.keys.clone(),
             row.scoped_action.clone(),
             row.description.clone(),
-            if row.is_user {
-                "*".to_string()
-            } else {
-                String::new()
-            },
         ]);
     }
 
     // Render and print the table, converting each ratatui Line to plain text.
     let options = TableOptions { row_dividers: true };
-    for line in render_table_constrained(&accum, &constraints, available, &options) {
+    for line in render_table_constrained(&accum, &constraints, term_width, &options) {
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         println!("{}", text);
     }

@@ -39,14 +39,14 @@ struct SnapshotManager {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum WordDelim {
     WhiteSpace,
-    LessStrict,
+    FineGrained,
 }
 
 impl WordDelim {
     fn is_word_boundary(&self, c: char) -> bool {
         match self {
             WordDelim::WhiteSpace => c.is_whitespace(),
-            WordDelim::LessStrict => c.is_whitespace() || c.is_ascii_punctuation(),
+            WordDelim::FineGrained => c.is_whitespace() || c.is_ascii_punctuation(),
         }
     }
 }
@@ -472,7 +472,7 @@ impl TextBuffer {
             .any(|c| c == '/' || c == '\\')
     }
 
-    pub fn delete_backwards(&mut self) {
+    pub fn delete_left(&mut self) {
         // delete one grapheme to the left
         self.push_snapshot(true);
         let old_cursor_col = self.cursor_byte;
@@ -481,7 +481,7 @@ impl TextBuffer {
         self.buf.drain(self.cursor_byte..old_cursor_col);
     }
 
-    pub fn delete_forwards(&mut self) {
+    pub fn delete_right(&mut self) {
         // delete one grapheme to the right
         self.push_snapshot(true);
         let cursor_pos_right = self.right_move_pos();
@@ -540,7 +540,7 @@ impl TextBuffer {
         self.buf.drain(self.cursor_byte..old_cursor_col);
     }
 
-    pub fn delete_one_word_right(&mut self, delim: WordDelim) {
+    pub fn delete_right_one_word(&mut self, delim: WordDelim) {
         self.push_snapshot(true);
         let end = self.buf.len();
         let end_cursor = if delim == WordDelim::WhiteSpace {
@@ -639,11 +639,11 @@ mod test_editing_advanced {
     #[test]
     fn delete_back() {
         let mut tb = TextBuffer::new("Hello, World!");
-        tb.delete_backwards();
+        tb.delete_left();
         assert_eq!(tb.buffer(), "Hello, World");
-        tb.delete_backwards();
+        tb.delete_left();
         assert_eq!(tb.buffer(), "Hello, Worl");
-        tb.delete_backwards();
+        tb.delete_left();
         assert_eq!(tb.buffer(), "Hello, Wor");
     }
 
@@ -753,23 +753,23 @@ mod test_editing_advanced {
     fn delete_one_word_left_less_strict() {
         let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
         tb.move_end_of_line();
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc::def::ghi   /etc/");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc::def::ghi   /etc");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc::def::ghi   /");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc::def::ghi   ");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc::def::ghi");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc::def::");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc::def");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc::");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "cargo test abc");
     }
 
@@ -777,13 +777,13 @@ mod test_editing_advanced {
     fn delete_one_word_right() {
         let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
         tb.move_start_of_line();
-        tb.delete_one_word_right(WordDelim::WhiteSpace);
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), " test abc::def::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::WhiteSpace);
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), " abc::def::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::WhiteSpace);
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), "   /etc/asd");
-        tb.delete_one_word_right(WordDelim::WhiteSpace);
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), "");
     }
 
@@ -791,33 +791,33 @@ mod test_editing_advanced {
     fn delete_one_word_right_less_strict() {
         let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
         tb.move_start_of_line();
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), " test abc::def::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "test abc::def::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), " abc::def::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "abc::def::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "::def::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "def::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "::ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "ghi   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "   /etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "/etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "etc/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "/asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "asd");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "");
     }
 
@@ -827,16 +827,16 @@ mod test_editing_advanced {
         // punctuation boundaries, so filename components with dots are not split.
         let mut tb = TextBuffer::new("echo ./foo_bar/baz.jeb");
         tb.move_end_of_line();
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "echo ./foo_bar/");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "echo ./foo_bar");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "echo ./");
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "echo .");
         // No more slashes in the remaining word; full punctuation mode resumes.
-        tb.delete_one_word_left(WordDelim::LessStrict);
+        tb.delete_one_word_left(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "echo ");
     }
 
@@ -845,25 +845,25 @@ mod test_editing_advanced {
         // Symmetric: forward deletion is also slash-aware.
         let mut tb = TextBuffer::new("echo ./foo_bar/baz.jeb");
         tb.move_start_of_line();
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), " ./foo_bar/baz.jeb");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "./foo_bar/baz.jeb");
         // Now the word starts with "./" which contains a slash; slash-only mode.
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "/foo_bar/baz.jeb");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "foo_bar/baz.jeb");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "/baz.jeb");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "baz.jeb");
         // No more slashes; full punctuation mode.
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), ".jeb");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "jeb");
-        tb.delete_one_word_right(WordDelim::LessStrict);
+        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "");
     }
 
