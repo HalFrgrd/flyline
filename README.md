@@ -317,7 +317,7 @@ Two possible fixes are:
 - Use a terminal emulator that supports [Kitty's extended keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
 ## Shell integration
-Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escape codes to integrate the shell with the terminal. These are on by default and can be disabled with `flyline --send-shell-integration-codes false`.
+Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escape codes to integrate the shell with the terminal. These are on by default and can be disabled with `flyline --send-shell-integration-codes none`.
 
 # Settings
 
@@ -333,11 +333,13 @@ The block below is auto-generated from `flyline --help`:
 Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
-  agent-mode   Configure AI agent mode.
-  create-anim  Create a custom prompt animation.
-  set-color    Configure the colour palette.
-  key          Manage keybindings.
-  help         Print this message or the help of the given subcommand(s)
+  agent-mode            Configure AI agent mode.
+  create-prompt-anim    Create a custom prompt animation.
+  create-prompt-widget  Create a custom prompt widget.
+  set-color             Configure the colour palette.
+  set-cursor            Configure the cursor appearance and animation.
+  key                   Manage keybindings.
+  help                  Print this message or the help of the given subcommand(s)
 
 Options:
       --version
@@ -357,8 +359,9 @@ Options:
       --load-zsh-history [<PATH>]
           Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file; if omitted, defaults to $HOME/.zsh_history
 
-      --run-tutorial [<TUTORIAL_MODE>]
-          Enable or disable tutorial mode with hints for first-time users. Use `--run-tutorial false` to disable
+      --run-tutorial [<RUN_TUTORIAL>]
+          Run the interactive tutorial for first-time users.
+          Use `--run-tutorial false` to disable.
           
           [possible values: true, false]
 
@@ -377,14 +380,6 @@ Options:
           
           [possible values: true, false]
 
-      --use-term-emulator-cursor [<USE_TERM_EMULATOR_CURSOR>]
-          Use the terminal emulator's cursor instead of rendering a custom cursor
-
-          Possible values:
-          - none:            Do not use the terminal emulator's cursor; flyline renders a custom cursor
-          - only-prompt-pos: Only send the escape codes that report the prompt start and end positions; flyline still renders a custom cursor for the active typing position
-          - full:            Fully use the terminal emulator's cursor: send prompt position codes and defer active cursor rendering to the terminal emulator. This is the default
-
       --matrix-animation [<MATRIX_ANIMATION>]
           Run matrix animation in the terminal background
           
@@ -402,9 +397,9 @@ Options:
           - smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
 
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
-          Send shell integration escape codes (OSC 133 / OSC 633)
+          Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
           
-          [possible values: true, false]
+          [possible values: none, only-prompt-pos, full]
 
   -h, --help
           Print help (see a summary with '-h')
