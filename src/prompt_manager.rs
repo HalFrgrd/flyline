@@ -1637,6 +1637,15 @@ mod tests {
         assert_eq!(&text[cwd_range], "try/ooh/lkj/");
     }
 
+    #[test]
+    fn test_find_cwd_full() {
+        // trailing slash is part of the detected match
+        let text = "otherpartofheprompt /home/qwe/try/ooh/lkj/:$";
+        let cwd = "/home/qwe/try/ooh/lkj";
+        let result = find_cwd_in_span(text, cwd);
+        let cwd_range = result.expect("should find a match");
+        assert_eq!(&text[cwd_range], "/home/qwe/try/ooh/lkj/");
+    }
     // --- expand_span_to_segments with CWD detection --------------------------
 
     #[test]
