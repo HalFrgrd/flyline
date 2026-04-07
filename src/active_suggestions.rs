@@ -754,7 +754,7 @@ impl ActiveSuggestions {
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
         match self.all_unprocessed_suggestions.as_slice() {
             [] => {
-                log::debug!("No completions found");
+                log::debug!("No completions found. all_unprocessed_suggestions is empty");
                 return None;
             }
             [single_suggestion] => {
@@ -767,7 +767,11 @@ impl ActiveSuggestions {
 
         match self.filtered_suggestions.as_slice() {
             [] => {
-                log::debug!("No completions found");
+                log::debug!("No completions found. filtered_suggestions is empty");
+                log::debug!(
+                    "all_unprocessed_suggestions: {:?}",
+                    self.all_unprocessed_suggestions
+                );
                 None
             }
             [_filtered_item] => {

@@ -601,7 +601,6 @@ const POSSIBLE_ACTIONS: &[Action] = &[
                 if let Some(cmd) = selection.selected_command() {
                     let cmd = cmd.to_string();
                     app.buffer.replace_buffer(&cmd);
-                    app.on_possible_buffer_change(); // TODO: is this needed?
                 }
                 app.content_mode = ContentMode::Normal;
             }
@@ -665,8 +664,16 @@ const POSSIBLE_ACTIONS: &[Action] = &[
     ),
     Action::new(
         "escape_to_normal_mode",
-        "Escape - clear suggestions or toggle mouse (Simple and Smart modes)",
+        "Return to the normal command editing mode",
         Scope::Any,
+        |app, _key| {
+            app.content_mode = ContentMode::Normal;
+        },
+    ),
+    Action::new(
+        "escape_to_normal_mode",
+        "Return to the normal command editing mode",
+        Scope::FuzzyHistorySearch,
         |app, _key| {
             app.content_mode = ContentMode::Normal;
         },
@@ -1006,7 +1013,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         Binding::try_new(&["PageDown"], Scope::FuzzyHistorySearch, "scroll_page_down").unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            Scope::Any,
+            Scope::FuzzyHistorySearch,
             "escape_to_normal_mode", // Stop fuzzy history search if active, otherwise escape to normal mode
         )
         .unwrap(),
@@ -1030,12 +1037,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         .unwrap(),
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
         Binding::try_new(&["Enter", "Ctrl+j"], Scope::PromptDirSelect, "accept_entry").unwrap(),
-        Binding::try_new(
-            &["Enter", "Ctrl+j"],
-            Scope::Any,
-            "submit_or_newline", // TODO name
-        )
-        .unwrap(),
+        Binding::try_new(&["Enter", "Ctrl+j"], Scope::Any, "submit_or_newline").unwrap(),
         Binding::try_new(
             &["Shift+Tab", "Backtab"], // TODO backtab and shift tab for agent output selection
             Scope::TabCompletion,

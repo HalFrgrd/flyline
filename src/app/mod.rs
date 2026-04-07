@@ -911,7 +911,7 @@ impl<'a> App<'a> {
     /// If `buffer_str` is empty, opens the agent-prompts fuzzy history search instead.
     fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
         if false && buffer_str.is_empty() {
-            // TOOD think through UX for this
+            // TODO think through UX for this
             // Warm with "" to display all agent prompts regardless of the current buffer.
             self.settings
                 .agent_prompt_history_manager
@@ -1337,7 +1337,7 @@ impl<'a> App<'a> {
                 let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
 
                 let para = Paragraph::new(tutorial_lines);
-                
+
                 para.render(
                     text_block.inner(Margin {
                         horizontal: 2,

@@ -22,7 +22,6 @@ unicode-width = { version = "0.2.0", default-features = false }
 unicode-segmentation = "1.13.2"
 itertools = "0.14.0"
 glob = "0.3.3"
-color-eyre = "0.6.5"
 flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "e515077183c61ff21a7d66f9fe8a8198acc01b64" }
 skim = { version = "3.6.1", default-features =  false, features = []}
 lscolors = "0.21.0"
