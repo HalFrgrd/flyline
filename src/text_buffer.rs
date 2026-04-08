@@ -457,19 +457,17 @@ impl TextBuffer {
         }
     }
 
-    fn has_slash_in_word_left(buf: &str, cursor_byte: usize) -> bool {
-        buf[..cursor_byte]
+    fn has_slash_in_word(buf: &str, cursor_byte: usize) -> bool {
+        let left = buf[..cursor_byte]
             .chars()
             .rev()
             .take_while(|c| !c.is_whitespace())
-            .any(|c| c == '/' || c == '\\')
-    }
-
-    fn has_slash_in_word_right(buf: &str, cursor_byte: usize) -> bool {
-        buf[cursor_byte..]
+            .any(|c| c == '/' || c == '\\');
+        let right = buf[cursor_byte..]
             .chars()
             .take_while(|c| !c.is_whitespace())
-            .any(|c| c == '/' || c == '\\')
+            .any(|c| c == '/' || c == '\\');
+        left || right
     }
 
     pub fn delete_left(&mut self) {
@@ -510,12 +508,11 @@ impl TextBuffer {
                 })
                 .unwrap_or(0);
         } else {
-            let class_fn: fn(char) -> u8 =
-                if Self::has_slash_in_word_left(&self.buf, self.cursor_byte) {
-                    Self::less_strict_class_slash_only
-                } else {
-                    Self::less_strict_class
-                };
+            let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, self.cursor_byte) {
+                Self::less_strict_class_slash_only
+            } else {
+                Self::less_strict_class
+            };
             self.cursor_byte = match iter.next() {
                 Some((first_i, first_c)) => {
                     let class = class_fn(first_c);
@@ -552,12 +549,11 @@ impl TextBuffer {
                 .next()
                 .map_or(end, |(i, _)| i)
         } else {
-            let class_fn: fn(char) -> u8 =
-                if Self::has_slash_in_word_right(&self.buf, self.cursor_byte) {
-                    Self::less_strict_class_slash_only
-                } else {
-                    Self::less_strict_class
-                };
+            let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, self.cursor_byte) {
+                Self::less_strict_class_slash_only
+            } else {
+                Self::less_strict_class
+            };
             let mut iter = self
                 .buf
                 .char_indices()
@@ -865,6 +861,42 @@ mod test_editing_advanced {
         assert_eq!(tb.buffer(), "jeb");
         tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "");
+    }
+
+    #[test]
+    fn delete_one_word_left_slash_aware_from_right() {
+        // When cursor is after a dotted path prefix but the slash is only to the
+        // right of the cursor, slash-only mode should still apply so the whole
+        // filename component is deleted as one unit.
+        let mut tb = TextBuffer::new("echo baz.jeb/foo_bar");
+        tb.cursor_byte = "echo baz.jeb".len();
+        tb.delete_one_word_left(WordDelim::FineGrained);
+        assert_eq!(tb.buffer(), "echo /foo_bar");
+    }
+
+    #[test]
+    fn delete_one_word_right_slash_aware_from_left() {
+        // When cursor is right after the last slash in a path, the slash to the
+        // left of the cursor should trigger slash-only mode so the dotted filename
+        // component is deleted as one unit rather than being split at the dot.
+        let mut tb = TextBuffer::new("echo /foo_bar/baz.jeb");
+        tb.cursor_byte = "echo /foo_bar/".len();
+        tb.delete_right_one_word(WordDelim::FineGrained);
+        assert_eq!(tb.buffer(), "echo /foo_bar/");
+    }
+
+    #[test]
+    fn delete_word_backslash_path_bidirectional() {
+        // Same behaviour with backslash path separators.
+        let mut tb = TextBuffer::new("echo baz.txt\\foo\\bar");
+        tb.cursor_byte = "echo baz.txt".len();
+        tb.delete_one_word_left(WordDelim::FineGrained);
+        assert_eq!(tb.buffer(), "echo \\foo\\bar");
+
+        let mut tb2 = TextBuffer::new("echo \\foo\\baz.txt");
+        tb2.cursor_byte = "echo \\foo\\".len();
+        tb2.delete_right_one_word(WordDelim::FineGrained);
+        assert_eq!(tb2.buffer(), "echo \\foo\\");
     }
 
     #[test]
