@@ -1,6 +1,6 @@
 pub(crate) mod actions;
 mod auto_close;
-mod formated_buffer;
+pub(crate) mod formated_buffer;
 mod tab_completion;
 
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, UnprocessedSuggestion};
@@ -265,6 +265,34 @@ pub(crate) struct App<'a> {
     last_keypress_action: Option<LastKeyPressAction>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     last_activity_time: std::time::Instant,
+}
+
+pub(crate) fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
+    if token.annotations.is_env_var && token.token.kind.is_word() {
+        let env_var_name = &token.token.value;
+
+        let tooltip = bash_funcs::format_shell_var(env_var_name);
+
+        return Some(formated_buffer::WordInfo {
+            tooltip: Some(tooltip),
+            is_recognised_command: false,
+        });
+    } else if let Some(value) = &token.annotations.command_word {
+        let (command_type, description) = bash_funcs::get_command_info(value);
+        return Some(formated_buffer::WordInfo {
+            tooltip: Some(description.to_string()),
+            is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+        });
+    } else if token.annotations.is_empty() && token.token.value.starts_with('~') {
+        let expanded = bash_funcs::expand_filename(&token.token.value);
+        if expanded != token.token.value {
+            return Some(formated_buffer::WordInfo {
+                tooltip: Some(format!("{}={}", token.token.value, expanded)),
+                is_recognised_command: false,
+            });
+        }
+    }
+    None
 }
 
 impl<'a> App<'a> {
@@ -1096,7 +1124,7 @@ impl<'a> App<'a> {
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
-            Some(Box::new(Self::get_word_info)),
+            Some(Box::new(get_word_info)),
             &self.settings.color_palette,
         );
 
@@ -1126,34 +1154,6 @@ impl<'a> App<'a> {
         //     self.buffer.buffer(),
         // )
         self.buffer.buffer()
-    }
-
-    fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
-        if token.annotations.is_env_var && token.token.kind.is_word() {
-            let env_var_name = &token.token.value;
-
-            let tooltip = bash_funcs::format_shell_var(env_var_name);
-
-            return Some(formated_buffer::WordInfo {
-                tooltip: Some(tooltip),
-                is_recognised_command: false,
-            });
-        } else if let Some(value) = &token.annotations.command_word {
-            let (command_type, description) = bash_funcs::get_command_info(value);
-            return Some(formated_buffer::WordInfo {
-                tooltip: Some(description.to_string()),
-                is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
-            });
-        } else if token.annotations.is_empty() && token.token.value.starts_with('~') {
-            let expanded = bash_funcs::expand_filename(&token.token.value);
-            if expanded != token.token.value {
-                return Some(formated_buffer::WordInfo {
-                    tooltip: Some(format!("{}={}", token.token.value, expanded)),
-                    is_recognised_command: false,
-                });
-            }
-        }
-        None
     }
 
     fn ts_to_timeago_string_5chars(ts: u64) -> String {
@@ -1806,7 +1806,7 @@ impl<'a> App<'a> {
                         cmd.len(),
                         cmd.len(),
                         false,
-                        Some(Box::new(Self::get_word_info)),
+                        Some(Box::new(get_word_info)),
                         &self.settings.color_palette,
                     );
                     for part in &formatted_cmd.parts {

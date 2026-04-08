@@ -6,8 +6,8 @@ use crate::bash_symbols;
 use crate::palette::Palette;
 use crate::settings::Settings;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
+use flash::lexer::TokenKind;
 use itertools::Itertools;
-use ratatui::prelude::Style;
 use ratatui::text::{Line, Span};
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
@@ -439,41 +439,6 @@ impl std::cmp::PartialOrd for HistoryEntryFormatted {
     }
 }
 
-fn apply_match_indices_to_lines(
-    lines: &[Line<'static>],
-    match_indices: &[usize],
-    match_style: Style,
-) -> Vec<Line<'static>> {
-    let mut result = Vec::with_capacity(lines.len());
-    let mut global_char_offset = 0usize;
-
-    for line in lines {
-        let mut new_spans = Vec::new();
-        for span in &line.spans {
-            let span_start_char = global_char_offset;
-            for (is_matching, group) in &span
-                .content
-                .chars()
-                .enumerate()
-                .chunk_by(|(char_idx, _)| match_indices.contains(&(span_start_char + char_idx)))
-            {
-                let s: String = group.map(|(_, c)| c).collect();
-                let style = if is_matching {
-                    span.style.patch(match_style)
-                } else {
-                    span.style
-                };
-                new_spans.push(Span::styled(s, style));
-            }
-            global_char_offset += span.content.chars().count();
-        }
-        result.push(Line::from(new_spans));
-        global_char_offset += 1; // +1 for the '\n' separator between lines
-    }
-
-    result
-}
-
 impl HistoryEntryFormatted {
     fn new(entry_index: usize, score: i64, match_indices: Vec<usize>) -> Self {
         HistoryEntryFormatted {
@@ -492,10 +457,31 @@ impl HistoryEntryFormatted {
     ) -> &Vec<Line<'static>> {
         self.command_spans.get_or_init(|| {
             let entry = &entries[self.entry_index];
-            let base_lines = entry
-                .syntax_highlighted
-                .get_or_init(|| palette.syntax_highlight_command(&entry.command));
-            apply_match_indices_to_lines(base_lines, &self.match_indices, palette.matching_char())
+            let base_lines = entry.syntax_highlighted.get_or_init(|| {
+                let mut parser = crate::dparser::DParser::from(&entry.command as &str);
+                parser.walk_to_end();
+                let tokens = parser.into_tokens();
+                let formatted = crate::app::formated_buffer::format_buffer(
+                    &tokens,
+                    entry.command.len(),
+                    entry.command.len(),
+                    false,
+                    Some(Box::new(crate::app::get_word_info)),
+                    palette,
+                );
+                let mut lines: Vec<Line<'static>> = vec![];
+                let mut current_spans: Vec<Span<'static>> = vec![];
+                for part in &formatted.parts {
+                    if matches!(part.token.token.kind, TokenKind::Newline) {
+                        lines.push(Line::from(std::mem::take(&mut current_spans)));
+                    } else {
+                        current_spans.push(part.normal_span().clone());
+                    }
+                }
+                lines.push(Line::from(current_spans));
+                lines
+            });
+            palette.apply_match_indices_to_lines(base_lines, &self.match_indices)
         })
     }
 }

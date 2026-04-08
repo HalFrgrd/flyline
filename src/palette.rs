@@ -387,49 +387,39 @@ impl Palette {
         Style::new().bg(Color::Rgb(intensity, intensity, intensity))
     }
 
-    /// Syntax-highlight `command` using the dparser and return one `Line` per
-    /// newline in the source string.  No cursor highlighting and no PATH lookup
-    /// (command words are coloured as unrecognised).  Used for static display of
-    /// history entries and other places where the command is not being edited.
-    pub fn syntax_highlight_command(&self, command: &str) -> Vec<Line<'static>> {
-        use crate::dparser::DParser;
-        use flash::lexer::TokenKind;
+    pub fn apply_match_indices_to_lines(
+        &self,
+        lines: &[Line<'static>],
+        match_indices: &[usize],
+    ) -> Vec<Line<'static>> {
+        let mut result = Vec::with_capacity(lines.len());
+        let mut global_char_offset = 0usize;
+        let match_style = self.matching_char();
 
-        let mut parser = DParser::from(command);
-        parser.walk_to_end();
-        let tokens = parser.into_tokens();
-
-        let mut lines: Vec<Line<'static>> = vec![];
-        let mut current_spans: Vec<Span<'static>> = vec![];
-
-        for token in &tokens {
-            if matches!(token.token.kind, TokenKind::Newline) {
-                lines.push(Line::from(std::mem::take(&mut current_spans)));
-                continue;
+        for line in lines {
+            let mut new_spans = Vec::new();
+            for span in &line.spans {
+                let span_start_char = global_char_offset;
+                for (is_matching, group) in
+                    &span.content.chars().enumerate().chunk_by(|(char_idx, _)| {
+                        match_indices.contains(&(span_start_char + char_idx))
+                    })
+                {
+                    let s: String = group.map(|(_, c)| c).collect();
+                    let style = if is_matching {
+                        span.style.patch(match_style)
+                    } else {
+                        span.style
+                    };
+                    new_spans.push(Span::styled(s, style));
+                }
+                global_char_offset += span.content.chars().count();
             }
-
-            let style = if token.annotations.is_env_var {
-                self.env_var()
-            } else if token.annotations.command_word.is_some() {
-                self.unrecognised_command()
-            } else if token.annotations.is_inside_single_quotes
-                || token.token.kind == TokenKind::SingleQuote
-            {
-                self.single_quoted_text()
-            } else if token.annotations.is_inside_double_quotes
-                || token.token.kind == TokenKind::Quote
-            {
-                self.double_quoted_text()
-            } else if token.annotations.is_comment {
-                self.comment()
-            } else {
-                self.normal_text()
-            };
-
-            current_spans.push(Span::styled(token.token.value.clone(), style));
+            result.push(Line::from(new_spans));
+            global_char_offset += 1; // +1 for the '\n' separator between lines
         }
-        lines.push(Line::from(current_spans));
-        lines
+
+        result
     }
 
     pub fn highlight_maching_indices(
