@@ -963,6 +963,29 @@ const POSSIBLE_ACTIONS: &[Action] = &[
             }
         },
     ),
+    Action::new(
+        "move_to_start",
+        "Move selection to the leftmost directory segment in the prompt",
+        Scope::PromptDirSelect,
+        |app, _key| {
+            if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
+                *index = app
+                    .prompt_manager
+                    .cwd_display_segment_count()
+                    .saturating_sub(1);
+            }
+        },
+    ),
+    Action::new(
+        "move_to_end",
+        "Move selection to the rightmost (current) directory segment in the prompt",
+        Scope::PromptDirSelect,
+        |app, _key| {
+            if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
+                *index = 0;
+            }
+        },
+    ),
 ];
 
 use clap::builder::PossibleValuesParser;
@@ -994,7 +1017,7 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 57]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
@@ -1107,6 +1130,22 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 53]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(&["Delete"], Scope::Any, "delete_right").unwrap(),
+        // PromptCwdEdit Home/End/Alt+Left/Ctrl+Left/Alt+Right/Ctrl+Right must appear before
+        // the corresponding Any/InlineHistoryAcceptable bindings.
+        Binding::try_new(&["Home"], Scope::PromptDirSelect, "move_to_start").unwrap(),
+        Binding::try_new(&["End"], Scope::PromptDirSelect, "move_to_end").unwrap(),
+        Binding::try_new(
+            &["Ctrl+Left", "Alt+Left", "Meta+Left"],
+            Scope::PromptDirSelect,
+            "move_left",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Ctrl+Right", "Alt+Right", "Meta+Right"],
+            Scope::PromptDirSelect,
+            "move_right",
+        )
+        .unwrap(),
         Binding::try_new(
             &["Home", "Super+Left", "Ctrl+A", "Super+A"],
             Scope::Any,
