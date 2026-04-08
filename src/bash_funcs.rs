@@ -1086,7 +1086,7 @@ pub fn get_fuzzy_first_word_completions(command: &str) -> Vec<String> {
     let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
     exe_guard.update_cache();
 
-    let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+    let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true, false);
     let mut scored: Vec<(i64, String)> = aliases
         .iter()
         .chain(reserved_words.iter())

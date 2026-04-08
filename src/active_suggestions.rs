@@ -467,7 +467,7 @@ impl ActiveSuggestions {
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len),
-            fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
+            fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true, false),
         };
 
         active_sug.apply_fuzzy_filter(word_under_cursor);

@@ -1,4 +1,3 @@
-use rand::prelude::*;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, StyledGrapheme};
@@ -6,6 +5,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+
+// PCG-style LCG constants (Knuth's MMIX / PCG family, 64-bit).
+const LCG_MULTIPLIER: u64 = 6364136223846793005;
+const LCG_INCREMENT: u64 = 1442695040888963407;
 
 /// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -643,6 +646,7 @@ struct MatrixAnimState {
     // tendrils[i] is the y position of the falling "tendril" in column i, or None if there is no tendril currently in that column
     // y might be off the screen but we still want to show the tail of the tendril until it fully disappears
     tendrils: Vec<Option<(usize, HashMap<usize, usize>)>>, // (current max y of the tendril, offsets for each y in the tendril to determine which char to show)
+    rng_state: u64,
 }
 
 impl MatrixAnimState {
@@ -650,6 +654,7 @@ impl MatrixAnimState {
         MatrixAnimState {
             last_update_time: std::time::Instant::now(),
             tendrils: vec![],
+            rng_state: 0x517cc1b727220a95,
         }
     }
 
@@ -678,12 +683,21 @@ impl MatrixAnimState {
 
         let blank_graph = StyledGrapheme::new(" ", ratatui::style::Style::default());
 
-        let mut rng = rand::rngs::StdRng::seed_from_u64(idx as u64);
+        // Simple seeded LCG for deterministic per-column character selection.
+        let mut lcg_state: u64 = (idx as u64)
+            .wrapping_mul(LCG_MULTIPLIER)
+            .wrapping_add(LCG_INCREMENT);
+        let mut lcg_next = move || -> u64 {
+            lcg_state = lcg_state
+                .wrapping_mul(LCG_MULTIPLIER)
+                .wrapping_add(LCG_INCREMENT);
+            lcg_state
+        };
 
         if let Some(Some((tendril_max_y, offsets))) = self.tendrils.get(idx) {
             let mut graphemes = vec![];
             for y in 0..=*tendril_max_y {
-                let char_indx = (rng.next_u32() as usize) + offsets.get(&y).cloned().unwrap_or(0);
+                let char_indx = (lcg_next() as usize) + offsets.get(&y).cloned().unwrap_or(0);
 
                 if y <= tendril_max_y.saturating_sub(Self::TENDRIL_MAX_LEN) {
                     graphemes.push(blank_graph.clone());
@@ -747,9 +761,23 @@ impl MatrixAnimState {
             if let Some((y, offsets)) = tendril {
                 *y += 1;
                 // Randomly change an offset for some y in the tendril to create a flickering effect
-                if rand::random::<f32>() < 0.9 {
-                    let rand_row = rand::random::<u64>() as usize % num_rows as usize;
-                    let rand_offset = rand::random::<u64>() as usize;
+                self.rng_state = self
+                    .rng_state
+                    .wrapping_mul(LCG_MULTIPLIER)
+                    .wrapping_add(LCG_INCREMENT);
+                let r0 = self.rng_state;
+                let flicker_prob = (r0 >> 33) as f32 / (u32::MAX as f32);
+                if flicker_prob < 0.9 {
+                    self.rng_state = self
+                        .rng_state
+                        .wrapping_mul(LCG_MULTIPLIER)
+                        .wrapping_add(LCG_INCREMENT);
+                    let rand_row = (self.rng_state >> 32) as usize % num_rows as usize;
+                    self.rng_state = self
+                        .rng_state
+                        .wrapping_mul(LCG_MULTIPLIER)
+                        .wrapping_add(LCG_INCREMENT);
+                    let rand_offset = self.rng_state as usize;
                     offsets.insert(rand_row, rand_offset);
                 }
             }
@@ -767,8 +795,12 @@ impl MatrixAnimState {
 
         // Spawn new tendrils with some probability
         for tendril in &mut self.tendrils {
-            let rand = rand::random::<f32>();
-            if tendril.is_none() && rand < 0.02 {
+            self.rng_state = self
+                .rng_state
+                .wrapping_mul(LCG_MULTIPLIER)
+                .wrapping_add(LCG_INCREMENT);
+            let spawn_prob = (self.rng_state >> 33) as f32 / (u32::MAX as f32);
+            if tendril.is_none() && spawn_prob < 0.02 {
                 *tendril = Some((0, HashMap::new()));
             }
         }
