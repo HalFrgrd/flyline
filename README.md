@@ -49,7 +49,7 @@ Download the latest `libflyline.so` for your system from [the releases page](htt
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
-flyline --run-tutorial
+flyline run-tutorial
 ```
 
 
@@ -339,17 +339,14 @@ Commands:
   set-color             Configure the colour palette.
   set-cursor            Configure the cursor appearance and animation.
   key                   Manage keybindings.
+  dump-logs             Dump in-memory logs to file.
+  stream-logs           Dump current logs to PATH and append new logs.
+  run-tutorial          Run the interactive tutorial for first-time users.
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
       --version
           Show version information
-
-      --dump-logs [<PATH>]
-          Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is created in the current directory
-
-      --stream-logs <PATH>
-          Dump current logs to PATH and append new logs. Use `stderr` to stream to standard error
 
       --log-level <LEVEL>
           Set the logging level
@@ -358,12 +355,6 @@ Options:
 
       --load-zsh-history [<PATH>]
           Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file; if omitted, defaults to $HOME/.zsh_history
-
-      --run-tutorial [<RUN_TUTORIAL>]
-          Run the interactive tutorial for first-time users.
-          Use `--run-tutorial false` to disable.
-          
-          [possible values: true, false]
 
       --show-animations [<SHOW_ANIMATIONS>]
           Show animations
@@ -381,15 +372,16 @@ Options:
           [possible values: true, false]
 
       --matrix-animation [<MATRIX_ANIMATION>]
-          Run matrix animation in the terminal background
-          
-          [possible values: true, false]
+          Run matrix animation in the terminal background. Use `on` to always show it, `off` to
+          disable it, or an integer number of seconds to show it after that many seconds of
+          inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a
+          value is equivalent to `on`.
 
       --frame-rate <FPS>
           Render frame rate in frames per second (1–120, default 30)
 
       --mouse-mode <MODE>
-          Mouse capture mode (disabled, simple, smart). Default is smart
+          Mouse capture mode (disabled, simple, smart). Default is smart.
 
           Possible values:
           - disabled: Never capture mouse events
