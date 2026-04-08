@@ -29,6 +29,33 @@ impl HistoryEntry {
             syntax_highlighted: OnceCell::new(),
         }
     }
+
+    pub fn get_syntax_highlighted(&self, palette: &Palette) -> &Vec<Line<'static>> {
+        self.syntax_highlighted.get_or_init(|| {
+            let mut parser = crate::dparser::DParser::from(&self.command as &str);
+            parser.walk_to_end();
+            let tokens = parser.into_tokens();
+            let formatted = crate::app::formated_buffer::format_buffer(
+                &tokens,
+                self.command.len(),
+                self.command.len(),
+                false,
+                Some(Box::new(crate::app::get_word_info)),
+                palette,
+            );
+            let mut lines: Vec<Line<'static>> = vec![];
+            let mut current_spans: Vec<Span<'static>> = vec![];
+            for part in &formatted.parts {
+                if matches!(part.token.token.kind, TokenKind::Newline) {
+                    lines.push(Line::from(std::mem::take(&mut current_spans)));
+                } else {
+                    current_spans.push(part.normal_span().clone());
+                }
+            }
+            lines.push(Line::from(current_spans));
+            lines
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -457,30 +484,7 @@ impl HistoryEntryFormatted {
     ) -> &Vec<Line<'static>> {
         self.command_spans.get_or_init(|| {
             let entry = &entries[self.entry_index];
-            let base_lines = entry.syntax_highlighted.get_or_init(|| {
-                let mut parser = crate::dparser::DParser::from(&entry.command as &str);
-                parser.walk_to_end();
-                let tokens = parser.into_tokens();
-                let formatted = crate::app::formated_buffer::format_buffer(
-                    &tokens,
-                    entry.command.len(),
-                    entry.command.len(),
-                    false,
-                    Some(Box::new(crate::app::get_word_info)),
-                    palette,
-                );
-                let mut lines: Vec<Line<'static>> = vec![];
-                let mut current_spans: Vec<Span<'static>> = vec![];
-                for part in &formatted.parts {
-                    if matches!(part.token.token.kind, TokenKind::Newline) {
-                        lines.push(Line::from(std::mem::take(&mut current_spans)));
-                    } else {
-                        current_spans.push(part.normal_span().clone());
-                    }
-                }
-                lines.push(Line::from(current_spans));
-                lines
-            });
+            let base_lines = entry.get_syntax_highlighted(palette);
             palette.apply_match_indices_to_lines(base_lines, &self.match_indices)
         })
     }
