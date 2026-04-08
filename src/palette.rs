@@ -387,6 +387,51 @@ impl Palette {
         Style::new().bg(Color::Rgb(intensity, intensity, intensity))
     }
 
+    /// Syntax-highlight `command` using the dparser and return one `Line` per
+    /// newline in the source string.  No cursor highlighting and no PATH lookup
+    /// (command words are coloured as unrecognised).  Used for static display of
+    /// history entries and other places where the command is not being edited.
+    pub fn syntax_highlight_command(&self, command: &str) -> Vec<Line<'static>> {
+        use crate::dparser::DParser;
+        use flash::lexer::TokenKind;
+
+        let mut parser = DParser::from(command);
+        parser.walk_to_end();
+        let tokens = parser.into_tokens();
+
+        let mut lines: Vec<Line<'static>> = vec![];
+        let mut current_spans: Vec<Span<'static>> = vec![];
+
+        for token in &tokens {
+            if matches!(token.token.kind, TokenKind::Newline) {
+                lines.push(Line::from(std::mem::take(&mut current_spans)));
+                continue;
+            }
+
+            let style = if token.annotations.is_env_var {
+                self.env_var()
+            } else if token.annotations.command_word.is_some() {
+                self.unrecognised_command()
+            } else if token.annotations.is_inside_single_quotes
+                || token.token.kind == TokenKind::SingleQuote
+            {
+                self.single_quoted_text()
+            } else if token.annotations.is_inside_double_quotes
+                || token.token.kind == TokenKind::Quote
+            {
+                self.double_quoted_text()
+            } else if token.annotations.is_comment {
+                self.comment()
+            } else {
+                self.normal_text()
+            };
+
+            current_spans.push(Span::styled(token.token.value.clone(), style));
+        }
+        lines.push(Line::from(current_spans));
+        lines
+    }
+
     pub fn highlight_maching_indices(
         &self,
         s: &str,

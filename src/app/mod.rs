@@ -1175,6 +1175,7 @@ impl<'a> App<'a> {
     /// command row; subsequent lines carry the continuation prefix.
     fn get_lines_for_history_entry(
         formatted_entry: &HistoryEntryFormatted,
+        entries: &[HistoryEntry],
         entry_idx: usize,
         fuzzy_search_index: usize,
         num_digits_for_index: usize,
@@ -1185,7 +1186,7 @@ impl<'a> App<'a> {
     ) -> Vec<Line<'static>> {
         let is_selected = fuzzy_search_index == entry_idx;
 
-        let entry = &formatted_entry.entry;
+        let entry = &entries[formatted_entry.entry_index];
         let timeago_str = entry
             .timestamp
             .map(Self::ts_to_timeago_string_5chars)
@@ -1199,7 +1200,7 @@ impl<'a> App<'a> {
             }
         };
 
-        let formatted_text = formatted_entry.command_spans(&palette);
+        let formatted_text = formatted_entry.command_spans(entries, palette);
 
         let total_logical_lines = formatted_text.len();
         let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
@@ -1636,16 +1637,17 @@ impl<'a> App<'a> {
                 // Use explicit field borrows instead of `select_fuzzy_history_manager_mut` to allow
                 // split-borrowing: `fuzzy_results` borrows only the specific manager field while
                 // `self.settings.color_palette` (a different field) remains accessible below.
-                let (fuzzy_results, fuzzy_search_index, num_results, num_searched) = match source {
-                    FuzzyHistorySource::PastCommands => &mut self.history_manager,
-                    FuzzyHistorySource::CancelledCommands => {
-                        &mut self.settings.cancelled_command_history_manager
+                let (entries, fuzzy_results, fuzzy_search_index, num_results, num_searched) =
+                    match source {
+                        FuzzyHistorySource::PastCommands => &mut self.history_manager,
+                        FuzzyHistorySource::CancelledCommands => {
+                            &mut self.settings.cancelled_command_history_manager
+                        }
+                        FuzzyHistorySource::AgentPrompts => {
+                            &mut self.settings.agent_prompt_history_manager
+                        }
                     }
-                    FuzzyHistorySource::AgentPrompts => {
-                        &mut self.settings.agent_prompt_history_manager
-                    }
-                }
-                .get_fuzzy_search_results(&history_buffer, num_rows_for_results as usize);
+                    .get_fuzzy_search_results(&history_buffer, num_rows_for_results as usize);
 
                 let starting_row = content.cursor_position().row;
 
@@ -1673,6 +1675,7 @@ impl<'a> App<'a> {
                     }
                     for line in Self::get_lines_for_history_entry(
                         formatted_entry,
+                        entries,
                         entry_idx,
                         fuzzy_search_index,
                         num_digits_for_index,
