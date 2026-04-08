@@ -387,6 +387,41 @@ impl Palette {
         Style::new().bg(Color::Rgb(intensity, intensity, intensity))
     }
 
+    pub fn apply_match_indices_to_lines(
+        &self,
+        lines: &[Line<'static>],
+        match_indices: &[usize],
+    ) -> Vec<Line<'static>> {
+        let mut result = Vec::with_capacity(lines.len());
+        let mut global_char_offset = 0usize;
+        let match_style = self.matching_char();
+
+        for line in lines {
+            let mut new_spans = Vec::new();
+            for span in &line.spans {
+                let span_start_char = global_char_offset;
+                for (is_matching, group) in
+                    &span.content.chars().enumerate().chunk_by(|(char_idx, _)| {
+                        match_indices.contains(&(span_start_char + char_idx))
+                    })
+                {
+                    let s: String = group.map(|(_, c)| c).collect();
+                    let style = if is_matching {
+                        span.style.patch(match_style)
+                    } else {
+                        span.style
+                    };
+                    new_spans.push(Span::styled(s, style));
+                }
+                global_char_offset += span.content.chars().count();
+            }
+            result.push(Line::from(new_spans));
+            global_char_offset += 1; // +1 for the '\n' separator between lines
+        }
+
+        result
+    }
+
     pub fn highlight_maching_indices(
         &self,
         s: &str,

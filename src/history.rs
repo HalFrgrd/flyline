@@ -6,8 +6,9 @@ use crate::bash_symbols;
 use crate::palette::Palette;
 use crate::settings::Settings;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
+use flash::lexer::TokenKind;
 use itertools::Itertools;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
@@ -16,6 +17,45 @@ pub struct HistoryEntry {
     pub timestamp: Option<u64>,
     pub index: usize,
     pub command: String,
+    syntax_highlighted: OnceCell<Vec<Line<'static>>>,
+}
+
+impl HistoryEntry {
+    fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
+        HistoryEntry {
+            timestamp,
+            index,
+            command,
+            syntax_highlighted: OnceCell::new(),
+        }
+    }
+
+    pub fn get_syntax_highlighted(&self, palette: &Palette) -> &Vec<Line<'static>> {
+        self.syntax_highlighted.get_or_init(|| {
+            let mut parser = crate::dparser::DParser::from(&self.command as &str);
+            parser.walk_to_end();
+            let tokens = parser.into_tokens();
+            let formatted = crate::app::formated_buffer::format_buffer(
+                &tokens,
+                self.command.len(),
+                self.command.len(),
+                false,
+                Some(Box::new(crate::app::get_word_info)),
+                palette,
+            );
+            let mut lines: Vec<Line<'static>> = vec![];
+            let mut current_spans: Vec<Span<'static>> = vec![];
+            for part in &formatted.parts {
+                if matches!(part.token.token.kind, TokenKind::Newline) {
+                    lines.push(Line::from(std::mem::take(&mut current_spans)));
+                } else {
+                    current_spans.push(part.normal_span().clone());
+                }
+            }
+            lines.push(Line::from(current_spans));
+            lines
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -98,11 +138,7 @@ impl HistoryManager {
                         None
                     };
 
-                    let entry = HistoryEntry {
-                        timestamp,
-                        index: index as usize,
-                        command: command_str,
-                    };
+                    let entry = HistoryEntry::new(timestamp, index as usize, command_str);
                     res.push(entry);
                 }
 
@@ -233,11 +269,7 @@ impl HistoryManager {
             return;
         }
         let index = self.entries.len();
-        self.entries.push(HistoryEntry {
-            timestamp: None,
-            index,
-            command,
-        });
+        self.entries.push(HistoryEntry::new(None, index, command));
         self.index = self.entries.len();
         self.fuzzy_search.clear_cache();
     }
@@ -264,11 +296,7 @@ impl HistoryManager {
                 my_ts
             } else {
                 // It's a command line
-                let entry = HistoryEntry {
-                    timestamp: my_ts,
-                    index: res.len(),
-                    command: l.to_string(),
-                };
+                let entry = HistoryEntry::new(my_ts, res.len(), l.to_string());
                 res.push(entry);
                 None
             }
@@ -310,11 +338,7 @@ impl HistoryManager {
                 (None, line.to_string())
             };
 
-            let entry = HistoryEntry {
-                timestamp,
-                index: res.len(),
-                command,
-            };
+            let entry = HistoryEntry::new(timestamp, res.len(), command);
             res.push(entry);
         }
 
@@ -375,9 +399,17 @@ impl HistoryManager {
         &mut self,
         current_cmd: &str,
         max_visible: usize,
-    ) -> (&[HistoryEntryFormatted], usize, usize, usize) {
-        self.fuzzy_search
-            .get_fuzzy_search_results(&self.entries, current_cmd, max_visible)
+    ) -> (
+        &[HistoryEntry],
+        &[HistoryEntryFormatted],
+        usize,
+        usize,
+        usize,
+    ) {
+        let (formatted, idx, num_results, num_searched) = self
+            .fuzzy_search
+            .get_fuzzy_search_results(&self.entries, current_cmd, max_visible);
+        (&self.entries, formatted, idx, num_results, num_searched)
     }
 
     /// Pre-warm the fuzzy search cache when entering fuzzy-search mode.
@@ -393,7 +425,7 @@ impl HistoryManager {
     }
 
     pub fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
-        self.fuzzy_search.accept_fuzzy_search_result()
+        self.fuzzy_search.accept_fuzzy_search_result(&self.entries)
     }
 
     pub fn fuzzy_search_set_idx(&mut self, idx: usize) {
@@ -409,7 +441,7 @@ impl HistoryManager {
 
 #[derive(Debug)]
 pub(crate) struct HistoryEntryFormatted {
-    pub entry: HistoryEntry,
+    pub entry_index: usize,
     pub score: i64,
     pub match_indices: Vec<usize>,
     command_spans: OnceCell<Vec<Line<'static>>>,
@@ -435,9 +467,9 @@ impl std::cmp::PartialOrd for HistoryEntryFormatted {
 }
 
 impl HistoryEntryFormatted {
-    fn new(entry: HistoryEntry, score: i64, match_indices: Vec<usize>) -> Self {
+    fn new(entry_index: usize, score: i64, match_indices: Vec<usize>) -> Self {
         HistoryEntryFormatted {
-            entry,
+            entry_index,
             score,
             match_indices,
             command_spans: OnceCell::new(),
@@ -445,13 +477,15 @@ impl HistoryEntryFormatted {
         }
     }
 
-    pub fn command_spans(&self, palette: &Palette) -> &Vec<Line<'static>> {
+    pub fn command_spans(
+        &self,
+        entries: &[HistoryEntry],
+        palette: &Palette,
+    ) -> &Vec<Line<'static>> {
         self.command_spans.get_or_init(|| {
-            palette.highlight_maching_indices(
-                &self.entry.command,
-                &self.match_indices,
-                palette.normal_text(),
-            )
+            let entry = &entries[self.entry_index];
+            let base_lines = entry.get_syntax_highlighted(palette);
+            palette.apply_match_indices_to_lines(base_lines, &self.match_indices)
         })
     }
 }
@@ -490,6 +524,7 @@ impl FuzzyHistorySearch {
     fn merge_sort_and_window_dedup(
         &mut self,
         sorted_new_cache_entries: Vec<HistoryEntryFormatted>,
+        entries: &[HistoryEntry],
     ) {
         if sorted_new_cache_entries.is_empty() {
             return;
@@ -503,12 +538,12 @@ impl FuzzyHistorySearch {
 
         let mut deduped: Vec<HistoryEntryFormatted> = Vec::with_capacity(self.cache.len());
         for entry in self.cache.drain(..) {
-            let entry_trimmed = entry.entry.command.trim();
+            let entry_trimmed = entries[entry.entry_index].command.trim();
             let is_duplicate = deduped
                 .iter()
                 .rev()
                 .take(Self::DUPLICATE_CHECK_WINDOW)
-                .any(|e| e.entry.command.trim() == entry_trimmed);
+                .any(|e| entries[e.entry_index].command.trim() == entry_trimmed);
 
             if !is_duplicate {
                 deduped.push(entry);
@@ -580,13 +615,13 @@ impl FuzzyHistorySearch {
         )
     }
 
-    fn accept_fuzzy_search_result(&self) -> Option<&HistoryEntry> {
-        if self.cache.is_empty() {
-            return None;
-        }
+    fn accept_fuzzy_search_result<'a>(
+        &self,
+        entries: &'a [HistoryEntry],
+    ) -> Option<&'a HistoryEntry> {
         self.cache
             .get(self.cache_index)
-            .map(|formatted| &formatted.entry)
+            .map(|formatted| &entries[formatted.entry_index])
     }
 
     fn set_fuzzy_search_idx(&mut self, idx: usize) {
@@ -635,23 +670,27 @@ impl FuzzyHistorySearch {
         let mut new_cache_entries = vec![];
 
         // Process as many entries as possible within the time budget
-        for (idx, entry) in entries.iter().rev().skip(self.global_index).enumerate() {
+        for (iter_idx, _) in entries.iter().rev().skip(self.global_index).enumerate() {
             // Check if we've exceeded the time budget every TIME_CHECK_INTERVAL entries
-            if idx % Self::TIME_CHECK_INTERVAL == 0 && start.elapsed() >= time_budget {
+            if iter_idx % Self::TIME_CHECK_INTERVAL == 0 && start.elapsed() >= time_budget {
                 break;
             }
+
+            // entry_index in the original entries slice: entries are iterated in reverse,
+            // so the current entry is at entries.len() - 1 - self.global_index (before increment).
+            let entry_index = entries.len() - 1 - self.global_index;
+            let entry = &entries[entry_index];
 
             if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
                 && score >= score_threshold
             {
-                // Before inserting, check if any of the 50 latest cache entries match after trimming
-                new_cache_entries.push(HistoryEntryFormatted::new(entry.clone(), score, indices));
+                new_cache_entries.push(HistoryEntryFormatted::new(entry_index, score, indices));
             }
             self.global_index += 1;
         }
 
         new_cache_entries.sort();
-        self.merge_sort_and_window_dedup(new_cache_entries);
+        self.merge_sort_and_window_dedup(new_cache_entries, entries);
 
         if start_index != self.global_index {
             let duration = start.elapsed();
@@ -744,16 +783,17 @@ git status
     fn test_merge_sort_and_window_dedup_respects_window() {
         let mut search = FuzzyHistorySearch::new();
 
+        // Build a flat entries table that the formatted entries will index into.
+        // Use entries.len() when creating each entry so the stored index always
+        // matches the position in the vec.
+        let mut entries: Vec<HistoryEntry> = Vec::new();
+        let seed_idx = entries.len();
+        entries.push(HistoryEntry::new(None, seed_idx, "echo hi".to_string()));
+
         // Pre-populate cache with a high-score "echo hi".
-        search.cache.push(HistoryEntryFormatted::new(
-            HistoryEntry {
-                timestamp: None,
-                index: 0,
-                command: "echo hi".to_string(),
-            },
-            100,
-            vec![],
-        ));
+        search
+            .cache
+            .push(HistoryEntryFormatted::new(seed_idx, 100, vec![]));
 
         // Add entries sorted by score after merge. We place another "echo hi" far enough away
         // (more than DUPLICATE_CHECK_WINDOW ranks lower) so it should NOT be removed.
@@ -761,42 +801,28 @@ git status
 
         // Many unique commands that will sit between the two duplicates.
         for i in 0..(FuzzyHistorySearch::DUPLICATE_CHECK_WINDOW + 5) {
-            new_entries.push(HistoryEntryFormatted::new(
-                HistoryEntry {
-                    timestamp: None,
-                    index: i + 1,
-                    command: format!("cmd_{i}"),
-                },
-                99 - (i as i64),
-                vec![],
-            ));
+            let idx = entries.len();
+            entries.push(HistoryEntry::new(None, idx, format!("cmd_{i}")));
+            new_entries.push(HistoryEntryFormatted::new(idx, 99 - (i as i64), vec![]));
         }
 
         // Lower-score duplicate; should survive because it's outside the window.
-        new_entries.push(HistoryEntryFormatted::new(
-            HistoryEntry {
-                timestamp: None,
-                index: 999,
-                command: "  echo hi  ".to_string(),
-            },
-            1,
-            vec![],
+        let far_dup_idx = entries.len();
+        entries.push(HistoryEntry::new(
+            None,
+            far_dup_idx,
+            "  echo hi  ".to_string(),
         ));
+        new_entries.push(HistoryEntryFormatted::new(far_dup_idx, 1, vec![]));
 
         // Another near-duplicate (close in rank): should be removed.
-        new_entries.push(HistoryEntryFormatted::new(
-            HistoryEntry {
-                timestamp: None,
-                index: 1000,
-                command: "echo hi".to_string(),
-            },
-            98,
-            vec![],
-        ));
+        let near_dup_idx = entries.len();
+        entries.push(HistoryEntry::new(None, near_dup_idx, "echo hi".to_string()));
+        new_entries.push(HistoryEntryFormatted::new(near_dup_idx, 98, vec![]));
 
         new_entries.sort();
 
-        search.merge_sort_and_window_dedup(new_entries);
+        search.merge_sort_and_window_dedup(new_entries, &entries);
 
         // After sorting/merging we should have exactly 2 "echo hi" entries:
         // - the original high-score one
@@ -804,7 +830,7 @@ git status
         let echo_hi_count = search
             .cache
             .iter()
-            .filter(|e| e.entry.command.trim() == "echo hi")
+            .filter(|e| entries[e.entry_index].command.trim() == "echo hi")
             .count();
 
         assert_eq!(echo_hi_count, 2);
