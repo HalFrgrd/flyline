@@ -895,15 +895,13 @@ impl Flyline {
                             log::info!("Cursor backend set to {:?}", b);
                             self.settings.cursor_config.backend = b;
                             if b == cursor::CursorBackend::Terminal {
-                                if interpolate.is_some()
-                                    || interpolate_easing.is_some()
-                                    || style.is_some()
+                                if style.is_some()
                                     || effect.is_some()
                                     || effect_speed.is_some()
                                     || effect_easing.is_some()
                                 {
                                     eprintln!(
-                                        "flyline set-cursor: interpolation, style, and effect options are ignored when --backend is set to 'terminal'"
+                                        "flyline set-cursor: --style, --effect, --effect-speed, and --effect-easing require --backend flyline"
                                     );
                                     return bash_symbols::BuiltinExitCode::Usage as c_int;
                                 }
@@ -937,6 +935,12 @@ impl Flyline {
                         }
 
                         if let Some(style_str) = style {
+                            if self.settings.cursor_config.backend
+                                == cursor::CursorBackend::Terminal
+                            {
+                                eprintln!("flyline set-cursor: --style requires --backend flyline");
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
                             match palette::parse_cursor_style_str(&style_str) {
                                 Ok(s) => {
                                     log::info!("Cursor style set to {:?}", s);
@@ -953,6 +957,14 @@ impl Flyline {
                         }
 
                         if let Some(eff) = effect {
+                            if self.settings.cursor_config.backend
+                                == cursor::CursorBackend::Terminal
+                            {
+                                eprintln!(
+                                    "flyline set-cursor: --effect requires --backend flyline"
+                                );
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
                             if eff == cursor::CursorEffect::Fade
                                 && let CursorStyleConfig::Custom(style) =
                                     self.settings.cursor_config.style
@@ -972,6 +984,14 @@ impl Flyline {
                         }
 
                         if let Some(speed) = effect_speed {
+                            if self.settings.cursor_config.backend
+                                == cursor::CursorBackend::Terminal
+                            {
+                                eprintln!(
+                                    "flyline set-cursor: --effect-speed requires --backend flyline"
+                                );
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
                             if speed > 0.0 {
                                 log::info!("Cursor effect speed set to {}", speed);
                                 self.settings.cursor_config.effect_speed = speed;
@@ -985,6 +1005,14 @@ impl Flyline {
                         }
 
                         if let Some(easing) = effect_easing {
+                            if self.settings.cursor_config.backend
+                                == cursor::CursorBackend::Terminal
+                            {
+                                eprintln!(
+                                    "flyline set-cursor: --effect-easing requires --backend flyline"
+                                );
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
                             log::info!("Cursor effect easing set to {:?}", easing);
                             self.settings.cursor_config.effect_easing = easing;
                         }
