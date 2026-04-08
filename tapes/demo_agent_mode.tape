@@ -12,7 +12,7 @@ Type `export PATH="/home/john/bin/:$PATH" && clear`
 Enter
 Show
 
-Type `flyline agent-mode --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \`
+Type `flyline set-agent-mode --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \`
 Enter
 Type `  --trigger-prefix "ai: " \`
 Enter

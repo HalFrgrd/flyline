@@ -156,13 +156,13 @@ enum Commands {
     ///
     /// Examples:
     ///   (N.B. `--command` should be the final flag since it consumes all remaining arguments)
-    ///   flyline agent-mode \
+    ///   flyline set-agent-mode \
     ///     --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
     ///     --command copilot --reasoning-effort low --prompt
-    ///   flyline agent-mode --trigger-prefix ": " --command copilot --reasoning-effort low --prompt
+    ///   flyline set-agent-mode --trigger-prefix ": " --command copilot --reasoning-effort low --prompt
     ///
     /// See https://github.com/HalFrgrd/flyline/blob/master/examples/agent_mode.sh for more details and example usage.
-    #[command(name = "agent-mode", verbatim_doc_comment)]
+    #[command(name = "set-agent-mode", verbatim_doc_comment)]
     AgentMode {
         /// Optional system prompt prepended to the buffer.
         /// The subprocess receives "<system-prompt>\n<buffer>" as its final argument.

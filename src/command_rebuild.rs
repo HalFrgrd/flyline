@@ -603,7 +603,7 @@ mod tests {
     const FLYLINE_HELP: &str = r#"Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
-  agent-mode            Configure AI agent mode.
+  set-agent-mode        Configure AI agent mode.
   create-prompt-anim    Create a custom prompt animation.
   create-prompt-widget  Create a custom prompt widget.
   set-color             Configure the colour palette.
@@ -666,7 +666,7 @@ Read more at https://github.com/HalFrgrd/flyline
 
         // Subcommands and their descriptions.
         let subs = subcommand_names(&cmd);
-        assert!(subs.contains(&"agent-mode"));
+        assert!(subs.contains(&"set-agent-mode"));
         assert!(subs.contains(&"create-prompt-anim"));
         assert!(subs.contains(&"set-color"));
         assert!(subs.contains(&"key"));
@@ -674,7 +674,7 @@ Read more at https://github.com/HalFrgrd/flyline
         assert!(subs.contains(&"stream-logs"));
         assert!(subs.contains(&"run-tutorial"));
         assert_eq!(
-            subcommand_by_name(&cmd, "agent-mode").and_then(|s| s.description.as_deref()),
+            subcommand_by_name(&cmd, "set-agent-mode").and_then(|s| s.description.as_deref()),
             Some("Configure AI agent mode.")
         );
         assert_eq!(

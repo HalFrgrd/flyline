@@ -333,7 +333,7 @@ The block below is auto-generated from `flyline --help`:
 Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
-  agent-mode            Configure AI agent mode.
+  set-agent-mode        Configure AI agent mode.
   create-prompt-anim    Create a custom prompt animation.
   create-prompt-widget  Create a custom prompt widget.
   set-color             Configure the colour palette.
