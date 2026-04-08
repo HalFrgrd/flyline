@@ -603,21 +603,20 @@ mod tests {
     const FLYLINE_HELP: &str = r#"Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
-  agent-mode   Configure AI agent mode.
-  create-anim  Create a custom prompt animation.
-  set-color    Configure the colour palette.
-  key          Manage keybindings.
-  help         Print this message or the help of the given subcommand(s)
+  set-agent-mode        Configure AI agent mode.
+  create-prompt-anim    Create a custom prompt animation.
+  create-prompt-widget  Create a custom prompt widget.
+  set-color             Configure the colour palette.
+  set-cursor            Configure the cursor appearance and animation.
+  key                   Manage keybindings.
+  dump-logs             Dump in-memory logs to file.
+  stream-logs           Dump current logs to PATH and append new logs.
+  run-tutorial          Run the interactive tutorial for first-time users.
+  help                  Print this message or the help of the given subcommand(s)
 
 Options:
       --version
           Show version information
-
-      --dump-logs [<PATH>]
-          Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is created in the current directory
-
-      --stream-logs <PATH>
-          Dump current logs to PATH and append new logs. Use `stderr` to stream to standard error
 
       --log-level <LEVEL>
           Set the logging level
@@ -626,11 +625,6 @@ Options:
 
       --load-zsh-history [<PATH>]
           Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file; if omitted, defaults to $HOME/.zsh_history
-
-      --tutorial-mode [<TUTORIAL_MODE>]
-          Enable or disable tutorial mode with hints for first-time users. Use `--tutorial-mode false` to disable
-          
-          [possible values: true, false]
 
       --show-animations [<SHOW_ANIMATIONS>]
           Show animations
@@ -647,24 +641,17 @@ Options:
           
           [possible values: true, false]
 
-      --use-term-emulator-cursor [<USE_TERM_EMULATOR_CURSOR>]
-          Use the terminal emulator's cursor instead of rendering a custom cursor
-
       --matrix-animation [<MATRIX_ANIMATION>]
-          Run matrix animation in the terminal background
-          
-          [possible values: true, false]
+          Run matrix animation in the terminal background. Use `on` to always show it, `off` to disable it, or an integer number of seconds to show it after that many seconds of inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a value is equivalent to `on`
 
       --frame-rate <FPS>
           Render frame rate in frames per second (1–120, default 30)
 
       --mouse-mode <MODE>
-          Mouse capture mode (disabled, simple, smart). Default is smart
+          Mouse capture mode (disabled, simple, smart). Default is smart.
 
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
-          Send shell integration escape codes (OSC 133 / OSC 633)
-          
-          [possible values: true, false]
+          Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
 
   -h, --help
           Print help (see a summary with '-h')
@@ -679,23 +666,45 @@ Read more at https://github.com/HalFrgrd/flyline
 
         // Subcommands and their descriptions.
         let subs = subcommand_names(&cmd);
-        assert!(subs.contains(&"agent-mode"));
-        assert!(subs.contains(&"create-anim"));
+        assert!(subs.contains(&"set-agent-mode"));
+        assert!(subs.contains(&"create-prompt-anim"));
         assert!(subs.contains(&"set-color"));
         assert!(subs.contains(&"key"));
+        assert!(subs.contains(&"dump-logs"));
+        assert!(subs.contains(&"stream-logs"));
+        assert!(subs.contains(&"run-tutorial"));
         assert_eq!(
-            subcommand_by_name(&cmd, "agent-mode").and_then(|s| s.description.as_deref()),
+            subcommand_by_name(&cmd, "set-agent-mode").and_then(|s| s.description.as_deref()),
             Some("Configure AI agent mode.")
         );
         assert_eq!(
-            subcommand_by_name(&cmd, "create-anim").and_then(|s| s.description.as_deref()),
-            Some("Create a custom prompt animation.")
+            subcommand_by_name(&cmd, "dump-logs").and_then(|s| s.description.as_deref()),
+            Some("Dump in-memory logs to file.")
+        );
+        assert_eq!(
+            subcommand_by_name(&cmd, "stream-logs").and_then(|s| s.description.as_deref()),
+            Some("Dump current logs to PATH and append new logs.")
+        );
+        assert_eq!(
+            subcommand_by_name(&cmd, "run-tutorial").and_then(|s| s.description.as_deref()),
+            Some("Run the interactive tutorial for first-time users.")
         );
 
         // Flag names.
         let longs = long_names(&cmd);
         assert!(longs.contains(&"--version"));
-        assert!(longs.contains(&"--dump-logs"));
+        assert!(
+            !longs.contains(&"--dump-logs"),
+            "--dump-logs should be a subcommand now"
+        );
+        assert!(
+            !longs.contains(&"--stream-logs"),
+            "--stream-logs should be a subcommand now"
+        );
+        assert!(
+            !longs.contains(&"--run-tutorial"),
+            "--run-tutorial should be a subcommand now"
+        );
         assert!(longs.contains(&"--log-level"));
         assert!(longs.contains(&"--frame-rate"));
         assert!(longs.contains(&"--mouse-mode"));
@@ -732,7 +741,6 @@ Read more at https://github.com/HalFrgrd/flyline
     }
 
     // ── flyline create-anim --help (clap) ────────────────────────────────────
-
     const FLYLINE_CREATE_ANIM_HELP: &str = r#"Create a custom prompt animation.
 
 Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced

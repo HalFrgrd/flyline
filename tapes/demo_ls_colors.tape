@@ -22,5 +22,5 @@ Sleep 2000ms
 #Enter
 #Enter
 #Sleep 500ms
-#Type "cd ~ && flyline --dump-logs flyline_ls_colors.log"
+#Type "cd ~ && flyline dump-logs flyline_ls_colors.log"
 #Enter

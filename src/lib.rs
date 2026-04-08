@@ -103,13 +103,6 @@ struct FlylineArgs {
     /// Show version information
     #[arg(long)]
     version: bool,
-    /// Dump in-memory logs to file. Optionally specify a PATH; if omitted, a timestamped file is
-    /// created in the current directory
-    #[arg(long = "dump-logs", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
-    dump_logs: Option<String>,
-    /// Dump current logs to PATH and append new logs. Use `stderr` to stream to standard error
-    #[arg(long = "stream-logs", value_name = "PATH")]
-    stream_logs: Option<String>,
     /// Set the logging level
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<LogLevel>,
@@ -117,10 +110,7 @@ struct FlylineArgs {
     /// file; if omitted, defaults to $HOME/.zsh_history
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
-    /// Run the interactive tutorial for first-time users.
-    /// Use `--run-tutorial false` to disable.
-    #[arg(long = "run-tutorial", default_missing_value = "true", num_args = 0..=1)]
-    run_tutorial: Option<bool>,
+
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
@@ -166,13 +156,13 @@ enum Commands {
     ///
     /// Examples:
     ///   (N.B. `--command` should be the final flag since it consumes all remaining arguments)
-    ///   flyline agent-mode \
+    ///   flyline set-agent-mode \
     ///     --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
     ///     --command copilot --reasoning-effort low --prompt
-    ///   flyline agent-mode --trigger-prefix ": " --command copilot --reasoning-effort low --prompt
+    ///   flyline set-agent-mode --trigger-prefix ": " --command copilot --reasoning-effort low --prompt
     ///
     /// See https://github.com/HalFrgrd/flyline/blob/master/examples/agent_mode.sh for more details and example usage.
-    #[command(name = "agent-mode", verbatim_doc_comment)]
+    #[command(name = "set-agent-mode", verbatim_doc_comment)]
     AgentMode {
         /// Optional system prompt prepended to the buffer.
         /// The subprocess receives "<system-prompt>\n<buffer>" as its final argument.
@@ -380,6 +370,43 @@ enum Commands {
         #[command(subcommand)]
         subcommand: KeySubcommands,
     },
+    /// Dump in-memory logs to file.
+    ///
+    /// Optionally specify a PATH; if omitted, a timestamped file is created in the current directory.
+    ///
+    /// Examples:
+    ///   flyline dump-logs
+    ///   flyline dump-logs /tmp/flyline.log
+    #[command(name = "dump-logs", verbatim_doc_comment)]
+    DumpLogs {
+        /// Path to write logs to. If omitted, a timestamped file is created in the current directory.
+        path: Option<String>,
+    },
+    /// Dump current logs to PATH and append new logs.
+    ///
+    /// Use `stderr` to stream to standard error.
+    ///
+    /// Examples:
+    ///   flyline stream-logs /tmp/flyline.log
+    ///   flyline stream-logs stderr
+    #[command(name = "stream-logs", verbatim_doc_comment)]
+    StreamLogs {
+        /// Path to write logs to. Use `stderr` to stream to standard error.
+        path: String,
+    },
+    /// Run the interactive tutorial for first-time users.
+    ///
+    /// Pass `false` to disable the tutorial.
+    ///
+    /// Examples:
+    ///   flyline run-tutorial
+    ///   flyline run-tutorial false
+    #[command(name = "run-tutorial", verbatim_doc_comment)]
+    RunTutorial {
+        /// Enable or disable the tutorial. Defaults to `true`.
+        #[arg(default_missing_value = "true", num_args = 0..=1)]
+        enabled: Option<bool>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -559,25 +586,6 @@ impl Flyline {
                     );
                 }
 
-                if let Some(ref path) = parsed.dump_logs {
-                    let path_opt = if path.is_empty() {
-                        None
-                    } else {
-                        Some(std::path::PathBuf::from(path))
-                    };
-                    match logging::dump_logs(path_opt) {
-                        Ok(path) => println!("Flyline logs dumped to {}", path.display()),
-                        Err(e) => eprintln!("Failed to dump logs: {}", e),
-                    }
-                }
-
-                if let Some(ref path) = parsed.stream_logs {
-                    match logging::stream_logs(path.into()) {
-                        Ok(path) => println!("Flyline logs streaming to {}", path.display()),
-                        Err(e) => eprintln!("Failed to stream logs: {}", e),
-                    }
-                }
-
                 if let Some(ref level) = parsed.log_level {
                     let filter = match level {
                         LogLevel::Error => log::LevelFilter::Error,
@@ -591,16 +599,6 @@ impl Flyline {
 
                 if let Some(path) = parsed.load_zsh_history {
                     self.settings.zsh_history_path = Some(path);
-                }
-
-                if let Some(enabled) = parsed.run_tutorial {
-                    log::info!("Run tutorial set to {}", enabled);
-                    self.settings.run_tutorial = enabled;
-                    if enabled {
-                        self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
-                    } else {
-                        self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
-                    }
                 }
 
                 if let Some(enabled) = parsed.show_animations {
@@ -882,6 +880,29 @@ impl Flyline {
                         }
                     },
                     None => {}
+                    Some(Commands::DumpLogs { path }) => {
+                        let path_opt = path.map(std::path::PathBuf::from);
+                        match logging::dump_logs(path_opt) {
+                            Ok(path) => println!("Flyline logs dumped to {}", path.display()),
+                            Err(e) => eprintln!("Failed to dump logs: {}", e),
+                        }
+                    }
+                    Some(Commands::StreamLogs { path }) => {
+                        match logging::stream_logs(path.as_str().into()) {
+                            Ok(path) => println!("Flyline logs streaming to {}", path.display()),
+                            Err(e) => eprintln!("Failed to stream logs: {}", e),
+                        }
+                    }
+                    Some(Commands::RunTutorial { enabled }) => {
+                        let enabled = enabled.unwrap_or(true);
+                        log::info!("Run tutorial set to {}", enabled);
+                        self.settings.run_tutorial = enabled;
+                        if enabled {
+                            self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
+                        } else {
+                            self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
+                        }
+                    }
                     Some(Commands::SetCursor {
                         backend,
                         interpolate,
