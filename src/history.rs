@@ -680,9 +680,9 @@ impl FuzzyHistorySearch {
         let mut new_cache_entries = vec![];
 
         // Process as many entries as possible within the time budget
-        for (idx, _) in entries.iter().rev().skip(self.global_index).enumerate() {
+        for (iter_idx, _) in entries.iter().rev().skip(self.global_index).enumerate() {
             // Check if we've exceeded the time budget every TIME_CHECK_INTERVAL entries
-            if idx % Self::TIME_CHECK_INTERVAL == 0 && start.elapsed() >= time_budget {
+            if iter_idx % Self::TIME_CHECK_INTERVAL == 0 && start.elapsed() >= time_budget {
                 break;
             }
 
@@ -794,28 +794,16 @@ git status
         let mut search = FuzzyHistorySearch::new();
 
         // Build a flat entries table that the formatted entries will index into.
-        // Index 0: "echo hi" (high-score seed already in cache)
-        // Indices 1..=DUPLICATE_CHECK_WINDOW+5: unique "cmd_i" commands
-        // Index DUPLICATE_CHECK_WINDOW+6: "  echo hi  " (far-away duplicate, should survive)
-        // Index DUPLICATE_CHECK_WINDOW+7: "echo hi" (near-duplicate, should be removed)
+        // Use entries.len() when creating each entry so the stored index always
+        // matches the position in the vec.
         let mut entries: Vec<HistoryEntry> = Vec::new();
-        entries.push(HistoryEntry::new(None, 0, "echo hi".to_string()));
-        for i in 0..(FuzzyHistorySearch::DUPLICATE_CHECK_WINDOW + 5) {
-            entries.push(HistoryEntry::new(None, i + 1, format!("cmd_{i}")));
-        }
-        let far_dup_idx = entries.len();
-        entries.push(HistoryEntry::new(
-            None,
-            far_dup_idx,
-            "  echo hi  ".to_string(),
-        ));
-        let near_dup_idx = entries.len();
-        entries.push(HistoryEntry::new(None, near_dup_idx, "echo hi".to_string()));
+        let seed_idx = entries.len();
+        entries.push(HistoryEntry::new(None, seed_idx, "echo hi".to_string()));
 
         // Pre-populate cache with a high-score "echo hi".
         search
             .cache
-            .push(HistoryEntryFormatted::new(0, 100, vec![]));
+            .push(HistoryEntryFormatted::new(seed_idx, 100, vec![]));
 
         // Add entries sorted by score after merge. We place another "echo hi" far enough away
         // (more than DUPLICATE_CHECK_WINDOW ranks lower) so it should NOT be removed.
@@ -823,13 +811,23 @@ git status
 
         // Many unique commands that will sit between the two duplicates.
         for i in 0..(FuzzyHistorySearch::DUPLICATE_CHECK_WINDOW + 5) {
-            new_entries.push(HistoryEntryFormatted::new(i + 1, 99 - (i as i64), vec![]));
+            let idx = entries.len();
+            entries.push(HistoryEntry::new(None, idx, format!("cmd_{i}")));
+            new_entries.push(HistoryEntryFormatted::new(idx, 99 - (i as i64), vec![]));
         }
 
         // Lower-score duplicate; should survive because it's outside the window.
+        let far_dup_idx = entries.len();
+        entries.push(HistoryEntry::new(
+            None,
+            far_dup_idx,
+            "  echo hi  ".to_string(),
+        ));
         new_entries.push(HistoryEntryFormatted::new(far_dup_idx, 1, vec![]));
 
         // Another near-duplicate (close in rank): should be removed.
+        let near_dup_idx = entries.len();
+        entries.push(HistoryEntry::new(None, near_dup_idx, "echo hi".to_string()));
         new_entries.push(HistoryEntryFormatted::new(near_dup_idx, 98, vec![]));
 
         new_entries.sort();
