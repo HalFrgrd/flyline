@@ -559,6 +559,112 @@ pub fn parse_help_generic(help: &str) -> Command {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Clap command conversion
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Leak a [`String`] into a `&'static str`.
+///
+/// This is used when building a dynamic [`clap::Command`] structure at runtime,
+/// because clap 4.x's builder methods (`.long()`, `.about()`, `.help()`,
+/// `.value_name()`) require `&'static str` references.  The leak is intentional
+/// and acceptable because `to_clap_command` is only called from the one-shot
+/// `completion-synthesis` subcommand.
+fn leak_string(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+
+/// Convert a parsed [`Command`] tree into a [`clap::Command`] that can be used
+/// to generate shell completion scripts via [`clap_complete`].
+///
+/// Argument names are derived from the long flag (stripping the leading `--`),
+/// falling back to the short flag (stripping `-`), and finally `"arg"` for
+/// purely positional arguments.  Short and long flags are attached when present.
+/// `value_type` is used as the `value_name` meta-variable and also implies
+/// `num_args(1)` unless `num_args` overrides it explicitly.
+pub fn to_clap_command(cmd: &Command) -> clap::Command {
+    let name = leak_string(cmd.name.as_deref().unwrap_or("unknown").to_string());
+    let mut clap_cmd = clap::Command::new(name)
+        // The parsed args already include `--help`/`--version` when present, so
+        // disable clap's auto-generated flags to avoid duplicate-name panics.
+        .disable_help_flag(true)
+        .disable_version_flag(true);
+
+    if let Some(desc) = &cmd.description {
+        clap_cmd = clap_cmd.about(leak_string(desc.clone()));
+    }
+
+    for arg in &cmd.args {
+        // Strip leading dashes from the long flag once; reuse for both the
+        // argument identifier and the `.long()` call.
+        let long_bare: Option<&'static str> = arg
+            .long
+            .as_deref()
+            .map(|l| leak_string(l.trim_start_matches('-').to_string()));
+
+        // Derive a stable identifier for the argument.
+        let id: &'static str = long_bare
+            .or_else(|| {
+                arg.short
+                    .as_deref()
+                    .map(|s| leak_string(s.trim_start_matches('-').to_string()))
+            })
+            .unwrap_or("arg");
+
+        let mut clap_arg = clap::Arg::new(id);
+
+        if let Some(long) = long_bare {
+            clap_arg = clap_arg.long(long);
+        }
+
+        if let Some(short) = &arg.short {
+            if let Some(c) = short.trim_start_matches('-').chars().next() {
+                clap_arg = clap_arg.short(c);
+            }
+        }
+
+        if let Some(desc) = &arg.description {
+            clap_arg = clap_arg.help(leak_string(desc.clone()));
+        }
+
+        if let Some(value_type) = &arg.value_type {
+            // Strip surrounding angle-brackets if present (e.g. `<PATH>` → `PATH`).
+            let meta = leak_string(
+                value_type
+                    .trim_matches(|c| c == '<' || c == '>')
+                    .to_string(),
+            );
+            clap_arg = clap_arg.value_name(meta);
+            // A value type implies the flag accepts exactly one value by default;
+            // this may be overridden below by an explicit `num_args`.
+            clap_arg = clap_arg.num_args(1);
+        }
+
+        if let Some(num_args_str) = &arg.num_args {
+            clap_arg = match num_args_str.as_str() {
+                "*" => clap_arg.num_args(0..),
+                "+" => clap_arg.num_args(1..),
+                "?" => clap_arg.num_args(0..=1),
+                s => {
+                    if let Ok(n) = s.parse::<usize>() {
+                        clap_arg.num_args(n)
+                    } else {
+                        clap_arg
+                    }
+                }
+            };
+        }
+
+        clap_cmd = clap_cmd.arg(clap_arg);
+    }
+
+    for sub in &cmd.subcommands {
+        clap_cmd = clap_cmd.subcommand(to_clap_command(sub));
+    }
+
+    clap_cmd
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Tests
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -1335,6 +1441,93 @@ Options:
         assert_eq!(
             arg_by_long(&cmd, "--speed").and_then(|a| a.value_type.as_deref()),
             Some("kn")
+        );
+    }
+
+    // ── to_clap_command ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_to_clap_command_basic() {
+        let cmd = Command {
+            name: Some("mytool".to_string()),
+            description: Some("A test tool.".to_string()),
+            args: vec![
+                Arg {
+                    long: Some("--verbose".to_string()),
+                    short: Some("-v".to_string()),
+                    description: Some("Enable verbose output.".to_string()),
+                    value_type: None,
+                    num_args: None,
+                },
+                Arg {
+                    long: Some("--output".to_string()),
+                    short: None,
+                    description: Some("Output file.".to_string()),
+                    value_type: Some("<PATH>".to_string()),
+                    num_args: None,
+                },
+            ],
+            subcommands: vec![Command {
+                name: Some("sub".to_string()),
+                description: Some("A subcommand.".to_string()),
+                args: vec![],
+                subcommands: vec![],
+                author: None,
+            }],
+            author: None,
+        };
+
+        let clap_cmd = to_clap_command(&cmd);
+
+        assert_eq!(clap_cmd.get_name(), "mytool");
+
+        // Check args are present.
+        let arg_ids: Vec<&str> = clap_cmd
+            .get_arguments()
+            .map(|a| a.get_id().as_str())
+            .collect();
+        assert!(
+            arg_ids.contains(&"verbose"),
+            "verbose arg missing: {arg_ids:?}"
+        );
+        assert!(
+            arg_ids.contains(&"output"),
+            "output arg missing: {arg_ids:?}"
+        );
+
+        // Check subcommand is present.
+        let sub_names: Vec<&str> = clap_cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(
+            sub_names.contains(&"sub"),
+            "sub subcommand missing: {sub_names:?}"
+        );
+    }
+
+    #[test]
+    fn test_to_clap_command_generates_bash_completion() {
+        // Parse a simple clap-style help and verify that the generated Bash
+        // completion script is non-empty and references the command name.
+        const HELP: &str = r#"Usage: greet [OPTIONS]
+
+Options:
+  -n, --name <NAME>  Name to greet
+  -h, --help         Print help
+"#;
+        let cmd = parse_help(HELP);
+        let mut clap_cmd = to_clap_command(&cmd);
+        let bin_name = clap_cmd.get_name().to_string();
+        let mut out = Vec::new();
+        clap_complete::generate(
+            clap_complete::Shell::Bash,
+            &mut clap_cmd,
+            &bin_name,
+            &mut out,
+        );
+        let script = String::from_utf8(out).expect("completion output is valid utf-8");
+        assert!(!script.is_empty(), "completion script should not be empty");
+        assert!(
+            script.contains("greet"),
+            "completion script should reference the command name"
         );
     }
 }

@@ -407,6 +407,17 @@ enum Commands {
         #[arg(default_missing_value = "true", num_args = 0..=1)]
         enabled: Option<bool>,
     },
+    /// Read a --help string from stdin, parse it into a command structure,
+    /// and print a Bash completion script to stdout.
+    ///
+    /// Pipe a tool's --help output into this subcommand to synthesise Bash
+    /// tab-completions for that tool on the fly.
+    ///
+    /// Examples:
+    ///   my-tool --help | flyline completion-synthesis
+    ///   flyline completion-synthesis < my-tool-help.txt
+    #[command(name = "completion-synthesis", verbatim_doc_comment)]
+    CompletionSynthesis,
 }
 
 #[derive(Subcommand, Debug)]
@@ -901,6 +912,32 @@ impl Flyline {
                             self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
                         } else {
                             self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
+                        }
+                    }
+                    Some(Commands::CompletionSynthesis) => {
+                        use std::io::Read;
+                        let mut input = String::new();
+                        if let Err(e) = std::io::stdin().read_to_string(&mut input) {
+                            log::error!(
+                                "flyline completion-synthesis: failed to read stdin: {}",
+                                e
+                            );
+                            return bash_symbols::BuiltinExitCode::Usage as c_int;
+                        }
+                        let parsed_cmd = command_rebuild::parse_help(&input);
+                        let mut clap_cmd = command_rebuild::to_clap_command(&parsed_cmd);
+                        let bin_name = clap_cmd.get_name().to_string();
+                        let mut output = Vec::new();
+                        generate(Shell::Bash, &mut clap_cmd, &bin_name, &mut output);
+                        match std::str::from_utf8(&output) {
+                            Ok(s) => print!("{}", s),
+                            Err(e) => {
+                                log::error!(
+                                    "flyline completion-synthesis: failed to encode output: {}",
+                                    e
+                                );
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
                         }
                     }
                     Some(Commands::SetCursor {
