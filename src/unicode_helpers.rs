@@ -1,0 +1,849 @@
+/// Unicode character helpers for drawing, animation, and symbols.
+///
+/// Provides ergonomic access to characters from the following Unicode blocks:
+/// - Braille Patterns (U+2800–U+28FF)
+/// - Box Drawing (U+2500–U+257F)
+/// - Block Elements (U+2580–U+259F)
+/// - I Ching Trigrams (U+2630–U+2637) and Hexagrams (U+4DC0–U+4DFF)
+/// - Symbols for Legacy Computing (U+1FB00–U+1FBFF)
+/// - Symbols for Legacy Computing Supplement (U+1CC00–U+1CEBF)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Braille Patterns  U+2800–U+28FF
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Bitflag representing which dots are raised in an 8-dot Braille cell.
+///
+/// Standard Braille dot layout:
+/// ```text
+/// 1  4
+/// 2  5
+/// 3  6
+/// 7  8
+/// ```
+/// Dots 1–6 form the traditional 6-dot Braille cell; dots 7 and 8 extend it
+/// for 8-dot Braille (computer Braille).
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct BrailleDots(pub u8);
+
+impl BrailleDots {
+    pub const EMPTY: Self = BrailleDots(0);
+    pub const DOT_1: Self = BrailleDots(1 << 0); // top-left
+    pub const DOT_2: Self = BrailleDots(1 << 1); // mid-left
+    pub const DOT_3: Self = BrailleDots(1 << 2); // lower-left
+    pub const DOT_4: Self = BrailleDots(1 << 3); // top-right
+    pub const DOT_5: Self = BrailleDots(1 << 4); // mid-right
+    pub const DOT_6: Self = BrailleDots(1 << 5); // lower-right
+    pub const DOT_7: Self = BrailleDots(1 << 6); // bottom-left (8-dot)
+    pub const DOT_8: Self = BrailleDots(1 << 7); // bottom-right (8-dot)
+}
+
+impl std::ops::BitOr for BrailleDots {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        BrailleDots(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for BrailleDots {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl std::ops::BitAnd for BrailleDots {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        BrailleDots(self.0 & rhs.0)
+    }
+}
+
+/// Returns the Braille character with the given dots raised (U+2800–U+28FF).
+///
+/// Every 8-bit value maps to a valid Unicode Braille Pattern, so this function
+/// always succeeds and never returns the blank Braille character for non-zero input.
+pub fn braille(dots: BrailleDots) -> char {
+    // The Braille Patterns block (U+2800–U+28FF) is fully defined for all 256 values.
+    char::from_u32(0x2800 + dots.0 as u32)
+        .expect("Braille block is fully defined for all 256 patterns")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// I Ching – Trigrams (U+2630–U+2637) and Hexagrams (U+4DC0–U+4DFF)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// ☰ TRIGRAM FOR HEAVEN – all three lines solid (yang), bits: 111
+pub const TRIGRAM_HEAVEN: char = '☰';
+/// ☱ TRIGRAM FOR LAKE – top line broken, bits: 011
+pub const TRIGRAM_LAKE: char = '☱';
+/// ☲ TRIGRAM FOR FIRE – middle line broken, bits: 101
+pub const TRIGRAM_FIRE: char = '☲';
+/// ☳ TRIGRAM FOR THUNDER – bottom line solid only, bits: 001
+pub const TRIGRAM_THUNDER: char = '☳';
+/// ☴ TRIGRAM FOR WIND – bottom line broken, bits: 110
+pub const TRIGRAM_WIND: char = '☴';
+/// ☵ TRIGRAM FOR WATER – middle line solid only, bits: 010
+pub const TRIGRAM_WATER: char = '☵';
+/// ☶ TRIGRAM FOR MOUNTAIN – top line solid only, bits: 100
+pub const TRIGRAM_MOUNTAIN: char = '☶';
+/// ☷ TRIGRAM FOR EARTH – all three lines broken (yin), bits: 000
+pub const TRIGRAM_EARTH: char = '☷';
+
+/// Bitflag selecting which rows of a hexagram are solid (yang, unbroken).
+///
+/// Bit 0 ([`HexagramRows::BOTTOM`]) is the bottom-most line; bit 5
+/// ([`HexagramRows::TOP`]) is the top-most line. A set bit means the line is
+/// solid (yang); a clear bit means the line is broken (yin).
+///
+/// # Example
+/// ```
+/// use flyline::unicode_helpers::{HexagramRows, yijing_hexagram};
+/// // All yang → ䷀ HEXAGRAM FOR THE CREATIVE
+/// let ch = yijing_hexagram(HexagramRows::ALL);
+/// assert_eq!(ch, '䷀');
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct HexagramRows(pub u8);
+
+impl HexagramRows {
+    pub const NONE: Self = HexagramRows(0);
+    pub const BOTTOM: Self = HexagramRows(1 << 0);
+    pub const ROW_2: Self = HexagramRows(1 << 1);
+    pub const ROW_3: Self = HexagramRows(1 << 2);
+    pub const ROW_4: Self = HexagramRows(1 << 3);
+    pub const ROW_5: Self = HexagramRows(1 << 4);
+    pub const TOP: Self = HexagramRows(1 << 5);
+    pub const ALL: Self = HexagramRows(0b0011_1111);
+}
+
+impl std::ops::BitOr for HexagramRows {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        HexagramRows(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for HexagramRows {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl std::ops::BitAnd for HexagramRows {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        HexagramRows(self.0 & rhs.0)
+    }
+}
+
+// King Wen ordinal (0-based) for each 6-bit yang-row pattern.
+//
+// The pattern value encodes the hexagram as (upper_trigram << 3) | lower_trigram,
+// with each trigram represented as a 3-bit number (bit 0 = bottom line, solid=1).
+//
+// Trigram values: Heaven=7, Lake=3, Fire=5, Thunder=1, Wind=6, Water=2, Mountain=4, Earth=0.
+const HEXAGRAM_KING_WEN: [u8; 64] = [
+    1,  // 0b000000 =  0: Kun           Earth/Earth
+    23, // 0b000001 =  1: Fu            Earth/Thunder
+    6,  // 0b000010 =  2: Shi           Earth/Water
+    18, // 0b000011 =  3: Lin           Earth/Lake
+    14, // 0b000100 =  4: Qian (Modest) Earth/Mountain
+    35, // 0b000101 =  5: Ming Yi       Earth/Fire
+    45, // 0b000110 =  6: Sheng         Earth/Wind
+    10, // 0b000111 =  7: Tai           Earth/Heaven
+    15, // 0b001000 =  8: Yu            Thunder/Earth
+    50, // 0b001001 =  9: Zhen          Thunder/Thunder
+    39, // 0b001010 = 10: Jie (Deliver) Thunder/Water
+    53, // 0b001011 = 11: Gui Mei       Thunder/Lake
+    61, // 0b001100 = 12: Xiao Guo      Thunder/Mountain
+    54, // 0b001101 = 13: Feng          Thunder/Fire
+    31, // 0b001110 = 14: Heng          Thunder/Wind
+    33, // 0b001111 = 15: Da Zhuang     Thunder/Heaven
+    7,  // 0b010000 = 16: Bi (Hold)     Water/Earth
+    2,  // 0b010001 = 17: Zhun          Water/Thunder
+    28, // 0b010010 = 18: Kan           Water/Water
+    59, // 0b010011 = 19: Jie (Limit)   Water/Lake
+    38, // 0b010100 = 20: Jian (Obst)   Water/Mountain
+    62, // 0b010101 = 21: Ji Ji         Water/Fire
+    47, // 0b010110 = 22: Jing          Water/Wind
+    4,  // 0b010111 = 23: Xu            Water/Heaven
+    44, // 0b011000 = 24: Cui           Lake/Earth
+    16, // 0b011001 = 25: Sui           Lake/Thunder
+    46, // 0b011010 = 26: Kun (Oppress) Lake/Water
+    57, // 0b011011 = 27: Dui           Lake/Lake
+    30, // 0b011100 = 28: Xian          Lake/Mountain
+    48, // 0b011101 = 29: Ge            Lake/Fire
+    27, // 0b011110 = 30: Da Guo        Lake/Wind
+    42, // 0b011111 = 31: Guai          Lake/Heaven
+    22, // 0b100000 = 32: Bo            Mountain/Earth
+    26, // 0b100001 = 33: Yi (Nourish)  Mountain/Thunder
+    3,  // 0b100010 = 34: Meng          Mountain/Water
+    40, // 0b100011 = 35: Sun (Decr)    Mountain/Lake
+    51, // 0b100100 = 36: Gen           Mountain/Mountain
+    21, // 0b100101 = 37: Bi (Grace)    Mountain/Fire
+    17, // 0b100110 = 38: Gu            Mountain/Wind
+    25, // 0b100111 = 39: Da Chu        Mountain/Heaven
+    34, // 0b101000 = 40: Jin           Fire/Earth
+    20, // 0b101001 = 41: Shi He        Fire/Thunder
+    63, // 0b101010 = 42: Wei Ji        Fire/Water
+    37, // 0b101011 = 43: Kui           Fire/Lake
+    55, // 0b101100 = 44: Lü (Wander)   Fire/Mountain
+    29, // 0b101101 = 45: Li (Cling)    Fire/Fire
+    49, // 0b101110 = 46: Ding          Fire/Wind
+    13, // 0b101111 = 47: Da You        Fire/Heaven
+    19, // 0b110000 = 48: Guan          Wind/Earth
+    41, // 0b110001 = 49: Yi (Increase) Wind/Thunder
+    58, // 0b110010 = 50: Huan          Wind/Water
+    60, // 0b110011 = 51: Zhong Fu      Wind/Lake
+    52, // 0b110100 = 52: Jian (Develop)Wind/Mountain
+    36, // 0b110101 = 53: Jia Ren       Wind/Fire
+    56, // 0b110110 = 54: Xun (Gentle)  Wind/Wind
+    8,  // 0b110111 = 55: Xiao Chu      Wind/Heaven
+    11, // 0b111000 = 56: Pi            Heaven/Earth
+    24, // 0b111001 = 57: Wu Wang       Heaven/Thunder
+    5,  // 0b111010 = 58: Song          Heaven/Water
+    9,  // 0b111011 = 59: Lü (Conduct)  Heaven/Lake
+    32, // 0b111100 = 60: Dun           Heaven/Mountain
+    12, // 0b111101 = 61: Tong Ren      Heaven/Fire
+    43, // 0b111110 = 62: Gou           Heaven/Wind
+    0,  // 0b111111 = 63: Qian          Heaven/Heaven
+];
+
+/// Returns the I Ching hexagram character for the given combination of yang rows.
+///
+/// The 64 hexagrams are at U+4DC0–U+4DFF in King Wen sequence.
+/// `rows_visible` selects which of the six lines are solid (yang); clear bits are yin (broken).
+/// Only the lower 6 bits of `rows_visible` are significant.
+pub fn yijing_hexagram(rows_visible: HexagramRows) -> char {
+    let pattern = (rows_visible.0 & 0x3F) as usize;
+    let ordinal = HEXAGRAM_KING_WEN[pattern] as u32;
+    // All 64 codepoints U+4DC0–U+4DFF are assigned hexagram characters.
+    char::from_u32(0x4DC0 + ordinal).expect("hexagram codepoints are all valid")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Box Drawing  U+2500–U+257F
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Bitflag indicating which sides of a cell a pipe character connects to.
+///
+/// Multiple directions can be combined with `|`.
+///
+/// # Example
+/// ```
+/// use flyline::unicode_helpers::{Directions, PipeStyle, pipe};
+/// assert_eq!(pipe(Directions::LEFT | Directions::RIGHT, PipeStyle::Single), Some('─'));
+/// assert_eq!(pipe(Directions::TOP | Directions::BOTTOM, PipeStyle::Double), Some('║'));
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct Directions(pub u8);
+
+impl Directions {
+    pub const NONE: Self = Directions(0);
+    pub const TOP: Self = Directions(1 << 0);
+    pub const RIGHT: Self = Directions(1 << 1);
+    pub const BOTTOM: Self = Directions(1 << 2);
+    pub const LEFT: Self = Directions(1 << 3);
+    pub const ALL: Self = Directions(0b1111);
+}
+
+impl std::ops::BitOr for Directions {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        Directions(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for Directions {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl std::ops::BitAnd for Directions {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        Directions(self.0 & rhs.0)
+    }
+}
+
+/// Line style for the [`pipe`] helper.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PipeStyle {
+    /// Thin single-line box drawing (─ │ ┌ …).
+    Single,
+    /// Double-line box drawing (═ ║ ╔ …).
+    Double,
+}
+
+// Lookup tables indexed by the 4-bit direction mask (TOP=bit0, RIGHT=bit1, BOTTOM=bit2, LEFT=bit3).
+// None entries mean no standard box-drawing character exists for that combination.
+#[rustfmt::skip]
+const PIPE_SINGLE: [Option<char>; 16] = [
+    None,        // 0b0000 none
+    Some('╵'),   // 0b0001 T
+    Some('╶'),   // 0b0010 R
+    Some('└'),   // 0b0011 T+R
+    Some('╷'),   // 0b0100 B
+    Some('│'),   // 0b0101 T+B
+    Some('┌'),   // 0b0110 R+B
+    Some('├'),   // 0b0111 T+R+B
+    Some('╴'),   // 0b1000 L
+    Some('┘'),   // 0b1001 T+L
+    Some('─'),   // 0b1010 R+L
+    Some('┴'),   // 0b1011 T+R+L
+    Some('┐'),   // 0b1100 B+L
+    Some('┤'),   // 0b1101 T+B+L
+    Some('┬'),   // 0b1110 R+B+L
+    Some('┼'),   // 0b1111 T+R+B+L
+];
+
+#[rustfmt::skip]
+const PIPE_DOUBLE: [Option<char>; 16] = [
+    None,        // 0b0000 none
+    None,        // 0b0001 T only – no double stub
+    None,        // 0b0010 R only – no double stub
+    Some('╚'),   // 0b0011 T+R
+    None,        // 0b0100 B only – no double stub
+    Some('║'),   // 0b0101 T+B
+    Some('╔'),   // 0b0110 R+B
+    Some('╠'),   // 0b0111 T+R+B
+    None,        // 0b1000 L only – no double stub
+    Some('╝'),   // 0b1001 T+L
+    Some('═'),   // 0b1010 R+L
+    Some('╩'),   // 0b1011 T+R+L
+    Some('╗'),   // 0b1100 B+L
+    Some('╣'),   // 0b1101 T+B+L
+    Some('╦'),   // 0b1110 R+B+L
+    Some('╬'),   // 0b1111 T+R+B+L
+];
+
+/// Returns the box-drawing character that connects the given sides in the given style,
+/// or `None` if no standard character exists for that combination.
+pub fn pipe(connections: Directions, style: PipeStyle) -> Option<char> {
+    let idx = (connections.0 & 0x0F) as usize;
+    match style {
+        PipeStyle::Single => PIPE_SINGLE[idx],
+        PipeStyle::Double => PIPE_DOUBLE[idx],
+    }
+}
+
+// ── Single light lines ────────────────────────────────────────────────────────
+pub const BOX_HORIZONTAL: char = '─'; // U+2500
+pub const BOX_VERTICAL: char = '│'; // U+2502
+// stubs
+pub const BOX_LEFT_STUB: char = '╴'; // U+2574
+pub const BOX_TOP_STUB: char = '╵'; // U+2575
+pub const BOX_RIGHT_STUB: char = '╶'; // U+2576
+pub const BOX_BOTTOM_STUB: char = '╷'; // U+2577
+// corners
+pub const BOX_DOWN_RIGHT: char = '┌'; // U+250C
+pub const BOX_DOWN_LEFT: char = '┐'; // U+2510
+pub const BOX_UP_RIGHT: char = '└'; // U+2514
+pub const BOX_UP_LEFT: char = '┘'; // U+2518
+// T-junctions
+pub const BOX_VERT_RIGHT: char = '├'; // U+251C
+pub const BOX_VERT_LEFT: char = '┤'; // U+2524
+pub const BOX_DOWN_HORIZ: char = '┬'; // U+252C
+pub const BOX_UP_HORIZ: char = '┴'; // U+2534
+pub const BOX_CROSS: char = '┼'; // U+253C
+
+// ── Single light dashed lines ─────────────────────────────────────────────────
+pub const BOX_HORIZ_2DASH: char = '╌'; // U+254C
+pub const BOX_VERT_2DASH: char = '╎'; // U+254E
+pub const BOX_HORIZ_4DASH: char = '┄'; // U+2504
+pub const BOX_VERT_4DASH: char = '┆'; // U+2506
+pub const BOX_HORIZ_3DASH: char = '┈'; // U+2508
+pub const BOX_VERT_3DASH: char = '┊'; // U+250A
+
+// ── Heavy/thick single lines ──────────────────────────────────────────────────
+pub const BOX_HEAVY_HORIZONTAL: char = '━'; // U+2501
+pub const BOX_HEAVY_VERTICAL: char = '┃'; // U+2503
+// heavy corners
+pub const BOX_HEAVY_DOWN_RIGHT: char = '┏'; // U+250F
+pub const BOX_HEAVY_DOWN_LEFT: char = '┓'; // U+2513
+pub const BOX_HEAVY_UP_RIGHT: char = '┗'; // U+2517
+pub const BOX_HEAVY_UP_LEFT: char = '┛'; // U+251B
+// heavy T-junctions
+pub const BOX_HEAVY_VERT_RIGHT: char = '┣'; // U+2523
+pub const BOX_HEAVY_VERT_LEFT: char = '┫'; // U+252B
+pub const BOX_HEAVY_DOWN_HORIZ: char = '┳'; // U+2533
+pub const BOX_HEAVY_UP_HORIZ: char = '┻'; // U+253B
+pub const BOX_HEAVY_CROSS: char = '╋'; // U+254B
+
+// ── Heavy dashed lines ────────────────────────────────────────────────────────
+pub const BOX_HEAVY_HORIZ_4DASH: char = '┅'; // U+2505
+pub const BOX_HEAVY_VERT_4DASH: char = '┇'; // U+2507
+pub const BOX_HEAVY_HORIZ_3DASH: char = '┉'; // U+2509
+pub const BOX_HEAVY_VERT_3DASH: char = '┋'; // U+250B
+pub const BOX_HEAVY_HORIZ_2DASH: char = '╍'; // U+254D
+pub const BOX_HEAVY_VERT_2DASH: char = '╏'; // U+254F
+
+// ── Light/heavy mixed lines ───────────────────────────────────────────────────
+// horizontal heavy, vertical light
+pub const BOX_LIGHT_DOWN_HEAVY_RIGHT: char = '┍'; // U+250D
+pub const BOX_HEAVY_DOWN_LIGHT_RIGHT: char = '┎'; // U+250E
+pub const BOX_LIGHT_DOWN_HEAVY_LEFT: char = '┑'; // U+2511
+pub const BOX_HEAVY_DOWN_LIGHT_LEFT: char = '┒'; // U+2512
+pub const BOX_LIGHT_UP_HEAVY_RIGHT: char = '┕'; // U+2515
+pub const BOX_HEAVY_UP_LIGHT_RIGHT: char = '┖'; // U+2516
+pub const BOX_LIGHT_UP_HEAVY_LEFT: char = '┙'; // U+2519
+pub const BOX_HEAVY_UP_LIGHT_LEFT: char = '┚'; // U+251A
+pub const BOX_HEAVY_VERT_LIGHT_RIGHT: char = '┝'; // U+251D
+pub const BOX_LIGHT_VERT_HEAVY_RIGHT: char = '┠'; // U+2520
+pub const BOX_HEAVY_VERT_LIGHT_LEFT: char = '┥'; // U+2525
+pub const BOX_LIGHT_VERT_HEAVY_LEFT: char = '┨'; // U+2528
+pub const BOX_LIGHT_DOWN_HEAVY_HORIZ: char = '┯'; // U+252F
+pub const BOX_HEAVY_DOWN_LIGHT_HORIZ: char = '┰'; // U+2530
+pub const BOX_LIGHT_UP_HEAVY_HORIZ: char = '┷'; // U+2537
+pub const BOX_HEAVY_UP_LIGHT_HORIZ: char = '┸'; // U+2538
+pub const BOX_LIGHT_VERT_HEAVY_HORIZ: char = '┿'; // U+253F
+pub const BOX_HEAVY_VERT_LIGHT_HORIZ: char = '╂'; // U+2542
+
+// ── Double lines ──────────────────────────────────────────────────────────────
+pub const BOX_DOUBLE_HORIZONTAL: char = '═'; // U+2550
+pub const BOX_DOUBLE_VERTICAL: char = '║'; // U+2551
+pub const BOX_DOUBLE_DOWN_RIGHT: char = '╔'; // U+2554
+pub const BOX_DOUBLE_DOWN_LEFT: char = '╗'; // U+2557
+pub const BOX_DOUBLE_UP_RIGHT: char = '╚'; // U+255A
+pub const BOX_DOUBLE_UP_LEFT: char = '╝'; // U+255D
+pub const BOX_DOUBLE_VERT_RIGHT: char = '╠'; // U+2560
+pub const BOX_DOUBLE_VERT_LEFT: char = '╣'; // U+2563
+pub const BOX_DOUBLE_DOWN_HORIZ: char = '╦'; // U+2566
+pub const BOX_DOUBLE_UP_HORIZ: char = '╩'; // U+2569
+pub const BOX_DOUBLE_CROSS: char = '╬'; // U+256C
+
+// ── Single/double mixed ───────────────────────────────────────────────────────
+// (horizontal double, vertical single)
+pub const BOX_DOWN_SINGLE_RIGHT_DOUBLE: char = '╒'; // U+2552
+pub const BOX_DOWN_DOUBLE_RIGHT_SINGLE: char = '╓'; // U+2553
+pub const BOX_DOWN_SINGLE_LEFT_DOUBLE: char = '╕'; // U+2555
+pub const BOX_DOWN_DOUBLE_LEFT_SINGLE: char = '╖'; // U+2556
+pub const BOX_UP_SINGLE_RIGHT_DOUBLE: char = '╘'; // U+2558
+pub const BOX_UP_DOUBLE_RIGHT_SINGLE: char = '╙'; // U+2559
+pub const BOX_UP_SINGLE_LEFT_DOUBLE: char = '╛'; // U+255B
+pub const BOX_UP_DOUBLE_LEFT_SINGLE: char = '╜'; // U+255C
+pub const BOX_VERT_SINGLE_RIGHT_DOUBLE: char = '╞'; // U+255E
+pub const BOX_VERT_DOUBLE_RIGHT_SINGLE: char = '╟'; // U+255F
+pub const BOX_VERT_SINGLE_LEFT_DOUBLE: char = '╡'; // U+2561
+pub const BOX_VERT_DOUBLE_LEFT_SINGLE: char = '╢'; // U+2562
+pub const BOX_DOWN_SINGLE_HORIZ_DOUBLE: char = '╤'; // U+2564
+pub const BOX_DOWN_DOUBLE_HORIZ_SINGLE: char = '╥'; // U+2565
+pub const BOX_UP_SINGLE_HORIZ_DOUBLE: char = '╧'; // U+2567
+pub const BOX_UP_DOUBLE_HORIZ_SINGLE: char = '╨'; // U+2568
+pub const BOX_VERT_SINGLE_HORIZ_DOUBLE: char = '╪'; // U+256A
+pub const BOX_VERT_DOUBLE_HORIZ_SINGLE: char = '╫'; // U+256B
+
+// ── Arc/rounded corners ───────────────────────────────────────────────────────
+pub const BOX_ARC_DOWN_RIGHT: char = '╭'; // U+256D
+pub const BOX_ARC_DOWN_LEFT: char = '╮'; // U+256E
+pub const BOX_ARC_UP_LEFT: char = '╯'; // U+256F
+pub const BOX_ARC_UP_RIGHT: char = '╰'; // U+2570
+
+// ── Diagonal lines ────────────────────────────────────────────────────────────
+pub const BOX_DIAGONAL_FORWARD: char = '╱'; // U+2571
+pub const BOX_DIAGONAL_BACKWARD: char = '╲'; // U+2572
+pub const BOX_DIAGONAL_CROSS: char = '╳'; // U+2573
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Block Elements  U+2580–U+259F
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Horizontal fraction blocks (filling from top or bottom) ───────────────────
+pub const UPPER_HALF_BLOCK: char = '▀'; // U+2580
+pub const LOWER_ONE_EIGHTH_BLOCK: char = '▁'; // U+2581
+pub const LOWER_ONE_QUARTER_BLOCK: char = '▂'; // U+2582
+pub const LOWER_THREE_EIGHTHS_BLOCK: char = '▃'; // U+2583
+pub const LOWER_HALF_BLOCK: char = '▄'; // U+2584
+pub const LOWER_FIVE_EIGHTHS_BLOCK: char = '▅'; // U+2585
+pub const LOWER_THREE_QUARTERS_BLOCK: char = '▆'; // U+2586
+pub const LOWER_SEVEN_EIGHTHS_BLOCK: char = '▇'; // U+2587
+pub const FULL_BLOCK: char = '█'; // U+2588
+
+// ── Vertical fraction blocks (filling from left) ──────────────────────────────
+pub const LEFT_SEVEN_EIGHTHS_BLOCK: char = '▉'; // U+2589
+pub const LEFT_THREE_QUARTERS_BLOCK: char = '▊'; // U+258A
+pub const LEFT_FIVE_EIGHTHS_BLOCK: char = '▋'; // U+258B
+pub const LEFT_HALF_BLOCK: char = '▌'; // U+258C
+pub const LEFT_THREE_EIGHTHS_BLOCK: char = '▍'; // U+258D
+pub const LEFT_ONE_QUARTER_BLOCK: char = '▎'; // U+258E
+pub const LEFT_ONE_EIGHTH_BLOCK: char = '▏'; // U+258F
+pub const RIGHT_HALF_BLOCK: char = '▐'; // U+2590
+
+// ── Shading ───────────────────────────────────────────────────────────────────
+pub const LIGHT_SHADE: char = '░'; // U+2591
+pub const MEDIUM_SHADE: char = '▒'; // U+2592
+pub const DARK_SHADE: char = '▓'; // U+2593
+
+// ── Single-eighth edge blocks ─────────────────────────────────────────────────
+pub const UPPER_ONE_EIGHTH_BLOCK: char = '▔'; // U+2594
+pub const RIGHT_ONE_EIGHTH_BLOCK: char = '▕'; // U+2595
+
+// ── Quadrant blocks ───────────────────────────────────────────────────────────
+pub const LOWER_LEFT_QUADRANT_BLOCK: char = '▖'; // U+2596
+pub const LOWER_RIGHT_QUADRANT_BLOCK: char = '▗'; // U+2597
+pub const UPPER_LEFT_QUADRANT_BLOCK: char = '▘'; // U+2598
+/// Three-quarter block: upper-left + lower-left + lower-right
+pub const UPPER_LEFT_LOWER_LEFT_LOWER_RIGHT_BLOCK: char = '▙'; // U+2599
+/// Diagonal: upper-left + lower-right
+pub const UPPER_LEFT_LOWER_RIGHT_BLOCK: char = '▚'; // U+259A
+/// Three-quarter block: upper-left + upper-right + lower-left
+pub const UPPER_LEFT_UPPER_RIGHT_LOWER_LEFT_BLOCK: char = '▛'; // U+259B
+/// Three-quarter block: upper-left + upper-right + lower-right
+pub const UPPER_LEFT_UPPER_RIGHT_LOWER_RIGHT_BLOCK: char = '▜'; // U+259C
+pub const UPPER_RIGHT_QUADRANT_BLOCK: char = '▝'; // U+259D
+/// Diagonal: upper-right + lower-left
+pub const UPPER_RIGHT_LOWER_LEFT_BLOCK: char = '▞'; // U+259E
+/// Three-quarter block: upper-right + lower-left + lower-right
+pub const UPPER_RIGHT_LOWER_LEFT_LOWER_RIGHT_BLOCK: char = '▟'; // U+259F
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Symbols for Legacy Computing  U+1FB00–U+1FBFF
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Sextant block elements ────────────────────────────────────────────────────
+
+/// Bitflag selecting which of the six sextant positions are filled.
+///
+/// Each cell is a 2×3 grid:
+/// ```text
+/// TOP_LEFT    TOP_RIGHT
+/// MID_LEFT    MID_RIGHT
+/// BOT_LEFT    BOT_RIGHT
+/// ```
+///
+/// # Example
+/// ```
+/// use flyline::unicode_helpers::{Sextant, SextantStyle, sextant};
+/// let ch = sextant(Sextant::TOP_LEFT | Sextant::MID_RIGHT, SextantStyle::Full);
+/// assert!(ch.is_some());
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct Sextant(pub u8);
+
+impl Sextant {
+    pub const NONE: Self = Sextant(0);
+    pub const TOP_LEFT: Self = Sextant(1 << 0); // position 1
+    pub const TOP_RIGHT: Self = Sextant(1 << 1); // position 2
+    pub const MID_LEFT: Self = Sextant(1 << 2); // position 3
+    pub const MID_RIGHT: Self = Sextant(1 << 3); // position 4
+    pub const BOT_LEFT: Self = Sextant(1 << 4); // position 5
+    pub const BOT_RIGHT: Self = Sextant(1 << 5); // position 6
+    pub const ALL: Self = Sextant(0b0011_1111);
+}
+
+impl std::ops::BitOr for Sextant {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        Sextant(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for Sextant {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl std::ops::BitAnd for Sextant {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        Sextant(self.0 & rhs.0)
+    }
+}
+
+/// Visual rendering style for [`sextant`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SextantStyle {
+    /// Filled/touching sextant blocks from U+1FB00–U+1FB3E.
+    Full,
+    /// Separated sextant blocks from U+1CE51–U+1CE8F (Unicode 16.0,
+    /// Symbols for Legacy Computing Supplement).
+    Separated,
+}
+
+/// Returns the block sextant character for the given filled positions and style.
+///
+/// Returns `None` if all positions are clear (empty cell), or if the requested
+/// codepoint is not assigned in the target Unicode block.
+///
+/// Full sextants are at U+1FB00–U+1FB3E (Symbols for Legacy Computing).
+/// Separated sextants are at U+1CE51–U+1CE8F (Symbols for Legacy Computing Supplement).
+///
+/// The bit pattern encodes positions in reading order:
+/// bit 0 = top-left, bit 1 = top-right, bit 2 = mid-left, bit 3 = mid-right,
+/// bit 4 = bot-left, bit 5 = bot-right.
+pub fn sextant(sextants_visible: Sextant, style: SextantStyle) -> Option<char> {
+    let bits = sextants_visible.0 & 0x3F;
+    if bits == 0 {
+        return None;
+    }
+    let offset = bits as u32 - 1;
+    let base = match style {
+        SextantStyle::Full => 0x1FB00,
+        SextantStyle::Separated => 0x1CE51,
+    };
+    char::from_u32(base + offset)
+}
+
+// ── Octant block elements ─────────────────────────────────────────────────────
+
+/// Bitflag selecting which of the eight octant positions are filled.
+///
+/// Each cell is a 2×4 grid (positions in reading order):
+/// ```text
+/// TOP_LEFT         TOP_RIGHT
+/// UPPER_MID_LEFT   UPPER_MID_RIGHT
+/// LOWER_MID_LEFT   LOWER_MID_RIGHT
+/// BOT_LEFT         BOT_RIGHT
+/// ```
+///
+/// # Example
+/// ```
+/// use flyline::unicode_helpers::{OctantDots, octant};
+/// let ch = octant(OctantDots::TOP_LEFT | OctantDots::BOT_RIGHT);
+/// assert!(ch.is_some());
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct OctantDots(pub u8);
+
+impl OctantDots {
+    pub const NONE: Self = OctantDots(0);
+    pub const TOP_LEFT: Self = OctantDots(1 << 0); // position 1
+    pub const TOP_RIGHT: Self = OctantDots(1 << 1); // position 2
+    pub const UPPER_MID_LEFT: Self = OctantDots(1 << 2); // position 3
+    pub const UPPER_MID_RIGHT: Self = OctantDots(1 << 3); // position 4
+    pub const LOWER_MID_LEFT: Self = OctantDots(1 << 4); // position 5
+    pub const LOWER_MID_RIGHT: Self = OctantDots(1 << 5); // position 6
+    pub const BOT_LEFT: Self = OctantDots(1 << 6); // position 7
+    pub const BOT_RIGHT: Self = OctantDots(1 << 7); // position 8
+    pub const ALL: Self = OctantDots(0xFF);
+}
+
+impl std::ops::BitOr for OctantDots {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        OctantDots(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for OctantDots {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl std::ops::BitAnd for OctantDots {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        OctantDots(self.0 & rhs.0)
+    }
+}
+
+/// Returns the block octant character for the given filled positions.
+///
+/// Returns `None` if all positions are clear (empty cell), or if the codepoint
+/// is unassigned.
+///
+/// Octant characters are at U+1CD00–U+1CDFE (Symbols for Legacy Computing
+/// Supplement, Unicode 16.0). The bit pattern is the natural 8-bit index
+/// (bit 0 = top-left, reading left-to-right and top-to-bottom).
+pub fn octant(dots: OctantDots) -> Option<char> {
+    if dots.0 == 0 {
+        return None;
+    }
+    let offset = dots.0 as u32 - 1;
+    char::from_u32(0x1CD00 + offset)
+}
+
+// ── Additional Symbols for Legacy Computing constants ─────────────────────────
+
+// Segmented digit characters (7-segment LCD style) U+1FBF0–U+1FBF9
+pub const SEGMENTED_DIGIT_ZERO: char = '\u{1FBF0}';
+pub const SEGMENTED_DIGIT_ONE: char = '\u{1FBF1}';
+pub const SEGMENTED_DIGIT_TWO: char = '\u{1FBF2}';
+pub const SEGMENTED_DIGIT_THREE: char = '\u{1FBF3}';
+pub const SEGMENTED_DIGIT_FOUR: char = '\u{1FBF4}';
+pub const SEGMENTED_DIGIT_FIVE: char = '\u{1FBF5}';
+pub const SEGMENTED_DIGIT_SIX: char = '\u{1FBF6}';
+pub const SEGMENTED_DIGIT_SEVEN: char = '\u{1FBF7}';
+pub const SEGMENTED_DIGIT_EIGHT: char = '\u{1FBF8}';
+pub const SEGMENTED_DIGIT_NINE: char = '\u{1FBF9}';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Braille ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_braille_blank() {
+        assert_eq!(braille(BrailleDots::EMPTY), '⠀');
+    }
+
+    #[test]
+    fn test_braille_all_dots() {
+        assert_eq!(braille(BrailleDots(0xFF)), '⣿');
+    }
+
+    #[test]
+    fn test_braille_single_dots() {
+        assert_eq!(braille(BrailleDots::DOT_1), '⠁');
+        assert_eq!(braille(BrailleDots::DOT_4), '⠈');
+    }
+
+    #[test]
+    fn test_braille_or() {
+        assert_eq!(
+            braille(BrailleDots::DOT_1 | BrailleDots::DOT_2),
+            '⠃'
+        );
+    }
+
+    // ── I Ching hexagrams ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_hexagram_creative_all_yang() {
+        // All six lines solid (yang) → Hexagram 1 (Qian, The Creative) = U+4DC0
+        assert_eq!(yijing_hexagram(HexagramRows::ALL), '䷀');
+    }
+
+    #[test]
+    fn test_hexagram_receptive_all_yin() {
+        // All six lines broken (yin) → Hexagram 2 (Kun, The Receptive) = U+4DC1
+        assert_eq!(yijing_hexagram(HexagramRows::NONE), '䷁');
+    }
+
+    #[test]
+    fn test_hexagram_wei_ji() {
+        // Fire over Water: upper=Fire(5)=101, lower=Water(2)=010 → pattern (5<<3)|2 = 42
+        // → Hexagram 64 (Wei Ji, Before Completion) = U+4DFF
+        let pattern = HexagramRows(42);
+        assert_eq!(yijing_hexagram(pattern), '䷿');
+    }
+
+    // ── Pipe / box drawing ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_pipe_single_horizontal() {
+        assert_eq!(
+            pipe(Directions::LEFT | Directions::RIGHT, PipeStyle::Single),
+            Some('─')
+        );
+    }
+
+    #[test]
+    fn test_pipe_single_vertical() {
+        assert_eq!(
+            pipe(Directions::TOP | Directions::BOTTOM, PipeStyle::Single),
+            Some('│')
+        );
+    }
+
+    #[test]
+    fn test_pipe_single_cross() {
+        assert_eq!(pipe(Directions::ALL, PipeStyle::Single), Some('┼'));
+    }
+
+    #[test]
+    fn test_pipe_single_corners() {
+        assert_eq!(
+            pipe(Directions::RIGHT | Directions::BOTTOM, PipeStyle::Single),
+            Some('┌')
+        );
+        assert_eq!(
+            pipe(Directions::TOP | Directions::RIGHT, PipeStyle::Single),
+            Some('└')
+        );
+    }
+
+    #[test]
+    fn test_pipe_double_horizontal() {
+        assert_eq!(
+            pipe(Directions::LEFT | Directions::RIGHT, PipeStyle::Double),
+            Some('═')
+        );
+    }
+
+    #[test]
+    fn test_pipe_double_cross() {
+        assert_eq!(pipe(Directions::ALL, PipeStyle::Double), Some('╬'));
+    }
+
+    #[test]
+    fn test_pipe_double_stub_is_none() {
+        // No double-line stub characters exist
+        assert_eq!(pipe(Directions::TOP, PipeStyle::Double), None);
+    }
+
+    #[test]
+    fn test_pipe_none_direction() {
+        assert_eq!(pipe(Directions::NONE, PipeStyle::Single), None);
+    }
+
+    // ── Sextant ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_sextant_none_returns_none() {
+        assert_eq!(sextant(Sextant::NONE, SextantStyle::Full), None);
+    }
+
+    #[test]
+    fn test_sextant_top_left_only() {
+        // BLOCK SEXTANT-1 = U+1FB00
+        assert_eq!(
+            sextant(Sextant::TOP_LEFT, SextantStyle::Full),
+            char::from_u32(0x1FB00)
+        );
+    }
+
+    #[test]
+    fn test_sextant_top_right_only() {
+        // BLOCK SEXTANT-2 = U+1FB01
+        assert_eq!(
+            sextant(Sextant::TOP_RIGHT, SextantStyle::Full),
+            char::from_u32(0x1FB01)
+        );
+    }
+
+    #[test]
+    fn test_sextant_top_row() {
+        // BLOCK SEXTANT-12 = U+1FB02 (top-left + top-right = bits 0+1 = pattern 3)
+        assert_eq!(
+            sextant(Sextant::TOP_LEFT | Sextant::TOP_RIGHT, SextantStyle::Full),
+            char::from_u32(0x1FB02)
+        );
+    }
+
+    #[test]
+    fn test_sextant_separated_top_left() {
+        // SEPARATED BLOCK SEXTANT-1 = U+1CE51
+        assert_eq!(
+            sextant(Sextant::TOP_LEFT, SextantStyle::Separated),
+            char::from_u32(0x1CE51)
+        );
+    }
+
+    // ── Octant ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_octant_none_returns_none() {
+        assert_eq!(octant(OctantDots::NONE), None);
+    }
+
+    #[test]
+    fn test_octant_top_left_only() {
+        // BLOCK OCTANT-1 = U+1CD00
+        assert_eq!(octant(OctantDots::TOP_LEFT), char::from_u32(0x1CD00));
+    }
+
+    #[test]
+    fn test_octant_or() {
+        let dots = OctantDots::TOP_LEFT | OctantDots::BOT_RIGHT;
+        // pattern = bit0 | bit7 = 0x81 = 129, offset = 128 → U+1CD80
+        assert_eq!(octant(dots), char::from_u32(0x1CD80));
+    }
+}

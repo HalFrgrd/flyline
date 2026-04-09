@@ -28,6 +28,7 @@ mod prompt_manager;
 mod settings;
 mod shell_integration;
 mod snake_animation;
+pub mod unicode_helpers;
 mod stateful_sliding_window;
 mod tab_completion_context;
 mod table;

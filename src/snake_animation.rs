@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use crate::unicode_helpers::{braille, BrailleDots};
+
 struct Coord {
     x: usize,
     y: usize,
@@ -140,62 +142,52 @@ impl SnakeAnimation {
                 [poss_col_pair[0], poss_col_pair[1]]
             };
 
-            let ch = SnakeAnimation::unicode_char(
-                col_pair[0][0],
-                col_pair[1][0],
-                col_pair[0][1],
-                col_pair[1][1],
-                col_pair[0][2],
-                col_pair[1][2],
-                col_pair[0][3],
-                col_pair[1][3],
-            );
+            let ch = braille(BrailleDots(
+                (col_pair[0][0] as u8)          // DOT_1 – top-left
+                | ((col_pair[0][1] as u8) << 1) // DOT_2 – mid-left
+                | ((col_pair[0][2] as u8) << 2) // DOT_3 – lower-left
+                | ((col_pair[1][0] as u8) << 3) // DOT_4 – top-right
+                | ((col_pair[1][1] as u8) << 4) // DOT_5 – mid-right
+                | ((col_pair[1][2] as u8) << 5) // DOT_6 – lower-right
+                | ((col_pair[0][3] as u8) << 6) // DOT_7 – bottom-left
+                | ((col_pair[1][3] as u8) << 7), // DOT_8 – bottom-right
+            ));
             res.push(ch);
         }
         res
     }
 
-    fn unicode_char(
-        pos_0_0: bool,
-        pos_0_1: bool,
-        pos_1_0: bool,
-        pos_1_1: bool,
-        pos_2_0: bool,
-        pos_2_1: bool,
-        pos_3_0: bool,
-        pos_3_1: bool,
-    ) -> char {
-        const BASE_CHAR: char = '⠀';
-        let mut c = 0;
-        c |= pos_0_0 as u32;
-        c |= (pos_1_0 as u32) << 1;
-        c |= (pos_2_0 as u32) << 2;
-        c |= (pos_0_1 as u32) << 3;
-        c |= (pos_1_1 as u32) << 4;
-        c |= (pos_2_1 as u32) << 5;
-        c |= (pos_3_0 as u32) << 6;
-        c |= (pos_3_1 as u32) << 7;
-        std::char::from_u32(BASE_CHAR as u32 + c).unwrap_or(BASE_CHAR)
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::unicode_helpers::{braille, BrailleDots};
 
     #[test]
-    fn test_unicode_gen() {
+    fn test_braille_top_row() {
+        // DOT_1 (top-left) + DOT_4 (top-right) = bits 0 and 3 = 0x09 → U+2809 = '⠉'
+        assert_eq!(braille(BrailleDots::DOT_1 | BrailleDots::DOT_4), '⠉');
+    }
+
+    #[test]
+    fn test_braille_most_dots() {
+        // All dots except DOT_5 (mid-right, bit 4) = 0xEF → U+28EF = '⣯'
         assert_eq!(
-            SnakeAnimation::unicode_char(true, true, false, false, false, false, false, false),
-            '⠉'
-        );
-        assert_eq!(
-            SnakeAnimation::unicode_char(true, true, true, false, true, true, true, true),
+            braille(
+                BrailleDots::DOT_1
+                    | BrailleDots::DOT_2
+                    | BrailleDots::DOT_3
+                    | BrailleDots::DOT_4
+                    | BrailleDots::DOT_6
+                    | BrailleDots::DOT_7
+                    | BrailleDots::DOT_8
+            ),
             '⣯'
         );
-        assert_eq!(
-            SnakeAnimation::unicode_char(false, false, false, false, false, false, false, false),
-            '⠀'
-        );
+    }
+
+    #[test]
+    fn test_braille_blank() {
+        assert_eq!(braille(BrailleDots::EMPTY), '⠀');
     }
 }
