@@ -918,7 +918,10 @@ impl Flyline {
                         use std::io::Read;
                         let mut input = String::new();
                         if let Err(e) = std::io::stdin().read_to_string(&mut input) {
-                            eprintln!("flyline completion-synthesis: failed to read stdin: {}", e);
+                            log::error!(
+                                "flyline completion-synthesis: failed to read stdin: {}",
+                                e
+                            );
                             return bash_symbols::BuiltinExitCode::Usage as c_int;
                         }
                         let parsed_cmd = command_rebuild::parse_help(&input);
@@ -929,7 +932,7 @@ impl Flyline {
                         match std::str::from_utf8(&output) {
                             Ok(s) => print!("{}", s),
                             Err(e) => {
-                                eprintln!(
+                                log::error!(
                                     "flyline completion-synthesis: failed to encode output: {}",
                                     e
                                 );

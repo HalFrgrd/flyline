@@ -594,20 +594,26 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
     }
 
     for arg in &cmd.args {
+        // Strip leading dashes from the long flag once; reuse for both the
+        // argument identifier and the `.long()` call.
+        let long_bare: Option<&'static str> = arg
+            .long
+            .as_deref()
+            .map(|l| leak_string(l.trim_start_matches('-').to_string()));
+
         // Derive a stable identifier for the argument.
-        let id = leak_string(
-            arg.long
-                .as_deref()
-                .map(|l| l.trim_start_matches('-'))
-                .or_else(|| arg.short.as_deref().map(|s| s.trim_start_matches('-')))
-                .unwrap_or("arg")
-                .to_string(),
-        );
+        let id: &'static str = long_bare
+            .or_else(|| {
+                arg.short
+                    .as_deref()
+                    .map(|s| leak_string(s.trim_start_matches('-').to_string()))
+            })
+            .unwrap_or("arg");
 
         let mut clap_arg = clap::Arg::new(id);
 
-        if let Some(long) = &arg.long {
-            clap_arg = clap_arg.long(leak_string(long.trim_start_matches('-').to_string()));
+        if let Some(long) = long_bare {
+            clap_arg = clap_arg.long(long);
         }
 
         if let Some(short) = &arg.short {
