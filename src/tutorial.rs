@@ -4,6 +4,9 @@ use ratatui::text::{Line, Span, Text};
 use crate::bash_funcs;
 use crate::palette::Palette;
 
+/// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
+const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
+
 /// Tracks progress through the interactive tutorial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TutorialStep {
@@ -19,11 +22,12 @@ pub enum TutorialStep {
     Autocompletions,
     AutoClosing,
     FineGrainDeletion,
+    FontDetection,
     End,
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 10] = [
+    const STEPS_IN_ORDER: [TutorialStep; 11] = [
         TutorialStep::Welcome,
         TutorialStep::RecommendedSettings,
         TutorialStep::MouseMode,
@@ -32,6 +36,7 @@ impl TutorialStep {
         TutorialStep::Autocompletions,
         TutorialStep::AutoClosing,
         TutorialStep::FineGrainDeletion,
+        TutorialStep::FontDetection,
         TutorialStep::End,
         TutorialStep::NotRunning,
     ];
@@ -320,6 +325,28 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
             )));
             lines.push(Line::from(Span::styled(
                 "Similarly, use Alt+Delete or Ctrl+Delete to delete forward. Try it out!",
+                text_style,
+            )));
+        }
+        TutorialStep::FontDetection => {
+            lines.push(Line::from(Span::styled("Font Detection", heading_style)));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Flyline uses symbols from the Unicode legacy computing supplement range. Here are some examples:",
+                text_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                LEGACY_COMPUTING_SYMBOLS_SAMPLE,
+                text_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "If the symbols above are not rendering correctly, install a font that supports this range,",
+                text_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "such as Iosevka Term Sans Serif (https://github.com/be5invis/Iosevka).",
                 text_style,
             )));
         }
