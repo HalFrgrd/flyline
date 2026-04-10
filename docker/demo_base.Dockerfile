@@ -1,7 +1,7 @@
 # Base image for VHS demo GIFs
 
 # Use the published Charmbracelet VHS image by digest
-FROM ghcr.io/charmbracelet/vhs@sha256:cbcdcd255e61dd9d278ad25183ae3662c849ab9b104434ac1ba330d27b2883cc AS demo-base
+FROM ghcr.io/charmbracelet/vhs@sha256:9d5fc3dc0c160b0fb1d2212baff07e6bdf3fa9438c504a3237484567302fcf93 AS demo-base
 
 # Create a non-root user for demos
 RUN useradd -m -s /bin/bash john
