@@ -1455,6 +1455,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn debug_assignment_tokens() {
+        let input = r#"FOO=1 echo hello"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for (i, t) in tokens.iter().enumerate() {
+            eprintln!("tokens[{}]: kind={:?} value={:?} annotations={:?}", i, t.token.kind, t.token.value, t.annotations);
+        }
+        assert!(true);
+    }
+
+    #[test]
+    fn debug_for_loop_tokens() {
+        let input = r#"for i in {1..4}; do echo "Welcome $i";done"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for (i, t) in tokens.iter().enumerate() {
+            eprintln!("tokens[{}]: kind={:?} value={:?} annotations={:?}", i, t.token.kind, t.token.value, t.annotations);
+        }
+        assert!(true);
+    }
+
     // ---- buffer_without_auto_inserted_suffix tests ----
 
     /// Helper: build a token list for `input` and mark the last token as auto-inserted closing.
