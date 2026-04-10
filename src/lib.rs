@@ -312,8 +312,8 @@ enum Commands {
     ///   flyline set-cursor --interpolate none
     #[command(name = "set-cursor", verbatim_doc_comment)]
     SetCursor {
-        /// Cursor rendering backend.  `flyline` renders a custom cursor;
-        /// `terminal` defers to the terminal emulator (the default).
+        /// Cursor rendering backend.  `flyline` renders a custom cursor (the default);
+        /// `terminal` defers to the terminal emulator.
         #[arg(long)]
         backend: Option<cursor::CursorBackend>,
         /// Interpolation speed in cells per second, or `none` to disable

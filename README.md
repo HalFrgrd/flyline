@@ -342,6 +342,7 @@ Commands:
   dump-logs             Dump in-memory logs to file.
   stream-logs           Dump current logs to PATH and append new logs.
   run-tutorial          Run the interactive tutorial for first-time users.
+  completion-synthesis  Read a --help string from stdin, parse it into a command structure,
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
