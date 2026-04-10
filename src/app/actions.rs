@@ -511,6 +511,21 @@ macro_rules! expand_variation_push {
     ($v:ident, "alt+w") => {
         $v.extend_from_slice(&["Alt+W", "Meta+W"]);
     };
+    // ── Shift+Tab / Backtab ───────────────────────────────────────────────
+    // BackTab (Shift+Tab) is sent as either "Shift+Tab" or the dedicated
+    // "Backtab" keycode depending on the terminal emulator.
+    ($v:ident, "Shift+Tab") => {
+        $v.extend_from_slice(&["Shift+Tab", "Backtab"]);
+    };
+    ($v:ident, "shift+tab") => {
+        $v.extend_from_slice(&["Shift+Tab", "Backtab"]);
+    };
+    ($v:ident, "Backtab") => {
+        $v.extend_from_slice(&["Backtab", "Shift+Tab"]);
+    };
+    ($v:ident, "backtab") => {
+        $v.extend_from_slice(&["Backtab", "Shift+Tab"]);
+    };
     // ── Fallthrough: pass through unchanged ───────────────────────────────
     ($v:ident, $key:literal) => {
         $v.push($key);
@@ -529,6 +544,8 @@ macro_rules! expand_variation_push {
 /// | Input            | Expands to                                          |
 /// |------------------|-----------------------------------------------------|
 /// | `"Enter"`        | `"Enter"`, `"Ctrl+j"`                               |
+/// | `"Shift+Tab"`    | `"Shift+Tab"`, `"Backtab"`                          |
+/// | `"Backtab"`      | `"Backtab"`, `"Shift+Tab"`                          |
 /// | `"Alt+Left"`     | `"Alt+Left"`, `"Alt+b"`, `"Meta+Left"`, `"Meta+b"` |
 /// | `"Alt+Right"`    | `"Alt+Right"`, `"Alt+f"`, `"Meta+Right"`, `"Meta+f"`|
 /// | `"Meta+Left"`    | same four-way word-left group                       |
@@ -542,6 +559,7 @@ macro_rules! expand_variation_push {
 ///
 /// ```ignore
 /// // expand_variations!["Enter"]               →  ["Enter", "Ctrl+j"]
+/// // expand_variations!["Shift+Tab"]           →  ["Shift+Tab", "Backtab"]
 /// // expand_variations!["Alt+Left"]            →  ["Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]
 /// // expand_variations!["Ctrl+Left", "Alt+Left"] →  ["Ctrl+Left", "Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]
 /// ```
@@ -553,26 +571,657 @@ macro_rules! expand_variations {
     }};
 }
 
-/// Push one [`Action::new`] entry for every [`Scope`] variant into a
-/// [`Vec<Action>`], all sharing the same name, description, and handler.
+/// Build the [`POSSIBLE_ACTIONS`] slice from a list of [`Action::new`] calls,
+/// where any entry written as `Action::expand_new([scope1, scope2, …], …)`
+/// is automatically expanded into one [`Action::new`] per listed scope.
 ///
-/// `$vec` must be a `Vec<Action>` identifier in scope.  Each scope gets its
-/// own entry so the action can be bound on a per-scope basis.
+/// The output is an array literal that can be coerced to `&[Action]` in a
+/// `const` context.
 ///
-/// # Example
+/// # Syntax
 ///
 /// ```ignore
-/// let mut v: Vec<Action> = vec![/* other actions */];
-/// expand_scopes!(
-///     v,
-///     "my_action",
-///     "Do the thing in any scope",
-///     |app, _key| { /* ... */ }
-/// );
+/// expand_actions![
+///     // ordinary action — one scope already baked in
+///     Action::new("name", "desc", Scope::Any, |app, _key| { /* … */ }),
+///
+///     // multi-scope action — expands to N Action::new entries
+///     Action::expand_new(
+///         [Scope::Any, Scope::FuzzyHistorySearch],
+///         "name", "desc",
+///         |app, _key| { /* … */ },
+///     ),
+/// ]
 /// ```
-macro_rules! expand_scopes {
-    ($vec:ident, $name:literal, $desc:literal, $action:expr) => {
-        for scope in [
+macro_rules! expand_actions {
+    // ── Base case: accumulator exhausted → produce the slice ──────────────
+    (@acc [ $($acc:tt)* ]) => {
+        &[ $($acc)* ]
+    };
+
+    // ── Action::expand_new with a following comma (not the last item) ─────
+    (
+        @acc [ $($acc:tt)* ]
+        Action::expand_new(
+            [$($scopes:expr),+ $(,)?],
+            $name:literal,
+            $desc:literal,
+            $action:expr $(,)?
+        ),
+        $($rest:tt)*
+    ) => {
+        expand_actions!(@acc [
+            $($acc)*
+            $(Action::new($name, $desc, $scopes, $action),)+
+        ] $($rest)*)
+    };
+
+    // ── Action::expand_new as the last item (optional trailing comma) ─────
+    (
+        @acc [ $($acc:tt)* ]
+        Action::expand_new(
+            [$($scopes:expr),+ $(,)?],
+            $name:literal,
+            $desc:literal,
+            $action:expr $(,)?
+        ) $(,)?
+    ) => {
+        expand_actions!(@acc [
+            $($acc)*
+            $(Action::new($name, $desc, $scopes, $action),)+
+        ])
+    };
+
+    // ── Action::new with a following comma (not the last item) ───────────
+    (
+        @acc [ $($acc:tt)* ]
+        Action::new( $($args:tt)* ),
+        $($rest:tt)*
+    ) => {
+        expand_actions!(@acc [
+            $($acc)*
+            Action::new($($args)*),
+        ] $($rest)*)
+    };
+
+    // ── Action::new as the last item (optional trailing comma) ───────────
+    (
+        @acc [ $($acc:tt)* ]
+        Action::new( $($args:tt)* ) $(,)?
+    ) => {
+        expand_actions!(@acc [
+            $($acc)*
+            Action::new($($args)*),
+        ])
+    };
+
+    // ── Public entry point ────────────────────────────────────────────────
+    [ $($input:tt)* ] => {
+        expand_actions!(@acc [] $($input)*)
+    };
+}
+
+const POSSIBLE_ACTIONS: &[Action] = expand_actions![
+    Action::new(
+        "accept_suggestion",
+        "Accept inline history suggestion",
+        Scope::InlineHistoryAcceptable,
+        |app, _key| {
+            if let Some((_, suf)) = &app.inline_history_suggestion {
+                app.buffer.insert_str(suf);
+                app.buffer.move_to_end();
+            }
+        },
+    ),
+    Action::new(
+        "select_next",
+        "Move down in agent output selection",
+        Scope::AgentOutputSelection,
+        |app, _key| {
+            if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                selection.move_down();
+            }
+        },
+    ),
+    Action::new(
+        "select_prev",
+        "Move up in agent output selection",
+        Scope::AgentOutputSelection,
+        |app, _key| {
+            if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                selection.move_up();
+            }
+        },
+    ),
+    Action::new(
+        "move_up",
+        "Move up in tab completion suggestions",
+        Scope::TabCompletion,
+        |app, _key| {
+            if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                active_suggestions.on_up_arrow();
+            }
+        },
+    ),
+    Action::new(
+        "move_down",
+        "Move down in tab completion suggestions",
+        Scope::TabCompletion,
+        |app, _key| {
+            if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                active_suggestions.on_down_arrow(); // TODO combine this with tab?
+            }
+        },
+    ),
+    Action::new(
+        "move_left",
+        "Move left in tab completion suggestions",
+        Scope::TabCompletion,
+        |app, _key| {
+            if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                active_suggestions.on_left_arrow();
+            }
+        },
+    ),
+    Action::new(
+        "move_right",
+        "Move right in tab completion suggestions",
+        Scope::TabCompletion,
+        |app, _key| {
+            if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                active_suggestions.on_right_arrow();
+            }
+        },
+    ),
+    Action::new(
+        "select_prev",
+        "Scroll up through fuzzy history search results",
+        Scope::FuzzyHistorySearch,
+        |app, _key| {
+            let source = match &app.content_mode {
+                ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                _ => return,
+            };
+            app.select_fuzzy_history_manager_mut(&source)
+                .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
+        },
+    ),
+    Action::new(
+        "select_next",
+        "Scroll down through fuzzy history search results",
+        Scope::FuzzyHistorySearch,
+        |app, _key| {
+            let source = match &app.content_mode {
+                ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                _ => return,
+            };
+            app.select_fuzzy_history_manager_mut(&source)
+                .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
+        },
+    ),
+    Action::new(
+        "scroll_page_up",
+        "Scroll up one page",
+        Scope::FuzzyHistorySearch,
+        |app, _key| {
+            let source = match &app.content_mode {
+                ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                _ => return,
+            };
+            app.select_fuzzy_history_manager_mut(&source)
+                .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
+        },
+    ),
+    Action::new(
+        "scroll_page_down",
+        "Scroll down one page",
+        Scope::FuzzyHistorySearch,
+        |app, _key| {
+            let source = match &app.content_mode {
+                ContentMode::FuzzyHistorySearch(s) => s.clone(),
+                _ => return,
+            };
+            app.select_fuzzy_history_manager_mut(&source)
+                .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
+        },
+    ),
+    Action::new(
+        "run_agent_mode",
+        "Run the agent mode command",
+        Scope::Any,
+        |app, _key| {
+            if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
+                app.start_agent_mode(agent_cmd, &buffer);
+            } else {
+                app.show_agent_mode_not_configured_error();
+            }
+        },
+    ),
+    Action::new(
+        "accept_entry",
+        "Accept the currently selected entry",
+        Scope::FuzzyHistorySearch,
+        |app, _key| {
+            app.accept_fuzzy_history_search();
+        },
+    ),
+    Action::new(
+        "accept_entry",
+        "Accept the currently selected suggestion",
+        Scope::TabCompletion,
+        |app, _key| {
+            if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                active_suggestions.accept_selected_filtered_item(&mut app.buffer);
+                app.content_mode = ContentMode::Normal;
+            }
+        },
+    ),
+    Action::new(
+        "run_help_command",
+        "Run the agent mode help command",
+        Scope::AgentError,
+        |app, _key| match &app.content_mode {
+            ContentMode::AgentError {
+                suggested_buffer: Some(buf),
+                ..
+            } => {
+                let buf = buf.clone();
+                app.buffer.replace_buffer(&buf);
+                app.on_possible_buffer_change();
+                app.content_mode = ContentMode::Normal;
+                if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
+                    app.start_agent_mode(agent_cmd, &buffer);
+                }
+            }
+            ContentMode::AgentError { .. } => {
+                app.content_mode = ContentMode::Normal;
+                app.buffer.replace_buffer("flyline agent-mode --help");
+                app.on_possible_buffer_change();
+                app.try_submit_current_buffer();
+            }
+            _ => {}
+        },
+    ),
+    Action::new(
+        "accept_entry",
+        "Accept the currently selected agent output",
+        Scope::AgentOutputSelection,
+        |app, _key| {
+            if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                if let Some(cmd) = selection.selected_command() {
+                    let cmd = cmd.to_string();
+                    app.buffer.replace_buffer(&cmd);
+                }
+                app.content_mode = ContentMode::Normal;
+            }
+        },
+    ),
+    Action::new(
+        "submit_or_newline", // TODO name
+        "Submit the current command. Insert a newline if the buffer has unclosed \",',[,(.",
+        Scope::Any,
+        |app, _key| {
+            if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
+                app.start_agent_mode(agent_cmd, &buffer);
+            } else {
+                app.try_submit_current_buffer();
+            }
+        },
+    ),
+    Action::new(
+        "prev_suggestion",
+        "Move to the previous tab completion suggestion",
+        Scope::TabCompletion,
+        |app, _key| {
+            if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                active_suggestions.on_tab(true);
+            }
+        },
+    ),
+    Action::new(
+        "accept_and_edit",
+        "Accept the current fuzzy history search suggestion for editing",
+        Scope::FuzzyHistorySearch,
+        |app, _key| {
+            app.accept_fuzzy_history_search();
+        },
+    ),
+    Action::new(
+        "next_suggestion",
+        "Move to the next tab completion suggestion",
+        Scope::AgentOutputSelection,
+        |app, _key| {
+            if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
+                selection.move_down(); // TODO: cycle through
+            }
+        },
+    ),
+    Action::new(
+        "next_suggestion",
+        "Move to the next tab completion suggestion",
+        Scope::TabCompletion,
+        |app, _key| {
+            if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                active_suggestions.on_tab(false);
+            }
+        },
+    ),
+    Action::new(
+        "run_tab_completion",
+        "Start tab completion",
+        Scope::Any,
+        |app, _key| app.start_tab_complete(),
+    ),
+    Action::new(
+        "toggle_mouse",
+        "Toggle mouse state (Simple and Smart modes)",
+        Scope::Any,
+        |app, _key| {
+            if matches!(
+                app.settings.mouse_mode,
+                MouseMode::Simple | MouseMode::Smart
+            ) {
+                app.toggle_mouse_state("Escape pressed");
+            }
+        },
+    ),
+    Action::new("exit", "Exit the application", Scope::Any, |app, _key| {
+        if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
+            app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
+        } else {
+            app.buffer.delete_right();
+        }
+    }),
+    Action::new(
+        "cancel",
+        "Cancel the current command or exit if no command is running",
+        Scope::Any,
+        |app, _key| {
+            let buf = app.buffer.buffer().to_string();
+            if false && buf.is_empty() {
+                // TODO think of good UX for this
+                // Warm with "" to display all cancelled commands regardless of buffer.
+                app.settings
+                    .cancelled_command_history_manager
+                    .warm_fuzzy_search_cache("");
+                app.content_mode =
+                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
+            } else {
+                if false {
+                    app.settings
+                        .cancelled_command_history_manager
+                        .push_entry(buf);
+                }
+                app.mode =
+                    crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
+            }
+        },
+    ),
+    Action::new(
+        "comment_line_submit",
+        "Comment out the current line and submit",
+        Scope::Any,
+        |app, _key| {
+            app.buffer.move_to_start();
+            app.buffer.insert_str("#");
+            app.try_submit_current_buffer();
+        },
+    ),
+    Action::new(
+        "run_fuzzy_history_search",
+        "Start fuzzy search through command history",
+        Scope::Any,
+        |app, _key| {
+            let history_buffer = app.buffer_for_history().to_owned();
+            app.history_manager.warm_fuzzy_search_cache(&history_buffer);
+            app.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
+        },
+    ),
+    Action::new(
+        "clear_screen",
+        "Clear the screen",
+        Scope::Any,
+        |app, _key| {
+            app.needs_screen_cleared = true;
+        },
+    ),
+    Action::new(
+        "delete_left_until_start_of_line",
+        "Delete until start of line",
+        Scope::Any,
+        |app, _key| app.buffer.delete_until_start_of_line(),
+    ),
+    Action::new(
+        "delete_left_one_word_fine_grained",
+        "Delete one word to the left stopping at punctuation or path segment boundaries",
+        Scope::Any,
+        |app, _key| app.buffer.delete_one_word_left(WordDelim::FineGrained),
+    ),
+    Action::new(
+        "delete_left_one_word_whitespace",
+        "Delete one word to the left, using whitespace as delimiter",
+        Scope::Any,
+        |app, _key| app.buffer.delete_one_word_left(WordDelim::WhiteSpace),
+    ),
+    Action::new(
+        "delete_left",
+        "Delete character before cursor",
+        Scope::Any,
+        |app, _key| {
+            if app.settings.auto_close_chars {
+                // Backspace: if the char to the right of the cursor is an auto-inserted closing token
+                // paired with the char about to be deleted, remove it as well.
+                app.delete_auto_inserted_closing_if_present();
+            }
+            app.buffer.delete_left()
+        },
+    ),
+    Action::new(
+        "delete_right_until_end_of_line",
+        "Delete until end of line",
+        Scope::Any,
+        |app, _key| app.buffer.delete_until_end_of_line(),
+    ),
+    Action::new(
+        "delete_right_one_word_fine_grained",
+        "Delete one word to the right stopping at punctuation or path segment boundaries",
+        Scope::Any,
+        |app, _key| app.buffer.delete_right_one_word(WordDelim::FineGrained),
+    ),
+    Action::new(
+        "delete_right_one_word_whitespace",
+        "Delete one word to the right, using whitespace as delimiter",
+        Scope::Any,
+        |app, _key| app.buffer.delete_right_one_word(WordDelim::WhiteSpace),
+    ),
+    Action::new(
+        "delete_right",
+        "Delete character after cursor",
+        Scope::Any,
+        |app, _key| app.buffer.delete_right(),
+    ),
+    Action::new(
+        "move_left_start_of_line",
+        "Move cursor to start of line",
+        Scope::Any,
+        |app, _key| app.buffer.move_start_of_line(),
+    ),
+    Action::new(
+        "move_left_one_word_whitespace",
+        "Move one word left, using whitespace as delimiter",
+        Scope::Any,
+        |app, _key| app.buffer.move_one_word_left(WordDelim::WhiteSpace),
+    ),
+    Action::new("move_left", "Move cursor left", Scope::Any, |app, _key| {
+        if app.buffer.cursor_byte_pos() == 0 && app.prompt_manager.cwd_display_segment_count() > 0 {
+            app.content_mode = ContentMode::PromptDirSelect(0);
+        } else {
+            app.buffer.move_left();
+        }
+    }),
+    Action::new(
+        "move_right_end_of_line",
+        "Move cursor to end of line",
+        Scope::Any,
+        |app, _key| app.buffer.move_end_of_line(),
+    ),
+    Action::new(
+        "move_right_one_word_whitespace",
+        "Move one word right, using whitespace as delimiter",
+        Scope::Any,
+        |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
+    ),
+    Action::new(
+        "move_right",
+        "Move cursor right",
+        Scope::Any,
+        |app, _key| app.buffer.move_right(),
+    ),
+    Action::new(
+        "move_line_up_or_history_up",
+        "Move cursor up one line or navigate history if on the first buffer line",
+        Scope::Any,
+        |app, _key| {
+            if app.buffer.cursor_row() == 0 {
+                app.buffer_before_history_navigation
+                    .get_or_insert_with(|| app.buffer.buffer().to_string());
+                let history_buffer = app.buffer_for_history().to_owned();
+                if let Some(entry) = app
+                    .history_manager
+                    .search_in_history(&history_buffer, HistorySearchDirection::Backward)
+                {
+                    app.buffer.replace_buffer(&entry.command);
+                }
+            } else {
+                app.buffer.move_line_up()
+            }
+        },
+    ),
+    Action::new(
+        "move_line_down_or_history_down",
+        "Move cursor down one line or navigate history if on the final buffer line",
+        Scope::Any,
+        |app, _key| {
+            if app.buffer.is_cursor_on_final_line() {
+                let history_buffer = app.buffer_for_history().to_owned();
+                match app
+                    .history_manager
+                    .search_in_history(&history_buffer, HistorySearchDirection::Forward)
+                {
+                    Some(entry) => {
+                        app.buffer.replace_buffer(&entry.command);
+                    }
+                    None => {
+                        if let Some(original_buffer) = app.buffer_before_history_navigation.take() {
+                            app.buffer.replace_buffer(&original_buffer);
+                        }
+                    }
+                }
+            } else {
+                app.buffer.move_line_down()
+            }
+        },
+    ),
+    Action::new("undo", "Undo last action", Scope::Any, |app, _key| {
+        app.buffer.undo()
+    }),
+    Action::new("redo", "Redo last action", Scope::Any, |app, _key| {
+        app.buffer.redo()
+    }),
+    Action::new("insert_char", "Insert character", Scope::Any, |app, key| {
+        if let KeyCode::Char(c) = key.code {
+            if app.settings.auto_close_chars {
+                app.last_keypress_action = app.handle_char_insertion(c);
+            } else {
+                app.buffer.insert_char(c);
+            }
+        }
+    }),
+    // ── PromptCwdEdit actions ─────────────────────────────────────────
+    Action::new(
+        "move_left",
+        "Navigate to the parent directory segment in the prompt",
+        Scope::PromptDirSelect,
+        |app, _key| {
+            if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
+                let max_index = app
+                    .prompt_manager
+                    .cwd_display_segment_count()
+                    .saturating_sub(1);
+                if *index < max_index {
+                    *index += 1;
+                }
+            }
+        },
+    ),
+    Action::new(
+        "move_right",
+        "Navigate to the child directory segment or exit prompt CWD edit mode",
+        Scope::PromptDirSelect,
+        |app, _key| match app.content_mode {
+            ContentMode::PromptDirSelect(0) => {
+                app.content_mode = ContentMode::Normal;
+            }
+            ContentMode::PromptDirSelect(ref mut index) => {
+                *index -= 1;
+            }
+            _ => {}
+        },
+    ),
+    Action::new(
+        "accept_entry",
+        "Replace the buffer with `cd <selected path>` and exit prompt CWD edit mode",
+        Scope::PromptDirSelect,
+        |app, _key| {
+            if let ContentMode::PromptDirSelect(index) = app.content_mode {
+                if let Some(path) = app.prompt_manager.cwd_path_for_index(index) {
+                    // Single-quote the path to handle spaces and most shell metacharacters.
+                    // Embedded single quotes are escaped with the standard '\'' idiom.
+                    // This is safe for CWD paths returned by the OS (no NUL bytes).
+                    let quoted = format!("'{}'", path.replace('\'', r"'\''"));
+                    app.buffer.replace_buffer(&format!("cd {}", quoted));
+                }
+                app.content_mode = ContentMode::Normal;
+                app.on_possible_buffer_change();
+                app.try_submit_current_buffer();
+            }
+        },
+    ),
+    Action::new(
+        "cancel",
+        "Exit prompt CWD edit mode without changing the buffer",
+        Scope::PromptDirSelect,
+        |app, _key| {
+            if matches!(app.content_mode, ContentMode::PromptDirSelect(_)) {
+                app.content_mode = ContentMode::Normal;
+            }
+        },
+    ),
+    Action::new(
+        "move_to_start",
+        "Move selection to the leftmost directory segment in the prompt",
+        Scope::PromptDirSelect,
+        |app, _key| {
+            if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
+                *index = app
+                    .prompt_manager
+                    .cwd_display_segment_count()
+                    .saturating_sub(1);
+            }
+        },
+    ),
+    Action::new(
+        "move_to_end",
+        "Move selection to the rightmost (current) directory segment in the prompt",
+        Scope::PromptDirSelect,
+        |app, _key| {
+            if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
+                *index = 0;
+            }
+        },
+    ),
+    Action::expand_new(
+        [
             Scope::Any,
             Scope::FuzzyHistorySearch,
             Scope::TabCompletionWaiting,
@@ -582,588 +1231,14 @@ macro_rules! expand_scopes {
             Scope::AgentError,
             Scope::InlineHistoryAcceptable,
             Scope::PromptDirSelect,
-        ] {
-            $vec.push(Action::new($name, $desc, scope, $action));
-        }
-    };
-}
-
-static POSSIBLE_ACTIONS: LazyLock<Vec<Action>> = LazyLock::new(|| {
-    let mut actions = vec![
-        Action::new(
-            "accept_suggestion",
-            "Accept inline history suggestion",
-            Scope::InlineHistoryAcceptable,
-            |app, _key| {
-                if let Some((_, suf)) = &app.inline_history_suggestion {
-                    app.buffer.insert_str(suf);
-                    app.buffer.move_to_end();
-                }
-            },
-        ),
-        Action::new(
-            "select_next",
-            "Move down in agent output selection",
-            Scope::AgentOutputSelection,
-            |app, _key| {
-                if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
-                    selection.move_down();
-                }
-            },
-        ),
-        Action::new(
-            "select_prev",
-            "Move up in agent output selection",
-            Scope::AgentOutputSelection,
-            |app, _key| {
-                if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
-                    selection.move_up();
-                }
-            },
-        ),
-        Action::new(
-            "move_up",
-            "Move up in tab completion suggestions",
-            Scope::TabCompletion,
-            |app, _key| {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                    active_suggestions.on_up_arrow();
-                }
-            },
-        ),
-        Action::new(
-            "move_down",
-            "Move down in tab completion suggestions",
-            Scope::TabCompletion,
-            |app, _key| {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                    active_suggestions.on_down_arrow(); // TODO combine this with tab?
-                }
-            },
-        ),
-        Action::new(
-            "move_left",
-            "Move left in tab completion suggestions",
-            Scope::TabCompletion,
-            |app, _key| {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                    active_suggestions.on_left_arrow();
-                }
-            },
-        ),
-        Action::new(
-            "move_right",
-            "Move right in tab completion suggestions",
-            Scope::TabCompletion,
-            |app, _key| {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                    active_suggestions.on_right_arrow();
-                }
-            },
-        ),
-        Action::new(
-            "select_prev",
-            "Scroll up through fuzzy history search results",
-            Scope::FuzzyHistorySearch,
-            |app, _key| {
-                let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
-                    _ => return,
-                };
-                app.select_fuzzy_history_manager_mut(&source)
-                    .fuzzy_search_onkeypress(HistorySearchDirection::Forward);
-            },
-        ),
-        Action::new(
-            "select_next",
-            "Scroll down through fuzzy history search results",
-            Scope::FuzzyHistorySearch,
-            |app, _key| {
-                let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
-                    _ => return,
-                };
-                app.select_fuzzy_history_manager_mut(&source)
-                    .fuzzy_search_onkeypress(HistorySearchDirection::Backward);
-            },
-        ),
-        Action::new(
-            "scroll_page_up",
-            "Scroll up one page",
-            Scope::FuzzyHistorySearch,
-            |app, _key| {
-                let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
-                    _ => return,
-                };
-                app.select_fuzzy_history_manager_mut(&source)
-                    .fuzzy_search_onkeypress(HistorySearchDirection::PageForward);
-            },
-        ),
-        Action::new(
-            "scroll_page_down",
-            "Scroll down one page",
-            Scope::FuzzyHistorySearch,
-            |app, _key| {
-                let source = match &app.content_mode {
-                    ContentMode::FuzzyHistorySearch(s) => s.clone(),
-                    _ => return,
-                };
-                app.select_fuzzy_history_manager_mut(&source)
-                    .fuzzy_search_onkeypress(HistorySearchDirection::PageBackward);
-            },
-        ),
-        Action::new(
-            "run_agent_mode",
-            "Run the agent mode command",
-            Scope::Any,
-            |app, _key| {
-                if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
-                    app.start_agent_mode(agent_cmd, &buffer);
-                } else {
-                    app.show_agent_mode_not_configured_error();
-                }
-            },
-        ),
-        Action::new(
-            "accept_entry",
-            "Accept the currently selected entry",
-            Scope::FuzzyHistorySearch,
-            |app, _key| {
-                app.accept_fuzzy_history_search();
-            },
-        ),
-        Action::new(
-            "accept_entry",
-            "Accept the currently selected suggestion",
-            Scope::TabCompletion,
-            |app, _key| {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                    active_suggestions.accept_selected_filtered_item(&mut app.buffer);
-                    app.content_mode = ContentMode::Normal;
-                }
-            },
-        ),
-        Action::new(
-            "run_help_command",
-            "Run the agent mode help command",
-            Scope::AgentError,
-            |app, _key| match &app.content_mode {
-                ContentMode::AgentError {
-                    suggested_buffer: Some(buf),
-                    ..
-                } => {
-                    let buf = buf.clone();
-                    app.buffer.replace_buffer(&buf);
-                    app.on_possible_buffer_change();
-                    app.content_mode = ContentMode::Normal;
-                    if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
-                        app.start_agent_mode(agent_cmd, &buffer);
-                    }
-                }
-                ContentMode::AgentError { .. } => {
-                    app.content_mode = ContentMode::Normal;
-                    app.buffer.replace_buffer("flyline agent-mode --help");
-                    app.on_possible_buffer_change();
-                    app.try_submit_current_buffer();
-                }
-                _ => {}
-            },
-        ),
-        Action::new(
-            "accept_entry",
-            "Accept the currently selected agent output",
-            Scope::AgentOutputSelection,
-            |app, _key| {
-                if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
-                    if let Some(cmd) = selection.selected_command() {
-                        let cmd = cmd.to_string();
-                        app.buffer.replace_buffer(&cmd);
-                    }
-                    app.content_mode = ContentMode::Normal;
-                }
-            },
-        ),
-        Action::new(
-            "submit_or_newline", // TODO name
-            "Submit the current command. Insert a newline if the buffer has unclosed \",',[,(.",
-            Scope::Any,
-            |app, _key| {
-                if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
-                    app.start_agent_mode(agent_cmd, &buffer);
-                } else {
-                    app.try_submit_current_buffer();
-                }
-            },
-        ),
-        Action::new(
-            "prev_suggestion",
-            "Move to the previous tab completion suggestion",
-            Scope::TabCompletion,
-            |app, _key| {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                    active_suggestions.on_tab(true);
-                }
-            },
-        ),
-        Action::new(
-            "accept_and_edit",
-            "Accept the current fuzzy history search suggestion for editing",
-            Scope::FuzzyHistorySearch,
-            |app, _key| {
-                app.accept_fuzzy_history_search();
-            },
-        ),
-        Action::new(
-            "next_suggestion",
-            "Move to the next tab completion suggestion",
-            Scope::AgentOutputSelection,
-            |app, _key| {
-                if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
-                    selection.move_down(); // TODO: cycle through
-                }
-            },
-        ),
-        Action::new(
-            "next_suggestion",
-            "Move to the next tab completion suggestion",
-            Scope::TabCompletion,
-            |app, _key| {
-                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                    active_suggestions.on_tab(false);
-                }
-            },
-        ),
-        Action::new(
-            "run_tab_completion",
-            "Start tab completion",
-            Scope::Any,
-            |app, _key| app.start_tab_complete(),
-        ),
-        Action::new(
-            "toggle_mouse",
-            "Toggle mouse state (Simple and Smart modes)",
-            Scope::Any,
-            |app, _key| {
-                if matches!(
-                    app.settings.mouse_mode,
-                    MouseMode::Simple | MouseMode::Smart
-                ) {
-                    app.toggle_mouse_state("Escape pressed");
-                }
-            },
-        ),
-        Action::new("exit", "Exit the application", Scope::Any, |app, _key| {
-            if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
-                app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
-            } else {
-                app.buffer.delete_right();
-            }
-        }),
-        Action::new(
-            "cancel",
-            "Cancel the current command or exit if no command is running",
-            Scope::Any,
-            |app, _key| {
-                let buf = app.buffer.buffer().to_string();
-                if false && buf.is_empty() {
-                    // TODO think of good UX for this
-                    // Warm with "" to display all cancelled commands regardless of buffer.
-                    app.settings
-                        .cancelled_command_history_manager
-                        .warm_fuzzy_search_cache("");
-                    app.content_mode =
-                        ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
-                } else {
-                    if false {
-                        app.settings
-                            .cancelled_command_history_manager
-                            .push_entry(buf);
-                    }
-                    app.mode =
-                        crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
-                }
-            },
-        ),
-        Action::new(
-            "comment_line_submit",
-            "Comment out the current line and submit",
-            Scope::Any,
-            |app, _key| {
-                app.buffer.move_to_start();
-                app.buffer.insert_str("#");
-                app.try_submit_current_buffer();
-            },
-        ),
-        Action::new(
-            "run_fuzzy_history_search",
-            "Start fuzzy search through command history",
-            Scope::Any,
-            |app, _key| {
-                let history_buffer = app.buffer_for_history().to_owned();
-                app.history_manager.warm_fuzzy_search_cache(&history_buffer);
-                app.content_mode =
-                    ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
-            },
-        ),
-        Action::new(
-            "clear_screen",
-            "Clear the screen",
-            Scope::Any,
-            |app, _key| {
-                app.needs_screen_cleared = true;
-            },
-        ),
-        Action::new(
-            "delete_left_until_start_of_line",
-            "Delete until start of line",
-            Scope::Any,
-            |app, _key| app.buffer.delete_until_start_of_line(),
-        ),
-        Action::new(
-            "delete_left_one_word_fine_grained",
-            "Delete one word to the left stopping at punctuation or path segment boundaries",
-            Scope::Any,
-            |app, _key| app.buffer.delete_one_word_left(WordDelim::FineGrained),
-        ),
-        Action::new(
-            "delete_left_one_word_whitespace",
-            "Delete one word to the left, using whitespace as delimiter",
-            Scope::Any,
-            |app, _key| app.buffer.delete_one_word_left(WordDelim::WhiteSpace),
-        ),
-        Action::new(
-            "delete_left",
-            "Delete character before cursor",
-            Scope::Any,
-            |app, _key| {
-                if app.settings.auto_close_chars {
-                    // Backspace: if the char to the right of the cursor is an auto-inserted closing token
-                    // paired with the char about to be deleted, remove it as well.
-                    app.delete_auto_inserted_closing_if_present();
-                }
-                app.buffer.delete_left()
-            },
-        ),
-        Action::new(
-            "delete_right_until_end_of_line",
-            "Delete until end of line",
-            Scope::Any,
-            |app, _key| app.buffer.delete_until_end_of_line(),
-        ),
-        Action::new(
-            "delete_right_one_word_fine_grained",
-            "Delete one word to the right stopping at punctuation or path segment boundaries",
-            Scope::Any,
-            |app, _key| app.buffer.delete_right_one_word(WordDelim::FineGrained),
-        ),
-        Action::new(
-            "delete_right_one_word_whitespace",
-            "Delete one word to the right, using whitespace as delimiter",
-            Scope::Any,
-            |app, _key| app.buffer.delete_right_one_word(WordDelim::WhiteSpace),
-        ),
-        Action::new(
-            "delete_right",
-            "Delete character after cursor",
-            Scope::Any,
-            |app, _key| app.buffer.delete_right(),
-        ),
-        Action::new(
-            "move_left_start_of_line",
-            "Move cursor to start of line",
-            Scope::Any,
-            |app, _key| app.buffer.move_start_of_line(),
-        ),
-        Action::new(
-            "move_left_one_word_whitespace",
-            "Move one word left, using whitespace as delimiter",
-            Scope::Any,
-            |app, _key| app.buffer.move_one_word_left(WordDelim::WhiteSpace),
-        ),
-        Action::new("move_left", "Move cursor left", Scope::Any, |app, _key| {
-            if app.buffer.cursor_byte_pos() == 0
-                && app.prompt_manager.cwd_display_segment_count() > 0
-            {
-                app.content_mode = ContentMode::PromptDirSelect(0);
-            } else {
-                app.buffer.move_left();
-            }
-        }),
-        Action::new(
-            "move_right_end_of_line",
-            "Move cursor to end of line",
-            Scope::Any,
-            |app, _key| app.buffer.move_end_of_line(),
-        ),
-        Action::new(
-            "move_right_one_word_whitespace",
-            "Move one word right, using whitespace as delimiter",
-            Scope::Any,
-            |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
-        ),
-        Action::new(
-            "move_right",
-            "Move cursor right",
-            Scope::Any,
-            |app, _key| app.buffer.move_right(),
-        ),
-        Action::new(
-            "move_line_up_or_history_up",
-            "Move cursor up one line or navigate history if on the first buffer line",
-            Scope::Any,
-            |app, _key| {
-                if app.buffer.cursor_row() == 0 {
-                    app.buffer_before_history_navigation
-                        .get_or_insert_with(|| app.buffer.buffer().to_string());
-                    let history_buffer = app.buffer_for_history().to_owned();
-                    if let Some(entry) = app
-                        .history_manager
-                        .search_in_history(&history_buffer, HistorySearchDirection::Backward)
-                    {
-                        app.buffer.replace_buffer(&entry.command);
-                    }
-                } else {
-                    app.buffer.move_line_up()
-                }
-            },
-        ),
-        Action::new(
-            "move_line_down_or_history_down",
-            "Move cursor down one line or navigate history if on the final buffer line",
-            Scope::Any,
-            |app, _key| {
-                if app.buffer.is_cursor_on_final_line() {
-                    let history_buffer = app.buffer_for_history().to_owned();
-                    match app
-                        .history_manager
-                        .search_in_history(&history_buffer, HistorySearchDirection::Forward)
-                    {
-                        Some(entry) => {
-                            app.buffer.replace_buffer(&entry.command);
-                        }
-                        None => {
-                            if let Some(original_buffer) =
-                                app.buffer_before_history_navigation.take()
-                            {
-                                app.buffer.replace_buffer(&original_buffer);
-                            }
-                        }
-                    }
-                } else {
-                    app.buffer.move_line_down()
-                }
-            },
-        ),
-        Action::new("undo", "Undo last action", Scope::Any, |app, _key| {
-            app.buffer.undo()
-        }),
-        Action::new("redo", "Redo last action", Scope::Any, |app, _key| {
-            app.buffer.redo()
-        }),
-        Action::new("insert_char", "Insert character", Scope::Any, |app, key| {
-            if let KeyCode::Char(c) = key.code {
-                if app.settings.auto_close_chars {
-                    app.last_keypress_action = app.handle_char_insertion(c);
-                } else {
-                    app.buffer.insert_char(c);
-                }
-            }
-        }),
-        // ── PromptCwdEdit actions ─────────────────────────────────────────
-        Action::new(
-            "move_left",
-            "Navigate to the parent directory segment in the prompt",
-            Scope::PromptDirSelect,
-            |app, _key| {
-                if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
-                    let max_index = app
-                        .prompt_manager
-                        .cwd_display_segment_count()
-                        .saturating_sub(1);
-                    if *index < max_index {
-                        *index += 1;
-                    }
-                }
-            },
-        ),
-        Action::new(
-            "move_right",
-            "Navigate to the child directory segment or exit prompt CWD edit mode",
-            Scope::PromptDirSelect,
-            |app, _key| match app.content_mode {
-                ContentMode::PromptDirSelect(0) => {
-                    app.content_mode = ContentMode::Normal;
-                }
-                ContentMode::PromptDirSelect(ref mut index) => {
-                    *index -= 1;
-                }
-                _ => {}
-            },
-        ),
-        Action::new(
-            "accept_entry",
-            "Replace the buffer with `cd <selected path>` and exit prompt CWD edit mode",
-            Scope::PromptDirSelect,
-            |app, _key| {
-                if let ContentMode::PromptDirSelect(index) = app.content_mode {
-                    if let Some(path) = app.prompt_manager.cwd_path_for_index(index) {
-                        // Single-quote the path to handle spaces and most shell metacharacters.
-                        // Embedded single quotes are escaped with the standard '\'' idiom.
-                        // This is safe for CWD paths returned by the OS (no NUL bytes).
-                        let quoted = format!("'{}'", path.replace('\'', r"'\''"));
-                        app.buffer.replace_buffer(&format!("cd {}", quoted));
-                    }
-                    app.content_mode = ContentMode::Normal;
-                    app.on_possible_buffer_change();
-                    app.try_submit_current_buffer();
-                }
-            },
-        ),
-        Action::new(
-            "cancel",
-            "Exit prompt CWD edit mode without changing the buffer",
-            Scope::PromptDirSelect,
-            |app, _key| {
-                if matches!(app.content_mode, ContentMode::PromptDirSelect(_)) {
-                    app.content_mode = ContentMode::Normal;
-                }
-            },
-        ),
-        Action::new(
-            "move_to_start",
-            "Move selection to the leftmost directory segment in the prompt",
-            Scope::PromptDirSelect,
-            |app, _key| {
-                if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
-                    *index = app
-                        .prompt_manager
-                        .cwd_display_segment_count()
-                        .saturating_sub(1);
-                }
-            },
-        ),
-        Action::new(
-            "move_to_end",
-            "Move selection to the rightmost (current) directory segment in the prompt",
-            Scope::PromptDirSelect,
-            |app, _key| {
-                if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
-                    *index = 0;
-                }
-            },
-        ),
-    ];
-    expand_scopes!(
-        actions,
+        ],
         "escape_to_normal_mode",
         "Return to the normal command editing mode",
         |app, _key| {
             app.content_mode = ContentMode::Normal;
-        }
-    );
-    actions
-});
+        },
+    ),
+];
 
 use clap::builder::PossibleValuesParser;
 
@@ -1261,7 +1336,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 57]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &["Shift+Tab", "Backtab"], // TODO backtab and shift tab for agent output selection
+            &expand_variations!["Shift+Tab"], // Shift+Tab and Backtab are equivalent
             Scope::TabCompletion,
             "prev_suggestion",
         )
