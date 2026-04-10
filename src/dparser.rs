@@ -487,6 +487,21 @@ impl DParser {
                         }
                     }
                 }
+                TokenKind::Assignment => {
+                    // When an assignment operator immediately follows a word (e.g. `FOO=1`),
+                    // retroactively annotate that word as an environment variable name and
+                    // remove the spurious command_word annotation it received earlier.
+                    if previous_token
+                        .as_ref()
+                        .is_some_and(|t| t.token.kind.is_word())
+                    {
+                        self.tokens[idx - 1].annotations.is_env_var = true;
+                        self.tokens[idx - 1].annotations.command_word = None;
+                    }
+                    if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
+                    }
+                }
                 TokenKind::Word(_) if word_is_part_of_assignment => {
                     if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
@@ -507,12 +522,18 @@ impl DParser {
                     });
                 }
 
+                // These keywords and operators introduce a new command; reset the command
+                // context so the first word after them receives the command_word annotation.
                 TokenKind::And
                 | TokenKind::Or
                 | TokenKind::Pipe
                 | TokenKind::Semicolon
                 | TokenKind::Background
-                | TokenKind::DoubleSemicolon => {
+                | TokenKind::DoubleSemicolon
+                | TokenKind::Do
+                | TokenKind::Then
+                | TokenKind::Elif
+                | TokenKind::Else => {
                     if stop_parsing_at_command_boundary {
                         break;
                     }
@@ -1452,6 +1473,110 @@ mod tests {
         assert_eq!(
             tokens[2].annotations.command_word.as_ref().unwrap(),
             "$HOME/bin/echo"
+        );
+    }
+
+    #[test]
+    fn test_assignment_env_var_annotation() {
+        // `FOO=1 echo hello`: FOO is the env-var name; echo is the command.
+        let input = r#"FOO=1 echo hello"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        // FOO – the variable name before `=`
+        assert_eq!(tokens[0].token.value, "FOO");
+        assert!(tokens[0].annotations.is_env_var);
+        assert_eq!(tokens[0].annotations.command_word, None);
+
+        // = – the assignment operator
+        assert_eq!(tokens[1].token.value, "=");
+
+        // 1 – the value on the right-hand side; not an env var
+        assert_eq!(tokens[2].token.value, "1");
+        assert!(!tokens[2].annotations.is_env_var);
+
+        // echo – the command that follows the env-var prefix
+        assert_eq!(tokens[4].token.value, "echo");
+        assert_eq!(tokens[4].annotations.command_word, Some("echo".to_string()));
+
+        // hello – a plain argument
+        assert_eq!(tokens[6].token.value, "hello");
+        assert_eq!(tokens[6].annotations, Annotations::default());
+    }
+
+    #[test]
+    fn test_for_loop_annotations() {
+        // Verify that `for…done` is matched, `echo` inside the body gets the
+        // command_word annotation, and `$i` is recognised as an env var.
+        let input = r#"for i in {1..4}; do echo "Welcome $i";done"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        // `for` – opening of the for…done block
+        assert_eq!(tokens[0].token.value, "for");
+        assert_eq!(
+            tokens[0].annotations.opening,
+            Some(OpeningState::Matched(19))
+        );
+
+        // `do` – keyword introducing the loop body; must NOT be the command_word
+        assert_eq!(tokens[9].token.value, "do");
+        assert_eq!(tokens[9].annotations.command_word, None);
+
+        // `echo` – first word of the command inside the loop body
+        assert_eq!(tokens[11].token.value, "echo");
+        assert_eq!(
+            tokens[11].annotations.command_word,
+            Some("echo".to_string())
+        );
+
+        // `"` – opening double-quote matched with its closing counterpart
+        assert_eq!(tokens[13].token.value, "\"");
+        assert_eq!(
+            tokens[13].annotations.opening,
+            Some(OpeningState::Matched(17))
+        );
+
+        // `Welcome ` – inside double quotes
+        assert_eq!(tokens[14].token.value, "Welcome ");
+        assert!(tokens[14].annotations.is_inside_double_quotes);
+
+        // `$` – env-var sigil inside double quotes
+        assert_eq!(tokens[15].token.value, "$");
+        assert!(tokens[15].annotations.is_env_var);
+        assert!(tokens[15].annotations.is_inside_double_quotes);
+
+        // `i` – env-var name inside double quotes
+        assert_eq!(tokens[16].token.value, "i");
+        assert!(tokens[16].annotations.is_env_var);
+        assert!(tokens[16].annotations.is_inside_double_quotes);
+
+        // closing `"` matched back to its opener
+        assert_eq!(tokens[17].token.value, "\"");
+        assert_eq!(
+            tokens[17].annotations.closing,
+            Some(ClosingAnnotation {
+                opening_idx: 13,
+                is_auto_inserted: false
+            })
+        );
+
+        // `done` – closing keyword matched back to `for`
+        assert_eq!(tokens[19].token.value, "done");
+        assert_eq!(
+            tokens[19].annotations.closing,
+            Some(ClosingAnnotation {
+                opening_idx: 0,
+                is_auto_inserted: false
+            })
         );
     }
 
