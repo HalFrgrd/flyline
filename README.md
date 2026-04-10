@@ -222,13 +222,22 @@ passed through Bash's `decode_prompt_string` so Bash prompt escape sequences
 # Non-blocking (default): spawns the command in the background; shows a
 # placeholder of 10 spaces while the command is running.
 flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
-  --command 'run_slow_git_metrics.sh' --placeholder-length 10
+  --command 'run_slow_git_metrics.sh' --placeholder 10
 # PS1 usage:
 PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 
+# Non-blocking with 'prev' placeholder: shows the previous output while
+# the new output is being computed.
+flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
+  --command 'run_slow_git_metrics.sh' --placeholder prev
+
 # Blocking: waits for the command to finish before showing the prompt.
 flyline create-prompt-widget custom --name CUSTOM_WIDGET2 \
-  --command 'run_something.sh' --blocking
+  --command 'run_something.sh' --block
+
+# Blocking with a timeout of 500 ms; falls back to placeholder if slower.
+flyline create-prompt-widget custom --name CUSTOM_WIDGET3 \
+  --command 'run_slow.sh --flag' --block 500 --placeholder prev
 ```
 
 
