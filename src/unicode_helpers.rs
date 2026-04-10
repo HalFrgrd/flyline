@@ -878,7 +878,10 @@ pub fn octant(dots: OctantDots, style: OctantStyle) -> Option<char> {
                 | (o & 0x20)             // octant bit5 (LMR) → braille bit5 (D6)
                 | (o & 0xC0); // octant bits6,7 (BL,BR) → braille bits6,7 (D7,D8)
             // Braille block (U+2800–U+28FF) is fully defined for all 256 values.
-            char::from_u32(0x2800 + b as u32)
+            Some(
+                char::from_u32(0x2800 + b as u32)
+                    .expect("Braille block U+2800–U+28FF is fully defined for all 256 patterns"),
+            )
         }
         OctantStyle::Full => {
             if dots.0 == 0 {
