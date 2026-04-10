@@ -825,6 +825,7 @@ dependencies = [
  "ratatui 0.30.0-beta.0",
  "serde",
  "serde_json",
+ "shlex",
  "skim",
  "timeago",
  "tokio",

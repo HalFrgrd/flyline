@@ -980,24 +980,13 @@ impl<'a> App<'a> {
             // cmd_args is non-empty, so split_first() always returns Some.
             let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
 
-            // Bash sets SIGCHLD to SIG_IGN, causing the kernel to auto-reap child
-            // processes. This makes output()'s internal wait() fail with ECHILD
-            // (os error 10). Temporarily restore SIG_DFL so we can wait on our
-            // child, then put the original disposition back.
-            // SAFETY: signal(2) only modifies signal disposition. No other thread
-            // in this process depends on SIGCHLD being SIG_IGN at this instant.
-            let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-
+            // SIGCHLD was already set to SIG_DFL by `Flyline::get()` before
+            // calling `app::get_command`, so no per-thread signal manipulation
+            // is needed here.
             let result: Result<String, (String, String)> = std::process::Command::new(prog)
                 .args(args)
                 .arg(&final_arg)
                 .output()
-                .inspect(|_| unsafe {
-                    libc::signal(libc::SIGCHLD, prev_sigchld);
-                })
-                .inspect_err(|_| unsafe {
-                    libc::signal(libc::SIGCHLD, prev_sigchld);
-                })
                 .map_err(|e| (format!("Failed to run AI command: {}", e), String::new()))
                 .and_then(|output| {
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();

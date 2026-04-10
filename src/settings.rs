@@ -42,6 +42,16 @@ pub struct PromptWidgetMouseMode {
     pub disabled_text: String,
 }
 
+/// What to show as a placeholder while a non-blocking (or timed-out blocking)
+/// custom widget command is still running.
+#[derive(Debug, Clone)]
+pub enum Placeholder {
+    /// Show N spaces.
+    Spaces(usize),
+    /// Show the previous output of the command (empty on the very first run).
+    Prev,
+}
+
 /// A prompt widget that runs a shell command and displays its output.
 #[derive(Debug, Clone)]
 pub struct PromptWidgetCustom {
@@ -49,12 +59,15 @@ pub struct PromptWidgetCustom {
     pub name: String,
     /// Command (and arguments) to run.
     pub command: Vec<String>,
-    /// When true, wait for the command to finish at prompt construction time.
-    /// When false (default), spawn the process in the background.
-    pub blocking: bool,
-    /// Number of spaces to use as a placeholder while the command is running.
-    /// Defaults to 0 (empty placeholder).
-    pub placeholder_length: Option<usize>,
+    /// When `Some(n)`, wait up to `n` milliseconds for the command to finish
+    /// before rendering the first prompt frame.  `Some(i32::MAX)` means wait
+    /// indefinitely.  `None` means the command always runs in the background.
+    pub block: Option<i32>,
+    /// What to show while the command is running (or has timed out).
+    pub placeholder: Option<Placeholder>,
+    /// Most recent successful output of the command; shared across clones so
+    /// that the `Placeholder::Prev` option can pick it up on subsequent renders.
+    pub prev_output: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 /// A custom prompt widget registered with `flyline create-prompt-widget`.
@@ -68,7 +81,8 @@ pub enum PromptWidget {
 #[derive(Debug, Clone)]
 pub struct AgentModeCommand {
     /// Command (and arguments) to invoke. The current buffer is appended as the
-    /// final argument.
+    /// final argument.  Stored as a `Vec<String>` after splitting the
+    /// user-supplied command string on whitespace.
     pub command: Vec<String>,
     /// Optional system prompt prepended to the buffer when invoking AI mode.
     /// When set, the subprocess receives `"<system_prompt>\n<buffer>"` as its final argument.

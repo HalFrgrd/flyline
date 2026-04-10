@@ -1,13 +1,14 @@
 use crate::bash_funcs;
 use crate::bash_symbols;
 use crate::content_builder::{Tag, TaggedLine, TaggedSpan};
-use crate::settings::{PromptAnimation, PromptWidget};
+use crate::settings::{Placeholder, PromptAnimation, PromptWidget, PromptWidgetCustom};
 #[cfg(not(test))]
 use ansi_to_tui::IntoText;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::{Arc, Mutex};
 
 /// An animation whose frames have been processed through
 /// [`expand_prompt_through_bash`].  Embedded directly inside
@@ -50,6 +51,9 @@ enum WidgetCustomState {
     Pending {
         placeholder: String,
         receiver: std::sync::mpsc::Receiver<Result<String, WidgetFailure>>,
+        /// Shared storage to write the output into when the command finishes,
+        /// so that `Placeholder::Prev` can use it on the next render cycle.
+        prev_output_cell: Arc<Mutex<Option<String>>>,
     },
     /// Command finished successfully; pre-tagged output spans are stored here
     /// so that the tag is applied only once rather than on every render.
@@ -669,8 +673,9 @@ impl<'a> PromptStringBuilder<'a> {
 /// For mouse-mode widgets the enabled/disabled texts are expanded through
 /// bash and stored as pre-tagged [`TaggedSpan`]s.
 ///
-/// For custom widgets the command is either run synchronously (blocking) or
-/// launched in a background thread.  No sharing between segments occurs.
+/// For custom widgets the command is either run synchronously (blocking with
+/// optional timeout) or launched in a background thread.  No sharing between
+/// segments occurs.
 fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
     match widget {
         PromptWidget::MouseMode(w) => PromptSegment::WidgetMouseMode {
@@ -678,13 +683,42 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
             disabled_text: stdout_to_tagged_spans(w.disabled_text.clone()),
         },
         PromptWidget::Custom(w) => {
-            let state = if w.blocking {
-                match run_widget_command(&w.command) {
-                    Ok(stdout) => WidgetCustomState::Done(stdout_to_tagged_spans(stdout)),
-                    Err(failure) => WidgetCustomState::Failed(failure),
+            let state = if let Some(timeout_ms) = w.block {
+                // Blocking (or blocking-with-timeout): spawn the command and wait
+                // for up to `timeout_ms` milliseconds.  If the command finishes
+                // in time we use its output for the first render.  If it times
+                // out we fall back to the placeholder and check on subsequent
+                // renders.
+                let command = w.command.clone();
+                let name = w.name.clone();
+                let (tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
+                std::thread::spawn(move || {
+                    let result = run_widget_command(&command);
+                    if let Err(e) = tx.send(result) {
+                        log::warn!("Custom widget '{}': failed to send result: {}", name, e);
+                    }
+                });
+                let timeout = std::time::Duration::from_millis(timeout_ms as u64);
+                match rx.recv_timeout(timeout) {
+                    Ok(Ok(stdout)) => {
+                        *w.prev_output.lock().unwrap() = Some(stdout.clone());
+                        WidgetCustomState::Done(stdout_to_tagged_spans(stdout))
+                    }
+                    Ok(Err(failure)) => WidgetCustomState::Failed(failure),
+                    Err(_) => {
+                        // Timed out: fall back to placeholder; the receiver is
+                        // still live so subsequent renders will pick up the result.
+                        let placeholder = resolve_placeholder(w);
+                        WidgetCustomState::Pending {
+                            placeholder,
+                            receiver: rx,
+                            prev_output_cell: w.prev_output.clone(),
+                        }
+                    }
                 }
             } else {
-                let placeholder = " ".repeat(w.placeholder_length.unwrap_or(0));
+                // Non-blocking: spawn and return immediately.
+                let placeholder = resolve_placeholder(w);
                 let command = w.command.clone();
                 let name = w.name.clone();
                 let (tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
@@ -697,10 +731,20 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                 WidgetCustomState::Pending {
                     placeholder,
                     receiver: rx,
+                    prev_output_cell: w.prev_output.clone(),
                 }
             };
             PromptSegment::WidgetCustom(state)
         }
+    }
+}
+
+/// Resolve the placeholder string for a custom widget that is not yet done.
+fn resolve_placeholder(w: &PromptWidgetCustom) -> String {
+    match &w.placeholder {
+        None => String::new(),
+        Some(Placeholder::Spaces(n)) => " ".repeat(*n),
+        Some(Placeholder::Prev) => w.prev_output.lock().unwrap().clone().unwrap_or_default(),
     }
 }
 
@@ -887,9 +931,14 @@ fn format_prompt_line(
     for segment in segments.iter_mut() {
         if let PromptSegment::WidgetCustom(state) = segment {
             let new_state: Option<WidgetCustomState> = match state {
-                WidgetCustomState::Pending { receiver, .. } => match receiver.try_recv() {
+                WidgetCustomState::Pending {
+                    receiver,
+                    prev_output_cell,
+                    ..
+                } => match receiver.try_recv() {
                     Ok(Ok(stdout)) => {
                         log::info!("Custom prompt widget command completed successfully");
+                        *prev_output_cell.lock().unwrap() = Some(stdout.clone());
                         Some(WidgetCustomState::Done(stdout_to_tagged_spans(stdout)))
                     }
                     Ok(Err(failure)) => {
@@ -1027,9 +1076,9 @@ fn get_frame_spans<'a>(
 /// `Err(WidgetFailure)` (carrying exit code, stdout, and stderr) when the
 /// command fails or cannot be spawned.  Both stdout and stderr are logged.
 ///
-/// Temporarily restores `SIGCHLD` to `SIG_DFL` so that the internal `wait()`
-/// call in `std::process::Command::output()` is not perturbed by Bash setting
-/// `SIGCHLD` to `SIG_IGN`.
+/// `SIGCHLD` is expected to have been set to `SIG_DFL` by the caller before
+/// `app::get_command` was invoked; this function does not touch signal
+/// dispositions.
 fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
     let (prog, args) = match command.split_first() {
         Some(parts) => parts,
@@ -1044,23 +1093,7 @@ fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
         }
     };
 
-    // Bash sets SIGCHLD to SIG_IGN, causing the kernel to auto-reap child
-    // processes. This makes output()'s internal wait() fail with ECHILD.
-    // Temporarily restore SIG_DFL so we can wait on our child, then put
-    // the original disposition back.
-    // SAFETY: signal(2) only modifies signal disposition; no other thread
-    // depends on SIGCHLD disposition at this exact instant.
-    let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-
-    let output = std::process::Command::new(prog)
-        .args(args)
-        .output()
-        .inspect(|_| unsafe {
-            libc::signal(libc::SIGCHLD, prev_sigchld);
-        })
-        .inspect_err(|_| unsafe {
-            libc::signal(libc::SIGCHLD, prev_sigchld);
-        });
+    let output = std::process::Command::new(prog).args(args).output();
 
     match output {
         Err(e) => {
@@ -1990,6 +2023,7 @@ mod tests {
         let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Pending {
             placeholder: "   ".to_string(),
             receiver: rx,
+            prev_output_cell: Arc::new(Mutex::new(None)),
         })];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
@@ -2047,8 +2081,9 @@ mod tests {
         let widget = PromptWidget::Custom(PromptWidgetCustom {
             name: "MY_WIDGET".to_string(),
             command: vec!["nonexistent_test_command".to_string()],
-            blocking: false,
-            placeholder_length: Some(0),
+            block: None,
+            placeholder: Some(crate::settings::Placeholder::Spaces(0)),
+            prev_output: Arc::new(Mutex::new(None)),
         });
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
