@@ -8,6 +8,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// An animation whose frames have been processed through
@@ -54,6 +55,12 @@ enum WidgetCustomState {
         /// Shared storage to write the output into when the command finishes,
         /// so that `Placeholder::Prev` can use it on the next render cycle.
         prev_output_cell: Arc<Mutex<Option<String>>>,
+        /// PID of the spawned child process, or `0` if the process has not yet
+        /// been spawned by the background thread.  Written once by the thread
+        /// immediately after [`std::process::Command::spawn`] succeeds; read by
+        /// [`Drop`] to send `SIGKILL` when the segment is discarded while the
+        /// command is still running.
+        child_pid: Arc<AtomicU32>,
     },
     /// Command finished successfully; pre-tagged output spans are stored here
     /// so that the tag is applied only once rather than on every render.
@@ -68,6 +75,39 @@ impl std::fmt::Debug for WidgetCustomState {
             WidgetCustomState::Pending { .. } => f.write_str("WidgetCustomState::Pending"),
             WidgetCustomState::Done(_) => f.write_str("WidgetCustomState::Done"),
             WidgetCustomState::Failed(_) => f.write_str("WidgetCustomState::Failed"),
+        }
+    }
+}
+
+impl Drop for WidgetCustomState {
+    /// If the widget command is still running when this state is dropped, send
+    /// `SIGKILL` to the child process so it is terminated as soon as possible
+    /// rather than being left running after the owning [`PromptSegment`] is
+    /// discarded.
+    fn drop(&mut self) {
+        if let WidgetCustomState::Pending { child_pid, .. } = self {
+            let pid = child_pid.load(Ordering::Acquire);
+            if pid != 0 {
+                log::debug!(
+                    "PromptSegment dropped while widget command (pid {}) still running; sending SIGKILL",
+                    pid
+                );
+                // SAFETY: kill(2) is safe to call with any pid value and a
+                // known signal number.  We use SIGKILL to terminate the child
+                // immediately.  The background thread calls wait_with_output()
+                // on the same child, so reaping is handled there.
+                let ret = unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+                if ret != 0 {
+                    // The process may have already exited between the PID load
+                    // and the kill(2) call; log at debug level so it is visible
+                    // during development but does not clutter normal output.
+                    log::debug!(
+                        "kill({}, SIGKILL) failed (errno {}); process may have already exited",
+                        pid,
+                        std::io::Error::last_os_error()
+                    );
+                }
+            }
         }
     }
 }
@@ -691,9 +731,11 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                 // renders.
                 let command = w.command.clone();
                 let name = w.name.clone();
+                let child_pid = Arc::new(AtomicU32::new(0));
+                let child_pid_clone = Arc::clone(&child_pid);
                 let (tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
                 std::thread::spawn(move || {
-                    let result = run_widget_command(&command);
+                    let result = run_widget_command(&command, &child_pid_clone);
                     if let Err(e) = tx.send(result) {
                         log::warn!("Custom widget '{}': failed to send result: {}", name, e);
                     }
@@ -713,6 +755,7 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                             placeholder,
                             receiver: rx,
                             prev_output_cell: w.prev_output.clone(),
+                            child_pid,
                         }
                     }
                 }
@@ -721,9 +764,11 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                 let placeholder = resolve_placeholder(w);
                 let command = w.command.clone();
                 let name = w.name.clone();
+                let child_pid = Arc::new(AtomicU32::new(0));
+                let child_pid_clone = Arc::clone(&child_pid);
                 let (tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
                 std::thread::spawn(move || {
-                    let result = run_widget_command(&command);
+                    let result = run_widget_command(&command, &child_pid_clone);
                     if let Err(e) = tx.send(result) {
                         log::warn!("Custom widget '{}': failed to send result: {}", name, e);
                     }
@@ -732,6 +777,7 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                     placeholder,
                     receiver: rx,
                     prev_output_cell: w.prev_output.clone(),
+                    child_pid,
                 }
             };
             PromptSegment::WidgetCustom(state)
@@ -1076,10 +1122,17 @@ fn get_frame_spans<'a>(
 /// `Err(WidgetFailure)` (carrying exit code, stdout, and stderr) when the
 /// command fails or cannot be spawned.  Both stdout and stderr are logged.
 ///
+/// `child_pid` is set to the child's PID immediately after [`spawn`] succeeds,
+/// so that the owning [`WidgetCustomState::Pending`] can send `SIGKILL` if the
+/// segment is dropped while the command is still running.
+///
 /// `SIGCHLD` is expected to have been set to `SIG_DFL` by the caller before
 /// `app::get_command` was invoked; this function does not touch signal
 /// dispositions.
-fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
+fn run_widget_command(
+    command: &[String],
+    child_pid: &Arc<AtomicU32>,
+) -> Result<String, WidgetFailure> {
     let (prog, args) = match command.split_first() {
         Some(parts) => parts,
         None => {
@@ -1093,9 +1146,9 @@ fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
         }
     };
 
-    let output = std::process::Command::new(prog).args(args).output();
+    let child = std::process::Command::new(prog).args(args).spawn();
 
-    match output {
+    match child {
         Err(e) => {
             log::error!(
                 "Custom prompt widget: failed to spawn command {:?}: {}",
@@ -1108,31 +1161,56 @@ fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
                 stderr: e.to_string(),
             })
         }
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            log::info!(
-                "Custom prompt widget command {:?} exited with {}",
-                command,
-                out.status
-            );
-            log::debug!("Custom prompt widget stdout: {}", stdout);
-            log::debug!("Custom prompt widget stderr: {}", stderr);
+        Ok(child) => {
+            // Store the PID immediately so that Drop can kill the process if
+            // the segment is discarded before the command finishes.  A PID of
+            // 0 would mean "no process" (our sentinel), so only store non-zero
+            // values; in practice child.id() is always non-zero on Unix.
+            let pid = child.id();
+            if pid != 0 {
+                child_pid.store(pid, Ordering::Release);
+            }
 
-            if out.status.success() {
-                Ok(stdout)
-            } else {
-                log::warn!(
-                    "Custom prompt widget: command {:?} failed with {}; stderr: {}",
-                    command,
-                    out.status,
-                    stderr
-                );
-                Err(WidgetFailure {
-                    exit_code: out.status.code(),
-                    stdout,
-                    stderr,
-                })
+            match child.wait_with_output() {
+                Err(e) => {
+                    log::error!(
+                        "Custom prompt widget: failed to wait for command {:?}: {}",
+                        command,
+                        e
+                    );
+                    Err(WidgetFailure {
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: e.to_string(),
+                    })
+                }
+                Ok(out) => {
+                    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                    log::info!(
+                        "Custom prompt widget command {:?} exited with {}",
+                        command,
+                        out.status
+                    );
+                    log::debug!("Custom prompt widget stdout: {}", stdout);
+                    log::debug!("Custom prompt widget stderr: {}", stderr);
+
+                    if out.status.success() {
+                        Ok(stdout)
+                    } else {
+                        log::warn!(
+                            "Custom prompt widget: command {:?} failed with {}; stderr: {}",
+                            command,
+                            out.status,
+                            stderr
+                        );
+                        Err(WidgetFailure {
+                            exit_code: out.status.code(),
+                            stdout,
+                            stderr,
+                        })
+                    }
+                }
             }
         }
     }
@@ -2024,6 +2102,7 @@ mod tests {
             placeholder: "   ".to_string(),
             receiver: rx,
             prev_output_cell: Arc::new(Mutex::new(None)),
+            child_pid: Arc::new(AtomicU32::new(0)),
         })];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
