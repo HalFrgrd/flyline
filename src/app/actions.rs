@@ -411,7 +411,257 @@ impl Binding {
     }
 }
 
-const POSSIBLE_ACTIONS: &[Action] = &[
+/// Internal helper for [`expand_variations!`].
+///
+/// Pushes all terminal-equivalent spellings for a single key literal into
+/// `$v: Vec<&'static str>`.  Both the canonical casing used in the default
+/// bindings and a fully-lowercase alias are listed for each rule so that
+/// callers are case-insensitive.
+macro_rules! expand_variation_push {
+    // ── Enter ─────────────────────────────────────────────────────────────
+    // Ctrl+j is the ASCII LF (line-feed) code, identical to Enter in most
+    // terminals.
+    ($v:ident, "Enter") => {
+        $v.extend_from_slice(&["Enter", "Ctrl+j"]);
+    };
+    ($v:ident, "enter") => {
+        $v.extend_from_slice(&["Enter", "Ctrl+j"]);
+    };
+    // ── Word-left group: Alt+Left / Alt+b / Meta+Left / Meta+b ────────────
+    // Alt+b is the Emacs backward-word shortcut; ghostty and other modern
+    // terminal emulators send Meta+Left for the same key chord.
+    ($v:ident, "Alt+Left") => {
+        $v.extend_from_slice(&["Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]);
+    };
+    ($v:ident, "alt+left") => {
+        $v.extend_from_slice(&["Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]);
+    };
+    ($v:ident, "Meta+Left") => {
+        $v.extend_from_slice(&["Meta+Left", "Meta+b", "Alt+Left", "Alt+b"]);
+    };
+    ($v:ident, "meta+left") => {
+        $v.extend_from_slice(&["Meta+Left", "Meta+b", "Alt+Left", "Alt+b"]);
+    };
+    ($v:ident, "Alt+b") => {
+        $v.extend_from_slice(&["Alt+b", "Alt+Left", "Meta+b", "Meta+Left"]);
+    };
+    ($v:ident, "alt+b") => {
+        $v.extend_from_slice(&["Alt+b", "Alt+Left", "Meta+b", "Meta+Left"]);
+    };
+    ($v:ident, "Meta+b") => {
+        $v.extend_from_slice(&["Meta+b", "Meta+Left", "Alt+b", "Alt+Left"]);
+    };
+    ($v:ident, "meta+b") => {
+        $v.extend_from_slice(&["Meta+b", "Meta+Left", "Alt+b", "Alt+Left"]);
+    };
+    // ── Word-right group: Alt+Right / Alt+f / Meta+Right / Meta+f ─────────
+    // Alt+f is the Emacs forward-word shortcut.
+    ($v:ident, "Alt+Right") => {
+        $v.extend_from_slice(&["Alt+Right", "Alt+f", "Meta+Right", "Meta+f"]);
+    };
+    ($v:ident, "alt+right") => {
+        $v.extend_from_slice(&["Alt+Right", "Alt+f", "Meta+Right", "Meta+f"]);
+    };
+    ($v:ident, "Meta+Right") => {
+        $v.extend_from_slice(&["Meta+Right", "Meta+f", "Alt+Right", "Alt+f"]);
+    };
+    ($v:ident, "meta+right") => {
+        $v.extend_from_slice(&["Meta+Right", "Meta+f", "Alt+Right", "Alt+f"]);
+    };
+    ($v:ident, "Alt+f") => {
+        $v.extend_from_slice(&["Alt+f", "Alt+Right", "Meta+f", "Meta+Right"]);
+    };
+    ($v:ident, "alt+f") => {
+        $v.extend_from_slice(&["Alt+f", "Alt+Right", "Meta+f", "Meta+Right"]);
+    };
+    ($v:ident, "Meta+f") => {
+        $v.extend_from_slice(&["Meta+f", "Meta+Right", "Alt+f", "Alt+Right"]);
+    };
+    ($v:ident, "meta+f") => {
+        $v.extend_from_slice(&["Meta+f", "Meta+Right", "Alt+f", "Alt+Right"]);
+    };
+    // ── Alt+X  →  also Meta+X (Alt/Meta terminal equivalence) ────────────
+    ($v:ident, "Alt+Enter") => {
+        $v.extend_from_slice(&["Alt+Enter", "Meta+Enter"]);
+    };
+    ($v:ident, "alt+enter") => {
+        $v.extend_from_slice(&["Alt+Enter", "Meta+Enter"]);
+    };
+    ($v:ident, "Alt+Backspace") => {
+        $v.extend_from_slice(&["Alt+Backspace", "Meta+Backspace"]);
+    };
+    ($v:ident, "alt+backspace") => {
+        $v.extend_from_slice(&["Alt+Backspace", "Meta+Backspace"]);
+    };
+    ($v:ident, "Alt+Delete") => {
+        $v.extend_from_slice(&["Alt+Delete", "Meta+Delete"]);
+    };
+    ($v:ident, "alt+delete") => {
+        $v.extend_from_slice(&["Alt+Delete", "Meta+Delete"]);
+    };
+    ($v:ident, "Alt+D") => {
+        $v.extend_from_slice(&["Alt+D", "Meta+D"]);
+    };
+    ($v:ident, "alt+d") => {
+        $v.extend_from_slice(&["Alt+D", "Meta+D"]);
+    };
+    ($v:ident, "Alt+W") => {
+        $v.extend_from_slice(&["Alt+W", "Meta+W"]);
+    };
+    ($v:ident, "alt+w") => {
+        $v.extend_from_slice(&["Alt+W", "Meta+W"]);
+    };
+    // ── Shift+Tab / Backtab ───────────────────────────────────────────────
+    // BackTab (Shift+Tab) is sent as either "Shift+Tab" or the dedicated
+    // "Backtab" keycode depending on the terminal emulator.
+    ($v:ident, "Shift+Tab") => {
+        $v.extend_from_slice(&["Shift+Tab", "Backtab"]);
+    };
+    ($v:ident, "shift+tab") => {
+        $v.extend_from_slice(&["Shift+Tab", "Backtab"]);
+    };
+    ($v:ident, "Backtab") => {
+        $v.extend_from_slice(&["Backtab", "Shift+Tab"]);
+    };
+    ($v:ident, "backtab") => {
+        $v.extend_from_slice(&["Backtab", "Shift+Tab"]);
+    };
+    // ── Fallthrough: pass through unchanged ───────────────────────────────
+    ($v:ident, $key:literal) => {
+        $v.push($key);
+    };
+}
+
+/// Expand a list of keybinding key strings to include their common terminal
+/// equivalents.
+///
+/// Returns a [`Vec<&'static str>`] that coerces to `&[&str]` via deref, so it
+/// can be passed directly as `&expand_variations![...]` to
+/// [`Binding::try_new`].
+///
+/// # Expansion rules
+///
+/// | Input            | Expands to                                          |
+/// |------------------|-----------------------------------------------------|
+/// | `"Enter"`        | `"Enter"`, `"Ctrl+j"`                               |
+/// | `"Shift+Tab"`    | `"Shift+Tab"`, `"Backtab"`                          |
+/// | `"Backtab"`      | `"Backtab"`, `"Shift+Tab"`                          |
+/// | `"Alt+Left"`     | `"Alt+Left"`, `"Alt+b"`, `"Meta+Left"`, `"Meta+b"` |
+/// | `"Alt+Right"`    | `"Alt+Right"`, `"Alt+f"`, `"Meta+Right"`, `"Meta+f"`|
+/// | `"Meta+Left"`    | same four-way word-left group                       |
+/// | `"Alt+b"` / `"Meta+b"` | same four-way word-left group               |
+/// | `"Meta+Right"`   | same four-way word-right group                      |
+/// | `"Alt+f"` / `"Meta+f"` | same four-way word-right group              |
+/// | `"Alt+X"` (other)| `"Alt+X"`, `"Meta+X"`                               |
+/// | anything else    | unchanged                                           |
+///
+/// # Example
+///
+/// ```ignore
+/// // expand_variations!["Enter"]               →  ["Enter", "Ctrl+j"]
+/// // expand_variations!["Shift+Tab"]           →  ["Shift+Tab", "Backtab"]
+/// // expand_variations!["Alt+Left"]            →  ["Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]
+/// // expand_variations!["Ctrl+Left", "Alt+Left"] →  ["Ctrl+Left", "Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]
+/// ```
+macro_rules! expand_variations {
+    [$($key:literal),+ $(,)?] => {{
+        let mut v: Vec<&'static str> = Vec::new();
+        $(expand_variation_push!(v, $key);)+
+        v
+    }};
+}
+
+/// Build the [`POSSIBLE_ACTIONS`] slice from a list of [`Action::new`] calls,
+/// where any entry written as `Action::expand_new([scope1, scope2, …], …)`
+/// is automatically expanded into one [`Action::new`] per listed scope.
+///
+/// The output is an array literal that can be coerced to `&[Action]` in a
+/// `const` context.
+///
+/// # Syntax
+///
+/// ```ignore
+/// expand_actions![
+///     // ordinary action — one scope already baked in
+///     Action::new("name", "desc", Scope::Any, |app, _key| { /* … */ }),
+///
+///     // multi-scope action — expands to N Action::new entries
+///     Action::expand_new(
+///         [Scope::Any, Scope::FuzzyHistorySearch],
+///         "name", "desc",
+///         |app, _key| { /* … */ },
+///     ),
+/// ]
+/// ```
+macro_rules! expand_actions {
+    // ── Base case: accumulator exhausted → produce the slice ──────────────
+    (@acc [ $($acc:tt)* ]) => {
+        &[ $($acc)* ]
+    };
+
+    // ── Action::expand_new with a following comma (not the last item) ─────
+    (
+        @acc [ $($acc:tt)* ]
+        Action::expand_new(
+            [$($scopes:expr),+ $(,)?],
+            $name:literal,
+            $desc:literal,
+            $action:expr $(,)?
+        ),
+        $($rest:tt)*
+    ) => {
+        expand_actions!(@acc [
+            $($acc)*
+            $(Action::new($name, $desc, $scopes, $action),)+
+        ] $($rest)*)
+    };
+
+    // ── Action::expand_new as the last item (optional trailing comma) ─────
+    (
+        @acc [ $($acc:tt)* ]
+        Action::expand_new(
+            [$($scopes:expr),+ $(,)?],
+            $name:literal,
+            $desc:literal,
+            $action:expr $(,)?
+        ) $(,)?
+    ) => {
+        expand_actions!(@acc [
+            $($acc)*
+            $(Action::new($name, $desc, $scopes, $action),)+
+        ])
+    };
+
+    // ── Action::new with a following comma (not the last item) ───────────
+    (
+        @acc [ $($acc:tt)* ]
+        Action::new( $($args:tt)* ),
+        $($rest:tt)*
+    ) => {
+        expand_actions!(@acc [
+            $($acc)*
+            Action::new($($args)*),
+        ] $($rest)*)
+    };
+
+    // ── Action::new as the last item (optional trailing comma) ───────────
+    (
+        @acc [ $($acc:tt)* ]
+        Action::new( $($args:tt)* ) $(,)?
+    ) => {
+        expand_actions!(@acc [
+            $($acc)*
+            Action::new($($args)*),
+        ])
+    };
+
+    // ── Public entry point ────────────────────────────────────────────────
+    [ $($input:tt)* ] => {
+        expand_actions!(@acc [] $($input)*)
+    };
+}
+
+const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "accept_suggestion",
         "Accept inline history suggestion",
@@ -661,22 +911,6 @@ const POSSIBLE_ACTIONS: &[Action] = &[
         "Start tab completion",
         Scope::Any,
         |app, _key| app.start_tab_complete(),
-    ),
-    Action::new(
-        "escape_to_normal_mode",
-        "Return to the normal command editing mode",
-        Scope::Any,
-        |app, _key| {
-            app.content_mode = ContentMode::Normal;
-        },
-    ),
-    Action::new(
-        "escape_to_normal_mode",
-        "Return to the normal command editing mode",
-        Scope::FuzzyHistorySearch,
-        |app, _key| {
-            app.content_mode = ContentMode::Normal;
-        },
     ),
     Action::new(
         "toggle_mouse",
@@ -986,6 +1220,24 @@ const POSSIBLE_ACTIONS: &[Action] = &[
             }
         },
     ),
+    Action::expand_new(
+        [
+            Scope::Any,
+            Scope::FuzzyHistorySearch,
+            Scope::TabCompletionWaiting,
+            Scope::TabCompletion,
+            Scope::AgentModeWaiting,
+            Scope::AgentOutputSelection,
+            Scope::AgentError,
+            Scope::InlineHistoryAcceptable,
+            Scope::PromptDirSelect,
+        ],
+        "escape_to_normal_mode",
+        "Return to the normal command editing mode",
+        |app, _key| {
+            app.content_mode = ContentMode::Normal;
+        },
+    ),
 ];
 
 use clap::builder::PossibleValuesParser;
@@ -1040,29 +1292,51 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 57]> = LazyLock::new(|| {
             "escape_to_normal_mode", // Stop fuzzy history search if active, otherwise escape to normal mode
         )
         .unwrap(),
-        Binding::try_new(&["Alt+Enter"], Scope::Any, "run_agent_mode").unwrap(),
         Binding::try_new(
-            &[
-                "Enter",
-                "Ctrl+j", // Without this, when I hold enter, sometimes 'j' is read as input
-            ],
+            &expand_variations!["Alt+Enter"],
+            Scope::Any,
+            "run_agent_mode",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Enter"],
             Scope::FuzzyHistorySearch,
             "accept_entry",
         )
         .unwrap(),
-        Binding::try_new(&["Enter", "Ctrl+j"], Scope::TabCompletion, "accept_entry").unwrap(),
-        Binding::try_new(&["Enter", "Ctrl+j"], Scope::AgentError, "run_help_command").unwrap(),
         Binding::try_new(
-            &["Enter", "Ctrl+j"],
+            &expand_variations!["Enter"],
+            Scope::TabCompletion,
+            "accept_entry",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Enter"],
+            Scope::AgentError,
+            "run_help_command",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Enter"],
             Scope::AgentOutputSelection,
             "accept_entry",
         )
         .unwrap(),
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
-        Binding::try_new(&["Enter", "Ctrl+j"], Scope::PromptDirSelect, "accept_entry").unwrap(),
-        Binding::try_new(&["Enter", "Ctrl+j"], Scope::Any, "submit_or_newline").unwrap(),
         Binding::try_new(
-            &["Shift+Tab", "Backtab"], // TODO backtab and shift tab for agent output selection
+            &expand_variations!["Enter"],
+            Scope::PromptDirSelect,
+            "accept_entry",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Enter"],
+            Scope::Any,
+            "submit_or_newline",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Shift+Tab"], // Shift+Tab and Backtab are equivalent
             Scope::TabCompletion,
             "prev_suggestion",
         )
@@ -1099,13 +1373,13 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 57]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &["Alt+Backspace", "Meta+Backspace"],
+            &expand_variations!["Alt+Backspace"],
             Scope::Any,
             "delete_left_one_word_fine_grained",
         )
         .unwrap(),
         Binding::try_new(
-            &["Ctrl+Backspace", "Ctrl+H", "Alt+W", "Ctrl+w", "Meta+W"],
+            &expand_variations!["Ctrl+Backspace", "Ctrl+H", "Alt+W", "Ctrl+w"],
             Scope::Any,
             "delete_left_one_word_whitespace",
         )
@@ -1118,13 +1392,13 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 57]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &["Alt+Delete", "Meta+Delete"],
+            &expand_variations!["Alt+Delete"],
             Scope::Any,
             "delete_right_one_word_fine_grained",
         )
         .unwrap(),
         Binding::try_new(
-            &["Ctrl+Delete", "Alt+D", "Meta+D"],
+            &expand_variations!["Ctrl+Delete", "Alt+D"],
             Scope::Any,
             "delete_right_one_word_whitespace",
         )
@@ -1135,13 +1409,13 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 57]> = LazyLock::new(|| {
         Binding::try_new(&["Home"], Scope::PromptDirSelect, "move_to_start").unwrap(),
         Binding::try_new(&["End"], Scope::PromptDirSelect, "move_to_end").unwrap(),
         Binding::try_new(
-            &["Ctrl+Left", "Alt+Left", "Meta+Left"],
+            &expand_variations!["Ctrl+Left", "Alt+Left"],
             Scope::PromptDirSelect,
             "move_left",
         )
         .unwrap(),
         Binding::try_new(
-            &["Ctrl+Right", "Alt+Right", "Meta+Right"],
+            &expand_variations!["Ctrl+Right", "Alt+Right"],
             Scope::PromptDirSelect,
             "move_right",
         )
@@ -1153,7 +1427,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 57]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &["Ctrl+Left", "Alt+Left", "Meta+Left", "Alt+b", "Meta+b"], // Emacs-style. ghostty sends this for Alt+Left by default
+            &expand_variations!["Ctrl+Left", "Alt+Left"], // Emacs-style. ghostty sends this for Alt+Left by default
             Scope::Any,
             "move_left_one_word_whitespace",
         )
@@ -1174,7 +1448,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 57]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &["Ctrl+Right", "Alt+Right", "Meta+Right", "Alt+f", "Meta+f"], // Emacs-style. ghostty sends Alt+Right as Meta+Right by default
+            &expand_variations!["Ctrl+Right", "Alt+Right"], // Emacs-style. ghostty sends Alt+Right as Meta+Right by default
             Scope::Any,
             "move_right_one_word_whitespace",
         )
