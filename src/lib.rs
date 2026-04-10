@@ -33,6 +33,7 @@ mod tab_completion_context;
 mod table;
 mod text_buffer;
 mod tutorial;
+pub mod unicode_helpers;
 mod users;
 
 fn get_styles() -> clap::builder::Styles {

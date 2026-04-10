@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use crate::unicode_helpers::{BRAILLE_BLANK, OctantDots, OctantStyle, octant};
+
 struct Coord {
     x: usize,
     y: usize,
@@ -32,7 +34,7 @@ impl SnakeAnimation {
             .map(|(i, original_char)| {
                 snake_chars
                     .get(i)
-                    .filter(|&&snake_char| snake_char != '⠀')
+                    .filter(|&&snake_char| snake_char != BRAILLE_BLANK)
                     .unwrap_or(&original_char)
                     .to_owned()
             })
@@ -133,69 +135,63 @@ impl SnakeAnimation {
         let mut res = String::new();
         let grid = self.body_as_grid();
         for poss_col_pair in grid.chunks(2) {
-            let col_pair = if poss_col_pair.len() % 2 == 1 {
+            let col_pair: [[bool; 4]; 2] = if poss_col_pair.len() % 2 == 1 {
                 assert!(poss_col_pair.len() == 1);
                 [poss_col_pair[0], [false; 4]]
             } else {
                 [poss_col_pair[0], poss_col_pair[1]]
             };
 
-            let ch = SnakeAnimation::unicode_char(
-                col_pair[0][0],
-                col_pair[1][0],
-                col_pair[0][1],
-                col_pair[1][1],
-                col_pair[0][2],
-                col_pair[1][2],
-                col_pair[0][3],
-                col_pair[1][3],
-            );
+            // Build OctantDots from the 2-column × 4-row grid and render as Braille.
+            let ch = octant(OctantDots::from_grid(col_pair), OctantStyle::Braille)
+                .unwrap_or(BRAILLE_BLANK);
             res.push(ch);
         }
         res
-    }
-
-    fn unicode_char(
-        pos_0_0: bool,
-        pos_0_1: bool,
-        pos_1_0: bool,
-        pos_1_1: bool,
-        pos_2_0: bool,
-        pos_2_1: bool,
-        pos_3_0: bool,
-        pos_3_1: bool,
-    ) -> char {
-        const BASE_CHAR: char = '⠀';
-        let mut c = 0;
-        c |= pos_0_0 as u32;
-        c |= (pos_1_0 as u32) << 1;
-        c |= (pos_2_0 as u32) << 2;
-        c |= (pos_0_1 as u32) << 3;
-        c |= (pos_1_1 as u32) << 4;
-        c |= (pos_2_1 as u32) << 5;
-        c |= (pos_3_0 as u32) << 6;
-        c |= (pos_3_1 as u32) << 7;
-        std::char::from_u32(BASE_CHAR as u32 + c).unwrap_or(BASE_CHAR)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::unicode_helpers::{OctantDots, OctantStyle, octant};
 
     #[test]
-    fn test_unicode_gen() {
+    fn test_braille_top_row() {
+        // TOP_LEFT + TOP_RIGHT → braille char '⠉' (DOT_1 + DOT_4)
         assert_eq!(
-            SnakeAnimation::unicode_char(true, true, false, false, false, false, false, false),
-            '⠉'
+            octant(
+                OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT,
+                OctantStyle::Braille
+            ),
+            Some('⠉')
         );
+    }
+
+    #[test]
+    fn test_braille_most_dots() {
+        // All positions except UPPER_MID_RIGHT = all braille dots except DOT_5
+        // → 0xEF → U+28EF = '⣯'
         assert_eq!(
-            SnakeAnimation::unicode_char(true, true, true, false, true, true, true, true),
-            '⣯'
+            octant(
+                OctantDots::TOP_LEFT
+                    | OctantDots::UPPER_MID_LEFT
+                    | OctantDots::LOWER_MID_LEFT
+                    | OctantDots::TOP_RIGHT
+                    | OctantDots::LOWER_MID_RIGHT
+                    | OctantDots::BOT_LEFT
+                    | OctantDots::BOT_RIGHT,
+                OctantStyle::Braille
+            ),
+            Some('⣯')
         );
+    }
+
+    #[test]
+    fn test_braille_blank() {
+        use crate::unicode_helpers::BRAILLE_BLANK;
         assert_eq!(
-            SnakeAnimation::unicode_char(false, false, false, false, false, false, false, false),
-            '⠀'
+            octant(OctantDots::NONE, OctantStyle::Braille),
+            Some(BRAILLE_BLANK)
         );
     }
 }
