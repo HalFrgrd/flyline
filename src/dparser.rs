@@ -503,9 +503,6 @@ impl DParser {
                     }
                 }
                 TokenKind::Word(_) if word_is_part_of_assignment => {
-                    // The word on the right-hand side of an assignment (e.g. `1` in `FOO=1`)
-                    // is an environment variable value and should be coloured accordingly.
-                    self.tokens[idx].annotations.is_env_var = true;
                     if let Some(range) = &mut self.current_command_range {
                         *range = *range.start()..=idx;
                     }
@@ -525,21 +522,18 @@ impl DParser {
                     });
                 }
 
+                // These keywords and operators introduce a new command; reset the command
+                // context so the first word after them receives the command_word annotation.
                 TokenKind::And
                 | TokenKind::Or
                 | TokenKind::Pipe
                 | TokenKind::Semicolon
                 | TokenKind::Background
-                | TokenKind::DoubleSemicolon => {
-                    if stop_parsing_at_command_boundary {
-                        break;
-                    }
-                    self.current_command_range = None;
-                }
-                // These keywords introduce a new command body; treat them as command
-                // separators so the first word after them receives the command_word
-                // annotation rather than the keyword itself.
-                TokenKind::Do | TokenKind::Then | TokenKind::Elif | TokenKind::Else => {
+                | TokenKind::DoubleSemicolon
+                | TokenKind::Do
+                | TokenKind::Then
+                | TokenKind::Elif
+                | TokenKind::Else => {
                     if stop_parsing_at_command_boundary {
                         break;
                     }
@@ -1484,7 +1478,7 @@ mod tests {
 
     #[test]
     fn test_assignment_env_var_annotation() {
-        // `FOO=1 echo hello`: FOO and 1 are both env-var assignments; echo is the command.
+        // `FOO=1 echo hello`: FOO is the env-var name; echo is the command.
         let input = r#"FOO=1 echo hello"#;
         let mut parser = DParser::from(input);
         parser.walk_to_end();
@@ -1501,9 +1495,9 @@ mod tests {
         // = – the assignment operator
         assert_eq!(tokens[1].token.value, "=");
 
-        // 1 – the value on the right-hand side of the assignment
+        // 1 – the value on the right-hand side; not an env var
         assert_eq!(tokens[2].token.value, "1");
-        assert!(tokens[2].annotations.is_env_var);
+        assert!(!tokens[2].annotations.is_env_var);
 
         // echo – the command that follows the env-var prefix
         assert_eq!(tokens[4].token.value, "echo");
