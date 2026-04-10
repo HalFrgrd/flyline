@@ -7,12 +7,37 @@
 /// - I Ching Trigrams (U+2630–U+2637) and Hexagrams (U+4DC0–U+4DFF)
 /// - Symbols for Legacy Computing (U+1FB00–U+1FBFF)
 /// - Symbols for Legacy Computing Supplement (U+1CC00–U+1CEBF)
+///
+/// # 8-dot cell rendering
+///
+/// Both Braille patterns and block octant characters represent a 2×4 grid of
+/// filled/empty positions.  Use [`OctantDots`] to describe which positions are
+/// filled, then choose the visual style via [`OctantStyle`]:
+///
+/// | Style                   | Characters  | Unicode range         |
+/// |-------------------------|-------------|-----------------------|
+/// | [`OctantStyle::Braille`] | ⠀–⣿        | U+2800–U+28FF         |
+/// | [`OctantStyle::Full`]   | 🬀–🳎        | U+1CD00–U+1CDFE       |
+/// | [`OctantStyle::Separated`] | (Unicode 16 supplement) | U+1CE00+ |
+///
+/// ```ignore
+/// use flyline::unicode_helpers::{OctantDots, OctantStyle, octant};
+/// // Braille "⠉" (top row filled)
+/// let ch = octant(OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT, OctantStyle::Braille);
+/// assert_eq!(ch, Some('⠉'));
+/// ```
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Braille Patterns  U+2800–U+28FF
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Bitflag representing which dots are raised in an 8-dot Braille cell.
+/// The blank Braille Pattern character (U+2800), representing "no dots raised".
+///
+/// Useful as a sentinel value when overlaying Braille on text.
+pub const BRAILLE_BLANK: char = '\u{2800}';
+
+/// Bitflag representing which dots are raised in an 8-dot Braille cell,
+/// using the traditional braille dot numbering (column-major layout).
 ///
 /// Standard Braille dot layout:
 /// ```text
@@ -23,6 +48,10 @@
 /// ```
 /// Dots 1–6 form the traditional 6-dot Braille cell; dots 7 and 8 extend it
 /// for 8-dot Braille (computer Braille).
+///
+/// To get a Braille character from a [`BrailleDots`] value, convert it to
+/// [`OctantDots`] via [`OctantDots::from_braille`] and call
+/// [`octant`] with [`OctantStyle::Braille`].
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub struct BrailleDots(pub u8);
 
@@ -56,16 +85,6 @@ impl std::ops::BitAnd for BrailleDots {
     fn bitand(self, rhs: Self) -> Self {
         BrailleDots(self.0 & rhs.0)
     }
-}
-
-/// Returns the Braille character with the given dots raised (U+2800–U+28FF).
-///
-/// Every 8-bit value maps to a valid Unicode Braille Pattern, so this function
-/// always succeeds and never returns the blank Braille character for non-zero input.
-pub fn braille(dots: BrailleDots) -> char {
-    // The Braille Patterns block (U+2800–U+28FF) is fully defined for all 256 values.
-    char::from_u32(0x2800 + dots.0 as u32)
-        .expect("Braille block is fully defined for all 256 patterns")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -498,6 +517,111 @@ pub const UPPER_RIGHT_LOWER_LEFT_BLOCK: char = '▞'; // U+259E
 pub const UPPER_RIGHT_LOWER_LEFT_LOWER_RIGHT_BLOCK: char = '▟'; // U+259F
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Quadrant helper  (uses Block Elements + half-blocks above)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Bitflag selecting which of the four quadrant positions are filled.
+///
+/// Each cell is a 2×2 grid:
+/// ```text
+/// UPPER_LEFT   UPPER_RIGHT
+/// LOWER_LEFT   LOWER_RIGHT
+/// ```
+///
+/// # Example
+/// ```ignore
+/// use flyline::unicode_helpers::{Quadrant, QuadrantStyle, quadrant};
+/// assert_eq!(quadrant(Quadrant::UPPER_LEFT | Quadrant::UPPER_RIGHT, QuadrantStyle::Full), Some('▀'));
+/// assert_eq!(quadrant(Quadrant::ALL, QuadrantStyle::Full), Some('█'));
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct Quadrant(pub u8);
+
+impl Quadrant {
+    pub const NONE: Self = Quadrant(0);
+    pub const UPPER_LEFT: Self = Quadrant(1 << 0);
+    pub const UPPER_RIGHT: Self = Quadrant(1 << 1);
+    pub const LOWER_LEFT: Self = Quadrant(1 << 2);
+    pub const LOWER_RIGHT: Self = Quadrant(1 << 3);
+    pub const ALL: Self = Quadrant(0b0000_1111);
+}
+
+impl std::ops::BitOr for Quadrant {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        Quadrant(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for Quadrant {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl std::ops::BitAnd for Quadrant {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        Quadrant(self.0 & rhs.0)
+    }
+}
+
+/// Visual rendering style for [`quadrant`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum QuadrantStyle {
+    /// Characters from Block Elements (U+2580–U+259F) and half-blocks.
+    Full,
+    /// Separated quadrant block characters from Symbols for Legacy Computing
+    /// Supplement (U+1CC00–U+1CEBF, Unicode 16.0).
+    Separated,
+}
+
+// Lookup table indexed by the 4-bit pattern (bit 0=UL, 1=UR, 2=LL, 3=LR).
+// None means no character is assigned for that combination.
+#[rustfmt::skip]
+const QUADRANT_FULL: [Option<char>; 16] = [
+    None,        // 0b0000: empty
+    Some('▘'),   // 0b0001: UL
+    Some('▝'),   // 0b0010: UR
+    Some('▀'),   // 0b0011: UL+UR  (upper half block)
+    Some('▖'),   // 0b0100: LL
+    Some('▌'),   // 0b0101: UL+LL  (left half block)
+    Some('▞'),   // 0b0110: UR+LL
+    Some('▛'),   // 0b0111: UL+UR+LL
+    Some('▗'),   // 0b1000: LR
+    Some('▚'),   // 0b1001: UL+LR
+    Some('▐'),   // 0b1010: UR+LR  (right half block)
+    Some('▜'),   // 0b1011: UL+UR+LR
+    Some('▄'),   // 0b1100: LL+LR  (lower half block)
+    Some('▙'),   // 0b1101: UL+LL+LR
+    Some('▟'),   // 0b1110: UR+LL+LR
+    Some('█'),   // 0b1111: all    (full block)
+];
+
+/// Returns the quadrant block character for the given filled positions and style.
+///
+/// Returns `None` if all positions are clear (empty cell).  For
+/// [`QuadrantStyle::Full`], all 15 non-empty combinations have a character;
+/// for [`QuadrantStyle::Separated`], the characters come from the Symbols for
+/// Legacy Computing Supplement block (Unicode 16.0), which is ordered by the
+/// same 4-bit pattern (offset 0 = UL-only, …, offset 14 = all four).
+pub fn quadrant(q: Quadrant, style: QuadrantStyle) -> Option<char> {
+    let idx = (q.0 & 0x0F) as usize;
+    match style {
+        QuadrantStyle::Full => QUADRANT_FULL[idx],
+        QuadrantStyle::Separated => {
+            if idx == 0 {
+                return None;
+            }
+            // Separated quadrant blocks are at U+1CC21–U+1CC2F in the
+            // Symbols for Legacy Computing Supplement (Unicode 16.0).
+            // The offset is the same 4-bit pattern minus 1.
+            char::from_u32(0x1CC21 + (idx as u32 - 1))
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Symbols for Legacy Computing  U+1FB00–U+1FBFF
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -590,7 +714,8 @@ pub fn sextant(sextants_visible: Sextant, style: SextantStyle) -> Option<char> {
 
 /// Bitflag selecting which of the eight octant positions are filled.
 ///
-/// Each cell is a 2×4 grid (positions in reading order):
+/// Each cell is a 2×4 grid (positions in reading order, left-to-right then
+/// top-to-bottom):
 /// ```text
 /// TOP_LEFT         TOP_RIGHT
 /// UPPER_MID_LEFT   UPPER_MID_RIGHT
@@ -598,11 +723,16 @@ pub fn sextant(sextants_visible: Sextant, style: SextantStyle) -> Option<char> {
 /// BOT_LEFT         BOT_RIGHT
 /// ```
 ///
+/// Use [`octant`] to render the dots as a Braille pattern, a filled block
+/// octant character, or a separated block octant character.
+///
 /// # Example
-/// ```
-/// use flyline::unicode_helpers::{OctantDots, octant};
-/// let ch = octant(OctantDots::TOP_LEFT | OctantDots::BOT_RIGHT);
-/// assert!(ch.is_some());
+/// ```ignore
+/// use flyline::unicode_helpers::{OctantDots, OctantStyle, octant};
+/// // Braille "⠉" (top-left + top-right)
+/// assert_eq!(octant(OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT, OctantStyle::Braille), Some('⠉'));
+/// // Full block octant (U+1CD00 = top-left only)
+/// assert_eq!(octant(OctantDots::TOP_LEFT, OctantStyle::Full), char::from_u32(0x1CD00));
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub struct OctantDots(pub u8);
@@ -618,6 +748,62 @@ impl OctantDots {
     pub const BOT_LEFT: Self = OctantDots(1 << 6); // position 7
     pub const BOT_RIGHT: Self = OctantDots(1 << 7); // position 8
     pub const ALL: Self = OctantDots(0xFF);
+
+    /// Construct from a 2-column × 4-row boolean grid where `grid[col][row]`
+    /// is `true` if that position is filled.
+    ///
+    /// - `grid[0]` = left column (rows 0–3 from top to bottom)
+    /// - `grid[1]` = right column (rows 0–3 from top to bottom)
+    ///
+    /// This mirrors the column layout used by the snake animation and braille displays.
+    ///
+    /// # Example
+    /// ```ignore
+    /// use flyline::unicode_helpers::{OctantDots, OctantStyle, octant};
+    /// // Left column fully filled, right column empty
+    /// let dots = OctantDots::from_grid([[true; 4], [false; 4]]);
+    /// assert_eq!(dots, OctantDots::TOP_LEFT | OctantDots::UPPER_MID_LEFT
+    ///                | OctantDots::LOWER_MID_LEFT | OctantDots::BOT_LEFT);
+    /// ```
+    pub fn from_grid(grid: [[bool; 4]; 2]) -> Self {
+        OctantDots(
+            (grid[0][0] as u8)           // row 0, col 0 → TOP_LEFT        (bit 0)
+            | ((grid[1][0] as u8) << 1)  // row 0, col 1 → TOP_RIGHT       (bit 1)
+            | ((grid[0][1] as u8) << 2)  // row 1, col 0 → UPPER_MID_LEFT  (bit 2)
+            | ((grid[1][1] as u8) << 3)  // row 1, col 1 → UPPER_MID_RIGHT (bit 3)
+            | ((grid[0][2] as u8) << 4)  // row 2, col 0 → LOWER_MID_LEFT  (bit 4)
+            | ((grid[1][2] as u8) << 5)  // row 2, col 1 → LOWER_MID_RIGHT (bit 5)
+            | ((grid[0][3] as u8) << 6)  // row 3, col 0 → BOT_LEFT        (bit 6)
+            | ((grid[1][3] as u8) << 7), // row 3, col 1 → BOT_RIGHT       (bit 7)
+        )
+    }
+
+    /// Construct from a [`BrailleDots`] value, converting from the traditional
+    /// column-major braille dot numbering to the reading-order grid used by
+    /// [`OctantDots`].
+    ///
+    /// Equivalent to calling `octant(OctantDots::from_braille(bd), OctantStyle::Braille)`.
+    pub fn from_braille(bd: BrailleDots) -> Self {
+        // Braille dot layout (column-major): DOT_1=bit0, DOT_2=bit1, DOT_3=bit2,
+        // DOT_4=bit3, DOT_5=bit4, DOT_6=bit5, DOT_7=bit6, DOT_8=bit7.
+        // OctantDots layout (reading order): TOP_LEFT=bit0, TOP_RIGHT=bit1,
+        // UPPER_MID_LEFT=bit2, UPPER_MID_RIGHT=bit3, LOWER_MID_LEFT=bit4,
+        // LOWER_MID_RIGHT=bit5, BOT_LEFT=bit6, BOT_RIGHT=bit7.
+        //
+        // Mapping: Braille DOT_1(bit0)→OctantDots bit0, DOT_2(bit1)→bit2,
+        //          DOT_3(bit2)→bit4, DOT_4(bit3)→bit1, DOT_5(bit4)→bit3,
+        //          DOT_6(bit5)→bit5, DOT_7(bit6)→bit6, DOT_8(bit7)→bit7.
+        let b = bd.0;
+        OctantDots(
+            (b & 0x01)           // braille bit0 → octant bit0
+            | ((b & 0x02) << 1)  // braille bit1 → octant bit2
+            | ((b & 0x04) << 2)  // braille bit2 → octant bit4
+            | ((b & 0x08) >> 2)  // braille bit3 → octant bit1
+            | ((b & 0x10) >> 1)  // braille bit4 → octant bit3
+            | (b & 0x20)         // braille bit5 → octant bit5
+            | (b & 0xC0), // braille bits6,7 → octant bits6,7
+        )
+    }
 }
 
 impl std::ops::BitOr for OctantDots {
@@ -640,20 +826,78 @@ impl std::ops::BitAnd for OctantDots {
     }
 }
 
-/// Returns the block octant character for the given filled positions.
+/// Visual rendering style for [`octant`].
 ///
-/// Returns `None` if all positions are clear (empty cell), or if the codepoint
-/// is unassigned.
+/// All three styles describe the same 2×4 cell grid; only the character set
+/// (and thus visual appearance) differs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OctantStyle {
+    /// Braille Patterns block (U+2800–U+28FF).
+    ///
+    /// The Braille encoding reorders the bits to column-major dot order (dots
+    /// 1–8).  Because every 8-bit value maps to a valid Braille character,
+    /// this variant always returns `Some`, including `Some(BRAILLE_BLANK)` for
+    /// [`OctantDots::NONE`].
+    Braille,
+    /// Filled block octant characters (U+1CD00–U+1CDFE, Symbols for Legacy
+    /// Computing Supplement, Unicode 16.0).
+    Full,
+    /// Separated block octant characters.
+    ///
+    /// The exact codepoint range in the Symbols for Legacy Computing
+    /// Supplement (Unicode 16.0) is not fully standardised for all patterns;
+    /// returns `None` if the requested pattern has no assigned codepoint.
+    Separated,
+}
+
+/// Returns the character that renders the given octant dots in the requested style.
 ///
-/// Octant characters are at U+1CD00–U+1CDFE (Symbols for Legacy Computing
-/// Supplement, Unicode 16.0). The bit pattern is the natural 8-bit index
-/// (bit 0 = top-left, reading left-to-right and top-to-bottom).
-pub fn octant(dots: OctantDots) -> Option<char> {
-    if dots.0 == 0 {
-        return None;
+/// For [`OctantStyle::Braille`] the function always returns `Some` (returning
+/// [`BRAILLE_BLANK`] when `dots` is [`OctantDots::NONE`]).  For the other
+/// styles, `None` is returned when `dots` is `NONE` or when no codepoint is
+/// assigned.
+///
+/// # Braille bit remapping
+///
+/// The [`OctantDots`] type uses reading order (row-major), while the Unicode
+/// Braille block uses column-major dot numbering.  [`octant`] performs the
+/// remapping automatically so callers always think in terms of grid positions.
+pub fn octant(dots: OctantDots, style: OctantStyle) -> Option<char> {
+    match style {
+        OctantStyle::Braille => {
+            // Remap OctantDots (reading order) bits to Braille (column-major) bits.
+            // OctantDots: bit0=TL, bit1=TR, bit2=UML, bit3=UMR, bit4=LML, bit5=LMR, bit6=BL, bit7=BR
+            // Braille:    bit0=D1(TL), bit1=D2(UML), bit2=D3(LML), bit3=D4(TR),
+            //             bit4=D5(UMR), bit5=D6(LMR), bit6=D7(BL), bit7=D8(BR)
+            let o = dots.0;
+            let b = (o & 0x01)           // octant bit0 (TL)  → braille bit0 (D1)
+                | ((o & 0x02) << 2)      // octant bit1 (TR)  → braille bit3 (D4)
+                | ((o & 0x04) >> 1)      // octant bit2 (UML) → braille bit1 (D2)
+                | ((o & 0x08) << 1)      // octant bit3 (UMR) → braille bit4 (D5)
+                | ((o & 0x10) >> 2)      // octant bit4 (LML) → braille bit2 (D3)
+                | (o & 0x20)             // octant bit5 (LMR) → braille bit5 (D6)
+                | (o & 0xC0); // octant bits6,7 (BL,BR) → braille bits6,7 (D7,D8)
+            // Braille block (U+2800–U+28FF) is fully defined for all 256 values.
+            char::from_u32(0x2800 + b as u32)
+        }
+        OctantStyle::Full => {
+            if dots.0 == 0 {
+                return None;
+            }
+            // Full octant chars: U+1CD00 + (pattern - 1), reading-order encoding.
+            let offset = dots.0 as u32 - 1;
+            char::from_u32(0x1CD00 + offset)
+        }
+        OctantStyle::Separated => {
+            if dots.0 == 0 {
+                return None;
+            }
+            // Separated octant chars are in the Symbols for Legacy Computing
+            // Supplement (Unicode 16.0).  Not all patterns have assigned codepoints.
+            let offset = dots.0 as u32 - 1;
+            char::from_u32(0x1CE00 + offset)
+        }
     }
-    let offset = dots.0 as u32 - 1;
-    char::from_u32(0x1CD00 + offset)
 }
 
 // ── Additional Symbols for Legacy Computing constants ─────────────────────────
@@ -677,29 +921,218 @@ pub const SEGMENTED_DIGIT_NINE: char = '\u{1FBF9}';
 mod tests {
     use super::*;
 
-    // ── Braille ───────────────────────────────────────────────────────────────
+    // ── Braille via octant(…, OctantStyle::Braille) ───────────────────────────
 
     #[test]
-    fn test_braille_blank() {
-        assert_eq!(braille(BrailleDots::EMPTY), '⠀');
-    }
-
-    #[test]
-    fn test_braille_all_dots() {
-        assert_eq!(braille(BrailleDots(0xFF)), '⣿');
-    }
-
-    #[test]
-    fn test_braille_single_dots() {
-        assert_eq!(braille(BrailleDots::DOT_1), '⠁');
-        assert_eq!(braille(BrailleDots::DOT_4), '⠈');
-    }
-
-    #[test]
-    fn test_braille_or() {
+    fn test_octant_braille_blank() {
+        // Empty dots → BRAILLE_BLANK (U+2800)
         assert_eq!(
-            braille(BrailleDots::DOT_1 | BrailleDots::DOT_2),
-            '⠃'
+            octant(OctantDots::NONE, OctantStyle::Braille),
+            Some(BRAILLE_BLANK)
+        );
+    }
+
+    #[test]
+    fn test_octant_braille_all_dots() {
+        // All 8 positions → '⣿' (U+28FF)
+        assert_eq!(octant(OctantDots::ALL, OctantStyle::Braille), Some('⣿'));
+    }
+
+    #[test]
+    fn test_octant_braille_top_row() {
+        // TOP_LEFT + TOP_RIGHT → braille DOT_1 + DOT_4 = 0x09 → U+2809 = '⠉'
+        assert_eq!(
+            octant(
+                OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT,
+                OctantStyle::Braille
+            ),
+            Some('⠉')
+        );
+    }
+
+    #[test]
+    fn test_octant_braille_or() {
+        // TOP_LEFT + UPPER_MID_LEFT → DOT_1 + DOT_2 = 0x03 → U+2803 = '⠃'
+        assert_eq!(
+            octant(
+                OctantDots::TOP_LEFT | OctantDots::UPPER_MID_LEFT,
+                OctantStyle::Braille
+            ),
+            Some('⠃')
+        );
+    }
+
+    #[test]
+    fn test_octant_braille_most_dots() {
+        // All positions except UPPER_MID_RIGHT = all braille dots except DOT_5
+        // → 0xEF → U+28EF = '⣯'
+        let dots = OctantDots::TOP_LEFT
+            | OctantDots::UPPER_MID_LEFT
+            | OctantDots::LOWER_MID_LEFT
+            | OctantDots::TOP_RIGHT
+            | OctantDots::LOWER_MID_RIGHT
+            | OctantDots::BOT_LEFT
+            | OctantDots::BOT_RIGHT;
+        assert_eq!(octant(dots, OctantStyle::Braille), Some('⣯'));
+    }
+
+    #[test]
+    fn test_octant_braille_single_top_left() {
+        // TOP_LEFT only → DOT_1 = 0x01 → U+2801 = '⠁'
+        assert_eq!(
+            octant(OctantDots::TOP_LEFT, OctantStyle::Braille),
+            Some('⠁')
+        );
+    }
+
+    #[test]
+    fn test_octant_braille_single_top_right() {
+        // TOP_RIGHT only → DOT_4 = 0x08 → U+2808 = '⠈'
+        assert_eq!(
+            octant(OctantDots::TOP_RIGHT, OctantStyle::Braille),
+            Some('⠈')
+        );
+    }
+
+    // ── OctantDots::from_grid ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_from_grid_left_col_only() {
+        // Left column all filled, right column empty
+        let dots = OctantDots::from_grid([[true; 4], [false; 4]]);
+        assert_eq!(
+            dots,
+            OctantDots::TOP_LEFT
+                | OctantDots::UPPER_MID_LEFT
+                | OctantDots::LOWER_MID_LEFT
+                | OctantDots::BOT_LEFT
+        );
+    }
+
+    #[test]
+    fn test_from_grid_top_row() {
+        // Top row filled (both columns at row 0)
+        let dots =
+            OctantDots::from_grid([[true, false, false, false], [true, false, false, false]]);
+        assert_eq!(dots, OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT);
+    }
+
+    #[test]
+    fn test_from_grid_braille_consistency() {
+        // from_grid followed by OctantStyle::Braille should give the same result
+        // as building OctantDots manually and calling octant().
+        let col_pair = [[true, false, true, false], [true, false, false, true]];
+        let via_grid = octant(OctantDots::from_grid(col_pair), OctantStyle::Braille);
+        let manual = octant(
+            OctantDots::TOP_LEFT
+                | OctantDots::LOWER_MID_LEFT
+                | OctantDots::TOP_RIGHT
+                | OctantDots::BOT_RIGHT,
+            OctantStyle::Braille,
+        );
+        assert_eq!(via_grid, manual);
+    }
+
+    // ── OctantDots::from_braille ──────────────────────────────────────────────
+
+    #[test]
+    fn test_from_braille_roundtrip() {
+        // Converting BrailleDots → OctantDots → octant(Braille) should produce
+        // the same character as using the raw braille bit pattern directly.
+        let bd = BrailleDots::DOT_1 | BrailleDots::DOT_4;
+        let via_convert = octant(OctantDots::from_braille(bd), OctantStyle::Braille);
+        // DOT_1 + DOT_4 → '⠉'
+        assert_eq!(via_convert, Some('⠉'));
+    }
+
+    // ── Full octant (U+1CD00) ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_octant_full_none_returns_none() {
+        assert_eq!(octant(OctantDots::NONE, OctantStyle::Full), None);
+    }
+
+    #[test]
+    fn test_octant_full_top_left_only() {
+        // BLOCK OCTANT-1 = U+1CD00
+        assert_eq!(
+            octant(OctantDots::TOP_LEFT, OctantStyle::Full),
+            char::from_u32(0x1CD00)
+        );
+    }
+
+    #[test]
+    fn test_octant_full_two_dots() {
+        let dots = OctantDots::TOP_LEFT | OctantDots::BOT_RIGHT;
+        // pattern = bit0 | bit7 = 0x81 = 129, offset = 128 → U+1CD80
+        assert_eq!(octant(dots, OctantStyle::Full), char::from_u32(0x1CD80));
+    }
+
+    // ── Quadrant ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_quadrant_none_returns_none() {
+        assert_eq!(quadrant(Quadrant::NONE, QuadrantStyle::Full), None);
+    }
+
+    #[test]
+    fn test_quadrant_full_all() {
+        assert_eq!(quadrant(Quadrant::ALL, QuadrantStyle::Full), Some('█'));
+    }
+
+    #[test]
+    fn test_quadrant_full_upper_half() {
+        assert_eq!(
+            quadrant(
+                Quadrant::UPPER_LEFT | Quadrant::UPPER_RIGHT,
+                QuadrantStyle::Full
+            ),
+            Some('▀')
+        );
+    }
+
+    #[test]
+    fn test_quadrant_full_lower_half() {
+        assert_eq!(
+            quadrant(
+                Quadrant::LOWER_LEFT | Quadrant::LOWER_RIGHT,
+                QuadrantStyle::Full
+            ),
+            Some('▄')
+        );
+    }
+
+    #[test]
+    fn test_quadrant_full_left_half() {
+        assert_eq!(
+            quadrant(
+                Quadrant::UPPER_LEFT | Quadrant::LOWER_LEFT,
+                QuadrantStyle::Full
+            ),
+            Some('▌')
+        );
+    }
+
+    #[test]
+    fn test_quadrant_full_right_half() {
+        assert_eq!(
+            quadrant(
+                Quadrant::UPPER_RIGHT | Quadrant::LOWER_RIGHT,
+                QuadrantStyle::Full
+            ),
+            Some('▐')
+        );
+    }
+
+    #[test]
+    fn test_quadrant_full_single_corners() {
+        assert_eq!(
+            quadrant(Quadrant::UPPER_LEFT, QuadrantStyle::Full),
+            Some('▘')
+        );
+        assert_eq!(
+            quadrant(Quadrant::LOWER_RIGHT, QuadrantStyle::Full),
+            Some('▗')
         );
     }
 
@@ -825,25 +1258,5 @@ mod tests {
             sextant(Sextant::TOP_LEFT, SextantStyle::Separated),
             char::from_u32(0x1CE51)
         );
-    }
-
-    // ── Octant ────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_octant_none_returns_none() {
-        assert_eq!(octant(OctantDots::NONE), None);
-    }
-
-    #[test]
-    fn test_octant_top_left_only() {
-        // BLOCK OCTANT-1 = U+1CD00
-        assert_eq!(octant(OctantDots::TOP_LEFT), char::from_u32(0x1CD00));
-    }
-
-    #[test]
-    fn test_octant_or() {
-        let dots = OctantDots::TOP_LEFT | OctantDots::BOT_RIGHT;
-        // pattern = bit0 | bit7 = 0x81 = 129, offset = 128 → U+1CD80
-        assert_eq!(octant(dots), char::from_u32(0x1CD80));
     }
 }

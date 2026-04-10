@@ -28,12 +28,12 @@ mod prompt_manager;
 mod settings;
 mod shell_integration;
 mod snake_animation;
-pub mod unicode_helpers;
 mod stateful_sliding_window;
 mod tab_completion_context;
 mod table;
 mod text_buffer;
 mod tutorial;
+pub mod unicode_helpers;
 mod users;
 
 fn get_styles() -> clap::builder::Styles {

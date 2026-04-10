@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::unicode_helpers::{braille, BrailleDots};
+use crate::unicode_helpers::{BRAILLE_BLANK, OctantDots, OctantStyle, octant};
 
 struct Coord {
     x: usize,
@@ -34,7 +34,7 @@ impl SnakeAnimation {
             .map(|(i, original_char)| {
                 snake_chars
                     .get(i)
-                    .filter(|&&snake_char| snake_char != '⠀')
+                    .filter(|&&snake_char| snake_char != BRAILLE_BLANK)
                     .unwrap_or(&original_char)
                     .to_owned()
             })
@@ -135,59 +135,63 @@ impl SnakeAnimation {
         let mut res = String::new();
         let grid = self.body_as_grid();
         for poss_col_pair in grid.chunks(2) {
-            let col_pair = if poss_col_pair.len() % 2 == 1 {
+            let col_pair: [[bool; 4]; 2] = if poss_col_pair.len() % 2 == 1 {
                 assert!(poss_col_pair.len() == 1);
                 [poss_col_pair[0], [false; 4]]
             } else {
                 [poss_col_pair[0], poss_col_pair[1]]
             };
 
-            let ch = braille(BrailleDots(
-                (col_pair[0][0] as u8)          // DOT_1 – top-left
-                | ((col_pair[0][1] as u8) << 1) // DOT_2 – mid-left
-                | ((col_pair[0][2] as u8) << 2) // DOT_3 – lower-left
-                | ((col_pair[1][0] as u8) << 3) // DOT_4 – top-right
-                | ((col_pair[1][1] as u8) << 4) // DOT_5 – mid-right
-                | ((col_pair[1][2] as u8) << 5) // DOT_6 – lower-right
-                | ((col_pair[0][3] as u8) << 6) // DOT_7 – bottom-left
-                | ((col_pair[1][3] as u8) << 7), // DOT_8 – bottom-right
-            ));
+            // Build OctantDots from the 2-column × 4-row grid and render as Braille.
+            let ch = octant(OctantDots::from_grid(col_pair), OctantStyle::Braille)
+                .unwrap_or(BRAILLE_BLANK);
             res.push(ch);
         }
         res
     }
-
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::unicode_helpers::{braille, BrailleDots};
+    use crate::unicode_helpers::{OctantDots, OctantStyle, octant};
 
     #[test]
     fn test_braille_top_row() {
-        // DOT_1 (top-left) + DOT_4 (top-right) = bits 0 and 3 = 0x09 → U+2809 = '⠉'
-        assert_eq!(braille(BrailleDots::DOT_1 | BrailleDots::DOT_4), '⠉');
+        // TOP_LEFT + TOP_RIGHT → braille char '⠉' (DOT_1 + DOT_4)
+        assert_eq!(
+            octant(
+                OctantDots::TOP_LEFT | OctantDots::TOP_RIGHT,
+                OctantStyle::Braille
+            ),
+            Some('⠉')
+        );
     }
 
     #[test]
     fn test_braille_most_dots() {
-        // All dots except DOT_5 (mid-right, bit 4) = 0xEF → U+28EF = '⣯'
+        // All positions except UPPER_MID_RIGHT = all braille dots except DOT_5
+        // → 0xEF → U+28EF = '⣯'
         assert_eq!(
-            braille(
-                BrailleDots::DOT_1
-                    | BrailleDots::DOT_2
-                    | BrailleDots::DOT_3
-                    | BrailleDots::DOT_4
-                    | BrailleDots::DOT_6
-                    | BrailleDots::DOT_7
-                    | BrailleDots::DOT_8
+            octant(
+                OctantDots::TOP_LEFT
+                    | OctantDots::UPPER_MID_LEFT
+                    | OctantDots::LOWER_MID_LEFT
+                    | OctantDots::TOP_RIGHT
+                    | OctantDots::LOWER_MID_RIGHT
+                    | OctantDots::BOT_LEFT
+                    | OctantDots::BOT_RIGHT,
+                OctantStyle::Braille
             ),
-            '⣯'
+            Some('⣯')
         );
     }
 
     #[test]
     fn test_braille_blank() {
-        assert_eq!(braille(BrailleDots::EMPTY), '⠀');
+        use crate::unicode_helpers::BRAILLE_BLANK;
+        assert_eq!(
+            octant(OctantDots::NONE, OctantStyle::Braille),
+            Some(BRAILLE_BLANK)
+        );
     }
 }

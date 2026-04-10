@@ -1,4 +1,8 @@
 use crate::content_builder::split_line_to_terminal_rows;
+use crate::unicode_helpers::{
+    BOX_ARC_DOWN_LEFT, BOX_ARC_DOWN_RIGHT, BOX_ARC_UP_LEFT, BOX_ARC_UP_RIGHT, BOX_CROSS,
+    BOX_DOWN_HORIZ, BOX_HORIZONTAL, BOX_UP_HORIZ, BOX_VERT_LEFT, BOX_VERT_RIGHT, BOX_VERTICAL,
+};
 use pulldown_cmark::Alignment;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::prelude::*;
@@ -116,33 +120,37 @@ pub fn render_table_with_options(
 
     let build_top_border = || -> Line<'static> {
         let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("╭─"));
+        spans.push(Span::raw(format!("{BOX_ARC_DOWN_RIGHT}{BOX_HORIZONTAL}")));
         for (j, &width) in col_widths.iter().enumerate() {
-            spans.push(Span::raw("─".repeat(width)));
+            spans.push(Span::raw(BOX_HORIZONTAL.to_string().repeat(width)));
             if j + 1 < col_widths.len() {
-                spans.push(Span::raw("─┬─"));
+                spans.push(Span::raw(format!(
+                    "{BOX_HORIZONTAL}{BOX_DOWN_HORIZ}{BOX_HORIZONTAL}"
+                )));
             }
         }
-        spans.push(Span::raw("─╮"));
+        spans.push(Span::raw(format!("{BOX_HORIZONTAL}{BOX_ARC_DOWN_LEFT}")));
         Line::from(spans)
     };
 
     let build_bottom_border = || -> Line<'static> {
         let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("╰─"));
+        spans.push(Span::raw(format!("{BOX_ARC_UP_RIGHT}{BOX_HORIZONTAL}")));
         for (j, &width) in col_widths.iter().enumerate() {
-            spans.push(Span::raw("─".repeat(width)));
+            spans.push(Span::raw(BOX_HORIZONTAL.to_string().repeat(width)));
             if j + 1 < col_widths.len() {
-                spans.push(Span::raw("─┴─"));
+                spans.push(Span::raw(format!(
+                    "{BOX_HORIZONTAL}{BOX_UP_HORIZ}{BOX_HORIZONTAL}"
+                )));
             }
         }
-        spans.push(Span::raw("─╯"));
+        spans.push(Span::raw(format!("{BOX_HORIZONTAL}{BOX_ARC_UP_LEFT}")));
         Line::from(spans)
     };
 
     let build_row = |cells: &[String], bold: bool| -> Line<'static> {
         let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("│ "));
+        spans.push(Span::raw(format!("{BOX_VERTICAL} ")));
         for (j, cell) in cells.iter().enumerate() {
             let width = col_widths.get(j).copied().unwrap_or(0);
             let padded = format!("{:<width$}", cell, width = width);
@@ -154,7 +162,7 @@ pub fn render_table_with_options(
             } else {
                 spans.push(Span::raw(padded));
             }
-            spans.push(Span::raw(" │ "));
+            spans.push(Span::raw(format!(" {BOX_VERTICAL} ")));
         }
         // Remove the trailing " │ " so the line ends with " │".
         if spans.len() > 1 {
@@ -166,43 +174,45 @@ pub fn render_table_with_options(
     };
 
     let build_separator = || -> Line<'static> {
+        let h = BOX_HORIZONTAL;
         let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("├─"));
+        spans.push(Span::raw(format!("{BOX_VERT_RIGHT}{h}")));
         for (j, &width) in col_widths.iter().enumerate() {
             let dashes = match accum.alignments.get(j) {
                 Some(Alignment::Center) => {
-                    let inner = "─".repeat(width.saturating_sub(2));
+                    let inner = h.to_string().repeat(width.saturating_sub(2));
                     format!(":{inner}:")
                 }
                 Some(Alignment::Right) => {
-                    let inner = "─".repeat(width.saturating_sub(1));
+                    let inner = h.to_string().repeat(width.saturating_sub(1));
                     format!("{inner}:")
                 }
                 Some(Alignment::Left) => {
-                    let inner = "─".repeat(width.saturating_sub(1));
+                    let inner = h.to_string().repeat(width.saturating_sub(1));
                     format!(":{inner}")
                 }
-                _ => "─".repeat(width),
+                _ => h.to_string().repeat(width),
             };
             spans.push(Span::raw(dashes));
             if j + 1 < col_widths.len() {
-                spans.push(Span::raw("─┼─"));
+                spans.push(Span::raw(format!("{h}{BOX_CROSS}{h}")));
             }
         }
-        spans.push(Span::raw("─┤"));
+        spans.push(Span::raw(format!("{h}{BOX_VERT_LEFT}")));
         Line::from(spans)
     };
 
     let build_row_divider = || -> Line<'static> {
+        let h = BOX_HORIZONTAL;
         let mut spans: Vec<Span<'static>> = Vec::new();
-        spans.push(Span::raw("├─"));
+        spans.push(Span::raw(format!("{BOX_VERT_RIGHT}{h}")));
         for (j, &width) in col_widths.iter().enumerate() {
-            spans.push(Span::raw("─".repeat(width)));
+            spans.push(Span::raw(h.to_string().repeat(width)));
             if j + 1 < col_widths.len() {
-                spans.push(Span::raw("─┼─"));
+                spans.push(Span::raw(format!("{h}{BOX_CROSS}{h}")));
             }
         }
-        spans.push(Span::raw("─┤"));
+        spans.push(Span::raw(format!("{h}{BOX_VERT_LEFT}")));
         Line::from(spans)
     };
 
