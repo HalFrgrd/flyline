@@ -136,6 +136,14 @@ impl TextBuffer {
             .map_or(self.buf.len(), |(i, _)| i)
     }
 
+    pub fn move_one_word_left_fine_grained(&mut self) {
+        self.cursor_byte = self.fine_grained_word_left_pos();
+    }
+
+    pub fn move_one_word_right_fine_grained(&mut self) {
+        self.cursor_byte = self.fine_grained_word_right_pos();
+    }
+
     pub fn move_to_start(&mut self) {
         self.cursor_byte = 0;
     }
@@ -278,6 +286,122 @@ mod test_movement {
         assert_eq!(tb.cursor_byte, "  abc".len());
         tb.move_one_word_right(WordDelim::WhiteSpace);
         assert_eq!(tb.cursor_byte, "  abc def".len());
+    }
+
+    #[test]
+    fn move_one_word_left_fine_grained_basic() {
+        // Stops at punctuation boundaries (no slashes → full punctuation mode).
+        let mut tb = TextBuffer::new("abc::def::ghi");
+        tb.move_end_of_line();
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc::def::".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc::def".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc::".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, 0);
+    }
+
+    #[test]
+    fn move_one_word_right_fine_grained_basic() {
+        // Stops at punctuation boundaries (no slashes → full punctuation mode).
+        let mut tb = TextBuffer::new("abc::def::ghi");
+        tb.move_to_start();
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc::".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc::def".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc::def::".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "abc::def::ghi".len());
+    }
+
+    #[test]
+    fn move_one_word_left_fine_grained_path() {
+        // When the word contains slashes, only '/' and '\' are boundaries.
+        let mut tb = TextBuffer::new("echo ./foo_bar/baz.jeb");
+        tb.move_end_of_line();
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ./foo_bar/".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ./foo_bar".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ./".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo .".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ".len());
+        // "echo" now has a slash to the right, so slash-only mode keeps it whole.
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo".len());
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, 0);
+    }
+
+    #[test]
+    fn move_one_word_right_fine_grained_path() {
+        // When the word contains slashes, only '/' and '\' are boundaries.
+        let mut tb = TextBuffer::new("echo ./foo_bar/baz.jeb");
+        tb.move_to_start();
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ".len());
+        // "./" contains a slash → slash-only mode; '.' and 'f' have different classes
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo .".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ./".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ./foo_bar".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ./foo_bar/".len());
+        // Slash still present to the left → slash-only mode; whole "baz.jeb" as one segment.
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "echo ./foo_bar/baz.jeb".len());
+    }
+
+    #[test]
+    fn move_one_word_fine_grained_edge_cases() {
+        // Empty buffer: both directions stay at 0.
+        let mut tb = TextBuffer::new("");
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, 0);
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, 0);
+
+        // Whitespace-only: left from end stops at start; right from start goes to end.
+        let mut tb = TextBuffer::new("   ");
+        tb.move_end_of_line();
+        tb.move_one_word_left_fine_grained();
+        assert_eq!(tb.cursor_byte, 0);
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "   ".len());
+
+        // Starts/ends with punctuation.
+        let mut tb = TextBuffer::new("::abc::");
+        tb.move_to_start();
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "::".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "::abc".len());
+        tb.move_one_word_right_fine_grained();
+        assert_eq!(tb.cursor_byte, "::abc::".len());
+
+        let mut tb2 = TextBuffer::new("::abc::");
+        tb2.move_end_of_line();
+        tb2.move_one_word_left_fine_grained();
+        assert_eq!(tb2.cursor_byte, "::abc".len());
+        tb2.move_one_word_left_fine_grained();
+        assert_eq!(tb2.cursor_byte, "::".len());
+        tb2.move_one_word_left_fine_grained();
+        assert_eq!(tb2.cursor_byte, 0);
     }
 
     #[test]
@@ -487,15 +611,75 @@ impl TextBuffer {
         self.buf.drain(self.cursor_byte..cursor_pos_right);
     }
 
-    pub fn delete_one_word_left(&mut self, delim: WordDelim) {
-        self.push_snapshot(true);
-        let old_cursor_col = self.cursor_byte;
+    /// Computes the target cursor byte position when moving/deleting one
+    /// fine-grained word to the left (stopping at punctuation or path-segment
+    /// boundaries, with slash-only mode when the word under the cursor
+    /// contains `/` or `\`).
+    fn fine_grained_word_left_pos(&self) -> usize {
+        let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, self.cursor_byte) {
+            Self::less_strict_class_slash_only
+        } else {
+            Self::less_strict_class
+        };
         let mut iter = self
             .buf
             .char_indices()
             .rev()
             .skip_while(|(i, _)| *i >= self.cursor_byte);
+        match iter.next() {
+            Some((first_i, first_c)) => {
+                let class = class_fn(first_c);
+                iter.scan((first_i, first_c), |prev, (i, c)| {
+                    let (prev_i, prev_c) = *prev;
+                    let boundary = if class_fn(prev_c) == class && class_fn(c) != class {
+                        Some(prev_i)
+                    } else {
+                        None
+                    };
+                    *prev = (i, c);
+                    Some(boundary)
+                })
+                .find_map(|x| x)
+                .unwrap_or(0)
+            }
+            None => 0,
+        }
+    }
+
+    /// Computes the target cursor byte position when moving/deleting one
+    /// fine-grained word to the right (stopping at punctuation or path-segment
+    /// boundaries, with slash-only mode when the word under the cursor
+    /// contains `/` or `\`).
+    fn fine_grained_word_right_pos(&self) -> usize {
+        let end = self.buf.len();
+        let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, self.cursor_byte) {
+            Self::less_strict_class_slash_only
+        } else {
+            Self::less_strict_class
+        };
+        let mut iter = self
+            .buf
+            .char_indices()
+            .skip_while(|(i, _)| *i < self.cursor_byte);
+        match iter.next() {
+            Some((_, first_c)) => {
+                let class = class_fn(first_c);
+                iter.find_map(|(i, c)| if class_fn(c) != class { Some(i) } else { None })
+                    .unwrap_or(end)
+            }
+            None => end,
+        }
+    }
+
+    pub fn delete_one_word_left(&mut self, delim: WordDelim) {
+        self.push_snapshot(true);
+        let old_cursor_col = self.cursor_byte;
         if delim == WordDelim::WhiteSpace {
+            let iter = self
+                .buf
+                .char_indices()
+                .rev()
+                .skip_while(|(i, _)| *i >= self.cursor_byte);
             self.cursor_byte = iter
                 .skip_while(|(_, c)| delim.is_word_boundary(*c))
                 .tuple_windows()
@@ -508,29 +692,7 @@ impl TextBuffer {
                 })
                 .unwrap_or(0);
         } else {
-            let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, self.cursor_byte) {
-                Self::less_strict_class_slash_only
-            } else {
-                Self::less_strict_class
-            };
-            self.cursor_byte = match iter.next() {
-                Some((first_i, first_c)) => {
-                    let class = class_fn(first_c);
-                    iter.scan((first_i, first_c), |prev, (i, c)| {
-                        let (prev_i, prev_c) = *prev;
-                        let boundary = if class_fn(prev_c) == class && class_fn(c) != class {
-                            Some(prev_i)
-                        } else {
-                            None
-                        };
-                        *prev = (i, c);
-                        Some(boundary)
-                    })
-                    .find_map(|x| x)
-                    .unwrap_or(0)
-                }
-                None => 0,
-            };
+            self.cursor_byte = self.fine_grained_word_left_pos();
         }
 
         assert!(self.cursor_byte <= old_cursor_col);
@@ -549,23 +711,7 @@ impl TextBuffer {
                 .next()
                 .map_or(end, |(i, _)| i)
         } else {
-            let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, self.cursor_byte) {
-                Self::less_strict_class_slash_only
-            } else {
-                Self::less_strict_class
-            };
-            let mut iter = self
-                .buf
-                .char_indices()
-                .skip_while(|(i, _)| *i < self.cursor_byte);
-            match iter.next() {
-                Some((_, first_c)) => {
-                    let class = class_fn(first_c);
-                    iter.find_map(|(i, c)| if class_fn(c) != class { Some(i) } else { None })
-                        .unwrap_or(end)
-                }
-                None => end,
-            }
+            self.fine_grained_word_right_pos()
         };
 
         assert!(end_cursor >= self.cursor_byte);
