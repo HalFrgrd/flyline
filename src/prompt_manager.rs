@@ -412,10 +412,16 @@ impl<'a> PromptStringBuilder<'a> {
         let result = lines
             .into_iter()
             .map(|line| {
-                line.spans
+                let mut segs: Vec<PromptSegment> = line
+                    .spans
                     .into_iter()
                     .flat_map(|span| self.expand_span_to_segments(span))
-                    .collect()
+                    .collect();
+                // If multiple Cwd segments are present (because the same path
+                // substring appeared in more than one prompt span), keep only
+                // the longest one and convert the rest back to Static segments.
+                dedup_cwd_segments(&mut segs);
+                segs
             })
             .collect();
         Some(result)
@@ -704,9 +710,57 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
     }
 }
 
+/// If a prompt line has more than one [`PromptSegment::Cwd`] segment
+/// (because the same path substring appeared in several prompt spans),
+/// keep only the longest one and convert the shorter duplicates back to
+/// plain [`PromptSegment::Static`] segments.
+fn dedup_cwd_segments(segs: &mut Vec<PromptSegment>) {
+    // Collect indices and text lengths of every Cwd segment.
+    let cwd_indices: Vec<(usize, usize)> = segs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, seg)| {
+            if let PromptSegment::Cwd(spans) = seg {
+                let len: usize = spans.iter().map(|s| s.content.len()).sum();
+                Some((i, len))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if cwd_indices.len() <= 1 {
+        return;
+    }
+
+    // Index of the Cwd segment with the most text content.
+    let longest_idx = cwd_indices
+        .iter()
+        .max_by_key(|(_, len)| *len)
+        .map(|(i, _)| *i)
+        .unwrap();
+
+    // Convert all shorter Cwd segments back to Static.
+    for (i, _) in &cwd_indices {
+        if *i != longest_idx {
+            if let PromptSegment::Cwd(spans) = &segs[*i] {
+                let content: String = spans.iter().map(|s| s.content.as_ref()).collect();
+                let style = spans.first().map(|s| s.style).unwrap_or_default();
+                segs[*i] = PromptSegment::Static(Span::styled(content, style));
+            }
+        }
+    }
+}
+
 /// Find the longest substring of `text` that looks like the current working
 /// directory or any contiguous sub-path of it.
 fn find_cwd_in_span(text: &str, cwd: &str) -> Option<Range<usize>> {
+    // Early exit: a CWD path must contain '/' or start with '~'.
+    // Spans with neither cannot match any CWD sub-path.
+    if !text.contains('/') && !text.contains('~') {
+        return None;
+    }
+
     let cwd_trimmed = cwd.trim_end_matches('/');
 
     // Collect non-empty path segments.
