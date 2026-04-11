@@ -51,6 +51,8 @@ enum WidgetCustomState {
     Pending {
         placeholder: String,
         child: std::process::Child,
+        /// The command that was spawned, retained for log messages.
+        command: Vec<String>,
         /// Shared storage to write the output into when the command finishes,
         /// so that `Placeholder::Prev` can use it on the next render cycle.
         prev_output_cell: Arc<Mutex<Option<String>>>,
@@ -729,7 +731,7 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                                         if start.elapsed() >= timeout {
                                             break None;
                                         }
-                                        std::thread::sleep(std::time::Duration::from_millis(1));
+                                        std::thread::sleep(std::time::Duration::from_millis(5));
                                     }
                                     Err(e) => break Some(Err(e)),
                                 }
@@ -755,6 +757,7 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                                     WidgetCustomState::Pending {
                                         placeholder,
                                         child,
+                                        command: w.command.clone(),
                                         prev_output_cell: w.prev_output.clone(),
                                     }
                                 }
@@ -766,6 +769,7 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                         WidgetCustomState::Pending {
                             placeholder,
                             child,
+                            command: w.command.clone(),
                             prev_output_cell: w.prev_output.clone(),
                         }
                     }
@@ -970,12 +974,16 @@ fn format_prompt_line(
             let new_state: Option<WidgetCustomState> = match state {
                 WidgetCustomState::Pending {
                     child,
+                    command,
                     prev_output_cell,
                     ..
                 } => match child.try_wait() {
-                    Ok(Some(status)) => {
-                        Some(collect_and_finalize(child, status, &[], prev_output_cell))
-                    }
+                    Ok(Some(status)) => Some(collect_and_finalize(
+                        child,
+                        status,
+                        command,
+                        prev_output_cell,
+                    )),
                     Ok(None) => None,
                     Err(e) => {
                         log::error!("Custom prompt widget: try_wait error: {}", e);
@@ -1191,10 +1199,22 @@ fn collect_and_finalize(
     let mut stdout_buf = Vec::new();
     let mut stderr_buf = Vec::new();
     if let Some(mut out) = child.stdout.take() {
-        let _ = out.read_to_end(&mut stdout_buf);
+        if let Err(e) = out.read_to_end(&mut stdout_buf) {
+            log::warn!(
+                "Custom prompt widget {:?}: error reading stdout: {}",
+                command,
+                e
+            );
+        }
     }
     if let Some(mut err) = child.stderr.take() {
-        let _ = err.read_to_end(&mut stderr_buf);
+        if let Err(e) = err.read_to_end(&mut stderr_buf) {
+            log::warn!(
+                "Custom prompt widget {:?}: error reading stderr: {}",
+                command,
+                e
+            );
+        }
     }
     let stdout = String::from_utf8_lossy(&stdout_buf).trim().to_string();
     let stderr = String::from_utf8_lossy(&stderr_buf).trim().to_string();
@@ -2110,6 +2130,7 @@ mod tests {
         let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Pending {
             placeholder: "   ".to_string(),
             child,
+            command: vec!["sleep".to_string(), "100".to_string()],
             prev_output_cell: Arc::new(Mutex::new(None)),
         })];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
