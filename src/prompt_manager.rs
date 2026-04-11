@@ -686,8 +686,10 @@ impl<'a> PromptStringBuilder<'a> {
 /// bash and stored as pre-tagged [`TaggedSpan`]s.
 ///
 /// For custom widgets the command is spawned directly as a child process.
-/// If blocking, we wait (polling) up to the given timeout before returning.
-/// If non-blocking, we return immediately with the child in the `Pending` state.
+/// A `block` timeout of 0 (the default when `block` is not specified) means
+/// we do a single non-blocking `try_wait` and immediately put the child in
+/// `Pending` if it hasn't finished yet.  `i32::MAX` waits indefinitely.
+/// Any other positive value polls up to that many milliseconds.
 fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
     match widget {
         PromptWidget::MouseMode(w) => PromptSegment::WidgetMouseMode {
@@ -698,79 +700,63 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
             let state = match spawn_widget_child(&w.command) {
                 Err(failure) => WidgetCustomState::Failed(failure),
                 Ok(mut child) => {
-                    if let Some(timeout_ms) = w.block {
-                        // Blocking (or blocking-with-timeout): wait for the child
-                        // process for up to `timeout_ms` milliseconds.  `i32::MAX`
-                        // means wait indefinitely.
-                        if timeout_ms == i32::MAX {
-                            // Block until the command finishes.
-                            match child.wait_with_output() {
-                                Ok(output) => {
-                                    finalize_widget_output(output, &w.command, &w.prev_output)
-                                }
-                                Err(e) => {
-                                    log::error!(
-                                        "Custom prompt widget: wait_with_output failed: {}",
-                                        e
-                                    );
-                                    WidgetCustomState::Failed(WidgetFailure {
-                                        exit_code: None,
-                                        stdout: String::new(),
-                                        stderr: e.to_string(),
-                                    })
-                                }
+                    // Default to 0 ms when `block` is not specified; a 0 ms
+                    // timeout performs a single non-blocking try_wait and moves
+                    // on immediately.  i32::MAX means wait indefinitely.
+                    let timeout_ms = w.block.unwrap_or(0);
+                    if timeout_ms == i32::MAX {
+                        // Block until the command finishes.
+                        match child.wait_with_output() {
+                            Ok(output) => {
+                                finalize_widget_output(output, &w.command, &w.prev_output)
                             }
-                        } else {
-                            // Poll until done or timeout.
-                            let timeout = std::time::Duration::from_millis(timeout_ms as u64);
-                            let start = std::time::Instant::now();
-                            let done_status = loop {
-                                match child.try_wait() {
-                                    Ok(Some(status)) => break Some(Ok(status)),
-                                    Ok(None) => {
-                                        if start.elapsed() >= timeout {
-                                            break None;
-                                        }
-                                        std::thread::sleep(std::time::Duration::from_millis(5));
-                                    }
-                                    Err(e) => break Some(Err(e)),
-                                }
-                            };
-                            match done_status {
-                                Some(Ok(status)) => collect_and_finalize(
-                                    &mut child,
-                                    status,
-                                    &w.command,
-                                    &w.prev_output,
-                                ),
-                                Some(Err(e)) => {
-                                    log::error!("Custom prompt widget: try_wait error: {}", e);
-                                    WidgetCustomState::Failed(WidgetFailure {
-                                        exit_code: None,
-                                        stdout: String::new(),
-                                        stderr: e.to_string(),
-                                    })
-                                }
-                                None => {
-                                    // Timed out: keep the child running in the background.
-                                    let placeholder = resolve_placeholder(w);
-                                    WidgetCustomState::Pending {
-                                        placeholder,
-                                        child,
-                                        command: w.command.clone(),
-                                        prev_output_cell: w.prev_output.clone(),
-                                    }
-                                }
+                            Err(e) => {
+                                log::error!("Custom prompt widget: wait_with_output failed: {}", e);
+                                WidgetCustomState::Failed(WidgetFailure {
+                                    exit_code: None,
+                                    stdout: String::new(),
+                                    stderr: e.to_string(),
+                                })
                             }
                         }
                     } else {
-                        // Non-blocking: pass ownership of the child to Pending.
-                        let placeholder = resolve_placeholder(w);
-                        WidgetCustomState::Pending {
-                            placeholder,
-                            child,
-                            command: w.command.clone(),
-                            prev_output_cell: w.prev_output.clone(),
+                        // Poll until done or timeout (0 ms = single try_wait then Pending).
+                        let timeout = std::time::Duration::from_millis(timeout_ms as u64);
+                        let start = std::time::Instant::now();
+                        let done_status = loop {
+                            match child.try_wait() {
+                                Ok(Some(status)) => break Some(Ok(status)),
+                                Ok(None) => {
+                                    if start.elapsed() >= timeout {
+                                        break None;
+                                    }
+                                    std::thread::sleep(std::time::Duration::from_millis(5));
+                                }
+                                Err(e) => break Some(Err(e)),
+                            }
+                        };
+                        match done_status {
+                            Some(Ok(status)) => {
+                                collect_and_finalize(&mut child, status, &w.command, &w.prev_output)
+                            }
+                            Some(Err(e)) => {
+                                log::error!("Custom prompt widget: try_wait error: {}", e);
+                                WidgetCustomState::Failed(WidgetFailure {
+                                    exit_code: None,
+                                    stdout: String::new(),
+                                    stderr: e.to_string(),
+                                })
+                            }
+                            None => {
+                                // Timed out: keep the child running in the background.
+                                let placeholder = resolve_placeholder(w);
+                                WidgetCustomState::Pending {
+                                    placeholder,
+                                    child,
+                                    command: w.command.clone(),
+                                    prev_output_cell: w.prev_output.clone(),
+                                }
+                            }
                         }
                     }
                 }
