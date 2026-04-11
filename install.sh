@@ -46,6 +46,23 @@ fetch_text() {
 # Platform detection
 # ---------------------------------------------------------------------------
 
+# Detect the version of the system bash as "major minor" integers.
+detect_bash_version_parts() {
+    bash_bin="$(command -v bash 2>/dev/null || true)"
+    [ -n "$bash_bin" ] || { echo "0 0"; return; }
+    "$bash_bin" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0"
+}
+
+# Returns 0 (true) if the system bash is older than 4.4, 1 (false) otherwise.
+is_bash_pre_4_4() {
+    version_str="$(detect_bash_version_parts)"
+    major="${version_str%% *}"
+    minor="${version_str##* }"
+    major="${major:-0}"
+    minor="${minor:-0}"
+    [ "$major" -lt 4 ] || { [ "$major" -eq 4 ] && [ "$minor" -lt 4 ]; }
+}
+
 detect_os() {
     os="$(uname -s)"
     case "$os" in
@@ -173,11 +190,32 @@ main() {
         say "Latest version: ${VERSION}"
     fi
 
-    ARCHIVE="libflyline-${VERSION}-${TARGET}.tar.gz"
-    ARCHIVE_SHA256="${ARCHIVE}.sha256"
+    ARCHIVE_STEM="libflyline-${VERSION}-${TARGET}"
 
-    DOWNLOAD_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE")"
-    SHA256_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE_SHA256")"
+    # When the system bash is older than 4.4 (e.g. macOS ships with 3.2.57),
+    # prefer a pre-bash-4.4 build if one is available in the release.
+    if is_bash_pre_4_4; then
+        say "Detected bash < 4.4, looking for pre-bash-4.4 build..."
+        PRE_4_4_ARCHIVE="${ARCHIVE_STEM}_pre_bash_4_4.tar.gz"
+        PRE_4_4_SHA256="${PRE_4_4_ARCHIVE}.sha256"
+        DOWNLOAD_URL="$(get_asset_url "$RELEASE_JSON" "$PRE_4_4_ARCHIVE")"
+        if [ -n "$DOWNLOAD_URL" ]; then
+            ARCHIVE="$PRE_4_4_ARCHIVE"
+            ARCHIVE_SHA256="$PRE_4_4_SHA256"
+            SHA256_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE_SHA256")"
+        else
+            say "No pre-bash-4.4 build found for this target, falling back to standard build"
+            ARCHIVE="${ARCHIVE_STEM}.tar.gz"
+            ARCHIVE_SHA256="${ARCHIVE}.sha256"
+            DOWNLOAD_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE")"
+            SHA256_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE_SHA256")"
+        fi
+    else
+        ARCHIVE="${ARCHIVE_STEM}.tar.gz"
+        ARCHIVE_SHA256="${ARCHIVE}.sha256"
+        DOWNLOAD_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE")"
+        SHA256_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE_SHA256")"
+    fi
 
     [ -n "$DOWNLOAD_URL" ] || err "Could not find download URL for ${ARCHIVE} in the latest release.
 Please check https://github.com/${REPO}/releases for available assets."
