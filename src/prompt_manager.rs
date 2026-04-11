@@ -50,7 +50,9 @@ enum WidgetCustomState {
     /// Command is still running (or has not yet been polled).
     Pending {
         placeholder: String,
-        receiver: std::sync::mpsc::Receiver<Result<String, WidgetFailure>>,
+        child: std::process::Child,
+        /// The command that was spawned, retained for log messages.
+        command: Vec<String>,
         /// Shared storage to write the output into when the command finishes,
         /// so that `Placeholder::Prev` can use it on the next render cycle.
         prev_output_cell: Arc<Mutex<Option<String>>>,
@@ -68,6 +70,16 @@ impl std::fmt::Debug for WidgetCustomState {
             WidgetCustomState::Pending { .. } => f.write_str("WidgetCustomState::Pending"),
             WidgetCustomState::Done(_) => f.write_str("WidgetCustomState::Done"),
             WidgetCustomState::Failed(_) => f.write_str("WidgetCustomState::Failed"),
+        }
+    }
+}
+
+impl Drop for WidgetCustomState {
+    /// Kill and reap a still-running child process when the state is dropped.
+    fn drop(&mut self) {
+        if let WidgetCustomState::Pending { child, .. } = self {
+            let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }
@@ -138,8 +150,8 @@ enum PromptSegment {
         enabled_text: Vec<TaggedSpan<'static>>,
         disabled_text: Vec<TaggedSpan<'static>>,
     },
-    /// A custom-command widget.  On first render the background-thread result
-    /// is polled; once available the command output (processed through
+    /// A custom-command widget.  On each render the child process is polled
+    /// with `try_wait`; once it exits the output (processed through
     /// `expand_prompt_through_bash`) is shown.  While still pending the
     /// placeholder string is shown.
     ///
@@ -673,9 +685,11 @@ impl<'a> PromptStringBuilder<'a> {
 /// For mouse-mode widgets the enabled/disabled texts are expanded through
 /// bash and stored as pre-tagged [`TaggedSpan`]s.
 ///
-/// For custom widgets the command is either run synchronously (blocking with
-/// optional timeout) or launched in a background thread.  No sharing between
-/// segments occurs.
+/// For custom widgets the command is spawned directly as a child process.
+/// A `block` timeout of 0 (the default when `block` is not specified) means
+/// we do a single non-blocking `try_wait` and immediately put the child in
+/// `Pending` if it hasn't finished yet.  `i32::MAX` waits indefinitely.
+/// Any other positive value polls up to that many milliseconds.
 fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
     match widget {
         PromptWidget::MouseMode(w) => PromptSegment::WidgetMouseMode {
@@ -683,55 +697,68 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
             disabled_text: stdout_to_tagged_spans(w.disabled_text.clone()),
         },
         PromptWidget::Custom(w) => {
-            let state = if let Some(timeout_ms) = w.block {
-                // Blocking (or blocking-with-timeout): spawn the command and wait
-                // for up to `timeout_ms` milliseconds.  If the command finishes
-                // in time we use its output for the first render.  If it times
-                // out we fall back to the placeholder and check on subsequent
-                // renders.
-                let command = w.command.clone();
-                let name = w.name.clone();
-                let (tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
-                std::thread::spawn(move || {
-                    let result = run_widget_command(&command);
-                    if let Err(e) = tx.send(result) {
-                        log::warn!("Custom widget '{}': failed to send result: {}", name, e);
-                    }
-                });
-                let timeout = std::time::Duration::from_millis(timeout_ms as u64);
-                match rx.recv_timeout(timeout) {
-                    Ok(Ok(stdout)) => {
-                        *w.prev_output.lock().unwrap() = Some(stdout.clone());
-                        WidgetCustomState::Done(stdout_to_tagged_spans(stdout))
-                    }
-                    Ok(Err(failure)) => WidgetCustomState::Failed(failure),
-                    Err(_) => {
-                        // Timed out: fall back to placeholder; the receiver is
-                        // still live so subsequent renders will pick up the result.
-                        let placeholder = resolve_placeholder(w);
-                        WidgetCustomState::Pending {
-                            placeholder,
-                            receiver: rx,
-                            prev_output_cell: w.prev_output.clone(),
+            let state = match spawn_widget_child(&w.command) {
+                Err(failure) => WidgetCustomState::Failed(failure),
+                Ok(mut child) => {
+                    // Default to 0 ms when `block` is not specified; a 0 ms
+                    // timeout performs a single non-blocking try_wait and moves
+                    // on immediately.  i32::MAX means wait indefinitely.
+                    let timeout_ms = w.block.unwrap_or(0);
+                    if timeout_ms == i32::MAX {
+                        // Block until the command finishes.
+                        match child.wait_with_output() {
+                            Ok(output) => {
+                                finalize_widget_output(output, &w.command, &w.prev_output)
+                            }
+                            Err(e) => {
+                                log::error!("Custom prompt widget: wait_with_output failed: {}", e);
+                                WidgetCustomState::Failed(WidgetFailure {
+                                    exit_code: None,
+                                    stdout: String::new(),
+                                    stderr: e.to_string(),
+                                })
+                            }
+                        }
+                    } else {
+                        // Poll until done or timeout (0 ms = single try_wait then Pending).
+                        let timeout = std::time::Duration::from_millis(timeout_ms as u64);
+                        let start = std::time::Instant::now();
+                        let done_status = loop {
+                            match child.try_wait() {
+                                Ok(Some(status)) => break Some(Ok(status)),
+                                Ok(None) => {
+                                    if start.elapsed() >= timeout {
+                                        break None;
+                                    }
+                                    std::thread::sleep(std::time::Duration::from_millis(5));
+                                }
+                                Err(e) => break Some(Err(e)),
+                            }
+                        };
+                        match done_status {
+                            Some(Ok(status)) => {
+                                collect_and_finalize(&mut child, status, &w.command, &w.prev_output)
+                            }
+                            Some(Err(e)) => {
+                                log::error!("Custom prompt widget: try_wait error: {}", e);
+                                WidgetCustomState::Failed(WidgetFailure {
+                                    exit_code: None,
+                                    stdout: String::new(),
+                                    stderr: e.to_string(),
+                                })
+                            }
+                            None => {
+                                // Timed out: keep the child running in the background.
+                                let placeholder = resolve_placeholder(w);
+                                WidgetCustomState::Pending {
+                                    placeholder,
+                                    child,
+                                    command: w.command.clone(),
+                                    prev_output_cell: w.prev_output.clone(),
+                                }
+                            }
                         }
                     }
-                }
-            } else {
-                // Non-blocking: spawn and return immediately.
-                let placeholder = resolve_placeholder(w);
-                let command = w.command.clone();
-                let name = w.name.clone();
-                let (tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
-                std::thread::spawn(move || {
-                    let result = run_widget_command(&command);
-                    if let Err(e) = tx.send(result) {
-                        log::warn!("Custom widget '{}': failed to send result: {}", name, e);
-                    }
-                });
-                WidgetCustomState::Pending {
-                    placeholder,
-                    receiver: rx,
-                    prev_output_cell: w.prev_output.clone(),
                 }
             };
             PromptSegment::WidgetCustom(state)
@@ -919,43 +946,39 @@ fn stdout_to_tagged_spans(stdout: String) -> Vec<TaggedSpan<'static>> {
 /// between the enabled and disabled text.
 ///
 /// Segments are passed as a mutable slice so that `WidgetCustom` segments can
-/// advance their internal state (polling the background-thread result) without
+/// advance their internal state (polling the child process) without
 /// requiring a `RefCell`.
 fn format_prompt_line(
     segments: &mut [PromptSegment],
     now: &chrono::DateTime<chrono::Local>,
     mouse_enabled: bool,
 ) -> TaggedLine<'static> {
-    // First pass: advance any Pending WidgetCustom segments that have received
-    // their result.  We need a mutable pass before the immutable render pass.
+    // First pass: advance any Pending WidgetCustom segments whose child process
+    // has exited.  We need a mutable pass before the immutable render pass.
     for segment in segments.iter_mut() {
         if let PromptSegment::WidgetCustom(state) = segment {
             let new_state: Option<WidgetCustomState> = match state {
                 WidgetCustomState::Pending {
-                    receiver,
+                    child,
+                    command,
                     prev_output_cell,
                     ..
-                } => match receiver.try_recv() {
-                    Ok(Ok(stdout)) => {
-                        log::info!("Custom prompt widget command completed successfully");
-                        *prev_output_cell.lock().unwrap() = Some(stdout.clone());
-                        Some(WidgetCustomState::Done(stdout_to_tagged_spans(stdout)))
-                    }
-                    Ok(Err(failure)) => {
-                        log::warn!("Custom prompt widget command failed");
-                        Some(WidgetCustomState::Failed(failure))
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        let msg =
-                            "Custom prompt widget channel disconnected without result".to_string();
-                        log::warn!("{}", msg);
+                } => match child.try_wait() {
+                    Ok(Some(status)) => Some(collect_and_finalize(
+                        child,
+                        status,
+                        command,
+                        prev_output_cell,
+                    )),
+                    Ok(None) => None,
+                    Err(e) => {
+                        log::error!("Custom prompt widget: try_wait error: {}", e);
                         Some(WidgetCustomState::Failed(WidgetFailure {
                             exit_code: None,
                             stdout: String::new(),
-                            stderr: msg,
+                            stderr: e.to_string(),
                         }))
                     }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
                 },
                 _ => None,
             };
@@ -1070,20 +1093,20 @@ fn get_frame_spans<'a>(
     &anim.frames[frame_index]
 }
 
-/// Run a widget command as a subprocess and return its stdout on success.
+/// Spawn a widget command as a child process with captured stdout and stderr.
 ///
-/// Returns `Ok(stdout)` when the command exits with status 0, or
-/// `Err(WidgetFailure)` (carrying exit code, stdout, and stderr) when the
-/// command fails or cannot be spawned.  Both stdout and stderr are logged.
+/// Returns the [`std::process::Child`] on success, or a [`WidgetFailure`] if
+/// the command list is empty or the process cannot be spawned.
 ///
 /// `SIGCHLD` is expected to have been set to `SIG_DFL` by the caller before
 /// `app::get_command` was invoked; this function does not touch signal
 /// dispositions.
-fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
+fn spawn_widget_child(command: &[String]) -> Result<std::process::Child, WidgetFailure> {
+    use std::process::Stdio;
     let (prog, args) = match command.split_first() {
         Some(parts) => parts,
         None => {
-            let msg = "run_widget_command: empty command".to_string();
+            let msg = "spawn_widget_child: empty command".to_string();
             log::warn!("{}", msg);
             return Err(WidgetFailure {
                 exit_code: None,
@@ -1092,49 +1115,113 @@ fn run_widget_command(command: &[String]) -> Result<String, WidgetFailure> {
             });
         }
     };
-
-    let output = std::process::Command::new(prog).args(args).output();
-
-    match output {
-        Err(e) => {
+    std::process::Command::new(prog)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
             log::error!(
                 "Custom prompt widget: failed to spawn command {:?}: {}",
                 command,
                 e
             );
-            Err(WidgetFailure {
+            WidgetFailure {
                 exit_code: None,
                 stdout: String::new(),
                 stderr: e.to_string(),
-            })
-        }
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            log::info!(
-                "Custom prompt widget command {:?} exited with {}",
-                command,
-                out.status
-            );
-            log::debug!("Custom prompt widget stdout: {}", stdout);
-            log::debug!("Custom prompt widget stderr: {}", stderr);
-
-            if out.status.success() {
-                Ok(stdout)
-            } else {
-                log::warn!(
-                    "Custom prompt widget: command {:?} failed with {}; stderr: {}",
-                    command,
-                    out.status,
-                    stderr
-                );
-                Err(WidgetFailure {
-                    exit_code: out.status.code(),
-                    stdout,
-                    stderr,
-                })
             }
+        })
+}
+
+/// Build a [`WidgetCustomState`] from a completed [`std::process::Output`].
+///
+/// Used for the indefinitely-blocking case where [`wait_with_output`] is called.
+fn finalize_widget_output(
+    output: std::process::Output,
+    command: &[String],
+    prev_output: &Arc<Mutex<Option<String>>>,
+) -> WidgetCustomState {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    log::info!(
+        "Custom prompt widget {:?} exited with {}",
+        command,
+        output.status
+    );
+    log::debug!("Custom prompt widget stdout: {}", stdout);
+    log::debug!("Custom prompt widget stderr: {}", stderr);
+    if output.status.success() {
+        *prev_output.lock().unwrap() = Some(stdout.clone());
+        WidgetCustomState::Done(stdout_to_tagged_spans(stdout))
+    } else {
+        log::warn!(
+            "Custom prompt widget {:?} failed with {}; stderr: {}",
+            command,
+            output.status,
+            stderr
+        );
+        WidgetCustomState::Failed(WidgetFailure {
+            exit_code: output.status.code(),
+            stdout,
+            stderr,
+        })
+    }
+}
+
+/// Read remaining output from a child that has already exited (after
+/// [`try_wait`] returned `Some(status)`) and build the final [`WidgetCustomState`].
+///
+/// The exit `status` must come from the `try_wait` call so that we do not call
+/// `wait` a second time (which would fail because the zombie has already been
+/// reaped by `try_wait` on Unix).
+fn collect_and_finalize(
+    child: &mut std::process::Child,
+    status: std::process::ExitStatus,
+    command: &[String],
+    prev_output: &Arc<Mutex<Option<String>>>,
+) -> WidgetCustomState {
+    use std::io::Read;
+    let mut stdout_buf = Vec::new();
+    let mut stderr_buf = Vec::new();
+    if let Some(mut out) = child.stdout.take() {
+        if let Err(e) = out.read_to_end(&mut stdout_buf) {
+            log::warn!(
+                "Custom prompt widget {:?}: error reading stdout: {}",
+                command,
+                e
+            );
         }
+    }
+    if let Some(mut err) = child.stderr.take() {
+        if let Err(e) = err.read_to_end(&mut stderr_buf) {
+            log::warn!(
+                "Custom prompt widget {:?}: error reading stderr: {}",
+                command,
+                e
+            );
+        }
+    }
+    let stdout = String::from_utf8_lossy(&stdout_buf).trim().to_string();
+    let stderr = String::from_utf8_lossy(&stderr_buf).trim().to_string();
+    log::info!("Custom prompt widget {:?} exited with {}", command, status);
+    log::debug!("Custom prompt widget stdout: {}", stdout);
+    log::debug!("Custom prompt widget stderr: {}", stderr);
+    if status.success() {
+        *prev_output.lock().unwrap() = Some(stdout.clone());
+        WidgetCustomState::Done(stdout_to_tagged_spans(stdout))
+    } else {
+        log::warn!(
+            "Custom prompt widget {:?} failed with {}; stderr: {}",
+            command,
+            status,
+            stderr
+        );
+        WidgetCustomState::Failed(WidgetFailure {
+            exit_code: status.code(),
+            stdout,
+            stderr,
+        })
     }
 }
 
@@ -2019,15 +2106,23 @@ mod tests {
     #[test]
     fn test_format_prompt_line_widget_custom_pending() {
         // A pending custom widget should render its placeholder.
-        let (_tx, rx) = std::sync::mpsc::channel::<Result<String, WidgetFailure>>();
+        // Spawn a long-running process so that try_wait returns None (still running).
+        let child = std::process::Command::new("sleep")
+            .arg("100")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("failed to spawn sleep for test");
         let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Pending {
             placeholder: "   ".to_string(),
-            receiver: rx,
+            child,
+            command: vec!["sleep".to_string(), "100".to_string()],
             prev_output_cell: Arc::new(Mutex::new(None)),
         })];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "   ");
+        // Drop segs here; the Drop impl on WidgetCustomState will kill sleep.
     }
 
     #[test]
@@ -2075,9 +2170,9 @@ mod tests {
     #[test]
     fn test_expand_span_widget_custom_name() {
         // When a custom widget name appears in a span it should produce a
-        // WidgetCustom segment. Non-blocking variant is used so the test
-        // doesn't wait for the command; the background thread will fail
-        // silently since the command doesn't exist.
+        // WidgetCustom segment. The spawn will fail immediately (ENOENT) since
+        // the command doesn't exist, producing a Failed state, which still
+        // satisfies the WidgetCustom(_) pattern match below.
         let widget = PromptWidget::Custom(PromptWidgetCustom {
             name: "MY_WIDGET".to_string(),
             command: vec!["nonexistent_test_command".to_string()],
