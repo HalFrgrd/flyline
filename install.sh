@@ -193,29 +193,18 @@ main() {
     ARCHIVE_STEM="libflyline-${VERSION}-${TARGET}"
 
     # When the system bash is older than 4.4 (e.g. macOS ships with 3.2.57),
-    # prefer a pre-bash-4.4 build if one is available in the release.
+    # use the pre-bash-4.4 build.
     if is_bash_pre_4_4; then
-        say "Detected bash < 4.4, looking for pre-bash-4.4 build..."
-        PRE_4_4_ARCHIVE="${ARCHIVE_STEM}_pre_bash_4_4.tar.gz"
-        PRE_4_4_SHA256="${PRE_4_4_ARCHIVE}.sha256"
-        DOWNLOAD_URL="$(get_asset_url "$RELEASE_JSON" "$PRE_4_4_ARCHIVE")"
-        if [ -n "$DOWNLOAD_URL" ]; then
-            ARCHIVE="$PRE_4_4_ARCHIVE"
-            ARCHIVE_SHA256="$PRE_4_4_SHA256"
-            SHA256_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE_SHA256")"
-        else
-            say "No pre-bash-4.4 build found for this target, falling back to standard build"
-            ARCHIVE="${ARCHIVE_STEM}.tar.gz"
-            ARCHIVE_SHA256="${ARCHIVE}.sha256"
-            DOWNLOAD_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE")"
-            SHA256_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE_SHA256")"
-        fi
+        say "Detected bash < 4.4, using pre-bash-4.4 build..."
+        ARCHIVE="${ARCHIVE_STEM}_pre_bash_4_4.tar.gz"
+        ARCHIVE_SHA256="${ARCHIVE}.sha256"
     else
         ARCHIVE="${ARCHIVE_STEM}.tar.gz"
         ARCHIVE_SHA256="${ARCHIVE}.sha256"
-        DOWNLOAD_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE")"
-        SHA256_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE_SHA256")"
     fi
+
+    DOWNLOAD_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE")"
+    SHA256_URL="$(get_asset_url "$RELEASE_JSON" "$ARCHIVE_SHA256")"
 
     [ -n "$DOWNLOAD_URL" ] || err "Could not find download URL for ${ARCHIVE} in the latest release.
 Please check https://github.com/${REPO}/releases for available assets."

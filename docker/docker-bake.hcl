@@ -225,12 +225,12 @@ target "install-test-ubuntu" {
     }
 }
 
-target "install-test-pre-bash-3-2-57" {
+target "install-test-bash-3-2-57" {
     context = "."
     contexts = {
         specific-bash-version = "target:specific-bash-version-3_2_57"
     }
-    dockerfile = "docker/install_test_pre_bash_3_2_57.Dockerfile"
+    dockerfile = "docker/install_test_bash_3.2.57.Dockerfile"
     args = {
         FLYLINE_RELEASE_VERSION = FLYLINE_RELEASE_VERSION
     }

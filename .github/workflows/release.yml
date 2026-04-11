@@ -201,4 +201,4 @@ jobs:
         env:
           FLYLINE_RELEASE_VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          docker buildx bake -f docker/docker-bake.hcl install-test-alpine install-test-ubuntu install-test-pre-bash-3-2-57
+          docker buildx bake -f docker/docker-bake.hcl install-test-alpine install-test-ubuntu install-test-bash-3-2-57
