@@ -63,7 +63,7 @@ impl SuggestionDescription {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Suggestion {
+pub struct ProcssedSuggestion {
     pub s: String,
     pub prefix: String,
     pub suffix: String,
@@ -92,7 +92,7 @@ impl SuggestionFormatted {
     const DESCRIPTION_SEPARATOR: &'static str = "  ";
 
     pub fn new(
-        suggestion: &Suggestion,
+        suggestion: &ProcssedSuggestion,
         suggestion_idx: usize,
         matching_indices: Vec<usize>,
         palette: &Palette,
@@ -268,9 +268,9 @@ mod description_tests {
 
     #[test]
     fn match_text_raw_strips_description() {
-        let item = UnprocessedSuggestion::Raw {
+        let item = MaybeProcessedSuggestion::Raw {
             raw_text: "git-commit\tRecord changes".to_string(),
-            expanded_path: None,
+            full_path: None,
             flags: crate::bash_funcs::CompletionFlags::default(),
             word_under_cursor: "git".to_string(),
         };
@@ -279,9 +279,9 @@ mod description_tests {
 
     #[test]
     fn match_text_raw_no_tab_unchanged() {
-        let item = UnprocessedSuggestion::Raw {
+        let item = MaybeProcessedSuggestion::Raw {
             raw_text: "git-commit".to_string(),
-            expanded_path: None,
+            full_path: None,
             flags: crate::bash_funcs::CompletionFlags::default(),
             word_under_cursor: "git".to_string(),
         };
@@ -291,7 +291,7 @@ mod description_tests {
     #[test]
     fn suggestion_with_description_formatted_omits_description() {
         // formatted() must only include what gets inserted (s + prefix + suffix).
-        let sug = Suggestion::new("cmd", "", " ").with_description(
+        let sug = ProcssedSuggestion::new("cmd", "", " ").with_description(
             SuggestionDescription::Animation(vec!["description text".to_string()]),
         );
         assert_eq!(sug.formatted(), "cmd ");
@@ -300,12 +300,13 @@ mod description_tests {
 
     #[test]
     fn description_frame_cycling() {
-        let sug =
-            Suggestion::new("x", "", "").with_description(SuggestionDescription::Animation(vec![
+        let sug = ProcssedSuggestion::new("x", "", "").with_description(
+            SuggestionDescription::Animation(vec![
                 "a".to_string(),
                 "b".to_string(),
                 "c".to_string(),
-            ]));
+            ]),
+        );
         let palette = crate::palette::Palette::default();
         let text_of = |spans: &[Span<'static>]| -> String {
             spans.iter().map(|s| s.content.as_ref()).collect()
@@ -325,10 +326,12 @@ mod description_tests {
 
     #[test]
     fn display_width_stable_across_frames() {
-        let sug =
-            Suggestion::new("abc", "", "").with_description(SuggestionDescription::Animation(
-                vec!["short".to_string(), "a much longer description".to_string()],
-            ));
+        let sug = ProcssedSuggestion::new("abc", "", "").with_description(
+            SuggestionDescription::Animation(vec![
+                "short".to_string(),
+                "a much longer description".to_string(),
+            ]),
+        );
         let palette = crate::palette::Palette::default();
         let fw0 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 0).display_width;
         let fw1 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 1).display_width;
@@ -341,7 +344,7 @@ mod description_tests {
 
     #[test]
     fn no_description_display_width_equals_text_width() {
-        let sug = Suggestion::new("hello", "", "");
+        let sug = ProcssedSuggestion::new("hello", "", "");
         let palette = crate::palette::Palette::default();
         let fw = SuggestionFormatted::new(&sug, 0, vec![], &palette, 0).display_width;
         assert_eq!(fw, "hello".len());
@@ -349,14 +352,14 @@ mod description_tests {
 
     #[test]
     fn last_mtime_description_max_width_is_5() {
-        let sug = Suggestion::new("file.txt", "", " ")
+        let sug = ProcssedSuggestion::new("file.txt", "", " ")
             .with_description(SuggestionDescription::LastMTime(0));
         assert_eq!(sug.description.max_width(), 5);
     }
 
     #[test]
     fn last_mtime_description_frame_is_nonempty() {
-        let sug = Suggestion::new("file.txt", "", " ")
+        let sug = ProcssedSuggestion::new("file.txt", "", " ")
             .with_description(SuggestionDescription::LastMTime(0));
         let frame = sug.description.frame_at(0);
         assert!(frame.is_some());
@@ -366,7 +369,7 @@ mod description_tests {
 
     #[test]
     fn static_empty_description_is_empty() {
-        let sug = Suggestion::new("foo", "", "");
+        let sug = ProcssedSuggestion::new("foo", "", "");
         assert_eq!(
             sug.description,
             SuggestionDescription::Static(String::new())
@@ -377,7 +380,7 @@ mod description_tests {
 
     #[test]
     fn static_nonempty_description_frame() {
-        let sug = Suggestion::new("foo", "", "")
+        let sug = ProcssedSuggestion::new("foo", "", "")
             .with_description(SuggestionDescription::Static("hello".to_string()));
         assert_eq!(sug.description.max_width(), 5);
         assert_eq!(sug.description.frame_at(0), Some("hello".to_string()));
@@ -386,13 +389,13 @@ mod description_tests {
     }
 }
 
-impl Suggestion {
+impl ProcssedSuggestion {
     pub fn new<S: Into<String>, P: Into<String>, X: Into<String>>(
         s: S,
         prefix: P,
         suffix: X,
     ) -> Self {
-        Suggestion {
+        ProcssedSuggestion {
             s: s.into(),
             prefix: prefix.into(),
             suffix: suffix.into(),
@@ -421,7 +424,7 @@ impl Suggestion {
         suggestions: Vec<String>,
         prefix: &str,
         suffix: &str,
-    ) -> Vec<Suggestion> {
+    ) -> Vec<ProcssedSuggestion> {
         suggestions
             .into_iter()
             .map(|s| {
@@ -430,18 +433,18 @@ impl Suggestion {
                 } else {
                     suffix.to_string()
                 };
-                Suggestion::new(s, prefix.to_string(), new_suffix)
+                ProcssedSuggestion::new(s, prefix.to_string(), new_suffix)
             })
             .collect()
     }
 }
 
-impl PartialOrd for Suggestion {
+impl PartialOrd for ProcssedSuggestion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.s.partial_cmp(&other.s)
     }
 }
-impl Ord for Suggestion {
+impl Ord for ProcssedSuggestion {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.s.cmp(&other.s)
     }
@@ -458,25 +461,25 @@ impl Ord for Suggestion {
 /// `style_for_path`, `fully_expand_path`) are deferred until the item is
 /// actually rendered or accepted.
 #[derive(Debug, Clone)]
-pub enum UnprocessedSuggestion {
-    Ready(Suggestion),
+pub enum MaybeProcessedSuggestion {
+    Ready(ProcssedSuggestion),
     Raw {
         raw_text: String,
-        expanded_path: Option<PathBuf>,
+        full_path: Option<PathBuf>,
         flags: bash_funcs::CompletionFlags,
         word_under_cursor: String,
     },
 }
 
-impl UnprocessedSuggestion {
+impl MaybeProcessedSuggestion {
     /// The text used for fuzzy matching and sorting.
     ///
     /// For `Raw` items, only the text up to the first tab character is considered
     /// (the remainder is a display-only description).
     pub fn match_text(&self) -> &str {
         match self {
-            UnprocessedSuggestion::Ready(s) => &s.s,
-            UnprocessedSuggestion::Raw { raw_text, .. } => raw_text
+            MaybeProcessedSuggestion::Ready(s) => &s.s,
+            MaybeProcessedSuggestion::Raw { raw_text, .. } => raw_text
                 .split_once('\t')
                 .map(|(text, _)| text)
                 .unwrap_or(raw_text),
@@ -485,22 +488,18 @@ impl UnprocessedSuggestion {
 
     /// Produce the fully processed [`Suggestion`], running post-processing
     /// for `Raw` items or returning the existing suggestion for `Ready` items.
-    pub fn to_suggestion(&mut self) -> Suggestion {
+    pub fn to_suggestion(&mut self) -> ProcssedSuggestion {
         match self {
-            UnprocessedSuggestion::Ready(s) => s.clone(),
-            UnprocessedSuggestion::Raw {
+            MaybeProcessedSuggestion::Ready(s) => s.clone(),
+            MaybeProcessedSuggestion::Raw {
                 raw_text,
-                expanded_path,
+                full_path,
                 flags,
                 word_under_cursor,
             } => {
-                let processed = post_process_completion(
-                    raw_text,
-                    expanded_path.as_deref(),
-                    *flags,
-                    word_under_cursor,
-                );
-                *self = UnprocessedSuggestion::Ready(processed.clone());
+                let processed =
+                    post_process_completion(raw_text, full_path.clone(), *flags, word_under_cursor);
+                *self = MaybeProcessedSuggestion::Ready(processed.clone());
                 processed
             }
         }
@@ -533,11 +532,36 @@ pub(crate) fn split_completion_description(raw: &str) -> (&str, Vec<String>) {
 /// description type applies).
 pub fn post_process_completion(
     raw_sug: &str,
-    path_to_use: Option<&std::path::Path>,
+    mut path_to_use: Option<std::path::PathBuf>,
     comp_resultflags: bash_funcs::CompletionFlags,
     word_under_cursor: &str,
-) -> Suggestion {
+) -> ProcssedSuggestion {
     let (sug, desc_frames) = split_completion_description(raw_sug);
+    let mut sug = sug.to_string();
+
+    if comp_resultflags.filename_completion_desired {
+        if path_to_use.is_none() {
+            path_to_use = Some(std::path::PathBuf::from(bash_funcs::fully_expand_path(
+                &sug,
+            )));
+        }
+    }
+
+    let suffix_char = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
+        sug = format!("{}/", sug);
+        None
+    } else if comp_resultflags.quote_type.is_some_and(|q| {
+        q == bash_funcs::QuoteType::SingleQuote || q == bash_funcs::QuoteType::DoubleQuote
+    }) {
+        // If we put a space after a filename that is quoted, bash thinks we want a filename ending in a space.
+        None
+    } else if comp_resultflags.no_suffix_desired {
+        None
+    } else if comp_resultflags.suffix_character == ' ' {
+        if sug.ends_with(" ") { None } else { Some(' ') }
+    } else {
+        Some(comp_resultflags.suffix_character)
+    };
 
     let quoted = if comp_resultflags.filename_quoting_desired
         && comp_resultflags.filename_completion_desired
@@ -545,13 +569,13 @@ pub fn post_process_completion(
         if !word_under_cursor.is_empty()
             && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
         {
-            let quoted_suffix = bash_funcs::quote_function_rust(
+            let quoted_suffix = bash_funcs::quoting_function_rust(
                 new_suffix,
                 comp_resultflags.quote_type.unwrap_or_default(),
             );
             format!("{}{}", word_under_cursor, quoted_suffix)
         } else {
-            bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
+            bash_funcs::quoting_function_rust(&sug, comp_resultflags.quote_type.unwrap_or_default())
         }
     } else {
         sug.to_string()
@@ -563,41 +587,15 @@ pub fn post_process_completion(
         quoted
     );
 
-    let suffix_char = if comp_resultflags.no_suffix_desired {
-        None
-    } else if comp_resultflags.suffix_character == ' ' {
-        if sug.ends_with(" ") { None } else { Some(' ') }
-    } else {
-        Some(comp_resultflags.suffix_character)
-    };
-
-    let (appended, suffix, ls_style, mtime) = if comp_resultflags.filename_completion_desired {
-        let owned_path;
-        let path = match path_to_use {
-            Some(p) => p,
-            None => {
-                owned_path = std::path::PathBuf::from(bash_funcs::fully_expand_path(sug));
-                &owned_path
-            }
-        };
-
-        let appended = if path.is_dir() {
-            (format!("{}/", quoted), None)
-        } else {
-            (quoted, suffix_char)
-        };
-        let ls_style = bash_funcs::style_for_path(path);
-        // Read the file's mtime for the LastMTime description.
-        let mtime = path
-            .metadata()
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs());
-        (appended.0, appended.1, ls_style, mtime)
-    } else {
-        (quoted, suffix_char, None, None)
-    };
+    let style = path_to_use
+        .as_ref()
+        .and_then(|p| bash_funcs::style_for_path(p));
+    let mtime = path_to_use
+        .as_ref()
+        .and_then(|p| p.metadata().ok())
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
 
     // Determine description type by priority:
     // 1. LastMTime (filename completion with available mtime)
@@ -606,7 +604,7 @@ pub fn post_process_completion(
     // 4. Static (empty — no description)
     let description = if let Some(ts) = mtime {
         SuggestionDescription::LastMTime(ts)
-    } else if let Some(easing) = CursorEasing::try_from_value_name(sug) {
+    } else if let Some(easing) = CursorEasing::try_from_value_name(&sug) {
         SuggestionDescription::Animation(easing_animation_frames(easing))
     } else if !desc_frames.is_empty() {
         SuggestionDescription::Animation(desc_frames)
@@ -614,10 +612,10 @@ pub fn post_process_completion(
         SuggestionDescription::Static(String::new())
     };
 
-    let suffix_str = suffix.map(|f| f.to_string()).unwrap_or_default();
-    let suggestion = Suggestion::new(appended, "", &suffix_str).with_description(description);
-    match ls_style {
-        Some(style) => suggestion.with_style(style),
+    let suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();
+    let suggestion = ProcssedSuggestion::new(quoted, "", &suffix_str).with_description(description);
+    match style {
+        Some(s) => suggestion.with_style(s),
         None => suggestion,
     }
 }
@@ -630,11 +628,13 @@ pub fn post_process_completion(
 #[derive(Debug, Clone)]
 struct FilteredItem {
     suggestion_idx: usize,
+    score: i64,
     matching_indices: Vec<usize>,
+    was_for_raw: bool,
 }
 
 pub struct ActiveSuggestions {
-    all_unprocessed_suggestions: Vec<UnprocessedSuggestion>,
+    all_unprocessed_suggestions: Vec<MaybeProcessedSuggestion>,
     filtered_suggestions: Vec<FilteredItem>,
     /// 2-D position of the currently-selected suggestion within the grid.
     /// `selected_col * last_num_rows_per_col + selected_row` gives the 1-D
@@ -642,6 +642,7 @@ pub struct ActiveSuggestions {
     selected_row: usize,
     selected_col: usize,
     pub word_under_cursor: SubString,
+    word_under_cursor_dequoted: String,
     /// Number of suggestion rows per column as used in the last rendered
     /// grid.  Kept in sync by [`update_grid_size`].
     last_num_rows_per_col: usize,
@@ -663,6 +664,10 @@ impl std::fmt::Debug for ActiveSuggestions {
             .field("selected_row", &self.selected_row)
             .field("selected_col", &self.selected_col)
             .field("word_under_cursor", &self.word_under_cursor)
+            .field(
+                "word_under_cursor_dequoted",
+                &self.word_under_cursor_dequoted,
+            )
             .field("last_num_rows_per_col", &self.last_num_rows_per_col)
             .field("last_num_visible_cols", &self.last_num_visible_cols)
             .field("col_window_to_show", &self.col_window_to_show)
@@ -677,7 +682,7 @@ pub struct ColumnInfo {
 }
 impl ActiveSuggestions {
     pub fn new<'underlying_buffer>(
-        suggestions: Vec<UnprocessedSuggestion>,
+        suggestions: Vec<MaybeProcessedSuggestion>,
         word_under_cursor: SubString,
     ) -> Self {
         let filtered_suggestions = vec![];
@@ -689,13 +694,14 @@ impl ActiveSuggestions {
             selected_row: 0,
             selected_col: 0,
             word_under_cursor: word_under_cursor.clone(),
+            word_under_cursor_dequoted: bash_funcs::dequoting_function_rust(&word_under_cursor.s),
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
         };
 
-        active_sug.apply_fuzzy_filter(word_under_cursor);
+        active_sug.update_word_under_cursor(word_under_cursor);
         active_sug
     }
 
@@ -850,10 +856,28 @@ impl ActiveSuggestions {
             let end = (start + max_rows).min(n);
             let col_items: Vec<(SuggestionFormatted, bool)> = (start..end)
                 .map(|filtered_idx| {
-                    let fi: &FilteredItem = &self.filtered_suggestions[filtered_idx];
-                    let unprocessed_suggestion =
-                        &mut self.all_unprocessed_suggestions[fi.suggestion_idx];
-                    let suggestion = unprocessed_suggestion.to_suggestion();
+                    {
+                        let fi: &FilteredItem = &self.filtered_suggestions[filtered_idx];
+                        self.all_unprocessed_suggestions[fi.suggestion_idx].to_suggestion();
+
+                        let unprocessed_suggestion =
+                            &self.all_unprocessed_suggestions[fi.suggestion_idx];
+
+                        if fi.was_for_raw {
+                            if let Some(new_if) = self.fuzzy_match_for_suggestion(
+                                fi.suggestion_idx,
+                                unprocessed_suggestion,
+                            ) {
+                                self.filtered_suggestions[filtered_idx] = new_if;
+                            }
+                            self.filtered_suggestions[filtered_idx].was_for_raw = false;
+                        }
+                    }
+
+                    let fi = &self.filtered_suggestions[filtered_idx];
+                    let suggestion =
+                        self.all_unprocessed_suggestions[fi.suggestion_idx].to_suggestion();
+
                     let formatted = SuggestionFormatted::new(
                         &suggestion,
                         fi.suggestion_idx,
@@ -947,41 +971,52 @@ impl ActiveSuggestions {
         self.filtered_suggestions.len()
     }
 
+    fn fuzzy_match_for_suggestion(
+        &self,
+        idx: usize,
+        item: &MaybeProcessedSuggestion,
+    ) -> Option<FilteredItem> {
+        let pattern = if matches!(item, MaybeProcessedSuggestion::Raw { .. }) {
+            &self.word_under_cursor_dequoted
+        } else {
+            &self.word_under_cursor.s
+        };
+        self.fuzzy_matcher
+            .fuzzy_indices(item.match_text(), pattern)
+            .map(|(score, indices)| FilteredItem {
+                score,
+                suggestion_idx: idx,
+                matching_indices: indices,
+                was_for_raw: matches!(item, MaybeProcessedSuggestion::Raw { .. }),
+            })
+    }
+
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
-    pub fn apply_fuzzy_filter(&mut self, new_word_under_cursor: SubString) {
+    pub fn update_word_under_cursor(&mut self, new_word_under_cursor: SubString) {
         self.word_under_cursor = new_word_under_cursor.clone();
 
-        let dequoted = bash_funcs::dequoting_function_rust(&self.word_under_cursor.s);
+        let raw_pattern = self.word_under_cursor.s.as_str();
+        let dequoted_pattern = bash_funcs::dequoting_function_rust(&self.word_under_cursor.s);
         log::debug!(
-            "Applying fuzzy filter with pattern {:?} on {} suggestions",
-            dequoted,
+            "Applying fuzzy filter with raw_pattern {:?} and dequoted_pattern {:?} on {} suggestions",
+            raw_pattern,
+            dequoted_pattern,
             self.all_unprocessed_suggestions.len()
         );
 
         // Score and filter suggestions using the stored matcher
-        let mut scored: Vec<(i64, FilteredItem)> = self
+        self.filtered_suggestions = self
             .all_unprocessed_suggestions
             .iter()
             .enumerate()
-            .filter_map(|(idx, item): (usize, &UnprocessedSuggestion)| {
-                self.fuzzy_matcher
-                    .fuzzy_indices(item.match_text(), &dequoted)
-                    .map(|(score, indices)| {
-                        (
-                            score,
-                            FilteredItem {
-                                suggestion_idx: idx,
-                                matching_indices: indices,
-                            },
-                        )
-                    })
+            .filter_map(|(idx, item): (usize, &MaybeProcessedSuggestion)| {
+                self.fuzzy_match_for_suggestion(idx, item)
             })
             .collect();
 
         // Sort by score (descending - higher scores are better matches)
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
-
-        self.filtered_suggestions = scored.into_iter().map(|(_score, item)| item).collect();
+        self.filtered_suggestions
+            .sort_by(|a, b| b.score.cmp(&a.score));
 
         // Reset selected position if needed
         if self.current_1d_index() >= self.filtered_suggestions.len()
@@ -1062,7 +1097,7 @@ impl ActiveSuggestions {
         };
     }
 
-    fn accept_item(&self, item: &Suggestion, buffer: &mut TextBuffer) {
+    fn accept_item(&self, item: &ProcssedSuggestion, buffer: &mut TextBuffer) {
         if let Err(e) = buffer.replace_word_under_cursor(&item.formatted(), &self.word_under_cursor)
         {
             log::error!("Failed to apply suggestion: {}", e);

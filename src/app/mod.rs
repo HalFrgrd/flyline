@@ -3,7 +3,7 @@ mod auto_close;
 pub(crate) mod formated_buffer;
 mod tab_completion;
 
-use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, UnprocessedSuggestion};
+use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, MaybeProcessedSuggestion};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
@@ -142,7 +142,7 @@ enum ContentMode {
     /// receiver and the word-under-cursor snapshot needed to finish the
     /// completion once the thread produces results.
     TabCompletionWaiting {
-        receiver: std::sync::mpsc::Receiver<Option<Vec<UnprocessedSuggestion>>>,
+        receiver: std::sync::mpsc::Receiver<Option<Vec<MaybeProcessedSuggestion>>>,
         wuc_substring: SubString,
     },
     /// AI command is running in the background. Stores the channel receiver and the
@@ -1081,7 +1081,7 @@ impl<'a> App<'a> {
                     active_suggestions.word_under_cursor.s,
                     word_under_cursor.s
                 );
-                active_suggestions.apply_fuzzy_filter(word_under_cursor);
+                active_suggestions.update_word_under_cursor(word_under_cursor);
             } else {
                 log::debug!(
                     "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",

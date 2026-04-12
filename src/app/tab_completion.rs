@@ -1,4 +1,4 @@
-use crate::active_suggestions::{ActiveSuggestions, Suggestion, UnprocessedSuggestion};
+use crate::active_suggestions::{ActiveSuggestions, MaybeProcessedSuggestion, ProcssedSuggestion};
 use crate::app::{App, ContentMode};
 use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
@@ -89,7 +89,7 @@ impl PathPatternExpansion {
         if let Some(suffix) = expanded_match.strip_prefix(&self.prefix_with_trailing_slash()) {
             let quoted_suffix = match quote_type {
                 Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
-                _ => bash_funcs::quote_function_rust(suffix, quote_type.unwrap_or_default()),
+                _ => bash_funcs::quoting_function_rust(suffix, quote_type.unwrap_or_default()),
             };
             if self.raw_prefix.is_empty() {
                 (quoted_suffix.clone(), quoted_suffix)
@@ -202,7 +202,7 @@ fn expand_alias_for_completion(
 
 /// Find the longest string that is a prefix of every suggestion's match text.
 /// Returns `None` if there are no suggestions or the common prefix is empty.
-fn common_prefix_of_suggestions(suggestions: &[UnprocessedSuggestion]) -> Option<String> {
+fn common_prefix_of_suggestions(suggestions: &[MaybeProcessedSuggestion]) -> Option<String> {
     let mut iter = suggestions.iter();
     let first_text = iter.next()?.match_text();
 
@@ -228,12 +228,12 @@ fn post_process_completions(
     completions: Vec<String>,
     comp_resultflags: bash_funcs::CompletionFlags,
     word_under_cursor: &str,
-) -> Vec<UnprocessedSuggestion> {
+) -> Vec<MaybeProcessedSuggestion> {
     completions
         .into_iter()
-        .map(|sug| UnprocessedSuggestion::Raw {
+        .map(|sug| MaybeProcessedSuggestion::Raw {
             raw_text: sug,
-            expanded_path: None,
+            full_path: None,
             flags: comp_resultflags,
             word_under_cursor: word_under_cursor.to_string(),
         })
@@ -242,7 +242,7 @@ fn post_process_completions(
 
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
-) -> Option<Vec<UnprocessedSuggestion>> {
+) -> Option<Vec<MaybeProcessedSuggestion>> {
     log::debug!("Completion context: {:#?}", completion_context);
 
     let word_under_cursor = &completion_context.word_under_cursor;
@@ -321,16 +321,16 @@ pub(crate) fn gen_completions_internal(
 fn gen_secondary_completions(
     completion_context: &tab_completion_context::CompletionContext,
     comp_resultflags: bash_funcs::CompletionFlags,
-) -> Option<Vec<UnprocessedSuggestion>> {
+) -> Option<Vec<MaybeProcessedSuggestion>> {
     let word_under_cursor = completion_context.word_under_cursor.as_ref();
     match completion_context.comp_type_secondary {
         Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
             log::debug!("Environment variable completion {:?}", word_under_cursor);
             let matching_vars = bash_funcs::get_all_variables_with_prefix(word_under_cursor);
             return Some(
-                Suggestion::from_string_vec(matching_vars, "", " ")
+                ProcssedSuggestion::from_string_vec(matching_vars, "", " ")
                     .into_iter()
-                    .map(UnprocessedSuggestion::Ready)
+                    .map(MaybeProcessedSuggestion::Ready)
                     .collect(),
             );
         }
@@ -370,9 +370,9 @@ fn gen_secondary_completions(
                     " "
                 };
                 return Some(
-                    Suggestion::from_string_vec(vec![completions_as_string], "", suffix)
+                    ProcssedSuggestion::from_string_vec(vec![completions_as_string], "", suffix)
                         .into_iter()
-                        .map(UnprocessedSuggestion::Ready)
+                        .map(MaybeProcessedSuggestion::Ready)
                         .collect(),
                 );
             }
@@ -404,7 +404,7 @@ fn gen_secondary_completions(
     None
 }
 
-fn tab_complete_first_word(command: &str) -> Vec<UnprocessedSuggestion> {
+fn tab_complete_first_word(command: &str) -> Vec<MaybeProcessedSuggestion> {
     log::debug!("Generating first word completions for: '{}'", command);
     if command.is_empty() {
         return vec![];
@@ -424,25 +424,25 @@ fn tab_complete_first_word(command: &str) -> Vec<UnprocessedSuggestion> {
         // No prefix matches found, fall back to fuzzy search
         log::debug!("No prefix matches for '{}', trying fuzzy search", command);
         res = bash_funcs::get_fuzzy_first_word_completions(command);
-        return Suggestion::from_string_vec(res, "", " ")
+        return ProcssedSuggestion::from_string_vec(res, "", " ")
             .into_iter()
-            .map(UnprocessedSuggestion::Ready)
+            .map(MaybeProcessedSuggestion::Ready)
             .collect();
     }
 
     // TODO: could prioritize based on frequency of use
     res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
     res.dedup();
-    Suggestion::from_string_vec(res, "", " ")
+    ProcssedSuggestion::from_string_vec(res, "", " ")
         .into_iter()
-        .map(UnprocessedSuggestion::Ready)
+        .map(MaybeProcessedSuggestion::Ready)
         .collect()
 }
 
 fn tab_complete_glob_expansion(
     pattern: &str,
     mut comp_resultflags: bash_funcs::CompletionFlags,
-) -> Vec<UnprocessedSuggestion> {
+) -> Vec<MaybeProcessedSuggestion> {
     // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
     // e.g. my_command $PWD/fi<TAB> should expand to:
     // my_command $PWD/file\ with\ spaces.txt
@@ -493,9 +493,9 @@ fn tab_complete_glob_expansion(
                     continue;
                 }
 
-                results.push(UnprocessedSuggestion::Raw {
+                results.push(MaybeProcessedSuggestion::Raw {
                     raw_text: unexpanded,
-                    expanded_path: Some(path),
+                    full_path: Some(path),
                     flags: comp_resultflags,
                     // The glob expansion path already preserves the raw prefix in
                     // `unexpanded` via PathPatternExpansion; pass "" here so
@@ -511,7 +511,7 @@ fn tab_complete_glob_expansion(
     results
 }
 
-fn tab_complete_tilde_expansion(pattern: &str) -> Vec<UnprocessedSuggestion> {
+fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> {
     let user_pattern = if let Some(stripped) = pattern.strip_prefix('~') {
         stripped
     } else {
@@ -520,7 +520,9 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<UnprocessedSuggestion> {
 
     // `~` alone — suggest the current user's home directory as `~/`
     if user_pattern.is_empty() {
-        return vec![UnprocessedSuggestion::Ready(Suggestion::new("~/", "", ""))];
+        return vec![MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
+            "~/", "", "",
+        ))];
     }
 
     // `~username` — find matching users from the users module
@@ -528,7 +530,7 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<UnprocessedSuggestion> {
 
     for user in users::get_all_users() {
         if user.username.starts_with(user_pattern) {
-            suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
+            suggestions.push(MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
                 format!("{}/", user.home_dir),
                 "",
                 "",
@@ -556,7 +558,7 @@ impl App<'_> {
     /// prefix insertion and handing suggestions to the UI).
     pub(crate) fn finish_tab_complete(
         &mut self,
-        sugs: Vec<UnprocessedSuggestion>,
+        sugs: Vec<MaybeProcessedSuggestion>,
         wuc_substring: SubString,
     ) {
         let mut final_wuc = wuc_substring.clone();
@@ -605,7 +607,7 @@ impl App<'_> {
 
         let wuc_substring = completion_context.word_under_cursor.clone();
 
-        let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<UnprocessedSuggestion>>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<MaybeProcessedSuggestion>>>();
 
         let completion_context_owned = completion_context.into_owned();
 
@@ -658,7 +660,7 @@ impl App<'_> {
         log::set_max_level(log::LevelFilter::Debug);
         logging::stream_logs("stderr".into()).unwrap();
 
-        let mut run_test_on = |command: &str, expected_suggestions: &[&Suggestion]| {
+        let mut run_test_on = |command: &str, expected_suggestions: &[&ProcssedSuggestion]| {
             log::info!(
                 "\n\n---------------------------------------------------------------------------------"
             );
@@ -687,7 +689,7 @@ impl App<'_> {
                 }
             }
 
-            let mut suggestions: Vec<Suggestion> = some_suggestions
+            let mut suggestions: Vec<ProcssedSuggestion> = some_suggestions
                 .unwrap()
                 .iter()
                 .map(|item| item.to_suggestion())
@@ -750,33 +752,33 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util --filenames ",
             &[
-                &Suggestion::new(r#"abc/"#, "", ""),
-                &Suggestion::new(r#"bar.txt"#, "", " "),
-                &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
-                &Suggestion::new(r#"foo/"#, "", ""),
-                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
+                &ProcssedSuggestion::new(r#"abc/"#, "", ""),
+                &ProcssedSuggestion::new(r#"bar.txt"#, "", " "),
+                &ProcssedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
+                &ProcssedSuggestion::new(r#"foo/"#, "", ""),
+                &ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &ProcssedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
         run_test_on(
             "fl_comp_util --quoting-desired ",
-            &[&Suggestion::new(r#"multi\ word\ option"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"multi\ word\ option"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util --suppress-quote ",
-            &[&Suggestion::new(r#"multi word option"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"multi word option"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util --dont-suppress-append ",
-            &[&Suggestion::new(r#"foo"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"foo"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util --suppress-append ",
-            &[&Suggestion::new(r#"foo"#, "", "")],
+            &[&ProcssedSuggestion::new(r#"foo"#, "", "")],
         );
 
         run_test_on(
@@ -785,38 +787,38 @@ impl App<'_> {
                 // &Suggestion::new(r#"bar.txt"#, "", " "),
                 // &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
                 // &Suggestion::new(r#"foo/"#, "", ""),
-                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
             ],
         );
 
         run_test_on(
             "fl_comp_util --fallback-to-default $FOOBARBA",
-            &[&Suggestion::new(r#"$FOOBARBAZ"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"$FOOBARBAZ"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default ma*",
-            &[&Suggestion::new(r#"many\ spaces\ here/"#, "", "")],
+            &[&ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", "")],
         );
 
         run_test_on(
             "fl_comp_util_dirnames --fallback-to-default-filenames ",
             &[
-                &Suggestion::new(r#"abc/"#, "", ""),
-                &Suggestion::new(r#"foo/"#, "", ""),
-                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
+                &ProcssedSuggestion::new(r#"abc/"#, "", ""),
+                &ProcssedSuggestion::new(r#"foo/"#, "", ""),
+                &ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &ProcssedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
         run_test_on(
             "fl_comp_util_plusdirs --quoting-desired ",
             &[
-                &Suggestion::new(r#"abc/"#, "", ""),
-                &Suggestion::new(r#"foo/"#, "", ""),
-                &Suggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &Suggestion::new(r#"multi\ word\ option"#, "", " "),
-                &Suggestion::new(r#"sym_link_to_foo/"#, "", ""),
+                &ProcssedSuggestion::new(r#"abc/"#, "", ""),
+                &ProcssedSuggestion::new(r#"foo/"#, "", ""),
+                &ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &ProcssedSuggestion::new(r#"multi\ word\ option"#, "", " "),
+                &ProcssedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
@@ -825,26 +827,38 @@ impl App<'_> {
         run_test_on(
             "fl_comp_alias ",
             &[
-                &Suggestion::new(r#"apple"#, "", " "),
-                &Suggestion::new(r#"banana"#, "", " "),
-                &Suggestion::new(r#"cherry"#, "", " "),
+                &ProcssedSuggestion::new(r#"apple"#, "", " "),
+                &ProcssedSuggestion::new(r#"banana"#, "", " "),
+                &ProcssedSuggestion::new(r#"cherry"#, "", " "),
             ],
         );
 
         // Test that we don't quote the prefix but do quote the part of the path filled in by tab completion
         run_test_on(
             "fl_comp_util --fallback-to-default $PWD/man",
-            &[&Suggestion::new(r#"$PWD/many\ spaces\ here/"#, "", "")],
+            &[&ProcssedSuggestion::new(
+                r#"$PWD/many\ spaces\ here/"#,
+                "",
+                "",
+            )],
         );
 
         run_test_on(
             r#"fl_comp_util --fallback-to-default $PWD/many\ spac"#,
-            &[&Suggestion::new(r#"$PWD/many\ spaces\ here/"#, "", "")],
+            &[&ProcssedSuggestion::new(
+                r#"$PWD/many\ spaces\ here/"#,
+                "",
+                "",
+            )],
         );
 
         run_test_on(
             r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
-            &[&Suggestion::new(r#""$PWD/many spaces here/"#, "", "")],
+            &[&ProcssedSuggestion::new(
+                r#""$PWD/many spaces here/"#,
+                "",
+                "",
+            )],
         );
 
         // Test that $HOME prefix is preserved (not backslash-escaped) while the
@@ -852,18 +866,18 @@ impl App<'_> {
         // $HOME/foo/ should complete to $HOME/foo/\$baz.txt (not \$HOME/foo/\$baz.txt).
         run_test_on(
             "fl_comp_util --env-var-test $HOME/foo/",
-            &[&Suggestion::new(r#"$HOME/foo/\$baz.txt"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"$HOME/foo/\$baz.txt"#, "", " ")],
         );
 
         // Test glob expansion with glob characters in directory components
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default foo*/ba*",
-            &[&Suggestion::new(r#"foo/baz"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"foo/baz"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default abc/foo*/ba*",
-            &[&Suggestion::new(r#"abc/foo/baz"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"abc/foo/baz"#, "", " ")],
         );
 
         // move to foo/glob_stuff dir:
@@ -872,25 +886,25 @@ impl App<'_> {
         // .* matches hidden files only. and should ignore . and ..
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default .*",
-            &[&Suggestion::new(r#".dotfile"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#".dotfile"#, "", " ")],
         );
 
         // ./.* matches hidden files only. and should ignore . and ..
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default ./.*",
-            &[&Suggestion::new(r#"./.dotfile"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"./.dotfile"#, "", " ")],
         );
 
         // ./* matches all non hidden
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default ./*",
-            &[&Suggestion::new(r#"./a.txt"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"./a.txt"#, "", " ")],
         );
 
         // * matches all non hidden
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default *",
-            &[&Suggestion::new(r#"a.txt"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"a.txt"#, "", " ")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
@@ -901,8 +915,8 @@ impl App<'_> {
 mod tests {
     use super::*;
 
-    fn make_ready(s: &str) -> UnprocessedSuggestion {
-        UnprocessedSuggestion::Ready(Suggestion::new(s, "", ""))
+    fn make_ready(s: &str) -> MaybeProcessedSuggestion {
+        MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(s, "", ""))
     }
 
     #[test]
@@ -954,15 +968,15 @@ mod tests {
     fn common_prefix_raw_suggestions() {
         let flags = bash_funcs::CompletionFlags::default();
         let sugs = vec![
-            UnprocessedSuggestion::Raw {
+            MaybeProcessedSuggestion::Raw {
                 raw_text: "git-commit".to_string(),
-                expanded_path: None,
+                full_path: None,
                 flags,
                 word_under_cursor: "git".to_string(),
             },
-            UnprocessedSuggestion::Raw {
+            MaybeProcessedSuggestion::Raw {
                 raw_text: "git-checkout".to_string(),
-                expanded_path: None,
+                full_path: None,
                 flags,
                 word_under_cursor: "git".to_string(),
             },
