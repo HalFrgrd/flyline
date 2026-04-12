@@ -529,7 +529,7 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<UnprocessedSuggestion> {
     for user in users::get_all_users() {
         if user.username.starts_with(user_pattern) {
             suggestions.push(UnprocessedSuggestion::Ready(Suggestion::new(
-                format!("~{}/", user.username),
+                format!("{}/", user.home_dir),
                 "",
                 "",
             )));

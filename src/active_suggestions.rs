@@ -1,6 +1,7 @@
 use crate::bash_funcs;
 use crate::content_utils::{
-    easing_animation_frames, highlight_matching_indices, middle_truncate_spans, ts_to_timeago_string_5chars, vec_spans_width
+    easing_animation_frames, highlight_matching_indices, middle_truncate_spans,
+    ts_to_timeago_string_5chars, vec_spans_width,
 };
 use crate::cursor::CursorEasing;
 use crate::palette::Palette;
@@ -84,7 +85,6 @@ pub struct SuggestionFormatted {
     /// Width of the current description frame text (excluding the separator).
     description_frame_width: usize,
 }
-
 
 impl SuggestionFormatted {
     /// Width of the separator between the suggestion text and its description.

@@ -118,7 +118,6 @@ pub fn middle_truncate_spans(spans: &[Span<'static>], max_chars: usize) -> Vec<S
     out
 }
 
-
 /// Split a single logical line's spans into display rows, each fitting within `available_cols`
 /// terminal columns. Returns at least one row (which may be empty if the input line is empty).
 pub fn split_line_to_terminal_rows(
