@@ -1,4 +1,5 @@
 use crate::bash_funcs;
+use crate::cursor::CursorEasing;
 use crate::palette::Palette;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::text_buffer::{SubString, TextBuffer};
@@ -15,6 +16,130 @@ use unicode_width::UnicodeWidthStr;
 /// suggestions grid.
 pub(crate) const COLUMN_PADDING: usize = 2;
 
+/// Total width (in terminal columns) of the easing-function dot animation.
+const EASING_ANIM_TOTAL_WIDTH: usize = 7;
+
+/// Number of frames in each half of the ping-pong animation (forward + backward).
+const EASING_ANIM_HALF_FRAMES: usize = 16;
+
+/// Render `ts` (a Unix-epoch timestamp in seconds) as a right-aligned,
+/// ≤5-character "time ago" string, matching the format used by the fuzzy
+/// history search header.
+pub(crate) fn mtime_to_string(ts: u64) -> String {
+    let duration = std::time::Duration::from_secs(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .saturating_sub(ts),
+    );
+    let s = timeago::format_5chars(duration);
+    format!("{:>5}", s.trim_start_matches('0'))
+}
+
+/// Build the ping-pong animation frames for the given easing function.
+///
+/// Returns `2 * EASING_ANIM_HALF_FRAMES - 2` frames showing a dot (`·`) that
+/// travels from the left edge to the right and back, using `easing` for the
+/// position curve in both directions.
+fn easing_animation_frames(easing: CursorEasing) -> Vec<String> {
+    let half = EASING_ANIM_HALF_FRAMES;
+    let dot_range = (EASING_ANIM_TOTAL_WIDTH - 1) as f32;
+    let total_frames = half * 2 - 2;
+    let mut frames = Vec::with_capacity(total_frames);
+
+    let make_frame = |pos: usize| -> String {
+        let mut s = String::with_capacity(EASING_ANIM_TOTAL_WIDTH);
+        for j in 0..EASING_ANIM_TOTAL_WIDTH {
+            if j == pos {
+                s.push('·');
+            } else {
+                s.push(' ');
+            }
+        }
+        s
+    };
+
+    // Forward: t goes 0 → 1
+    for i in 0..half {
+        let t = i as f32 / (half - 1) as f32;
+        let pos = (easing.apply(t) * dot_range).round() as usize;
+        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
+    }
+    // Backward: t goes from the second-to-last back to 0 (skip first and last to avoid repeats)
+    for i in (1..half - 1).rev() {
+        let t = i as f32 / (half - 1) as f32;
+        let pos = (easing.apply(t) * dot_range).round() as usize;
+        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
+    }
+
+    frames
+}
+
+/// Describes what to display alongside a suggestion as a visual suffix.
+///
+/// The priority when choosing which variant to use (in `post_process_completion`) is:
+/// `LastMTime` > `EasingFunc` > `Animation` > `Static`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SuggestionDescription {
+    /// A single static string.  An empty string means no description is shown.
+    Static(String),
+    /// A multi-frame animated description.  Frames are cycled at ~24 fps.
+    Animation(Vec<String>),
+    /// Last-modification time of the associated file (Unix timestamp).
+    /// Rendered as a right-aligned, ≤5-character "time ago" string.
+    LastMTime(u64),
+    /// Preview animation for one of the [`CursorEasing`] values.
+    /// Displayed as a small dot moving left-to-right driven by the curve.
+    EasingFunc(CursorEasing),
+}
+
+impl SuggestionDescription {
+    /// Returns `true` if this description produces no visible text.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            SuggestionDescription::Static(s) => s.is_empty(),
+            SuggestionDescription::Animation(frames) => frames.is_empty(),
+            SuggestionDescription::LastMTime(_) | SuggestionDescription::EasingFunc(_) => false,
+        }
+    }
+
+    /// Maximum display width (in terminal columns) across all frames.
+    pub fn max_width(&self) -> usize {
+        match self {
+            SuggestionDescription::Static(s) => s.width(),
+            SuggestionDescription::Animation(frames) => {
+                frames.iter().map(|f| f.width()).max().unwrap_or(0)
+            }
+            SuggestionDescription::LastMTime(_) => 5,
+            SuggestionDescription::EasingFunc(_) => EASING_ANIM_TOTAL_WIDTH,
+        }
+    }
+
+    /// Returns the string to display for `frame_index`, or `None` when the
+    /// description is empty.
+    pub fn frame_at(&self, frame_index: usize) -> Option<String> {
+        match self {
+            SuggestionDescription::Static(s) if s.is_empty() => None,
+            SuggestionDescription::Static(s) => Some(s.clone()),
+            SuggestionDescription::Animation(frames) if frames.is_empty() => None,
+            SuggestionDescription::Animation(frames) => {
+                Some(frames[frame_index % frames.len()].clone())
+            }
+            SuggestionDescription::LastMTime(ts) => Some(mtime_to_string(*ts)),
+            SuggestionDescription::EasingFunc(easing) => {
+                let frames = easing_animation_frames(*easing);
+                // frames should never be empty (half >= 2), but guard anyway
+                if frames.is_empty() {
+                    None
+                } else {
+                    Some(frames[frame_index % frames.len()].clone())
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
     pub s: String,
@@ -22,10 +147,8 @@ pub struct Suggestion {
     pub suffix: String,
     /// Optional display style (e.g. from LS_COLORS) applied when rendering in the completion list.
     pub style: Option<Style>,
-    /// Description frames extracted from tab-separated segments in the raw completion string.
-    /// Displayed as a visual suffix (not inserted). If there are multiple frames, they are
-    /// cycled through at 24 fps.
-    pub description: Vec<String>,
+    /// Description to display as a visual suffix (not inserted).
+    pub description: SuggestionDescription,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,22 +297,18 @@ impl SuggestionFormatted {
         let main_width = suggestion.s.width();
 
         // Compute the widest description frame to use for stable column sizing.
-        let max_description_frame_width = suggestion
-            .description
-            .iter()
-            .map(|f| f.width())
-            .max()
-            .unwrap_or(0);
+        let max_description_frame_width = suggestion.description.max_width();
 
         // Select the description frame to display for this render cycle.
-        let (description_spans, description_frame_width) = if suggestion.description.is_empty() {
-            (vec![], 0)
-        } else {
-            let frame = &suggestion.description[frame_index % suggestion.description.len()];
-            let desc_style = palette.secondary_text();
-            let spans = vec![Span::styled(frame.clone(), desc_style)];
-            (spans, frame.width())
-        };
+        let (description_spans, description_frame_width) =
+            match suggestion.description.frame_at(frame_index) {
+                None => (vec![], 0),
+                Some(frame) => {
+                    let desc_style = palette.secondary_text();
+                    let width = frame.width();
+                    (vec![Span::styled(frame, desc_style)], width)
+                }
+            };
 
         // Column width accounts for the widest frame so the column stays stable.
         let display_width = if max_description_frame_width > 0 {
@@ -363,19 +482,21 @@ mod description_tests {
     #[test]
     fn suggestion_with_description_formatted_omits_description() {
         // formatted() must only include what gets inserted (s + prefix + suffix).
-        let sug =
-            Suggestion::new("cmd", "", " ").with_description(vec!["description text".to_string()]);
+        let sug = Suggestion::new("cmd", "", " ").with_description(
+            SuggestionDescription::Animation(vec!["description text".to_string()]),
+        );
         assert_eq!(sug.formatted(), "cmd ");
         assert!(!sug.formatted().contains("description"));
     }
 
     #[test]
     fn description_frame_cycling() {
-        let sug = Suggestion::new("x", "", "").with_description(vec![
-            "a".to_string(),
-            "b".to_string(),
-            "c".to_string(),
-        ]);
+        let sug =
+            Suggestion::new("x", "", "").with_description(SuggestionDescription::Animation(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+            ]));
         let palette = crate::palette::Palette::default();
         let text_of = |spans: &[Span<'static>]| -> String {
             spans.iter().map(|s| s.content.as_ref()).collect()
@@ -395,10 +516,10 @@ mod description_tests {
 
     #[test]
     fn display_width_stable_across_frames() {
-        let sug = Suggestion::new("abc", "", "").with_description(vec![
-            "short".to_string(),
-            "a much longer description".to_string(),
-        ]);
+        let sug =
+            Suggestion::new("abc", "", "").with_description(SuggestionDescription::Animation(
+                vec!["short".to_string(), "a much longer description".to_string()],
+            ));
         let palette = crate::palette::Palette::default();
         let fw0 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 0).display_width;
         let fw1 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 1).display_width;
@@ -416,6 +537,75 @@ mod description_tests {
         let fw = SuggestionFormatted::new(&sug, 0, vec![], &palette, 0).display_width;
         assert_eq!(fw, "hello".len());
     }
+
+    #[test]
+    fn last_mtime_description_max_width_is_5() {
+        let sug = Suggestion::new("file.txt", "", " ")
+            .with_description(SuggestionDescription::LastMTime(0));
+        assert_eq!(sug.description.max_width(), 5);
+    }
+
+    #[test]
+    fn last_mtime_description_frame_is_nonempty() {
+        let sug = Suggestion::new("file.txt", "", " ")
+            .with_description(SuggestionDescription::LastMTime(0));
+        let frame = sug.description.frame_at(0);
+        assert!(frame.is_some());
+        let s = frame.unwrap();
+        assert_eq!(s.width(), 5, "LastMTime frame must be exactly 5 chars wide");
+    }
+
+    #[test]
+    fn easing_func_description_max_width() {
+        let sug = Suggestion::new("linear", "", " ")
+            .with_description(SuggestionDescription::EasingFunc(CursorEasing::Linear));
+        assert_eq!(sug.description.max_width(), EASING_ANIM_TOTAL_WIDTH);
+    }
+
+    #[test]
+    fn easing_func_description_frame_is_nonempty_and_correct_width() {
+        let sug = Suggestion::new("linear", "", " ")
+            .with_description(SuggestionDescription::EasingFunc(CursorEasing::Linear));
+        let frame = sug.description.frame_at(0);
+        assert!(frame.is_some());
+        let s = frame.unwrap();
+        assert_eq!(
+            s.width(),
+            EASING_ANIM_TOTAL_WIDTH,
+            "EasingFunc frame must be EASING_ANIM_TOTAL_WIDTH wide"
+        );
+        // Frame 0 should have the dot at position 0 (leftmost)
+        assert_eq!(s.chars().next(), Some('·'));
+    }
+
+    #[test]
+    fn easing_func_ping_pong_frames_cycle() {
+        let desc = SuggestionDescription::EasingFunc(CursorEasing::Linear);
+        let f0 = desc.frame_at(0).unwrap();
+        // After a full cycle the animation wraps back to the start
+        let total = 2 * EASING_ANIM_HALF_FRAMES - 2;
+        let f_wrap = desc.frame_at(total).unwrap();
+        assert_eq!(f0, f_wrap, "animation should wrap seamlessly");
+    }
+
+    #[test]
+    fn static_empty_description_is_empty() {
+        let sug = Suggestion::new("foo", "", "");
+        assert!(sug.description.is_empty());
+        assert_eq!(sug.description.max_width(), 0);
+        assert!(sug.description.frame_at(0).is_none());
+    }
+
+    #[test]
+    fn static_nonempty_description_frame() {
+        let sug = Suggestion::new("foo", "", "")
+            .with_description(SuggestionDescription::Static("hello".to_string()));
+        assert!(!sug.description.is_empty());
+        assert_eq!(sug.description.max_width(), 5);
+        assert_eq!(sug.description.frame_at(0), Some("hello".to_string()));
+        // frame_at is stable for any index
+        assert_eq!(sug.description.frame_at(99), Some("hello".to_string()));
+    }
 }
 
 impl Suggestion {
@@ -429,13 +619,12 @@ impl Suggestion {
             prefix: prefix.into(),
             suffix: suffix.into(),
             style: None,
-            description: vec![],
+            description: SuggestionDescription::Static(String::new()),
         }
     }
 
-    /// Set the description frames on this suggestion (tab-separated segments from the raw
-    /// completion string that are shown as a visual suffix but not inserted).
-    pub fn with_description(mut self, description: Vec<String>) -> Self {
+    /// Set the description on this suggestion.
+    pub fn with_description(mut self, description: SuggestionDescription) -> Self {
         self.description = description;
         self
     }
@@ -557,8 +746,18 @@ pub(crate) fn split_completion_description(raw: &str) -> (&str, Vec<String>) {
 /// suffix computation.  Expensive for filenames due to syscalls; call lazily.
 ///
 /// If `sug` contains tab characters the text before the first tab is the
-/// completion value; the remaining tab-separated segments are description
-/// frames that are displayed as a visual suffix but never inserted.
+/// completion value; the remaining tab-separated segments are treated as
+/// animation frames for the description (used when no higher-priority
+/// description type applies).
+///
+/// **Description priority** (highest first):
+/// 1. [`SuggestionDescription::LastMTime`] — when `filename_completion_desired`
+///    is set and the file's mtime is obtainable.
+/// 2. [`SuggestionDescription::EasingFunc`] — when the suggestion text matches
+///    one of the [`CursorEasing`] value names.
+/// 3. [`SuggestionDescription::Animation`] — when there are tab-separated
+///    description frames in the raw completion string.
+/// 4. [`SuggestionDescription::Static`] (empty) — fallback.
 pub fn post_process_completion(
     sug: &str,
     path_to_use: Option<&std::path::Path>,
@@ -566,7 +765,7 @@ pub fn post_process_completion(
     word_under_cursor: &str,
 ) -> Suggestion {
     // Split off the description frames (tab-separated segments after the text).
-    let (sug_text, description) = split_completion_description(sug);
+    let (sug_text, tab_frames) = split_completion_description(sug);
 
     let quoted = if comp_resultflags.filename_quoting_desired
         && comp_resultflags.filename_completion_desired
@@ -601,7 +800,7 @@ pub fn post_process_completion(
         Some(comp_resultflags.suffix_character)
     };
 
-    let (appended, suffix, ls_style) = if comp_resultflags.filename_completion_desired {
+    let (appended, suffix, ls_style, mtime) = if comp_resultflags.filename_completion_desired {
         let owned_path;
         let path = match path_to_use {
             Some(p) => p,
@@ -617,9 +816,31 @@ pub fn post_process_completion(
             (quoted, suffix)
         };
         let ls_style = bash_funcs::style_for_path(path);
-        (appended.0, appended.1, ls_style)
+        // Read the file's mtime for the LastMTime description.
+        let mtime = path
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs());
+        (appended.0, appended.1, ls_style, mtime)
     } else {
-        (quoted, suffix, None)
+        (quoted, suffix, None, None)
+    };
+
+    // Determine description type by priority:
+    // 1. LastMTime (filename completion with available mtime)
+    // 2. EasingFunc (suggestion name is a CursorEasing value)
+    // 3. Animation (tab-separated frames in the raw completion string)
+    // 4. Static (empty — no description)
+    let description = if let Some(ts) = mtime {
+        SuggestionDescription::LastMTime(ts)
+    } else if let Some(easing) = CursorEasing::try_from_value_name(sug_text) {
+        SuggestionDescription::EasingFunc(easing)
+    } else if !tab_frames.is_empty() {
+        SuggestionDescription::Animation(tab_frames)
+    } else {
+        SuggestionDescription::Static(String::new())
     };
 
     let suffix_str = suffix.map(|f| f.to_string()).unwrap_or_default();
