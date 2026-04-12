@@ -127,7 +127,7 @@ impl Action {
 #[derive(Debug, Clone)]
 pub enum KeyEventMatch {
     Exact(KeyEvent),
-    AnyCharAndMods(Vec<KeyModifiers>),
+    AnyCharAndMods(KeyModifiers),
 }
 
 impl TryFrom<&str> for KeyEventMatch {
@@ -143,7 +143,7 @@ impl TryFrom<&str> for KeyEventMatch {
             modifiers |= parse_single_modifier(mod_part)?;
         }
         if key_part.trim().eq_ignore_ascii_case("anychar") {
-            return Ok(KeyEventMatch::AnyCharAndMods(vec![modifiers]));
+            return Ok(KeyEventMatch::AnyCharAndMods(modifiers));
         }
         let code = parse_single_keycode(key_part)?;
         Ok(KeyEventMatch::Exact(KeyEvent::new(code, modifiers)))
@@ -405,8 +405,7 @@ impl Binding {
                 action_binding.code == key.code && key.modifiers.contains(action_binding.modifiers)
             }
             KeyEventMatch::AnyCharAndMods(mods) => {
-                matches!(key.code, KeyCode::Char(_))
-                    && mods.iter().any(|m| key.modifiers.contains(*m))
+                matches!(key.code, KeyCode::Char(_)) && key.modifiers.contains(*mods)
             }
         })
     }
@@ -1535,8 +1534,13 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
         Binding::try_new(&["Right"], Scope::Default, "move_right").unwrap(),
         Binding::try_new(&["Up"], Scope::Default, "move_line_up_or_history_up").unwrap(),
         Binding::try_new(&["Down"], Scope::Default, "move_line_down_or_history_down").unwrap(),
-        Binding::try_new(&["Ctrl+z", "Super+Shift+Z"], Scope::Default, "undo").unwrap(),
-        Binding::try_new(&["Ctrl+y", "Super+Shift+Z"], Scope::Default, "redo").unwrap(),
+        Binding::try_new(
+            &["Ctrl+y", "Super+Y", "Ctrl+Shift+Z", "Super+Shift+Z"],
+            Scope::Default,
+            "redo",
+        )
+        .unwrap(),
+        Binding::try_new(&["Ctrl+z", "Super+Z"], Scope::Default, "undo").unwrap(),
         Binding::try_new(&["AnyChar", "Shift+AnyChar"], Scope::Default, "insert_char").unwrap(),
     ]
 });
@@ -1666,15 +1670,11 @@ impl KeyEventMatch {
                 parts.push(display_keycode(ke.code));
                 parts.join("+")
             }
-            KeyEventMatch::AnyCharAndMods(mods) => mods
-                .iter()
-                .map(|m| {
-                    let mut parts = display_modifiers(*m);
-                    parts.push("AnyChar".to_string());
-                    parts.join("+")
-                })
-                .collect::<Vec<_>>()
-                .join(" / "),
+            KeyEventMatch::AnyCharAndMods(mods) => {
+                let mut parts = display_modifiers(*mods);
+                parts.push("AnyChar".to_string());
+                parts.join("+")
+            }
         }
     }
 
@@ -1720,16 +1720,12 @@ impl KeyEventMatch {
                 parts.join("+")
             }
             // AnyChar bindings: apply inverse modifier display per modifier set.
-            KeyEventMatch::AnyCharAndMods(mods) => mods
-                .iter()
-                .map(|m| {
-                    let mut parts: Vec<String> = Vec::new();
-                    push_modifiers(*m, &mut parts);
-                    parts.push("AnyChar".to_string());
-                    parts.join("+")
-                })
-                .collect::<Vec<_>>()
-                .join(" / "),
+            KeyEventMatch::AnyCharAndMods(mods) => {
+                let mut parts: Vec<String> = Vec::new();
+                push_modifiers(*mods, &mut parts);
+                parts.push("AnyChar".to_string());
+                parts.join("+")
+            }
         }
     }
 }
@@ -1739,25 +1735,22 @@ const ANSI_BLINK_WHITE_ON_RED: &str = "\x1b[5;37;41m";
 /// ANSI escape sequence: reset all attributes.
 const ANSI_RESET: &str = "\x1b[0m";
 
-/// Returns `true` if `a` and `b` can both be triggered by the same physical
-/// key press, i.e. there exists a [`KeyEvent`] that would cause both patterns
-/// to return `true` from [`Binding::matches`].
-fn key_event_match_overlaps(a: &KeyEventMatch, b: &KeyEventMatch) -> bool {
+fn key_event_a_shadows_b(a: &KeyEventMatch, b: &KeyEventMatch) -> bool {
     match (a, b) {
-        // Two exact patterns overlap when they share the same key code.
-        // The `matches` predicate uses `key.modifiers.contains(binding.modifiers)`,
-        // so pressing a key with the union of both modifier sets satisfies both.
+        // If b contains more modifiers than a, a will shadow b.
         (KeyEventMatch::Exact(ea), KeyEventMatch::Exact(eb)) => {
             ea.code == eb.code && eb.modifiers.contains(ea.modifiers)
         }
-        // Any two AnyCharAndMods patterns overlap: a char key pressed with the
-        // union of any modifier from each side satisfies both.
-        (KeyEventMatch::AnyCharAndMods(_), KeyEventMatch::AnyCharAndMods(_)) => true,
+        (KeyEventMatch::AnyCharAndMods(mods_a), KeyEventMatch::AnyCharAndMods(mods_b)) => {
+            mods_b.contains(*mods_a)
+        }
         // AnyCharAndMods overlaps with an Exact char pattern, but not with a
         // non-char key (e.g. Enter, Tab) since AnyCharAndMods only fires on chars.
-        (KeyEventMatch::AnyCharAndMods(_), KeyEventMatch::Exact(e))
-        | (KeyEventMatch::Exact(e), KeyEventMatch::AnyCharAndMods(_)) => {
-            matches!(e.code, KeyCode::Char(_))
+        (KeyEventMatch::AnyCharAndMods(mods), KeyEventMatch::Exact(e)) => {
+            e.modifiers.contains(*mods) && matches!(e.code, KeyCode::Char(_))
+        }
+        (KeyEventMatch::Exact(e), KeyEventMatch::AnyCharAndMods(mods)) => {
+            matches!(e.code, KeyCode::Char(_)) && mods.contains(e.modifiers)
         }
     }
 }
@@ -1812,7 +1805,7 @@ fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) 
                     continue;
                 }
                 for kem_a in &binding_a.key_events {
-                    if key_event_match_overlaps(kem_a, kem_b) {
+                    if key_event_a_shadows_b(kem_a, kem_b) {
                         conflicts.push(Conflict {
                             key_display: kem_b.display_with_remapping(remappings),
                             inaccessible_action: binding_b.action.scoped_action_name(),
@@ -1944,15 +1937,15 @@ pub fn print_bindings_table(
         let use_color = std::io::stdout().is_terminal();
         for conflict in &conflicts {
             // "INACCESSIBLE: key" formatted as blinking white on red.
-            let label = format!("INACCESSIBLE: {}", conflict.key_display);
+            let label = format!("INACCESSIBLE: {}", conflict.inaccessible_action);
             let styled_label = if use_color {
                 format!("{}{}{}", ANSI_BLINK_WHITE_ON_RED, label, ANSI_RESET)
             } else {
                 label
             };
             println!(
-                "  {}  ({} shadowed by {})",
-                styled_label, conflict.inaccessible_action, conflict.shadowing_action
+                "  {}  (shadowed by {} with key {})",
+                styled_label, conflict.shadowing_action, conflict.key_display
             );
         }
     }
@@ -2297,43 +2290,43 @@ mod tests {
     fn test_overlap_exact_same_key() {
         let a = KeyEventMatch::Exact(key(KeyCode::Tab));
         let b = KeyEventMatch::Exact(key(KeyCode::Tab));
-        assert!(key_event_match_overlaps(&a, &b));
+        assert!(key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
     fn test_overlap_exact_different_keys() {
         let a = KeyEventMatch::Exact(key(KeyCode::Tab));
         let b = KeyEventMatch::Exact(key(KeyCode::Enter));
-        assert!(!key_event_match_overlaps(&a, &b));
+        assert!(!key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
     fn test_overlap_exact_same_key_different_modifiers() {
         let a = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('a'), KeyModifiers::CONTROL));
         let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('a'), KeyModifiers::ALT));
-        assert!(key_event_match_overlaps(&a, &b));
+        assert!(key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
     fn test_overlap_anychar_and_anychar() {
-        let a = KeyEventMatch::AnyCharAndMods(vec![KeyModifiers::empty()]);
-        let b = KeyEventMatch::AnyCharAndMods(vec![KeyModifiers::CONTROL]);
-        assert!(key_event_match_overlaps(&a, &b));
+        let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
+        let b = KeyEventMatch::AnyCharAndMods(KeyModifiers::CONTROL);
+        assert!(key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
     fn test_overlap_anychar_and_exact_char() {
-        let a = KeyEventMatch::AnyCharAndMods(vec![KeyModifiers::empty()]);
+        let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
         let b = KeyEventMatch::Exact(key(KeyCode::Char('q')));
-        assert!(key_event_match_overlaps(&a, &b));
-        assert!(key_event_match_overlaps(&b, &a));
+        assert!(key_event_a_shadows_b(&a, &b));
+        assert!(key_event_a_shadows_b(&b, &a));
     }
 
     #[test]
     fn test_overlap_anychar_and_exact_nonchar() {
-        let a = KeyEventMatch::AnyCharAndMods(vec![KeyModifiers::empty()]);
+        let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
         let b = KeyEventMatch::Exact(key(KeyCode::Tab));
-        assert!(!key_event_match_overlaps(&a, &b));
-        assert!(!key_event_match_overlaps(&b, &a));
+        assert!(!key_event_a_shadows_b(&a, &b));
+        assert!(!key_event_a_shadows_b(&b, &a));
     }
 }
