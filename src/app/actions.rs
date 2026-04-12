@@ -2304,7 +2304,7 @@ mod tests {
     fn test_overlap_exact_same_key_different_modifiers() {
         let a = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('a'), KeyModifiers::CONTROL));
         let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('a'), KeyModifiers::ALT));
-        assert!(key_event_a_shadows_b(&a, &b));
+        assert!(!key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
