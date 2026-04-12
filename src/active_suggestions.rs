@@ -7,6 +7,7 @@ use crate::cursor::CursorEasing;
 use crate::palette::Palette;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::text_buffer::{SubString, TextBuffer};
+use itertools::Itertools;
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
@@ -675,7 +676,12 @@ impl std::fmt::Debug for ActiveSuggestions {
             .finish()
     }
 }
-
+pub struct ColumnInfo {
+    pub idx: usize,
+    pub items: Vec<(SuggestionFormatted, bool)>,
+    pub width: usize,
+    pub is_selected_col: bool,
+}
 impl ActiveSuggestions {
     pub fn new<'underlying_buffer>(
         suggestions: Vec<UnprocessedSuggestion>,
@@ -821,7 +827,7 @@ impl ActiveSuggestions {
         max_rows: usize,
         max_width: usize,
         palette: &Palette,
-    ) -> Vec<(Vec<(SuggestionFormatted, bool)>, usize)> {
+    ) -> Vec<ColumnInfo> {
         let selected_1d = self.current_1d_index();
         let n = self.filtered_suggestions.len();
         if n == 0 || max_rows == 0 {
@@ -834,11 +840,10 @@ impl ActiveSuggestions {
             .map(|d| (d.as_millis() / (1000 / 24)) as usize)
             .unwrap_or(0);
 
-        let mut grid: Vec<(Vec<(SuggestionFormatted, bool)>, usize, bool)> = vec![];
-        let mut total_width: usize = 0;
+        let mut grid: Vec<ColumnInfo> = vec![];
+        let mut untruncated_total_width: usize = 0;
 
         let max_col_index = (n - 1) / max_rows;
-        let mut first_col_len = max_rows;
 
         self.col_window_to_show.update_max_index(max_col_index + 1);
         self.col_window_to_show
@@ -846,7 +851,9 @@ impl ActiveSuggestions {
         self.col_window_to_show.move_index_to(self.selected_col);
 
         // First round: try and fit as many columns as possible with their full untruncated width.
-        for col_idx in self.col_window_to_show.get_window_range().start..=max_col_index {
+        for (local_idx, col_idx) in
+            (self.col_window_to_show.get_window_range().start..=max_col_index).enumerate()
+        {
             // Build the column, processing each item lazily.
             let start = col_idx * max_rows;
             let end = (start + max_rows).min(n);
@@ -874,67 +881,71 @@ impl ActiveSuggestions {
                 .max()
                 .unwrap_or(0);
 
-            total_width += if grid.is_empty() {
+            untruncated_total_width += if grid.is_empty() {
                 untruncated_col_width
             } else {
                 COLUMN_PADDING + untruncated_col_width
             };
-            grid.push((
-                col_items,
-                untruncated_col_width,
-                col_idx == self.selected_col,
-            ));
-            if total_width > max_width {
+            grid.push(ColumnInfo {
+                idx: col_idx,
+                items: col_items,
+                width: untruncated_col_width,
+                is_selected_col: col_idx == self.selected_col,
+            });
+            if untruncated_total_width > max_width {
                 break;
             }
         }
 
-        // Second round,  try not to truncate the selected column, and truncate other columns if needed to fit within max_width.
-
-        let mut local_col_idx_to_grid = vec![0; grid.len()];
+        // Second round, try not to truncate the selected column, and truncate other columns if needed to fit within max_width.
 
         let mut total_width = 0;
-        for local_idx in 0..local_col_idx_to_grid.len() {
-            let is_selected = grid[local_idx].2;
-            let untruncated_col_width = grid[local_idx].1;
-            if is_selected {
-                // Don't truncate the selected column, so count its full width.
-                local_col_idx_to_grid[local_idx] = untruncated_col_width.min(max_width);
-            } else {
-                const MIN_COL_WIDTH: usize = 10;
-                let truncated_col_width =
-                    if total_width + COLUMN_PADDING + untruncated_col_width > max_width {
+
+        let final_grid = grid
+            .into_iter()
+            .sorted_by_key(|col_info| {
+                col_info
+                    .idx
+                    .checked_signed_diff(self.selected_col)
+                    .map(|d| d.abs() as usize)
+                    .unwrap_or(0)
+            })
+            .map(|mut col| {
+                if col.is_selected_col {
+                    // Don't truncate the selected column, so count its full width.
+                    col.width = col.width.min(max_width);
+                } else {
+                    const MIN_COL_WIDTH: usize = 10;
+                    let truncated_col_width = if total_width + COLUMN_PADDING + col.width
+                        > max_width
+                    {
                         if max_width.saturating_sub(total_width + COLUMN_PADDING) > MIN_COL_WIDTH {
                             // We can still fit MIN_COL_WIDTH chars of this col so it should be alright.
                             max_width - total_width - COLUMN_PADDING
                         } else {
-                            break;
+                            0
                         }
                     } else {
-                        untruncated_col_width
+                        col.width
                     };
-                local_col_idx_to_grid[local_idx] = truncated_col_width;
-            }
+                    col.width = truncated_col_width;
+                }
 
-            total_width += if local_idx == 0 {
-                local_col_idx_to_grid[local_idx]
-            } else {
-                COLUMN_PADDING + local_col_idx_to_grid[local_idx]
-            };
-        }
+                total_width += if col.idx == 0 {
+                    col.width
+                } else {
+                    COLUMN_PADDING + col.width
+                };
+                col
+            })
+            .filter(|col_info| col_info.width > 0)
+            .sorted_by_key(|col_info| col_info.idx)
+            .collect::<Vec<_>>();
 
-        let mut final_grid: Vec<(Vec<(SuggestionFormatted, bool)>, usize)> = vec![];
-
-        for (local_idx, (col_items, _, _)) in grid.into_iter().enumerate() {
-            if local_idx == 0 {
-                first_col_len = col_items.len();
-            }
-            let col_width = local_col_idx_to_grid[local_idx];
-            if col_width == 0 {
-                break;
-            }
-            final_grid.push((col_items, col_width));
-        }
+        let first_col_len = final_grid
+            .first()
+            .map(|col| col.items.len())
+            .unwrap_or(max_rows);
 
         self.last_num_visible_cols = final_grid.len();
         self.last_num_rows_per_col = max_rows.min(first_col_len);

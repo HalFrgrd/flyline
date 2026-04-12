@@ -1581,9 +1581,9 @@ impl<'a> App<'a> {
                         &self.settings.color_palette,
                     );
 
-                    for row_idx in 0..grid[0].0.len() {
-                        for (is_first, _, (col, col_width)) in grid.iter().flag_first_last() {
-                            if let Some((formatted, is_selected)) = col.get(row_idx) {
+                    for row_idx in 0..grid[0].items.len() {
+                        for (is_first, _, col) in grid.iter().flag_first_last() {
+                            if let Some((formatted, is_selected)) = col.items.get(row_idx) {
                                 if !is_first {
                                     content.write_tagged_span(&TaggedSpan::new(
                                         Span::raw(" ".repeat(COLUMN_PADDING)),
@@ -1591,7 +1591,7 @@ impl<'a> App<'a> {
                                     ));
                                 }
                                 let formatted_suggestion =
-                                    formatted.render(*col_width, *is_selected);
+                                    formatted.render(col.width, *is_selected);
                                 let tag = Tag::Suggestion(formatted.suggestion_idx);
                                 for span in formatted_suggestion {
                                     content.write_tagged_span(&TaggedSpan::new(span, tag));
