@@ -767,6 +767,18 @@ impl<'a> App<'a> {
             t => {
                 log::trace!("Mouse over  {:?}", t);
                 self.last_mouse_over_cell = None;
+                // Exit PromptDirSelect mode when clicking on a non-CWD cell
+                // that is within the terminal viewport (not above scrollback).
+                if matches!(mouse.kind, MouseEventKind::Down(_))
+                    && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
+                    && !matches!(t, Some((Tag::Ps1PromptCwd(_), _)))
+                    && self
+                        .last_contents
+                        .as_ref()
+                        .is_some_and(|c| mouse.row >= c.viewport_start)
+                {
+                    self.content_mode = ContentMode::Normal;
+                }
             }
         }
 

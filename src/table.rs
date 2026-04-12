@@ -148,12 +148,20 @@ pub fn render_table_with_options(
         Line::from(spans)
     };
 
-    let build_row = |cells: &[String], bold: bool| -> Line<'static> {
+    let build_row = |cells: &[String], bold: bool, center: bool| -> Line<'static> {
         let mut spans: Vec<Span<'static>> = Vec::new();
         spans.push(Span::raw(format!("{BOX_VERTICAL} ")));
         for (j, cell) in cells.iter().enumerate() {
             let width = col_widths.get(j).copied().unwrap_or(0);
-            let padded = format!("{:<width$}", cell, width = width);
+            let padded = if center {
+                let content_len = cell.len();
+                let padding = width.saturating_sub(content_len);
+                let left_pad = padding / 2;
+                let right_pad = padding - left_pad;
+                format!("{}{}{}", " ".repeat(left_pad), cell, " ".repeat(right_pad))
+            } else {
+                format!("{:<width$}", cell, width = width)
+            };
             if bold {
                 spans.push(Span::styled(
                     padded,
@@ -219,7 +227,7 @@ pub fn render_table_with_options(
     // Render a logical table row (whose cells may wrap) into one or more
     // display lines. The first display line uses the given `bold` style;
     // subsequent continuation lines are always plain.
-    let build_multiline_row = |cells: &[String], bold: bool| -> Vec<Line<'static>> {
+    let build_multiline_row = |cells: &[String], bold: bool, center: bool| -> Vec<Line<'static>> {
         // Wrap each cell to its column width.
         let wrapped: Vec<Vec<String>> = cells
             .iter()
@@ -234,25 +242,36 @@ pub fn render_table_with_options(
 
         (0..max_lines)
             .map(|line_idx| {
+                let is_first_line = line_idx == 0;
                 // For each column, pick the wrapped line at this index or an
                 // empty string if the cell wrapped to fewer lines.
                 let row_cells: Vec<String> = (0..ncols)
                     .map(|j| {
                         let w = col_widths.get(j).copied().unwrap_or(0);
-                        let s = wrapped.get(j).and_then(|c| c.get(line_idx));
-                        // Pad to the column width.
-                        format!("{:<w$}", s.map(|x| x.as_str()).unwrap_or(""), w = w)
+                        let s = wrapped
+                            .get(j)
+                            .and_then(|c| c.get(line_idx))
+                            .map(|x| x.as_str())
+                            .unwrap_or("");
+                        if center && is_first_line {
+                            // Leave the content un-padded so build_row can
+                            // centre it within the column width.
+                            s.to_owned()
+                        } else {
+                            // Pad to the column width (left-align).
+                            format!("{s:<w$}")
+                        }
                     })
                     .collect();
-                // Only apply bold on the first wrapped line of the header row.
-                build_row(&row_cells, bold && line_idx == 0)
+                // Only apply bold and centering on the first wrapped line of the header row.
+                build_row(&row_cells, bold && is_first_line, center && is_first_line)
             })
             .collect()
     };
 
     let mut lines: Vec<Line<'static>> = Vec::new();
     lines.push(build_top_border());
-    lines.extend(build_multiline_row(&accum.header_cells, true));
+    lines.extend(build_multiline_row(&accum.header_cells, true, true));
     lines.push(build_separator());
     for (i, row) in accum.body_rows.iter().enumerate() {
         // Pad row to the expected number of columns.
@@ -260,7 +279,7 @@ pub fn render_table_with_options(
         while padded.len() < ncols {
             padded.push(String::new());
         }
-        lines.extend(build_multiline_row(&padded, false));
+        lines.extend(build_multiline_row(&padded, false, false));
         if options.row_dividers && i + 1 < accum.body_rows.len() {
             lines.push(build_row_divider());
         }

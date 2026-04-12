@@ -494,10 +494,10 @@ macro_rules! expand_variation_push {
         $v.extend_from_slice(&["Alt+Backspace", "Meta+Backspace"]);
     };
     ($v:ident, "Alt+Delete") => {
-        $v.extend_from_slice(&["Alt+Delete", "Meta+Delete"]);
+        $v.extend_from_slice(&["Alt+Delete", "Meta+Delete", "Alt+d", "Meta+d"]);
     };
     ($v:ident, "alt+delete") => {
-        $v.extend_from_slice(&["Alt+Delete", "Meta+Delete"]);
+        $v.extend_from_slice(&["Alt+Delete", "Meta+Delete", "Alt+d", "Meta+d"]);
     };
     ($v:ident, "Alt+D") => {
         $v.extend_from_slice(&["Alt+D", "Meta+D"]);
@@ -510,6 +510,21 @@ macro_rules! expand_variation_push {
     };
     ($v:ident, "alt+w") => {
         $v.extend_from_slice(&["Alt+W", "Meta+W"]);
+    };
+    // ── Home / End ────────────────────────────────────────────────────────
+    // Ctrl+a (Emacs move-beginning-of-line) is treated as an alias for Home.
+    // Ctrl+e (Emacs move-end-of-line) is treated as an alias for End.
+    ($v:ident, "Home") => {
+        $v.extend_from_slice(&["Home", "Ctrl+a"]);
+    };
+    ($v:ident, "home") => {
+        $v.extend_from_slice(&["Home", "Ctrl+a"]);
+    };
+    ($v:ident, "End") => {
+        $v.extend_from_slice(&["End", "Ctrl+e"]);
+    };
+    ($v:ident, "end") => {
+        $v.extend_from_slice(&["End", "Ctrl+e"]);
     };
     // ── Shift+Tab / Backtab ───────────────────────────────────────────────
     // BackTab (Shift+Tab) is sent as either "Shift+Tab" or the dedicated
@@ -1281,7 +1296,7 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 59]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
@@ -1355,6 +1370,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 59]> = LazyLock::new(|| {
         .unwrap(),
         // Scoped Esc bindings must appear before the Normal Esc binding.
         Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
+        Binding::try_new(
+            &expand_variations!["Shift+Tab"],
+            Scope::AgentOutputSelection,
+            "select_prev",
+        )
+        .unwrap(),
         Binding::try_new(&["Tab"], Scope::AgentOutputSelection, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::TabCompletion, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::Any, "run_tab_completion").unwrap(),
@@ -1418,8 +1439,18 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 59]> = LazyLock::new(|| {
         Binding::try_new(&["Delete"], Scope::Any, "delete_right").unwrap(),
         // PromptCwdEdit Home/End/Alt+Left/Ctrl+Left/Alt+Right/Ctrl+Right must appear before
         // the corresponding Any/InlineHistoryAcceptable bindings.
-        Binding::try_new(&["Home"], Scope::PromptDirSelect, "move_to_start").unwrap(),
-        Binding::try_new(&["End"], Scope::PromptDirSelect, "move_to_end").unwrap(),
+        Binding::try_new(
+            &expand_variations!["Home"],
+            Scope::PromptDirSelect,
+            "move_to_start",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["End"],
+            Scope::PromptDirSelect,
+            "move_to_end",
+        )
+        .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Left", "Alt+Left"],
             Scope::PromptDirSelect,
@@ -1433,7 +1464,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 59]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &["Home", "Super+Left", "Ctrl+A", "Super+A"],
+            &expand_variations!["Home", "Super+Left", "Ctrl+A", "Super+A"],
             Scope::Any,
             "move_left_start_of_line",
         )
@@ -1454,13 +1485,13 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 59]> = LazyLock::new(|| {
         Binding::try_new(&["Left"], Scope::PromptDirSelect, "move_left").unwrap(),
         Binding::try_new(&["Left"], Scope::Any, "move_left").unwrap(),
         Binding::try_new(
-            &["Right", "End"],
+            &expand_variations!["Right", "End"],
             Scope::InlineHistoryAcceptable,
             "accept_suggestion",
         )
         .unwrap(),
         Binding::try_new(
-            &["End", "Super+Right", "Ctrl+E", "Super+E"],
+            &expand_variations!["End", "Super+Right", "Ctrl+E", "Super+E"],
             Scope::Any,
             "move_right_end_of_line",
         )
