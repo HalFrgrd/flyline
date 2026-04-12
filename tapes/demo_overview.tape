@@ -67,7 +67,7 @@ Up
 Sleep 500ms
 Up
 Sleep 500ms
-Alt+I
+Enter
 Sleep 500ms
 Ctrl+C
 Sleep 800ms
