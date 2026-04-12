@@ -693,22 +693,6 @@ impl DParser {
             return None;
         }
 
-        // Unambiguously opening characters – always auto-close.
-        match c {
-            '{' => return Some('}'),
-            '[' => return Some(']'),
-            '(' => return Some(')'),
-            _ => {}
-        }
-
-        // Ambiguous characters: consult the stale token annotations.
-        let (closing, opener_kind) = match c {
-            '"' => ('"', TokenKind::Quote),
-            '\'' => ('\'', TokenKind::SingleQuote),
-            '`' => ('`', TokenKind::Backtick),
-            _ => return None,
-        };
-
         // If the insertion point is inside a matched single- or double-quoted string, the typed
         // character is just literal content – don't auto-close. For example, inserting `'` in the
         // middle of `"abcde"` should not produce a closing `'`.
@@ -736,6 +720,22 @@ impl DParser {
         if is_before_word {
             return None;
         }
+
+        // Unambiguously opening characters – always auto-close.
+        match c {
+            '{' => return Some('}'),
+            '[' => return Some(']'),
+            '(' => return Some(')'),
+            _ => {}
+        }
+
+        // Ambiguous characters: consult the stale token annotations.
+        let (closing, opener_kind) = match c {
+            '"' => ('"', TokenKind::Quote),
+            '\'' => ('\'', TokenKind::SingleQuote),
+            '`' => ('`', TokenKind::Backtick),
+            _ => return None,
+        };
 
         // If there is already an unmatched opener of the same kind strictly before the
         // insertion point, the character just typed is closing it – don't auto-insert.
