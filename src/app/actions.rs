@@ -536,10 +536,10 @@ macro_rules! expand_variation_push {
         $v.extend_from_slice(&["Shift+Tab", "Backtab"]);
     };
     ($v:ident, "Backtab") => {
-        $v.extend_from_slice(&["Backtab", "Shift+Tab"]);
+        $v.extend_from_slice(&["Backtab", "Shift+Tab", "Shift+Backtab"]); /// Shift+Tab shows up as Shift+Backtab for me
     };
     ($v:ident, "backtab") => {
-        $v.extend_from_slice(&["Backtab", "Shift+Tab"]);
+        $v.extend_from_slice(&["Backtab", "Shift+Tab", "Shift+Backtab"]);
     };
     // ── Fallthrough: pass through unchanged ───────────────────────────────
     ($v:ident, $key:literal) => {

@@ -17,6 +17,7 @@ mod bash_symbols;
 mod command_acceptance;
 mod command_rebuild;
 mod content_builder;
+mod content_utils;
 mod cursor;
 mod dparser;
 mod history;
