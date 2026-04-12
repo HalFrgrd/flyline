@@ -12,7 +12,7 @@ Enter
 Show
 
 
-Type "flyline create-prompt-anim --name MY_ANIMATION --fps 10 ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽"
+Type "flyline create-prompt-widget animation --name MY_ANIMATION --fps 10 ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽"
 Enter
 Sleep 500ms
 
@@ -24,14 +24,14 @@ Type `# any text in the prompt is considered for replacement so you can animate 
 Enter
 Sleep 1000ms
 
-Type `flyline create-prompt-anim --name "john" --ping-pong --fps 8 john john john John jOhn joHn johN john john`
+Type `flyline create-prompt-widget animation --name "john" --ping-pong --fps 8 john john john John jOhn joHn johN john john`
 Enter
 Sleep 2500ms
 
 Type `# add styles with ANSI escape codes:`
 Enter
 Sleep 500ms
-Type `flyline create-prompt-anim --name "john" --ping-pong --fps 3 \`
+Type `flyline create-prompt-widget animation --name "john" --ping-pong --fps 3 \`
 Enter
 Type `    "\e[33mjohn" \`
 Enter

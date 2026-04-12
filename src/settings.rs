@@ -17,7 +17,7 @@ pub enum ColorTheme {
     Light,
 }
 
-/// A single custom prompt animation registered with `flyline create-prompt-anim`.
+/// A single custom prompt animation registered with `flyline create-prompt-widget animation`.
 #[derive(Debug, Clone)]
 pub struct PromptAnimation {
     /// Name used as placeholder in prompt strings (e.g., `COOL_SPINNER`).
@@ -156,7 +156,7 @@ pub struct Settings {
     /// - `Some(prefix)` key: activated when the user presses Enter and the buffer starts
     ///   with `prefix`; the prefix is stripped before the buffer is sent to the command.
     pub agent_commands: HashMap<Option<String>, AgentModeCommand>,
-    /// Custom prompt animations registered with `flyline create-prompt-anim`.
+    /// Custom prompt animations registered with `flyline create-prompt-widget animation`.
     pub custom_animations: HashMap<String, PromptAnimation>,
     /// Custom prompt widgets registered with `flyline create-prompt-widget`.
     pub custom_prompt_widgets: HashMap<String, PromptWidget>,

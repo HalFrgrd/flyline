@@ -17,10 +17,10 @@ RUN touch /root/.bashrc && \
 RUN /bin/bash -i -c 'NO_COLOR=1 flyline --help' 2>/dev/null > /flyline_help.txt
 
 
-# Run flyline create-prompt-anim --help and strip ANSI escape sequences.
-RUN /bin/bash -i -c 'NO_COLOR=1 flyline create-prompt-anim --help' 2>/dev/null > /flyline_create_prompt_anim_help.txt
+# Run flyline create-prompt-widget animation --help and strip ANSI escape sequences.
+RUN /bin/bash -i -c 'NO_COLOR=1 flyline create-prompt-widget animation --help' 2>/dev/null > /flyline_create_prompt_widget_animation_help.txt
 
 
 FROM scratch AS flyline-help-output
 COPY --from=help-runner /flyline_help.txt /flyline_help.txt
-COPY --from=help-runner /flyline_create_prompt_anim_help.txt /flyline_create_prompt_anim_help.txt
+COPY --from=help-runner /flyline_create_prompt_widget_animation_help.txt /flyline_create_prompt_widget_animation_help.txt

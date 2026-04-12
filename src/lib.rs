@@ -178,41 +178,19 @@ enum Commands {
         #[arg(long = "command", required = true)]
         command: String,
     },
-    /// Create a custom prompt animation.
-    ///
-    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
-    /// with the current animation frame on every render.  Frames may include
-    /// ANSI colour sequences written as `\e` (e.g. `\e[33m`).
-    ///
-    /// Examples:
-    ///   flyline create-prompt-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
-    ///   flyline create-prompt-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
-    ///
-    /// See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
-    #[command(name = "create-prompt-anim", verbatim_doc_comment)]
-    CreatePromptAnim {
-        /// Name to embed in prompt strings as the animation placeholder.
-        #[arg(long)]
-        name: String,
-        /// Playback speed in frames per second (default: 10).
-        #[arg(long, default_value = "10")]
-        fps: f64,
-        /// Reverse direction at each end instead of wrapping (ping-pong / bounce mode).
-        #[arg(long)]
-        ping_pong: bool,
-        /// One or more animation frames (positional).  Use `\e` for the ESC character.
-        frames: Vec<String>,
-    },
     /// Create a custom prompt widget.
     ///
     /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
     /// with the widget output on every render.
     ///
     /// Widget types:
+    ///   animation   Cycles through a list of frames at a given fps.
     ///   mouse-mode  Shows different text depending on whether mouse capture is enabled.
     ///   custom      Runs a shell command and displays its output.
     ///
     /// Examples:
+    ///   flyline create-prompt-widget animation --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
+    ///   flyline create-prompt-widget animation --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
     ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder 10
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
@@ -477,6 +455,31 @@ enum KeySubcommands {
 
 #[derive(Subcommand, Debug)]
 enum PromptWidgetSubcommands {
+    /// Create a custom prompt animation that cycles through frames.
+    ///
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// with the current animation frame on every render.  Frames may include
+    /// ANSI colour sequences written as `\e` (e.g. `\e[33m`).
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget animation --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
+    ///   flyline create-prompt-widget animation --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
+    ///
+    /// See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
+    #[command(name = "animation", verbatim_doc_comment)]
+    Animation {
+        /// Name to embed in prompt strings as the animation placeholder.
+        #[arg(long)]
+        name: String,
+        /// Playback speed in frames per second (default: 10).
+        #[arg(long, default_value = "10")]
+        fps: f64,
+        /// Reverse direction at each end instead of wrapping (ping-pong / bounce mode).
+        #[arg(long)]
+        ping_pong: bool,
+        /// One or more animation frames (positional).  Use `\e` for the ESC character.
+        frames: Vec<String>,
+    },
     /// Show different text depending on whether mouse capture is enabled.
     ///
     /// Examples:
@@ -682,37 +685,37 @@ impl Flyline {
                             },
                         );
                     }
-                    Some(Commands::CreatePromptAnim {
-                        name,
-                        fps,
-                        frames,
-                        ping_pong,
-                    }) => {
-                        if fps <= 0.0 {
-                            eprintln!(
-                                "flyline create-prompt-anim: --fps must be greater than 0 (got {}); animation '{}' not registered",
-                                fps, name
-                            );
-                            return bash_symbols::BuiltinExitCode::Usage as c_int;
-                        }
-                        log::info!(
-                            "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
+                    Some(Commands::CreatePromptWidget { subcommand }) => match subcommand {
+                        PromptWidgetSubcommands::Animation {
                             name,
                             fps,
-                            frames.len(),
-                            ping_pong
-                        );
-                        self.settings.custom_animations.insert(
-                            name.clone(),
-                            settings::PromptAnimation {
+                            frames,
+                            ping_pong,
+                        } => {
+                            if fps <= 0.0 {
+                                eprintln!(
+                                    "flyline create-prompt-widget animation: --fps must be greater than 0 (got {}); animation '{}' not registered",
+                                    fps, name
+                                );
+                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            }
+                            log::info!(
+                                "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
                                 name,
                                 fps,
-                                frames,
-                                ping_pong,
-                            },
-                        );
-                    }
-                    Some(Commands::CreatePromptWidget { subcommand }) => match subcommand {
+                                frames.len(),
+                                ping_pong
+                            );
+                            self.settings.custom_animations.insert(
+                                name.clone(),
+                                settings::PromptAnimation {
+                                    name,
+                                    fps,
+                                    frames,
+                                    ping_pong,
+                                },
+                            );
+                        }
                         PromptWidgetSubcommands::MouseMode {
                             name,
                             enabled_text,
