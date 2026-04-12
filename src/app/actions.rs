@@ -5,6 +5,7 @@ use crate::settings::MouseMode;
 use crate::text_buffer::WordDelim;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::io::IsTerminal;
 use std::sync::LazyLock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1712,6 +1713,11 @@ impl KeyEventMatch {
     }
 }
 
+/// ANSI escape sequence: blinking white text on red background.
+const ANSI_BLINK_WHITE_ON_RED: &str = "\x1b[5;37;41m";
+/// ANSI escape sequence: reset all attributes.
+const ANSI_RESET: &str = "\x1b[0m";
+
 /// Returns `true` if `a` and `b` can both be triggered by the same physical
 /// key press, i.e. there exists a [`KeyEvent`] that would cause both patterns
 /// to return `true` from [`Binding::matches`].
@@ -1744,6 +1750,18 @@ struct Conflict {
     shadowing_action: String,
 }
 
+/// Returns `true` if a higher-priority binding `higher` can shadow a
+/// lower-priority binding `lower` for the same key, making `lower` inaccessible.
+///
+/// Two patterns cause shadowing:
+/// 1. `higher` is in `Scope::Any` (always active) and `lower` is in a narrower
+///    scope — the `Any` binding fires before the scoped one can.
+/// 2. Both bindings are in the same scope — only the higher-priority one fires.
+fn binding_shadows(higher: &Binding, lower: &Binding) -> bool {
+    (higher.action.scope == Scope::Any && lower.action.scope != Scope::Any)
+        || (higher.action.scope == lower.action.scope)
+}
+
 /// Scan the combined set of bindings (user overrides + defaults) and return
 /// every case where a lower-priority binding is permanently shadowed.
 ///
@@ -1767,10 +1785,7 @@ fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) 
         for kem_b in &binding_b.key_events {
             // Check whether any higher-priority binding shadows this key event.
             'find_shadow: for binding_a in &all_bindings[..idx_b] {
-                let shadows = (binding_a.action.scope == Scope::Any
-                    && binding_b.action.scope != Scope::Any)
-                    || (binding_a.action.scope == binding_b.action.scope);
-                if !shadows {
+                if !binding_shadows(binding_a, binding_b) {
                     continue;
                 }
                 for kem_a in &binding_a.key_events {
@@ -1903,12 +1918,12 @@ pub fn print_bindings_table(
     let conflicts = detect_binding_conflicts(user_bindings, remappings);
     if !conflicts.is_empty() {
         println!("\nKey Binding Conflicts:");
-        let use_color = std::io::IsTerminal::is_terminal(&std::io::stdout());
+        let use_color = std::io::stdout().is_terminal();
         for conflict in &conflicts {
             // "INACCESSIBLE: key" formatted as blinking white on red.
             let label = format!("INACCESSIBLE: {}", conflict.key_display);
             let styled_label = if use_color {
-                format!("\x1b[5;37;41m{}\x1b[0m", label)
+                format!("{}{}{}", ANSI_BLINK_WHITE_ON_RED, label, ANSI_RESET)
             } else {
                 label
             };
