@@ -1195,7 +1195,12 @@ impl<'a> App<'a> {
 
         let indicator_span = || {
             if is_selected {
-                Span::styled("▐", palette.matching_char())
+                Span::styled(
+                    "▐",
+                    palette
+                        .matching_char()
+                        .remove_modifier(Modifier::UNDERLINED),
+                )
             } else {
                 Span::styled(" ", palette.secondary_text())
             }

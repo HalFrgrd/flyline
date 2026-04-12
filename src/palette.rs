@@ -267,7 +267,8 @@ impl Palette {
             tutorial_hint_override: None,
             matching_char: Style::default()
                 .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
             matching_char_override: None,
             opening_and_closing_pair: Style::default()
                 .fg(Color::Red)

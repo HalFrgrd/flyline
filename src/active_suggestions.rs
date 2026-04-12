@@ -95,15 +95,6 @@ pub enum SuggestionDescription {
 }
 
 impl SuggestionDescription {
-    /// Returns `true` if this description produces no visible text.
-    pub fn is_empty(&self) -> bool {
-        match self {
-            SuggestionDescription::Static(s) => s.is_empty(),
-            SuggestionDescription::Animation(frames) => frames.is_empty(),
-            SuggestionDescription::LastMTime(_) | SuggestionDescription::EasingFunc(_) => false,
-        }
-    }
-
     /// Maximum display width (in terminal columns) across all frames.
     pub fn max_width(&self) -> usize {
         match self {
