@@ -1267,7 +1267,10 @@ mod tests {
         match ctx.comp_type {
             CompType::CommandComp { command_word } => {
                 assert_eq!(command_word, "ll");
-                assert_eq!(ctx.word_under_cursor.as_ref(), r#"$HOME/projects/flyline/qwe\ asd/\$"#);
+                assert_eq!(
+                    ctx.word_under_cursor.as_ref(),
+                    r#"$HOME/projects/flyline/qwe\ asd/\$"#
+                );
             }
             _ => panic!("Expected CommandComp"),
         }
@@ -1277,6 +1280,4 @@ mod tests {
             Some(SecondaryCompType::FilenameExpansion)
         );
     }
-
-    
 }

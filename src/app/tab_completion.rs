@@ -87,10 +87,12 @@ impl PathPatternExpansion {
         // suggestion preserves the user's original prefix spelling
         // (e.g. `~/`, `$HOME/`, or a relative path segment).
         if let Some(suffix) = expanded_match.strip_prefix(&self.prefix_with_trailing_slash()) {
-            let quoted_suffix = match quote_type {
-                Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
-                _ => bash_funcs::quoting_function_rust(suffix, quote_type.unwrap_or_default(), true),
-            };
+            let quoted_suffix = bash_funcs::quoting_function_rust(
+                suffix,
+                quote_type.unwrap_or_default(),
+                false,
+                false,
+            );
             if self.raw_prefix.is_empty() {
                 (quoted_suffix.clone(), quoted_suffix)
             } else {
@@ -351,7 +353,13 @@ fn gen_secondary_completions(
                 .map(|mut item| item.to_suggestion().s)
                 .fold(String::new(), |mut acc, s| {
                     if !acc.is_empty() {
-                        acc.push(' ');
+                        if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
+                            acc.push_str("\" ");
+                        } else if comp_resultflags.quote_type == Some(QuoteType::SingleQuote) {
+                            acc.push_str("' ");
+                        } else {
+                            acc.push(' ');
+                        }
                     }
                     acc.push_str(&s);
                     acc
@@ -478,6 +486,13 @@ fn tab_complete_glob_expansion(
                 let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
                     &path.to_string_lossy(),
                     comp_resultflags.quote_type,
+                );
+
+                log::debug!(
+                    "Glob match: expanded='{}', unexpanded='{}', globbed_suffix='{}'",
+                    path.display(),
+                    unexpanded,
+                    globbed_suffix
                 );
 
                 // Tab completion ignores "." and ".."

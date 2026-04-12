@@ -778,21 +778,28 @@ extern "C" fn quoting_function_c(
         .next()
         .and_then(QuoteType::from_char)
         .unwrap_or_default();
-    let quoted = quoting_function_rust(&s_str, quote_type, true);
+    let quoted = quoting_function_rust(&s_str, quote_type, true, true);
     let quoted_cstr = std::ffi::CString::new(quoted).unwrap();
     unsafe { bash_symbols::xmalloc_cstr(&quoted_cstr) }
 }
 
-pub fn quoting_function_rust(s: &str, quote_type: QuoteType, closing_quote: bool) -> String {
+pub fn quoting_function_rust(
+    s: &str,
+    quote_type: QuoteType,
+    opening_quote: bool,
+    closing_quote: bool,
+) -> String {
     match quote_type {
         QuoteType::SingleQuote => {
-            let mut quoted = format!("'{}", s.replace('\'', "'\\''"));
+            let mut quoted = s.replace('\'', "'\\''");
+            if opening_quote {
+                quoted = format!("'{}", quoted);
+            }
             if closing_quote {
                 quoted.push('\'');
             }
             quoted
-
-        },
+        }
         QuoteType::DoubleQuote => {
             let escaped: String = s
                 .chars()
@@ -805,7 +812,11 @@ pub fn quoting_function_rust(s: &str, quote_type: QuoteType, closing_quote: bool
                 })
                 .collect();
 
-            let mut quoted = format!("\"{}", escaped);
+            let mut quoted = if opening_quote {
+                format!("\"{}", escaped)
+            } else {
+                escaped
+            };
             if closing_quote {
                 quoted.push('"');
             }
@@ -1189,15 +1200,15 @@ mod tests {
     #[test]
     fn test_quote_function() {
         assert_eq!(
-            quoting_function_rust(r#"qwe asd"#, QuoteType::Backslash, true),
+            quoting_function_rust(r#"qwe asd"#, QuoteType::Backslash, true, true),
             r#"qwe\ asd"#
         );
         assert_eq!(
-            quoting_function_rust(r#"qwe asd"#, QuoteType::DoubleQuote, true),
+            quoting_function_rust(r#"qwe asd"#, QuoteType::DoubleQuote, true, true),
             r#""qwe asd""#
         );
         assert_eq!(
-            quoting_function_rust(r#"qwe asd"#, QuoteType::SingleQuote, true),
+            quoting_function_rust(r#"qwe asd"#, QuoteType::SingleQuote, true, true),
             r#"'qwe asd'"#
         );
     }
@@ -1205,11 +1216,11 @@ mod tests {
     #[test]
     fn test_quote_function_harder() {
         assert_eq!(
-            quoting_function_rust(r#"qwe"asdf"#, QuoteType::Backslash, true),
+            quoting_function_rust(r#"qwe"asdf"#, QuoteType::Backslash, true, true),
             r#"qwe\"asdf"#
         );
         assert_eq!(
-            quoting_function_rust(r#"qwe"asdf"#, QuoteType::DoubleQuote, true),
+            quoting_function_rust(r#"qwe"asdf"#, QuoteType::DoubleQuote, true, true),
             r#""qwe\"asdf""#
         );
     }
@@ -1220,7 +1231,7 @@ mod tests {
             let input = format!("a{}b", c);
             let expected = format!("a\\{}b", c);
             assert_eq!(
-                quoting_function_rust(&input, QuoteType::Backslash, true),
+                quoting_function_rust(&input, QuoteType::Backslash, true, true),
                 expected
             );
         }
@@ -1233,7 +1244,7 @@ mod tests {
             let expected_inner = format!("a\\{}b", c);
             let expected = format!("\"{}\"", expected_inner);
             assert_eq!(
-                quoting_function_rust(&input, QuoteType::DoubleQuote, true),
+                quoting_function_rust(&input, QuoteType::DoubleQuote, true, true),
                 expected
             );
         }

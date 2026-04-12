@@ -572,11 +572,17 @@ pub fn post_process_completion(
             let quoted_suffix = bash_funcs::quoting_function_rust(
                 new_suffix,
                 comp_resultflags.quote_type.unwrap_or_default(),
+                true,
                 false,
             );
             format!("{}{}", word_under_cursor, quoted_suffix)
         } else {
-            bash_funcs::quoting_function_rust(&sug, comp_resultflags.quote_type.unwrap_or_default(), false)
+            bash_funcs::quoting_function_rust(
+                &sug,
+                comp_resultflags.quote_type.unwrap_or_default(),
+                true,
+                false,
+            )
         }
     } else {
         sug.to_string()
@@ -1057,13 +1063,7 @@ impl ActiveSuggestions {
                 log::debug!("Only one completion found for first word: auto-accepted");
                 None
             }
-            _ => {
-                log::debug!(
-                    "Multiple completions available: {:?}",
-                    self.filtered_suggestions
-                );
-                Some(self)
-            }
+            _ => Some(self),
         }
     }
 
