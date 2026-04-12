@@ -1,6 +1,7 @@
 use crate::bash_funcs;
 use crate::content_utils::{
-    highlight_matching_indices, take_prefix_of_spans, take_suffix_of_spans, vec_spans_width,
+    easing_animation_frames, highlight_matching_indices, take_prefix_of_spans,
+    take_suffix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
 };
 use crate::cursor::CursorEasing;
 use crate::palette::Palette;
@@ -18,66 +19,6 @@ use unicode_width::UnicodeWidthStr;
 /// suggestions grid.
 pub(crate) const COLUMN_PADDING: usize = 2;
 
-/// Total width (in terminal columns) of the easing-function dot animation.
-const EASING_ANIM_TOTAL_WIDTH: usize = 7;
-
-/// Number of frames in each half of the ping-pong animation (forward + backward).
-const EASING_ANIM_HALF_FRAMES: usize = 16;
-
-/// Render `ts` (a Unix-epoch timestamp in seconds) as a right-aligned,
-/// ≤5-character "time ago" string, matching the format used by the fuzzy
-/// history search header.
-pub(crate) fn mtime_to_string(ts: u64) -> String {
-    let duration = std::time::Duration::from_secs(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            .saturating_sub(ts),
-    );
-    let s = timeago::format_5chars(duration);
-    format!("{:>5}", s.trim_start_matches('0'))
-}
-
-/// Build the ping-pong animation frames for the given easing function.
-///
-/// Returns `2 * EASING_ANIM_HALF_FRAMES - 2` frames showing a dot (`·`) that
-/// travels from the left edge to the right and back, using `easing` for the
-/// position curve in both directions.
-fn easing_animation_frames(easing: CursorEasing) -> Vec<String> {
-    let half = EASING_ANIM_HALF_FRAMES;
-    let dot_range = (EASING_ANIM_TOTAL_WIDTH - 1) as f32;
-    let total_frames = half * 2 - 2;
-    let mut frames = Vec::with_capacity(total_frames);
-
-    let make_frame = |pos: usize| -> String {
-        let mut s = String::with_capacity(EASING_ANIM_TOTAL_WIDTH);
-        for j in 0..EASING_ANIM_TOTAL_WIDTH {
-            if j == pos {
-                s.push('·');
-            } else {
-                s.push(' ');
-            }
-        }
-        s
-    };
-
-    // Forward: t goes 0 → 1
-    for i in 0..half {
-        let t = i as f32 / (half - 1) as f32;
-        let pos = (easing.apply(t) * dot_range).round() as usize;
-        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
-    }
-    // Backward: t goes from the second-to-last back to 0 (skip first and last to avoid repeats)
-    for i in (1..half - 1).rev() {
-        let t = i as f32 / (half - 1) as f32;
-        let pos = (easing.apply(t) * dot_range).round() as usize;
-        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
-    }
-
-    frames
-}
-
 /// Describes what to display alongside a suggestion as a visual suffix.
 ///
 /// The priority when choosing which variant to use (in `post_process_completion`) is:
@@ -91,9 +32,6 @@ pub enum SuggestionDescription {
     /// Last-modification time of the associated file (Unix timestamp).
     /// Rendered as a right-aligned, ≤5-character "time ago" string.
     LastMTime(u64),
-    /// Preview animation for one of the [`CursorEasing`] values.
-    /// Displayed as a small dot moving left-to-right driven by the curve.
-    EasingFunc(CursorEasing),
 }
 
 impl SuggestionDescription {
@@ -105,7 +43,6 @@ impl SuggestionDescription {
                 frames.iter().map(|f| f.width()).max().unwrap_or(0)
             }
             SuggestionDescription::LastMTime(_) => 5,
-            SuggestionDescription::EasingFunc(_) => EASING_ANIM_TOTAL_WIDTH,
         }
     }
 
@@ -119,16 +56,7 @@ impl SuggestionDescription {
             SuggestionDescription::Animation(frames) => {
                 Some(frames[frame_index % frames.len()].clone())
             }
-            SuggestionDescription::LastMTime(ts) => Some(mtime_to_string(*ts)),
-            SuggestionDescription::EasingFunc(easing) => {
-                let frames = easing_animation_frames(*easing);
-                // frames should never be empty (half >= 2), but guard anyway
-                if frames.is_empty() {
-                    None
-                } else {
-                    Some(frames[frame_index % frames.len()].clone())
-                }
-            }
+            SuggestionDescription::LastMTime(ts) => Some(ts_to_timeago_string_5chars(*ts)),
         }
     }
 }
@@ -472,39 +400,6 @@ mod description_tests {
     }
 
     #[test]
-    fn easing_func_description_max_width() {
-        let sug = Suggestion::new("linear", "", " ")
-            .with_description(SuggestionDescription::EasingFunc(CursorEasing::Linear));
-        assert_eq!(sug.description.max_width(), EASING_ANIM_TOTAL_WIDTH);
-    }
-
-    #[test]
-    fn easing_func_description_frame_is_nonempty_and_correct_width() {
-        let sug = Suggestion::new("linear", "", " ")
-            .with_description(SuggestionDescription::EasingFunc(CursorEasing::Linear));
-        let frame = sug.description.frame_at(0);
-        assert!(frame.is_some());
-        let s = frame.unwrap();
-        assert_eq!(
-            s.width(),
-            EASING_ANIM_TOTAL_WIDTH,
-            "EasingFunc frame must be EASING_ANIM_TOTAL_WIDTH wide"
-        );
-        // Frame 0 should have the dot at position 0 (leftmost)
-        assert_eq!(s.chars().next(), Some('·'));
-    }
-
-    #[test]
-    fn easing_func_ping_pong_frames_cycle() {
-        let desc = SuggestionDescription::EasingFunc(CursorEasing::Linear);
-        let f0 = desc.frame_at(0).unwrap();
-        // After a full cycle the animation wraps back to the start
-        let total = 2 * EASING_ANIM_HALF_FRAMES - 2;
-        let f_wrap = desc.frame_at(total).unwrap();
-        assert_eq!(f0, f_wrap, "animation should wrap seamlessly");
-    }
-
-    #[test]
     fn static_empty_description_is_empty() {
         let sug = Suggestion::new("foo", "", "");
         assert_eq!(
@@ -754,7 +649,7 @@ pub fn post_process_completion(
     let description = if let Some(ts) = mtime {
         SuggestionDescription::LastMTime(ts)
     } else if let Some(easing) = CursorEasing::try_from_value_name(sug_text) {
-        SuggestionDescription::EasingFunc(easing)
+        SuggestionDescription::Animation(easing_animation_frames(easing))
     } else if !tab_frames.is_empty() {
         SuggestionDescription::Animation(tab_frames)
     } else {

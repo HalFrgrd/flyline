@@ -1,4 +1,4 @@
-use crate::palette::Palette;
+use crate::{cursor::CursorEasing, palette::Palette};
 use itertools::Itertools;
 use ratatui::prelude::*;
 use unicode_segmentation::UnicodeSegmentation;
@@ -303,4 +303,61 @@ pub fn highlight_matching_indices(
     }
 
     normal_lines
+}
+
+pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
+    let duration = std::time::Duration::from_secs(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .saturating_sub(ts),
+    );
+    let s = timeago::format_5chars(duration);
+    format!("{:>5}", s.trim_start_matches('0'))
+}
+
+/// Total width (in terminal columns) of the easing-function dot animation.
+const EASING_ANIM_TOTAL_WIDTH: usize = 7;
+
+/// Number of frames in each half of the ping-pong animation (forward + backward).
+const EASING_ANIM_HALF_FRAMES: usize = 16;
+
+/// Build the ping-pong animation frames for the given easing function.
+///
+/// Returns `2 * EASING_ANIM_HALF_FRAMES - 2` frames showing a dot (`·`) that
+/// travels from the left edge to the right and back, using `easing` for the
+/// position curve in both directions.
+pub fn easing_animation_frames(easing: CursorEasing) -> Vec<String> {
+    let half = EASING_ANIM_HALF_FRAMES;
+    let dot_range = (EASING_ANIM_TOTAL_WIDTH - 1) as f32;
+    let total_frames = half * 2 - 2;
+    let mut frames = Vec::with_capacity(total_frames);
+
+    let make_frame = |pos: usize| -> String {
+        let mut s = String::with_capacity(EASING_ANIM_TOTAL_WIDTH);
+        for j in 0..EASING_ANIM_TOTAL_WIDTH {
+            if j == pos {
+                s.push('·');
+            } else {
+                s.push(' ');
+            }
+        }
+        s
+    };
+
+    // Forward: t goes 0 → 1
+    for i in 0..half {
+        let t = i as f32 / (half - 1) as f32;
+        let pos = (easing.apply(t) * dot_range).round() as usize;
+        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
+    }
+    // Backward: t goes from the second-to-last back to 0 (skip first and last to avoid repeats)
+    for i in (1..half - 1).rev() {
+        let t = i as f32 / (half - 1) as f32;
+        let pos = (easing.apply(t) * dot_range).round() as usize;
+        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
+    }
+
+    frames
 }

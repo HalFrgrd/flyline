@@ -7,7 +7,7 @@ use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, UnprocessedSu
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
-use crate::content_utils::split_line_to_terminal_rows;
+use crate::content_utils::{split_line_to_terminal_rows, ts_to_timeago_string_5chars};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
@@ -1156,18 +1156,6 @@ impl<'a> App<'a> {
         self.buffer.buffer()
     }
 
-    fn ts_to_timeago_string_5chars(ts: u64) -> String {
-        let duration = std::time::Duration::from_secs(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                .saturating_sub(ts),
-        );
-        let s = timeago::format_5chars(duration);
-        format!("{:>5}", s.trim_start_matches('0'))
-    }
-
     /// Build the display lines for a single fuzzy-history entry.
     ///
     /// Returns one `Line` per terminal row. The first line combines the
@@ -1189,7 +1177,7 @@ impl<'a> App<'a> {
         let entry = &entries[formatted_entry.entry_index];
         let timeago_str = entry
             .timestamp
-            .map(Self::ts_to_timeago_string_5chars)
+            .map(ts_to_timeago_string_5chars)
             .unwrap_or_else(|| "     ".to_string());
 
         let indicator_span = || {
@@ -1528,7 +1516,7 @@ impl<'a> App<'a> {
                     if is_last {
                         let mut extra_info_text = format!(" #idx={}", sug.index);
                         if let Some(ts) = sug.timestamp {
-                            let time_ago_str = Self::ts_to_timeago_string_5chars(ts);
+                            let time_ago_str = ts_to_timeago_string_5chars(ts);
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
