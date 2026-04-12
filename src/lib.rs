@@ -507,7 +507,7 @@ enum PromptWidgetSubcommands {
         #[arg(long)]
         command: String,
         /// Block until the command finishes, optionally with a timeout in milliseconds.
-        /// With no value, blocks indefinitely (i32::MAX ms ≈ 24.8 days).  If the
+        /// With no value, polls indefinitely (i32::MAX ms ≈ 24.8 days).  If the
         /// timeout expires the command continues running in the background and
         /// subsequent renders will pick up its output.
         // default_missing_value "2147483647" == i32::MAX; proc-macro attributes

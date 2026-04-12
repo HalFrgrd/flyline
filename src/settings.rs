@@ -59,9 +59,12 @@ pub struct PromptWidgetCustom {
     pub name: String,
     /// Command (and arguments) to run.
     pub command: Vec<String>,
-    /// When `Some(n)`, wait up to `n` milliseconds for the command to finish
-    /// before rendering the first prompt frame.  `Some(i32::MAX)` means wait
-    /// indefinitely.  `None` means the command always runs in the background.
+    /// Timeout in milliseconds to wait for the command before rendering the
+    /// first prompt frame.  `None` (not specified) defaults to `0`, meaning a
+    /// single non-blocking `try_wait` is performed at spawn time — the command
+    /// immediately goes to the background if it hasn't finished.  `Some(n)`
+    /// polls for up to `n` milliseconds; `Some(i32::MAX)` (~24.8 days) is
+    /// effectively indefinite.
     pub block: Option<i32>,
     /// What to show while the command is running (or has timed out).
     pub placeholder: Option<Placeholder>,
