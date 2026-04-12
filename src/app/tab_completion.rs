@@ -706,7 +706,7 @@ impl App<'_> {
 
             let mut suggestions: Vec<ProcssedSuggestion> = some_suggestions
                 .unwrap()
-                .iter()
+                .iter_mut()
                 .map(|item| item.to_suggestion())
                 .collect();
 
@@ -724,7 +724,8 @@ impl App<'_> {
                 match pair {
                     itertools::EitherOrBoth::Both(sug, &expected) => {
                         assert_eq!(
-                            sug, expected,
+                            (&sug.prefix, &sug.s, &sug.suffix),
+                            (&expected.prefix, &expected.s, &expected.suffix),
                             "For command '{}', expected suggestion '{:?}' but got '{:?}'",
                             command, expected, sug
                         );
