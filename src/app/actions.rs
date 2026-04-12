@@ -526,20 +526,18 @@ macro_rules! expand_variation_push {
     ($v:ident, "end") => {
         $v.extend_from_slice(&["End", "Ctrl+e"]);
     };
-    // ── Shift+Tab / Backtab ───────────────────────────────────────────────
-    // BackTab (Shift+Tab) is sent as either "Shift+Tab" or the dedicated
-    // "Backtab" keycode depending on the terminal emulator.
+    // ── Shift+Tab / BackTab ───────────────────────────────────────────────
     ($v:ident, "Shift+Tab") => {
-        $v.extend_from_slice(&["Shift+Tab", "Backtab"]);
+        $v.extend_from_slice(&["BackTab", "Shift+Tab", "Shift+BackTab"]);
     };
     ($v:ident, "shift+tab") => {
-        $v.extend_from_slice(&["Shift+Tab", "Backtab"]);
+        $v.extend_from_slice(&["BackTab", "Shift+Tab", "Shift+BackTab"]);
     };
-    ($v:ident, "Backtab") => {
-        $v.extend_from_slice(&["Backtab", "Shift+Tab", "Shift+Backtab"]); /// Shift+Tab shows up as Shift+Backtab for me
+    ($v:ident, "BackTab") => {
+        $v.extend_from_slice(&["BackTab", "Shift+Tab", "Shift+BackTab"]);
     };
     ($v:ident, "backtab") => {
-        $v.extend_from_slice(&["Backtab", "Shift+Tab", "Shift+Backtab"]);
+        $v.extend_from_slice(&["BackTab", "Shift+Tab", "Shift+BackTab"]);
     };
     // ── Fallthrough: pass through unchanged ───────────────────────────────
     ($v:ident, $key:literal) => {
@@ -559,8 +557,8 @@ macro_rules! expand_variation_push {
 /// | Input            | Expands to                                          |
 /// |------------------|-----------------------------------------------------|
 /// | `"Enter"`        | `"Enter"`, `"Ctrl+j"`                               |
-/// | `"Shift+Tab"`    | `"Shift+Tab"`, `"Backtab"`                          |
-/// | `"Backtab"`      | `"Backtab"`, `"Shift+Tab"`                          |
+/// | `"Shift+Tab"`    | `"Shift+Tab"`, `"BackTab"`                          |
+/// | `"BackTab"`      | `"BackTab"`, `"Shift+Tab"`                          |
 /// | `"Alt+Left"`     | `"Alt+Left"`, `"Alt+b"`, `"Meta+Left"`, `"Meta+b"` |
 /// | `"Alt+Right"`    | `"Alt+Right"`, `"Alt+f"`, `"Meta+Right"`, `"Meta+f"`|
 /// | `"Meta+Left"`    | same four-way word-left group                       |
@@ -574,16 +572,25 @@ macro_rules! expand_variation_push {
 ///
 /// ```ignore
 /// // expand_variations!["Enter"]               →  ["Enter", "Ctrl+j"]
-/// // expand_variations!["Shift+Tab"]           →  ["Shift+Tab", "Backtab"]
+/// // expand_variations!["Shift+Tab"]           →  ["Shift+Tab", "BackTab"]
 /// // expand_variations!["Alt+Left"]            →  ["Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]
 /// // expand_variations!["Ctrl+Left", "Alt+Left"] →  ["Ctrl+Left", "Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]
 /// ```
 macro_rules! expand_variations {
-    [$($key:literal),+ $(,)?] => {{
+    [$($key:tt),+ $(,)?] => {{
         let mut v: Vec<&'static str> = Vec::new();
         $(expand_variation_push!(v, $key);)+
         v
     }};
+}
+
+#[cfg(test)]
+mod expand_variations_tests {
+
+    #[test]
+    fn test_expand_variations() {
+        assert_eq!(expand_variations!["Enter"], vec!["Enter", "Ctrl+j"]);
+    }
 }
 
 /// Build the [`POSSIBLE_ACTIONS`] slice from a list of [`Action::new`] calls,
@@ -1370,7 +1377,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &expand_variations!["Shift+Tab"], // Shift+Tab and Backtab are equivalent
+            &expand_variations!["BackTab"],
             Scope::TabCompletion,
             "prev_suggestion",
         )
@@ -1378,7 +1385,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
         // Scoped Esc bindings must appear before the Normal Esc binding.
         Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
         Binding::try_new(
-            &expand_variations!["Shift+Tab"],
+            &expand_variations!["BackTab"],
             Scope::AgentOutputSelection,
             "select_prev",
         )

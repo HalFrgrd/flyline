@@ -727,7 +727,9 @@ impl App<'_> {
                             (&sug.prefix, &sug.s, &sug.suffix),
                             (&expected.prefix, &expected.s, &expected.suffix),
                             "For command '{}', expected suggestion '{:?}' but got '{:?}'",
-                            command, expected, sug
+                            command,
+                            expected,
+                            sug
                         );
                     }
                     itertools::EitherOrBoth::Left(sug) => {
