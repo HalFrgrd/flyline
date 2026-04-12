@@ -1,6 +1,4 @@
-use itertools::Itertools;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
 
 use crate::cursor::CursorStyleConfig;
 use crate::settings::ColorTheme;
@@ -386,85 +384,6 @@ impl Palette {
 
     pub fn cursor_style(intensity: u8) -> Style {
         Style::new().bg(Color::Rgb(intensity, intensity, intensity))
-    }
-
-    pub fn apply_match_indices_to_lines(
-        &self,
-        lines: &[Line<'static>],
-        match_indices: &[usize],
-    ) -> Vec<Line<'static>> {
-        let mut result = Vec::with_capacity(lines.len());
-        let mut global_char_offset = 0usize;
-        let match_style = self.matching_char();
-
-        for line in lines {
-            let mut new_spans = Vec::new();
-            for span in &line.spans {
-                let span_start_char = global_char_offset;
-                for (is_matching, group) in
-                    &span.content.chars().enumerate().chunk_by(|(char_idx, _)| {
-                        match_indices.contains(&(span_start_char + char_idx))
-                    })
-                {
-                    let s: String = group.map(|(_, c)| c).collect();
-                    let style = if is_matching {
-                        span.style.patch(match_style)
-                    } else {
-                        span.style
-                    };
-                    new_spans.push(Span::styled(s, style));
-                }
-                global_char_offset += span.content.chars().count();
-            }
-            result.push(Line::from(new_spans));
-            global_char_offset += 1; // +1 for the '\n' separator between lines
-        }
-
-        result
-    }
-
-    pub fn highlight_maching_indices(
-        &self,
-        s: &str,
-        matching_indices: &[usize],
-        base_style: Style,
-    ) -> Vec<Line<'static>> {
-        let mut normal_lines = Vec::new();
-
-        let mut char_offset = 0usize;
-        for text_line in s.split('\n') {
-            let line_char_count = text_line.chars().count();
-            let line_end_offset = char_offset + line_char_count;
-
-            let relative_indices: Vec<usize> = matching_indices
-                .iter()
-                .filter(|&&idx| idx >= char_offset && idx < line_end_offset)
-                .map(|&idx| idx - char_offset)
-                .collect();
-
-            let mut normal_spans = Vec::new();
-
-            for (is_matching, chunk) in &text_line
-                .char_indices()
-                .chunk_by(|(idx, _)| relative_indices.contains(idx))
-            {
-                let chunk_str = chunk.map(|(_, c)| c).collect::<String>();
-                if is_matching {
-                    normal_spans.push(Span::styled(
-                        chunk_str,
-                        base_style.patch(self.matching_char()),
-                    ));
-                } else {
-                    normal_spans.push(Span::styled(chunk_str, base_style));
-                }
-            }
-
-            normal_lines.push(Line::from(normal_spans));
-
-            char_offset = line_end_offset + 1; // +1 for the '\n' character
-        }
-
-        normal_lines
     }
 }
 

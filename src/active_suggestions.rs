@@ -1,5 +1,7 @@
 use crate::bash_funcs;
-use crate::content_utils::{take_prefix_of_spans, take_suffix_of_spans, vec_spans_width};
+use crate::content_utils::{
+    highlight_matching_indices, take_prefix_of_spans, take_suffix_of_spans, vec_spans_width,
+};
 use crate::cursor::CursorEasing;
 use crate::palette::Palette;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
@@ -204,7 +206,8 @@ impl SuggestionFormatted {
         frame_index: usize,
     ) -> Self {
         let base_style = suggestion.style.unwrap_or(palette.normal_text());
-        let lines = palette.highlight_maching_indices(&suggestion.s, &matching_indices, base_style);
+        let lines =
+            highlight_matching_indices(palette, &suggestion.s, &matching_indices, base_style);
 
         let main_spans: Vec<Span<'static>> = lines.into_iter().flat_map(|l| l.spans).collect();
         let main_width = suggestion.s.width();

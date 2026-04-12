@@ -6,9 +6,8 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, UnprocessedSuggestion};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
-use crate::content_builder::{
-    Contents, SpanTag, Tag, TaggedLine, TaggedSpan, split_line_to_terminal_rows,
-};
+use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
+use crate::content_utils::split_line_to_terminal_rows;
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};

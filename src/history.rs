@@ -3,6 +3,7 @@ use std::time::Instant;
 use std::vec;
 
 use crate::bash_symbols;
+use crate::content_utils::apply_match_indices_to_lines;
 use crate::palette::Palette;
 use crate::settings::Settings;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
@@ -485,7 +486,7 @@ impl HistoryEntryFormatted {
         self.command_spans.get_or_init(|| {
             let entry = &entries[self.entry_index];
             let base_lines = entry.get_syntax_highlighted(palette);
-            palette.apply_match_indices_to_lines(base_lines, &self.match_indices)
+            apply_match_indices_to_lines(palette, base_lines, &self.match_indices)
         })
     }
 }

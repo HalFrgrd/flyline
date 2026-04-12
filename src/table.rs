@@ -1,4 +1,4 @@
-use crate::content_builder::split_line_to_terminal_rows;
+use crate::content_utils::split_line_to_terminal_rows;
 use crate::unicode_helpers::{
     BOX_ARC_DOWN_LEFT, BOX_ARC_DOWN_RIGHT, BOX_ARC_UP_LEFT, BOX_ARC_UP_RIGHT, BOX_CROSS,
     BOX_DOWN_HORIZ, BOX_HORIZONTAL, BOX_UP_HORIZ, BOX_VERT_LEFT, BOX_VERT_RIGHT, BOX_VERTICAL,

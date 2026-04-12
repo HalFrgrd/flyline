@@ -753,12 +753,8 @@ impl DParser {
     }
 
     /// Returns `buffer` with any trailing auto-inserted closing tokens stripped.
-    ///
-    /// Iterates the tokens from the end, collecting all consecutive trailing tokens
-    /// whose `closing.is_auto_inserted` flag is set, then strips the corresponding
-    /// suffix from `buffer`.  The result is the string that should be used when
-    /// searching history so that auto-inserted closing delimiters do not affect the
-    /// search query.
+    /// TODO: think of good ux for when the user wants to search history with auto inserted chars.
+    #[allow(dead_code)]
     pub fn buffer_without_auto_inserted_suffix<'buf>(
         tokens: &[AnnotatedToken],
         buffer: &'buf str,
