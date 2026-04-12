@@ -1233,16 +1233,6 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "cancel",
-        "Exit prompt CWD edit mode without changing the buffer",
-        Scope::PromptDirSelect,
-        |app, _key| {
-            if matches!(app.content_mode, ContentMode::PromptDirSelect(_)) {
-                app.content_mode = ContentMode::Normal;
-            }
-        },
-    ),
-    Action::new(
         "move_to_start",
         "Move selection to the leftmost directory segment in the prompt",
         Scope::PromptDirSelect,
@@ -1314,7 +1304,7 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
@@ -1397,9 +1387,23 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
         Binding::try_new(&["Tab"], Scope::AgentOutputSelection, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::TabCompletion, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::Default, "run_tab_completion").unwrap(),
-        // PromptCwdEdit Esc must appear before the Normal Esc binding.
-        Binding::try_new(&["Esc"], Scope::PromptDirSelect, "cancel").unwrap(),
-        Binding::try_new(&["Esc"], Scope::Default, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(&["Esc"], Scope::AgentError, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(&["Esc"], Scope::AgentModeWaiting, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            Scope::AgentOutputSelection,
+            "escape_to_normal_mode",
+        )
+        .unwrap(),
+        Binding::try_new(&["Esc"], Scope::FuzzyHistorySearch, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(&["Esc"], Scope::PromptDirSelect, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(&["Esc"], Scope::TabCompletion, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            Scope::TabCompletionWaiting,
+            "escape_to_normal_mode",
+        )
+        .unwrap(),
         Binding::try_new(&["Esc"], Scope::Default, "toggle_mouse").unwrap(),
         Binding::try_new(&["Ctrl+d"], Scope::Default, "exit").unwrap(),
         Binding::try_new(&["Ctrl+c", "Meta+c"], Scope::Default, "cancel").unwrap(),
@@ -1743,7 +1747,9 @@ fn key_event_match_overlaps(a: &KeyEventMatch, b: &KeyEventMatch) -> bool {
         // Two exact patterns overlap when they share the same key code.
         // The `matches` predicate uses `key.modifiers.contains(binding.modifiers)`,
         // so pressing a key with the union of both modifier sets satisfies both.
-        (KeyEventMatch::Exact(ea), KeyEventMatch::Exact(eb)) => ea.code == eb.code,
+        (KeyEventMatch::Exact(ea), KeyEventMatch::Exact(eb)) => {
+            ea.code == eb.code && eb.modifiers.contains(ea.modifiers)
+        }
         // Any two AnyCharAndMods patterns overlap: a char key pressed with the
         // union of any modifier from each side satisfies both.
         (KeyEventMatch::AnyCharAndMods(_), KeyEventMatch::AnyCharAndMods(_)) => true,
@@ -1774,7 +1780,7 @@ struct Conflict {
 /// 1. `higher` is in `Scope::Default` (always active) and `lower` is in a narrower
 ///    scope — the `Default` binding fires before the scoped one can.
 /// 2. Both bindings are in the same scope — only the higher-priority one fires.
-fn binding_shadows(higher: &Binding, lower: &Binding) -> bool {
+fn scope_shadows(higher: &Binding, lower: &Binding) -> bool {
     (higher.action.scope == Scope::Default && lower.action.scope != Scope::Default)
         || (higher.action.scope == lower.action.scope)
 }
@@ -1802,7 +1808,7 @@ fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) 
         for kem_b in &binding_b.key_events {
             // Check whether any higher-priority binding shadows this key event.
             'find_shadow: for binding_a in &all_bindings[..idx_b] {
-                if !binding_shadows(binding_a, binding_b) {
+                if !scope_shadows(binding_a, binding_b) {
                     continue;
                 }
                 for kem_a in &binding_a.key_events {
