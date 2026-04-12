@@ -537,17 +537,10 @@ impl<'a> PromptStringBuilder<'a> {
 
         // Pass 4: split any remaining Static segments on CWD.
         if let Some(cwd) = self.cwd.as_deref() {
-            let mut found_one = false;
             widget_segs
                 .into_iter()
                 .flat_map(|seg| match seg {
-                    PromptSegment::Static(s) if !found_one => {
-                        found_one = true;
-                        let res = split_static_span_by_cwd(s, cwd);
-                        found_one =
-                            found_one || res.iter().any(|s| matches!(s, PromptSegment::Cwd(_)));
-                        res
-                    }
+                    PromptSegment::Static(s) => split_static_span_by_cwd(s, cwd),
                     other => vec![other],
                 })
                 .collect()

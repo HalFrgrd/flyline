@@ -95,15 +95,6 @@ pub enum SuggestionDescription {
 }
 
 impl SuggestionDescription {
-    /// Returns `true` if this description produces no visible text.
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        match self {
-            SuggestionDescription::Static(s) => s.is_empty(),
-            SuggestionDescription::Animation(frames) => frames.is_empty(),
-            SuggestionDescription::LastMTime(_) | SuggestionDescription::EasingFunc(_) => false,
-        }
-    }
 
     /// Maximum display width (in terminal columns) across all frames.
     pub fn max_width(&self) -> usize {
@@ -370,18 +361,18 @@ impl SuggestionFormatted {
 
         let rendered_main_len = vec_spans_width(&spans);
 
+        let rendered_total = rendered_main_len + desc_col_width;
+        spans.push(Span::raw(
+            " ".repeat(col_width.saturating_sub(rendered_total)),
+        ));
+
         // Append description if there is space for it.
         if desc_col_width > 0 && !self.description_spans.is_empty() {
             spans.push(Span::raw(Self::DESCRIPTION_SEPARATOR));
             spans.extend(self.description_spans.clone());
         }
 
-        let rendered_total = rendered_main_len + desc_col_width;
-        let mut result = spans;
-        result.push(Span::raw(
-            " ".repeat(col_width.saturating_sub(rendered_total)),
-        ));
-        result
+        spans
     }
 }
 
@@ -592,7 +583,7 @@ mod description_tests {
     #[test]
     fn static_empty_description_is_empty() {
         let sug = Suggestion::new("foo", "", "");
-        assert!(sug.description.is_empty());
+        assert_eq!(sug.description, SuggestionDescription::Static(String::new()));
         assert_eq!(sug.description.max_width(), 0);
         assert!(sug.description.frame_at(0).is_none());
     }
@@ -601,7 +592,6 @@ mod description_tests {
     fn static_nonempty_description_frame() {
         let sug = Suggestion::new("foo", "", "")
             .with_description(SuggestionDescription::Static("hello".to_string()));
-        assert!(!sug.description.is_empty());
         assert_eq!(sug.description.max_width(), 5);
         assert_eq!(sug.description.frame_at(0), Some("hello".to_string()));
         // frame_at is stable for any index
