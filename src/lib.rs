@@ -156,11 +156,10 @@ enum Commands {
     /// the buffer is sent to the command).
     ///
     /// Examples:
-    ///   (N.B. `--command` should be the final flag since it consumes all remaining arguments)
     ///   flyline set-agent-mode \
     ///     --system-prompt "Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
-    ///     --command copilot --reasoning-effort low --prompt
-    ///   flyline set-agent-mode --trigger-prefix ": " --command copilot --reasoning-effort low --prompt
+    ///     --command 'copilot --reasoning-effort low --prompt'
+    ///   flyline set-agent-mode --trigger-prefix ": " --command 'copilot --reasoning-effort low --prompt'
     ///
     /// See https://github.com/HalFrgrd/flyline/blob/master/examples/agent_mode.sh for more details and example usage.
     #[command(name = "set-agent-mode", verbatim_doc_comment)]
@@ -173,10 +172,11 @@ enum Commands {
         /// starts with this prefix activates agent mode (the prefix is stripped).
         #[arg(long = "trigger-prefix")]
         trigger_prefix: Option<String>,
-        /// Command (and arguments) to invoke. The current buffer is appended as the
-        /// final argument when Alt+Enter is pressed.
-        #[arg(long = "command", num_args = 1.., allow_hyphen_values = true, required = true)]
-        command: Vec<String>,
+        /// Command string to invoke; include any flags in the same string, e.g.
+        /// --command 'copilot --reasoning-effort low --prompt'.
+        /// The current buffer is appended as the final argument when Alt+Enter is pressed.
+        #[arg(long = "command", required = true)]
+        command: String,
     },
     /// Create a custom prompt animation.
     ///
@@ -214,8 +214,8 @@ enum Commands {
     ///
     /// Examples:
     ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
-    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder-length 10
-    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --blocking
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder 10
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
     #[command(name = "create-prompt-widget", verbatim_doc_comment)]
     CreatePromptWidget {
         #[command(subcommand)]
@@ -494,23 +494,30 @@ enum PromptWidgetSubcommands {
     /// Run a shell command and display its output in the prompt.
     ///
     /// Examples:
-    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder-length 10
-    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --blocking
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder 10
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow.sh' --block 500 --placeholder prev
     #[command(name = "custom", verbatim_doc_comment)]
     Custom {
         /// Name to embed in prompt strings as the widget placeholder.
         #[arg(long)]
         name: String,
-        /// Command (and arguments) to run.
-        #[arg(long, num_args = 1.., allow_hyphen_values = true, required = true)]
-        command: Vec<String>,
-        /// Wait for the command to finish before rendering the prompt.
-        /// When omitted, the command runs in the background.
+        /// Command string to run; include any flags in the same string, e.g.
+        /// --command './widget.sh --someflag'.
         #[arg(long)]
-        blocking: bool,
-        /// Number of spaces to show as a placeholder while the command runs.
-        #[arg(long = "placeholder-length")]
-        placeholder_length: Option<usize>,
+        command: String,
+        /// Block until the command finishes, optionally with a timeout in milliseconds.
+        /// With no value, polls indefinitely (i32::MAX ms ≈ 24.8 days).  If the
+        /// timeout expires the command continues running in the background and
+        /// subsequent renders will pick up its output.
+        // default_missing_value "2147483647" == i32::MAX; proc-macro attributes
+        // require a string literal so the constant cannot be referenced directly.
+        #[arg(long, num_args = 0..=1, default_missing_value = "2147483647", value_name = "MS")]
+        block: Option<i32>,
+        /// What to show while the command is running.  Either a number (spaces) or
+        /// 'prev' (use the previous output of the command).
+        #[arg(long)]
+        placeholder: Option<String>,
     },
 }
 
@@ -654,15 +661,23 @@ impl Flyline {
                         trigger_prefix,
                         command,
                     }) => {
+                        let command_args: Vec<String> =
+                            shlex::split(&command).unwrap_or_else(|| {
+                                command.split_whitespace().map(String::from).collect()
+                            });
+                        if command_args.is_empty() {
+                            eprintln!("flyline set-agent-mode: --command must not be empty");
+                            return bash_symbols::BuiltinExitCode::Usage as c_int;
+                        }
                         log::info!(
                             "AI command set: {:?} (trigger_prefix={:?})",
-                            command,
+                            command_args,
                             trigger_prefix
                         );
                         self.settings.agent_commands.insert(
                             trigger_prefix.clone(),
                             settings::AgentModeCommand {
-                                command: command.clone(),
+                                command: command_args,
                                 system_prompt: system_prompt.clone(),
                             },
                         );
@@ -723,29 +738,57 @@ impl Flyline {
                         PromptWidgetSubcommands::Custom {
                             name,
                             command,
-                            blocking,
-                            placeholder_length,
+                            block,
+                            placeholder,
                         } => {
-                            if command.is_empty() {
+                            let command_args: Vec<String> =
+                                shlex::split(&command).unwrap_or_else(|| {
+                                    command.split_whitespace().map(String::from).collect()
+                                });
+                            if command_args.is_empty() {
                                 eprintln!(
                                     "flyline create-prompt-widget custom: --command must not be empty"
                                 );
                                 return bash_symbols::BuiltinExitCode::Usage as c_int;
                             }
+                            if let Some(ms) = block {
+                                if ms < 0 {
+                                    eprintln!(
+                                        "flyline create-prompt-widget custom: --block timeout must be non-negative (got {})",
+                                        ms
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            }
+                            let placeholder_spec = match placeholder {
+                                None => None,
+                                Some(ref s) if s == "prev" => Some(settings::Placeholder::Prev),
+                                Some(ref s) => match s.parse::<usize>() {
+                                    Ok(n) => Some(settings::Placeholder::Spaces(n)),
+                                    Err(_) => {
+                                        eprintln!(
+                                            "flyline create-prompt-widget custom: --placeholder must be a number or 'prev', got {:?}",
+                                            s
+                                        );
+                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                    }
+                                },
+                            };
                             log::info!(
-                                "Registering custom widget '{}' (command={:?}, blocking={}, placeholder_length={:?})",
+                                "Registering custom widget '{}' (command={:?}, block={:?}, placeholder={:?})",
                                 name,
-                                command,
-                                blocking,
-                                placeholder_length
+                                command_args,
+                                block,
+                                placeholder
                             );
                             self.settings.custom_prompt_widgets.insert(
                                 name.clone(),
                                 settings::PromptWidget::Custom(settings::PromptWidgetCustom {
                                     name,
-                                    command,
-                                    blocking,
-                                    placeholder_length,
+                                    command: command_args,
+                                    block,
+                                    placeholder: placeholder_spec,
+                                    prev_output: std::sync::Arc::new(std::sync::Mutex::new(None)),
                                 }),
                             );
                         }
@@ -1082,7 +1125,9 @@ impl Flyline {
                 if parsed.run_tab_completion_tests {
                     self.settings.run_tab_completion_tests = true;
                     println!("Running tab completion tests...");
+                    let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
                     app::get_command(&mut self.settings);
+                    unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
                     println!("Finished running tab completion tests.");
                 }
 
@@ -1138,9 +1183,20 @@ impl Flyline {
 
             // I haven't bothered replicating this line either:
             //   sh_unset_nodelay_mode (fileno (rl_instream));	/* just in case */
+            // Bash sets SIGCHLD to SIG_IGN, causing the kernel to auto-reap child
+            // processes, which makes output()'s internal wait() fail with ECHILD.
+            // Restore SIG_DFL for the entire duration of the app (covers all
+            // background threads spawned for prompt widgets and agent mode), then
+            // put the original disposition back once the app exits.
+            // SAFETY: signal(2) only modifies the signal disposition; no other
+            // thread depends on SIGCHLD disposition at this instant.
+            let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 app::get_command(&mut self.settings)
             }));
+
+            unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 
             // unsafe {
             //     // This doesn't seem to be strictly necessary but yy_readline_get does it here.

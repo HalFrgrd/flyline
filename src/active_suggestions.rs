@@ -22,13 +22,24 @@ pub struct Suggestion {
     pub suffix: String,
     /// Optional display style (e.g. from LS_COLORS) applied when rendering in the completion list.
     pub style: Option<Style>,
+    /// Description frames extracted from tab-separated segments in the raw completion string.
+    /// Displayed as a visual suffix (not inserted). If there are multiple frames, they are
+    /// cycled through at 24 fps.
+    pub description: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuggestionFormatted {
     pub suggestion_idx: usize,
+    /// Visual width used for column sizing. Includes the description separator and the
+    /// widest description frame so that the column does not resize during animation.
     pub display_width: usize,
     pub spans: Vec<Span<'static>>,
+    /// Pre-rendered description spans for the current animation frame (empty if there is no
+    /// description).  These are appended after `spans` in [`render`] with a leading separator.
+    description_spans: Vec<Span<'static>>,
+    /// Width of the current description frame text (excluding the separator).
+    description_frame_width: usize,
 }
 
 fn vec_spans_width(spans: &[Span<'static>]) -> usize {
@@ -146,19 +157,53 @@ fn middle_truncate_spans(spans: &[Span<'static>], max_chars: usize) -> Vec<Span<
 }
 
 impl SuggestionFormatted {
+    /// Width of the separator between the suggestion text and its description.
+    const DESCRIPTION_SEPARATOR: &'static str = "  ";
+
     pub fn new(
         suggestion: &Suggestion,
         suggestion_idx: usize,
         matching_indices: Vec<usize>,
         palette: &Palette,
+        frame_index: usize,
     ) -> Self {
         let base_style = suggestion.style.unwrap_or(palette.normal_text());
         let lines = palette.highlight_maching_indices(&suggestion.s, &matching_indices, base_style);
 
+        let main_spans: Vec<Span<'static>> = lines.into_iter().flat_map(|l| l.spans).collect();
+        let main_width = suggestion.s.width();
+
+        // Compute the widest description frame to use for stable column sizing.
+        let max_description_frame_width = suggestion
+            .description
+            .iter()
+            .map(|f| f.width())
+            .max()
+            .unwrap_or(0);
+
+        // Select the description frame to display for this render cycle.
+        let (description_spans, description_frame_width) = if suggestion.description.is_empty() {
+            (vec![], 0)
+        } else {
+            let frame = &suggestion.description[frame_index % suggestion.description.len()];
+            let desc_style = palette.secondary_text();
+            let spans = vec![Span::styled(frame.clone(), desc_style)];
+            (spans, frame.width())
+        };
+
+        // Column width accounts for the widest frame so the column stays stable.
+        let display_width = if max_description_frame_width > 0 {
+            main_width + Self::DESCRIPTION_SEPARATOR.len() + max_description_frame_width
+        } else {
+            main_width
+        };
+
         SuggestionFormatted {
             suggestion_idx,
-            display_width: suggestion.s.width(),
-            spans: lines.into_iter().flat_map(|l| l.spans).collect(),
+            display_width,
+            spans: main_spans,
+            description_spans,
+            description_frame_width,
         }
     }
 
@@ -169,8 +214,29 @@ impl SuggestionFormatted {
     /// text, middle-ellipsis truncation is applied so the text fits exactly
     /// within `col_width` characters.
     pub fn render(&self, col_width: usize, is_selected: bool) -> Vec<Span<'static>> {
-        let mut spans: Vec<Span<'static>> = if col_width < self.display_width {
-            middle_truncate_spans(&self.spans, col_width)
+        // Determine widths available for the main text and description.
+        let main_text_width = vec_spans_width(&self.spans);
+        let desc_total_width = if !self.description_spans.is_empty() {
+            Self::DESCRIPTION_SEPARATOR.len() + self.description_frame_width
+        } else {
+            0
+        };
+
+        let (main_col_width, desc_col_width) = if col_width < self.display_width {
+            // Truncation needed – shrink main text first, keep description if room allows.
+            if col_width > desc_total_width + Self::DESCRIPTION_SEPARATOR.len() {
+                let available_for_main = col_width.saturating_sub(desc_total_width);
+                (available_for_main, desc_total_width)
+            } else {
+                // Not enough room for description at all.
+                (col_width, 0)
+            }
+        } else {
+            (main_text_width, desc_total_width)
+        };
+
+        let mut spans: Vec<Span<'static>> = if main_col_width < main_text_width {
+            middle_truncate_spans(&self.spans, main_col_width)
         } else {
             self.spans.clone()
         };
@@ -182,11 +248,18 @@ impl SuggestionFormatted {
                 .collect();
         }
 
-        let rendered_len = vec_spans_width(&spans);
+        let rendered_main_len = vec_spans_width(&spans);
 
+        // Append description if there is space for it.
+        if desc_col_width > 0 && !self.description_spans.is_empty() {
+            spans.push(Span::raw(Self::DESCRIPTION_SEPARATOR));
+            spans.extend(self.description_spans.clone());
+        }
+
+        let rendered_total = rendered_main_len + desc_col_width;
         let mut result = spans;
         result.push(Span::raw(
-            " ".repeat(col_width.saturating_sub(rendered_len)),
+            " ".repeat(col_width.saturating_sub(rendered_total)),
         ));
         result
     }
@@ -233,6 +306,118 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod description_tests {
+    use super::*;
+
+    #[test]
+    fn split_no_tab() {
+        let (text, frames) = split_completion_description("hello");
+        assert_eq!(text, "hello");
+        assert!(frames.is_empty());
+    }
+
+    #[test]
+    fn split_single_tab_gives_one_frame() {
+        let (text, frames) = split_completion_description("hello\tworld");
+        assert_eq!(text, "hello");
+        assert_eq!(frames, vec!["world".to_string()]);
+    }
+
+    #[test]
+    fn split_multiple_tabs_give_multiple_frames() {
+        let (text, frames) = split_completion_description("opt\tframe1\tframe2\tframe3");
+        assert_eq!(text, "opt");
+        assert_eq!(
+            frames,
+            vec![
+                "frame1".to_string(),
+                "frame2".to_string(),
+                "frame3".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn match_text_raw_strips_description() {
+        let item = UnprocessedSuggestion::Raw {
+            raw_text: "git-commit\tRecord changes".to_string(),
+            expanded_path: None,
+            flags: crate::bash_funcs::CompletionFlags::default(),
+            word_under_cursor: "git".to_string(),
+        };
+        assert_eq!(item.match_text(), "git-commit");
+    }
+
+    #[test]
+    fn match_text_raw_no_tab_unchanged() {
+        let item = UnprocessedSuggestion::Raw {
+            raw_text: "git-commit".to_string(),
+            expanded_path: None,
+            flags: crate::bash_funcs::CompletionFlags::default(),
+            word_under_cursor: "git".to_string(),
+        };
+        assert_eq!(item.match_text(), "git-commit");
+    }
+
+    #[test]
+    fn suggestion_with_description_formatted_omits_description() {
+        // formatted() must only include what gets inserted (s + prefix + suffix).
+        let sug =
+            Suggestion::new("cmd", "", " ").with_description(vec!["description text".to_string()]);
+        assert_eq!(sug.formatted(), "cmd ");
+        assert!(!sug.formatted().contains("description"));
+    }
+
+    #[test]
+    fn description_frame_cycling() {
+        let sug = Suggestion::new("x", "", "").with_description(vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]);
+        let palette = crate::palette::Palette::default();
+        let text_of = |spans: &[Span<'static>]| -> String {
+            spans.iter().map(|s| s.content.as_ref()).collect()
+        };
+
+        let f0 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 0);
+        let f1 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 1);
+        let f2 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 2);
+        // Frame 3 wraps back to frame 0.
+        let f3 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 3);
+
+        assert_eq!(text_of(&f0.description_spans), "a");
+        assert_eq!(text_of(&f1.description_spans), "b");
+        assert_eq!(text_of(&f2.description_spans), "c");
+        assert_eq!(text_of(&f3.description_spans), "a");
+    }
+
+    #[test]
+    fn display_width_stable_across_frames() {
+        let sug = Suggestion::new("abc", "", "").with_description(vec![
+            "short".to_string(),
+            "a much longer description".to_string(),
+        ]);
+        let palette = crate::palette::Palette::default();
+        let fw0 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 0).display_width;
+        let fw1 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 1).display_width;
+        // display_width must not change between frames.
+        assert_eq!(fw0, fw1);
+        // display_width = "abc".len() + separator(2) + max("short", "a much longer description").len()
+        let expected = "abc".len() + 2 + "a much longer description".len();
+        assert_eq!(fw0, expected);
+    }
+
+    #[test]
+    fn no_description_display_width_equals_text_width() {
+        let sug = Suggestion::new("hello", "", "");
+        let palette = crate::palette::Palette::default();
+        let fw = SuggestionFormatted::new(&sug, 0, vec![], &palette, 0).display_width;
+        assert_eq!(fw, "hello".len());
+    }
+}
+
 impl Suggestion {
     pub fn new<S: Into<String>, P: Into<String>, X: Into<String>>(
         s: S,
@@ -244,7 +429,15 @@ impl Suggestion {
             prefix: prefix.into(),
             suffix: suffix.into(),
             style: None,
+            description: vec![],
         }
+    }
+
+    /// Set the description frames on this suggestion (tab-separated segments from the raw
+    /// completion string that are shown as a visual suffix but not inserted).
+    pub fn with_description(mut self, description: Vec<String>) -> Self {
+        self.description = description;
+        self
     }
 
     /// Set an optional display style (e.g. derived from `LS_COLORS`) on this suggestion.
@@ -310,10 +503,16 @@ pub enum UnprocessedSuggestion {
 
 impl UnprocessedSuggestion {
     /// The text used for fuzzy matching and sorting.
+    ///
+    /// For `Raw` items, only the text up to the first tab character is considered
+    /// (the remainder is a display-only description).
     pub fn match_text(&self) -> &str {
         match self {
             UnprocessedSuggestion::Ready(s) => &s.s,
-            UnprocessedSuggestion::Raw { raw_text, .. } => raw_text,
+            UnprocessedSuggestion::Raw { raw_text, .. } => raw_text
+                .split_once('\t')
+                .map(|(text, _)| text)
+                .unwrap_or(raw_text),
         }
     }
 
@@ -337,21 +536,43 @@ impl UnprocessedSuggestion {
     }
 }
 
+/// Split a raw completion string into the completion text and description frames.
+///
+/// Any tab characters in `raw` serve as separators: the text before the first
+/// tab is the value that gets inserted; each subsequent tab-separated segment
+/// is one frame of the animated description.
+pub(crate) fn split_completion_description(raw: &str) -> (&str, Vec<String>) {
+    match raw.split_once('\t') {
+        None => (raw, vec![]),
+        Some((text, rest)) => {
+            let frames: Vec<String> = rest.split('\t').map(|s| s.to_owned()).collect();
+            (text, frames)
+        }
+    }
+}
+
 /// Post-process a single raw completion string into a [`Suggestion`].
 ///
 /// This performs quoting, filesystem checks (`is_dir`, `style_for_path`), and
 /// suffix computation.  Expensive for filenames due to syscalls; call lazily.
+///
+/// If `sug` contains tab characters the text before the first tab is the
+/// completion value; the remaining tab-separated segments are description
+/// frames that are displayed as a visual suffix but never inserted.
 pub fn post_process_completion(
     sug: &str,
     path_to_use: Option<&std::path::Path>,
     comp_resultflags: bash_funcs::CompletionFlags,
     word_under_cursor: &str,
 ) -> Suggestion {
+    // Split off the description frames (tab-separated segments after the text).
+    let (sug_text, description) = split_completion_description(sug);
+
     let quoted = if comp_resultflags.filename_quoting_desired
         && comp_resultflags.filename_completion_desired
     {
         if !word_under_cursor.is_empty()
-            && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
+            && let Some(new_suffix) = sug_text.strip_prefix(word_under_cursor)
         {
             let quoted_suffix = bash_funcs::quote_function_rust(
                 new_suffix,
@@ -359,16 +580,23 @@ pub fn post_process_completion(
             );
             format!("{}{}", word_under_cursor, quoted_suffix)
         } else {
-            bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
+            bash_funcs::quote_function_rust(
+                sug_text,
+                comp_resultflags.quote_type.unwrap_or_default(),
+            )
         }
     } else {
-        sug.to_string()
+        sug_text.to_string()
     };
 
     let suffix = if comp_resultflags.no_suffix_desired {
         None
     } else if comp_resultflags.suffix_character == ' ' {
-        if sug.ends_with(" ") { None } else { Some(' ') }
+        if sug_text.ends_with(" ") {
+            None
+        } else {
+            Some(' ')
+        }
     } else {
         Some(comp_resultflags.suffix_character)
     };
@@ -378,7 +606,7 @@ pub fn post_process_completion(
         let path = match path_to_use {
             Some(p) => p,
             None => {
-                owned_path = std::path::PathBuf::from(bash_funcs::fully_expand_path(sug));
+                owned_path = std::path::PathBuf::from(bash_funcs::fully_expand_path(sug_text));
                 &owned_path
             }
         };
@@ -395,7 +623,7 @@ pub fn post_process_completion(
     };
 
     let suffix_str = suffix.map(|f| f.to_string()).unwrap_or_default();
-    let suggestion = Suggestion::new(appended, "", &suffix_str);
+    let suggestion = Suggestion::new(appended, "", &suffix_str).with_description(description);
     match ls_style {
         Some(style) => suggestion.with_style(style),
         None => suggestion,
@@ -602,6 +830,12 @@ impl ActiveSuggestions {
             return vec![];
         }
 
+        // Compute the animation frame index at 24 fps from the current wall-clock time.
+        let frame_index: usize = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| (d.as_millis() / (1000 / 24)) as usize)
+            .unwrap_or(0);
+
         let mut grid: Vec<(Vec<(SuggestionFormatted, bool)>, usize, bool)> = vec![];
         let mut total_width: usize = 0;
 
@@ -629,6 +863,7 @@ impl ActiveSuggestions {
                         fi.suggestion_idx,
                         fi.matching_indices.clone(),
                         palette,
+                        frame_index,
                     );
                     let is_selected = filtered_idx == selected_1d;
                     (formatted, is_selected)

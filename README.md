@@ -174,6 +174,8 @@ Examples:
   flyline create-prompt-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
   flyline create-prompt-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
 
+See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
+
 Usage: flyline create-prompt-anim [OPTIONS] --name <NAME> [FRAMES]...
 
 Arguments:
@@ -222,13 +224,22 @@ passed through Bash's `decode_prompt_string` so Bash prompt escape sequences
 # Non-blocking (default): spawns the command in the background; shows a
 # placeholder of 10 spaces while the command is running.
 flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
-  --command 'run_slow_git_metrics.sh' --placeholder-length 10
+  --command 'run_slow_git_metrics.sh' --placeholder 10
 # PS1 usage:
 PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 
+# Non-blocking with 'prev' placeholder: shows the previous output while
+# the new output is being computed.
+flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
+  --command 'run_slow_git_metrics.sh' --placeholder prev
+
 # Blocking: waits for the command to finish before showing the prompt.
 flyline create-prompt-widget custom --name CUSTOM_WIDGET2 \
-  --command 'run_something.sh' --blocking
+  --command 'run_something.sh' --block
+
+# Blocking with a timeout of 500 ms; falls back to placeholder if slower.
+flyline create-prompt-widget custom --name CUSTOM_WIDGET3 \
+  --command 'run_slow.sh --flag' --block 500 --placeholder prev
 ```
 
 
@@ -343,6 +354,7 @@ Commands:
   stream-logs           Dump current logs to PATH and append new logs.
   run-tutorial          Run the interactive tutorial for first-time users.
   completion-synthesis  Read a --help string from stdin, parse it into a command structure,
+                        and print a Bash completion script to stdout.
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
@@ -373,16 +385,13 @@ Options:
           [possible values: true, false]
 
       --matrix-animation [<MATRIX_ANIMATION>]
-          Run matrix animation in the terminal background. Use `on` to always show it, `off` to
-          disable it, or an integer number of seconds to show it after that many seconds of
-          inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a
-          value is equivalent to `on`.
+          Run matrix animation in the terminal background. Use `on` to always show it, `off` to disable it, or an integer number of seconds to show it after that many seconds of inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a value is equivalent to `on`
 
       --frame-rate <FPS>
           Render frame rate in frames per second (1–120, default 30)
 
       --mouse-mode <MODE>
-          Mouse capture mode (disabled, simple, smart). Default is smart.
+          Mouse capture mode (disabled, simple, smart). Default is smart
 
           Possible values:
           - disabled: Never capture mouse events
@@ -391,8 +400,11 @@ Options:
 
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
           Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
-          
-          [possible values: none, only-prompt-pos, full]
+
+          Possible values:
+          - none:            Send no shell integration codes
+          - only-prompt-pos: Only send the escape codes that report prompt start/end positions
+          - full:            Send the full set of shell integration codes: prompt positions, execution start/end codes, and cursor-position reporting.  This is the default
 
   -h, --help
           Print help (see a summary with '-h')

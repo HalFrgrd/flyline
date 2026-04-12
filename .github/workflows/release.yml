@@ -134,9 +134,53 @@ jobs:
           version="${{ needs.create-release.outputs.version }}"
           gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
 
+  build-release-macos-pre-bash-4-4:
+    name: Build pre_bash_4_4 (${{ matrix.target }})
+    needs: create-release
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build ${{ matrix.target }} with pre_bash_4_4 feature
+        run: cargo build --release --target ${{ matrix.target }} --features pre_bash_4_4
+
+      - name: Prepare release artifact
+        run: |
+          ARCHIVE="libflyline-${{ github.ref_name }}-${{ matrix.target }}_pre_bash_4_4"
+          echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
+
+      - name: Build archive (macOS pre_bash_4_4)
+        shell: bash
+        run: |
+          tar czf "$ARCHIVE.tar.gz" -C "target/${{ matrix.target }}/release" libflyline.dylib
+          shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
+          echo "ASSET=$ARCHIVE.tar.gz" >> $GITHUB_ENV
+          echo "ASSET_SUM=$ARCHIVE.tar.gz.sha256" >> $GITHUB_ENV
+
+      - name: Upload release archive
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          version="${{ needs.create-release.outputs.version }}"
+          gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
+
   publish-release:
     name: publish-release
-    needs: [create-release, build-release, build-release-macos]
+    needs: [create-release, build-release, build-release-macos, build-release-macos-pre-bash-4-4]
     runs-on: ubuntu-latest
     steps:
       - name: Mark release as prerelease
@@ -157,4 +201,4 @@ jobs:
         env:
           FLYLINE_RELEASE_VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          docker buildx bake -f docker/docker-bake.hcl install-test-alpine install-test-ubuntu
+          docker buildx bake -f docker/docker-bake.hcl install-test-alpine install-test-ubuntu install-test-bash-3-2-57

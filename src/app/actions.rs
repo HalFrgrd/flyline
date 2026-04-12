@@ -1067,6 +1067,12 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         Scope::Any,
         |app, _key| app.buffer.move_one_word_left(WordDelim::WhiteSpace),
     ),
+    Action::new(
+        "move_left_one_word_fine_grained",
+        "Move one word left, stopping at punctuation or path segment boundaries",
+        Scope::Any,
+        |app, _key| app.buffer.move_one_word_left_fine_grained(),
+    ),
     Action::new("move_left", "Move cursor left", Scope::Any, |app, _key| {
         if app.buffer.cursor_byte_pos() == 0 && app.prompt_manager.cwd_display_segment_count() > 0 {
             app.content_mode = ContentMode::PromptDirSelect(0);
@@ -1085,6 +1091,12 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Move one word right, using whitespace as delimiter",
         Scope::Any,
         |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
+    ),
+    Action::new(
+        "move_right_one_word_fine_grained",
+        "Move one word right, stopping at punctuation or path segment boundaries",
+        Scope::Any,
+        |app, _key| app.buffer.move_one_word_right_fine_grained(),
     ),
     Action::new(
         "move_right",
@@ -1284,7 +1296,7 @@ pub fn possible_action_names() -> PossibleValuesParser {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 58]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
@@ -1458,9 +1470,15 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 58]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &expand_variations!["Ctrl+Left", "Alt+Left"], // Emacs-style. ghostty sends this for Alt+Left by default
+            &["Ctrl+Left"], // Emacs-style whitespace word-left
             Scope::Any,
             "move_left_one_word_whitespace",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Alt+Left"], // Fine-grained word-left (stops at punctuation / path boundaries)
+            Scope::Any,
+            "move_left_one_word_fine_grained",
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
@@ -1479,9 +1497,15 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 58]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &expand_variations!["Ctrl+Right", "Alt+Right"], // Emacs-style. ghostty sends Alt+Right as Meta+Right by default
+            &["Ctrl+Right"], // Emacs-style whitespace word-right
             Scope::Any,
             "move_right_one_word_whitespace",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Alt+Right"], // Fine-grained word-right (stops at punctuation / path boundaries)
+            Scope::Any,
+            "move_right_one_word_fine_grained",
         )
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
