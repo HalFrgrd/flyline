@@ -527,33 +527,23 @@ pub(crate) fn split_completion_description(raw: &str) -> (&str, Vec<String>) {
 /// This performs quoting, filesystem checks (`is_dir`, `style_for_path`), and
 /// suffix computation.  Expensive for filenames due to syscalls; call lazily.
 ///
-/// If `sug` contains tab characters the text before the first tab is the
+/// If `raw_sug` contains tab characters the text before the first tab is the
 /// completion value; the remaining tab-separated segments are treated as
 /// animation frames for the description (used when no higher-priority
 /// description type applies).
-///
-/// **Description priority** (highest first):
-/// 1. [`SuggestionDescription::LastMTime`] — when `filename_completion_desired`
-///    is set and the file's mtime is obtainable.
-/// 2. [`SuggestionDescription::EasingFunc`] — when the suggestion text matches
-///    one of the [`CursorEasing`] value names.
-/// 3. [`SuggestionDescription::Animation`] — when there are tab-separated
-///    description frames in the raw completion string.
-/// 4. [`SuggestionDescription::Static`] (empty) — fallback.
 pub fn post_process_completion(
-    sug: &str,
+    raw_sug: &str,
     path_to_use: Option<&std::path::Path>,
     comp_resultflags: bash_funcs::CompletionFlags,
     word_under_cursor: &str,
 ) -> Suggestion {
-    // Split off the description frames (tab-separated segments after the text).
-    let (sug_text, tab_frames) = split_completion_description(sug);
+    let (sug, desc_frames) = split_completion_description(raw_sug);
 
     let quoted = if comp_resultflags.filename_quoting_desired
         && comp_resultflags.filename_completion_desired
     {
         if !word_under_cursor.is_empty()
-            && let Some(new_suffix) = sug_text.strip_prefix(word_under_cursor)
+            && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
         {
             let quoted_suffix = bash_funcs::quote_function_rust(
                 new_suffix,
@@ -561,29 +551,22 @@ pub fn post_process_completion(
             );
             format!("{}{}", word_under_cursor, quoted_suffix)
         } else {
-            bash_funcs::quote_function_rust(
-                sug_text,
-                comp_resultflags.quote_type.unwrap_or_default(),
-            )
+            bash_funcs::quote_function_rust(sug, comp_resultflags.quote_type.unwrap_or_default())
         }
     } else {
-        sug_text.to_string()
+        sug.to_string()
     };
 
     log::debug!(
-        "Post-processing completion: raw={:?}, quoted={:?}",
-        sug,
+        "Post-processing completion: raw_sug={:?}, quoted={:?}",
+        raw_sug,
         quoted
     );
 
-    let suffix = if comp_resultflags.no_suffix_desired {
+    let suffix_char = if comp_resultflags.no_suffix_desired {
         None
     } else if comp_resultflags.suffix_character == ' ' {
-        if sug_text.ends_with(" ") {
-            None
-        } else {
-            Some(' ')
-        }
+        if sug.ends_with(" ") { None } else { Some(' ') }
     } else {
         Some(comp_resultflags.suffix_character)
     };
@@ -593,7 +576,7 @@ pub fn post_process_completion(
         let path = match path_to_use {
             Some(p) => p,
             None => {
-                owned_path = std::path::PathBuf::from(bash_funcs::fully_expand_path(sug_text));
+                owned_path = std::path::PathBuf::from(bash_funcs::fully_expand_path(sug));
                 &owned_path
             }
         };
@@ -601,7 +584,7 @@ pub fn post_process_completion(
         let appended = if path.is_dir() {
             (format!("{}/", quoted), None)
         } else {
-            (quoted, suffix)
+            (quoted, suffix_char)
         };
         let ls_style = bash_funcs::style_for_path(path);
         // Read the file's mtime for the LastMTime description.
@@ -613,7 +596,7 @@ pub fn post_process_completion(
             .map(|d| d.as_secs());
         (appended.0, appended.1, ls_style, mtime)
     } else {
-        (quoted, suffix, None, None)
+        (quoted, suffix_char, None, None)
     };
 
     // Determine description type by priority:
@@ -623,10 +606,10 @@ pub fn post_process_completion(
     // 4. Static (empty — no description)
     let description = if let Some(ts) = mtime {
         SuggestionDescription::LastMTime(ts)
-    } else if let Some(easing) = CursorEasing::try_from_value_name(sug_text) {
+    } else if let Some(easing) = CursorEasing::try_from_value_name(sug) {
         SuggestionDescription::Animation(easing_animation_frames(easing))
-    } else if !tab_frames.is_empty() {
-        SuggestionDescription::Animation(tab_frames)
+    } else if !desc_frames.is_empty() {
+        SuggestionDescription::Animation(desc_frames)
     } else {
         SuggestionDescription::Static(String::new())
     };
