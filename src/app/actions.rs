@@ -1712,6 +1712,84 @@ impl KeyEventMatch {
     }
 }
 
+/// Returns `true` if `a` and `b` can both be triggered by the same physical
+/// key press, i.e. there exists a [`KeyEvent`] that would cause both patterns
+/// to return `true` from [`Binding::matches`].
+fn key_event_match_overlaps(a: &KeyEventMatch, b: &KeyEventMatch) -> bool {
+    match (a, b) {
+        // Two exact patterns overlap when they share the same key code.
+        // The `matches` predicate uses `key.modifiers.contains(binding.modifiers)`,
+        // so pressing a key with the union of both modifier sets satisfies both.
+        (KeyEventMatch::Exact(ea), KeyEventMatch::Exact(eb)) => ea.code == eb.code,
+        // Any two AnyCharAndMods patterns overlap: a char key pressed with the
+        // union of any modifier from each side satisfies both.
+        (KeyEventMatch::AnyCharAndMods(_), KeyEventMatch::AnyCharAndMods(_)) => true,
+        // AnyCharAndMods overlaps with an Exact char pattern, but not with a
+        // non-char key (e.g. Enter, Tab) since AnyCharAndMods only fires on chars.
+        (KeyEventMatch::AnyCharAndMods(_), KeyEventMatch::Exact(e))
+        | (KeyEventMatch::Exact(e), KeyEventMatch::AnyCharAndMods(_)) => {
+            matches!(e.code, KeyCode::Char(_))
+        }
+    }
+}
+
+/// A key-binding conflict: a lower-priority binding that can never be reached
+/// because a higher-priority binding always fires first.
+struct Conflict {
+    /// Human-readable display of the key event that is inaccessible.
+    key_display: String,
+    /// `scoped_action_name()` of the inaccessible (shadowed) binding.
+    inaccessible_action: String,
+    /// `scoped_action_name()` of the higher-priority binding that shadows it.
+    shadowing_action: String,
+}
+
+/// Scan the combined set of bindings (user overrides + defaults) and return
+/// every case where a lower-priority binding is permanently shadowed.
+///
+/// Two conflict patterns are detected:
+/// 1. A `Scope::Any` binding has higher priority than a scoped binding for the
+///    same key.  Because `Any` is always active, the scoped binding can never
+///    be reached.
+/// 2. Two bindings in the *same* scope share the same key code.  Only the
+///    higher-priority one will ever fire.
+fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) -> Vec<Conflict> {
+    // Collect all bindings highest-priority-first, mirroring `handle_key_event`.
+    let all_bindings: Vec<&Binding> = user_bindings
+        .iter()
+        .rev()
+        .chain(DEFAULT_BINDINGS.iter())
+        .collect();
+
+    let mut conflicts = Vec::new();
+
+    for (idx_b, binding_b) in all_bindings.iter().enumerate() {
+        for kem_b in &binding_b.key_events {
+            // Check whether any higher-priority binding shadows this key event.
+            'find_shadow: for binding_a in &all_bindings[..idx_b] {
+                let shadows = (binding_a.action.scope == Scope::Any
+                    && binding_b.action.scope != Scope::Any)
+                    || (binding_a.action.scope == binding_b.action.scope);
+                if !shadows {
+                    continue;
+                }
+                for kem_a in &binding_a.key_events {
+                    if key_event_match_overlaps(kem_a, kem_b) {
+                        conflicts.push(Conflict {
+                            key_display: kem_b.display_with_remapping(remappings),
+                            inaccessible_action: binding_b.action.scoped_action_name(),
+                            shadowing_action: binding_a.action.scoped_action_name(),
+                        });
+                        break 'find_shadow;
+                    }
+                }
+            }
+        }
+    }
+
+    conflicts
+}
+
 /// Print all keybindings as a formatted table to stdout, ordered from lowest
 /// to highest priority.  User-defined bindings appear above the defaults and
 /// are marked with `*` in the rightmost column.
@@ -1818,6 +1896,26 @@ pub fn print_bindings_table(
                     );
                 }
             }
+        }
+    }
+
+    // Detect and print key-binding conflicts.
+    let conflicts = detect_binding_conflicts(user_bindings, remappings);
+    if !conflicts.is_empty() {
+        println!("\nKey Binding Conflicts:");
+        let use_color = std::io::IsTerminal::is_terminal(&std::io::stdout());
+        for conflict in &conflicts {
+            // "INACCESSIBLE: key" formatted as blinking white on red.
+            let label = format!("INACCESSIBLE: {}", conflict.key_display);
+            let styled_label = if use_color {
+                format!("\x1b[5;37;41m{}\x1b[0m", label)
+            } else {
+                label
+            };
+            println!(
+                "  {}  ({} shadowed by {})",
+                styled_label, conflict.inaccessible_action, conflict.shadowing_action
+            );
         }
     }
 }
@@ -2153,5 +2251,124 @@ mod tests {
         assert_eq!(parse_single_modifier("gui").unwrap(), KeyModifiers::SUPER);
         assert_eq!(parse_single_modifier("option").unwrap(), KeyModifiers::ALT);
         assert_eq!(parse_single_modifier("hyper").unwrap(), KeyModifiers::HYPER);
+    }
+
+    // --- key_event_match_overlaps ---
+
+    #[test]
+    fn test_overlap_exact_same_key() {
+        let a = KeyEventMatch::Exact(key(KeyCode::Tab));
+        let b = KeyEventMatch::Exact(key(KeyCode::Tab));
+        assert!(key_event_match_overlaps(&a, &b));
+    }
+
+    #[test]
+    fn test_overlap_exact_different_keys() {
+        let a = KeyEventMatch::Exact(key(KeyCode::Tab));
+        let b = KeyEventMatch::Exact(key(KeyCode::Enter));
+        assert!(!key_event_match_overlaps(&a, &b));
+    }
+
+    #[test]
+    fn test_overlap_exact_same_key_different_modifiers() {
+        let a = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('a'), KeyModifiers::ALT));
+        assert!(key_event_match_overlaps(&a, &b));
+    }
+
+    #[test]
+    fn test_overlap_anychar_and_anychar() {
+        let a = KeyEventMatch::AnyCharAndMods(vec![KeyModifiers::empty()]);
+        let b = KeyEventMatch::AnyCharAndMods(vec![KeyModifiers::CONTROL]);
+        assert!(key_event_match_overlaps(&a, &b));
+    }
+
+    #[test]
+    fn test_overlap_anychar_and_exact_char() {
+        let a = KeyEventMatch::AnyCharAndMods(vec![KeyModifiers::empty()]);
+        let b = KeyEventMatch::Exact(key(KeyCode::Char('q')));
+        assert!(key_event_match_overlaps(&a, &b));
+        assert!(key_event_match_overlaps(&b, &a));
+    }
+
+    #[test]
+    fn test_overlap_anychar_and_exact_nonchar() {
+        let a = KeyEventMatch::AnyCharAndMods(vec![KeyModifiers::empty()]);
+        let b = KeyEventMatch::Exact(key(KeyCode::Tab));
+        assert!(!key_event_match_overlaps(&a, &b));
+        assert!(!key_event_match_overlaps(&b, &a));
+    }
+
+    // --- detect_binding_conflicts ---
+
+    #[test]
+    fn test_detect_conflict_any_shadows_scoped() {
+        // A Scope::Any binding with higher priority than a FuzzyHistorySearch binding
+        // for the same key → conflict.
+        let user_bindings = vec![
+            Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
+            Binding::try_new(&["Tab"], Scope::Any, "run_tab_completion").unwrap(),
+        ];
+        let conflicts = detect_binding_conflicts(&user_bindings, &[]);
+        // The last element (highest priority user binding) is Any::run_tab_completion.
+        // It shadows FuzzyHistorySearch::accept_and_edit.
+        assert!(
+            conflicts
+                .iter()
+                .any(|c| c.inaccessible_action.contains("accept_and_edit")
+                    && c.shadowing_action.contains("run_tab_completion")),
+            "expected Any::run_tab_completion to shadow FuzzyHistorySearch::accept_and_edit"
+        );
+    }
+
+    #[test]
+    fn test_detect_conflict_same_scope_duplicate() {
+        // Two Scope::Any bindings for the same key → lower-priority one is inaccessible.
+        let user_bindings = vec![
+            Binding::try_new(&["Ctrl+x"], Scope::Any, "undo").unwrap(),
+            Binding::try_new(&["Ctrl+x"], Scope::Any, "redo").unwrap(),
+        ];
+        let conflicts = detect_binding_conflicts(&user_bindings, &[]);
+        // redo has higher priority (last in vec → first after .rev()); undo is shadowed.
+        assert!(
+            conflicts
+                .iter()
+                .any(|c| c.inaccessible_action.contains("undo")
+                    && c.shadowing_action.contains("redo")),
+            "expected redo to shadow undo for Ctrl+x"
+        );
+    }
+
+    #[test]
+    fn test_no_conflict_scoped_before_any() {
+        // A FuzzyHistorySearch binding at higher priority than an Any binding for the
+        // same key is not a conflict (this is the normal intended pattern).
+        let user_bindings = vec![
+            Binding::try_new(&["Tab"], Scope::Any, "run_tab_completion").unwrap(),
+            Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
+        ];
+        let conflicts = detect_binding_conflicts(&user_bindings, &[]);
+        // The FuzzyHistorySearch binding (higher priority) does NOT shadow the Any binding
+        // in a problematic way — scoped bindings shadowing Any is expected behaviour.
+        assert!(
+            !conflicts
+                .iter()
+                .any(|c| c.inaccessible_action.contains("run_tab_completion")
+                    && c.shadowing_action.contains("accept_and_edit")),
+            "scoped shadowing Any is not a conflict"
+        );
+    }
+
+    #[test]
+    fn test_detect_conflicts_default_bindings_include_esc() {
+        // The default bindings include two Scope::Any Esc bindings; the second
+        // (toggle_mouse) is shadowed by the first (escape_to_normal_mode).
+        let conflicts = detect_binding_conflicts(&[], &[]);
+        assert!(
+            conflicts.iter().any(|c| c.key_display.contains("Esc")
+                && c.inaccessible_action.contains("toggle_mouse")
+                && c.shadowing_action.contains("escape_to_normal_mode")),
+            "expected Esc any::toggle_mouse to be shadowed by any::escape_to_normal_mode"
+        );
     }
 }
