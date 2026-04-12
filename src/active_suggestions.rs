@@ -485,7 +485,7 @@ impl UnprocessedSuggestion {
 
     /// Produce the fully processed [`Suggestion`], running post-processing
     /// for `Raw` items or returning the existing suggestion for `Ready` items.
-    pub fn to_suggestion(&self) -> Suggestion {
+    pub fn to_suggestion(&mut self) -> Suggestion {
         match self {
             UnprocessedSuggestion::Ready(s) => s.clone(),
             UnprocessedSuggestion::Raw {
@@ -493,12 +493,16 @@ impl UnprocessedSuggestion {
                 expanded_path,
                 flags,
                 word_under_cursor,
-            } => post_process_completion(
-                raw_text,
-                expanded_path.as_deref(),
-                *flags,
-                word_under_cursor,
-            ),
+            } => {
+                let processed = post_process_completion(
+                    raw_text,
+                    expanded_path.as_deref(),
+                    *flags,
+                    word_under_cursor,
+                );
+                *self = UnprocessedSuggestion::Ready(processed.clone());
+                processed
+            }
         }
     }
 }
@@ -565,6 +569,12 @@ pub fn post_process_completion(
     } else {
         sug_text.to_string()
     };
+
+    log::debug!(
+        "Post-processing completion: raw={:?}, quoted={:?}",
+        sug,
+        quoted
+    );
 
     let suffix = if comp_resultflags.no_suffix_desired {
         None
@@ -851,9 +861,7 @@ impl ActiveSuggestions {
         self.col_window_to_show.move_index_to(self.selected_col);
 
         // First round: try and fit as many columns as possible with their full untruncated width.
-        for (local_idx, col_idx) in
-            (self.col_window_to_show.get_window_range().start..=max_col_index).enumerate()
-        {
+        for col_idx in self.col_window_to_show.get_window_range().start..=max_col_index {
             // Build the column, processing each item lazily.
             let start = col_idx * max_rows;
             let end = (start + max_rows).min(n);
@@ -861,7 +869,7 @@ impl ActiveSuggestions {
                 .map(|filtered_idx| {
                     let fi: &FilteredItem = &self.filtered_suggestions[filtered_idx];
                     let unprocessed_suggestion =
-                        &self.all_unprocessed_suggestions[fi.suggestion_idx];
+                        &mut self.all_unprocessed_suggestions[fi.suggestion_idx];
                     let suggestion = unprocessed_suggestion.to_suggestion();
                     let formatted = SuggestionFormatted::new(
                         &suggestion,
@@ -898,7 +906,6 @@ impl ActiveSuggestions {
         }
 
         // Second round, try not to truncate the selected column, and truncate other columns if needed to fit within max_width.
-
         let mut total_width = 0;
 
         let final_grid = grid
@@ -961,6 +968,13 @@ impl ActiveSuggestions {
     pub fn apply_fuzzy_filter(&mut self, new_word_under_cursor: SubString) {
         self.word_under_cursor = new_word_under_cursor.clone();
 
+        let dequoted = bash_funcs::dequoting_function_rust(&self.word_under_cursor.s);
+        log::debug!(
+            "Applying fuzzy filter with pattern {:?} on {} suggestions",
+            dequoted,
+            self.all_unprocessed_suggestions.len()
+        );
+
         // Score and filter suggestions using the stored matcher
         let mut scored: Vec<(i64, FilteredItem)> = self
             .all_unprocessed_suggestions
@@ -968,7 +982,7 @@ impl ActiveSuggestions {
             .enumerate()
             .filter_map(|(idx, item): (usize, &UnprocessedSuggestion)| {
                 self.fuzzy_matcher
-                    .fuzzy_indices(item.match_text(), &new_word_under_cursor.s)
+                    .fuzzy_indices(item.match_text(), &dequoted)
                     .map(|(score, indices)| {
                         (
                             score,
@@ -996,13 +1010,14 @@ impl ActiveSuggestions {
     }
 
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
-        match self.all_unprocessed_suggestions.as_slice() {
+        match self.all_unprocessed_suggestions.as_mut_slice() {
             [] => {
                 log::debug!("No completions found. all_unprocessed_suggestions is empty");
                 return None;
             }
             [single_suggestion] => {
-                self.accept_item(single_suggestion, buffer);
+                let suggestion = single_suggestion.to_suggestion();
+                self.accept_item(&suggestion, buffer);
                 log::debug!("Only one completion found: auto-accepted");
                 return None;
             }
@@ -1013,7 +1028,7 @@ impl ActiveSuggestions {
             [] => {
                 log::debug!("No completions found. filtered_suggestions is empty");
                 log::debug!(
-                    "all_unprocessed_suggestions: {:?}",
+                    "all_unprocessed_suggestions: {:#?}",
                     self.all_unprocessed_suggestions
                 );
                 None
@@ -1045,11 +1060,14 @@ impl ActiveSuggestions {
             }
         };
 
-        let completion_item = match self
+        match self
             .all_unprocessed_suggestions
-            .get(filtered_item.suggestion_idx)
+            .get_mut(filtered_item.suggestion_idx)
         {
-            Some(s) => s,
+            Some(s) => {
+                let suggestion = s.to_suggestion();
+                self.accept_item(&suggestion, buffer);
+            }
             None => {
                 log::warn!(
                     "Suggestion index {} out of bounds (len={})",
@@ -1059,14 +1077,10 @@ impl ActiveSuggestions {
                 return;
             }
         };
-
-        self.accept_item(completion_item, buffer);
     }
 
-    fn accept_item(&self, item: &UnprocessedSuggestion, buffer: &mut TextBuffer) {
-        let suggestion = item.to_suggestion();
-        if let Err(e) =
-            buffer.replace_word_under_cursor(&suggestion.formatted(), &self.word_under_cursor)
+    fn accept_item(&self, item: &Suggestion, buffer: &mut TextBuffer) {
+        if let Err(e) = buffer.replace_word_under_cursor(&item.formatted(), &self.word_under_cursor)
         {
             log::error!("Failed to apply suggestion: {}", e);
         }

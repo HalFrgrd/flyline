@@ -346,16 +346,16 @@ fn gen_secondary_completions(
             // Unlike other completions, if there are multiple glob completions,
             // we join them with spaces and insert them all at once.
             // Process each item eagerly here since we need the final text.
-            let completions_as_string = completions.iter().map(|item| item.to_suggestion().s).fold(
-                String::new(),
-                |mut acc, s| {
+            let completions_as_string = completions
+                .into_iter()
+                .map(|mut item| item.to_suggestion().s)
+                .fold(String::new(), |mut acc, s| {
                     if !acc.is_empty() {
                         acc.push(' ');
                     }
                     acc.push_str(&s);
                     acc
-                },
-            );
+                });
             if completions_as_string.is_empty() {
                 log::debug!(
                     "No glob expansion completions found for pattern: {}",
