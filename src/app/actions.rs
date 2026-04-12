@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
-    Any,
+    Default,
     FuzzyHistorySearch,
     TabCompletionWaiting,
     TabCompletion,
@@ -24,7 +24,7 @@ pub enum Scope {
 impl Scope {
     pub fn is_active(&self, app: &App) -> bool {
         match self {
-            Scope::Any => true,
+            Scope::Default => true,
             Scope::FuzzyHistorySearch => matches!(
                 app.content_mode,
                 crate::app::ContentMode::FuzzyHistorySearch(_)
@@ -64,7 +64,7 @@ impl Scope {
 impl AsRef<str> for Scope {
     fn as_ref(&self) -> &str {
         match self {
-            Scope::Any => "any",
+            Scope::Default => "default",
             Scope::FuzzyHistorySearch => "fuzzy_history_search",
             Scope::TabCompletionWaiting => "tab_completion_waiting",
             Scope::TabCompletion => "tab_completion",
@@ -82,7 +82,7 @@ impl TryFrom<&str> for Scope {
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         match s.to_lowercase().as_str() {
-            "any" => Ok(Scope::Any),
+            "default" => Ok(Scope::Default),
             "fuzzy_history_search" => Ok(Scope::FuzzyHistorySearch),
             "tab_completion_waiting" => Ok(Scope::TabCompletionWaiting),
             "tab_completion" => Ok(Scope::TabCompletion),
@@ -599,11 +599,11 @@ macro_rules! expand_variations {
 /// ```ignore
 /// expand_actions![
 ///     // ordinary action — one scope already baked in
-///     Action::new("name", "desc", Scope::Any, |app, _key| { /* … */ }),
+///     Action::new("name", "desc", Scope::Default, |app, _key| { /* … */ }),
 ///
 ///     // multi-scope action — expands to N Action::new entries
 ///     Action::expand_new(
-///         [Scope::Any, Scope::FuzzyHistorySearch],
+///         [Scope::Default, Scope::FuzzyHistorySearch],
 ///         "name", "desc",
 ///         |app, _key| { /* … */ },
 ///     ),
@@ -804,7 +804,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "run_agent_mode",
         "Run the agent mode command",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
                 app.start_agent_mode(agent_cmd, &buffer);
@@ -875,7 +875,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "submit_or_newline", // TODO name
         "Submit the current command. Insert a newline if the buffer has unclosed \",',[,(.",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
                 app.start_agent_mode(agent_cmd, &buffer);
@@ -925,13 +925,13 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "run_tab_completion",
         "Start tab completion",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.start_tab_complete(),
     ),
     Action::new(
         "toggle_mouse",
         "Toggle mouse state (Simple and Smart modes)",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             if matches!(
                 app.settings.mouse_mode,
@@ -941,17 +941,22 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
             }
         },
     ),
-    Action::new("exit", "Exit the application", Scope::Any, |app, _key| {
-        if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
-            app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
-        } else {
-            app.buffer.delete_right();
+    Action::new(
+        "exit",
+        "Exit the application",
+        Scope::Default,
+        |app, _key| {
+            if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
+                app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
+            } else {
+                app.buffer.delete_right();
+            }
         }
-    }),
+    ),
     Action::new(
         "cancel",
         "Cancel the current command or exit if no command is running",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             let buf = app.buffer.buffer().to_string();
             if false && buf.is_empty() {
@@ -976,7 +981,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "comment_line_submit",
         "Comment out the current line and submit",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             app.buffer.move_to_start();
             app.buffer.insert_str("#");
@@ -986,7 +991,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "run_fuzzy_history_search",
         "Start fuzzy search through command history",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             let history_buffer = app.buffer_for_history().to_owned();
             app.history_manager.warm_fuzzy_search_cache(&history_buffer);
@@ -996,7 +1001,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "clear_screen",
         "Clear the screen",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             app.needs_screen_cleared = true;
         },
@@ -1004,25 +1009,25 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "delete_left_until_start_of_line",
         "Delete until start of line",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.delete_until_start_of_line(),
     ),
     Action::new(
         "delete_left_one_word_fine_grained",
         "Delete one word to the left stopping at punctuation or path segment boundaries",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.delete_one_word_left(WordDelim::FineGrained),
     ),
     Action::new(
         "delete_left_one_word_whitespace",
         "Delete one word to the left, using whitespace as delimiter",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.delete_one_word_left(WordDelim::WhiteSpace),
     ),
     Action::new(
         "delete_left",
         "Delete character before cursor",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             if app.settings.auto_close_chars {
                 // Backspace: if the char to the right of the cursor is an auto-inserted closing token
@@ -1035,80 +1040,87 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "delete_right_until_end_of_line",
         "Delete until end of line",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.delete_until_end_of_line(),
     ),
     Action::new(
         "delete_right_one_word_fine_grained",
         "Delete one word to the right stopping at punctuation or path segment boundaries",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.delete_right_one_word(WordDelim::FineGrained),
     ),
     Action::new(
         "delete_right_one_word_whitespace",
         "Delete one word to the right, using whitespace as delimiter",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.delete_right_one_word(WordDelim::WhiteSpace),
     ),
     Action::new(
         "delete_right",
         "Delete character after cursor",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.delete_right(),
     ),
     Action::new(
         "move_left_start_of_line",
         "Move cursor to start of line",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.move_start_of_line(),
     ),
     Action::new(
         "move_left_one_word_whitespace",
         "Move one word left, using whitespace as delimiter",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.move_one_word_left(WordDelim::WhiteSpace),
     ),
     Action::new(
         "move_left_one_word_fine_grained",
         "Move one word left, stopping at punctuation or path segment boundaries",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.move_one_word_left_fine_grained(),
     ),
-    Action::new("move_left", "Move cursor left", Scope::Any, |app, _key| {
-        if app.buffer.cursor_byte_pos() == 0 && app.prompt_manager.cwd_display_segment_count() > 0 {
-            app.content_mode = ContentMode::PromptDirSelect(0);
-        } else {
-            app.buffer.move_left();
+    Action::new(
+        "move_left",
+        "Move cursor left",
+        Scope::Default,
+        |app, _key| {
+            if app.buffer.cursor_byte_pos() == 0
+                && app.prompt_manager.cwd_display_segment_count() > 0
+            {
+                app.content_mode = ContentMode::PromptDirSelect(0);
+            } else {
+                app.buffer.move_left();
+            }
         }
-    }),
+    ),
     Action::new(
         "move_right_end_of_line",
         "Move cursor to end of line",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.move_end_of_line(),
     ),
     Action::new(
         "move_right_one_word_whitespace",
         "Move one word right, using whitespace as delimiter",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
     ),
     Action::new(
         "move_right_one_word_fine_grained",
         "Move one word right, stopping at punctuation or path segment boundaries",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.move_one_word_right_fine_grained(),
     ),
     Action::new(
         "move_right",
         "Move cursor right",
-        Scope::Any,
+        Scope::Default,
         |app, _key| app.buffer.move_right(),
     ),
     Action::new(
         "move_line_up_or_history_up",
         "Move cursor up one line or navigate history if on the first buffer line",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             if app.buffer.cursor_row() == 0 {
                 app.buffer_before_history_navigation
@@ -1128,7 +1140,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "move_line_down_or_history_down",
         "Move cursor down one line or navigate history if on the final buffer line",
-        Scope::Any,
+        Scope::Default,
         |app, _key| {
             if app.buffer.is_cursor_on_final_line() {
                 let history_buffer = app.buffer_for_history().to_owned();
@@ -1150,21 +1162,26 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
             }
         },
     ),
-    Action::new("undo", "Undo last action", Scope::Any, |app, _key| {
+    Action::new("undo", "Undo last action", Scope::Default, |app, _key| {
         app.buffer.undo()
     }),
-    Action::new("redo", "Redo last action", Scope::Any, |app, _key| {
+    Action::new("redo", "Redo last action", Scope::Default, |app, _key| {
         app.buffer.redo()
     }),
-    Action::new("insert_char", "Insert character", Scope::Any, |app, key| {
-        if let KeyCode::Char(c) = key.code {
-            if app.settings.auto_close_chars {
-                app.last_keypress_action = app.handle_char_insertion(c);
-            } else {
-                app.buffer.insert_char(c);
+    Action::new(
+        "insert_char",
+        "Insert character",
+        Scope::Default,
+        |app, key| {
+            if let KeyCode::Char(c) = key.code {
+                if app.settings.auto_close_chars {
+                    app.last_keypress_action = app.handle_char_insertion(c);
+                } else {
+                    app.buffer.insert_char(c);
+                }
             }
         }
-    }),
+    ),
     // ── PromptCwdEdit actions ─────────────────────────────────────────
     Action::new(
         "move_left",
@@ -1250,7 +1267,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     ),
     Action::expand_new(
         [
-            Scope::Any,
+            Scope::Default,
             Scope::FuzzyHistorySearch,
             Scope::TabCompletionWaiting,
             Scope::TabCompletion,
@@ -1322,7 +1339,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Enter"],
-            Scope::Any,
+            Scope::Default,
             "run_agent_mode",
         )
         .unwrap(),
@@ -1359,7 +1376,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            Scope::Any,
+            Scope::Default,
             "submit_or_newline",
         )
         .unwrap(),
@@ -1379,67 +1396,67 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(&["Tab"], Scope::AgentOutputSelection, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::TabCompletion, "next_suggestion").unwrap(),
-        Binding::try_new(&["Tab"], Scope::Any, "run_tab_completion").unwrap(),
+        Binding::try_new(&["Tab"], Scope::Default, "run_tab_completion").unwrap(),
         // PromptCwdEdit Esc must appear before the Normal Esc binding.
         Binding::try_new(&["Esc"], Scope::PromptDirSelect, "cancel").unwrap(),
-        Binding::try_new(&["Esc"], Scope::Any, "escape_to_normal_mode").unwrap(),
-        Binding::try_new(&["Esc"], Scope::Any, "toggle_mouse").unwrap(),
-        Binding::try_new(&["Ctrl+d"], Scope::Any, "exit").unwrap(),
-        Binding::try_new(&["Ctrl+c", "Meta+c"], Scope::Any, "cancel").unwrap(),
+        Binding::try_new(&["Esc"], Scope::Default, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(&["Esc"], Scope::Default, "toggle_mouse").unwrap(),
+        Binding::try_new(&["Ctrl+d"], Scope::Default, "exit").unwrap(),
+        Binding::try_new(&["Ctrl+c", "Meta+c"], Scope::Default, "cancel").unwrap(),
         Binding::try_new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             &["Ctrl+/", "Meta+/", "Super+/", "Ctrl+7"],
-            Scope::Any,
+            Scope::Default,
             "comment_line_submit",
         )
         .unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            Scope::Any,
+            Scope::Default,
             "run_fuzzy_history_search",
         )
         .unwrap(),
-        Binding::try_new(&["Ctrl+l"], Scope::Any, "clear_screen").unwrap(),
+        Binding::try_new(&["Ctrl+l"], Scope::Default, "clear_screen").unwrap(),
         Binding::try_new(
             &["Super+Backspace", "Ctrl+u", "Ctrl+Shift+Backspace"],
-            Scope::Any,
+            Scope::Default,
             "delete_left_until_start_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Backspace"],
-            Scope::Any,
+            Scope::Default,
             "delete_left_one_word_fine_grained",
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Backspace", "Ctrl+H", "Alt+W", "Ctrl+w"],
-            Scope::Any,
+            Scope::Default,
             "delete_left_one_word_whitespace",
         )
         .unwrap(),
-        Binding::try_new(&["Backspace"], Scope::Any, "delete_left").unwrap(),
+        Binding::try_new(&["Backspace"], Scope::Default, "delete_left").unwrap(),
         Binding::try_new(
             &["Super+Delete", "Ctrl+Shift+Delete", "Ctrl+k"],
-            Scope::Any,
+            Scope::Default,
             "delete_right_until_end_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Delete"],
-            Scope::Any,
+            Scope::Default,
             "delete_right_one_word_fine_grained",
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Delete", "Alt+D"],
-            Scope::Any,
+            Scope::Default,
             "delete_right_one_word_whitespace",
         )
         .unwrap(),
-        Binding::try_new(&["Delete"], Scope::Any, "delete_right").unwrap(),
+        Binding::try_new(&["Delete"], Scope::Default, "delete_right").unwrap(),
         // PromptCwdEdit Home/End/Alt+Left/Ctrl+Left/Alt+Right/Ctrl+Right must appear before
-        // the corresponding Any/InlineHistoryAcceptable bindings.
+        // the corresponding Default/InlineHistoryAcceptable bindings.
         Binding::try_new(
             &expand_variations!["Home"],
             Scope::PromptDirSelect,
@@ -1466,25 +1483,25 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Home", "Super+Left", "Ctrl+A", "Super+A"],
-            Scope::Any,
+            Scope::Default,
             "move_left_start_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Left"], // Emacs-style whitespace word-left
-            Scope::Any,
+            Scope::Default,
             "move_left_one_word_whitespace",
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Left"], // Fine-grained word-left (stops at punctuation / path boundaries)
-            Scope::Any,
+            Scope::Default,
             "move_left_one_word_fine_grained",
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
         Binding::try_new(&["Left"], Scope::PromptDirSelect, "move_left").unwrap(),
-        Binding::try_new(&["Left"], Scope::Any, "move_left").unwrap(),
+        Binding::try_new(&["Left"], Scope::Default, "move_left").unwrap(),
         Binding::try_new(
             &expand_variations!["Right", "End"],
             Scope::InlineHistoryAcceptable,
@@ -1493,30 +1510,30 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 60]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(
             &expand_variations!["End", "Super+Right", "Ctrl+E", "Super+E"],
-            Scope::Any,
+            Scope::Default,
             "move_right_end_of_line",
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Right"], // Emacs-style whitespace word-right
-            Scope::Any,
+            Scope::Default,
             "move_right_one_word_whitespace",
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Right"], // Fine-grained word-right (stops at punctuation / path boundaries)
-            Scope::Any,
+            Scope::Default,
             "move_right_one_word_fine_grained",
         )
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
         Binding::try_new(&["Right"], Scope::PromptDirSelect, "move_right").unwrap(),
-        Binding::try_new(&["Right"], Scope::Any, "move_right").unwrap(),
-        Binding::try_new(&["Up"], Scope::Any, "move_line_up_or_history_up").unwrap(),
-        Binding::try_new(&["Down"], Scope::Any, "move_line_down_or_history_down").unwrap(),
-        Binding::try_new(&["Ctrl+z", "Super+Shift+Z"], Scope::Any, "undo").unwrap(),
-        Binding::try_new(&["Ctrl+y", "Super+Shift+Z"], Scope::Any, "redo").unwrap(),
-        Binding::try_new(&["AnyChar", "Shift+AnyChar"], Scope::Any, "insert_char").unwrap(),
+        Binding::try_new(&["Right"], Scope::Default, "move_right").unwrap(),
+        Binding::try_new(&["Up"], Scope::Default, "move_line_up_or_history_up").unwrap(),
+        Binding::try_new(&["Down"], Scope::Default, "move_line_down_or_history_down").unwrap(),
+        Binding::try_new(&["Ctrl+z", "Super+Shift+Z"], Scope::Default, "undo").unwrap(),
+        Binding::try_new(&["Ctrl+y", "Super+Shift+Z"], Scope::Default, "redo").unwrap(),
+        Binding::try_new(&["AnyChar", "Shift+AnyChar"], Scope::Default, "insert_char").unwrap(),
     ]
 });
 
@@ -1754,11 +1771,11 @@ struct Conflict {
 /// lower-priority binding `lower` for the same key, making `lower` inaccessible.
 ///
 /// Two patterns cause shadowing:
-/// 1. `higher` is in `Scope::Any` (always active) and `lower` is in a narrower
-///    scope — the `Any` binding fires before the scoped one can.
+/// 1. `higher` is in `Scope::Default` (always active) and `lower` is in a narrower
+///    scope — the `Default` binding fires before the scoped one can.
 /// 2. Both bindings are in the same scope — only the higher-priority one fires.
 fn binding_shadows(higher: &Binding, lower: &Binding) -> bool {
-    (higher.action.scope == Scope::Any && lower.action.scope != Scope::Any)
+    (higher.action.scope == Scope::Default && lower.action.scope != Scope::Default)
         || (higher.action.scope == lower.action.scope)
 }
 
@@ -1766,8 +1783,8 @@ fn binding_shadows(higher: &Binding, lower: &Binding) -> bool {
 /// every case where a lower-priority binding is permanently shadowed.
 ///
 /// Two conflict patterns are detected:
-/// 1. A `Scope::Any` binding has higher priority than a scoped binding for the
-///    same key.  Because `Any` is always active, the scoped binding can never
+/// 1. A `Scope::Default` binding has higher priority than a scoped binding for the
+///    same key.  Because `Default` is always active, the scoped binding can never
 ///    be reached.
 /// 2. Two bindings in the *same* scope share the same key code.  Only the
 ///    higher-priority one will ever fire.
@@ -2317,31 +2334,31 @@ mod tests {
     // --- detect_binding_conflicts ---
 
     #[test]
-    fn test_detect_conflict_any_shadows_scoped() {
-        // A Scope::Any binding with higher priority than a FuzzyHistorySearch binding
+    fn test_detect_conflict_default_shadows_scoped() {
+        // A Scope::Default binding with higher priority than a FuzzyHistorySearch binding
         // for the same key → conflict.
         let user_bindings = vec![
             Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
-            Binding::try_new(&["Tab"], Scope::Any, "run_tab_completion").unwrap(),
+            Binding::try_new(&["Tab"], Scope::Default, "run_tab_completion").unwrap(),
         ];
         let conflicts = detect_binding_conflicts(&user_bindings, &[]);
-        // The last element (highest priority user binding) is Any::run_tab_completion.
+        // The last element (highest priority user binding) is Default::run_tab_completion.
         // It shadows FuzzyHistorySearch::accept_and_edit.
         assert!(
             conflicts
                 .iter()
                 .any(|c| c.inaccessible_action.contains("accept_and_edit")
                     && c.shadowing_action.contains("run_tab_completion")),
-            "expected Any::run_tab_completion to shadow FuzzyHistorySearch::accept_and_edit"
+            "expected Default::run_tab_completion to shadow FuzzyHistorySearch::accept_and_edit"
         );
     }
 
     #[test]
     fn test_detect_conflict_same_scope_duplicate() {
-        // Two Scope::Any bindings for the same key → lower-priority one is inaccessible.
+        // Two Scope::Default bindings for the same key → lower-priority one is inaccessible.
         let user_bindings = vec![
-            Binding::try_new(&["Ctrl+x"], Scope::Any, "undo").unwrap(),
-            Binding::try_new(&["Ctrl+x"], Scope::Any, "redo").unwrap(),
+            Binding::try_new(&["Ctrl+x"], Scope::Default, "undo").unwrap(),
+            Binding::try_new(&["Ctrl+x"], Scope::Default, "redo").unwrap(),
         ];
         let conflicts = detect_binding_conflicts(&user_bindings, &[]);
         // redo has higher priority (last in vec → first after .rev()); undo is shadowed.
@@ -2355,35 +2372,35 @@ mod tests {
     }
 
     #[test]
-    fn test_no_conflict_scoped_before_any() {
-        // A FuzzyHistorySearch binding at higher priority than an Any binding for the
+    fn test_no_conflict_scoped_before_default() {
+        // A FuzzyHistorySearch binding at higher priority than a Default binding for the
         // same key is not a conflict (this is the normal intended pattern).
         let user_bindings = vec![
-            Binding::try_new(&["Tab"], Scope::Any, "run_tab_completion").unwrap(),
+            Binding::try_new(&["Tab"], Scope::Default, "run_tab_completion").unwrap(),
             Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
         ];
         let conflicts = detect_binding_conflicts(&user_bindings, &[]);
-        // The FuzzyHistorySearch binding (higher priority) does NOT shadow the Any binding
-        // in a problematic way — scoped bindings shadowing Any is expected behaviour.
+        // The FuzzyHistorySearch binding (higher priority) does NOT shadow the Default binding
+        // in a problematic way — scoped bindings shadowing Default is expected behaviour.
         assert!(
             !conflicts
                 .iter()
                 .any(|c| c.inaccessible_action.contains("run_tab_completion")
                     && c.shadowing_action.contains("accept_and_edit")),
-            "scoped shadowing Any is not a conflict"
+            "scoped shadowing Default is not a conflict"
         );
     }
 
     #[test]
     fn test_detect_conflicts_default_bindings_include_esc() {
-        // The default bindings include two Scope::Any Esc bindings; the second
+        // The default bindings include two Scope::Default Esc bindings; the second
         // (toggle_mouse) is shadowed by the first (escape_to_normal_mode).
         let conflicts = detect_binding_conflicts(&[], &[]);
         assert!(
             conflicts.iter().any(|c| c.key_display.contains("Esc")
                 && c.inaccessible_action.contains("toggle_mouse")
                 && c.shadowing_action.contains("escape_to_normal_mode")),
-            "expected Esc any::toggle_mouse to be shadowed by any::escape_to_normal_mode"
+            "expected Esc default::toggle_mouse to be shadowed by default::escape_to_normal_mode"
         );
     }
 }
