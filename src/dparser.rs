@@ -675,6 +675,9 @@ impl DParser {
     /// - `{`, `[`, `(` are unambiguously openers and always produce a closing counterpart.
     /// - `"`, `'`, `` ` `` are ambiguous: they close when there is already an unmatched opener of
     ///   the same kind before `just_inserted_pos` in the stale buffer; otherwise they open.
+    /// - Returns `None` when `just_inserted_pos` falls inside an already-matched single- or
+    ///   double-quoted string, or when the character at `just_inserted_pos` in the stale buffer
+    ///   is the start of (or inside) a word token.
     pub fn closing_char_to_insert(
         tokens: &[AnnotatedToken],
         c: char,
@@ -705,6 +708,34 @@ impl DParser {
             '`' => ('`', TokenKind::Backtick),
             _ => return None,
         };
+
+        // If the insertion point is inside a matched single- or double-quoted string, the typed
+        // character is just literal content – don't auto-close. For example, inserting `'` in the
+        // middle of `"abcde"` should not produce a closing `'`.
+        let is_inside_matched_string = tokens.iter().any(|t| {
+            if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
+                if matches!(t.token.kind, TokenKind::Quote | TokenKind::SingleQuote) {
+                    let open_end = t.token.byte_range().end;
+                    let close_start = tokens[close_idx].token.byte_range().start;
+                    return open_end <= just_inserted_pos && just_inserted_pos <= close_start;
+                }
+            }
+            false
+        });
+        if is_inside_matched_string {
+            return None;
+        }
+
+        // If a word token starts at or contains `just_inserted_pos`, we are inserting the quote
+        // immediately before (or inside) an existing word. Auto-closing would wrap only an empty
+        // string, leaving the word outside the quotes. E.g., `"` before `bar` in `foo bar` should
+        // yield `foo "bar`, not `foo "bar"`.
+        let is_before_word = tokens
+            .iter()
+            .any(|t| t.token.kind.is_word() && t.token.byte_range().contains(&just_inserted_pos));
+        if is_before_word {
+            return None;
+        }
 
         // If there is already an unmatched opener of the same kind strictly before the
         // insertion point, the character just typed is closing it – don't auto-insert.
@@ -1277,6 +1308,125 @@ mod tests {
         assert_eq!(
             DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
             None
+        );
+    }
+
+    // ── Case 1: insertion inside an already-matched quoted string ────────────
+
+    #[test]
+    fn no_closing_char_single_quote_inserted_inside_double_quoted_string() {
+        // Buffer is `"abcde"` (fully matched). Cursor between `b` and `c` (pos 3).
+        // Inserting `'` inside an existing double-quoted string should not auto-close.
+        let stale = r#""abcde""#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        // Position 3 is inside the word `abcde` (byte range 1..6), which is inside the quotes.
+        let just_inserted_pos = 3;
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn no_closing_char_quote_inserted_at_boundary_before_closing_double_quote() {
+        // Buffer is `"abcde"`. Cursor at position 6, right before the closing `"`.
+        // Inserting `'` there should not auto-close.
+        let stale = r#""abcde""#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        // `"` is at 0, `abcde` is at 1..6, closing `"` is at 6.
+        let just_inserted_pos = 6;
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn no_closing_char_double_quote_inserted_inside_single_quoted_string() {
+        // Buffer is `'hello world'` (fully matched single-quoted string).
+        // Cursor at position 5 (inside the content).
+        // Inserting `"` inside a single-quoted string should not auto-close.
+        let stale = "'hello world'";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 5;
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn no_closing_char_single_quote_inserted_inside_single_quoted_string() {
+        // Buffer is `'hello world'` (fully matched). Cursor at position 5.
+        // Inserting another `'` inside should not auto-close.
+        let stale = "'hello world'";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 5;
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            None
+        );
+    }
+
+    // ── Case 2: insertion immediately before a word token ────────────────────
+
+    #[test]
+    fn no_closing_char_double_quote_inserted_before_word() {
+        // Buffer is `foo bar`. Cursor at position 4 (start of `bar`).
+        // Inserting `"` before a word should give `foo "bar`, not `foo "bar"`.
+        let stale = "foo bar";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 4; // byte offset of `b` in `bar`
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn no_closing_char_single_quote_inserted_before_word() {
+        // Buffer is `foo bar`. Cursor at position 4 (start of `bar`).
+        // Inserting `'` before a word should not auto-close.
+        let stale = "foo bar";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 4;
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '\'', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn no_closing_char_double_quote_inserted_within_word() {
+        // Buffer is `foobar`. Cursor at position 3 (inside the word).
+        // Inserting `"` inside a word should not auto-close.
+        let stale = "foobar";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 3;
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn closing_char_double_quote_after_word_is_inserted() {
+        // Buffer is `foo`. Cursor at the end (position 3, after the word).
+        // Inserting `"` after a word (not before one) should still auto-close.
+        let stale = "foo ";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = stale.len(); // position 4, past whitespace
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
+            Some('"')
         );
     }
 
