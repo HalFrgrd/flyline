@@ -63,7 +63,8 @@ pub struct PromptWidgetCustom {
     /// first prompt frame.  `None` (not specified) defaults to `0`, meaning a
     /// single non-blocking `try_wait` is performed at spawn time — the command
     /// immediately goes to the background if it hasn't finished.  `Some(n)`
-    /// polls for up to `n` milliseconds.  `Some(i32::MAX)` waits indefinitely.
+    /// polls for up to `n` milliseconds; `Some(i32::MAX)` (~24.8 days) is
+    /// effectively indefinite.
     pub block: Option<i32>,
     /// What to show while the command is running (or has timed out).
     pub placeholder: Option<Placeholder>,
