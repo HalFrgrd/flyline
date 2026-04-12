@@ -787,8 +787,8 @@ impl Flyline {
                                     name,
                                     command: command_args,
                                     block,
-                                    placeholder: placeholder_spec,
-                                    prev_output: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                                    placeholder: placeholder_spec.unwrap_or_default(),
+                                    prev_output: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
                                 }),
                             );
                         }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::actions;
+use crate::content_builder::TaggedSpan;
 use crate::cursor::CursorConfig;
 use crate::history::HistoryManager;
 use crate::palette::Palette;
@@ -44,11 +45,12 @@ pub struct PromptWidgetMouseMode {
 
 /// What to show as a placeholder while a non-blocking (or timed-out blocking)
 /// custom widget command is still running.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum Placeholder {
     /// Show N spaces.
     Spaces(usize),
     /// Show the previous output of the command (empty on the very first run).
+    #[default]
     Prev,
 }
 
@@ -67,10 +69,10 @@ pub struct PromptWidgetCustom {
     /// effectively indefinite.
     pub block: Option<i32>,
     /// What to show while the command is running (or has timed out).
-    pub placeholder: Option<Placeholder>,
+    pub placeholder: Placeholder,
     /// Most recent successful output of the command; shared across clones so
     /// that the `Placeholder::Prev` option can pick it up on subsequent renders.
-    pub prev_output: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    pub prev_output: std::sync::Arc<std::sync::Mutex<Vec<TaggedSpan<'static>>>>,
 }
 
 /// A custom prompt widget registered with `flyline create-prompt-widget`.

@@ -49,13 +49,13 @@ impl ProcessedAnimation {
 enum WidgetCustomState {
     /// Command is still running (or has not yet been polled).
     Pending {
-        placeholder: String,
+        placeholder: Vec<TaggedSpan<'static>>,
         child: std::process::Child,
         /// The command that was spawned, retained for log messages.
         command: Vec<String>,
         /// Shared storage to write the output into when the command finishes,
         /// so that `Placeholder::Prev` can use it on the next render cycle.
-        prev_output_cell: Arc<Mutex<Option<String>>>,
+        prev_output_cell: Arc<Mutex<Vec<TaggedSpan<'static>>>>,
     },
     /// Command finished successfully; pre-tagged output spans are stored here
     /// so that the tag is applied only once rather than on every render.
@@ -799,11 +799,10 @@ fn dedup_cwd_segments(segs: &mut Vec<PromptSegment>) {
 }
 
 /// Resolve the placeholder string for a custom widget that is not yet done.
-fn resolve_placeholder(w: &PromptWidgetCustom) -> String {
+fn resolve_placeholder(w: &PromptWidgetCustom) -> Vec<TaggedSpan<'static>> {
     match &w.placeholder {
-        None => String::new(),
-        Some(Placeholder::Spaces(n)) => " ".repeat(*n),
-        Some(Placeholder::Prev) => w.prev_output.lock().unwrap().clone().unwrap_or_default(),
+        Placeholder::Spaces(n) => vec![TaggedSpan::new(Span::raw(" ".repeat(*n)), Tag::Ps1Prompt)],
+        Placeholder::Prev => w.prev_output.lock().unwrap().clone(),
     }
 }
 
@@ -1081,12 +1080,7 @@ fn format_prompt_line(
                     tagged.clone()
                 }
                 PromptSegment::WidgetCustom(state) => match state {
-                    WidgetCustomState::Pending { placeholder, .. } => {
-                        vec![TaggedSpan::new(
-                            Span::raw(placeholder.clone()),
-                            Tag::Ps1Prompt,
-                        )]
-                    }
+                    WidgetCustomState::Pending { placeholder, .. } => placeholder.clone(),
                     WidgetCustomState::Done(tagged_spans) => tagged_spans.clone(),
                     WidgetCustomState::Failed(failure) => failure.to_error_spans(),
                 },
@@ -1182,7 +1176,7 @@ fn collect_and_finalize(
     child: &mut std::process::Child,
     status: std::process::ExitStatus,
     command: &[String],
-    prev_output: &Arc<Mutex<Option<String>>>,
+    prev_output: &Arc<Mutex<Vec<TaggedSpan<'static>>>>,
 ) -> WidgetCustomState {
     use std::io::Read;
     let mut stdout_buf = Vec::new();
@@ -1211,8 +1205,9 @@ fn collect_and_finalize(
     log::debug!("Custom prompt widget stdout: {}", stdout);
     log::debug!("Custom prompt widget stderr: {}", stderr);
     if status.success() {
-        *prev_output.lock().unwrap() = Some(stdout.clone());
-        WidgetCustomState::Done(stdout_to_tagged_spans(stdout))
+        let process_output = stdout_to_tagged_spans(stdout);
+        *prev_output.lock().unwrap() = process_output.clone();
+        WidgetCustomState::Done(process_output)
     } else {
         log::warn!(
             "Custom prompt widget {:?} failed with {}; stderr: {}",
@@ -2117,10 +2112,10 @@ mod tests {
             .spawn()
             .expect("failed to spawn sleep for test");
         let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Pending {
-            placeholder: "   ".to_string(),
+            placeholder: vec![TaggedSpan::new(Span::raw("   "), Tag::Ps1Prompt)],
             child,
             command: vec!["sleep".to_string(), "100".to_string()],
-            prev_output_cell: Arc::new(Mutex::new(None)),
+            prev_output_cell: Arc::new(Mutex::new(Vec::new())),
         })];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
@@ -2180,8 +2175,8 @@ mod tests {
             name: "MY_WIDGET".to_string(),
             command: vec!["nonexistent_test_command".to_string()],
             block: None,
-            placeholder: Some(crate::settings::Placeholder::Spaces(0)),
-            prev_output: Arc::new(Mutex::new(None)),
+            placeholder: crate::settings::Placeholder::Spaces(0),
+            prev_output: Arc::new(Mutex::new(Vec::new())),
         });
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
