@@ -1,7 +1,6 @@
 use crate::bash_funcs;
 use crate::content_utils::{
-    easing_animation_frames, highlight_matching_indices, take_prefix_of_spans,
-    take_suffix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
+    easing_animation_frames, highlight_matching_indices, middle_truncate_spans, ts_to_timeago_string_5chars, vec_spans_width
 };
 use crate::cursor::CursorEasing;
 use crate::palette::Palette;
@@ -86,41 +85,6 @@ pub struct SuggestionFormatted {
     description_frame_width: usize,
 }
 
-/// Truncate `spans` to at most `max_chars` Unicode characters using middle
-/// ellipsis (e.g. `"very_long_name"` → `"very…ame"`), preserving span styles.
-fn middle_truncate_spans(spans: &[Span<'static>], max_chars: usize) -> Vec<Span<'static>> {
-    let total = vec_spans_width(spans);
-    if total <= max_chars {
-        return spans.to_vec();
-    }
-    if max_chars == 0 {
-        return vec![];
-    }
-    if max_chars == 1 {
-        let style = spans.first().map(|s| s.style).unwrap_or_default();
-        return vec![Span::styled("…".to_string(), style)];
-    }
-
-    // Reserve 1 char for the ellipsis.
-    let keep = max_chars - 1;
-    let left = keep / 2;
-    let right = keep - left;
-
-    let mut out: Vec<Span<'static>> = Vec::new();
-    let mut left_spans = take_prefix_of_spans(spans, left);
-    let right_spans = take_suffix_of_spans(spans, right);
-
-    let ellipsis_style = left_spans
-        .last()
-        .map(|s| s.style)
-        .or_else(|| right_spans.first().map(|s| s.style))
-        .unwrap_or_default();
-
-    out.append(&mut left_spans);
-    out.push(Span::styled("…".to_string(), ellipsis_style));
-    out.extend(right_spans);
-    out
-}
 
 impl SuggestionFormatted {
     /// Width of the separator between the suggestion text and its description.
