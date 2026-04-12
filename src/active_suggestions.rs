@@ -96,6 +96,7 @@ pub enum SuggestionDescription {
 
 impl SuggestionDescription {
     /// Returns `true` if this description produces no visible text.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         match self {
             SuggestionDescription::Static(s) => s.is_empty(),

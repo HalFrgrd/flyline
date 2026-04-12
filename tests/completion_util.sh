@@ -75,11 +75,16 @@ _fl_comp_util_completions() {
             COMPREPLY=('$HOME/foo/$baz.txt')
             return 0
             ;;
+        
+        --description)
+            COMPREPLY=( $'option1\t This is the first option' $'option2\t This is the second option' )
+            return 0
+            ;;
 
     esac
 
     # Default completion shows available flags
-    local opts="--filenames --quoting-desired --suppress-quote --dont-suppress-append --suppress-append --nosort --fallback-to-default --fallback-to-default-filenames --env-var-test"
+    local opts="--filenames --quoting-desired --suppress-quote --dont-suppress-append --suppress-append --nosort --fallback-to-default --fallback-to-default-filenames --env-var-test --description" 
     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
 }
 
