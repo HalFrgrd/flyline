@@ -123,7 +123,7 @@ pub fn get_completion_context<'a>(
         println!("Context tokens:");
         dbg!(cursor_byte_pos);
         for t in context_tokens.iter() {
-            println!("{:?} byte_range={:?}", t, t.token.byte_range());
+            println!("{:#?} byte_range={:?}\n", t, t.token.byte_range());
         }
     }
 
@@ -160,7 +160,6 @@ pub fn get_completion_context<'a>(
         Some((node_idx, cursor_node)) if cursor_node.token.kind.is_word() => {
             let byte_range = cursor_node.token.byte_range();
 
-            // try grow to the left if there are single or double quotes or $
             let mut start = byte_range.start;
             let mut end = byte_range.end;
 
@@ -180,6 +179,12 @@ pub fn get_completion_context<'a>(
                             && (!range_contains_dollar
                                 || cursor_node.token.value.contains('/')) =>
                     {
+                        start = t.token.byte_range().start;
+                    }
+                    Some(t) if t.token.kind.is_word() && cursor_node.token.value.contains('/') => {
+                        start = t.token.byte_range().start;
+                    }
+                    Some(t) if t.token.kind == TokenKind::Dollar => {
                         start = t.token.byte_range().start;
                     }
                     _ => break,
@@ -1254,4 +1259,24 @@ mod tests {
             Some(SecondaryCompType::FilenameExpansion)
         );
     }
+
+    #[test]
+    fn test_env_var_at_start_but_not_end() {
+        let ctx = run_inline(r#"ll $HOME/projects/flyline/qwe\ asd/\$█"#);
+
+        match ctx.comp_type {
+            CompType::CommandComp { command_word } => {
+                assert_eq!(command_word, "ll");
+                assert_eq!(ctx.word_under_cursor.as_ref(), r#"$HOME/projects/flyline/qwe\ asd/\$"#);
+            }
+            _ => panic!("Expected CommandComp"),
+        }
+
+        assert_eq!(
+            ctx.comp_type_secondary,
+            Some(SecondaryCompType::FilenameExpansion)
+        );
+    }
+
+    
 }

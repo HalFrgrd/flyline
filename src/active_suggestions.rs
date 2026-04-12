@@ -572,10 +572,11 @@ pub fn post_process_completion(
             let quoted_suffix = bash_funcs::quoting_function_rust(
                 new_suffix,
                 comp_resultflags.quote_type.unwrap_or_default(),
+                false,
             );
             format!("{}{}", word_under_cursor, quoted_suffix)
         } else {
-            bash_funcs::quoting_function_rust(&sug, comp_resultflags.quote_type.unwrap_or_default())
+            bash_funcs::quoting_function_rust(&sug, comp_resultflags.quote_type.unwrap_or_default(), false)
         }
     } else {
         sug.to_string()

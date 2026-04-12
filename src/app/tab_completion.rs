@@ -89,7 +89,7 @@ impl PathPatternExpansion {
         if let Some(suffix) = expanded_match.strip_prefix(&self.prefix_with_trailing_slash()) {
             let quoted_suffix = match quote_type {
                 Some(QuoteType::DoubleQuote | QuoteType::SingleQuote) => suffix.to_string(),
-                _ => bash_funcs::quoting_function_rust(suffix, quote_type.unwrap_or_default()),
+                _ => bash_funcs::quoting_function_rust(suffix, quote_type.unwrap_or_default(), true),
             };
             if self.raw_prefix.is_empty() {
                 (quoted_suffix.clone(), quoted_suffix)
