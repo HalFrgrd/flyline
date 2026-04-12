@@ -60,6 +60,12 @@ pub enum CursorEasing {
 }
 
 impl CursorEasing {
+    /// Try to parse a string as a `CursorEasing` value using clap's case-insensitive
+    /// value-name matching (e.g. `"in-quad"` → `CursorEasing::InQuad`).
+    pub fn try_from_value_name(s: &str) -> Option<Self> {
+        <Self as clap::ValueEnum>::from_str(s, true).ok()
+    }
+
     /// Apply the easing function to `t` ∈ [0, 1], returning a value in [0, 1].
     pub fn apply(self, t: f32) -> f32 {
         match self {
