@@ -153,30 +153,30 @@ RPS1='\D{%H:%M}'
 
 ## Custom animations
 
-Create your own animations with `flyline create-prompt-anim --name [your animation name here]`.
+Create your own animations with `flyline create-prompt-widget animation --name [your animation name here]`.
 Flyline will replace strings in the prompt matching the animation name with the animation:
 
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
 
 More examples can be found in [examples/animations.sh](examples/animations.sh).
 
-The block below is auto-generated from `flyline create-prompt-anim --help`:
+The block below is auto-generated from `flyline create-prompt-widget animation --help`:
 
-<!-- FLYLINE_CREATE_PROMPT_ANIM_HELP_START -->
+<!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_START -->
 ```
-Create a custom prompt animation.
+Create a custom prompt animation that cycles through frames.
 
 Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
 with the current animation frame on every render.  Frames may include
 ANSI colour sequences written as `\e` (e.g. `\e[33m`).
 
 Examples:
-  flyline create-prompt-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
-  flyline create-prompt-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
+  flyline create-prompt-widget animation --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
+  flyline create-prompt-widget animation --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
 
 See https://github.com/HalFrgrd/flyline/blob/master/examples/animations.sh for more details and example usage.
 
-Usage: flyline create-prompt-anim [OPTIONS] --name <NAME> [FRAMES]...
+Usage: flyline create-prompt-widget animation [OPTIONS] --name <NAME> [FRAMES]...
 
 Arguments:
   [FRAMES]...
@@ -197,7 +197,7 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 ```
-<!-- FLYLINE_CREATE_PROMPT_ANIM_HELP_END -->
+<!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_END -->
 
 ## Custom prompt widgets
 
@@ -345,7 +345,6 @@ Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
   set-agent-mode        Configure AI agent mode.
-  create-prompt-anim    Create a custom prompt animation.
   create-prompt-widget  Create a custom prompt widget.
   set-color             Configure the colour palette.
   set-cursor            Configure the cursor appearance and animation.
