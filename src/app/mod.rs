@@ -133,6 +133,68 @@ impl FuzzyHistorySource {
     }
 }
 
+/// Guard that joins the tab-completion thread on drop, ensuring it does not
+/// outlive the app.
+struct TabCompletionHandle(Option<std::thread::JoinHandle<()>>);
+
+impl std::fmt::Debug for TabCompletionHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TabCompletionHandle").finish()
+    }
+}
+
+impl Drop for TabCompletionHandle {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            if let Err(e) = handle.join() {
+                log::warn!("Tab completion thread panicked: {:?}", e);
+            }
+        }
+    }
+}
+
+/// Guard that sends SIGTERM to the agent-mode subprocess and joins its thread
+/// on drop, ensuring neither the process nor the thread outlives the app.
+struct AgentModeHandle {
+    /// PID of the agent subprocess; 0 means not yet spawned.
+    child_pid: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl std::fmt::Debug for AgentModeHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentModeHandle")
+            .field(
+                "child_pid",
+                &self.child_pid.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .finish()
+    }
+}
+
+impl Drop for AgentModeHandle {
+    fn drop(&mut self) {
+        let pid = self.child_pid.load(std::sync::atomic::Ordering::Acquire);
+        if pid != 0 {
+            // SAFETY: `pid` was obtained from `Child::id()` and is a valid
+            // child process PID for the lifetime of this handle.
+            let ret = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+            if ret != 0 {
+                log::debug!(
+                    "Agent mode: kill({}) returned error (process may have already exited): {}",
+                    pid,
+                    std::io::Error::last_os_error()
+                );
+            }
+        }
+        if let Some(handle) = self.handle.take() {
+            if let Err(e) = handle.join() {
+                log::warn!("Agent mode thread panicked: {:?}", e);
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ContentMode {
     Normal,
@@ -144,6 +206,9 @@ enum ContentMode {
     TabCompletionWaiting {
         receiver: std::sync::mpsc::Receiver<Option<Vec<MaybeProcessedSuggestion>>>,
         wuc_substring: SubString,
+        /// Held for its `Drop` impl, which joins the background thread.
+        #[allow(dead_code)]
+        handle: TabCompletionHandle,
     },
     /// AI command is running in the background. Stores the channel receiver and the
     /// human-readable representation of the command being executed.
@@ -151,6 +216,9 @@ enum ContentMode {
         receiver: std::sync::mpsc::Receiver<Result<String, (String, String)>>,
         command_display: String,
         start_time: std::time::Instant,
+        /// Held for its `Drop` impl, which kills the subprocess and joins the thread.
+        #[allow(dead_code)]
+        handle: AgentModeHandle,
     },
     /// AI output has been parsed; user is selecting a suggestion from the list.
     AgentOutputSelection(AiOutputSelection),
@@ -986,7 +1054,9 @@ impl<'a> App<'a> {
                 .join(" ")
         };
         log::info!("Running AI command: {}", command_display);
-        std::thread::spawn(move || {
+        let child_pid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let child_pid_clone = child_pid.clone();
+        let thread_handle = std::thread::spawn(move || {
             // Safety: the guard `!ai_command.is_empty()` at the call site ensures
             // cmd_args is non-empty, so split_first() always returns Some.
             let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
@@ -994,11 +1064,25 @@ impl<'a> App<'a> {
             // SIGCHLD was already set to SIG_DFL by `Flyline::get()` before
             // calling `app::get_command`, so no per-thread signal manipulation
             // is needed here.
+            //
+            // We use spawn() + wait_with_output() instead of output() so that we
+            // can store the child PID for cancellation via AgentModeHandle::drop.
             let result: Result<String, (String, String)> = std::process::Command::new(prog)
                 .args(args)
                 .arg(&final_arg)
-                .output()
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
                 .map_err(|e| (format!("Failed to run AI command: {}", e), String::new()))
+                .and_then(|child| {
+                    child_pid_clone.store(child.id(), std::sync::atomic::Ordering::Release);
+                    child.wait_with_output().map_err(|e| {
+                        (
+                            format!("Failed to wait for AI command: {}", e),
+                            String::new(),
+                        )
+                    })
+                })
                 .and_then(|output| {
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if !output.status.success() {
@@ -1020,6 +1104,10 @@ impl<'a> App<'a> {
             receiver: rx,
             command_display,
             start_time: std::time::Instant::now(),
+            handle: AgentModeHandle {
+                child_pid,
+                handle: Some(thread_handle),
+            },
         };
     }
 
