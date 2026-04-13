@@ -6,7 +6,7 @@
 
 # Stage 1: Builder - Use Ubuntu 16.04 for glibc 2.23 compatibility
 # targetting this older glibc version ensures compatibility with a wide range of host systems
-FROM ubuntu:16.04 AS chef
+FROM ubuntu:24.04 AS chef
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive

@@ -1,4 +1,4 @@
-FROM ubuntu:20.04 AS help-runner
+FROM ubuntu:24.04 AS help-runner
 
 # ubuntu:20.04 ships with bash 5.0; no extra install needed.
 # Prevent interactive prompts during any potential package installation
