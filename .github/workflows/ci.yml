@@ -112,7 +112,7 @@ jobs:
           OWNER: '${{ github.repository_owner }}'
 
       - name: Run integration tests
-        uses: docker/bake-action@v6
+        uses: docker/bake-action@v7
         with:
           files: docker/docker-bake.hcl
           targets: bash-integration-test-${{ matrix.bash_version_slug }}
