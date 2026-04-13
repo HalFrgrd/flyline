@@ -208,7 +208,6 @@ enum Commands {
     ///
     /// Examples:
     ///   flyline set-color --default-theme dark
-    ///   flyline set-color --default-theme auto
     ///   flyline set-color --inline-suggestion "dim italic"
     ///   flyline set-color --matching-char "bold green"
     ///   flyline set-color --default-theme light --matching-char "bold blue"
@@ -216,8 +215,7 @@ enum Commands {
     ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
     #[command(name = "set-color", verbatim_doc_comment)]
     SetColor {
-        /// Apply a built-in colour preset for dark or light terminals, or `auto` to detect
-        /// the terminal background colour at startup and choose automatically.
+        /// Apply a built-in colour preset for dark or light terminals.
         #[arg(long = "default-theme", value_name = "MODE")]
         default_theme: Option<settings::ColorTheme>,
         /// Style for recognised (valid) commands (e.g. "green").

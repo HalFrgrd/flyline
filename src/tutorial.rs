@@ -197,16 +197,16 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "2. Always: mouse interactions are always enabled, but behaviour may be inconsistent in some terminals.",
+                "2. Simple: mouse interactions are enabled by default and toggled when Escape is pressed.",
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "3. Never: mouse interactions are disabled.",
+                "3. Disabled: mouse interactions are disabled.",
                 text_style,
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "Toggle mouse interaction modes with `flyline --mouse-mode smart/always/never`.",
+                "Switch mouse interaction modes with `flyline --mouse-mode smart/simple/disabled`.",
                 text_style,
             )));
         }
@@ -225,7 +225,7 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "Press Enter to run the selected command, Shift+Enter to accept it for editing.",
+                "Press Enter to run the selected command, or Tab to accept it for editing.",
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
@@ -264,11 +264,11 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
             )));
             lines.push(Line::from(Span::styled("Examples:", text_style)));
             lines.push(Line::from(Span::styled(
-                "  flyline set-color --default dark",
+                "  flyline set-color --default-theme dark",
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "  flyline set-color --default light",
+                "  flyline set-color --default-theme light",
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
@@ -276,7 +276,7 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "  flyline set-color --recognised-word \"green\" --unrecognised-word \"bold red\"",
+                "  flyline set-color --recognised-command \"green\" --unrecognised-command \"bold red\"",
                 text_style,
             )));
             lines.push(Line::from(""));
@@ -320,11 +320,11 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "Ctrl+Backspace deletes to the previous whitespace and Alt+Backspace deletes to the next punctuation character or, if you're editing a file path, the previous path segment.",
+                "Ctrl+Backspace deletes one whitespace-delimited word to the left, and Alt+Backspace deletes left using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "Similarly, use Alt+Delete or Ctrl+Delete to delete forward. Try it out!",
+                "Similarly, Ctrl+Delete deletes one whitespace-delimited word to the right, and Alt+Delete deletes right using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
         }
