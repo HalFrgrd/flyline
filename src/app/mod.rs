@@ -33,6 +33,13 @@ use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+/// After this duration of inactivity the frame rate drops to 0.2 fps and the
+/// cursor is rendered in the unfocused (dim, non-animated) state.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
+const IDLE_FRAME_RATE: f64 = 0.2;
+
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -562,8 +569,13 @@ impl<'a> App<'a> {
                 break;
             }
 
-            let min_refresh_rate: Duration =
-                Duration::from_millis((1000.0 / (self.settings.frame_rate as f64)) as u64);
+            let is_idle = self.last_activity_time.elapsed() >= IDLE_TIMEOUT;
+            let effective_fps = if is_idle {
+                IDLE_FRAME_RATE
+            } else {
+                self.settings.frame_rate as f64
+            };
+            let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
 
             redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
@@ -1482,7 +1494,8 @@ impl<'a> App<'a> {
                     None
                 } else if self.settings.show_animations {
                     let focused = self.term_has_focus
-                        && !matches!(self.content_mode, ContentMode::PromptDirSelect(_));
+                        && !matches!(self.content_mode, ContentMode::PromptDirSelect(_))
+                        && self.last_activity_time.elapsed() < IDLE_TIMEOUT;
                     self.cursor.get_style(focused, &self.settings.cursor_config)
                 } else {
                     Some(Palette::cursor_style(255))
