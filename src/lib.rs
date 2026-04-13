@@ -1,5 +1,5 @@
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
-use clap_complete::{Shell, generate};
+use clap_complete::{CompleteEnv, Shell, generate};
 use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
@@ -588,6 +588,21 @@ impl Flyline {
             }
         }
         log::debug!("flyline called with args: {:?}", args);
+
+        // Handle dynamic shell completions (COMPLETE=bash flyline …)
+        let args_os: Vec<std::ffi::OsString> = std::iter::once("flyline".into())
+            .chain(args.iter().map(std::ffi::OsString::from))
+            .collect();
+        let current_dir = std::env::current_dir().ok();
+        match CompleteEnv::with_factory(FlylineArgs::command)
+            .try_complete(args_os, current_dir.as_deref())
+        {
+            Ok(true) => return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int,
+            Ok(false) => {}
+            Err(e) => {
+                log::error!("flyline: dynamic completion error (check the COMPLETE env var value): {e}");
+            }
+        }
 
         // args contains words from WordList; first word is not the command name unlike argv
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
