@@ -1,4 +1,5 @@
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
+use clap_complete::env::EnvCompleter as _;
 use clap_complete::{CompleteEnv, Shell, generate};
 use libc::{c_char, c_int};
 use ratatui::style::Style;
@@ -600,7 +601,9 @@ impl Flyline {
             Ok(true) => return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int,
             Ok(false) => {}
             Err(e) => {
-                log::error!("flyline: dynamic completion error (check the COMPLETE env var value): {e}");
+                log::error!(
+                    "flyline: dynamic completion error (check the COMPLETE env var value): {e}"
+                );
             }
         }
 
@@ -1299,12 +1302,16 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
 
 fn setup_autocompletion() {
     let mut completion = Vec::new();
-    generate(
-        Shell::Bash,
-        &mut FlylineArgs::command(),
+    if let Err(e) = clap_complete::env::Bash.write_registration(
+        "COMPLETE",
+        "flyline",
+        "flyline",
         "flyline",
         &mut completion,
-    );
+    ) {
+        log::error!("Failed to generate dynamic completion registration: {}", e);
+        return;
+    }
     let completion_str = match std::ffi::CString::new(completion) {
         Ok(s) => s,
         Err(e) => {
