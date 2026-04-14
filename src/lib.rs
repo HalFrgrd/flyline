@@ -184,16 +184,26 @@ pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::R
     ) {
         Ok(candidates) => {
             log::info!("{:#?}", candidates);
-            return Ok(candidates
-                .iter()
-                .map(|c| c.get_value().to_string_lossy().to_string())
-                .collect());
+            return Ok(candidates.iter().map(comp_candidate_to_string).collect());
         }
         Err(e) => {
             log::error!("Error generating bash completion: {e}");
             return Err(anyhow::anyhow!("Error generating bash completion: {e}"));
         }
     };
+}
+
+fn comp_candidate_to_string(candidate: &clap_complete::CompletionCandidate) -> String {
+    let value = candidate.get_value().to_string_lossy().to_string();
+
+    if let Some(help) = candidate
+        .get_help()
+        .map(|h| h.to_string())
+        .filter(|h| !h.is_empty())
+    {
+        return format!("{}\t{}", value, help);
+    }
+    value
 }
 
 #[derive(Subcommand, Debug)]
@@ -1331,7 +1341,6 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     handle: std::ptr::null(),
 };
 
-
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // Returning 0 means the load fails
@@ -1364,7 +1373,6 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
             return FAILURE;
         }
     }
-
 
     // This is how we ensure that our custom input stream is used by bash instead of readline.
     // This code is run during `run_startup_files` so we can't modify bash_input directly.

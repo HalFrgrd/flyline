@@ -566,11 +566,6 @@ pub fn run_programmable_completions(
 
         let foundcs: std::ffi::c_int = 0;
 
-        log::info!(
-            "Calling bash programmable_completions function for command '{}'",
-            command_word
-        );
-
         let list_of_strs = bash_symbols::programmable_completions(
             std::ffi::CString::new(command_word).unwrap().as_ptr(),
             std::ffi::CString::new(word_under_cursor).unwrap().as_ptr(),

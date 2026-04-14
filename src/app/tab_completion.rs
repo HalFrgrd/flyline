@@ -633,10 +633,6 @@ impl App<'_> {
         let completion_context_owned = completion_context.into_owned();
 
         let thread_handle = std::thread::spawn(move || {
-            log::info!(
-                "Tab completion thread started for context: {:?}",
-                completion_context_owned
-            );
             let suggestions = gen_completions_internal(&completion_context_owned);
             if suggestions.is_none() {
                 log::debug!(
@@ -655,10 +651,6 @@ impl App<'_> {
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(Some(sugs)) => {
-                log::info!(
-                    "Tab completion thread finished within 100ms with {} suggestions",
-                    sugs.len()
-                );
                 self.finish_tab_complete(sugs, wuc_substring);
             }
             Ok(None) => {
@@ -666,7 +658,6 @@ impl App<'_> {
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Thread hasn't finished yet; enter waiting mode.
-                log::info!("Tab completion thread not finished after 100ms, entering waiting mode");
                 self.content_mode = ContentMode::TabCompletionWaiting {
                     handle: TabCompletionHandle {
                         receiver: rx,
