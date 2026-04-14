@@ -282,7 +282,14 @@ pub(crate) fn gen_completions_internal(
             let poss_completions = if command_word == "flyline" {
                 let words = complete_flyline_args(&full_command, cursor_byte_pos);
 
-                words.map(|w| ProgrammableCompleteReturn::from(w, None, 1, 0))
+                words.map(|w| {
+                    ProgrammableCompleteReturn::from(
+                        w,
+                        bash_funcs::find_quote_type(word_under_cursor.as_ref()),
+                        1,
+                        ' ' as i32,
+                    )
+                })
             } else {
                 bash_funcs::run_programmable_completions(
                     &full_command,

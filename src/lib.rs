@@ -152,27 +152,52 @@ pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::R
 
     let mut command = FlylineArgs::command();
 
-    let mut args = shlex::split(&raw_command)
-        .ok_or_else(|| anyhow::anyhow!("Failed to parse command string"))?;
-    args.remove(0);
+    let tokens = dparser::collect_tokens_include_whitespace(raw_command);
+    // if the cursor is not in any of the tokens, append a whitespace token at the end so that we can generate completions for an empty token after the last word
+    let tokens =
+        if tokens.is_empty() || !tokens.iter().any(|t| t.byte_range().contains(&cursor_byte)) {
+            let mut tokens = tokens;
+            tokens.push(flash::lexer::Token {
+                kind: flash::lexer::TokenKind::Whitespace(" ".to_string()),
+                value: " ".to_string(),
+                position: flash::lexer::Position {
+                    line: 0,
+                    column: 0,
+                    byte: cursor_byte,
+                },
+            });
+            tokens
+        } else {
+            tokens
+        };
 
-    // TODO: not correct:
-    let index = args
-        .iter()
-        .map(|arg| arg.len() + 1)
-        .take_while(|&len| len <= cursor_byte)
-        .count()
-        .saturating_sub(1);
+    let non_whitespace_tokens = tokens
+        .into_iter()
+        .filter(|x| !x.kind.is_whitespace() || x.byte_range().contains(&cursor_byte))
+        .collect::<Vec<_>>();
 
-    let args_os_string = args
+    let index = non_whitespace_tokens
         .iter()
-        .map(std::ffi::OsString::from)
+        .filter(|x| !x.kind.is_whitespace())
+        .take_while(|&tok| tok.byte_range().end < cursor_byte)
+        .count();
+    // .saturating_sub(1);
+
+    let args_os_string = non_whitespace_tokens
+        .iter()
+        .map(|t| {
+            if t.kind.is_whitespace() {
+                std::ffi::OsString::new()
+            } else {
+                std::ffi::OsString::from(&t.value)
+            }
+        })
         .collect::<Vec<_>>();
 
     log::info!(
         "Completing command: cursor_byte: {}, parsed args: {:?}, index: {}, ",
         cursor_byte,
-        args,
+        args_os_string,
         index
     );
 
