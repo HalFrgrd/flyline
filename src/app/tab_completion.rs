@@ -656,9 +656,11 @@ impl App<'_> {
                     "Tab completion thread not finished after 100ms, entering waiting mode"
                 );
                 self.content_mode = ContentMode::TabCompletionWaiting {
-                    receiver: rx,
+                    handle: TabCompletionHandle {
+                        receiver: rx,
+                        thread: Some(thread_handle),
+                    },
                     wuc_substring,
-                    handle: TabCompletionHandle(Some(thread_handle)),
                 };
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
