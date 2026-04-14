@@ -1285,31 +1285,71 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     ),
 ];
 
-use clap::builder::PossibleValuesParser;
-
-pub fn possible_action_names() -> PossibleValuesParser {
-    let values = POSSIBLE_ACTIONS.iter().map(|a| {
-        let s = a.scoped_action_name();
-        Box::leak(s.into_boxed_str()) as &'static str
-    });
-
-    PossibleValuesParser::new(values)
+pub fn possible_action_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    let current = current.to_string_lossy();
+    POSSIBLE_ACTIONS
+        .iter()
+        .filter_map(|a| {
+            let s = a.scoped_action_name();
+            if s.to_lowercase().contains(&current.to_lowercase()) {
+                Some(CompletionCandidate::new(s))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
-
 
 pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     let current = current.to_string_lossy();
-    let mut suggestions = Vec::new();
-    // for binding in DEFAULT_BINDINGS.iter() {
-    //     for key_seq in binding.key_sequences() {
-    //         if key_seq.to_lowercase().starts_with(&current.to_lowercase()) {
-    //             suggestions.push(key_seq.to_string());
-    //         }
-    //     }
-    // }
-    suggestions.push(CompletionCandidate::new("Enter"));
-    suggestions.push(CompletionCandidate::new("Ctrl"));
-    suggestions
+    const MODS: &[&str] = &[
+        display_modifier_bit(KeyModifiers::CONTROL),
+        display_modifier_bit(KeyModifiers::ALT),
+        display_modifier_bit(KeyModifiers::SHIFT),
+        display_modifier_bit(KeyModifiers::SUPER),
+        display_modifier_bit(KeyModifiers::HYPER),
+    ];
+    let KEYS: Vec<String> = vec![KeyCode::BackTab, KeyCode::Backspace]
+        .into_iter()
+        .map(display_keycode)
+        .chain(std::iter::once("AnyChar".to_string()))
+        .chain((32u8..127).map(|c| display_keycode(KeyCode::Char(c as char))))
+        .collect();
+
+    let parts: Vec<&str> = current.split('+').collect();
+
+    let (used, current) = if parts.len() > 1 {
+        (&parts[..parts.len() - 1], parts.last().unwrap())
+    } else {
+        (&[][..], &parts[0])
+    };
+    let mut out = vec![];
+
+    for m in MODS {
+        if !used.contains(m) && m.starts_with(current) {
+            let prefix = parts[..parts.len() - 1].join("+");
+            let prefix = if prefix.is_empty() {
+                "".into()
+            } else {
+                prefix + "+"
+            };
+            out.push(format!("{}{}+", prefix, m));
+        }
+    }
+
+    for k in KEYS {
+        if k.starts_with(current) {
+            let prefix = parts[..parts.len() - 1].join("+");
+            let prefix = if prefix.is_empty() {
+                "".into()
+            } else {
+                prefix + "+"
+            };
+            out.push(format!("{}{}", prefix, k));
+        }
+    }
+
+    out.into_iter().map(CompletionCandidate::new).collect()
 }
 
 /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
@@ -1607,7 +1647,7 @@ fn display_keycode(code: KeyCode) -> String {
 }
 
 /// Return the display name for a single modifier bit.
-fn display_modifier_bit(bit: KeyModifiers) -> &'static str {
+const fn display_modifier_bit(bit: KeyModifiers) -> &'static str {
     if bit.contains(KeyModifiers::CONTROL) {
         "Ctrl"
     } else if bit.contains(KeyModifiers::ALT) {

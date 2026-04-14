@@ -1,12 +1,11 @@
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
-use clap_complete::env::EnvCompleter as _;
-use clap_complete::{ArgValueCompleter, CompleteEnv, Shell, generate};
+use clap_complete::{ArgValueCompleter, Shell, generate};
 use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
 
 use crate::{
-    app::actions::{self, possible_action_names},
+    app::actions::{self},
     cursor::CursorStyleConfig,
 };
 
@@ -501,7 +500,7 @@ enum KeySubcommands {
         #[arg(num_args = 1, hide = true, add = ArgValueCompleter::new(actions::key_sequence_completer))]
         key_sequence: String,
         /// Action in the form scope::action_name (e.g. "normal::submit_or_newline").
-        #[arg(value_parser = possible_action_names(), num_args = 1)]
+        #[arg(add = ArgValueCompleter::new(actions::possible_action_names), num_args = 1)]
         action: String,
     },
     /// List all keybindings from lowest to highest priority.
