@@ -102,7 +102,7 @@ fn parse_effect_speed(s: &str) -> Result<f32, String> {
     styles = get_styles(),
     after_help = "Read more at https://github.com/HalFrgrd/flyline",
 )]
-struct FlylineArgs {
+pub struct FlylineArgs {
     /// Show version information
     #[arg(long)]
     version: bool,
@@ -143,7 +143,7 @@ struct FlylineArgs {
     #[arg(long = "run-tab-completion-tests")]
     run_tab_completion_tests: bool,
     #[command(subcommand)]
-    command: Option<Commands>,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -588,22 +588,6 @@ impl Flyline {
         }
         log::debug!("flyline called with args: {:?}", args);
 
-        // Handle dynamic shell completions (COMPLETE=bash flyline …)
-        let args_os: Vec<std::ffi::OsString> = std::iter::once("flyline".into())
-            .chain(args.iter().map(std::ffi::OsString::from))
-            .collect();
-        let current_dir = std::env::current_dir().ok();
-        match CompleteEnv::with_factory(FlylineArgs::command)
-            .try_complete(args_os, current_dir.as_deref())
-        {
-            Ok(true) => return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int,
-            Ok(false) => {}
-            Err(e) => {
-                log::error!(
-                    "flyline: dynamic completion error (check the COMPLETE env var value): {e}"
-                );
-            }
-        }
 
         // args contains words from WordList; first word is not the command name unlike argv
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
@@ -1317,6 +1301,7 @@ fn setup_autocompletion() {
             return;
         }
     };
+    log::info!("Generated bash completion registration: {}", completion_str.to_string_lossy());
     let from_file = c"flyline_setup_autocompletion";
     #[cfg(not(feature = "pre_bash_4_4"))]
     let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
