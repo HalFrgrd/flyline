@@ -1309,12 +1309,40 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
         display_modifier_bit(KeyModifiers::SUPER),
         display_modifier_bit(KeyModifiers::HYPER),
     ];
-    let KEYS: Vec<String> = vec![KeyCode::BackTab, KeyCode::Backspace]
-        .into_iter()
-        .map(display_keycode)
-        .chain(std::iter::once("AnyChar".to_string()))
-        .chain((32u8..127).map(|c| display_keycode(KeyCode::Char(c as char))))
-        .collect();
+    let keys: Vec<String> = vec![
+        KeyCode::Enter,
+        KeyCode::Backspace,
+        KeyCode::Left,
+        KeyCode::Right,
+        KeyCode::Up,
+        KeyCode::Down,
+        KeyCode::Home,
+        KeyCode::End,
+        KeyCode::PageUp,
+        KeyCode::PageDown,
+        KeyCode::Tab,
+        KeyCode::BackTab,
+        KeyCode::Delete,
+        KeyCode::Insert,
+        KeyCode::Esc,
+        KeyCode::CapsLock,
+        KeyCode::ScrollLock,
+        KeyCode::NumLock,
+        KeyCode::PrintScreen,
+        KeyCode::Pause,
+        KeyCode::Menu,
+        KeyCode::KeypadBegin,
+        KeyCode::Null,
+        // KeyCode::Char(c),
+        // KeyCode::F(n),
+        // KeyCode::Media(mk),
+    ]
+    .into_iter()
+    .map(display_keycode)
+    .chain(std::iter::once("AnyChar".to_string()))
+    .chain(std::iter::once("Space".to_string()))
+    .chain((97u8..123).map(|c| display_keycode(KeyCode::Char(c as char))))
+    .collect();
 
     let parts: Vec<&str> = current.split('+').collect();
 
@@ -1333,11 +1361,11 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
             } else {
                 prefix + "+"
             };
-            out.push(format!("{}{}+", prefix, m));
+            out.push(CompletionCandidate::new(format!("{}{}+", prefix, m)));
         }
     }
 
-    for k in KEYS {
+    for k in keys {
         if k.starts_with(current) {
             let prefix = parts[..parts.len() - 1].join("+");
             let prefix = if prefix.is_empty() {
@@ -1345,11 +1373,11 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
             } else {
                 prefix + "+"
             };
-            out.push(format!("{}{}", prefix, k));
+            out.push(CompletionCandidate::new(format!("{}{}", prefix, k)));
         }
     }
 
-    out.into_iter().map(CompletionCandidate::new).collect()
+    out
 }
 
 /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
