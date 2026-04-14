@@ -1,9 +1,9 @@
 use crate::active_suggestions::{ActiveSuggestions, MaybeProcessedSuggestion, ProcssedSuggestion};
 use crate::app::{App, ContentMode, TabCompletionHandle};
-use crate::bash_funcs::{self, QuoteType};
-use crate::tab_completion_context;
+use crate::bash_funcs::{self, ProgrammableCompleteReturn, QuoteType};
 use crate::text_buffer::SubString;
 use crate::users;
+use crate::{complete_flyline_args, tab_completion_context};
 use glob;
 
 #[derive(Debug)]
@@ -279,13 +279,26 @@ pub(crate) fn gen_completions_internal(
                 completion_context.context_until_cursor.as_ref(),
             );
 
-            let poss_completions = bash_funcs::run_programmable_completions(
-                &full_command,
-                &command_word,
-                word_under_cursor.as_ref(),
-                cursor_byte_pos,
-                word_under_cursor_end,
-            );
+            let poss_completions = if command_word == "flyline" {
+                let words = complete_flyline_args(&full_command, cursor_byte_pos);
+
+                words.map(|w| {
+                    ProgrammableCompleteReturn::from(
+                        w,
+                        bash_funcs::find_quote_type(word_under_cursor.as_ref()),
+                        1,
+                        ' ' as i32,
+                    )
+                })
+            } else {
+                bash_funcs::run_programmable_completions(
+                    &full_command,
+                    &command_word,
+                    word_under_cursor.as_ref(),
+                    cursor_byte_pos,
+                    word_under_cursor_end,
+                )
+            };
 
             match poss_completions {
                 Ok(comp_result) if !comp_result.completions.is_empty() => {
@@ -652,9 +665,6 @@ impl App<'_> {
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Thread hasn't finished yet; enter waiting mode.
-                log::debug!(
-                    "Tab completion thread not finished after 100ms, entering waiting mode"
-                );
                 self.content_mode = ContentMode::TabCompletionWaiting {
                     handle: TabCompletionHandle {
                         receiver: rx,

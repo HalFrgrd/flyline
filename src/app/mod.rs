@@ -1004,7 +1004,7 @@ impl<'a> App<'a> {
             .min();
 
         let (message, suggested_buffer) = if let Some(prefix) = prefix {
-            let suggested_buf = format!("{}{}", prefix, self.buffer.buffer());
+            let suggested_buf = format!("{} {}", prefix, self.buffer.buffer());
             (
                 format!(
                     "No default agent mode configured, but you have agent mode configured with trigger prefix \"{}\".",
@@ -1014,7 +1014,7 @@ impl<'a> App<'a> {
             )
         } else {
             (
-                "Agent mode is not configured. Run `flyline agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
+                "Agent mode is not configured. Run `flyline set-agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
                 None,
             )
         };
@@ -1865,7 +1865,10 @@ impl<'a> App<'a> {
                     }
                     let indicator = if is_selected { "▐" } else { " " };
                     let indicator_style = if is_selected {
-                        self.settings.color_palette.matching_char()
+                        self.settings
+                            .color_palette
+                            .matching_char()
+                            .remove_modifier(Modifier::UNDERLINED)
                     } else {
                         self.settings.color_palette.secondary_text()
                     };
@@ -1973,7 +1976,7 @@ impl<'a> App<'a> {
                     content.newline();
                     content.write_tagged_span(&TaggedSpan::new(
                         Span::styled(
-                            "Press Enter to run `flyline agent-mode --help`.",
+                            "Press Enter to run `flyline set-agent-mode --help`.",
                             self.settings.color_palette.secondary_text(),
                         ),
                         Tag::Blank,

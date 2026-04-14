@@ -1,12 +1,11 @@
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
-use clap_complete::env::EnvCompleter as _;
-use clap_complete::{CompleteEnv, Shell, generate};
+use clap_complete::{ArgValueCompleter, Shell, generate};
 use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
 
 use crate::{
-    app::actions::{self, possible_action_names},
+    app::actions::{self},
     cursor::CursorStyleConfig,
 };
 
@@ -109,11 +108,9 @@ struct FlylineArgs {
     /// Set the logging level
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<LogLevel>,
-    /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history
-    /// file; if omitted, defaults to $HOME/.zsh_history
+    /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
-
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
@@ -144,6 +141,90 @@ struct FlylineArgs {
     run_tab_completion_tests: bool,
     #[command(subcommand)]
     command: Option<Commands>,
+}
+
+pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::Result<Vec<String>> {
+    let current_dir = std::env::current_dir().ok();
+    let current_dir_asdf = current_dir.as_ref().map(|p| p.to_path_buf());
+
+    let mut command = FlylineArgs::command();
+
+    let tokens = dparser::collect_tokens_include_whitespace(raw_command);
+    // if the cursor is not in any of the tokens, append a whitespace token at the end so that we can generate completions for an empty token after the last word
+    let tokens =
+        if tokens.is_empty() || !tokens.iter().any(|t| t.byte_range().contains(&cursor_byte)) {
+            let mut tokens = tokens;
+            tokens.push(flash::lexer::Token {
+                kind: flash::lexer::TokenKind::Whitespace(" ".to_string()),
+                value: " ".to_string(),
+                position: flash::lexer::Position {
+                    line: 0,
+                    column: 0,
+                    byte: cursor_byte,
+                },
+            });
+            tokens
+        } else {
+            tokens
+        };
+
+    let non_whitespace_tokens = tokens
+        .into_iter()
+        .filter(|x| !x.kind.is_whitespace() || x.byte_range().contains(&cursor_byte))
+        .collect::<Vec<_>>();
+
+    let index = non_whitespace_tokens
+        .iter()
+        .filter(|x| !x.kind.is_whitespace())
+        .take_while(|&tok| tok.byte_range().end < cursor_byte)
+        .count();
+
+    let args_os_string = non_whitespace_tokens
+        .iter()
+        .map(|t| {
+            if t.kind.is_whitespace() {
+                std::ffi::OsString::new()
+            } else {
+                std::ffi::OsString::from(&t.value)
+            }
+        })
+        .collect::<Vec<_>>();
+
+    log::info!(
+        "Completing command: cursor_byte: {}, parsed args: {:?}, index: {}, ",
+        cursor_byte,
+        args_os_string,
+        index
+    );
+
+    match clap_complete::engine::complete(
+        &mut command,
+        args_os_string,
+        index,
+        current_dir_asdf.as_deref(),
+    ) {
+        Ok(candidates) => {
+            log::info!("{:#?}", candidates);
+            return Ok(candidates.iter().map(comp_candidate_to_string).collect());
+        }
+        Err(e) => {
+            log::error!("Error generating bash completion: {e}");
+            return Err(anyhow::anyhow!("Error generating bash completion: {e}"));
+        }
+    };
+}
+
+fn comp_candidate_to_string(candidate: &clap_complete::CompletionCandidate) -> String {
+    let value = candidate.get_value().to_string_lossy().to_string();
+
+    if let Some(help) = candidate
+        .get_help()
+        .map(|h| h.to_string())
+        .filter(|h| !h.is_empty())
+    {
+        return format!("{}\t{}", value, help);
+    }
+    value
 }
 
 #[derive(Subcommand, Debug)]
@@ -416,10 +497,10 @@ enum KeySubcommands {
     #[command(name = "set", verbatim_doc_comment, disable_help_flag = true)]
     Set {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
-        #[arg(num_args = 1, hide = true)]
+        #[arg(num_args = 1, hide = true, add = ArgValueCompleter::new(actions::key_sequence_completer))]
         key_sequence: String,
         /// Action in the form scope::action_name (e.g. "normal::submit_or_newline").
-        #[arg(value_parser = possible_action_names(), num_args = 1)]
+        #[arg(add = ArgValueCompleter::new(actions::possible_action_names), num_args = 1)]
         action: String,
     },
     /// List all keybindings from lowest to highest priority.
@@ -587,23 +668,6 @@ impl Flyline {
             }
         }
         log::debug!("flyline called with args: {:?}", args);
-
-        // Handle dynamic shell completions (COMPLETE=bash flyline …)
-        let args_os: Vec<std::ffi::OsString> = std::iter::once("flyline".into())
-            .chain(args.iter().map(std::ffi::OsString::from))
-            .collect();
-        let current_dir = std::env::current_dir().ok();
-        match CompleteEnv::with_factory(FlylineArgs::command)
-            .try_complete(args_os, current_dir.as_deref())
-        {
-            Ok(true) => return bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int,
-            Ok(false) => {}
-            Err(e) => {
-                log::error!(
-                    "flyline: dynamic completion error (check the COMPLETE env var value): {e}"
-                );
-            }
-        }
 
         // args contains words from WordList; first word is not the command name unlike argv
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
@@ -1298,47 +1362,6 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     handle: std::ptr::null(),
 };
 
-fn setup_autocompletion() {
-    let mut completion = Vec::new();
-    if let Err(e) = clap_complete::env::Bash.write_registration(
-        "COMPLETE",
-        "flyline",
-        "flyline",
-        "flyline",
-        &mut completion,
-    ) {
-        log::error!("Failed to generate dynamic completion registration: {}", e);
-        return;
-    }
-    let completion_str = match std::ffi::CString::new(completion) {
-        Ok(s) => s,
-        Err(e) => {
-            log::error!("Failed to create completion CString: {}", e);
-            return;
-        }
-    };
-    let from_file = c"flyline_setup_autocompletion";
-    #[cfg(not(feature = "pre_bash_4_4"))]
-    let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
-    #[cfg(feature = "pre_bash_4_4")]
-    let flags = bash_symbols::SEVAL_NOHIST;
-    unsafe {
-        // The called function will free the string we pass to it, so we use `xmalloc` to allocate it on the heap.
-        #[cfg(not(feature = "pre_bash_4_4"))]
-        bash_symbols::evalstring(
-            bash_symbols::xmalloc_cstr(&completion_str),
-            from_file.as_ptr(),
-            flags,
-        );
-        #[cfg(feature = "pre_bash_4_4")]
-        bash_symbols::parse_and_execute(
-            bash_symbols::xmalloc_cstr(&completion_str),
-            from_file.as_ptr(),
-            flags,
-        );
-    }
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     // Returning 0 means the load fails
@@ -1371,8 +1394,6 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
             return FAILURE;
         }
     }
-
-    setup_autocompletion();
 
     // This is how we ensure that our custom input stream is used by bash instead of readline.
     // This code is run during `run_startup_files` so we can't modify bash_input directly.

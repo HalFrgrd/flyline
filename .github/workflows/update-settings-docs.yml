@@ -32,7 +32,7 @@ jobs:
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
-      # flyline_help.txt and flyline_create_prompt_anim_help.txt are now in the project root (output of extract-help-text)
+      # flyline_help.txt and flyline_create_prompt_widget_animation_help.txt are now in the project root (output of extract-help-text)
       - name: Update README between marker comments
         run: |
           python3 - <<'EOF'
@@ -53,12 +53,12 @@ jobs:
               ["<!-- FLYLINE_HELP_START -->\n", "```\n", *[l + "\n" for l in help_text.splitlines()], "```\n", "<!-- FLYLINE_HELP_END -->\n"],
           )
 
-          create_anim_help_text = pathlib.Path("flyline_create_prompt_anim_help.txt").read_text().rstrip("\n")
+          create_anim_help_text = pathlib.Path("flyline_create_prompt_widget_animation_help.txt").read_text().rstrip("\n")
           lines = replace_between_markers(
               lines,
-              "<!-- FLYLINE_CREATE_PROMPT_ANIM_HELP_START -->",
-              "<!-- FLYLINE_CREATE_PROMPT_ANIM_HELP_END -->",
-              ["<!-- FLYLINE_CREATE_PROMPT_ANIM_HELP_START -->\n", "```\n", *[l + "\n" for l in create_anim_help_text.splitlines()], "```\n", "<!-- FLYLINE_CREATE_PROMPT_ANIM_HELP_END -->\n"],
+              "<!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_START -->",
+              "<!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_END -->",
+              ["<!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_START -->\n", "```\n", *[l + "\n" for l in create_anim_help_text.splitlines()], "```\n", "<!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_END -->\n"],
           )
 
           pathlib.Path("README.md").write_text("".join(lines))

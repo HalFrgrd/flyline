@@ -4,6 +4,7 @@ use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
 use crate::text_buffer::WordDelim;
 use anyhow::Result;
+use clap_complete::CompletionCandidate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::IsTerminal;
 use std::sync::LazyLock;
@@ -124,7 +125,7 @@ impl Action {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyEventMatch {
     Exact(KeyEvent),
     AnyCharAndMods(KeyModifiers),
@@ -171,7 +172,10 @@ fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     use crossterm::event::{MediaKeyCode, ModifierKeyCode};
     let s = s.trim();
     if s.len() == 1 {
-        return Ok(KeyCode::Char(s.chars().next().unwrap()));
+        // Convert upper case ASCII letters to lower case since terminals typically don't distinguish them in key codes.
+        let c = s.chars().next().unwrap();
+        let lower_case = c.to_ascii_lowercase();
+        return Ok(KeyCode::Char(lower_case));
     }
     let lower = s.to_lowercase();
     // F-key: "f1" … "f255"
@@ -1281,15 +1285,99 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     ),
 ];
 
-use clap::builder::PossibleValuesParser;
+pub fn possible_action_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    let current = current.to_string_lossy();
+    POSSIBLE_ACTIONS
+        .iter()
+        .filter_map(|a| {
+            let s = a.scoped_action_name();
+            if s.to_lowercase().contains(&current.to_lowercase()) {
+                Some(CompletionCandidate::new(s))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 
-pub fn possible_action_names() -> PossibleValuesParser {
-    let values = POSSIBLE_ACTIONS.iter().map(|a| {
-        let s = a.scoped_action_name();
-        Box::leak(s.into_boxed_str()) as &'static str
-    });
+pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    let current = current.to_string_lossy();
+    const MODS: &[&str] = &[
+        display_modifier_bit(KeyModifiers::CONTROL),
+        display_modifier_bit(KeyModifiers::ALT),
+        display_modifier_bit(KeyModifiers::SHIFT),
+        display_modifier_bit(KeyModifiers::SUPER),
+        display_modifier_bit(KeyModifiers::HYPER),
+    ];
+    let keys: Vec<String> = vec![
+        KeyCode::Enter,
+        KeyCode::Backspace,
+        KeyCode::Left,
+        KeyCode::Right,
+        KeyCode::Up,
+        KeyCode::Down,
+        KeyCode::Home,
+        KeyCode::End,
+        KeyCode::PageUp,
+        KeyCode::PageDown,
+        KeyCode::Tab,
+        KeyCode::BackTab,
+        KeyCode::Delete,
+        KeyCode::Insert,
+        KeyCode::Esc,
+        KeyCode::CapsLock,
+        KeyCode::ScrollLock,
+        KeyCode::NumLock,
+        KeyCode::PrintScreen,
+        KeyCode::Pause,
+        KeyCode::Menu,
+        KeyCode::KeypadBegin,
+        KeyCode::Null,
+        // KeyCode::Char(c),
+        // KeyCode::F(n),
+        // KeyCode::Media(mk),
+    ]
+    .into_iter()
+    .map(display_keycode)
+    .chain(std::iter::once("AnyChar".to_string()))
+    .chain(std::iter::once("Space".to_string()))
+    .chain((97u8..123).map(|c| display_keycode(KeyCode::Char(c as char))))
+    .collect();
 
-    PossibleValuesParser::new(values)
+    let parts: Vec<&str> = current.split('+').collect();
+
+    let (used, current) = if parts.len() > 1 {
+        (&parts[..parts.len() - 1], parts.last().unwrap())
+    } else {
+        (&[][..], &parts[0])
+    };
+    let mut out = vec![];
+
+    for m in MODS {
+        if !used.contains(m) && m.starts_with(current) {
+            let prefix = parts[..parts.len() - 1].join("+");
+            let prefix = if prefix.is_empty() {
+                "".into()
+            } else {
+                prefix + "+"
+            };
+            out.push(CompletionCandidate::new(format!("{}{}+", prefix, m)));
+        }
+    }
+
+    for k in keys {
+        if k.starts_with(current) {
+            let prefix = parts[..parts.len() - 1].join("+");
+            let prefix = if prefix.is_empty() {
+                "".into()
+            } else {
+                prefix + "+"
+            };
+            out.push(CompletionCandidate::new(format!("{}{}", prefix, k)));
+        }
+    }
+
+    out
 }
 
 /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
@@ -1587,7 +1675,7 @@ fn display_keycode(code: KeyCode) -> String {
 }
 
 /// Return the display name for a single modifier bit.
-fn display_modifier_bit(bit: KeyModifiers) -> &'static str {
+const fn display_modifier_bit(bit: KeyModifiers) -> &'static str {
     if bit.contains(KeyModifiers::CONTROL) {
         "Ctrl"
     } else if bit.contains(KeyModifiers::ALT) {
@@ -2275,6 +2363,29 @@ mod tests {
         assert_eq!(
             parse_single_keycode("modifier:leftsuper").unwrap(),
             KeyCode::Modifier(ModifierKeyCode::LeftSuper)
+        );
+    }
+
+    #[test]
+    fn test_parse_key_code_cases() {
+        assert_eq!(parse_single_keycode("c").unwrap(), KeyCode::Char('c'));
+
+        assert_eq!(parse_single_keycode("C").unwrap(), KeyCode::Char('c'));
+
+        assert_eq!(parse_single_keycode("@").unwrap(), KeyCode::Char('@'));
+
+        assert_eq!(parse_single_keycode("2").unwrap(), KeyCode::Char('2'));
+
+        assert_eq!(parse_single_keycode("\"").unwrap(), KeyCode::Char('"'));
+
+        assert_eq!(
+            KeyEventMatch::try_from("Super+Z").unwrap(),
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::SUPER))
+        );
+
+        assert_eq!(
+            KeyEventMatch::try_from("Super+z").unwrap(),
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::SUPER))
         );
     }
 
