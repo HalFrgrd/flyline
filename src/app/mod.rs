@@ -115,7 +115,11 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
 
     let runtime = build_runtime();
 
-    let end_state = runtime.block_on(App::new(settings).run(backend));
+    let t_app_create = std::time::Instant::now();
+    let app = App::new(settings);
+    log::trace!("startup: app creation: {:?}", t_app_create.elapsed());
+
+    let end_state = runtime.block_on(app.run(backend));
 
     restore_terminal();
 
@@ -411,7 +415,10 @@ impl<'a> App<'a> {
             return ExitState::WithoutCommand;
         }
 
+        let t_run = std::time::Instant::now();
+
         // Send execution finished escape codes (previous command has completed).
+        let t_escape = std::time::Instant::now();
         if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
             let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
             let hostname = bash_funcs::get_hostname();
@@ -422,7 +429,9 @@ impl<'a> App<'a> {
                     log::error!("Failed to write execution finished escape codes: {}", e);
                 });
         }
+        log::trace!("startup: escape codes: {:?}", t_escape.elapsed());
 
+        let t_terminal_setup = std::time::Instant::now();
         crossterm::terminal::enable_raw_mode().unwrap();
 
         let options = TerminalOptions {
@@ -432,9 +441,11 @@ impl<'a> App<'a> {
             ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
 
         bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
+        log::trace!("startup: terminal setup: {:?}", t_terminal_setup.elapsed());
 
         let mut redraw = true;
         let mut last_terminal_size = terminal.size().unwrap();
+        let mut t_after_first_render: Option<std::time::Instant> = None;
 
         'main_loop: loop {
             // Poll AI background task: check if a result has arrived without blocking.
@@ -530,10 +541,21 @@ impl<'a> App<'a> {
                         log::error!("Failed to set viewport height: {}", e);
                     });
 
+                // Only time the very first draw; subsequent redraws are not startup.
+                let t_draw = if t_after_first_render.is_none() {
+                    Some(std::time::Instant::now())
+                } else {
+                    None
+                };
                 let prev_contents = std::mem::take(&mut self.last_contents);
                 match terminal.draw(|f| self.ui(f, content)) {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
+
+                        if let Some(t) = t_draw {
+                            log::trace!("startup: initial render: {:?}", t.elapsed());
+                            t_after_first_render = Some(std::time::Instant::now());
+                        }
 
                         if matches!(
                             self.settings.send_shell_integration_codes,
@@ -576,6 +598,11 @@ impl<'a> App<'a> {
                 self.settings.frame_rate as f64
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
+
+            if let Some(t) = t_after_first_render.take() {
+                log::trace!("startup: until waiting on stdin: {:?}", t.elapsed());
+                log::trace!("startup: total: {:?}", t_run.elapsed());
+            }
 
             redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
