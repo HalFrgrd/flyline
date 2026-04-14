@@ -424,7 +424,6 @@ Flyline ships with two built-in colour presets (dark and light) and lets you ove
 ```bash
 flyline set-color --default-theme dark   # original palette, optimised for dark terminals
 flyline set-color --default-theme light  # preset optimised for light terminals
-flyline set-color --default-theme auto   # detect dark/light from the terminal background colour
 ```
 
 ### Custom colours
