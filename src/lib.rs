@@ -102,7 +102,7 @@ fn parse_effect_speed(s: &str) -> Result<f32, String> {
     styles = get_styles(),
     after_help = "Read more at https://github.com/HalFrgrd/flyline",
 )]
-pub struct FlylineArgs {
+struct FlylineArgs {
     /// Show version information
     #[arg(long)]
     version: bool,
@@ -143,7 +143,57 @@ pub struct FlylineArgs {
     #[arg(long = "run-tab-completion-tests")]
     run_tab_completion_tests: bool,
     #[command(subcommand)]
-    pub command: Option<Commands>,
+    command: Option<Commands>,
+}
+
+pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::Result<Vec<String>> {
+    let current_dir = std::env::current_dir().ok();
+    let current_dir_asdf = current_dir.as_ref().map(|p| p.to_path_buf());
+
+    let mut command = FlylineArgs::command();
+
+    let mut args = shlex::split(&raw_command)
+        .ok_or_else(|| anyhow::anyhow!("Failed to parse command string"))?;
+    args.remove(0);
+
+    // TODO: not correct:
+    let index = args
+        .iter()
+        .map(|arg| arg.len() + 1)
+        .take_while(|&len| len <= cursor_byte)
+        .count()
+        .saturating_sub(1);
+
+    let args_os_string = args
+        .iter()
+        .map(std::ffi::OsString::from)
+        .collect::<Vec<_>>();
+
+    log::info!(
+        "Completing command: cursor_byte: {}, parsed args: {:?}, index: {}, ",
+        cursor_byte,
+        args,
+        index
+    );
+
+    match clap_complete::engine::complete(
+        &mut command,
+        args_os_string,
+        index,
+        current_dir_asdf.as_deref(),
+    ) {
+        Ok(candidates) => {
+            log::info!("{:#?}", candidates);
+            return Ok(candidates
+                .iter()
+                .map(|c| c.get_value().to_string_lossy().to_string())
+                .collect());
+        }
+        Err(e) => {
+            log::error!("Error generating bash completion: {e}");
+            return Err(anyhow::anyhow!("Error generating bash completion: {e}"));
+        }
+    };
 }
 
 #[derive(Subcommand, Debug)]
@@ -587,7 +637,6 @@ impl Flyline {
             }
         }
         log::debug!("flyline called with args: {:?}", args);
-
 
         // args contains words from WordList; first word is not the command name unlike argv
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
@@ -1282,47 +1331,6 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     handle: std::ptr::null(),
 };
 
-fn setup_autocompletion() {
-    let mut completion = Vec::new();
-    if let Err(e) = clap_complete::env::Bash.write_registration(
-        "COMPLETE",
-        "flyline",
-        "flyline",
-        "flyline",
-        &mut completion,
-    ) {
-        log::error!("Failed to generate dynamic completion registration: {}", e);
-        return;
-    }
-    let completion_str = match std::ffi::CString::new(completion) {
-        Ok(s) => s,
-        Err(e) => {
-            log::error!("Failed to create completion CString: {}", e);
-            return;
-        }
-    };
-    log::info!("Generated bash completion registration: {}", completion_str.to_string_lossy());
-    let from_file = c"flyline_setup_autocompletion";
-    #[cfg(not(feature = "pre_bash_4_4"))]
-    let flags = bash_symbols::SEVAL_NOHIST | bash_symbols::SEVAL_NOOPTIMIZE;
-    #[cfg(feature = "pre_bash_4_4")]
-    let flags = bash_symbols::SEVAL_NOHIST;
-    unsafe {
-        // The called function will free the string we pass to it, so we use `xmalloc` to allocate it on the heap.
-        #[cfg(not(feature = "pre_bash_4_4"))]
-        bash_symbols::evalstring(
-            bash_symbols::xmalloc_cstr(&completion_str),
-            from_file.as_ptr(),
-            flags,
-        );
-        #[cfg(feature = "pre_bash_4_4")]
-        bash_symbols::parse_and_execute(
-            bash_symbols::xmalloc_cstr(&completion_str),
-            from_file.as_ptr(),
-            flags,
-        );
-    }
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
@@ -1357,7 +1365,6 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
         }
     }
 
-    setup_autocompletion();
 
     // This is how we ensure that our custom input stream is used by bash instead of readline.
     // This code is run during `run_startup_files` so we can't modify bash_input directly.

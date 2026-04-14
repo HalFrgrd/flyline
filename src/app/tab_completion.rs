@@ -1,11 +1,9 @@
 use crate::active_suggestions::{ActiveSuggestions, MaybeProcessedSuggestion, ProcssedSuggestion};
 use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, ProgrammableCompleteReturn, QuoteType};
-use crate::{FlylineArgs, tab_completion_context};
 use crate::text_buffer::SubString;
 use crate::users;
-use clap::CommandFactory;
-use clap_complete::CompleteEnv;
+use crate::{complete_flyline_args, tab_completion_context};
 use glob;
 
 #[derive(Debug)]
@@ -281,43 +279,19 @@ pub(crate) fn gen_completions_internal(
                 completion_context.context_until_cursor.as_ref(),
             );
 
-            let poss_completions;
+            let poss_completions = if command_word == "flyline" {
+                let words = complete_flyline_args(&full_command, cursor_byte_pos);
 
-            if command_word == "flyline" {
-                    let args_os: Vec<std::ffi::OsString> = full_command.split_whitespace().map(std::ffi::OsString::from).collect();
-                    let current_dir = std::env::current_dir().ok();
-                    match CompleteEnv::with_factory(FlylineArgs::command)
-                        .try_complete(args_os, current_dir.as_deref())
-                    {
-                        Ok(true) => {
-                            log::info!("flyline: completed shell completions");
-                            poss_completions = Ok(ProgrammableCompleteReturn {
-                                completions: vec![],
-                                flags: bash_funcs::CompletionFlags::default(),
-                            });
-                        }
-                        Ok(false) => {
-                            log::info!("flyline: no completions generated");
-                            poss_completions = "No completions generated".into();
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "flyline: dynamic completion error (check the COMPLETE env var value): {e}"
-                            );
-                            poss_completions = Err(format!("Dynamic completion error: {e}"));
-                        }
-
-                    }
+                words.map(|w| ProgrammableCompleteReturn::from(w, None, 1, 0))
             } else {
-                poss_completions = bash_funcs::run_programmable_completions(
+                bash_funcs::run_programmable_completions(
                     &full_command,
                     &command_word,
                     word_under_cursor.as_ref(),
                     cursor_byte_pos,
                     word_under_cursor_end,
-                );
-            }
-
+                )
+            };
 
             match poss_completions {
                 Ok(comp_result) if !comp_result.completions.is_empty() => {
@@ -659,7 +633,10 @@ impl App<'_> {
         let completion_context_owned = completion_context.into_owned();
 
         let thread_handle = std::thread::spawn(move || {
-            log::info!("Tab completion thread started for context: {:?}", completion_context_owned);
+            log::info!(
+                "Tab completion thread started for context: {:?}",
+                completion_context_owned
+            );
             let suggestions = gen_completions_internal(&completion_context_owned);
             if suggestions.is_none() {
                 log::debug!(
@@ -689,9 +666,7 @@ impl App<'_> {
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Thread hasn't finished yet; enter waiting mode.
-                log::info!(
-                    "Tab completion thread not finished after 100ms, entering waiting mode"
-                );
+                log::info!("Tab completion thread not finished after 100ms, entering waiting mode");
                 self.content_mode = ContentMode::TabCompletionWaiting {
                     handle: TabCompletionHandle {
                         receiver: rx,

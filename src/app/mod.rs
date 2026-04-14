@@ -159,16 +159,11 @@ impl std::fmt::Debug for TabCompletionHandle {
 
 impl Drop for TabCompletionHandle {
     fn drop(&mut self) {
-        // log::info!("Joining tab completion thread");
-        // if let Some(handle) = self.thread.take() {
-        //     log::info!("Waiting for tab completion thread to finish...");
-        //     if let Err(e) = handle.join() {
-        //         log::warn!("Tab completion thread panicked: {:?}", e);
-        //     }
-        //         else {
-        //             log::info!("Tab completion thread joined successfully");
-        //         }
-        // }
+        if let Some(handle) = self.thread.take() {
+            if let Err(e) = handle.join() {
+                log::warn!("Tab completion thread panicked: {:?}", e);
+            }
+        }
     }
 }
 
