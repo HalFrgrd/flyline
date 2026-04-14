@@ -144,22 +144,64 @@ impl FuzzyHistorySource {
     }
 }
 
+/// Guard that owns the tab-completion background thread and the result channel.
+/// Joining the thread (on drop) ensures it does not outlive the app.
+struct TabCompletionHandle {
+    receiver: std::sync::mpsc::Receiver<Option<Vec<MaybeProcessedSuggestion>>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl std::fmt::Debug for TabCompletionHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TabCompletionHandle").finish()
+    }
+}
+
+impl Drop for TabCompletionHandle {
+    fn drop(&mut self) {
+        if let Some(handle) = self.thread.take() {
+            if let Err(e) = handle.join() {
+                log::warn!("Tab completion thread panicked: {:?}", e);
+            }
+        }
+    }
+}
+
+/// Wraps an in-flight agent-mode child process. On drop the child is killed
+/// and waited on so it does not outlive the app.
+struct AgentChild(std::process::Child);
+
+impl std::fmt::Debug for AgentChild {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentChild")
+            .field("pid", &self.0.id())
+            .finish()
+    }
+}
+
+impl Drop for AgentChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 #[derive(Debug)]
 enum ContentMode {
     Normal,
     FuzzyHistorySearch(FuzzyHistorySource),
     TabCompletion(Box<ActiveSuggestions>),
-    /// Tab completion is running in a background thread. Stores the channel
-    /// receiver and the word-under-cursor snapshot needed to finish the
-    /// completion once the thread produces results.
+    /// Tab completion is running in a background thread.  The handle owns both
+    /// the result channel receiver and the thread join-handle so that cleanup
+    /// happens automatically when the mode transitions.
     TabCompletionWaiting {
-        receiver: std::sync::mpsc::Receiver<Option<Vec<MaybeProcessedSuggestion>>>,
+        handle: TabCompletionHandle,
         wuc_substring: SubString,
     },
-    /// AI command is running in the background. Stores the channel receiver and the
-    /// human-readable representation of the command being executed.
+    /// AI command is running as a child process.  The child is polled each
+    /// event-loop iteration with `try_wait`; on drop it is killed and reaped.
     AgentModeWaiting {
-        receiver: std::sync::mpsc::Receiver<Result<String, (String, String)>>,
+        child: AgentChild,
         command_display: String,
         start_time: std::time::Instant,
     },
@@ -448,15 +490,43 @@ impl<'a> App<'a> {
         let mut t_after_first_render: Option<std::time::Instant> = None;
 
         'main_loop: loop {
-            // Poll AI background task: check if a result has arrived without blocking.
-            let ai_result =
-                if let ContentMode::AgentModeWaiting { ref receiver, .. } = self.content_mode {
-                    match receiver.try_recv() {
-                        Ok(result) => Some(result),
-                        Err(std::sync::mpsc::TryRecvError::Empty) => None,
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            log::warn!("AI task channel disconnected unexpectedly");
-                            Some(Err(("AI task disconnected".to_string(), String::new())))
+            // Poll AI background task: check if the child process has finished.
+            let ai_result: Option<Result<String, (String, String)>> =
+                if let ContentMode::AgentModeWaiting { ref mut child, .. } = self.content_mode {
+                    match child.0.try_wait() {
+                        Ok(Some(status)) => {
+                            // Process has exited; drain the pipes synchronously.
+                            // This is safe because the child has exited (all write
+                            // ends of the pipes are closed) so read_to_string returns
+                            // immediately after consuming the buffered data.
+                            let stdout =
+                                child.0.stdout.take().map_or_else(String::new, |mut out| {
+                                    let mut buf = String::new();
+                                    let _ = std::io::Read::read_to_string(&mut out, &mut buf);
+                                    buf
+                                });
+                            let stdout = stdout.trim().to_string();
+                            if status.success() {
+                                Some(Ok(stdout))
+                            } else {
+                                let stderr =
+                                    child.0.stderr.take().map_or_else(String::new, |mut err| {
+                                        let mut buf = String::new();
+                                        let _ = std::io::Read::read_to_string(&mut err, &mut buf);
+                                        buf
+                                    });
+                                let stderr = stderr.trim().to_string();
+                                log::warn!("AI command exited with {}: {}", status, stderr);
+                                Some(Err((
+                                    format!("AI command exited with {}", status),
+                                    format!("stdout: {}\nstderr: {}", stdout, stderr),
+                                )))
+                            }
+                        }
+                        Ok(None) => None,
+                        Err(e) => {
+                            log::warn!("AI task: try_wait error: {}", e);
+                            Some(Err((format!("AI task failed: {}", e), String::new())))
                         }
                     }
                 } else {
@@ -492,8 +562,8 @@ impl<'a> App<'a> {
             }
 
             // Poll tab-completion background thread: check if results have arrived.
-            if let ContentMode::TabCompletionWaiting { ref receiver, .. } = self.content_mode {
-                match receiver.try_recv() {
+            if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
+                match handle.receiver.try_recv() {
                     Ok(Some(sugs)) => {
                         // Take ownership of wuc_substring from the waiting state.
                         let wuc =
@@ -984,7 +1054,7 @@ impl<'a> App<'a> {
             .map(|cmd| (cmd.clone(), buf))
     }
 
-    /// Spawn the configured AI command in a background thread and transition to `AiMode`.
+    /// Spawn the configured AI command as a child process and transition to `AgentModeWaiting`.
     /// Words that contain a space are quoted with single quotes in the display string.
     /// If `buffer_str` is empty, opens the agent-prompts fuzzy history search instead.
     fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
@@ -1005,7 +1075,6 @@ impl<'a> App<'a> {
             Some(prompt) => format!("{}\n{}", prompt, buffer_str),
             None => buffer_str.to_string(),
         };
-        let (tx, rx) = std::sync::mpsc::channel::<Result<String, (String, String)>>();
         // Build a human-readable representation of the full command being run.
         // Any word that contains a space is wrapped in single quotes, with any
         // embedded single quotes escaped using the shell '\'' idiom.
@@ -1025,41 +1094,34 @@ impl<'a> App<'a> {
                 .join(" ")
         };
         log::info!("Running AI command: {}", command_display);
-        std::thread::spawn(move || {
-            // Safety: the guard `!ai_command.is_empty()` at the call site ensures
-            // cmd_args is non-empty, so split_first() always returns Some.
-            let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
-
-            // SIGCHLD was already set to SIG_DFL by `Flyline::get()` before
-            // calling `app::get_command`, so no per-thread signal manipulation
-            // is needed here.
-            let result: Result<String, (String, String)> = std::process::Command::new(prog)
-                .args(args)
-                .arg(&final_arg)
-                .output()
-                .map_err(|e| (format!("Failed to run AI command: {}", e), String::new()))
-                .and_then(|output| {
-                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if !output.status.success() {
-                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                        log::warn!("AI command exited with {}: {}", output.status, stderr);
-                        Err((
-                            format!("AI command exited with {}", output.status),
-                            format!("stdout: {}\nstderr: {}", stdout, stderr),
-                        ))
-                    } else {
-                        Ok(stdout)
-                    }
-                });
-            if let Err(e) = tx.send(result) {
-                log::warn!("AI task: failed to send result (receiver dropped): {}", e);
+        // Safety: the guard `!ai_command.is_empty()` at the call site ensures
+        // cmd_args is non-empty, so split_first() always returns Some.
+        let (prog, args) = cmd_args.split_first().expect("ai_command is non-empty");
+        // SIGCHLD was already set to SIG_DFL by `Flyline::get()` before calling
+        // `app::get_command`, so no per-process signal manipulation is needed.
+        match std::process::Command::new(prog)
+            .args(args)
+            .arg(&final_arg)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => {
+                self.content_mode = ContentMode::AgentModeWaiting {
+                    child: AgentChild(child),
+                    command_display,
+                    start_time: std::time::Instant::now(),
+                };
             }
-        });
-        self.content_mode = ContentMode::AgentModeWaiting {
-            receiver: rx,
-            command_display,
-            start_time: std::time::Instant::now(),
-        };
+            Err(e) => {
+                log::error!("Failed to spawn AI command: {}", e);
+                self.content_mode = ContentMode::AgentError {
+                    message: format!("Failed to run AI command: {}", e),
+                    raw_output: String::new(),
+                    suggested_buffer: None,
+                };
+            }
+        }
     }
 
     /// Submit the current buffer if bash would accept it, otherwise insert a newline.

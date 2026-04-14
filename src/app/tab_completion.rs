@@ -1,5 +1,5 @@
 use crate::active_suggestions::{ActiveSuggestions, MaybeProcessedSuggestion, ProcssedSuggestion};
-use crate::app::{App, ContentMode};
+use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
 use crate::tab_completion_context;
 use crate::text_buffer::SubString;
@@ -626,7 +626,7 @@ impl App<'_> {
 
         let completion_context_owned = completion_context.into_owned();
 
-        std::thread::spawn(move || {
+        let thread_handle = std::thread::spawn(move || {
             let suggestions = gen_completions_internal(&completion_context_owned);
             if suggestions.is_none() {
                 log::debug!(
@@ -656,7 +656,10 @@ impl App<'_> {
                     "Tab completion thread not finished after 100ms, entering waiting mode"
                 );
                 self.content_mode = ContentMode::TabCompletionWaiting {
-                    receiver: rx,
+                    handle: TabCompletionHandle {
+                        receiver: rx,
+                        thread: Some(thread_handle),
+                    },
                     wuc_substring,
                 };
             }
