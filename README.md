@@ -366,7 +366,7 @@ Options:
           [possible values: error, warn, info, debug, trace]
 
       --load-zsh-history [<PATH>]
-          Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file; if omitted, defaults to $HOME/.zsh_history
+          Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
 
       --show-animations [<SHOW_ANIMATIONS>]
           Show animations
