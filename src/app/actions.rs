@@ -124,7 +124,7 @@ impl Action {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyEventMatch {
     Exact(KeyEvent),
     AnyCharAndMods(KeyModifiers),
@@ -171,7 +171,10 @@ fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     use crossterm::event::{MediaKeyCode, ModifierKeyCode};
     let s = s.trim();
     if s.len() == 1 {
-        return Ok(KeyCode::Char(s.chars().next().unwrap()));
+        // Convert upper case ASCII letters to lower case since terminals typically don't distinguish them in key codes.
+        let c = s.chars().next().unwrap();
+        let lower_case = c.to_ascii_lowercase();
+        return Ok(KeyCode::Char(lower_case));
     }
     let lower = s.to_lowercase();
     // F-key: "f1" … "f255"
@@ -2275,6 +2278,29 @@ mod tests {
         assert_eq!(
             parse_single_keycode("modifier:leftsuper").unwrap(),
             KeyCode::Modifier(ModifierKeyCode::LeftSuper)
+        );
+    }
+
+    #[test]
+    fn test_parse_key_code_cases() {
+        assert_eq!(parse_single_keycode("c").unwrap(), KeyCode::Char('c'));
+
+        assert_eq!(parse_single_keycode("C").unwrap(), KeyCode::Char('c'));
+
+        assert_eq!(parse_single_keycode("@").unwrap(), KeyCode::Char('@'));
+
+        assert_eq!(parse_single_keycode("2").unwrap(), KeyCode::Char('2'));
+
+        assert_eq!(parse_single_keycode("\"").unwrap(), KeyCode::Char('"'));
+
+        assert_eq!(
+            KeyEventMatch::try_from("Super+Z").unwrap(),
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::SUPER))
+        );
+
+        assert_eq!(
+            KeyEventMatch::try_from("Super+z").unwrap(),
+            KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::SUPER))
         );
     }
 
