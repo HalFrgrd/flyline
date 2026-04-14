@@ -1,6 +1,6 @@
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
 use clap_complete::env::EnvCompleter as _;
-use clap_complete::{CompleteEnv, Shell, generate};
+use clap_complete::{ArgValueCompleter, CompleteEnv, Shell, generate};
 use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
@@ -109,11 +109,9 @@ struct FlylineArgs {
     /// Set the logging level
     #[arg(long = "log-level", value_name = "LEVEL")]
     log_level: Option<LogLevel>,
-    /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history
-    /// file; if omitted, defaults to $HOME/.zsh_history
+    /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
-
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
@@ -181,7 +179,6 @@ pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::R
         .filter(|x| !x.kind.is_whitespace())
         .take_while(|&tok| tok.byte_range().end < cursor_byte)
         .count();
-    // .saturating_sub(1);
 
     let args_os_string = non_whitespace_tokens
         .iter()
@@ -501,7 +498,7 @@ enum KeySubcommands {
     #[command(name = "set", verbatim_doc_comment, disable_help_flag = true)]
     Set {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
-        #[arg(num_args = 1, hide = true)]
+        #[arg(num_args = 1, hide = true, add = ArgValueCompleter::new(actions::key_sequence_completer))]
         key_sequence: String,
         /// Action in the form scope::action_name (e.g. "normal::submit_or_newline").
         #[arg(value_parser = possible_action_names(), num_args = 1)]

@@ -4,6 +4,7 @@ use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
 use crate::text_buffer::WordDelim;
 use anyhow::Result;
+use clap_complete::CompletionCandidate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::IsTerminal;
 use std::sync::LazyLock;
@@ -1293,6 +1294,22 @@ pub fn possible_action_names() -> PossibleValuesParser {
     });
 
     PossibleValuesParser::new(values)
+}
+
+
+pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    let current = current.to_string_lossy();
+    let mut suggestions = Vec::new();
+    // for binding in DEFAULT_BINDINGS.iter() {
+    //     for key_seq in binding.key_sequences() {
+    //         if key_seq.to_lowercase().starts_with(&current.to_lowercase()) {
+    //             suggestions.push(key_seq.to_string());
+    //         }
+    //     }
+    // }
+    suggestions.push(CompletionCandidate::new("Enter"));
+    suggestions.push(CompletionCandidate::new("Ctrl"));
+    suggestions
 }
 
 /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
