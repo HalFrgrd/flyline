@@ -221,17 +221,17 @@ passed through Bash's `decode_prompt_string` so Bash prompt escape sequences
 (e.g. `\u`, `\w`, ANSI colour codes) are fully supported.
 
 ```bash
-# Non-blocking (default): spawns the command in the background; shows a
-# placeholder of 10 spaces while the command is running.
+# Non-blocking (default): spawns the command in the background; shows the
+# previous output while the command is running (empty on the first render).
 flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
-  --command 'run_slow_git_metrics.sh' --placeholder 10
+  --command 'run_slow_git_metrics.sh'
 # PS1 usage:
 PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 
-# Non-blocking with 'prev' placeholder: shows the previous output while
-# the new output is being computed.
+# Non-blocking with an explicit 10-space placeholder while the new output is
+# being computed.
 flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
-  --command 'run_slow_git_metrics.sh' --placeholder prev
+  --command 'run_slow_git_metrics.sh' --placeholder 10
 
 # Blocking: waits for the command to finish before showing the prompt.
 flyline create-prompt-widget custom --name CUSTOM_WIDGET2 \
