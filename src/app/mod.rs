@@ -48,14 +48,20 @@ fn build_runtime() -> tokio::runtime::Runtime {
 }
 
 fn restore_terminal() {
-    crossterm::terminal::disable_raw_mode().unwrap();
-    let _ = crossterm::execute!(
+    crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
+        // Likely from the master pty fd being closed.
+        log::error!("Failed to disable raw mode: {}", e);
+    });
+    crossterm::execute!(
         std::io::stdout(),
         crossterm::event::DisableBracketedPaste,
         crossterm::event::DisableFocusChange,
         crossterm::event::DisableMouseCapture,
         crossterm::event::PopKeyboardEnhancementFlags
-    );
+    )
+    .unwrap_or_else(|e| {
+        log::error!("Failed to restore terminal features: {}", e);
+    });
 }
 
 fn set_panic_hook() {
@@ -111,7 +117,9 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
                 | crossterm::event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
         )
     )
-    .unwrap();
+    .unwrap_or_else(|e| {
+        log::error!("Failed to set terminal features: {}", e);
+    });
 
     let runtime = build_runtime();
 
