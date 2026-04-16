@@ -610,7 +610,7 @@ static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
-    if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_mut() {
+    if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
         return boxed.get();
     }
     eprintln!("flyline_get_char: FLYLINE_INSTANCE_PTR is None");
@@ -619,7 +619,7 @@ extern "C" fn flyline_get_char() -> c_int {
 
 // C-compatible ungetter function that bash will call
 extern "C" fn flyline_unget_char(c: c_int) -> c_int {
-    if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_mut() {
+    if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
         return boxed.unget(c);
     }
     eprintln!("flyline_unget_char: FLYLINE_INSTANCE_PTR is None");
@@ -627,11 +627,21 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
 }
 
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
-    if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap().as_mut() {
-        return boxed.call(words);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if let Some(boxed) = FLYLINE_INSTANCE_PTR.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            return boxed.call(words);
+        }
+        eprintln!("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
+        0
+    }));
+    match result {
+        Ok(code) => code,
+        Err(_) => {
+            eprintln!("flyline: command handler panicked; ignoring.");
+            log::error!("flyline_call_command panicked; returning failure");
+            bash_symbols::BuiltinExitCode::Usage as c_int
+        }
     }
-    eprintln!("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
-    0
 }
 
 #[derive(Debug)]
@@ -1416,7 +1426,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
         }
 
         // Store the Arc globally so C callbacks can access it
-        *FLYLINE_INSTANCE_PTR.lock().unwrap() = Some(Box::new(Flyline::new()));
+        *FLYLINE_INSTANCE_PTR.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(Flyline::new()));
     };
 
     unsafe {
@@ -1495,7 +1505,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
-    let had_instance = FLYLINE_INSTANCE_PTR.lock().unwrap().take().is_some();
+    let had_instance = FLYLINE_INSTANCE_PTR.lock().unwrap_or_else(|e| e.into_inner()).take().is_some();
 
     if !had_instance {
         return;
