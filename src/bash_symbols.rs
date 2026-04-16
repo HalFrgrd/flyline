@@ -5,11 +5,6 @@ pub const EOF: c_int = -1;
 
 pub const BUILTIN_ENABLED: c_int = 0x01;
 
-// common.h seval flags
-pub const SEVAL_NOHIST: c_int = 0x004;
-#[cfg(not(feature = "pre_bash_4_4"))]
-pub const SEVAL_NOOPTIMIZE: c_int = 0x400; /* don't try to set optimization flags */
-
 /* A structure which represents a word. */
 // typedef struct word_desc {
 //   char *word;		/* Zero terminated string. */
