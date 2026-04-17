@@ -491,9 +491,22 @@ impl DParser {
                     // When an assignment operator immediately follows a word (e.g. `FOO=1`),
                     // retroactively annotate that word as an environment variable name and
                     // remove the spurious command_word annotation it received earlier.
-                    if previous_token
-                        .as_ref()
-                        .is_some_and(|t| t.token.kind.is_word())
+                    //
+                    // Only do this when there is no active command yet, or when the only
+                    // token in the active command range is the immediately preceding word
+                    // (i.e. that word started the command range and now needs to be
+                    // reinterpreted as an env-var assignment instead).  Otherwise the `=`
+                    // is part of an argument to an existing command (e.g. the `go=` in
+                    // `chmod go=,go-st /some/path`) and must not be turned into an
+                    // env-var assignment.
+                    let prev_is_lone_command_start = match &self.current_command_range {
+                        Some(range) => *range.start() == idx - 1 && *range.end() == idx - 1,
+                        None => true,
+                    };
+                    if prev_is_lone_command_start
+                        && previous_token
+                            .as_ref()
+                            .is_some_and(|t| t.token.kind.is_word())
                     {
                         self.tokens[idx - 1].annotations.is_env_var = true;
                         self.tokens[idx - 1].annotations.command_word = None;
@@ -609,7 +622,12 @@ impl DParser {
                         }
                     }
 
-                    if self.current_command_range.is_none() && !in_double_quote && !in_single_quote
+                    // A Comment token must never start a command range or be
+                    // tagged as a command word.
+                    if self.current_command_range.is_none()
+                        && !in_double_quote
+                        && !in_single_quote
+                        && token.kind != TokenKind::Comment
                     {
                         self.tokens[idx].annotations.command_word =
                             Some(self.tokens[idx].token.value.clone());
@@ -1652,6 +1670,56 @@ mod tests {
         // hello – a plain argument
         assert_eq!(tokens[6].token.value, "hello");
         assert_eq!(tokens[6].annotations, Annotations::default());
+    }
+
+    #[test]
+    fn test_assignment_inside_command_args_not_env_var() {
+        // `chmod go=,go-st /some/path`: the `go` to the left of `=` is an
+        // argument to `chmod`, not an env-var assignment. It must therefore
+        // not be tagged with is_env_var.
+        let input = r#"chmod go=,go-st /some/path"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        // chmod – the command word
+        assert_eq!(tokens[0].token.value, "chmod");
+        assert_eq!(
+            tokens[0].annotations.command_word,
+            Some("chmod".to_string())
+        );
+
+        // go – first argument fragment, NOT an env var
+        assert_eq!(tokens[2].token.value, "go");
+        assert!(!tokens[2].annotations.is_env_var);
+    }
+
+    #[test]
+    fn test_comment_only_buffer_not_command() {
+        // A buffer containing only a comment must not produce any token
+        // annotated as a command word; the only token should be flagged as a
+        // comment instead.
+        let input = "# just a comment";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        for t in tokens {
+            assert!(
+                t.annotations.command_word.is_none(),
+                "Comment-only buffer should not produce a command word, but token {:?} got command_word={:?}",
+                t.token,
+                t.annotations.command_word
+            );
+        }
+        // At least one token must be flagged as a comment.
+        assert!(tokens.iter().any(|t| t.annotations.is_comment));
     }
 
     #[test]

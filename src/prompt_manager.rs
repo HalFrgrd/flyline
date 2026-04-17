@@ -1,6 +1,7 @@
 use crate::bash_funcs;
 use crate::bash_symbols;
 use crate::content_builder::{Tag, TaggedLine, TaggedSpan};
+use crate::kill_on_drop_child::KillOnDropChild;
 use crate::settings::{Placeholder, PromptAnimation, PromptWidget, PromptWidgetCustom};
 #[cfg(not(test))]
 use ansi_to_tui::IntoText;
@@ -50,7 +51,7 @@ enum WidgetCustomState {
     /// Command is still running (or has not yet been polled).
     Pending {
         placeholder: Vec<TaggedSpan<'static>>,
-        child: std::process::Child,
+        child: KillOnDropChild,
         /// The command that was spawned, retained for log messages.
         command: Vec<String>,
         /// Shared storage to write the output into when the command finishes,
@@ -70,16 +71,6 @@ impl std::fmt::Debug for WidgetCustomState {
             WidgetCustomState::Pending { .. } => f.write_str("WidgetCustomState::Pending"),
             WidgetCustomState::Done(_) => f.write_str("WidgetCustomState::Done"),
             WidgetCustomState::Failed(_) => f.write_str("WidgetCustomState::Failed"),
-        }
-    }
-}
-
-impl Drop for WidgetCustomState {
-    /// Kill and reap a still-running child process when the state is dropped.
-    fn drop(&mut self) {
-        if let WidgetCustomState::Pending { child, .. } = self {
-            let _ = child.kill();
-            let _ = child.wait();
         }
     }
 }
@@ -736,7 +727,7 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                             let placeholder = resolve_placeholder(w);
                             WidgetCustomState::Pending {
                                 placeholder,
-                                child,
+                                child: KillOnDropChild::new(child),
                                 command: w.command.clone(),
                                 prev_output_cell: w.prev_output.clone(),
                             }
@@ -995,7 +986,7 @@ fn format_prompt_line(
                     ..
                 } => match child.try_wait() {
                     Ok(Some(status)) => Some(collect_and_finalize(
-                        child,
+                        &mut *child,
                         status,
                         command,
                         prev_output_cell,
@@ -2106,7 +2097,7 @@ mod tests {
             .expect("failed to spawn sleep for test");
         let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Pending {
             placeholder: vec![TaggedSpan::new(Span::raw("   "), Tag::Ps1Prompt)],
-            child,
+            child: KillOnDropChild::new(child),
             command: vec!["sleep".to_string(), "100".to_string()],
             prev_output_cell: Arc::new(Mutex::new(Vec::new())),
         })];

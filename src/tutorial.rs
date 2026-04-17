@@ -1,8 +1,10 @@
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span, Text};
+use std::sync::LazyLock;
 
 use crate::bash_funcs;
 use crate::palette::Palette;
+use crate::shell_integration;
 
 /// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
 const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
@@ -90,7 +92,57 @@ fn detect_kitty_keyboard_support() -> bool {
 }
 
 fn is_vscode() -> bool {
-    bash_funcs::get_envvar_value("TERM_PROGRAM").as_deref() == Some("vscode")
+    shell_integration::is_vscode()
+}
+
+/// Path to the user's Zsh history file (`$HOME/.zsh_history`), if `$HOME` is
+/// set. Returns `None` when no home directory can be determined.
+fn zsh_history_path() -> Option<std::path::PathBuf> {
+    bash_funcs::get_envvar_value("HOME").map(|h| std::path::PathBuf::from(h).join(".zsh_history"))
+}
+
+/// Returns true when the user's default shell (`$SHELL`) ends with `zsh`.
+fn default_shell_is_zsh() -> bool {
+    bash_funcs::get_envvar_value("SHELL")
+        .map(|s| {
+            std::path::PathBuf::from(&s)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n == "zsh")
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+/// Returns true when `$HOME/.zsh_history` exists and was modified within the
+/// last 24 hours.
+fn zsh_history_recently_modified() -> bool {
+    let Some(path) = zsh_history_path() else {
+        return false;
+    };
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return false;
+    };
+    let Ok(modified) = meta.modified() else {
+        return false;
+    };
+    let Ok(elapsed) = std::time::SystemTime::now().duration_since(modified) else {
+        return false;
+    };
+    elapsed < std::time::Duration::from_secs(24 * 60 * 60)
+}
+
+/// Cached result of [`should_recommend_zsh_history`]. Evaluated lazily on
+/// first access; the underlying environment / filesystem state is not
+/// expected to change over the lifetime of the process.
+static SHOULD_RECOMMEND_ZSH_HISTORY: LazyLock<bool> =
+    LazyLock::new(|| default_shell_is_zsh() || zsh_history_recently_modified());
+
+/// Returns true when flyline should recommend that the user enables Zsh
+/// history loading: the user's default shell is `zsh`, or there is a
+/// `$HOME/.zsh_history` file that was modified in the last 24 hours.
+fn should_recommend_zsh_history() -> bool {
+    *SHOULD_RECOMMEND_ZSH_HISTORY
 }
 
 /// Generate recommended settings text for the first tutorial step.
@@ -136,6 +188,18 @@ pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
         )));
         lines.push(Line::from(Span::styled(
             "  This enables better key disambiguation for flyline.",
+            text_style,
+        )));
+    }
+
+    if should_recommend_zsh_history() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "💡 We detected that you use Zsh. Consider loading your Zsh history into flyline:",
+            text_style,
+        )));
+        lines.push(Line::from(Span::styled(
+            "    flyline --load-zsh-history",
             text_style,
         )));
     }

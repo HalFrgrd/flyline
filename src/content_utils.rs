@@ -2,10 +2,30 @@ use crate::{cursor::CursorEasing, palette::Palette};
 use itertools::Itertools;
 use ratatui::prelude::*;
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub fn vec_spans_width(spans: &[Span<'static>]) -> usize {
     spans.iter().map(|s| s.width()).sum()
+}
+
+/// Truncate `s` so that it fits within `max_width` terminal columns.
+/// Returns the (possibly shortened) string and its actual rendered width.
+pub fn truncate_to_width(s: &str, max_width: usize) -> (String, usize) {
+    let total = s.width();
+    if total <= max_width {
+        return (s.to_string(), total);
+    }
+    let mut out = String::new();
+    let mut acc = 0usize;
+    for g in s.graphemes(true) {
+        let grapheme_width: usize = g.chars().map(|c| c.width().unwrap_or(0)).sum();
+        if acc + grapheme_width > max_width {
+            break;
+        }
+        out.push_str(g);
+        acc += grapheme_width;
+    }
+    (out, acc)
 }
 
 pub fn take_prefix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'static>> {
