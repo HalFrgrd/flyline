@@ -568,7 +568,7 @@ pub fn parse_help_generic(help: &str) -> Command {
 /// because clap 4.x's builder methods (`.long()`, `.about()`, `.help()`,
 /// `.value_name()`) require `&'static str` references.  The leak is intentional
 /// and acceptable because `to_clap_command` is only called from the one-shot
-/// `completion-synthesis` subcommand.
+/// `comp-spec-synthesis` subcommand.
 fn leak_string(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
@@ -665,8 +665,78 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Tests
+// Synthesis: run a command and build its completion spec
 // ──────────────────────────────────────────────────────────────────────────────
+
+/// Run `command_path --help` (falling back to stderr when stdout is empty),
+/// parse the output, and then flesh out each discovered subcommand by running
+/// `command_path <subcommand> --help` and parsing those results too.
+///
+/// The `name` field of the returned [`Command`] is always set to the basename
+/// of `command_path` so that the generated completion script uses the correct
+/// name regardless of what the help text says.
+pub fn synthesize_completion(command_path: &str) -> anyhow::Result<Command> {
+    // ── top-level help ───────────────────────────────────────────────────────
+    let top_help = run_help(command_path, &[])?;
+    let mut cmd = parse_help(&top_help);
+
+    // Always use the basename of the supplied path as the canonical name.
+    let cmd_name = std::path::Path::new(command_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(command_path)
+        .to_string();
+    cmd.name = Some(cmd_name);
+
+    // ── subcommand help ──────────────────────────────────────────────────────
+    for sub in &mut cmd.subcommands {
+        if let Some(sub_name) = sub.name.clone() {
+            match run_help(command_path, &[&sub_name]) {
+                Ok(sub_help) if !sub_help.trim().is_empty() => {
+                    let parsed_sub = parse_help(&sub_help);
+                    sub.args = parsed_sub.args;
+                    sub.subcommands = parsed_sub.subcommands;
+                    if sub.description.is_none() {
+                        sub.description = parsed_sub.description;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::debug!(
+                        "comp-spec-synthesis: skipping subcommand '{}': {}",
+                        sub_name,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(cmd)
+}
+
+/// Invoke `command_path [extra_args...] --help` and return the combined output.
+///
+/// Many tools print their help to *stderr* rather than *stdout*; this function
+/// returns whichever stream is non-empty (preferring stdout).
+fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Result<String> {
+    let output = std::process::Command::new(command_path)
+        .args(extra_args)
+        .arg("--help")
+        .output()
+        .map_err(|e| anyhow::anyhow!("failed to run '{}': {}", command_path, e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    // Some tools (e.g. git) write help to stdout when `--help` is passed as a
+    // flag, but others write to stderr.  Prefer stdout when it has content.
+    Ok(if stdout.trim().is_empty() {
+        stderr
+    } else {
+        stdout
+    })
+}
 
 #[cfg(test)]
 mod tests {
@@ -1527,6 +1597,367 @@ Options:
         assert!(
             script.contains("greet"),
             "completion script should reference the command name"
+        );
+    }
+
+    // ── git --help ───────────────────────────────────────────────────────────
+    //
+    // A simplified version of `git --help` using a standard Commands: section
+    // so that the clap parser picks up the subcommands correctly.
+
+    const GIT_HELP: &str = r#"usage: git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]
+           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
+           [--no-replace-objects] [--bare] [--git-dir=<path>] [--work-tree=<path>]
+           <command> [<args>]
+
+Usage: git [OPTIONS] <COMMAND>
+
+Commands:
+  clone     Clone a repository into a new directory
+  init      Create an empty Git repository or reinitialize an existing one
+  add       Add file contents to the index
+  rm        Remove files from the working tree and from the index
+  diff      Show changes between commits, commit and working tree, etc
+  log       Show the commit logs
+  status    Show the working tree status
+  branch    List, create, or delete branches
+  commit    Record changes to the repository
+  merge     Join two or more development histories together
+  rebase    Reapply commits on top of another base tip
+  reset     Reset current HEAD to the specified state
+  fetch     Download objects and refs from another repository
+  pull      Fetch from and integrate with another repository or a local branch
+  push      Update remote refs along with associated objects
+  tag       Create, list, delete or verify a tag object signed with GPG
+
+Options:
+  -C <path>                Run as if git was started in <path>
+  -c <name>=<value>        Pass a configuration parameter to the command
+  -v, --version            Print the Git suite version
+  -h, --help               Print help
+"#;
+
+    #[test]
+    fn test_git_help() {
+        let cmd = parse_help(GIT_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("git"));
+
+        let subs = subcommand_names(&cmd);
+        assert!(subs.contains(&"clone"), "clone should be a subcommand");
+        assert!(subs.contains(&"commit"), "commit should be a subcommand");
+        assert!(subs.contains(&"log"), "log should be a subcommand");
+        assert!(subs.contains(&"diff"), "diff should be a subcommand");
+        assert!(subs.contains(&"push"), "push should be a subcommand");
+        assert!(subs.contains(&"pull"), "pull should be a subcommand");
+        assert!(subs.contains(&"branch"), "branch should be a subcommand");
+        assert!(subs.contains(&"status"), "status should be a subcommand");
+
+        // Check a couple of subcommand descriptions.
+        assert_eq!(
+            subcommand_by_name(&cmd, "clone").and_then(|s| s.description.as_deref()),
+            Some("Clone a repository into a new directory")
+        );
+        assert_eq!(
+            subcommand_by_name(&cmd, "commit").and_then(|s| s.description.as_deref()),
+            Some("Record changes to the repository")
+        );
+    }
+
+    // ── git log --help ────────────────────────────────────────────────────────
+
+    const GIT_LOG_HELP: &str = r#"usage: git log [<options>] [<revision-range>] [[--] <path>...]
+
+    -q, --quiet           Suppress diff output
+    -v, --verbose         Be more verbose
+    -n, --max-count <n>   Limit the number of commits to output
+    --skip <n>            Skip number commits before starting to show output
+    --since <date>        Show commits more recent than a specific date
+    --after <date>        Show commits more recent than a specific date (alias)
+    --until <date>        Show commits older than a specific date
+    --before <date>       Show commits older than a specific date (alias)
+    --author <pattern>    Limit output to commits with matching author
+    --committer <pattern> Limit output to commits with matching committer
+    --grep <pattern>      Limit commit output to ones matching the pattern
+    --all-match           Limit output to commits matching all grep patterns
+    -i, --regexp-ignore-case
+                          Case insensitive match
+    --oneline             Show one commit per line with abbreviated hash
+    --no-walk             Only show given commits, not their parents
+    --graph               Show the commit graph as ASCII art
+    --decorate            Decorate refs
+    --first-parent        Follow only the first parent commit upon merges
+    -p, --patch           Show patch
+    -s, --no-patch        Suppress diff output
+    --stat                Generate a diffstat
+    --format <format>     Pretty-print in given format
+    --abbrev-commit       Show only a partial commit hash prefix
+"#;
+
+    #[test]
+    fn test_git_log_help() {
+        let cmd = parse_help(GIT_LOG_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("git"));
+
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-q"), "-q should be present");
+        assert!(shorts.contains(&"-v"), "-v should be present");
+        assert!(shorts.contains(&"-n"), "-n should be present");
+        assert!(shorts.contains(&"-p"), "-p should be present");
+        assert!(shorts.contains(&"-s"), "-s should be present");
+        assert!(shorts.contains(&"-i"), "-i should be present");
+
+        let longs = long_names(&cmd);
+        assert!(
+            longs.contains(&"--max-count"),
+            "--max-count should be present"
+        );
+        assert!(longs.contains(&"--since"), "--since should be present");
+        assert!(longs.contains(&"--author"), "--author should be present");
+        assert!(longs.contains(&"--grep"), "--grep should be present");
+        assert!(longs.contains(&"--oneline"), "--oneline should be present");
+        assert!(longs.contains(&"--graph"), "--graph should be present");
+        assert!(longs.contains(&"--stat"), "--stat should be present");
+        assert!(
+            longs.contains(&"--first-parent"),
+            "--first-parent should be present"
+        );
+        assert!(longs.contains(&"--patch"), "--patch should be present");
+        assert!(
+            longs.contains(&"--no-patch"),
+            "--no-patch should be present"
+        );
+
+        // Value types.
+        assert_eq!(
+            arg_by_long(&cmd, "--max-count").and_then(|a| a.value_type.as_deref()),
+            Some("n")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--since").and_then(|a| a.value_type.as_deref()),
+            Some("date")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--author").and_then(|a| a.value_type.as_deref()),
+            Some("pattern")
+        );
+
+        // Descriptions.
+        assert!(
+            arg_by_long(&cmd, "--graph")
+                .and_then(|a| a.description.as_deref())
+                .unwrap_or("")
+                .contains("ASCII"),
+            "--graph description should mention ASCII"
+        );
+    }
+
+    // ── git commit --help ────────────────────────────────────────────────────
+
+    const GIT_COMMIT_HELP: &str = r#"usage: git commit [-a | --interactive | --patch] [-s] [-v] [--amend]
+   [--author=<author>] [--date=<date>] [-m <msg>] [--no-verify]
+
+    -q, --quiet           Suppress summary after successful commit
+    -v, --verbose         Show diff in commit message template
+    -F, --file <file>     Read message from file
+    --author <author>     Override author for commit
+    --date <date>         Override date for commit
+    -m, --message <message>
+                          Commit message
+    -s, --signoff         Add a Signed-off-by trailer
+    -e, --edit            Force edit of commit
+    --cleanup <mode>      How to strip spaces and #comments from message
+    --no-verify           Bypass pre-commit and commit-msg hooks
+    --allow-empty         Allow recording an empty commit
+    --allow-empty-message
+                          Allow recording a commit with an empty message
+    --amend               Amend previous commit
+    -a, --all             Commit all changed files
+    -i, --include         Add specified files to index for commit
+    -o, --only            Commit only specified files
+    --dry-run             Show what would be committed
+    --short               Show status concisely
+    --branch              Show branch information
+    --squash <commit>     Use autosquash formatted message to squash specified commit
+    --fixup <commit>      Use autosquash formatted message to fixup specified commit
+"#;
+
+    #[test]
+    fn test_git_commit_help() {
+        let cmd = parse_help(GIT_COMMIT_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("git"));
+
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-q"), "-q should be present");
+        assert!(shorts.contains(&"-v"), "-v should be present");
+        assert!(shorts.contains(&"-m"), "-m should be present");
+        assert!(shorts.contains(&"-a"), "-a should be present");
+        assert!(shorts.contains(&"-s"), "-s should be present");
+        assert!(shorts.contains(&"-e"), "-e should be present");
+
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--message"), "--message should be present");
+        assert!(longs.contains(&"--author"), "--author should be present");
+        assert!(longs.contains(&"--amend"), "--amend should be present");
+        assert!(
+            longs.contains(&"--no-verify"),
+            "--no-verify should be present"
+        );
+        assert!(
+            longs.contains(&"--allow-empty"),
+            "--allow-empty should be present"
+        );
+        assert!(longs.contains(&"--dry-run"), "--dry-run should be present");
+        assert!(longs.contains(&"--squash"), "--squash should be present");
+        assert!(longs.contains(&"--signoff"), "--signoff should be present");
+
+        // Value types.
+        assert_eq!(
+            arg_by_long(&cmd, "--message").and_then(|a| a.value_type.as_deref()),
+            Some("message")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--file").and_then(|a| a.value_type.as_deref()),
+            Some("file")
+        );
+    }
+
+    // ── git diff --help ───────────────────────────────────────────────────────
+
+    const GIT_DIFF_HELP: &str = r#"usage: git diff [<options>] [<commit>] [--] [<path>...]
+   or: git diff [<options>] --cached [<commit>] [--] [<path>...]
+   or: git diff [<options>] <commit>...<commit> [--] [<path>...]
+
+    -p, --patch           Show patch
+    -s, --no-patch        Suppress diff output
+    --raw                 Generate the diff in raw format
+    --minimal             Produce the smallest possible diff
+    --patience            Use the patience diff algorithm
+    --histogram           Use the histogram diff algorithm
+    --diff-algorithm <algorithm>
+                          Choose a diff algorithm
+    --stat                Generate a diffstat
+    --compact-summary     Generate a compact summary in diffstat
+    --numstat             Generate a diffstat in machine-readable form
+    --shortstat           Output only the last line of --stat format
+    --name-only           Show only names of changed files
+    --name-status         Show only names and status of changed files
+    --color <when>        Show colored diff (always, never, auto)
+    --no-color            Turn off colored diff
+    --word-diff <mode>    Show a word diff using the given mode
+    -U, --unified <n>     Generate diffs with <n> lines of context
+    --cached              View the changes staged for the next commit
+    -W, --function-context
+                          Show whole surrounding functions of changes
+"#;
+
+    #[test]
+    fn test_git_diff_help() {
+        let cmd = parse_help(GIT_DIFF_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("git"));
+
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-p"), "-p should be present");
+        assert!(shorts.contains(&"-s"), "-s should be present");
+        assert!(shorts.contains(&"-U"), "-U should be present");
+        assert!(shorts.contains(&"-W"), "-W should be present");
+
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--patch"), "--patch should be present");
+        assert!(
+            longs.contains(&"--no-patch"),
+            "--no-patch should be present"
+        );
+        assert!(longs.contains(&"--stat"), "--stat should be present");
+        assert!(
+            longs.contains(&"--name-only"),
+            "--name-only should be present"
+        );
+        assert!(longs.contains(&"--cached"), "--cached should be present");
+        assert!(
+            longs.contains(&"--word-diff"),
+            "--word-diff should be present"
+        );
+        assert!(longs.contains(&"--color"), "--color should be present");
+        assert!(longs.contains(&"--unified"), "--unified should be present");
+    }
+
+    // ── git with subcommand help synthesis (static test) ─────────────────────
+    //
+    // Simulate the subcommand-synthesis logic by manually constructing a
+    // top-level Command whose subcommands are initially bare, then overlaying
+    // the parsed subcommand help to check that args are populated correctly.
+
+    #[test]
+    fn test_subcommand_synthesis_overlay() {
+        // Start with a top-level git-style command that lists "log" and "commit"
+        // as subcommands (bare, no args yet).
+        let mut top = parse_help(GIT_HELP);
+        assert!(
+            subcommand_names(&top).contains(&"log"),
+            "log subcommand should be present"
+        );
+        assert!(
+            subcommand_names(&top).contains(&"commit"),
+            "commit subcommand should be present"
+        );
+
+        // Simulate what synthesize_completion does: overlay parsed subcommand help.
+        for sub in &mut top.subcommands {
+            let sub_help = match sub.name.as_deref() {
+                Some("log") => Some(GIT_LOG_HELP),
+                Some("commit") => Some(GIT_COMMIT_HELP),
+                Some("diff") => Some(GIT_DIFF_HELP),
+                _ => None,
+            };
+            if let Some(help) = sub_help {
+                let parsed = parse_help(help);
+                sub.args = parsed.args;
+            }
+        }
+
+        // Verify that the "log" subcommand now has its args populated.
+        let log_sub = subcommand_by_name(&top, "log").expect("log subcommand should exist");
+        let log_longs = long_names(log_sub);
+        assert!(
+            log_longs.contains(&"--oneline"),
+            "log subcommand should have --oneline"
+        );
+        assert!(
+            log_longs.contains(&"--graph"),
+            "log subcommand should have --graph"
+        );
+        assert!(
+            log_longs.contains(&"--since"),
+            "log subcommand should have --since"
+        );
+
+        // Verify that the "commit" subcommand now has its args populated.
+        let commit_sub =
+            subcommand_by_name(&top, "commit").expect("commit subcommand should exist");
+        let commit_longs = long_names(commit_sub);
+        assert!(
+            commit_longs.contains(&"--amend"),
+            "commit subcommand should have --amend"
+        );
+        assert!(
+            commit_longs.contains(&"--message"),
+            "commit subcommand should have --message"
+        );
+        assert!(
+            commit_longs.contains(&"--no-verify"),
+            "commit subcommand should have --no-verify"
+        );
+
+        // Verify that the "diff" subcommand now has its args populated.
+        let diff_sub = subcommand_by_name(&top, "diff").expect("diff subcommand should exist");
+        let diff_longs = long_names(diff_sub);
+        assert!(
+            diff_longs.contains(&"--cached"),
+            "diff subcommand should have --cached"
+        );
+        assert!(
+            diff_longs.contains(&"--stat"),
+            "diff subcommand should have --stat"
         );
     }
 }
