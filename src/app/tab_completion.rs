@@ -480,7 +480,13 @@ fn tab_complete_glob_expansion(
     // we can strip it from the returned absolute paths and recover the relative
     // path that convert_expanded_match_to_unexpanded expects.
     let base_dir = if expanded.expanded_prefix.is_empty() {
-        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+        std::env::current_dir().unwrap_or_else(|e| {
+            log::warn!(
+                "Failed to determine current directory: {}. Falling back to '.'.",
+                e
+            );
+            std::path::PathBuf::from(".")
+        })
     } else {
         std::path::PathBuf::from(&expanded.expanded_prefix)
     };
@@ -508,7 +514,14 @@ fn tab_complete_glob_expansion(
             let effective_path_str: std::borrow::Cow<str> = if expanded.expanded_prefix.is_empty() {
                 path.strip_prefix(&base_dir)
                     .map(|rel| rel.to_string_lossy().into_owned())
-                    .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| {
+                        log::debug!(
+                            "Could not strip base_dir '{}' from globwalker path '{}'; using full path.",
+                            base_dir.display(),
+                            path.display()
+                        );
+                        path.to_string_lossy().into_owned()
+                    })
                     .into()
             } else {
                 path.to_string_lossy()
