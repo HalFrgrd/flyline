@@ -160,6 +160,25 @@ main() {
     OS="$(detect_os)"
     ARCH="$(detect_arch)"
 
+    # Prompt for install directory; read from /dev/tty so it works when piped.
+    # Falls back to the default when no terminal is available (e.g. CI).
+    printf 'Install directory [%s]: ' "$INSTALL_DIR"
+    input_dir=""
+    if [ -t 0 ]; then
+        read -r input_dir || true
+    elif [ -r /dev/tty ]; then
+        read -r input_dir </dev/tty || true
+    fi
+    if [ -n "$input_dir" ]; then
+        # Expand a leading ~/ to $HOME/.
+        # shellcheck disable=SC2088
+        case "$input_dir" in
+            '~/'*) input_dir="${HOME}/${input_dir#~/}" ;;
+            '~')   input_dir="${HOME}" ;;
+        esac
+        INSTALL_DIR="$input_dir"
+    fi
+
     if [ "$OS" = "darwin" ]; then
         TARGET="${ARCH}-apple-darwin"
         LIB_NAME="libflyline.dylib"
