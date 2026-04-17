@@ -12,14 +12,16 @@ use globwalker;
 
 #[derive(Debug)]
 struct PathPatternExpansion {
-    /// The part of the pattern before the last `/`, kept in its original form
-    /// (e.g. `~/foo` or `relative/dir`).
+    /// The part of the pattern before the last '/' that separates the pattern kept in its original form
+    /// (e.g. `~/foo` for `~/foo/baz*` or `relative/dir` for `relative/dir/*/*.txt`).
+    /// it might be empty : e.g. `baz*`
     raw_prefix: String,
     /// `raw_prefix` after tilde expansion, conversion to an absolute path, and
     /// environment-variable expansion (e.g. `/home/user/foo` or `/cwd/relative/dir`).
+    /// it might be empty: e.g. `/pro*/123*`.
     expanded_prefix: String,
-    /// The part of the pattern after the last `/` — the glob portion
-    /// (e.g. `ba*` or `*.txt`).
+    /// The part of the pattern after the separating`/`— the glob portion
+    /// (e.g. `baz*` or `*/*.txt`).
     rhs_pattern: String,
 }
 
@@ -58,17 +60,6 @@ impl PathPatternExpansion {
         }
     }
 
-    fn prefix_with_trailing_slash(&self) -> String {
-        let mut prefix = self.expanded_prefix.clone();
-        if prefix.is_empty() {
-            return prefix;
-        }
-        if !prefix.ends_with('/') {
-            prefix.push('/');
-        }
-        prefix
-    }
-
     fn wants_hidden(&self) -> bool {
         self.rhs_pattern.starts_with('.') && !self.rhs_pattern.starts_with("./")
     }
@@ -82,19 +73,15 @@ impl PathPatternExpansion {
         // expanded_prefix, then reconstruct using raw_prefix so the
         // suggestion preserves the user's original prefix spelling
         // (e.g. `~/`, `$HOME/`, or a relative path segment).
-        if let Some(suffix) = expanded_match.strip_prefix(&self.prefix_with_trailing_slash()) {
+        if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
             let quoted_suffix = bash_funcs::quoting_function_rust(
                 suffix,
                 quote_type.unwrap_or_default(),
                 false,
                 false,
             );
-            if self.raw_prefix.is_empty() {
-                (quoted_suffix.clone(), quoted_suffix)
-            } else {
-                let combined = format!("{}/{}", self.raw_prefix, quoted_suffix);
-                (combined.clone(), quoted_suffix)
-            }
+            let combined = format!("{}{}", self.raw_prefix, quoted_suffix);
+            (combined.clone(), quoted_suffix)  
         } else {
             log::warn!(
                 "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
@@ -537,13 +524,7 @@ fn tab_complete_glob_expansion(
     // we can strip it from the returned absolute paths and recover the relative
     // path that convert_expanded_match_to_unexpanded expects.
     let base_dir = if expanded.expanded_prefix.is_empty() {
-        std::env::current_dir().unwrap_or_else(|e| {
-            log::warn!(
-                "Failed to determine current directory: {}. Falling back to '.'.",
-                e
-            );
-            std::path::PathBuf::from(".")
-        })
+        std::path::PathBuf::from("/")
     } else {
         std::path::PathBuf::from(&expanded.expanded_prefix)
     };
@@ -562,30 +543,10 @@ fn tab_complete_glob_expansion(
                 break;
             }
 
-            let path = entry.path().to_path_buf();
-
-            // globwalker returns absolute paths rooted at base_dir. When
-            // expanded_prefix is empty we walked from cwd, so strip base_dir to
-            // recover the relative path that convert_expanded_match_to_unexpanded
-            // expects (it strips expanded_prefix/, which is "" in this case).
-            let effective_path_str: std::borrow::Cow<str> = if expanded.expanded_prefix.is_empty() {
-                path.strip_prefix(&base_dir)
-                    .map(|rel| rel.to_string_lossy().into_owned())
-                    .unwrap_or_else(|_| {
-                        log::debug!(
-                            "Could not strip base_dir '{}' from globwalker path '{}'; using full path.",
-                            base_dir.display(),
-                            path.display()
-                        );
-                        path.to_string_lossy().into_owned()
-                    })
-                    .into()
-            } else {
-                path.to_string_lossy()
-            };
+            let path_str = entry.path().to_string_lossy();
 
             let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
-                &effective_path_str,
+                &path_str,
                 comp_resultflags.quote_type,
             );
 
