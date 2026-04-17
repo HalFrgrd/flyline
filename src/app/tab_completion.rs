@@ -4,7 +4,7 @@ use crate::bash_funcs::{self, ProgrammableCompleteReturn, QuoteType};
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
-use glob;
+use globwalker;
 
 #[derive(Debug)]
 struct PathPatternExpansion {
@@ -51,14 +51,6 @@ impl PathPatternExpansion {
             raw_prefix,
             expanded_prefix,
             rhs_pattern,
-        }
-    }
-
-    fn expanded_pattern(&self) -> String {
-        if self.expanded_prefix.is_empty() {
-            self.rhs_pattern.clone()
-        } else {
-            format!("{}/{}", self.expanded_prefix, self.rhs_pattern)
         }
     }
 
@@ -478,15 +470,27 @@ fn tab_complete_glob_expansion(
     let expanded = PathPatternExpansion::new(pattern);
     log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
 
-    // Use glob to find matching paths
+    // Use globwalker to find matching paths
     let mut results = Vec::new();
 
-    const MAX_GLOB_RESULTS: usize = 1_000;
+    const MAX_GLOB_RESULTS: usize = 5_000;
 
-    let glob_pattern = expanded.expanded_pattern();
+    // When expanded_prefix is empty, use the current directory as base_dir so
+    // globwalker has a concrete directory to walk, but track it separately so
+    // we can strip it from the returned absolute paths and recover the relative
+    // path that convert_expanded_match_to_unexpanded expects.
+    let base_dir = if expanded.expanded_prefix.is_empty() {
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+    } else {
+        std::path::PathBuf::from(&expanded.expanded_prefix)
+    };
 
-    if let Ok(paths) = glob::glob(&glob_pattern) {
-        for (idx, path_result) in paths.enumerate() {
+    let walker = globwalker::GlobWalkerBuilder::from_patterns(&base_dir, &[&expanded.rhs_pattern])
+        .follow_links(true)
+        .build();
+
+    if let Ok(walker) = walker {
+        for (idx, entry) in walker.into_iter().filter_map(Result::ok).enumerate() {
             if idx >= MAX_GLOB_RESULTS {
                 log::debug!(
                     "Reached maximum glob results limit of {}. Stopping further processing.",
@@ -495,43 +499,56 @@ fn tab_complete_glob_expansion(
                 break;
             }
 
-            if let Ok(path) = path_result {
-                let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
-                    &path.to_string_lossy(),
-                    comp_resultflags.quote_type,
-                );
+            let path = entry.path().to_path_buf();
 
-                log::debug!(
-                    "Glob match: expanded='{}', unexpanded='{}', globbed_suffix='{}'",
-                    path.display(),
-                    unexpanded,
-                    globbed_suffix
-                );
+            // globwalker returns absolute paths rooted at base_dir. When
+            // expanded_prefix is empty we walked from cwd, so strip base_dir to
+            // recover the relative path that convert_expanded_match_to_unexpanded
+            // expects (it strips expanded_prefix/, which is "" in this case).
+            let effective_path_str: std::borrow::Cow<str> = if expanded.expanded_prefix.is_empty() {
+                path.strip_prefix(&base_dir)
+                    .map(|rel| rel.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+                    .into()
+            } else {
+                path.to_string_lossy()
+            };
 
-                // Tab completion ignores "." and ".."
-                if globbed_suffix == "." || globbed_suffix == ".." {
-                    continue;
-                }
+            let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
+                &effective_path_str,
+                comp_resultflags.quote_type,
+            );
 
-                // Only include hidden if the pattern explicitly requested it
-                if !expanded.wants_hidden()
-                    && globbed_suffix.starts_with('.')
-                    && !globbed_suffix.starts_with("./")
-                {
-                    continue;
-                }
+            log::debug!(
+                "Glob match: expanded='{}', unexpanded='{}', globbed_suffix='{}'",
+                path.display(),
+                unexpanded,
+                globbed_suffix
+            );
 
-                results.push(MaybeProcessedSuggestion::Raw {
-                    raw_text: unexpanded,
-                    full_path: Some(path),
-                    flags: comp_resultflags,
-                    // The glob expansion path already preserves the raw prefix in
-                    // `unexpanded` via PathPatternExpansion; pass "" here so
-                    // post_process_completion doesn't attempt a second
-                    // prefix split (filename_quoting_desired is false anyway).
-                    word_under_cursor: String::new(),
-                });
+            // Tab completion ignores "." and ".."
+            if globbed_suffix == "." || globbed_suffix == ".." {
+                continue;
             }
+
+            // Only include hidden if the pattern explicitly requested it
+            if !expanded.wants_hidden()
+                && globbed_suffix.starts_with('.')
+                && !globbed_suffix.starts_with("./")
+            {
+                continue;
+            }
+
+            results.push(MaybeProcessedSuggestion::Raw {
+                raw_text: unexpanded,
+                full_path: Some(path),
+                flags: comp_resultflags,
+                // The glob expansion path already preserves the raw prefix in
+                // `unexpanded` via PathPatternExpansion; pass "" here so
+                // post_process_completion doesn't attempt a second
+                // prefix split (filename_quoting_desired is false anyway).
+                word_under_cursor: String::new(),
+            });
         }
     }
 
