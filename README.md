@@ -206,41 +206,21 @@ Flyline will replace strings in the prompt matching the widget name with the wid
 
 ### Mouse-mode widget
 
-Shows different text depending on whether mouse capture is currently enabled:
+The block below is auto-generated from `flyline create-prompt-widget mouse-mode --help`:
 
-```bash
-flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE '🖱️' '🔴'
-# Now use FLYLINE_MOUSE_MODE in your prompt:
-PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
+<!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_START -->
 ```
+```
+<!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_END -->
 
 ### Custom command widget
 
-Runs a shell command and displays its output in the prompt.  The output is
-passed through Bash's `decode_prompt_string` so Bash prompt escape sequences
-(e.g. `\u`, `\w`, ANSI colour codes) are fully supported.
+The block below is auto-generated from `flyline create-prompt-widget custom --help`:
 
-```bash
-# Non-blocking (default): spawns the command in the background; shows the
-# previous output while the command is running (empty on the first render).
-flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
-  --command 'run_slow_git_metrics.sh'
-# PS1 usage:
-PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
-
-# Non-blocking with an explicit 10-space placeholder while the new output is
-# being computed.
-flyline create-prompt-widget custom --name CUSTOM_WIDGET1 \
-  --command 'run_slow_git_metrics.sh' --placeholder 10
-
-# Blocking: waits for the command to finish before showing the prompt.
-flyline create-prompt-widget custom --name CUSTOM_WIDGET2 \
-  --command 'run_something.sh' --block
-
-# Blocking with a timeout of 500 ms; falls back to placeholder if slower.
-flyline create-prompt-widget custom --name CUSTOM_WIDGET3 \
-  --command 'run_slow.sh --flag' --block 500 --placeholder prev
+<!-- FLYLINE_CREATE_PROMPT_WIDGET_CUSTOM_HELP_START -->
 ```
+```
+<!-- FLYLINE_CREATE_PROMPT_WIDGET_CUSTOM_HELP_END -->
 
 
 # Agent mode
