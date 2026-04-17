@@ -14,7 +14,28 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use std::path::PathBuf;
 use std::vec;
 
-use unicode_width::UnicodeWidthStr;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+/// Truncate `s` so that it fits within `max_width` terminal columns.
+/// Returns the (possibly shortened) string and its actual rendered width.
+fn truncate_to_width(s: &str, max_width: usize) -> (String, usize) {
+    let total = s.width();
+    if total <= max_width {
+        return (s.to_string(), total);
+    }
+    let mut out = String::new();
+    let mut acc = 0usize;
+    for g in s.graphemes(true) {
+        let w: usize = g.chars().map(|c| c.width().unwrap_or(0)).sum();
+        if acc + w > max_width {
+            break;
+        }
+        out.push_str(g);
+        acc += w;
+    }
+    (out, acc)
+}
 
 /// Number of whitespace characters inserted between adjacent columns in the
 /// suggestions grid.
@@ -91,6 +112,13 @@ impl SuggestionFormatted {
     /// Width of the separator between the suggestion text and its description.
     const DESCRIPTION_SEPARATOR: &'static str = "  ";
 
+    /// Maximum number of terminal columns used for a description in the
+    /// completion grid. Descriptions are preferentially truncated down to this
+    /// width before any of the suggestion text itself is truncated; if there
+    /// are fewer than this many columns available for a description it is
+    /// dropped entirely.
+    const MAX_DESCRIPTION_WIDTH: usize = 20;
+
     pub fn new(
         suggestion: &ProcssedSuggestion,
         suggestion_idx: usize,
@@ -106,7 +134,12 @@ impl SuggestionFormatted {
         let main_width = suggestion.s.width();
 
         // Compute the widest description frame to use for stable column sizing.
-        let max_description_frame_width = suggestion.description.max_width();
+        // Cap at MAX_DESCRIPTION_WIDTH so a single very long description does
+        // not force the column to be unreasonably wide.
+        let max_description_frame_width = suggestion
+            .description
+            .max_width()
+            .min(Self::MAX_DESCRIPTION_WIDTH);
 
         // Select the description frame to display for this render cycle.
         let (description_spans, description_frame_width) =
@@ -114,12 +147,13 @@ impl SuggestionFormatted {
                 None => (vec![], 0),
                 Some(frame) => {
                     let desc_style = palette.secondary_text();
-                    let width = frame.width();
+                    let (frame, width) = truncate_to_width(&frame, Self::MAX_DESCRIPTION_WIDTH);
                     (vec![Span::styled(frame, desc_style)], width)
                 }
             };
 
-        // Column width accounts for the widest frame so the column stays stable.
+        // Column width accounts for the widest (capped) frame so the column
+        // stays stable across animation frames.
         let display_width = if max_description_frame_width > 0 {
             main_width + Self::DESCRIPTION_SEPARATOR.len() + max_description_frame_width
         } else {
@@ -144,24 +178,26 @@ impl SuggestionFormatted {
     pub fn render(&self, col_width: usize, is_selected: bool) -> Vec<Span<'static>> {
         // Determine widths available for the main text and description.
         let main_text_width = vec_spans_width(&self.spans);
-        let desc_total_width = if !self.description_spans.is_empty() {
+        let has_description = !self.description_spans.is_empty();
+        let desc_total_width = if has_description {
             Self::DESCRIPTION_SEPARATOR.len() + self.description_frame_width
         } else {
             0
         };
 
-        let (main_col_width, desc_col_width) = if col_width < self.display_width {
-            // Truncation needed – shrink main text first, keep description if room allows.
-            if col_width > desc_total_width + Self::DESCRIPTION_SEPARATOR.len() {
-                let available_for_main = col_width.saturating_sub(desc_total_width);
-                (available_for_main, desc_total_width)
+        // Layout policy:
+        // - The description has already been capped at MAX_DESCRIPTION_WIDTH
+        //   in `SuggestionFormatted::new`, so we never grow it here.
+        // - If the full layout (main + separator + description) fits, render
+        //   it as-is.
+        // - Otherwise drop the description entirely and only then truncate
+        //   the suggestion text to fit the available width.
+        let (main_col_width, desc_col_width) =
+            if has_description && col_width >= main_text_width + desc_total_width {
+                (main_text_width, desc_total_width)
             } else {
-                // Not enough room for description at all.
-                (col_width, 0)
-            }
-        } else {
-            (main_text_width, desc_total_width)
-        };
+                (col_width.min(main_text_width), 0)
+            };
 
         let mut spans: Vec<Span<'static>> = if main_col_width < main_text_width {
             middle_truncate_spans(&self.spans, main_col_width)
@@ -337,8 +373,10 @@ mod description_tests {
         let fw1 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 1).display_width;
         // display_width must not change between frames.
         assert_eq!(fw0, fw1);
-        // display_width = "abc".len() + separator(2) + max("short", "a much longer description").len()
-        let expected = "abc".len() + 2 + "a much longer description".len();
+        // The longest description ("a much longer description", 25 cols) is
+        // capped at MAX_DESCRIPTION_WIDTH (20) for column sizing purposes.
+        // display_width = "abc".len() + separator(2) + 20
+        let expected = "abc".len() + 2 + SuggestionFormatted::MAX_DESCRIPTION_WIDTH;
         assert_eq!(fw0, expected);
     }
 

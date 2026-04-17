@@ -1,6 +1,9 @@
-use crate::active_suggestions::{ActiveSuggestions, MaybeProcessedSuggestion, ProcssedSuggestion};
+use crate::active_suggestions::{
+    ActiveSuggestions, MaybeProcessedSuggestion, ProcssedSuggestion, SuggestionDescription,
+    split_completion_description,
+};
 use crate::app::{App, ContentMode, TabCompletionHandle};
-use crate::bash_funcs::{self, ProgrammableCompleteReturn, QuoteType};
+use crate::bash_funcs::{self, QuoteType};
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
@@ -280,16 +283,35 @@ pub(crate) fn gen_completions_internal(
             );
 
             let poss_completions = if command_word == "flyline" {
-                let words = complete_flyline_args(&full_command, cursor_byte_pos);
-
-                words.map(|w| {
-                    ProgrammableCompleteReturn::from(
-                        w,
-                        bash_funcs::find_quote_type(word_under_cursor.as_ref()),
-                        1,
-                        ' ' as i32,
-                    )
-                })
+                // Flyline's own subcommand/flag completions are produced by
+                // clap_complete and are already escaped/finalized. Skip the
+                // bash post-processing pipeline entirely and build
+                // ProcssedSuggestions directly so descriptions (the part
+                // after the first `\t`) are preserved as-is.
+                match complete_flyline_args(&full_command, cursor_byte_pos) {
+                    Ok(words) => {
+                        let suggestions: Vec<MaybeProcessedSuggestion> = words
+                            .into_iter()
+                            .map(|raw| {
+                                let (text, desc_frames) = split_completion_description(&raw);
+                                let description = if desc_frames.is_empty() {
+                                    SuggestionDescription::Static(String::new())
+                                } else {
+                                    SuggestionDescription::Animation(desc_frames)
+                                };
+                                MaybeProcessedSuggestion::Ready(
+                                    ProcssedSuggestion::new(text, "", "")
+                                        .with_description(description),
+                                )
+                            })
+                            .collect();
+                        return Some(suggestions);
+                    }
+                    Err(e) => {
+                        log::error!("Error generating flyline completions: {}", e);
+                        return None;
+                    }
+                }
             } else {
                 bash_funcs::run_programmable_completions(
                     &full_command,

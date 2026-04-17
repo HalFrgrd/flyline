@@ -12,6 +12,7 @@ use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
+use crate::kill_on_drop_child::KillOnDropChild;
 use crate::mouse_state::MouseState;
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
@@ -47,27 +48,39 @@ fn build_runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-fn restore_terminal() {
+fn restore_terminal(extended_key_codes: bool) {
     crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
         // Likely from the master pty fd being closed.
         log::error!("Failed to disable raw mode: {}", e);
     });
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::event::DisableBracketedPaste,
-        crossterm::event::DisableFocusChange,
-        crossterm::event::DisableMouseCapture,
-        crossterm::event::PopKeyboardEnhancementFlags
-    )
-    .unwrap_or_else(|e| {
-        log::error!("Failed to restore terminal features: {}", e);
-    });
+    if extended_key_codes {
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::DisableBracketedPaste,
+            crossterm::event::DisableFocusChange,
+            crossterm::event::DisableMouseCapture,
+            crossterm::event::PopKeyboardEnhancementFlags
+        )
+        .unwrap_or_else(|e| {
+            log::error!("Failed to restore terminal features: {}", e);
+        });
+    } else {
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::DisableBracketedPaste,
+            crossterm::event::DisableFocusChange,
+            crossterm::event::DisableMouseCapture,
+        )
+        .unwrap_or_else(|e| {
+            log::error!("Failed to restore terminal features: {}", e);
+        });
+    }
 }
 
-fn set_panic_hook() {
+fn set_panic_hook(extended_key_codes: bool) {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore_terminal();
+        restore_terminal(extended_key_codes);
         log::error!("Panic: {}", info);
         hook(info);
     }));
@@ -98,7 +111,8 @@ pub enum LastKeyPressAction {
 }
 
 pub fn get_command(settings: &mut Settings) -> ExitState {
-    set_panic_hook();
+    let extended_key_codes = settings.enable_extended_key_codes;
+    set_panic_hook(extended_key_codes);
 
     let mut stdout = std::io::stdout();
     std::io::Write::flush(&mut stdout).unwrap();
@@ -112,15 +126,23 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         std::io::stdout(),
         crossterm::event::EnableBracketedPaste,
         crossterm::event::EnableFocusChange,
-        crossterm::event::PushKeyboardEnhancementFlags(
-            crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-                | crossterm::event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
-        )
     )
     .unwrap_or_else(|e| {
         log::error!("Failed to set terminal features: {}", e);
     });
+    if extended_key_codes {
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::event::PushKeyboardEnhancementFlags(
+                crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+                    | crossterm::event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+            )
+        )
+        .unwrap_or_else(|e| {
+            log::error!("Failed to push keyboard enhancement flags: {}", e);
+        });
+    }
 
     let runtime = build_runtime();
 
@@ -130,7 +152,7 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
 
     let end_state = runtime.block_on(app.run(backend));
 
-    restore_terminal();
+    restore_terminal(extended_key_codes);
 
     log::debug!("Final state: {:?}", end_state);
     end_state
@@ -178,22 +200,7 @@ impl Drop for TabCompletionHandle {
 
 /// Wraps an in-flight agent-mode child process. On drop the child is killed
 /// and waited on so it does not outlive the app.
-struct AgentChild(std::process::Child);
-
-impl std::fmt::Debug for AgentChild {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AgentChild")
-            .field("pid", &self.0.id())
-            .finish()
-    }
-}
-
-impl Drop for AgentChild {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
+type AgentChild = KillOnDropChild;
 
 #[derive(Debug)]
 enum ContentMode {
@@ -496,6 +503,7 @@ impl<'a> App<'a> {
 
         let mut redraw = true;
         let mut last_terminal_size = terminal.size().unwrap();
+        let mut initial_render_logged = false;
         let mut t_after_first_render: Option<std::time::Instant> = None;
 
         'main_loop: loop {
@@ -621,7 +629,7 @@ impl<'a> App<'a> {
                     });
 
                 // Only time the very first draw; subsequent redraws are not startup.
-                let t_draw = if t_after_first_render.is_none() {
+                let t_draw = if !initial_render_logged {
                     Some(std::time::Instant::now())
                 } else {
                     None
@@ -634,6 +642,7 @@ impl<'a> App<'a> {
                         if let Some(t) = t_draw {
                             log::trace!("startup: initial render: {:?}", t.elapsed());
                             t_after_first_render = Some(std::time::Instant::now());
+                            initial_render_logged = true;
                         }
 
                         if matches!(
@@ -880,6 +889,9 @@ impl<'a> App<'a> {
             Some((tag @ Tag::TutorialNext, true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
+            Some((tag @ Tag::Ps1PromptCwd(_), _)) => {
+                self.last_mouse_over_cell = Some(tag);
+            }
 
             t => {
                 log::trace!("Mouse over  {:?}", t);
@@ -971,6 +983,11 @@ impl<'a> App<'a> {
                         // The tutorial_step being NotRunning is sufficient.
                     }
                     return true;
+                }
+            }
+            Some(Tag::Ps1PromptCwd(idx)) => {
+                if matches!(mouse.kind, MouseEventKind::Down(_)) {
+                    self.content_mode = ContentMode::PromptDirSelect(idx);
                 }
             }
             _ => {}
@@ -1117,7 +1134,7 @@ impl<'a> App<'a> {
         {
             Ok(child) => {
                 self.content_mode = ContentMode::AgentModeWaiting {
-                    child: AgentChild(child),
+                    child: AgentChild::new(child),
                     command_display,
                     start_time: std::time::Instant::now(),
                 };

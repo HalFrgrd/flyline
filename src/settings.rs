@@ -168,6 +168,11 @@ pub struct Settings {
     pub frame_rate: u8,
     /// Shell integration escape codes level (OSC 133 / OSC 633).
     pub send_shell_integration_codes: ShellIntegrationLevel,
+    /// Whether to request the use of extended (kitty-protocol) keyboard codes
+    /// during startup. Enabling this gives flyline more accurate keyboard
+    /// events on terminals that support the protocol; disable it if your
+    /// terminal misbehaves when the request is sent. Enabled by default.
+    pub enable_extended_key_codes: bool,
     /// Configurable colour palette for UI elements.
     pub color_palette: Palette,
     /// Which colour theme the user has selected (dark or light).
@@ -202,6 +207,7 @@ impl Default for Settings {
             matrix_animation: MatrixAnimation::Off,
             frame_rate: 30,
             send_shell_integration_codes: ShellIntegrationLevel::Full,
+            enable_extended_key_codes: true,
             color_palette: Palette::default(),
             color_theme: ColorTheme::Dark,
             keybindings: Vec::new(),
