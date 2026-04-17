@@ -149,7 +149,10 @@ struct FlylineArgs {
     command: Option<Commands>,
 }
 
-pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::Result<Vec<String>> {
+pub fn complete_flyline_args(
+    raw_command: &str,
+    cursor_byte: usize,
+) -> anyhow::Result<Vec<clap_complete::CompletionCandidate>> {
     let current_dir = std::env::current_dir().ok();
     let current_dir_asdf = current_dir.as_ref().map(|p| p.to_path_buf());
 
@@ -211,26 +214,13 @@ pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::R
     ) {
         Ok(candidates) => {
             log::info!("{:#?}", candidates);
-            return Ok(candidates.iter().map(comp_candidate_to_string).collect());
+            return Ok(candidates);
         }
         Err(e) => {
             log::error!("Error generating bash completion: {e}");
             return Err(anyhow::anyhow!("Error generating bash completion: {e}"));
         }
     };
-}
-
-fn comp_candidate_to_string(candidate: &clap_complete::CompletionCandidate) -> String {
-    let value = candidate.get_value().to_string_lossy().to_string();
-
-    if let Some(help) = candidate
-        .get_help()
-        .map(|h| h.to_string())
-        .filter(|h| !h.is_empty())
-    {
-        return format!("{}\t{}", value, help);
-    }
-    value
 }
 
 #[derive(Subcommand, Debug)]

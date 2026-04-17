@@ -53,26 +53,22 @@ fn restore_terminal(extended_key_codes: bool) {
         // Likely from the master pty fd being closed.
         log::error!("Failed to disable raw mode: {}", e);
     });
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::event::DisableBracketedPaste,
+        crossterm::event::DisableFocusChange,
+        crossterm::event::DisableMouseCapture,
+    )
+    .unwrap_or_else(|e| {
+        log::error!("Failed to restore terminal features: {}", e);
+    });
     if extended_key_codes {
         crossterm::execute!(
             std::io::stdout(),
-            crossterm::event::DisableBracketedPaste,
-            crossterm::event::DisableFocusChange,
-            crossterm::event::DisableMouseCapture,
             crossterm::event::PopKeyboardEnhancementFlags
         )
         .unwrap_or_else(|e| {
-            log::error!("Failed to restore terminal features: {}", e);
-        });
-    } else {
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::DisableBracketedPaste,
-            crossterm::event::DisableFocusChange,
-            crossterm::event::DisableMouseCapture,
-        )
-        .unwrap_or_else(|e| {
-            log::error!("Failed to restore terminal features: {}", e);
+            log::error!("Failed to pop keyboard enhancement flags: {}", e);
         });
     }
 }
@@ -198,10 +194,6 @@ impl Drop for TabCompletionHandle {
     }
 }
 
-/// Wraps an in-flight agent-mode child process. On drop the child is killed
-/// and waited on so it does not outlive the app.
-type AgentChild = KillOnDropChild;
-
 #[derive(Debug)]
 enum ContentMode {
     Normal,
@@ -217,7 +209,7 @@ enum ContentMode {
     /// AI command is running as a child process.  The child is polled each
     /// event-loop iteration with `try_wait`; on drop it is killed and reaped.
     AgentModeWaiting {
-        child: AgentChild,
+        child: KillOnDropChild,
         command_display: String,
         start_time: std::time::Instant,
     },
@@ -1134,7 +1126,7 @@ impl<'a> App<'a> {
         {
             Ok(child) => {
                 self.content_mode = ContentMode::AgentModeWaiting {
-                    child: AgentChild::new(child),
+                    child: KillOnDropChild::new(child),
                     command_display,
                     start_time: std::time::Instant::now(),
                 };

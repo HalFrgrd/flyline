@@ -1,8 +1,10 @@
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span, Text};
+use std::sync::LazyLock;
 
 use crate::bash_funcs;
 use crate::palette::Palette;
+use crate::shell_integration;
 
 /// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
 const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
@@ -90,7 +92,7 @@ fn detect_kitty_keyboard_support() -> bool {
 }
 
 fn is_vscode() -> bool {
-    bash_funcs::get_envvar_value("TERM_PROGRAM").as_deref() == Some("vscode")
+    shell_integration::is_vscode()
 }
 
 /// Path to the user's Zsh history file (`$HOME/.zsh_history`), if `$HOME` is
@@ -130,11 +132,17 @@ fn zsh_history_recently_modified() -> bool {
     elapsed < std::time::Duration::from_secs(24 * 60 * 60)
 }
 
+/// Cached result of [`should_recommend_zsh_history`]. Evaluated lazily on
+/// first access; the underlying environment / filesystem state is not
+/// expected to change over the lifetime of the process.
+static SHOULD_RECOMMEND_ZSH_HISTORY: LazyLock<bool> =
+    LazyLock::new(|| default_shell_is_zsh() || zsh_history_recently_modified());
+
 /// Returns true when flyline should recommend that the user enables Zsh
 /// history loading: the user's default shell is `zsh`, or there is a
 /// `$HOME/.zsh_history` file that was modified in the last 24 hours.
 fn should_recommend_zsh_history() -> bool {
-    default_shell_is_zsh() || zsh_history_recently_modified()
+    *SHOULD_RECOMMEND_ZSH_HISTORY
 }
 
 /// Generate recommended settings text for the first tutorial step.

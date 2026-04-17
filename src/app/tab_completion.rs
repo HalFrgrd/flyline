@@ -1,6 +1,5 @@
 use crate::active_suggestions::{
     ActiveSuggestions, MaybeProcessedSuggestion, ProcssedSuggestion, SuggestionDescription,
-    split_completion_description,
 };
 use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
@@ -286,21 +285,24 @@ pub(crate) fn gen_completions_internal(
                 // Flyline's own subcommand/flag completions are produced by
                 // clap_complete and are already escaped/finalized. Skip the
                 // bash post-processing pipeline entirely and build
-                // ProcssedSuggestions directly so descriptions (the part
-                // after the first `\t`) are preserved as-is.
+                // ProcssedSuggestions directly so descriptions (the help text
+                // attached to each candidate) are preserved as-is.
                 match complete_flyline_args(&full_command, cursor_byte_pos) {
-                    Ok(words) => {
-                        let suggestions: Vec<MaybeProcessedSuggestion> = words
+                    Ok(candidates) => {
+                        let suggestions: Vec<MaybeProcessedSuggestion> = candidates
                             .into_iter()
-                            .map(|raw| {
-                                let (text, desc_frames) = split_completion_description(&raw);
-                                let description = if desc_frames.is_empty() {
-                                    SuggestionDescription::Static(String::new())
-                                } else {
-                                    SuggestionDescription::Animation(desc_frames)
+                            .map(|c| {
+                                let value = c.get_value().to_string_lossy().to_string();
+                                let help = c
+                                    .get_help()
+                                    .map(|h| h.to_string())
+                                    .filter(|h| !h.is_empty());
+                                let description = match help {
+                                    Some(h) => SuggestionDescription::Animation(vec![h]),
+                                    None => SuggestionDescription::Static(String::new()),
                                 };
                                 MaybeProcessedSuggestion::Ready(
-                                    ProcssedSuggestion::new(text, "", "")
+                                    ProcssedSuggestion::new(&value, "", "")
                                         .with_description(description),
                                 )
                             })

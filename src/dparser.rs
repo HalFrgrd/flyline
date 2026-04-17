@@ -584,16 +584,6 @@ impl DParser {
                         self.tokens[idx].annotations.is_comment = true;
                     }
 
-                    // A Comment token must never be tagged as a command word.
-                    // Skip both the command-word extension logic below and the
-                    // fallback that turns the first non-word token into a
-                    // command word when no command range exists.
-                    if token.kind == TokenKind::Comment {
-                        previous_token = Some(self.tokens[idx].clone());
-                        idx += 1;
-                        continue;
-                    }
-
                     if token.kind.is_word() && !in_single_quote {
                         if let Some(prev_token) = &previous_token {
                             if prev_token.token.kind == TokenKind::Dollar {
@@ -632,7 +622,12 @@ impl DParser {
                         }
                     }
 
-                    if self.current_command_range.is_none() && !in_double_quote && !in_single_quote
+                    // A Comment token must never start a command range or be
+                    // tagged as a command word.
+                    if self.current_command_range.is_none()
+                        && !in_double_quote
+                        && !in_single_quote
+                        && token.kind != TokenKind::Comment
                     {
                         self.tokens[idx].annotations.command_word =
                             Some(self.tokens[idx].token.value.clone());
