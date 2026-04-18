@@ -30,7 +30,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 ### Who is it for?
 1. You want an out-of-the-box great shell experience without setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts.
-2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you.
+2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you, contributions welcome!
 
 # Installation
 
@@ -43,7 +43,9 @@ From easiest to hardest:
 
 ### Run `install.sh`
 
-Run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
+> [!TIP]
+> Quick install:
+> Run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
@@ -165,8 +167,6 @@ Create custom prompt widgets with `flyline create-prompt-widget`.
 Flyline will replace strings in the prompt matching the widget name with the widget's output.
 
 ### Animations
-
-## Custom animations
 
 Create your own animations with `flyline create-prompt-widget animation --name [your animation name here] [FRAMES]`.
 Flyline will replace strings in the prompt matching the animation name with the animation:
@@ -328,6 +328,11 @@ For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's s
 
 ### Mid-word tab completions
 When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
+
+### Dynamic descriptions
+If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab delimited frame at 24fps. Try `flyline set-cursor --effect-easing <Tab>` for an example.
+
+Descriptions for files are the time since last modified.
 
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
