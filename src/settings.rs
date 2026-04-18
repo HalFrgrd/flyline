@@ -126,10 +126,10 @@ pub enum ShellIntegrationLevel {
     /// Send no shell integration codes.
     None,
     /// Only send the escape codes that report prompt start/end positions.
+    #[default]
     OnlyPromptPos,
     /// Send the full set of shell integration codes: prompt positions, execution
-    /// start/end codes, and cursor-position reporting.  This is the default.
-    #[default]
+    /// start/end codes, and cursor-position reporting.
     Full,
 }
 
