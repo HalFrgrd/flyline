@@ -1,4 +1,4 @@
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
+use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 use clap_complete::{ArgValueCompleter, Shell, generate};
 use libc::{c_char, c_int};
 use ratatui::style::Style;
@@ -67,15 +67,6 @@ fn get_styles() -> clap::builder::Styles {
         )
 }
 
-#[derive(ValueEnum, Clone, Debug)]
-enum LogLevel {
-    Error,
-    Warn,
-    Info,
-    Debug,
-    Trace,
-}
-
 fn parse_matrix_animation(s: &str) -> Result<settings::MatrixAnimation, String> {
     match s {
         "on" => Ok(settings::MatrixAnimation::On),
@@ -106,9 +97,6 @@ struct FlylineArgs {
     /// Show version information
     #[arg(long)]
     version: bool,
-    /// Set the logging level
-    #[arg(long = "log-level", value_name = "LEVEL")]
-    log_level: Option<LogLevel>,
     /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
@@ -426,29 +414,17 @@ enum Commands {
         #[command(subcommand)]
         subcommand: KeySubcommands,
     },
-    /// Dump in-memory logs to file.
-    ///
-    /// Optionally specify a PATH; if omitted, a timestamped file is created in the current directory.
+    /// Logging commands: dump, configure level, or stream logs.
     ///
     /// Examples:
-    ///   flyline dump-logs
-    ///   flyline dump-logs /tmp/flyline.log
-    #[command(name = "dump-logs", verbatim_doc_comment)]
-    DumpLogs {
-        /// Path to write logs to. If omitted, a timestamped file is created in the current directory.
-        path: Option<String>,
-    },
-    /// Dump current logs to PATH and append new logs.
-    ///
-    /// Use `stderr` to stream to standard error.
-    ///
-    /// Examples:
-    ///   flyline stream-logs /tmp/flyline.log
-    ///   flyline stream-logs stderr
-    #[command(name = "stream-logs", verbatim_doc_comment)]
-    StreamLogs {
-        /// Path to write logs to. Use `stderr` to stream to standard error.
-        path: String,
+    ///   flyline log dump
+    ///   flyline log set-level debug
+    ///   flyline log stream /tmp/flyline.log
+    ///   flyline log stream terminal
+    #[command(name = "log", verbatim_doc_comment)]
+    Log {
+        #[command(subcommand)]
+        subcommand: LogSubcommands,
     },
     /// Run the interactive tutorial for first-time users.
     ///
@@ -533,6 +509,67 @@ enum KeySubcommands {
         /// The key or modifier to remap to (e.g. "z", "ctrl").
         to: String,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum LogSubcommands {
+    /// Dump all in-memory log entries to stdout.
+    ///
+    /// Examples:
+    ///   flyline log dump
+    #[command(name = "dump", verbatim_doc_comment)]
+    Dump,
+    /// Set the logging level.
+    ///
+    /// LEVEL is one of: error, warn, info, debug, trace
+    ///
+    /// Examples:
+    ///   flyline log set-level debug
+    ///   flyline log set-level trace
+    #[command(name = "set-level", verbatim_doc_comment)]
+    SetLevel {
+        /// Logging level to apply.
+        #[arg(value_name = "LEVEL")]
+        level: LogLevelArg,
+    },
+    /// Stream logs to a file path or to the terminal.
+    ///
+    /// Use `terminal` to display the last 20 log lines inside the flyline TUI
+    /// on every render.  Otherwise supply a file path; existing log entries
+    /// are written to the file and subsequent entries are appended.
+    /// Use `stderr` to stream to standard error.
+    ///
+    /// Examples:
+    ///   flyline log stream /tmp/flyline.log
+    ///   flyline log stream stderr
+    ///   flyline log stream terminal
+    #[command(name = "stream", verbatim_doc_comment)]
+    Stream {
+        /// Destination: a file path, `stderr`, or `terminal`.
+        #[arg(value_name = "FILEPATH|terminal")]
+        dest: String,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum LogLevelArg {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl From<LogLevelArg> for log::LevelFilter {
+    fn from(level: LogLevelArg) -> Self {
+        match level {
+            LogLevelArg::Error => log::LevelFilter::Error,
+            LogLevelArg::Warn => log::LevelFilter::Warn,
+            LogLevelArg::Info => log::LevelFilter::Info,
+            LogLevelArg::Debug => log::LevelFilter::Debug,
+            LogLevelArg::Trace => log::LevelFilter::Trace,
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -731,17 +768,6 @@ impl Flyline {
                         env!("GIT_HASH"),
                         env!("BUILD_TIME"),
                     );
-                }
-
-                if let Some(ref level) = parsed.log_level {
-                    let filter = match level {
-                        LogLevel::Error => log::LevelFilter::Error,
-                        LogLevel::Warn => log::LevelFilter::Warn,
-                        LogLevel::Info => log::LevelFilter::Info,
-                        LogLevel::Debug => log::LevelFilter::Debug,
-                        LogLevel::Trace => log::LevelFilter::Trace,
-                    };
-                    log::set_max_level(filter);
                 }
 
                 if let Some(path) = parsed.load_zsh_history {
@@ -1068,19 +1094,28 @@ impl Flyline {
                         }
                     },
                     None => {}
-                    Some(Commands::DumpLogs { path }) => {
-                        let path_opt = path.map(std::path::PathBuf::from);
-                        match logging::dump_logs(path_opt) {
-                            Ok(path) => println!("Flyline logs dumped to {}", path.display()),
-                            Err(e) => eprintln!("Failed to dump logs: {}", e),
+                    Some(Commands::Log { subcommand }) => match subcommand {
+                        LogSubcommands::Dump => {
+                            if let Err(e) = logging::dump_logs_stdout() {
+                                eprintln!("Failed to dump logs: {}", e);
+                            }
                         }
-                    }
-                    Some(Commands::StreamLogs { path }) => {
-                        match logging::stream_logs(path.as_str().into()) {
-                            Ok(path) => println!("Flyline logs streaming to {}", path.display()),
+                        LogSubcommands::SetLevel { level } => {
+                            let filter = log::LevelFilter::from(level);
+                            log::set_max_level(filter);
+                            log::info!("Log level set to {:?}", filter);
+                        }
+                        LogSubcommands::Stream { dest } => match logging::stream_logs(&dest) {
+                            Ok(()) => {
+                                if dest == "terminal" {
+                                    log::info!("Log streaming to terminal");
+                                } else {
+                                    println!("Flyline logs streaming to {}", dest);
+                                }
+                            }
                             Err(e) => eprintln!("Failed to stream logs: {}", e),
-                        }
-                    }
+                        },
+                    },
                     Some(Commands::RunTutorial { enabled }) => {
                         let enabled = enabled.unwrap_or(true);
                         log::info!("Run tutorial set to {}", enabled);
@@ -1444,7 +1479,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
             log::info!(
                 "To avoid loading flyline in non-interactive shells, add the following to your .bashrc before the flyline enable line:\nif [[ $- != *i* ]]; then return; fi"
             );
-            logging::print_logs();
+            logging::print_logs_stderr();
             return FAILURE;
         }
     }
@@ -1540,7 +1575,7 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
                 idx += 1;
             }
             log::error!("Could not setup flyline");
-            logging::print_logs();
+            logging::print_logs_stderr();
             return FAILURE;
         }
     }

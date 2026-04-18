@@ -1447,6 +1447,19 @@ impl<'a> App<'a> {
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
 
+        // When terminal log streaming is enabled, show the last 20 log lines at
+        // the top of the content before anything else.
+        if crate::logging::is_terminal_streaming() {
+            let log_lines = crate::logging::last_n_logs(20);
+            for line_text in log_lines {
+                let tagged_line = TaggedLine::from(vec![TaggedSpan::new(
+                    ratatui::text::Span::raw(line_text),
+                    Tag::Normal,
+                )]);
+                content.write_tagged_line(&tagged_line, true);
+            }
+        }
+
         // Render tutorial text above the prompt when a tutorial step is active.
         if self.mode.is_running() {
             if let Some(tutorial_lines) = crate::tutorial::generate_tutorial_text(
