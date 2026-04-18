@@ -426,8 +426,7 @@ Commands:
   set-color             Configure the colour palette.
   set-cursor            Configure the cursor appearance and animation.
   key                   Manage keybindings.
-  dump-logs             Dump in-memory logs to file.
-  stream-logs           Dump current logs to PATH and append new logs.
+  log                   Logging commands: dump, configure level, or stream logs.
   run-tutorial          Run the interactive tutorial for first-time users.
   comp-spec-synthesis   Run a command with --help, parse the output, and print a Bash completion
                         script to stdout.
@@ -436,11 +435,6 @@ Commands:
 Options:
       --version
           Show version information
-
-      --log-level <LEVEL>
-          Set the logging level
-          
-          [possible values: error, warn, info, debug, trace]
 
       --load-zsh-history [<PATH>]
           Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
@@ -480,10 +474,10 @@ Options:
           Possible values:
           - none:            Send no shell integration codes
           - only-prompt-pos: Only send the escape codes that report prompt start/end positions
-          - full:            Send the full set of shell integration codes: prompt positions, execution start/end codes, and cursor-position reporting.  This is the default
+          - full:            Send the full set of shell integration codes: prompt positions, execution start/end codes, and cursor-position reporting
 
       --enable-extended-key-codes [<ENABLE_EXTENDED_KEY_CODES>]
-          Whether to request the use of extended (kitty-protocol) keyboard codes during startup. Enabled by default; pass `--enable-extended-key-codes false` (or with no value) to disable it on terminals that misbehave when the request is sent
+          Whether to request the use of extended (kitty-protocol) keyboard codes during startup. Enabled by default; pass `--enable-extended-key-codes false` to disable it on terminals that misbehave when the request is sent
           
           [possible values: true, false]
 
