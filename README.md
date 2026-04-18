@@ -13,19 +13,24 @@
 
 </div>
 
-When you write a command in Bash, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
+When Bash prompts you for a command a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
-- Fuzzy history suggestions
+- [Rich prompt customization, widgets, animations](#rich-prompts)
+- Fuzzy history searching
 - [Mouse support](#mouse-support)
 - [Improvements on Bash's tab completion](#tab-completion-improvements)
 - Tooltips
 - Auto close brackets and quotes
 - Syntax highlighting
 - Runs in the same process as Bash
-- Cursor animations
+- Cursor animations and styles
 
 Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is written in Rust and uses [ratatui.rs](https://ratatui.rs/) to more easily draw complex user interfaces.
+
+### Who is it for?
+1. You want an out-of-the-box great shell experience without setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts.
+2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you.
 
 # Installation
 
@@ -152,9 +157,18 @@ RPS1='\e[01;32m\D{%Y-%m-%d %H:%M:%S}\e[0m'
 RPS1='\D{%H:%M}'
 ```
 
+
+
+## Custom prompt widgets
+
+Create custom prompt widgets with `flyline create-prompt-widget`.
+Flyline will replace strings in the prompt matching the widget name with the widget's output.
+
+### Animations
+
 ## Custom animations
 
-Create your own animations with `flyline create-prompt-widget animation --name [your animation name here]`.
+Create your own animations with `flyline create-prompt-widget animation --name [your animation name here] [FRAMES]`.
 Flyline will replace strings in the prompt matching the animation name with the animation:
 
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
@@ -199,11 +213,6 @@ Options:
           Print help (see a summary with '-h')
 ```
 <!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_END -->
-
-## Custom prompt widgets
-
-Create custom prompt widgets with `flyline create-prompt-widget`.
-Flyline will replace strings in the prompt matching the widget name with the widget's output.
 
 ### Mouse-mode widget
 
