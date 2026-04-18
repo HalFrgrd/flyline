@@ -711,6 +711,43 @@ impl DParser {
             return None;
         }
 
+        // Special case: `$(` → `)`, `$((` → `)`, and `${` → `}` should auto-close even when
+        // typed inside a matched double-quoted string, because `$` expansions are active inside
+        // double quotes.  Single-quoted strings treat `$` as a literal, so this exemption does
+        // not apply there.  We still respect `is_before_word` to avoid wrapping existing tokens.
+        if matches!(c, '(' | '{') {
+            let is_inside_single_quoted = tokens.iter().any(|t| {
+                if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
+                    if t.token.kind == TokenKind::SingleQuote {
+                        let open_end = t.token.byte_range().end;
+                        let close_start = tokens[close_idx].token.byte_range().start;
+                        return open_end <= just_inserted_pos && just_inserted_pos <= close_start;
+                    }
+                }
+                false
+            });
+            if !is_inside_single_quoted {
+                let is_before_word = tokens.iter().any(|t| {
+                    t.token.kind.is_word() && t.token.byte_range().contains(&just_inserted_pos)
+                });
+                if !is_before_word {
+                    let prev_token_kind = tokens
+                        .iter()
+                        .rev()
+                        .find(|t| t.token.byte_range().end == just_inserted_pos)
+                        .map(|t| &t.token.kind);
+                    let closing = match (c, prev_token_kind) {
+                        ('(', Some(TokenKind::Dollar | TokenKind::CmdSubst)) => Some(')'),
+                        ('{', Some(TokenKind::Dollar)) => Some('}'),
+                        _ => None,
+                    };
+                    if closing.is_some() {
+                        return closing;
+                    }
+                }
+            }
+        }
+
         // If the insertion point is inside a matched single- or double-quoted string, the typed
         // character is just literal content – don't auto-close. For example, inserting `'` in the
         // middle of `"abcde"` should not produce a closing `'`.
@@ -1441,6 +1478,82 @@ mod tests {
         assert_eq!(
             DParser::closing_char_to_insert(&parser.tokens(), '"', just_inserted_pos),
             Some('"')
+        );
+    }
+
+    // ── Dollar-prefix auto-close inside double-quoted strings ────────────────
+
+    #[test]
+    fn paren_auto_closed_after_dollar_inside_double_quoted_string() {
+        // Stale buffer: `"$"` – the `"` pair is matched (auto-inserted closing).
+        // Cursor is at position 2 (after `$`, before the closing `"`).
+        // Typing `(` should still produce `)` because `$(` is a valid expansion.
+        let stale = r#""$""#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 2; // after `$`
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '(', just_inserted_pos),
+            Some(')')
+        );
+    }
+
+    #[test]
+    fn paren_auto_closed_after_cmdsubst_inside_double_quoted_string() {
+        // Stale buffer: `"$()"` – `$(` is a CmdSubst token, `)` auto-inserted, `"` matched.
+        // Cursor is at position 3 (after `$(`, before the auto-inserted `)`).
+        // Typing `(` should produce `)` to allow `$((1+2))`.
+        let stale = r#""$()""#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 3; // after `$(`
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '(', just_inserted_pos),
+            Some(')')
+        );
+    }
+
+    #[test]
+    fn brace_auto_closed_after_dollar_inside_double_quoted_string() {
+        // Stale buffer: `"$"` – matched double-quoted pair.
+        // Cursor at position 2 (after `$`).
+        // Typing `{` should produce `}` because `${var}` is a valid expansion.
+        let stale = r#""$""#;
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 2; // after `$`
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '{', just_inserted_pos),
+            Some('}')
+        );
+    }
+
+    #[test]
+    fn no_paren_auto_close_after_dollar_inside_single_quoted_string() {
+        // Stale buffer: `'$'` – single-quoted, `$` is literal; no expansion.
+        // Cursor at position 2 (after `$`).
+        // Typing `(` should NOT auto-close.
+        let stale = "'$'";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 2; // after `$`
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '(', just_inserted_pos),
+            None
+        );
+    }
+
+    #[test]
+    fn no_brace_auto_close_after_dollar_inside_single_quoted_string() {
+        // Stale buffer: `'$'` – single-quoted.
+        // Typing `{` should NOT auto-close.
+        let stale = "'$'";
+        let mut parser = DParser::from(stale);
+        parser.walk_to_end();
+        let just_inserted_pos = 2; // after `$`
+        assert_eq!(
+            DParser::closing_char_to_insert(&parser.tokens(), '{', just_inserted_pos),
+            None
         );
     }
 
