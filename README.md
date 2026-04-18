@@ -69,12 +69,14 @@ cargo build
 enable -f /path/to/flyline_checkout/target/debug/libflyline.so flyline
 ```
 
-### Notes
+
+<details>
+<summary><strong>Installation notes</strong></summary>
 
 Disable flyline with `enable -d flyline`.
 
-<details>
-<summary><strong>On newer versions of Bash</strong></summary>
+#### BASH_LOADABLES_PATH
+
 Taken from https://www.gnu.org/software/bash/manual/bash.html:
 
 > The -f option means to load the new builtin command name from shared object filename, on systems that support dynamic loading. If filename does not contain a slash, Bash will use the value of the BASH_LOADABLES_PATH variable as a colon-separated list of directories in which to search for filename. The default for BASH_LOADABLES_PATH is system-dependent, and may include "." to force a search of the current directory.
