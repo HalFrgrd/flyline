@@ -117,7 +117,7 @@ PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
 ```
 
 > [!TIP]
-> Does git metrics slow down your prompt loading time? See [custom widget](#custom-command-widget) or [example widgets](examples/widgets.sh) for a solution.
+> Do git metrics slow down your prompt loading time? See [custom widget](#custom-command-widget) or [example widgets](examples/widgets.sh) for a solution.
 
 ## RPS1 / RPROMPT
 The `RPS1` / `RPROMPT` variable sets the right prompt similarly to Zsh.
@@ -318,23 +318,22 @@ This allows you to write a command in plain English and your agent will convert 
 
 After setting up your agent with flyline, you can pass the buffer to your agent with Alt+Enter or simply Enter when your command starts with your trigger prefix (e.g. `ai: list files older than three days`).
 
-[See the examples on how to set this up.](examples/agent_mode.sh)
-The agent should return a simple JSON array of commands as described by the example system prompt.
+[See the examples on how to set this up.](examples/agent_mode.sh) or simply press Alt+Enter and flyline will try to configure agent mode for you.
 
 Flyine will syntax highlight the suggested commands and render markdown output.
 
 # Mouse support
 
-Move your cursor, select suggestions, hover for tooltips with your mouse.
+Click to move your cursor, select suggestions, and hover for tooltips.
 Flyline must capture mouse events for the entire terminal which isn't always desirable.
 For instance, you might want to select text above the current prompt with your mouse.
 
 Flyline offers three mouse modes:
-- disabled: Never capture mouse events
-- simple:   Mouse capture is on by default; toggled when Escape is pressed
-- smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
+- `disabled`: Never capture mouse events
+- `simple`: Mouse capture is on by default; toggled when Escape is pressed
+- `smart` (default): Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
 
-`flyline --mouse-mode smart` is the default.
+I'd recommend [setting up a mouse mode widget](#mouse-mode-widget) to know when mouse capture is enabled.
 
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
@@ -346,7 +345,7 @@ When you're presented with suggestions, you can type to fuzzily search through t
 ![Fuzzy suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_suggestions.gif)
 
 ### Alias expansion
-Aliases are expanded before tab completion so that Bash calls the desired completion function.
+Aliases are expanded before attempting tab completion so that Bash calls the desired completion function.
 For instance, if `gc` aliases to `git commit`, `gc --verbo<Tab>` will work as expected.
 
 ### Nested command
