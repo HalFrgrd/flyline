@@ -13,31 +13,39 @@
 
 </div>
 
-When you write a command in Bash, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
+When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
-- Fuzzy history suggestions
+- [Rich prompt customization, widgets, animations](#rich-prompts)
+- [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
 - [Improvements on Bash's tab completion](#tab-completion-improvements)
 - Tooltips
 - Auto close brackets and quotes
 - Syntax highlighting
 - Runs in the same process as Bash
-- Cursor animations
+- Cursor animations and styles
 
 Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is written in Rust and uses [ratatui.rs](https://ratatui.rs/) to more easily draw complex user interfaces.
+
+### Who is it for?
+1. You want an out-of-the-box great shell experience without setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts.
+2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you, contributions welcome!
 
 # Installation
 
 To install flyline, you need to:
 1. Acquire `libflyline.so`
 2. Run `enable -f /path/to/libflyline.so flyline` (preferably in your `.bashrc`)
+3. Optional but recommended: `flyline run-tutorial`
 
 From easiest to hardest:
 
 ### Run `install.sh`
 
-Run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
+> [!TIP]
+> Quick install:
+> Run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
@@ -61,12 +69,14 @@ cargo build
 enable -f /path/to/flyline_checkout/target/debug/libflyline.so flyline
 ```
 
-### Notes
+
+<details>
+<summary><strong>Installation notes</strong></summary>
 
 Disable flyline with `enable -d flyline`.
 
-<details>
-<summary><strong>On newer versions of Bash</strong></summary>
+#### BASH_LOADABLES_PATH
+
 Taken from https://www.gnu.org/software/bash/manual/bash.html:
 
 > The -f option means to load the new builtin command name from shared object filename, on systems that support dynamic loading. If filename does not contain a slash, Bash will use the value of the BASH_LOADABLES_PATH variable as a colon-separated list of directories in which to search for filename. The default for BASH_LOADABLES_PATH is system-dependent, and may include "." to force a search of the current directory.
@@ -85,6 +95,13 @@ So on Bash at least as recent as 5.2, if you install flyline to one of:
 Then you can simply run `enable flyline`.
 
 </details>
+
+# Configuration
+
+Flyline sets up its own tab completion
+so you can type `flyline <Tab>` in your shell to interactively browse and configure settings. Copy the commands into your `.bashrc` so they persist.
+
+Explore this readme and [examples](examples/settings.sh) for what you can configure.
 
 # Rich prompts
 
@@ -151,9 +168,16 @@ RPS1='\e[01;32m\D{%Y-%m-%d %H:%M:%S}\e[0m'
 RPS1='\D{%H:%M}'
 ```
 
-## Custom animations
 
-Create your own animations with `flyline create-prompt-widget animation --name [your animation name here]`.
+
+## Custom prompt widgets
+
+Create custom prompt widgets with `flyline create-prompt-widget`.
+Flyline will replace strings in the prompt matching the widget name with the widget's output.
+
+### Animations
+
+Create your own animations with `flyline create-prompt-widget animation --name [your animation name here] [FRAMES]`.
 Flyline will replace strings in the prompt matching the animation name with the animation:
 
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
@@ -198,11 +222,6 @@ Options:
           Print help (see a summary with '-h')
 ```
 <!-- FLYLINE_CREATE_PROMPT_WIDGET_ANIMATION_HELP_END -->
-
-## Custom prompt widgets
-
-Create custom prompt widgets with `flyline create-prompt-widget`.
-Flyline will replace strings in the prompt matching the widget name with the widget's output.
 
 ### Mouse-mode widget
 
@@ -289,7 +308,7 @@ Options:
 
 
 # Agent mode
-Flyline can call an agent of your choice with the current command buffer as a prompt.
+Flyline can interact with your AI agent to suggest commands.
 This allows you to write a command in plain English and your agent will convert it into a Bash command:
 
 ![Agent mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
@@ -298,6 +317,21 @@ After setting up your agent with flyline, you can pass the buffer to your agent 
 
 [See the examples on how to set this up.](examples/agent_mode.sh)
 The agent should return a simple JSON array of commands as described by the example system prompt.
+
+Flyine will syntax highlight the suggested commands and render markdown output.
+
+# Mouse support
+
+Move your cursor, select suggestions, hover for tooltips with your mouse.
+Flyline must capture mouse events for the entire terminal which isn't always desirable.
+For instance, you might want to select text above the current prompt with your mouse.
+
+Flyline offers three mouse modes:
+- disabled: Never capture mouse events
+- simple:   Mouse capture is on by default; toggled when Escape is pressed
+- smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
+
+`flyline --mouse-mode smart` is the default.
 
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
@@ -319,23 +353,19 @@ For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's s
 ### Mid-word tab completions
 When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
 
+### Dynamic descriptions
+If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab delimited frame at 24fps. Try `flyline set-cursor --effect-easing <Tab>` for an example.
+
+Descriptions for files are the time since last modified.
+
+### Automatically complete based on `--help`
+Coming soon: if the command doesn't not have a completion spec, flyline can run `your_command --help` in the background, parse the output, and intelligently create tab completion suggestions.
+
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
 
 ![LS_COLORS demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_ls_colors.gif)
 
-# Mouse support
-
-Move your cursor, select suggestions, hover for tooltips with your mouse.
-Flyline must capture mouse events for the entire terminal which isn't always desirable.
-For instance, you might want to select text above the current prompt with your mouse.
-
-Flyline offers three mouse modes:
-- disabled: Never capture mouse events
-- simple:   Mouse capture is on by default; toggled when Escape is pressed
-- smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
-
-`flyline --mouse-mode smart` is the default.
 
 # Command history
 
@@ -343,7 +373,6 @@ Flyline offers three mouse modes:
 Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl+R`:
 
 ![Fuzzy history demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_history.gif)
-
 
 **Inline suggestions:**
 Inline suggestions appear as you type based on the most recent matching history entry. Accept them with `Right`/`End`.
@@ -364,8 +393,6 @@ Recommended settings
 - If keybindings are not working properly, you can debug by [Toggling Keyboard Shortcuts Troubleshooting](https://code.visualstudio.com/docs/configure/keybindings#_troubleshooting-keyboard-shortcuts).
 
 ## macOS
-> [!NOTE]
-> These notes are for when the terminal emulator is running on macOS and flyline is running within a remote Linux shell
 
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
 Two possible fixes are:
@@ -376,11 +403,6 @@ Two possible fixes are:
 Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escape codes to integrate the shell with the terminal. These are on by default and can be disabled with `flyline --send-shell-integration-codes none`.
 
 # Settings
-
-Configure flyline by running `flyline [OPTIONS]` in your `.bashrc` (after the `enable` call) or in Bash session.
-Run `flyline --help` to see all available options.
-You could set these options in your current session but then they wouldn't persist between sessions.
-[Examples can be found here.](examples/settings.sh)
 
 The block below is auto-generated from `flyline --help`:
 
@@ -457,8 +479,6 @@ Read more at https://github.com/HalFrgrd/flyline
 ```
 <!-- FLYLINE_HELP_END -->
 
-When flyline loads, it automatically sets up its own tab completion
-so you can type `flyline --<Tab>` in your shell to interactively browse and configure settings.
 
 ## Colour palette
 
@@ -488,3 +508,27 @@ flyline set-color --default-theme light --matching-char "bold blue"
 flyline set-color --recognised-command "green" --unrecognised-command "bold red"
 flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
 ```
+
+## Keybindings
+
+List all keybindings with `flyline key list`.
+Flyline allows configurable keybindings with the `flyline key set [KEY SEQUENCE] [SCOPED ACTION]` subcommand.
+Certain actions are only possible in certain scopes.
+This allows a key sequence to trigger different actions under different circumstances.
+
+For instance:
+```bash
+flyline key set Enter default::submit_or_newline
+flyline key set Enter tab_completion::accept_entry        # defined last -> higher priority
+```
+When you press `Enter`, flyline will accept the tab completion entry if the `tab_completion` scope is active (i.e. if are currently browsing tab completion suggestions).
+If the `tab_completion` scope is not active, then it will try the next keybinding for `Enter` and run that action if the scope is active.
+The `default` is always active.
+
+It is possible to remap keys entirely with:
+```bash
+flyline key remap Alt Ctrl       # Pressing Alt now acts like pesssing Ctrl
+flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effectively swapped.
+```
+
+Tab completions exist for both key sequences and actions to make it easier to write keybindings.
