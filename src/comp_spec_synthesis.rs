@@ -668,19 +668,25 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
 // Synthesis: run a command and build its completion spec
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Run `command_path --help` (falling back to stderr when stdout is empty),
-/// parse the output, and then flesh out each discovered subcommand by running
-/// `command_path <subcommand> --help` and parsing those results too.
-/// Subcommands are explored iteratively using a work-stack so that nested
-/// subcommands (sub-sub-commands, etc.) are also populated, up to a maximum
-/// nesting depth of [`MAX_SUBCOMMAND_DEPTH`].
+/// Invoke `help_runner` to obtain help text, parse it, and flesh out each
+/// discovered subcommand by calling `help_runner` again with the subcommand
+/// path.  Subcommands are explored iteratively using a work-stack so that
+/// nested subcommands (sub-sub-commands, etc.) are also populated, up to a
+/// maximum nesting depth of [`MAX_SUBCOMMAND_DEPTH`].
 ///
 /// The `name` field of the returned [`Command`] is always set to the basename
 /// of `command_path` so that the generated completion script uses the correct
 /// name regardless of what the help text says.
-pub fn synthesize_completion(command_path: &str) -> anyhow::Result<Command> {
+///
+/// `help_runner` is called with the subcommand path (e.g. `&["remote", "add"]`)
+/// and must return the corresponding `--help` output.  For the top-level
+/// command the slice is empty (`&[]`).
+pub fn synthesize_completion<F>(command_path: &str, help_runner: F) -> anyhow::Result<Command>
+where
+    F: Fn(&[&str]) -> anyhow::Result<String>,
+{
     // ── top-level help ───────────────────────────────────────────────────────
-    let top_help = run_help(command_path, &[])?;
+    let top_help = help_runner(&[])?;
     let mut root = parse_help(&top_help);
 
     // Always use the basename of the supplied path as the canonical name.
@@ -695,7 +701,9 @@ pub fn synthesize_completion(command_path: &str) -> anyhow::Result<Command> {
     // Each stack entry is a path of subcommand names from the root, e.g.
     // `["remote", "add"]`.  We use this path both to locate the node in the
     // `Command` tree and to build the argv for the `--help` invocation.
-    const MAX_SUBCOMMAND_DEPTH: usize = 10;
+    // Five levels of nesting covers the vast majority of real CLI tools while
+    // keeping synthesis time bounded.
+    const MAX_SUBCOMMAND_DEPTH: usize = 5;
 
     // Seed the stack with every top-level subcommand.
     let mut stack: Vec<Vec<String>> = root
@@ -711,7 +719,7 @@ pub fn synthesize_completion(command_path: &str) -> anyhow::Result<Command> {
 
         // Build the argv slice for the help invocation.
         let path_strs: Vec<&str> = path.iter().map(String::as_str).collect();
-        let help_output = match run_help(command_path, &path_strs) {
+        let help_output = match help_runner(&path_strs) {
             Ok(s) if !s.trim().is_empty() => s,
             Ok(_) => continue,
             Err(e) => {
@@ -767,7 +775,7 @@ fn find_subcommand_mut<'a>(root: &'a mut Command, path: &[String]) -> Option<&'a
 ///
 /// Many tools print their help to *stderr* rather than *stdout*; this function
 /// returns whichever stream is non-empty (preferring stdout).
-fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Result<String> {
+pub(crate) fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Result<String> {
     let output = std::process::Command::new(command_path)
         .args(extra_args)
         .arg("--help")
@@ -1641,11 +1649,8 @@ Options:
             &mut out,
         );
         let script = String::from_utf8(out).expect("completion output is valid utf-8");
-        assert!(!script.is_empty(), "completion script should not be empty");
-        assert!(
-            script.contains("greet"),
-            "completion script should reference the command name"
-        );
+        assert!(!script.is_empty());
+        assert!(script.contains("greet"));
     }
 
     // ── git --help ───────────────────────────────────────────────────────────
@@ -1691,14 +1696,14 @@ Options:
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
         let subs = subcommand_names(&cmd);
-        assert!(subs.contains(&"clone"), "clone should be a subcommand");
-        assert!(subs.contains(&"commit"), "commit should be a subcommand");
-        assert!(subs.contains(&"log"), "log should be a subcommand");
-        assert!(subs.contains(&"diff"), "diff should be a subcommand");
-        assert!(subs.contains(&"push"), "push should be a subcommand");
-        assert!(subs.contains(&"pull"), "pull should be a subcommand");
-        assert!(subs.contains(&"branch"), "branch should be a subcommand");
-        assert!(subs.contains(&"status"), "status should be a subcommand");
+        assert!(subs.contains(&"clone"));
+        assert!(subs.contains(&"commit"));
+        assert!(subs.contains(&"log"));
+        assert!(subs.contains(&"diff"));
+        assert!(subs.contains(&"push"));
+        assert!(subs.contains(&"pull"));
+        assert!(subs.contains(&"branch"));
+        assert!(subs.contains(&"status"));
 
         // Check a couple of subcommand descriptions.
         assert_eq!(
@@ -1747,33 +1752,24 @@ Options:
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-q"), "-q should be present");
-        assert!(shorts.contains(&"-v"), "-v should be present");
-        assert!(shorts.contains(&"-n"), "-n should be present");
-        assert!(shorts.contains(&"-p"), "-p should be present");
-        assert!(shorts.contains(&"-s"), "-s should be present");
-        assert!(shorts.contains(&"-i"), "-i should be present");
+        assert!(shorts.contains(&"-q"));
+        assert!(shorts.contains(&"-v"));
+        assert!(shorts.contains(&"-n"));
+        assert!(shorts.contains(&"-p"));
+        assert!(shorts.contains(&"-s"));
+        assert!(shorts.contains(&"-i"));
 
         let longs = long_names(&cmd);
-        assert!(
-            longs.contains(&"--max-count"),
-            "--max-count should be present"
-        );
-        assert!(longs.contains(&"--since"), "--since should be present");
-        assert!(longs.contains(&"--author"), "--author should be present");
-        assert!(longs.contains(&"--grep"), "--grep should be present");
-        assert!(longs.contains(&"--oneline"), "--oneline should be present");
-        assert!(longs.contains(&"--graph"), "--graph should be present");
-        assert!(longs.contains(&"--stat"), "--stat should be present");
-        assert!(
-            longs.contains(&"--first-parent"),
-            "--first-parent should be present"
-        );
-        assert!(longs.contains(&"--patch"), "--patch should be present");
-        assert!(
-            longs.contains(&"--no-patch"),
-            "--no-patch should be present"
-        );
+        assert!(longs.contains(&"--max-count"));
+        assert!(longs.contains(&"--since"));
+        assert!(longs.contains(&"--author"));
+        assert!(longs.contains(&"--grep"));
+        assert!(longs.contains(&"--oneline"));
+        assert!(longs.contains(&"--graph"));
+        assert!(longs.contains(&"--stat"));
+        assert!(longs.contains(&"--first-parent"));
+        assert!(longs.contains(&"--patch"));
+        assert!(longs.contains(&"--no-patch"));
 
         // Value types.
         assert_eq!(
@@ -1835,28 +1831,22 @@ Options:
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-q"), "-q should be present");
-        assert!(shorts.contains(&"-v"), "-v should be present");
-        assert!(shorts.contains(&"-m"), "-m should be present");
-        assert!(shorts.contains(&"-a"), "-a should be present");
-        assert!(shorts.contains(&"-s"), "-s should be present");
-        assert!(shorts.contains(&"-e"), "-e should be present");
+        assert!(shorts.contains(&"-q"));
+        assert!(shorts.contains(&"-v"));
+        assert!(shorts.contains(&"-m"));
+        assert!(shorts.contains(&"-a"));
+        assert!(shorts.contains(&"-s"));
+        assert!(shorts.contains(&"-e"));
 
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--message"), "--message should be present");
-        assert!(longs.contains(&"--author"), "--author should be present");
-        assert!(longs.contains(&"--amend"), "--amend should be present");
-        assert!(
-            longs.contains(&"--no-verify"),
-            "--no-verify should be present"
-        );
-        assert!(
-            longs.contains(&"--allow-empty"),
-            "--allow-empty should be present"
-        );
-        assert!(longs.contains(&"--dry-run"), "--dry-run should be present");
-        assert!(longs.contains(&"--squash"), "--squash should be present");
-        assert!(longs.contains(&"--signoff"), "--signoff should be present");
+        assert!(longs.contains(&"--message"));
+        assert!(longs.contains(&"--author"));
+        assert!(longs.contains(&"--amend"));
+        assert!(longs.contains(&"--no-verify"));
+        assert!(longs.contains(&"--allow-empty"));
+        assert!(longs.contains(&"--dry-run"));
+        assert!(longs.contains(&"--squash"));
+        assert!(longs.contains(&"--signoff"));
 
         // Value types.
         assert_eq!(
@@ -1904,109 +1894,55 @@ Options:
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-p"), "-p should be present");
-        assert!(shorts.contains(&"-s"), "-s should be present");
-        assert!(shorts.contains(&"-U"), "-U should be present");
-        assert!(shorts.contains(&"-W"), "-W should be present");
+        assert!(shorts.contains(&"-p"));
+        assert!(shorts.contains(&"-s"));
+        assert!(shorts.contains(&"-U"));
+        assert!(shorts.contains(&"-W"));
 
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--patch"), "--patch should be present");
-        assert!(
-            longs.contains(&"--no-patch"),
-            "--no-patch should be present"
-        );
-        assert!(longs.contains(&"--stat"), "--stat should be present");
-        assert!(
-            longs.contains(&"--name-only"),
-            "--name-only should be present"
-        );
-        assert!(longs.contains(&"--cached"), "--cached should be present");
-        assert!(
-            longs.contains(&"--word-diff"),
-            "--word-diff should be present"
-        );
-        assert!(longs.contains(&"--color"), "--color should be present");
-        assert!(longs.contains(&"--unified"), "--unified should be present");
+        assert!(longs.contains(&"--patch"));
+        assert!(longs.contains(&"--no-patch"));
+        assert!(longs.contains(&"--stat"));
+        assert!(longs.contains(&"--name-only"));
+        assert!(longs.contains(&"--cached"));
+        assert!(longs.contains(&"--word-diff"));
+        assert!(longs.contains(&"--color"));
+        assert!(longs.contains(&"--unified"));
     }
 
     // ── git with subcommand help synthesis (static test) ─────────────────────
-    //
-    // Simulate the subcommand-synthesis logic by manually constructing a
-    // top-level Command whose subcommands are initially bare, then overlaying
-    // the parsed subcommand help to check that args are populated correctly.
 
     #[test]
     fn test_subcommand_synthesis_overlay() {
-        // Start with a top-level git-style command that lists "log" and "commit"
-        // as subcommands (bare, no args yet).
-        let mut top = parse_help(GIT_HELP);
-        assert!(
-            subcommand_names(&top).contains(&"log"),
-            "log subcommand should be present"
-        );
-        assert!(
-            subcommand_names(&top).contains(&"commit"),
-            "commit subcommand should be present"
-        );
-
-        // Simulate what synthesize_completion does: overlay parsed subcommand help.
-        for sub in &mut top.subcommands {
-            let sub_help = match sub.name.as_deref() {
-                Some("log") => Some(GIT_LOG_HELP),
-                Some("commit") => Some(GIT_COMMIT_HELP),
-                Some("diff") => Some(GIT_DIFF_HELP),
-                _ => None,
+        let help_runner = |args: &[&str]| -> anyhow::Result<String> {
+            let text = match args {
+                [] => GIT_HELP,
+                ["log"] => GIT_LOG_HELP,
+                ["commit"] => GIT_COMMIT_HELP,
+                ["diff"] => GIT_DIFF_HELP,
+                _ => "",
             };
-            if let Some(help) = sub_help {
-                let parsed = parse_help(help);
-                sub.args = parsed.args;
-            }
-        }
+            Ok(text.to_string())
+        };
+        let top = synthesize_completion("git", help_runner).unwrap();
 
-        // Verify that the "log" subcommand now has its args populated.
+        assert!(subcommand_names(&top).contains(&"log"));
+        assert!(subcommand_names(&top).contains(&"commit"));
+
         let log_sub = subcommand_by_name(&top, "log").expect("log subcommand should exist");
-        let log_longs = long_names(log_sub);
-        assert!(
-            log_longs.contains(&"--oneline"),
-            "log subcommand should have --oneline"
-        );
-        assert!(
-            log_longs.contains(&"--graph"),
-            "log subcommand should have --graph"
-        );
-        assert!(
-            log_longs.contains(&"--since"),
-            "log subcommand should have --since"
-        );
+        assert!(long_names(log_sub).contains(&"--oneline"));
+        assert!(long_names(log_sub).contains(&"--graph"));
+        assert!(long_names(log_sub).contains(&"--since"));
 
-        // Verify that the "commit" subcommand now has its args populated.
         let commit_sub =
             subcommand_by_name(&top, "commit").expect("commit subcommand should exist");
-        let commit_longs = long_names(commit_sub);
-        assert!(
-            commit_longs.contains(&"--amend"),
-            "commit subcommand should have --amend"
-        );
-        assert!(
-            commit_longs.contains(&"--message"),
-            "commit subcommand should have --message"
-        );
-        assert!(
-            commit_longs.contains(&"--no-verify"),
-            "commit subcommand should have --no-verify"
-        );
+        assert!(long_names(commit_sub).contains(&"--amend"));
+        assert!(long_names(commit_sub).contains(&"--message"));
+        assert!(long_names(commit_sub).contains(&"--no-verify"));
 
-        // Verify that the "diff" subcommand now has its args populated.
         let diff_sub = subcommand_by_name(&top, "diff").expect("diff subcommand should exist");
-        let diff_longs = long_names(diff_sub);
-        assert!(
-            diff_longs.contains(&"--cached"),
-            "diff subcommand should have --cached"
-        );
-        assert!(
-            diff_longs.contains(&"--stat"),
-            "diff subcommand should have --stat"
-        );
+        assert!(long_names(diff_sub).contains(&"--cached"));
+        assert!(long_names(diff_sub).contains(&"--stat"));
     }
 
     // ── find_subcommand_mut ───────────────────────────────────────────────────
@@ -2107,91 +2043,46 @@ Options:
     --delete           Delete URL
 "#;
 
+    const GIT_WITH_REMOTE_HELP: &str = r#"Usage: git [OPTIONS] <COMMAND>
+
+Commands:
+  clone   Clone a repository into a new directory
+  remote  Manage set of tracked repositories
+
+Options:
+  -h, --help  Print help
+"#;
+
     #[test]
     fn test_nested_subcommand_synthesis_simulation() {
-        // Build the initial top-level tree.
-        let mut top = parse_help(GIT_HELP);
-
-        // Inject the `remote` subcommand as if git --help had listed it.
-        top.subcommands.push(Command {
-            name: Some("remote".to_string()),
-            description: Some("Manage set of tracked repositories".to_string()),
-            args: vec![],
-            subcommands: vec![],
-            author: None,
-        });
-
-        // Run the stack-based exploration manually (mirrors synthesize_completion
-        // internals) over just the remote subtree.
-        const MAX_DEPTH: usize = 10;
-        let mut stack: Vec<Vec<String>> = vec![vec!["remote".to_string()]];
-
-        // Lookup table: path -> help string.
-        let help_for = |path: &[String]| -> Option<&str> {
-            match path {
-                [a] if a == "remote" => Some(GIT_REMOTE_HELP),
-                [a, b] if a == "remote" && b == "add" => Some(GIT_REMOTE_ADD_HELP),
-                [a, b] if a == "remote" && b == "set-url" => Some(GIT_REMOTE_SET_URL_HELP),
-                _ => None,
-            }
-        };
-
-        while let Some(path) = stack.pop() {
-            if path.len() > MAX_DEPTH {
-                continue;
-            }
-            let help = match help_for(&path) {
-                Some(h) => h,
-                None => continue,
+        let help_runner = |args: &[&str]| -> anyhow::Result<String> {
+            let text = match args {
+                [] => GIT_WITH_REMOTE_HELP,
+                ["remote"] => GIT_REMOTE_HELP,
+                ["remote", "add"] => GIT_REMOTE_ADD_HELP,
+                ["remote", "set-url"] => GIT_REMOTE_SET_URL_HELP,
+                _ => "",
             };
-            let parsed = parse_help(help);
-            if let Some(node) = find_subcommand_mut(&mut top, &path) {
-                for child in &parsed.subcommands {
-                    if let Some(child_name) = &child.name {
-                        let mut child_path = path.clone();
-                        child_path.push(child_name.clone());
-                        stack.push(child_path);
-                    }
-                }
-                node.args = parsed.args;
-                node.subcommands = parsed.subcommands;
-            }
-        }
+            Ok(text.to_string())
+        };
+        let top = synthesize_completion("git", help_runner).unwrap();
 
-        // remote itself should have --verbose.
         let remote =
             subcommand_by_name(&top, "remote").expect("remote subcommand should be present");
-        assert!(
-            long_names(remote).contains(&"--verbose"),
-            "remote should have --verbose"
-        );
+        assert!(long_names(remote).contains(&"--verbose"));
 
-        // remote add should have --fetch.
         let remote_add =
             subcommand_by_name(remote, "add").expect("remote add subcommand should be present");
-        assert!(
-            long_names(remote_add).contains(&"--fetch"),
-            "remote add should have --fetch"
-        );
-        assert!(
-            short_names(remote_add).contains(&"-f"),
-            "remote add should have -f"
-        );
+        assert!(long_names(remote_add).contains(&"--fetch"));
+        assert!(short_names(remote_add).contains(&"-f"));
         assert_eq!(
             arg_by_long(remote_add, "--track").and_then(|a| a.value_type.as_deref()),
             Some("branch")
         );
 
-        // remote set-url should have --push.
         let remote_set_url = subcommand_by_name(remote, "set-url")
             .expect("remote set-url subcommand should be present");
-        assert!(
-            long_names(remote_set_url).contains(&"--push"),
-            "remote set-url should have --push"
-        );
-        assert!(
-            long_names(remote_set_url).contains(&"--delete"),
-            "remote set-url should have --delete"
-        );
+        assert!(long_names(remote_set_url).contains(&"--push"));
+        assert!(long_names(remote_set_url).contains(&"--delete"));
     }
 }

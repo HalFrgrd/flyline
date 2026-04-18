@@ -1091,7 +1091,9 @@ impl Flyline {
                         }
                     }
                     Some(Commands::CompSpecSynthesis { command }) => {
-                        match comp_spec_synthesis::synthesize_completion(&command) {
+                        match comp_spec_synthesis::synthesize_completion(&command, |args| {
+                            comp_spec_synthesis::run_help(&command, args)
+                        }) {
                             Ok(parsed_cmd) => {
                                 let cmd_name = std::path::Path::new(&command)
                                     .file_name()
