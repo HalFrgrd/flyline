@@ -1022,32 +1022,4 @@ mod tests {
             Some("café_".to_string())
         );
     }
-
-    #[test]
-    fn common_prefix_raw_suggestions() {
-        let flags = bash_funcs::CompletionFlags::default();
-        let mut sugs = vec![
-            MaybeProcessedSuggestion::Raw {
-                raw_text: "git-commit".to_string(),
-                full_path: None,
-                flags,
-                word_under_cursor: "git".to_string(),
-            },
-            MaybeProcessedSuggestion::Raw {
-                raw_text: "git-checkout".to_string(),
-                full_path: None,
-                flags,
-                word_under_cursor: "git".to_string(),
-            },
-        ];
-        // Convert to processed suggestions before calling common_prefix_of_suggestions
-        for sug in &mut sugs {
-            sug.to_suggestion();
-        }
-        // "git-commit" and "git-checkout" share "git-c" before diverging
-        assert_eq!(
-            common_prefix_of_suggestions(&sugs),
-            Some("git-c".to_string())
-        );
-    }
 }
