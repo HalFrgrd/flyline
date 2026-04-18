@@ -2,9 +2,9 @@ use anyhow::{Result, anyhow};
 use chrono::Local;
 use log::{LevelFilter, Log, Metadata, Record};
 use std::collections::VecDeque;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 const MAX_LOGS: usize = 10_000;
@@ -81,6 +81,7 @@ impl Log for MemoryLogger {
 }
 
 static LOGGER: OnceLock<MemoryLogger> = OnceLock::new();
+static TERMINAL_STREAMING: AtomicBool = AtomicBool::new(false);
 
 pub fn init() -> Result<()> {
     let logger = LOGGER.get_or_init(MemoryLogger::new);
@@ -96,35 +97,51 @@ pub fn init() -> Result<()> {
     }
 }
 
-pub fn print_logs() {
+/// Returns true if `flyline log stream terminal` has been configured.
+pub fn is_terminal_streaming() -> bool {
+    TERMINAL_STREAMING.load(Ordering::Relaxed)
+}
+
+/// Returns the last `n` log entries (most recent last).
+pub fn last_n_logs(n: usize) -> Vec<String> {
+    if let Some(logger) = LOGGER.get() {
+        let entries = logger.entries.lock().unwrap();
+        entries
+            .iter()
+            .rev()
+            .take(n)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
+    } else {
+        vec![]
+    }
+}
+
+/// Dump all in-memory log entries to stdout.
+pub fn dump_logs_stdout() -> Result<()> {
+    let logger = LOGGER
+        .get()
+        .ok_or_else(|| anyhow!("Logger not initialized"))?;
+    let entries = logger.snapshot();
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    for entry in entries {
+        writeln!(out, "{}", entry)?;
+    }
+    Ok(())
+}
+
+/// Print all in-memory log entries to stderr (used for diagnostic error paths).
+pub fn print_logs_stderr() {
     if let Some(logger) = LOGGER.get() {
         let entries = logger.snapshot();
         for entry in entries {
             eprintln!("{}", entry);
         }
     }
-}
-
-pub fn dump_logs(path: Option<PathBuf>) -> Result<PathBuf> {
-    let logger = LOGGER
-        .get()
-        .ok_or_else(|| anyhow!("Logger not initialized"))?;
-    let path = match path {
-        Some(p) => p,
-        None => {
-            let pid = unsafe { libc::getpid() };
-            let filename = format!("flyline_logs_{}.txt", pid);
-            std::env::current_dir()?.join(filename)
-        }
-    };
-
-    let entries = logger.snapshot();
-    let mut file = File::create(&path)?;
-    for entry in entries {
-        writeln!(file, "{}", entry)?;
-    }
-
-    Ok(path)
 }
 
 /// A writer wrapper that converts `\n` to `\r\n` for use when the terminal is
@@ -161,7 +178,19 @@ impl Write for RawModeWriter {
     }
 }
 
-pub fn stream_logs(path: PathBuf) -> Result<PathBuf> {
+/// Configure log streaming.
+///
+/// If `dest` is `"terminal"`, future log entries are shown inside the flyline
+/// TUI (last 20 lines prepended to the content area on every render).
+/// Otherwise `dest` is treated as a file path: existing log entries are
+/// written to the file and all subsequent entries are appended.
+pub fn stream_logs(dest: &str) -> Result<()> {
+    if dest == "terminal" {
+        TERMINAL_STREAMING.store(true, Ordering::Relaxed);
+        return Ok(());
+    }
+
+    let path: std::path::PathBuf = dest.into();
     let logger = LOGGER
         .get()
         .ok_or_else(|| anyhow!("Logger not initialized"))?;
@@ -182,5 +211,5 @@ pub fn stream_logs(path: PathBuf) -> Result<PathBuf> {
 
     logger.set_stream_writer(writer);
 
-    Ok(path)
+    Ok(())
 }
