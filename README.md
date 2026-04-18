@@ -45,7 +45,7 @@ From easiest to hardest:
 
 > [!TIP]
 > Quick install:
-> Run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
+> run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
