@@ -113,6 +113,27 @@ Enter
 Sleep 800ms
 Enter
 
+Type `cd ~/foo/bar/bad`
+Sleep 500ms
+Enter
+Sleep 800ms
+Type "# have you ever wanted to navigate by simply using selecting a folder shown in your prompt?"
+Enter
+Sleep 800ms
+Left
+Sleep 500ms
+Left
+Sleep 500ms
+Left
+Sleep 500ms
+Left
+Sleep 500ms
+Enter
+Sleep 800ms
+Type "# flyline automatically detects the current working directory in your prompt and allows you to interact with it."
+Enter
+Sleep 800ms
+
 Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
 Enter
 Type `RPS1='\t`
