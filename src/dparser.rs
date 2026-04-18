@@ -716,7 +716,7 @@ impl DParser {
         // double quotes.  Single-quoted strings treat `$` as a literal, so this exemption does
         // not apply there.  We still respect `is_before_word` to avoid wrapping existing tokens.
         if matches!(c, '(' | '{') {
-            let is_inside_single_quoted = tokens.iter().any(|t| {
+            let is_inside_single_quote = tokens.iter().any(|t| {
                 if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
                     if t.token.kind == TokenKind::SingleQuote {
                         let open_end = t.token.byte_range().end;
@@ -726,7 +726,7 @@ impl DParser {
                 }
                 false
             });
-            if !is_inside_single_quoted {
+            if !is_inside_single_quote {
                 let is_before_word = tokens.iter().any(|t| {
                     t.token.kind.is_word() && t.token.byte_range().contains(&just_inserted_pos)
                 });
