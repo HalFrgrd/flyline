@@ -30,6 +30,9 @@ Enter
 Enter
 Enter
 Type `No other process is drawing this; it is all happening inside of bash!`
+Enter
+Enter
+Type `"`
 Sleep 2000ms
 Ctrl+C
 Enter
@@ -48,8 +51,7 @@ Type `ls`
 Sleep 1500ms
 Type ` $HOME`
 Sleep 1500ms
-Type `/`
-Enter
+Ctrl+C
 Sleep 800ms
 
 Type `# Or fuzzy history search like fzf:`
@@ -94,7 +96,7 @@ Sleep 800ms
 Ctrl+C
 Sleep 800ms
 
-Type `# Flyline can call your command line agent to help you write commands`
+Type `# Flyline can interface with your AI agent to help you write commands`
 Enter
 Sleep 800ms
 Type "list files older than three days"

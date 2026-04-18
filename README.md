@@ -16,7 +16,7 @@
 When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
-- [Rich prompt customization, widgets, animations](#rich-prompts)
+- [Rich prompt customizations, widgets, animations](#rich-prompts)
 - [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
 - [Improvements on Bash's tab completion](#tab-completion-improvements)
@@ -41,7 +41,7 @@ To install flyline, you need to:
 
 From easiest to hardest:
 
-### Run `install.sh`
+### Quick install: run `install.sh`
 
 > [!TIP]
 > Quick install:
@@ -53,7 +53,7 @@ curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh 
 
 ### Download from releases
 
-Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
+Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you know you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
@@ -101,7 +101,7 @@ Then you can simply run `enable flyline`.
 Flyline sets up its own tab completion
 so you can type `flyline <Tab>` in your shell to interactively browse and configure settings. Copy the commands into your `.bashrc` so they persist.
 
-Explore this readme and [examples](examples/settings.sh) for what you can configure.
+Explore this readme and [examples](examples/) for what you can configure.
 
 # Rich prompts
 
@@ -115,6 +115,9 @@ PS1='\u@\h:\w$ '
 PS1='\u@\h:\w\n$ '
 PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
 ```
+
+> [!TIP]
+> Do git metrics slow down your prompt loading time? See [custom widget](#custom-command-widget) or [example widgets](examples/widgets.sh) for a solution.
 
 ## RPS1 / RPROMPT
 The `RPS1` / `RPROMPT` variable sets the right prompt similarly to Zsh.
@@ -315,23 +318,22 @@ This allows you to write a command in plain English and your agent will convert 
 
 After setting up your agent with flyline, you can pass the buffer to your agent with Alt+Enter or simply Enter when your command starts with your trigger prefix (e.g. `ai: list files older than three days`).
 
-[See the examples on how to set this up.](examples/agent_mode.sh)
-The agent should return a simple JSON array of commands as described by the example system prompt.
+[See the examples on how to set this up.](examples/agent_mode.sh) or simply press Alt+Enter and flyline will try to configure agent mode for you.
 
 Flyine will syntax highlight the suggested commands and render markdown output.
 
 # Mouse support
 
-Move your cursor, select suggestions, hover for tooltips with your mouse.
+Click to move your cursor, select suggestions, and hover for tooltips.
 Flyline must capture mouse events for the entire terminal which isn't always desirable.
 For instance, you might want to select text above the current prompt with your mouse.
 
 Flyline offers three mouse modes:
-- disabled: Never capture mouse events
-- simple:   Mouse capture is on by default; toggled when Escape is pressed
-- smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
+- `disabled`: Never capture mouse events
+- `simple`: Mouse capture is on by default; toggled when Escape is pressed
+- `smart` (default): Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
 
-`flyline --mouse-mode smart` is the default.
+I'd recommend [setting up a mouse mode widget](#mouse-mode-widget) to know when mouse capture is enabled.
 
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
@@ -343,7 +345,7 @@ When you're presented with suggestions, you can type to fuzzily search through t
 ![Fuzzy suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_suggestions.gif)
 
 ### Alias expansion
-Aliases are expanded before tab completion so that Bash calls the desired completion function.
+Aliases are expanded before attempting tab completion so that Bash calls the desired completion function.
 For instance, if `gc` aliases to `git commit`, `gc --verbo<Tab>` will work as expected.
 
 ### Nested command
@@ -359,7 +361,7 @@ If a suggestion contains a tab character, flyline displays the contents after th
 Descriptions for files are the time since last modified.
 
 ### Automatically complete based on `--help`
-Coming soon: if the command doesn't not have a completion spec, flyline can run `your_command --help` in the background, parse the output, and intelligently create tab completion suggestions.
+Coming soon: if the command doesn't have a completion spec, flyline can run `your_command --help` in the background, parse the output, and intelligently generate tab completion suggestions on the fly.
 
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
@@ -375,7 +377,7 @@ Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl
 ![Fuzzy history demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_history.gif)
 
 **Inline suggestions:**
-Inline suggestions appear as you type based on the most recent matching history entry. Accept them with `Right`/`End`.
+Inline suggestions appear as you type based on the most recent matching history entry. Accept them by moving your cursor to the end of the line and pressing `Right`/`End`.
 
 **Scroll through prefix matches:**
 Pressing `Up` will scroll through history entries that are a prefix match with the current command.
