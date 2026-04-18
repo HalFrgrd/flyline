@@ -15,7 +15,6 @@ pub enum TutorialStep {
     /// Tutorial is not active.
     #[default]
     NotRunning,
-    /// Welcome message and recommended settings.
     Welcome,
     RecommendedSettings,
     MouseMode,
