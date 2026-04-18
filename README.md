@@ -320,6 +320,19 @@ The agent should return a simple JSON array of commands as described by the exam
 
 Flyine will syntax highlight the suggested commands and render markdown output.
 
+# Mouse support
+
+Move your cursor, select suggestions, hover for tooltips with your mouse.
+Flyline must capture mouse events for the entire terminal which isn't always desirable.
+For instance, you might want to select text above the current prompt with your mouse.
+
+Flyline offers three mouse modes:
+- disabled: Never capture mouse events
+- simple:   Mouse capture is on by default; toggled when Escape is pressed
+- smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
+
+`flyline --mouse-mode smart` is the default.
+
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
 Note that you will need to have [set up completions in normal Bash first](https://github.com/scop/bash-completion).
@@ -353,18 +366,6 @@ Flyline styles your filename tab completion results according to `$LS_COLORS`:
 
 ![LS_COLORS demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_ls_colors.gif)
 
-# Mouse support
-
-Move your cursor, select suggestions, hover for tooltips with your mouse.
-Flyline must capture mouse events for the entire terminal which isn't always desirable.
-For instance, you might want to select text above the current prompt with your mouse.
-
-Flyline offers three mouse modes:
-- disabled: Never capture mouse events
-- simple:   Mouse capture is on by default; toggled when Escape is pressed
-- smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
-
-`flyline --mouse-mode smart` is the default.
 
 # Command history
 
