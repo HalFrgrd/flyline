@@ -19,6 +19,8 @@ fn main() {
 
     // Re-run when HEAD changes (branch switch or detached-HEAD commit)
     println!("cargo:rerun-if-changed=.git/HEAD");
+    // Re-run when the example agent mode file changes (embedded via include_str! in agent_mode.rs)
+    println!("cargo:rerun-if-changed=examples/agent_mode.sh");
     // Re-run when the current branch ref changes (new commit on a branch)
     if let Ok(head) = std::fs::read_to_string(".git/HEAD")
         && let Some(refpath) = head.strip_prefix("ref: ")

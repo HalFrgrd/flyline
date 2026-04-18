@@ -859,6 +859,16 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
                     app.start_agent_mode(agent_cmd, &buffer);
                 }
             }
+            ContentMode::AgentError {
+                suggested_setup_command: Some(setup_cmd),
+                ..
+            } => {
+                let setup_cmd = setup_cmd.clone();
+                app.content_mode = ContentMode::Normal;
+                app.buffer.replace_buffer(&setup_cmd);
+                app.on_possible_buffer_change();
+                app.try_submit_current_buffer();
+            }
             ContentMode::AgentError { .. } => {
                 app.content_mode = ContentMode::Normal;
                 app.buffer.replace_buffer("flyline agent-mode --help");
