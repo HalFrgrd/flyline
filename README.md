@@ -394,6 +394,14 @@ Recommended settings
 - Enable [`terminal.integrated.textBlinking`](vscode://terminal.integrated.textBlinking). Few terminal emulators support this neat text style option so enjoy it!
 - If keybindings are not working properly, you can debug by [Toggling Keyboard Shortcuts Troubleshooting](https://code.visualstudio.com/docs/configure/keybindings#_troubleshooting-keyboard-shortcuts).
 
+I find that Copilot can't interact with the terminal if flyline runs with certain settings. If you run into this problem, add this to the end of your `.bashrc`:
+```bash
+if [[ "$TERM_PROGRAM" == "vscode" ]]; then
+    RPS1=''
+    flyline set-cursor --backend terminal --interpolate none
+fi
+``` 
+
 ## macOS
 
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
