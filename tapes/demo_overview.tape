@@ -113,11 +113,11 @@ Enter
 Sleep 800ms
 Enter
 
-Type `cd ~/foo/bar/bad`
+Type `cd ~/foo/bar/baz`
 Sleep 500ms
 Enter
 Sleep 800ms
-Type "# have you ever wanted to navigate by simply using selecting a folder shown in your prompt?"
+Type "# have you ever wanted to navigate by simply selecting a folder shown in your prompt?"
 Enter
 Sleep 800ms
 Left
