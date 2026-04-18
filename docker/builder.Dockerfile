@@ -41,6 +41,7 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release ${CARGO_FEATURES:+--features $CARGO_FEATURES} --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
+COPY examples ./examples
 RUN cargo build --release ${CARGO_FEATURES:+--features $CARGO_FEATURES}
 
 FROM flyline-builder AS flyline-lib-tests
