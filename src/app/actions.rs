@@ -963,7 +963,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     ),
     Action::new(
         "exit",
-        "Exit the application",
+        "Send EOF to Bash if ignoreeof is non-zero",
         Scope::Default,
         |app, _key| {
             if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
