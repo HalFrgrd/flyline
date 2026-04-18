@@ -592,9 +592,6 @@ pub fn post_process_completion(
         None
     } else if comp_resultflags.no_suffix_desired {
         None
-    } else if sug.ends_with("+") {
-        // TODO: this is just for flyline key completion so find a better way.
-        None
     } else if comp_resultflags.suffix_character == ' ' {
         if sug.ends_with(" ") { None } else { Some(' ') }
     } else {

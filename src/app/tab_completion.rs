@@ -281,14 +281,14 @@ pub(crate) fn gen_completions_internal(
                 completion_context.context_until_cursor.as_ref(),
             );
 
-            let poss_completions = if command_word == "flyline" {
+            if command_word == "flyline" {
                 // Flyline's own subcommand/flag completions are produced by
                 // clap_complete and are already escaped/finalized. Skip the
                 // bash post-processing pipeline entirely and build
                 // ProcssedSuggestions directly so descriptions (the help text
                 // attached to each candidate) are preserved as-is.
                 match complete_flyline_args(&full_command, cursor_byte_pos) {
-                    Ok(candidates) => {
+                    Ok(candidates) if !candidates.is_empty() => {
                         let suggestions: Vec<MaybeProcessedSuggestion> = candidates
                             .into_iter()
                             .map(|c| {
@@ -301,50 +301,51 @@ pub(crate) fn gen_completions_internal(
                                     Some(h) => SuggestionDescription::Animation(vec![h]),
                                     None => SuggestionDescription::Static(String::new()),
                                 };
+                                let suffix = if value.ends_with('+') { " " } else { "" };
                                 MaybeProcessedSuggestion::Ready(
-                                    ProcssedSuggestion::new(&value, "", "")
+                                    ProcssedSuggestion::new(&value, "", suffix)
                                         .with_description(description),
                                 )
                             })
                             .collect();
                         return Some(suggestions);
                     }
+                    Ok(_) => {}
                     Err(e) => {
                         log::error!("Error generating flyline completions: {}", e);
-                        return None;
                     }
                 }
             } else {
-                bash_funcs::run_programmable_completions(
+                let poss_completions = bash_funcs::run_programmable_completions(
                     &full_command,
                     &command_word,
                     word_under_cursor.as_ref(),
                     cursor_byte_pos,
                     word_under_cursor_end,
-                )
-            };
+                );
 
-            match poss_completions {
-                Ok(comp_result) if !comp_result.completions.is_empty() => {
-                    log::debug!(
-                        "Programmable completion results for command: {}",
-                        full_command
-                    );
-                    log::debug!("Completions: {:#?}", comp_result);
+                match poss_completions {
+                    Ok(comp_result) if !comp_result.completions.is_empty() => {
+                        log::debug!(
+                            "Programmable completion results for command: {}",
+                            full_command
+                        );
+                        log::debug!("Completions: {:#?}", comp_result);
 
-                    let suggestions = post_process_completions(
-                        comp_result.completions,
-                        comp_result.flags,
-                        word_under_cursor.as_ref(),
-                    );
-                    return Some(suggestions);
+                        let suggestions = post_process_completions(
+                            comp_result.completions,
+                            comp_result.flags,
+                            word_under_cursor.as_ref(),
+                        );
+                        return Some(suggestions);
+                    }
+                    Ok(comp_result) => {
+                        // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
+                        // Always try to produce secondary completions
+                        return gen_secondary_completions(completion_context, comp_result.flags);
+                    }
+                    _ => {}
                 }
-                Ok(comp_result) => {
-                    // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
-                    // Always try to produce secondary completions
-                    return gen_secondary_completions(completion_context, comp_result.flags);
-                }
-                _ => {}
             }
         }
     }
@@ -610,7 +611,7 @@ impl App<'_> {
     /// prefix insertion and handing suggestions to the UI).
     pub(crate) fn finish_tab_complete(
         &mut self,
-        sugs: Vec<MaybeProcessedSuggestion>,
+        mut sugs: Vec<MaybeProcessedSuggestion>,
         wuc_substring: SubString,
     ) {
         let mut final_wuc = wuc_substring.clone();
@@ -619,6 +620,9 @@ impl App<'_> {
         // cursor.
         const MAX_FOR_COMMON_PREFIX: usize = 500;
         if sugs.len() < MAX_FOR_COMMON_PREFIX {
+            for sug in &mut sugs {
+                sug.to_suggestion();
+            }
             if let Some(common_prefix) = common_prefix_of_suggestions(&sugs) {
                 if common_prefix.len() > wuc_substring.s.len()
                     && common_prefix.starts_with(&*wuc_substring.s)
@@ -1022,7 +1026,7 @@ mod tests {
     #[test]
     fn common_prefix_raw_suggestions() {
         let flags = bash_funcs::CompletionFlags::default();
-        let sugs = vec![
+        let mut sugs = vec![
             MaybeProcessedSuggestion::Raw {
                 raw_text: "git-commit".to_string(),
                 full_path: None,
@@ -1036,6 +1040,10 @@ mod tests {
                 word_under_cursor: "git".to_string(),
             },
         ];
+        // Convert to processed suggestions before calling common_prefix_of_suggestions
+        for sug in &mut sugs {
+            sug.to_suggestion();
+        }
         // "git-commit" and "git-checkout" share "git-c" before diverging
         assert_eq!(
             common_prefix_of_suggestions(&sugs),
