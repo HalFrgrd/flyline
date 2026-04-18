@@ -308,7 +308,7 @@ Options:
 
 
 # Agent mode
-Flyline can call an agent of your choice with the current command buffer as a prompt.
+Flyline can interact with your AI agent to suggest commands.
 This allows you to write a command in plain English and your agent will convert it into a Bash command:
 
 ![Agent mode demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_agent_mode.gif)
@@ -317,6 +317,8 @@ After setting up your agent with flyline, you can pass the buffer to your agent 
 
 [See the examples on how to set this up.](examples/agent_mode.sh)
 The agent should return a simple JSON array of commands as described by the example system prompt.
+
+Flyine will syntax highlight the suggested commands and render markdown output.
 
 # Tab completion improvements
 Flyline extends Bash's tab completion feature in many ways.
@@ -342,6 +344,9 @@ When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>
 If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab delimited frame at 24fps. Try `flyline set-cursor --effect-easing <Tab>` for an example.
 
 Descriptions for files are the time since last modified.
+
+### Automatically complete based on `--help`
+Coming soon: if the command doesn't not have a completion spec, flyline can run `your_command --help` in the background, parse the output, and intelligently create tab completion suggestions.
 
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
