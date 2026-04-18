@@ -374,9 +374,10 @@ const EXAMPLE_AGENT_MODE: &str = include_str!("../examples/agent_mode.sh");
 
 /// Extract the command executable name from a `--command '...'` argument in a
 /// `flyline set-agent-mode` command string.  Returns `None` if the pattern is
-/// not found.  The parsing is intentionally simple: it looks for the literal
-/// substring `--command '` and takes the first whitespace-delimited word from
-/// the content inside the single-quoted value.
+/// not found or the value is not properly closed with a single quote.  The
+/// parsing is intentionally simple: it looks for the literal substring
+/// `--command '`, finds the closing `'`, and returns the first
+/// whitespace-delimited word from the content between the quotes.
 fn extract_command_name(flyline_cmd: &str) -> Option<String> {
     let marker = "--command '";
     let start = flyline_cmd.find(marker)?;
@@ -416,7 +417,7 @@ pub fn parse_example_agent_commands() -> Vec<(String, String)> {
             // Join: strip trailing '\' and surrounding whitespace from each piece.
             let cmd_str = block
                 .iter()
-                .map(|l| l.trim().trim_end_matches('\\').trim())
+                .map(|l| l.trim_end_matches('\\').trim())
                 .collect::<Vec<_>>()
                 .join(" ");
 
