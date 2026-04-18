@@ -13,11 +13,11 @@
 
 </div>
 
-When Bash prompts you for a command a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
+When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
 - [Rich prompt customization, widgets, animations](#rich-prompts)
-- Fuzzy history searching
+- [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
 - [Improvements on Bash's tab completion](#tab-completion-improvements)
 - Tooltips
@@ -95,6 +95,13 @@ So on Bash at least as recent as 5.2, if you install flyline to one of:
 Then you can simply run `enable flyline`.
 
 </details>
+
+# Configuration
+
+Flyline sets up its own tab completion
+so you can type `flyline <Tab>` in your shell to interactively browse and configure settings. Copy the commands into your `.bashrc` so they persist.
+
+Explore this readme and [examples](examples/settings.sh) for what you can configure.
 
 # Rich prompts
 
@@ -391,11 +398,6 @@ Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#note
 
 # Settings
 
-Configure flyline by running `flyline [OPTIONS]` in your `.bashrc` (after the `enable` call) or in Bash session.
-Run `flyline --help` to see all available options.
-You could set these options in your current session but then they wouldn't persist between sessions.
-[Examples can be found here.](examples/settings.sh)
-
 The block below is auto-generated from `flyline --help`:
 
 <!-- FLYLINE_HELP_START -->
@@ -471,8 +473,6 @@ Read more at https://github.com/HalFrgrd/flyline
 ```
 <!-- FLYLINE_HELP_END -->
 
-When flyline loads, it automatically sets up its own tab completion
-so you can type `flyline --<Tab>` in your shell to interactively browse and configure settings.
 
 ## Colour palette
 
