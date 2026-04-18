@@ -35,7 +35,7 @@ impl ProcessedAnimation {
     pub fn patch_style(mut self, style: Style) -> Self {
         for frame in &mut self.frames {
             for span in frame {
-                span.style = span.style.patch(style);
+                span.style = style.patch(span.style);
             }
         }
         self
@@ -148,7 +148,14 @@ enum PromptSegment {
     ///
     /// Each segment is fully independent: two occurrences of the same widget
     /// name in a prompt string each run their own process.
-    WidgetCustom(WidgetCustomState),
+    ///
+    /// `base_style` is the style of the prompt span in which the widget name
+    /// appeared.  At render time each output span's own style overrides this
+    /// base (i.e. `base_style.patch(span.style)`).
+    WidgetCustom {
+        state: WidgetCustomState,
+        base_style: Style,
+    },
 }
 
 pub struct PromptManager {
@@ -644,8 +651,7 @@ impl<'a> PromptStringBuilder<'a> {
                 )));
             }
 
-            // TODO: patch the widget style here
-            result.push(make_widget_segment(&self.widgets[widget_idx]));
+            result.push(make_widget_segment(&self.widgets[widget_idx], style));
 
             remaining = remaining[pos + name_len..].to_owned();
         }
@@ -681,7 +687,7 @@ impl<'a> PromptStringBuilder<'a> {
 /// `Pending` if it hasn't finished yet.  Any positive value (including
 /// `i32::MAX` ≈ 24.8 days, which is effectively indefinite) polls up to that
 /// many milliseconds before moving on.
-fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
+fn make_widget_segment(widget: &PromptWidget, base_style: Style) -> PromptSegment {
     match widget {
         PromptWidget::MouseMode(w) => PromptSegment::WidgetMouseMode {
             enabled_text: stdout_to_tagged_spans(w.enabled_text.clone()),
@@ -735,7 +741,7 @@ fn make_widget_segment(widget: &PromptWidget) -> PromptSegment {
                     }
                 }
             };
-            PromptSegment::WidgetCustom(state)
+            PromptSegment::WidgetCustom { state, base_style }
         }
     }
 }
@@ -977,7 +983,7 @@ fn format_prompt_line(
     // First pass: advance any Pending WidgetCustom segments whose child process
     // has exited.  We need a mutable pass before the immutable render pass.
     for segment in segments.iter_mut() {
-        if let PromptSegment::WidgetCustom(state) = segment {
+        if let PromptSegment::WidgetCustom { state, .. } = segment {
             let new_state: Option<WidgetCustomState> = match state {
                 WidgetCustomState::Pending {
                     child,
@@ -1063,11 +1069,22 @@ fn format_prompt_line(
                     };
                     tagged.clone()
                 }
-                PromptSegment::WidgetCustom(state) => match state {
-                    WidgetCustomState::Pending { placeholder, .. } => placeholder.clone(),
-                    WidgetCustomState::Done(tagged_spans) => tagged_spans.clone(),
-                    WidgetCustomState::Failed(failure) => failure.to_error_spans(),
-                },
+                PromptSegment::WidgetCustom { state, base_style } => {
+                    let raw_spans = match state {
+                        WidgetCustomState::Pending { placeholder, .. } => placeholder.clone(),
+                        WidgetCustomState::Done(tagged_spans) => tagged_spans.clone(),
+                        WidgetCustomState::Failed(failure) => failure.to_error_spans(),
+                    };
+                    // Apply the base prompt span style first; the widget
+                    // output's own style overrides it (base_style.patch(span)).
+                    raw_spans
+                        .into_iter()
+                        .map(|mut ts| {
+                            ts.span.style = base_style.patch(ts.span.style);
+                            ts
+                        })
+                        .collect()
+                }
             }
         })
         .collect();
@@ -1618,6 +1635,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_animation_frame_style_overrides_base_style() {
+        // When the prompt span has a base style and the animation frame has its
+        // own style, the frame style should override the base style, not the
+        // other way round.  `base.patch(frame)` means frame wins.
+        let base_style = Style::default().fg(Color::Blue);
+        let frame_style = Style::default().fg(Color::Red);
+        let mut anim = make_processed_anim("SPIN", 10.0, &["f0"]);
+        // Give the single frame span an explicit colour.
+        anim.frames[0][0].style = frame_style;
+        let anim = anim.patch_style(base_style);
+        // The frame style (Red) must win over the base style (Blue).
+        assert_eq!(
+            anim.frames[0][0].style.fg,
+            Some(Color::Red),
+            "frame fg should override base fg"
+        );
+    }
+
+    #[test]
+    fn test_animation_base_style_fills_unset_fields() {
+        // When the animation frame leaves a style field unset, the base style
+        // should fill it in.
+        let base_style = Style::default().fg(Color::Green);
+        let mut anim = make_processed_anim("SPIN", 10.0, &["f0"]);
+        // Frame has no explicit colour set.
+        anim.frames[0][0].style = Style::default();
+        let anim = anim.patch_style(base_style);
+        assert_eq!(
+            anim.frames[0][0].style.fg,
+            Some(Color::Green),
+            "base fg should be used when frame fg is unset"
+        );
+    }
+
     // --- format_prompt_line (DynamicTime rendering) --------------------------
 
     #[test]
@@ -2095,12 +2147,15 @@ mod tests {
             .stderr(std::process::Stdio::piped())
             .spawn()
             .expect("failed to spawn sleep for test");
-        let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Pending {
-            placeholder: vec![TaggedSpan::new(Span::raw("   "), Tag::Ps1Prompt)],
-            child: KillOnDropChild::new(child),
-            command: vec!["sleep".to_string(), "100".to_string()],
-            prev_output_cell: Arc::new(Mutex::new(Vec::new())),
-        })];
+        let mut segs = vec![PromptSegment::WidgetCustom {
+            state: WidgetCustomState::Pending {
+                placeholder: vec![TaggedSpan::new(Span::raw("   "), Tag::Ps1Prompt)],
+                child: KillOnDropChild::new(child),
+                command: vec!["sleep".to_string(), "100".to_string()],
+                prev_output_cell: Arc::new(Mutex::new(Vec::new())),
+            },
+            base_style: Style::default(),
+        }];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "   ");
@@ -2111,9 +2166,10 @@ mod tests {
     fn test_format_prompt_line_widget_custom_done() {
         // A done custom widget renders the pre-tagged result spans.
         let result_spans = vec![TaggedSpan::new(Span::raw("output"), Tag::Ps1Prompt)];
-        let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Done(
-            result_spans,
-        ))];
+        let mut segs = vec![PromptSegment::WidgetCustom {
+            state: WidgetCustomState::Done(result_spans),
+            base_style: Style::default(),
+        }];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "output");
@@ -2122,13 +2178,14 @@ mod tests {
     #[test]
     fn test_format_prompt_line_widget_custom_failed() {
         // A failed custom widget renders the "command failed (exit N)" error text.
-        let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Failed(
-            WidgetFailure {
+        let mut segs = vec![PromptSegment::WidgetCustom {
+            state: WidgetCustomState::Failed(WidgetFailure {
                 exit_code: Some(1),
                 stdout: String::new(),
                 stderr: String::new(),
-            },
-        ))];
+            }),
+            base_style: Style::default(),
+        }];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "command failed (exit 1)");
@@ -2137,13 +2194,14 @@ mod tests {
     #[test]
     fn test_format_prompt_line_widget_custom_failed_no_exit_code() {
         // When there's no exit code (spawn failure), renders "command failed".
-        let mut segs = vec![PromptSegment::WidgetCustom(WidgetCustomState::Failed(
-            WidgetFailure {
+        let mut segs = vec![PromptSegment::WidgetCustom {
+            state: WidgetCustomState::Failed(WidgetFailure {
                 exit_code: None,
                 stdout: String::new(),
                 stderr: String::new(),
-            },
-        ))];
+            }),
+            base_style: Style::default(),
+        }];
         let line = format_prompt_line(&mut segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "command failed");
@@ -2172,12 +2230,52 @@ mod tests {
             _ => panic!("expected Static at 0"),
         }
         match &segs[1] {
-            PromptSegment::WidgetCustom(_) => {}
+            PromptSegment::WidgetCustom { .. } => {}
             _ => panic!("expected WidgetCustom at 1"),
         }
         match &segs[2] {
             PromptSegment::Static(s) => assert_eq!(s.content, " after"),
             _ => panic!("expected Static at 2"),
         }
+    }
+
+    #[test]
+    fn test_widget_custom_output_style_overrides_base_style() {
+        // The output span's own style should override the base (prompt span)
+        // style, not the other way round.
+        let base_style = Style::default().fg(Color::Blue);
+        let output_style = Style::default().fg(Color::Red);
+        let result_spans = vec![TaggedSpan::new(
+            Span::styled("output", output_style),
+            Tag::Ps1Prompt,
+        )];
+        let mut segs = vec![PromptSegment::WidgetCustom {
+            state: WidgetCustomState::Done(result_spans),
+            base_style,
+        }];
+        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        assert_eq!(
+            line.spans[0].span.style.fg,
+            Some(Color::Red),
+            "output fg should override base fg"
+        );
+    }
+
+    #[test]
+    fn test_widget_custom_base_style_fills_unset_fields() {
+        // When the widget output leaves a style field unset, the base style
+        // should fill it in.
+        let base_style = Style::default().fg(Color::Green);
+        let result_spans = vec![TaggedSpan::new(Span::raw("output"), Tag::Ps1Prompt)];
+        let mut segs = vec![PromptSegment::WidgetCustom {
+            state: WidgetCustomState::Done(result_spans),
+            base_style,
+        }];
+        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        assert_eq!(
+            line.spans[0].span.style.fg,
+            Some(Color::Green),
+            "base fg should be used when output fg is unset"
+        );
     }
 }
