@@ -330,7 +330,6 @@ pub(crate) struct App<'a> {
     last_activity_time: std::time::Instant,
 }
 
-#[cfg(not(test))]
 pub(crate) fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
     if token.annotations.is_env_var && token.token.kind.is_word() {
         let env_var_name = &token.token.value;
