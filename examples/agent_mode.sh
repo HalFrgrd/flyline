@@ -1,3 +1,6 @@
+# This file is compiled into flyline to help with auto setup.
+# Always use `--command '` so flyline can parse this file
+
 # Copilot
 flyline set-agent-mode \
     --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
