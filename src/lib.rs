@@ -22,6 +22,7 @@ mod cursor;
 mod dparser;
 mod history;
 mod iter_first_last;
+mod kill_on_drop_child;
 mod logging;
 mod mouse_state;
 mod palette;
@@ -135,6 +136,11 @@ struct FlylineArgs {
     /// Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
     #[arg(long = "send-shell-integration-codes", default_missing_value = "full", num_args = 0..=1)]
     send_shell_integration_codes: Option<settings::ShellIntegrationLevel>,
+    /// Whether to request the use of extended (kitty-protocol) keyboard codes during startup.
+    /// Enabled by default; pass `--enable-extended-key-codes false` (or with no value) to
+    /// disable it on terminals that misbehave when the request is sent.
+    #[arg(long = "enable-extended-key-codes", default_missing_value = "true", num_args = 0..=1)]
+    enable_extended_key_codes: Option<bool>,
     // Only for integration tests
     #[cfg(feature = "integration-tests")]
     #[arg(long = "run-tab-completion-tests")]
@@ -143,7 +149,10 @@ struct FlylineArgs {
     command: Option<Commands>,
 }
 
-pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::Result<Vec<String>> {
+pub fn complete_flyline_args(
+    raw_command: &str,
+    cursor_byte: usize,
+) -> anyhow::Result<Vec<clap_complete::CompletionCandidate>> {
     let current_dir = std::env::current_dir().ok();
     let current_dir_asdf = current_dir.as_ref().map(|p| p.to_path_buf());
 
@@ -205,26 +214,13 @@ pub fn complete_flyline_args(raw_command: &str, cursor_byte: usize) -> anyhow::R
     ) {
         Ok(candidates) => {
             log::info!("{:#?}", candidates);
-            return Ok(candidates.iter().map(comp_candidate_to_string).collect());
+            return Ok(candidates);
         }
         Err(e) => {
             log::error!("Error generating bash completion: {e}");
             return Err(anyhow::anyhow!("Error generating bash completion: {e}"));
         }
     };
-}
-
-fn comp_candidate_to_string(candidate: &clap_complete::CompletionCandidate) -> String {
-    let value = candidate.get_value().to_string_lossy().to_string();
-
-    if let Some(help) = candidate
-        .get_help()
-        .map(|h| h.to_string())
-        .filter(|h| !h.is_empty())
-    {
-        return format!("{}\t{}", value, help);
-    }
-    value
 }
 
 #[derive(Subcommand, Debug)]
@@ -785,6 +781,11 @@ impl Flyline {
                 if let Some(level) = parsed.send_shell_integration_codes {
                     log::info!("Shell integration codes set to {:?}", level);
                     self.settings.send_shell_integration_codes = level;
+                }
+
+                if let Some(enabled) = parsed.enable_extended_key_codes {
+                    log::info!("Extended keyboard codes enabled: {}", enabled);
+                    self.settings.enable_extended_key_codes = enabled;
                 }
 
                 match parsed.command {

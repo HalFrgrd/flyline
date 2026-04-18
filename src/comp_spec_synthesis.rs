@@ -884,6 +884,11 @@ Options:
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
           Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
 
+      --enable-extended-key-codes [<ENABLE_EXTENDED_KEY_CODES>]
+          Whether to request the use of extended (kitty-protocol) keyboard codes during startup. Enabled by default; pass `--enable-extended-key-codes false` (or with no value) to disable it on terminals that misbehave when the request is sent
+          
+          [possible values: true, false]
+
   -h, --help
           Print help (see a summary with '-h')
 

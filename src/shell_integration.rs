@@ -196,7 +196,7 @@ impl Command for EscapeCodes {
     }
 }
 
-fn is_vscode() -> bool {
+pub fn is_vscode() -> bool {
     *IS_VSCODE
 }
 

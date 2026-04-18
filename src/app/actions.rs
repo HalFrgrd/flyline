@@ -1351,10 +1351,11 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     } else {
         (&[][..], &parts[0])
     };
+    let current_lower = current.to_lowercase();
     let mut out = vec![];
 
     for m in MODS {
-        if !used.contains(m) && m.starts_with(current) {
+        if !used.contains(m) && m.to_lowercase().starts_with(&current_lower) {
             let prefix = parts[..parts.len() - 1].join("+");
             let prefix = if prefix.is_empty() {
                 "".into()
@@ -1366,7 +1367,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     }
 
     for k in keys {
-        if k.starts_with(current) {
+        if k.to_lowercase().starts_with(&current_lower) {
             let prefix = parts[..parts.len() - 1].join("+");
             let prefix = if prefix.is_empty() {
                 "".into()
