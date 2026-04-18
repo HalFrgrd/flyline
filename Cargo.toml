@@ -44,7 +44,6 @@ pre_bash_4_4 = []
 
 [profile.release]
 panic = "unwind"
-lto = true
 overflow-checks = true
 
 [build-dependencies]
