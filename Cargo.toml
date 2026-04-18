@@ -45,6 +45,7 @@ pre_bash_4_4 = []
 [profile.release]
 panic = "unwind"
 overflow-checks = true
+lto = true
 
 [build-dependencies]
 chrono = { version = "0.4" }
