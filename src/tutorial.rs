@@ -88,6 +88,7 @@ fn detect_kitty_keyboard_support() -> bool {
         || lower_program.contains("wezterm")
         || lower_program.contains("foot")
         || lower_program.contains("rio")
+        || lower_program.contains("vscode")
 }
 
 fn is_vscode() -> bool {
