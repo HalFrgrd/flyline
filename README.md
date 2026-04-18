@@ -16,7 +16,7 @@
 When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
-- [Rich prompt customization, widgets, animations](#rich-prompts)
+- [Rich prompt customizations, widgets, animations](#rich-prompts)
 - [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
 - [Improvements on Bash's tab completion](#tab-completion-improvements)
@@ -41,7 +41,7 @@ To install flyline, you need to:
 
 From easiest to hardest:
 
-### Run `install.sh`
+### Quick install: run `install.sh`
 
 > [!TIP]
 > Quick install:
@@ -53,7 +53,7 @@ curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh 
 
 ### Download from releases
 
-Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
+Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you know you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
@@ -101,7 +101,7 @@ Then you can simply run `enable flyline`.
 Flyline sets up its own tab completion
 so you can type `flyline <Tab>` in your shell to interactively browse and configure settings. Copy the commands into your `.bashrc` so they persist.
 
-Explore this readme and [examples](examples/settings.sh) for what you can configure.
+Explore this readme and [examples](examples/) for what you can configure.
 
 # Rich prompts
 
@@ -115,6 +115,9 @@ PS1='\u@\h:\w$ '
 PS1='\u@\h:\w\n$ '
 PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
 ```
+
+> [!TIP]
+> Does git metrics slow down your prompt loading time? See [custom widget](#custom-command-widget) or [example widgets](examples/widgets.sh) for a solution.
 
 ## RPS1 / RPROMPT
 The `RPS1` / `RPROMPT` variable sets the right prompt similarly to Zsh.
