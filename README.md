@@ -32,6 +32,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 To install flyline, you need to:
 1. Acquire `libflyline.so`
 2. Run `enable -f /path/to/libflyline.so flyline` (preferably in your `.bashrc`)
+3. Optional but recommended: `flyline run-tutorial`
 
 From easiest to hardest:
 
