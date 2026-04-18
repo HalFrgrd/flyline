@@ -560,6 +560,18 @@ enum LogLevelArg {
     Trace,
 }
 
+impl From<LogLevelArg> for log::LevelFilter {
+    fn from(level: LogLevelArg) -> Self {
+        match level {
+            LogLevelArg::Error => log::LevelFilter::Error,
+            LogLevelArg::Warn => log::LevelFilter::Warn,
+            LogLevelArg::Info => log::LevelFilter::Info,
+            LogLevelArg::Debug => log::LevelFilter::Debug,
+            LogLevelArg::Trace => log::LevelFilter::Trace,
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 enum PromptWidgetSubcommands {
     /// Create a custom prompt animation that cycles through frames.
@@ -1089,13 +1101,7 @@ impl Flyline {
                             }
                         }
                         LogSubcommands::SetLevel { level } => {
-                            let filter = match level {
-                                LogLevelArg::Error => log::LevelFilter::Error,
-                                LogLevelArg::Warn => log::LevelFilter::Warn,
-                                LogLevelArg::Info => log::LevelFilter::Info,
-                                LogLevelArg::Debug => log::LevelFilter::Debug,
-                                LogLevelArg::Trace => log::LevelFilter::Trace,
-                            };
+                            let filter = log::LevelFilter::from(level);
                             log::set_max_level(filter);
                             log::info!("Log level set to {:?}", filter);
                         }

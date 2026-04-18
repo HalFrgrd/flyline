@@ -108,12 +108,8 @@ pub fn last_n_logs(n: usize) -> Vec<String> {
         let entries = logger.entries.lock().unwrap();
         entries
             .iter()
-            .rev()
-            .take(n)
+            .skip(entries.len().saturating_sub(n))
             .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
             .collect()
     } else {
         vec![]
