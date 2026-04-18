@@ -36,12 +36,11 @@ impl HistoryEntry {
             let mut parser = crate::dparser::DParser::from(&self.command as &str);
             parser.walk_to_end();
             let tokens = parser.into_tokens();
-            let formatted = crate::app::formated_buffer::format_buffer(
+            let formatted = crate::app::formatted_buffer::format_buffer(
                 &tokens,
                 self.command.len(),
                 self.command.len(),
                 false,
-                Some(Box::new(crate::app::get_word_info)),
                 palette,
             );
             let mut lines: Vec<Line<'static>> = vec![];

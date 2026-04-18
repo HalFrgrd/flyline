@@ -5,6 +5,8 @@ use crate::snake_animation::SnakeAnimation;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(not(test))]
+use crate::bash_funcs;
 use crate::dparser::{AnnotatedToken, ClosingAnnotation, ToInclusiveRange};
 use crate::palette::Palette;
 use itertools::{EitherOrBoth, Itertools};
@@ -27,21 +29,13 @@ impl FormattedBuffer {
             .find(|part| part.token.token.byte_range().contains(&byte_pos))
     }
 
-    /// Create a `FormattedBuffer` from a raw string and cursor position, with no word-info
-    /// function. Only intended for use in tests.
+    /// Create a `FormattedBuffer` from a raw string and cursor position. Only intended for use in tests.
     #[cfg(test)]
     pub fn from(input: &str, cursor_pos: usize) -> Self {
         let mut parser = crate::dparser::DParser::from(input);
         parser.walk_to_end();
         let tokens = parser.tokens().to_vec();
-        format_buffer(
-            &tokens,
-            cursor_pos,
-            input.len(),
-            false,
-            None,
-            &Palette::dark(),
-        )
+        format_buffer(&tokens, cursor_pos, input.len(), false, &Palette::dark())
     }
 }
 
@@ -124,22 +118,53 @@ fn token_to_style(
 }
 
 #[derive(Debug)]
-pub struct WordInfo {
+struct WordInfo {
     pub tooltip: Option<String>,
     pub is_recognised_command: bool,
 }
 
-pub type WordInfoFn<'a> = Box<dyn FnMut(&AnnotatedToken) -> Option<WordInfo> + 'a>;
+#[cfg(not(test))]
+fn get_word_info(token: &AnnotatedToken) -> Option<WordInfo> {
+    if token.annotations.is_env_var && token.token.kind.is_word() {
+        let env_var_name = &token.token.value;
+
+        let tooltip = bash_funcs::format_shell_var(env_var_name);
+
+        return Some(WordInfo {
+            tooltip: Some(tooltip),
+            is_recognised_command: false,
+        });
+    } else if let Some(value) = &token.annotations.command_word {
+        let (command_type, description) = bash_funcs::get_command_info(value);
+        return Some(WordInfo {
+            tooltip: Some(description.to_string()),
+            is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
+        });
+    } else if token.annotations.is_empty() && token.token.value.starts_with('~') {
+        let expanded = bash_funcs::expand_filename(&token.token.value);
+        if expanded != token.token.value {
+            return Some(WordInfo {
+                tooltip: Some(format!("{}={}", token.token.value, expanded)),
+                is_recognised_command: false,
+            });
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+fn get_word_info(_token: &AnnotatedToken) -> Option<WordInfo> {
+    None
+}
 
 impl FormattedBufferPart {
     pub fn new(
         token: &AnnotatedToken,
-        wordinfo_fn: &mut Option<WordInfoFn<'_>>,
         cursor_on_this_or_closing_token: bool,
         cursor_byte_pos_in_token: Option<usize>,
         palette: &Palette,
     ) -> Self {
-        let word_info = wordinfo_fn.as_mut().and_then(|f| f(token));
+        let word_info = get_word_info(token);
         let tooltip = word_info.as_ref().and_then(|info| info.tooltip.clone());
         let recognised_command = word_info.as_ref().map(|info| info.is_recognised_command);
 
@@ -250,12 +275,11 @@ impl FormattedBufferPart {
     }
 }
 
-pub fn format_buffer<'a>(
+pub fn format_buffer(
     annotated_tokens: &[AnnotatedToken],
     cursor_byte_pos: usize,
     buffer_byte_length: usize,
     app_is_running: bool,
-    mut wordinfo_fn: Option<WordInfoFn<'a>>,
     palette: &Palette,
 ) -> FormattedBuffer {
     let check_highlight = |inclusive: bool| {
@@ -310,13 +334,7 @@ pub fn format_buffer<'a>(
             } else {
                 None
             };
-            FormattedBufferPart::new(
-                tok,
-                &mut wordinfo_fn,
-                highlight,
-                cursor_pos_in_token,
-                palette,
-            )
+            FormattedBufferPart::new(tok, highlight, cursor_pos_in_token, palette)
         })
         .collect();
 

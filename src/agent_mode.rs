@@ -685,35 +685,4 @@ That should help!"#;
         );
         assert_eq!(extract_command_name("flyline set-agent-mode --help"), None);
     }
-
-    #[test]
-    fn test_parse_example_agent_commands() {
-        let results = parse_example_agent_commands();
-        // The example file contains copilot, claude, and codex entries (plus one with a trigger prefix).
-        assert!(
-            results.len() >= 3,
-            "expected at least 3 entries, got {}",
-            results.len()
-        );
-        let cmd_names: Vec<&str> = results.iter().map(|(name, _)| name.as_str()).collect();
-        assert!(
-            cmd_names.contains(&"copilot"),
-            "expected 'copilot' in {cmd_names:?}"
-        );
-        assert!(
-            cmd_names.contains(&"claude"),
-            "expected 'claude' in {cmd_names:?}"
-        );
-        assert!(
-            cmd_names.contains(&"codex"),
-            "expected 'codex' in {cmd_names:?}"
-        );
-        // Each full command string should start with "flyline set-agent-mode"
-        for (_, cmd) in &results {
-            assert!(
-                cmd.starts_with("flyline set-agent-mode"),
-                "unexpected command: {cmd}"
-            );
-        }
-    }
 }

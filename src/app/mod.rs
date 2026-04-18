@@ -1,11 +1,11 @@
 pub(crate) mod actions;
 mod auto_close;
-pub(crate) mod formated_buffer;
+pub(crate) mod formatted_buffer;
 mod tab_completion;
 
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, MaybeProcessedSuggestion};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
-use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
+use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils::{split_line_to_terminal_rows, ts_to_timeago_string_5chars};
 use crate::cursor::{Cursor, CursorBackend};
@@ -328,34 +328,6 @@ pub(crate) struct App<'a> {
     last_keypress_action: Option<LastKeyPressAction>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     last_activity_time: std::time::Instant,
-}
-
-pub(crate) fn get_word_info(token: &dparser::AnnotatedToken) -> Option<formated_buffer::WordInfo> {
-    if token.annotations.is_env_var && token.token.kind.is_word() {
-        let env_var_name = &token.token.value;
-
-        let tooltip = bash_funcs::format_shell_var(env_var_name);
-
-        return Some(formated_buffer::WordInfo {
-            tooltip: Some(tooltip),
-            is_recognised_command: false,
-        });
-    } else if let Some(value) = &token.annotations.command_word {
-        let (command_type, description) = bash_funcs::get_command_info(value);
-        return Some(formated_buffer::WordInfo {
-            tooltip: Some(description.to_string()),
-            is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
-        });
-    } else if token.annotations.is_empty() && token.token.value.starts_with('~') {
-        let expanded = bash_funcs::expand_filename(&token.token.value);
-        if expanded != token.token.value {
-            return Some(formated_buffer::WordInfo {
-                tooltip: Some(format!("{}={}", token.token.value, expanded)),
-                is_recognised_command: false,
-            });
-        }
-    }
-    None
 }
 
 impl<'a> App<'a> {
@@ -1262,7 +1234,6 @@ impl<'a> App<'a> {
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
-            Some(Box::new(get_word_info)),
             &self.settings.color_palette,
         );
 
@@ -1446,6 +1417,19 @@ impl<'a> App<'a> {
         // Basically build the entire frame in a Content first
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
+
+        // When terminal log streaming is enabled, show the last 20 log lines at
+        // the top of the content before anything else.
+        if crate::logging::is_terminal_streaming() {
+            let log_lines = crate::logging::last_n_logs(20);
+            for line_text in log_lines {
+                let tagged_line = TaggedLine::from(vec![TaggedSpan::new(
+                    ratatui::text::Span::raw(line_text),
+                    Tag::Normal,
+                )]);
+                content.write_tagged_line(&tagged_line, true);
+            }
+        }
 
         // Render tutorial text above the prompt when a tutorial step is active.
         if self.mode.is_running() {
@@ -1941,7 +1925,6 @@ impl<'a> App<'a> {
                         cmd.len(),
                         cmd.len(),
                         false,
-                        Some(Box::new(get_word_info)),
                         &self.settings.color_palette,
                     );
                     for part in &formatted_cmd.parts {

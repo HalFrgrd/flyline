@@ -45,7 +45,7 @@ From easiest to hardest:
 
 > [!TIP]
 > Quick install:
-> Run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
+> run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
@@ -393,6 +393,14 @@ Recommended settings
 - Enable [`terminal.integrated.enableKittyKeyboardProtocol`](vscode://settings/terminal.integrated.enableKittyKeyboardProtocol) so that the integrated terminal [correctly forwards keystrokes to flyline](https://code.visualstudio.com/updates/v1_109#_new-vt-features). You will need to set [`workbench.settings.alwaysShowAdvancedSettings = 1`](vscode://settings/workbench.settings.alwaysShowAdvancedSettings) to find this setting.
 - Enable [`terminal.integrated.textBlinking`](vscode://terminal.integrated.textBlinking). Few terminal emulators support this neat text style option so enjoy it!
 - If keybindings are not working properly, you can debug by [Toggling Keyboard Shortcuts Troubleshooting](https://code.visualstudio.com/docs/configure/keybindings#_troubleshooting-keyboard-shortcuts).
+
+I find that Copilot can't interact with the terminal if flyline runs with certain settings. If you run into this problem, add this to the end of your `.bashrc`:
+```bash
+if [[ "$TERM_PROGRAM" == "vscode" ]]; then
+    RPS1=''
+    flyline set-cursor --backend terminal --interpolate none
+fi
+``` 
 
 ## macOS
 

@@ -443,229 +443,80 @@ impl<'a> PromptStringBuilder<'a> {
 
     /// Split a single decoded [`Span`] into a sequence of [`PromptSegment`]s.
     ///
-    /// Two passes are performed:
-    /// 1. Split on time-placeholder strings: portions matching a placeholder
-    ///    become [`PromptSegment::DynamicTime`]; the rest stay
-    ///    [`PromptSegment::Static`].
-    /// 2. Split each remaining `Static` segment on animation names: each
-    ///    occurrence of an animation name becomes a
-    ///    [`PromptSegment::Animation`] carrying a clone of the matching
-    ///    [`ProcessedAnimation`].
+    /// Performs four successive passes, each replacing matching substrings
+    /// inside any remaining [`PromptSegment::Static`] segments with the
+    /// appropriate richer segment kind:
+    /// 1. Time-placeholder strings → [`PromptSegment::DynamicTime`].
+    /// 2. Animation names → [`PromptSegment::Animation`].
+    /// 3. Widget names → `PromptSegment::Widget*`.
+    /// 4. CWD substrings → [`PromptSegment::Cwd`].
     fn expand_span_to_segments(&self, span: Span<'static>) -> Vec<PromptSegment> {
-        let raw = span.content.as_ref();
+        // Pass 1: time placeholders.
+        let style = span.style;
+        let segs = split_span_by(span, |text| {
+            self.time_map
+                .iter()
+                .filter_map(|(id, fmt)| text.find(id.as_str()).map(|pos| (pos, id.len(), fmt)))
+                .min_by_key(|(pos, _, _)| *pos)
+                .map(|(pos, len, fmt)| {
+                    (
+                        pos,
+                        len,
+                        PromptSegment::DynamicTime {
+                            strftime: fmt.clone(),
+                            style,
+                        },
+                    )
+                })
+        });
 
-        let has_placeholder =
-            !self.time_map.is_empty() && self.time_map.keys().any(|id| raw.contains(id.as_str()));
-
-        let time_segs: Vec<PromptSegment> = if has_placeholder {
-            let style = span.style;
-            let mut result: Vec<PromptSegment> = Vec::new();
-            let mut remaining = raw.to_owned();
-
-            loop {
-                // Find the placeholder that appears earliest in `remaining`.
-                let next = self
-                    .time_map
+        // Pass 2: animations.
+        let segs = split_static_segments(segs, |s| {
+            let style = s.style;
+            split_span_by(s, |text| {
+                self.animations
                     .iter()
-                    .filter_map(|(id, fmt)| {
-                        remaining
-                            .find(id.as_str())
-                            .map(|pos| (pos, id.len(), fmt.clone()))
+                    .filter_map(|anim| {
+                        text.find(anim.name.as_str())
+                            .map(|pos| (pos, anim.name.len(), anim))
                     })
-                    .min_by_key(|(pos, _, _)| *pos);
+                    .min_by_key(|(pos, _, _)| *pos)
+                    .map(|(pos, len, anim)| {
+                        (
+                            pos,
+                            len,
+                            PromptSegment::Animation(Box::new(anim.clone().patch_style(style))),
+                        )
+                    })
+            })
+        });
 
-                let (pos, id_len, fmt) = match next {
-                    None => break,
-                    Some(t) => t,
-                };
+        // Pass 3: widgets.  Custom widgets with an empty command are excluded
+        // (they have no valid name to match) so their placeholder text stays
+        // literal.  Each match spawns a fresh independent widget segment.
+        let segs = split_static_segments(segs, |s| {
+            let style = s.style;
+            split_span_by(s, |text| {
+                self.widgets
+                    .iter()
+                    .filter_map(|widget| {
+                        let name = match widget {
+                            PromptWidget::MouseMode(w) => w.name.as_str(),
+                            PromptWidget::Custom(w) if !w.command.is_empty() => w.name.as_str(),
+                            PromptWidget::Custom(_) => return None,
+                        };
+                        text.find(name).map(|pos| (pos, name.len(), widget))
+                    })
+                    .min_by_key(|(pos, _, _)| *pos)
+                    .map(|(pos, len, widget)| (pos, len, make_widget_segment(widget, style)))
+            })
+        });
 
-                if pos > 0 {
-                    result.push(PromptSegment::Static(Span::styled(
-                        remaining[..pos].to_owned(),
-                        style,
-                    )));
-                }
-
-                result.push(PromptSegment::DynamicTime {
-                    strftime: fmt,
-                    style,
-                });
-
-                remaining = remaining[pos + id_len..].to_owned();
-            }
-
-            if !remaining.is_empty() {
-                result.push(PromptSegment::Static(Span::styled(remaining, style)));
-            }
-
-            if result.is_empty() {
-                result.push(PromptSegment::Static(Span::styled(String::new(), style)));
-            }
-
-            result
-        } else {
-            vec![PromptSegment::Static(span)]
-        };
-
-        // Pass 2: split any remaining Static segments on animation names.
-        let animation_segs: Vec<PromptSegment> = if self.animations.is_empty() {
-            time_segs
-        } else {
-            time_segs
-                .into_iter()
-                .flat_map(|seg| match seg {
-                    PromptSegment::Static(s) => self.split_static_span_by_animations(s),
-                    other => vec![other],
-                })
-                .collect()
-        };
-
-        // Pass 3: split any remaining Static segments on widget names.
-        let widget_segs: Vec<PromptSegment> = if self.widgets.is_empty() {
-            animation_segs
-        } else {
-            animation_segs
-                .into_iter()
-                .flat_map(|seg| match seg {
-                    PromptSegment::Static(s) => self.split_static_span_by_widgets(s),
-                    other => vec![other],
-                })
-                .collect()
-        };
-
-        // Pass 4: split any remaining Static segments on CWD.
-        if let Some(cwd) = self.cwd.as_deref() {
-            widget_segs
-                .into_iter()
-                .flat_map(|seg| match seg {
-                    PromptSegment::Static(s) => split_static_span_by_cwd(s, cwd),
-                    other => vec![other],
-                })
-                .collect()
-        } else {
-            widget_segs
+        // Pass 4: CWD detection.
+        match self.cwd.as_deref() {
+            Some(cwd) => split_static_segments(segs, |s| split_static_span_by_cwd(s, cwd)),
+            None => segs,
         }
-    }
-
-    /// Split a static [`Span`] at animation-name boundaries, producing
-    /// `Static` and `Animation` segments.
-    ///
-    /// Runs a single greedy loop that always picks the earliest-occurring
-    /// animation name in the remaining text.  Returns at least one segment;
-    /// if no animation names are found the original span is returned unchanged
-    /// as a `Static` segment.
-    fn split_static_span_by_animations(&self, span: Span<'static>) -> Vec<PromptSegment> {
-        let style = span.style;
-        let mut result: Vec<PromptSegment> = Vec::new();
-        let mut remaining: String = span.content.into_owned();
-
-        loop {
-            // Find the animation whose name appears earliest in `remaining`.
-            let next = self
-                .animations
-                .iter()
-                .enumerate()
-                .filter_map(|(i, anim)| {
-                    remaining
-                        .find(anim.name.as_str())
-                        .map(|pos| (pos, i, anim.name.len()))
-                })
-                .min_by_key(|(pos, _, _)| *pos);
-
-            let (pos, anim_idx, name_len) = match next {
-                None => break,
-                Some(m) => m,
-            };
-
-            if pos > 0 {
-                result.push(PromptSegment::Static(Span::styled(
-                    remaining[..pos].to_owned(),
-                    style,
-                )));
-            }
-
-            let anim = self.animations[anim_idx].clone().patch_style(style);
-
-            result.push(PromptSegment::Animation(Box::new(anim)));
-
-            remaining = remaining[pos + name_len..].to_owned();
-        }
-
-        if !remaining.is_empty() {
-            result.push(PromptSegment::Static(Span::styled(remaining, style)));
-        }
-
-        // Ensure at least one segment is always returned (e.g. for an empty
-        // span with no matching animation name).
-        if result.is_empty() {
-            result.push(PromptSegment::Static(Span::styled(String::new(), style)));
-        }
-
-        result
-    }
-
-    /// Split a static [`Span`] at widget-name boundaries, producing
-    /// `Static` and `Widget*` segments.
-    ///
-    /// Runs a single greedy loop that always picks the earliest-occurring
-    /// widget name in the remaining text.  Returns at least one segment;
-    /// if no widget names are found the original span is returned unchanged
-    /// as a `Static` segment.
-    ///
-    /// For each occurrence of a custom-widget name the widget command is
-    /// either run synchronously (blocking) or launched in a background thread
-    /// (non-blocking).  Multiple occurrences of the same name each produce an
-    /// independent `WidgetCustom` segment with their own process.
-    fn split_static_span_by_widgets(&self, span: Span<'static>) -> Vec<PromptSegment> {
-        let style = span.style;
-        let mut result: Vec<PromptSegment> = Vec::new();
-        let mut remaining: String = span.content.into_owned();
-
-        loop {
-            // Find the widget whose name appears earliest in `remaining`.
-            // Custom widgets with an empty command are excluded (they have no
-            // valid name to match) so their placeholder text stays literal.
-            let next = self
-                .widgets
-                .iter()
-                .enumerate()
-                .filter_map(|(i, widget)| {
-                    let name = match widget {
-                        PromptWidget::MouseMode(w) => w.name.as_str(),
-                        PromptWidget::Custom(w) if !w.command.is_empty() => w.name.as_str(),
-                        PromptWidget::Custom(_) => return None,
-                    };
-                    remaining.find(name).map(|pos| (pos, i, name.len()))
-                })
-                .min_by_key(|(pos, _, _)| *pos);
-
-            let (pos, widget_idx, name_len) = match next {
-                None => break,
-                Some(m) => m,
-            };
-
-            if pos > 0 {
-                result.push(PromptSegment::Static(Span::styled(
-                    remaining[..pos].to_owned(),
-                    style,
-                )));
-            }
-
-            result.push(make_widget_segment(&self.widgets[widget_idx], style));
-
-            remaining = remaining[pos + name_len..].to_owned();
-        }
-
-        if !remaining.is_empty() {
-            result.push(PromptSegment::Static(Span::styled(remaining, style)));
-        }
-
-        // Ensure at least one segment is always returned.
-        if result.is_empty() {
-            result.push(PromptSegment::Static(Span::styled(String::new(), style)));
-        }
-
-        result
     }
 
     /// Allocate the next placeholder identifier and advance the counter.
@@ -674,6 +525,59 @@ impl<'a> PromptStringBuilder<'a> {
         self.counter += 1;
         id
     }
+}
+
+/// Apply `split` to every [`PromptSegment::Static`] in `segs`, leaving every
+/// other segment untouched.  Used by the time/animation/widget/cwd passes in
+/// [`PromptStringBuilder::expand_span_to_segments`] to chain successive
+/// substring-splitting passes over the still-unmatched portions of text.
+fn split_static_segments<F>(segs: Vec<PromptSegment>, mut split: F) -> Vec<PromptSegment>
+where
+    F: FnMut(Span<'static>) -> Vec<PromptSegment>,
+{
+    segs.into_iter()
+        .flat_map(|seg| match seg {
+            PromptSegment::Static(s) => split(s),
+            other => vec![other],
+        })
+        .collect()
+}
+
+/// Generic substring-splitting helper used by the time, animation and widget
+/// passes.  Repeatedly invokes `find_next` on the unmatched tail of `span` to
+/// locate the next match (returning byte position, byte length and the
+/// replacement segment), and emits a [`PromptSegment::Static`] for the text
+/// between matches.  Always returns at least one segment.
+fn split_span_by(
+    span: Span<'static>,
+    mut find_next: impl FnMut(&str) -> Option<(usize, usize, PromptSegment)>,
+) -> Vec<PromptSegment> {
+    let style = span.style;
+    let mut result: Vec<PromptSegment> = Vec::new();
+    let mut remaining: String = span.content.into_owned();
+
+    while let Some((pos, len, segment)) = find_next(&remaining) {
+        if pos > 0 {
+            result.push(PromptSegment::Static(Span::styled(
+                remaining[..pos].to_owned(),
+                style,
+            )));
+        }
+        result.push(segment);
+        remaining = remaining[pos + len..].to_owned();
+    }
+
+    if !remaining.is_empty() {
+        result.push(PromptSegment::Static(Span::styled(remaining, style)));
+    }
+
+    // Ensure at least one segment is always returned (e.g. for an empty span
+    // with no matches).
+    if result.is_empty() {
+        result.push(PromptSegment::Static(Span::styled(String::new(), style)));
+    }
+
+    result
 }
 
 /// Build a [`PromptSegment`] for the given [`PromptWidget`].
@@ -966,22 +870,14 @@ fn stdout_to_tagged_spans(stdout: String) -> Vec<TaggedSpan<'static>> {
         .collect()
 }
 
-/// Convert a slice of [`PromptSegment`]s to a [`TaggedLine`] by resolving each
-/// segment against `now` and attaching an appropriate [`Tag`] to each span.
+/// Advance every [`PromptSegment::WidgetCustom`] segment whose child process
+/// has exited from `Pending` to either `Done` or `Failed`.
 ///
-/// `mouse_enabled` is used by [`PromptSegment::WidgetMouseMode`] to choose
-/// between the enabled and disabled text.
-///
-/// Segments are passed as a mutable slice so that `WidgetCustom` segments can
-/// advance their internal state (polling the child process) without
-/// requiring a `RefCell`.
-fn format_prompt_line(
-    segments: &mut [PromptSegment],
-    now: &chrono::DateTime<chrono::Local>,
-    mouse_enabled: bool,
-) -> TaggedLine<'static> {
-    // First pass: advance any Pending WidgetCustom segments whose child process
-    // has exited.  We need a mutable pass before the immutable render pass.
+/// This is the only step that needs mutable access to the prompt segments at
+/// render time, so it is split out from [`format_prompt_line`] (which takes
+/// an immutable slice) and called separately from
+/// [`PromptManager::get_ps1_lines`].
+fn advance_pending_widgets(segments: &mut [PromptSegment]) {
     for segment in segments.iter_mut() {
         if let PromptSegment::WidgetCustom { state, .. } = segment {
             let new_state: Option<WidgetCustomState> = match state {
@@ -1014,7 +910,22 @@ fn format_prompt_line(
             }
         }
     }
+}
 
+/// Convert a slice of [`PromptSegment`]s to a [`TaggedLine`] by resolving each
+/// segment against `now` and attaching an appropriate [`Tag`] to each span.
+///
+/// `mouse_enabled` is used by [`PromptSegment::WidgetMouseMode`] to choose
+/// between the enabled and disabled text.
+///
+/// Pending [`PromptSegment::WidgetCustom`] segments are not advanced here;
+/// callers are expected to invoke [`advance_pending_widgets`] beforehand so
+/// that this function can take an immutable slice.
+fn format_prompt_line(
+    segments: &[PromptSegment],
+    now: &chrono::DateTime<chrono::Local>,
+    mouse_enabled: bool,
+) -> TaggedLine<'static> {
     let tagged_spans: Vec<TaggedSpan<'static>> = segments
         .iter()
         .flat_map(|segment| -> Vec<TaggedSpan<'static>> {
@@ -1358,16 +1269,23 @@ impl PromptManager {
         let formatted_prompt: Vec<TaggedLine<'static>> = self
             .prompt
             .iter_mut()
-            .map(|line| format_prompt_line(line, &now, mouse_enabled))
+            .map(|line| {
+                advance_pending_widgets(line);
+                format_prompt_line(line, &now, mouse_enabled)
+            })
             .collect();
 
         let formatted_rprompt: Vec<TaggedLine<'static>> = self
             .rprompt
             .iter_mut()
-            .map(|line| format_prompt_line(line, &now, mouse_enabled))
+            .map(|line| {
+                advance_pending_widgets(line);
+                format_prompt_line(line, &now, mouse_enabled)
+            })
             .collect();
 
-        let formatted_fill = format_prompt_line(&mut self.fill_span, &now, mouse_enabled);
+        advance_pending_widgets(&mut self.fill_span);
+        let formatted_fill = format_prompt_line(&self.fill_span, &now, mouse_enabled);
 
         (formatted_prompt, formatted_rprompt, formatted_fill)
     }
@@ -1608,7 +1526,7 @@ mod tests {
             PromptSegment::Static(Span::raw(" after")),
         ];
         let now = fixed_time(0);
-        let line = format_prompt_line(&mut segments, &now, false);
+        let line = format_prompt_line(&segments, &now, false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "before f0 after");
     }
@@ -1618,7 +1536,7 @@ mod tests {
         // At t=100 ms, fps=10 → frame 1 ("f1").
         let anim = make_processed_anim("SPIN", 10.0, &["f0", "f1"]);
         let mut segments = vec![PromptSegment::Animation(Box::new(anim))];
-        let line = format_prompt_line(&mut segments, &fixed_time(100), false);
+        let line = format_prompt_line(&segments, &fixed_time(100), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "f1");
     }
@@ -1627,7 +1545,7 @@ mod tests {
     fn test_format_prompt_line_animation_tag() {
         let anim = make_processed_anim("SPIN", 10.0, &["f0"]);
         let mut segments = vec![PromptSegment::Animation(Box::new(anim))];
-        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
+        let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert!(
             line.spans.iter().all(
                 |s| s.tag == crate::content_builder::SpanTag::Constant(Tag::Ps1PromptAnimation)
@@ -1638,15 +1556,13 @@ mod tests {
     #[test]
     fn test_animation_frame_style_overrides_base_style() {
         // When the prompt span has a base style and the animation frame has its
-        // own style, the frame style should override the base style, not the
-        // other way round.  `base.patch(frame)` means frame wins.
+        // own style, the frame style should override the base style.
+        // `base.patch(frame)` means frame wins.
         let base_style = Style::default().fg(Color::Blue);
         let frame_style = Style::default().fg(Color::Red);
         let mut anim = make_processed_anim("SPIN", 10.0, &["f0"]);
-        // Give the single frame span an explicit colour.
         anim.frames[0][0].style = frame_style;
         let anim = anim.patch_style(base_style);
-        // The frame style (Red) must win over the base style (Blue).
         assert_eq!(
             anim.frames[0][0].style.fg,
             Some(Color::Red),
@@ -1660,7 +1576,6 @@ mod tests {
         // should fill it in.
         let base_style = Style::default().fg(Color::Green);
         let mut anim = make_processed_anim("SPIN", 10.0, &["f0"]);
-        // Frame has no explicit colour set.
         anim.frames[0][0].style = Style::default();
         let anim = anim.patch_style(base_style);
         assert_eq!(
@@ -1688,7 +1603,7 @@ mod tests {
             },
             PromptSegment::Static(Span::raw("]")),
         ];
-        let line = format_prompt_line(&mut segments, &now, false);
+        let line = format_prompt_line(&segments, &now, false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, format!("[{}]", formatted_time));
     }
@@ -1919,7 +1834,7 @@ mod tests {
         // "/" separators get Ps1Prompt (not selectable).
         let spans = split_cwd_text_into_spans("~/foo/bar", ratatui::style::Style::default());
         let mut segments = vec![PromptSegment::Cwd(spans)];
-        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
+        let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 5);
         // "~" → index 2
         assert_eq!(
@@ -1952,7 +1867,7 @@ mod tests {
     fn test_format_prompt_line_cwd_single_segment_tag() {
         let spans = split_cwd_text_into_spans("~", ratatui::style::Style::default());
         let mut segments = vec![PromptSegment::Cwd(spans)];
-        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
+        let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
@@ -1966,7 +1881,7 @@ mod tests {
             strftime: "%H:%M".to_string(),
             style: ratatui::style::Style::default(),
         }];
-        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
+        let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
@@ -1977,7 +1892,7 @@ mod tests {
     #[test]
     fn test_format_prompt_line_static_tag() {
         let mut segments = vec![PromptSegment::Static(Span::raw("$ "))];
-        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
+        let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
@@ -2068,7 +1983,7 @@ mod tests {
             enabled_text: vec![TaggedSpan::new(Span::raw("mouse on"), Tag::Ps1Prompt)],
             disabled_text: vec![TaggedSpan::new(Span::raw("mouse off"), Tag::Ps1Prompt)],
         }];
-        let line = format_prompt_line(&mut segments, &fixed_time(0), true);
+        let line = format_prompt_line(&segments, &fixed_time(0), true);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "mouse on");
     }
@@ -2079,7 +1994,7 @@ mod tests {
             enabled_text: vec![TaggedSpan::new(Span::raw("mouse on"), Tag::Ps1Prompt)],
             disabled_text: vec![TaggedSpan::new(Span::raw("mouse off"), Tag::Ps1Prompt)],
         }];
-        let line = format_prompt_line(&mut segments, &fixed_time(0), false);
+        let line = format_prompt_line(&segments, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "mouse off");
     }
@@ -2156,7 +2071,7 @@ mod tests {
             },
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "   ");
         // Drop segs here; the Drop impl on WidgetCustomState will kill sleep.
@@ -2170,7 +2085,7 @@ mod tests {
             state: WidgetCustomState::Done(result_spans),
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "output");
     }
@@ -2186,7 +2101,7 @@ mod tests {
             }),
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "command failed (exit 1)");
     }
@@ -2202,7 +2117,7 @@ mod tests {
             }),
             base_style: Style::default(),
         }];
-        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "command failed");
     }
@@ -2249,11 +2164,11 @@ mod tests {
             Span::styled("output", output_style),
             Tag::Ps1Prompt,
         )];
-        let mut segs = vec![PromptSegment::WidgetCustom {
+        let segs = vec![PromptSegment::WidgetCustom {
             state: WidgetCustomState::Done(result_spans),
             base_style,
         }];
-        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
         assert_eq!(
             line.spans[0].span.style.fg,
             Some(Color::Red),
@@ -2267,11 +2182,11 @@ mod tests {
         // should fill it in.
         let base_style = Style::default().fg(Color::Green);
         let result_spans = vec![TaggedSpan::new(Span::raw("output"), Tag::Ps1Prompt)];
-        let mut segs = vec![PromptSegment::WidgetCustom {
+        let segs = vec![PromptSegment::WidgetCustom {
             state: WidgetCustomState::Done(result_spans),
             base_style,
         }];
-        let line = format_prompt_line(&mut segs, &fixed_time(0), false);
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
         assert_eq!(
             line.spans[0].span.style.fg,
             Some(Color::Green),
