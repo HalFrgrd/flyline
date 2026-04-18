@@ -361,7 +361,7 @@ If a suggestion contains a tab character, flyline displays the contents after th
 Descriptions for files are the time since last modified.
 
 ### Automatically complete based on `--help`
-Coming soon: if the command doesn't not have a completion spec, flyline can run `your_command --help` in the background, parse the output, and intelligently create tab completion suggestions.
+Coming soon: if the command doesn't have a completion spec, flyline can run `your_command --help` in the background, parse the output, and intelligently generate tab completion suggestions on the fly.
 
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
@@ -377,7 +377,7 @@ Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl
 ![Fuzzy history demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_history.gif)
 
 **Inline suggestions:**
-Inline suggestions appear as you type based on the most recent matching history entry. Accept them with `Right`/`End`.
+Inline suggestions appear as you type based on the most recent matching history entry. Accept them by moving your cursor to the end of the line and pressing `Right`/`End`.
 
 **Scroll through prefix matches:**
 Pressing `Up` will scroll through history entries that are a prefix match with the current command.
