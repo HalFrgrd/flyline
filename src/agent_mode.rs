@@ -370,6 +370,65 @@ pub fn parse_ai_output(raw: &str) -> anyhow::Result<AiOutputParsed> {
     })
 }
 
+const EXAMPLE_AGENT_MODE: &str = include_str!("../examples/agent_mode.sh");
+
+/// Extract the command executable name from a `--command '...'` argument in a
+/// `flyline set-agent-mode` command string.  Returns `None` if the pattern is
+/// not found.  The parsing is intentionally simple: it looks for the literal
+/// substring `--command '` and takes the first whitespace-delimited word from
+/// the content inside the single-quoted value.
+fn extract_command_name(flyline_cmd: &str) -> Option<String> {
+    let marker = "--command '";
+    let start = flyline_cmd.find(marker)?;
+    let after = &flyline_cmd[start + marker.len()..];
+    let end = after.find('\'')?;
+    let cmd_str = &after[..end];
+    cmd_str.split_whitespace().next().map(|s| s.to_string())
+}
+
+/// Parse [`EXAMPLE_AGENT_MODE`] (embedded at compile time from
+/// `examples/agent_mode.sh`) and return a list of
+/// `(command_executable_name, full_flyline_set_agent_mode_command)` pairs —
+/// one entry per `flyline set-agent-mode` block found in the file.
+///
+/// Each multi-line continuation block (lines ending with ` \`) is joined into
+/// a single command string.  Lines that begin with `#` are skipped.
+pub fn parse_example_agent_commands() -> Vec<(String, String)> {
+    let lines: Vec<&str> = EXAMPLE_AGENT_MODE.lines().collect();
+    let mut results = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        if trimmed.starts_with("flyline set-agent-mode") {
+            // Collect continuation lines (ending with ' \').
+            let mut block: Vec<&str> = Vec::new();
+            loop {
+                block.push(lines[i]);
+                if lines[i].trim_end().ends_with('\\') {
+                    i += 1;
+                    if i >= lines.len() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            // Join: strip trailing '\' and surrounding whitespace from each piece.
+            let cmd_str = block
+                .iter()
+                .map(|l| l.trim().trim_end_matches('\\').trim())
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            if let Some(cmd_name) = extract_command_name(&cmd_str) {
+                results.push((cmd_name, cmd_str));
+            }
+        }
+        i += 1;
+    }
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -603,5 +662,57 @@ That should help!"#;
         // Out of bounds is ignored
         sel.set_selected_by_idx(100);
         assert_eq!(sel.selected_idx, 1);
+    }
+
+    #[test]
+    fn test_extract_command_name() {
+        assert_eq!(
+            extract_command_name("flyline set-agent-mode --command 'claude --effort low --prompt'"),
+            Some("claude".to_string())
+        );
+        assert_eq!(
+            extract_command_name(
+                "flyline set-agent-mode --command 'copilot --reasoning-effort low --prompt'"
+            ),
+            Some("copilot".to_string())
+        );
+        assert_eq!(
+            extract_command_name(
+                "flyline set-agent-mode --system-prompt 'x' --command 'codex -a never'"
+            ),
+            Some("codex".to_string())
+        );
+        assert_eq!(extract_command_name("flyline set-agent-mode --help"), None);
+    }
+
+    #[test]
+    fn test_parse_example_agent_commands() {
+        let results = parse_example_agent_commands();
+        // The example file contains copilot, claude, and codex entries (plus one with a trigger prefix).
+        assert!(
+            results.len() >= 3,
+            "expected at least 3 entries, got {}",
+            results.len()
+        );
+        let cmd_names: Vec<&str> = results.iter().map(|(name, _)| name.as_str()).collect();
+        assert!(
+            cmd_names.contains(&"copilot"),
+            "expected 'copilot' in {cmd_names:?}"
+        );
+        assert!(
+            cmd_names.contains(&"claude"),
+            "expected 'claude' in {cmd_names:?}"
+        );
+        assert!(
+            cmd_names.contains(&"codex"),
+            "expected 'codex' in {cmd_names:?}"
+        );
+        // Each full command string should start with "flyline set-agent-mode"
+        for (_, cmd) in &results {
+            assert!(
+                cmd.starts_with("flyline set-agent-mode"),
+                "unexpected command: {cmd}"
+            );
+        }
     }
 }

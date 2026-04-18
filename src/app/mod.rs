@@ -218,10 +218,13 @@ enum ContentMode {
     /// AI command or JSON parsing failed; stores the error message and any raw output.
     /// When `suggested_buffer` is set, the error is a "no default agent but prefix-only config"
     /// case: pressing Enter will launch agent mode with that buffer instead of running help.
+    /// When `suggested_setup_command` is set, an agent from the example file was found on PATH;
+    /// pressing Enter will run that `flyline set-agent-mode ...` command to configure it.
     AgentError {
         message: String,
         raw_output: String,
         suggested_buffer: Option<String>,
+        suggested_setup_command: Option<String>,
     },
     /// User is navigating the CWD path segments displayed in the prompt.
     /// The inner value is the currently highlighted segment index (0 = rightmost/current dir).
@@ -555,6 +558,7 @@ impl<'a> App<'a> {
                                 message: format!("Failed to parse AI output: {}", e),
                                 raw_output,
                                 suggested_buffer: None,
+                                suggested_setup_command: None,
                             };
                         }
                     },
@@ -564,6 +568,7 @@ impl<'a> App<'a> {
                             message: msg,
                             raw_output,
                             suggested_buffer: None,
+                            suggested_setup_command: None,
                         };
                     }
                 }
@@ -1011,6 +1016,8 @@ impl<'a> App<'a> {
     /// Show an error explaining that agent mode is not configured, with links to help resources.
     /// If the user has agent mode configured with a trigger prefix but no default (None-keyed)
     /// command, offer to prepend that prefix to the current buffer and launch agent mode.
+    /// If no agent is configured at all, search the example file for a command that is available
+    /// on the system and offer to run the corresponding `flyline set-agent-mode` command.
     fn show_agent_mode_not_configured_error(&mut self) {
         // Find a trigger-prefix-based command (a Some(prefix) key) if any exists.
         // Sort prefixes for deterministic selection.
@@ -1021,7 +1028,7 @@ impl<'a> App<'a> {
             .filter_map(|k| k.as_deref())
             .min();
 
-        let (message, suggested_buffer) = if let Some(prefix) = prefix {
+        let (message, suggested_buffer, suggested_setup_command) = if let Some(prefix) = prefix {
             let suggested_buf = format!("{} {}", prefix, self.buffer.buffer());
             (
                 format!(
@@ -1029,17 +1036,28 @@ impl<'a> App<'a> {
                     prefix
                 ),
                 Some(suggested_buf),
+                None,
             )
         } else {
+            // No agent configured at all — try to find a suitable one from the example file.
+            let setup_cmd = crate::agent_mode::parse_example_agent_commands()
+                .into_iter()
+                .find(|(cmd_name, _)| {
+                    bash_funcs::get_command_info(cmd_name).0 != bash_funcs::CommandType::Unknown
+                })
+                .map(|(_, flyline_cmd)| flyline_cmd);
+
             (
                 "Agent mode is not configured. Run `flyline set-agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
                 None,
+                setup_cmd,
             )
         };
         self.content_mode = ContentMode::AgentError {
             message,
             raw_output: String::new(),
             suggested_buffer,
+            suggested_setup_command,
         };
     }
 
@@ -1137,6 +1155,7 @@ impl<'a> App<'a> {
                     message: format!("Failed to run AI command: {}", e),
                     raw_output: String::new(),
                     suggested_buffer: None,
+                    suggested_setup_command: None,
                 };
             }
         }
@@ -1955,6 +1974,7 @@ impl<'a> App<'a> {
                 message,
                 raw_output,
                 suggested_buffer,
+                suggested_setup_command,
             } if self.mode.is_running() => {
                 content.newline();
                 content.write_tagged_span(&TaggedSpan::new(
@@ -1992,11 +2012,13 @@ impl<'a> App<'a> {
                         }
                     }
                     content.newline();
+                    let hint = if let Some(setup_cmd) = suggested_setup_command {
+                        format!("Press Enter to run `{}`.", setup_cmd)
+                    } else {
+                        "Press Enter to run `flyline set-agent-mode --help`.".to_string()
+                    };
                     content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(
-                            "Press Enter to run `flyline set-agent-mode --help`.",
-                            self.settings.color_palette.secondary_text(),
-                        ),
+                        Span::styled(hint, self.settings.color_palette.secondary_text()),
                         Tag::Blank,
                     ));
                 }
