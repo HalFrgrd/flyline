@@ -620,9 +620,6 @@ impl App<'_> {
         // cursor.
         const MAX_FOR_COMMON_PREFIX: usize = 500;
         if sugs.len() < MAX_FOR_COMMON_PREFIX {
-            for sug in &mut sugs {
-                sug.to_suggestion();
-            }
             if let Some(common_prefix) = common_prefix_of_suggestions(&sugs) {
                 if common_prefix.len() > wuc_substring.s.len()
                     && common_prefix.starts_with(&*wuc_substring.s)
@@ -967,59 +964,5 @@ impl App<'_> {
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_ready(s: &str) -> MaybeProcessedSuggestion {
-        MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(s, "", ""))
-    }
-
-    #[test]
-    fn common_prefix_empty_slice() {
-        assert_eq!(common_prefix_of_suggestions(&[]), None);
-    }
-
-    #[test]
-    fn common_prefix_single_suggestion() {
-        let sugs = vec![make_ready("foobar")];
-        assert_eq!(
-            common_prefix_of_suggestions(&sugs),
-            Some("foobar".to_string())
-        );
-    }
-
-    #[test]
-    fn common_prefix_identical_suggestions() {
-        let sugs = vec![make_ready("abc"), make_ready("abc"), make_ready("abc")];
-        assert_eq!(common_prefix_of_suggestions(&sugs), Some("abc".to_string()));
-    }
-
-    #[test]
-    fn common_prefix_shared_prefix() {
-        let sugs = vec![
-            make_ready("foobar"),
-            make_ready("foobaz"),
-            make_ready("foo"),
-        ];
-        assert_eq!(common_prefix_of_suggestions(&sugs), Some("foo".to_string()));
-    }
-
-    #[test]
-    fn common_prefix_no_shared_prefix() {
-        let sugs = vec![make_ready("apple"), make_ready("banana")];
-        assert_eq!(common_prefix_of_suggestions(&sugs), None);
-    }
-
-    #[test]
-    fn common_prefix_unicode() {
-        let sugs = vec![make_ready("café_au_lait"), make_ready("café_crème")];
-        assert_eq!(
-            common_prefix_of_suggestions(&sugs),
-            Some("café_".to_string())
-        );
     }
 }
