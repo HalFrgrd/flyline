@@ -59,10 +59,14 @@ pub fn generate_welcome_action_line() -> Line<'static> {
     const TEXT: &str = "Press enter to start the tutorial";
 
     // Wave peak: travels 30 cols every 2 s → 15 cols/s; loops every 50 virtual cols.
+    // The text is only 33 chars wide, so the peak spends some of its loop period
+    // outside the visible text — giving intervals where the whole line is dim.
+    // Non-circular distance is intentional: no wrap-around continuity at the boundary.
     let elapsed_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f32())
         .unwrap_or(0.0);
+    // Virtual loop length is 50 columns; peak wraps to 0 after travelling 50 cols.
     let peak_pos = (elapsed_secs * 15.0) % 50.0;
 
     let spans: Vec<Span<'static>> = TEXT
