@@ -134,10 +134,10 @@ struct FlylineArgs {
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
     /// Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
-    #[arg(long = "send-shell-integration-codes", default_missing_value = "full", num_args = 0..=1)]
+    #[arg(long = "send-shell-integration-codes", default_missing_value = "only-prompt-pos", num_args = 0..=1)]
     send_shell_integration_codes: Option<settings::ShellIntegrationLevel>,
     /// Whether to request the use of extended (kitty-protocol) keyboard codes during startup.
-    /// Enabled by default; pass `--enable-extended-key-codes false` (or with no value) to
+    /// Enabled by default; pass `--enable-extended-key-codes false` to
     /// disable it on terminals that misbehave when the request is sent.
     #[arg(long = "enable-extended-key-codes", default_missing_value = "true", num_args = 0..=1)]
     enable_extended_key_codes: Option<bool>,
