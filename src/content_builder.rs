@@ -7,6 +7,54 @@ use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+/// Identifies a named clipboard slot for click-to-copy functionality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ClipboardTypes {
+    TutorialRecommendedSettings,
+}
+
+/// Encode `data` as a standard (RFC 4648) base64 string.
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut i = 0;
+    while i < data.len() {
+        let b0 = data[i] as u32;
+        let b1 = if i + 1 < data.len() {
+            data[i + 1] as u32
+        } else {
+            0
+        };
+        let b2 = if i + 2 < data.len() {
+            data[i + 2] as u32
+        } else {
+            0
+        };
+        out.push(CHARS[((b0 >> 2) & 0x3F) as usize] as char);
+        out.push(CHARS[(((b0 << 4) | (b1 >> 4)) & 0x3F) as usize] as char);
+        if i + 1 < data.len() {
+            out.push(CHARS[(((b1 << 2) | (b2 >> 6)) & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if i + 2 < data.len() {
+            out.push(CHARS[(b2 & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        i += 3;
+    }
+    out
+}
+
+/// Write an OSC 52 clipboard sequence for `text` to stdout, then flush.
+pub fn print_osc52(text: &str) {
+    use std::io::Write;
+    let encoded = base64_encode(text.as_bytes());
+    let _ = write!(std::io::stdout(), "\x1b]52;c;{}\x07", encoded);
+    let _ = std::io::stdout().flush();
+}
+
 /// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpanTag {
@@ -136,6 +184,7 @@ pub enum Tag {
     TutorialPrev,
     TutorialNext,
     Tutorial,
+    Clipboard(ClipboardTypes),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +221,8 @@ pub struct Contents {
     pub focus_row: Option<u16>,
     pub prompt_start: Option<Coord>,
     pub prompt_end: Option<Coord>,
+    /// Per-clipboard-type text payloads set up during content building.
+    pub clipboards: HashMap<ClipboardTypes, String>,
 }
 
 impl Contents {
@@ -188,12 +239,21 @@ impl Contents {
             focus_row: None,
             prompt_start: None,
             prompt_end: None,
+            clipboards: HashMap::new(),
         }
     }
 
     /// Set the focus row – the row that `get_row_range_to_show` will try to keep visible.
     pub fn set_focus_row(&mut self, row: u16) {
         self.focus_row = Some(row);
+    }
+
+    /// Append `text` to the clipboard slot identified by `clipboard_type`.
+    pub fn setup_clipboard(&mut self, clipboard_type: ClipboardTypes, text: String) {
+        self.clipboards
+            .entry(clipboard_type)
+            .or_default()
+            .push_str(&text);
     }
 
     /// Get the current cursor position (x, y)

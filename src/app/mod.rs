@@ -6,7 +6,7 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, MaybeProcessedSuggestion};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formated_buffer::{FormattedBuffer, format_buffer};
-use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
+use crate::content_builder::{ClipboardTypes, Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils::{split_line_to_terminal_rows, ts_to_timeago_string_5chars};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -281,6 +281,7 @@ impl DrawnContent {
                     | Tag::AiResult(_)
                     | Tag::TutorialPrev
                     | Tag::TutorialNext
+                    | Tag::Clipboard(_)
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
@@ -881,6 +882,9 @@ impl<'a> App<'a> {
             Some((tag @ Tag::TutorialNext, true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
+            Some((tag @ Tag::Clipboard(_), true)) => {
+                self.last_mouse_over_cell = Some(tag);
+            }
             Some((tag @ Tag::Ps1PromptCwd(_), _)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
@@ -975,6 +979,19 @@ impl<'a> App<'a> {
                         // The tutorial_step being NotRunning is sufficient.
                     }
                     return true;
+                }
+            }
+            Some(Tag::Clipboard(clipboard_type)) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if let Some(text) = self
+                        .last_contents
+                        .as_ref()
+                        .and_then(|c| c.contents.clipboards.get(&clipboard_type))
+                        .cloned()
+                    {
+                        crate::content_builder::print_osc52(&text);
+                        log::info!("Copied clipboard {:?} via OSC 52", clipboard_type);
+                    }
                 }
             }
             Some(Tag::Ps1PromptCwd(idx)) => {
@@ -1466,7 +1483,18 @@ impl<'a> App<'a> {
 
                 para.render(text_block, &mut text_buffer);
 
-                content.write_buffer(&text_buffer, Tag::Tutorial);
+                let text_tag = if self.settings.tutorial_step
+                    == crate::tutorial::TutorialStep::RecommendedSettings
+                {
+                    content.setup_clipboard(
+                        ClipboardTypes::TutorialRecommendedSettings,
+                        "settings placeholder".to_string(),
+                    );
+                    Tag::Clipboard(ClipboardTypes::TutorialRecommendedSettings)
+                } else {
+                    Tag::Tutorial
+                };
+                content.write_buffer(&text_buffer, text_tag);
 
                 content.render_block(
                     prev_block,
