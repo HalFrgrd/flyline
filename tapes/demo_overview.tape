@@ -94,7 +94,7 @@ Sleep 800ms
 Ctrl+C
 Sleep 800ms
 
-Type `# Flyline can call your command line agent to help you write commands`
+Type `# Flyline can interface with your AI agent to help you write commands`
 Enter
 Sleep 800ms
 Type "list files older than three days"
