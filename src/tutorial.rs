@@ -1,6 +1,7 @@
-use ratatui::style::Modifier;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use std::sync::LazyLock;
+use unicode_width::UnicodeWidthChar;
 
 use crate::bash_funcs;
 use crate::palette::Palette;
@@ -8,6 +9,82 @@ use crate::shell_integration;
 
 /// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
 const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
+
+/// Large block-art logo displayed on the welcome screen.
+const LOGO_LINES: &[&str] = &[
+    "",
+    "\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}             \u{2588}\u{2588}\u{2588}\u{2588}   \u{2588}\u{2588}\u{2588}                     ",
+    "\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}            \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2591}\u{2591}                      ",
+    " \u{2591}\u{2588}\u{2588}\u{2588}   \u{2588} \u{2591}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}    \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
+    " \u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}    \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}",
+    " \u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}\u{2588}    \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
+    " \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}     \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}  ",
+    " \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}       \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
+    "\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}       \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}   \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  \u{2591}\u{2591}\u{2591}\u{2591}\u{2591} \u{2591}\u{2591}\u{2591}\u{2591} \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  ",
+    "                    \u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}                                 ",
+    "                   \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}                                  ",
+    "                    \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}",
+];
+
+/// Truncates a `&str` to at most `max_width` display columns.
+/// Returns an owned `String` (which is always `'static`-compatible).
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    let mut cols = 0usize;
+    let mut byte_end = s.len();
+    for (byte_idx, ch) in s.char_indices() {
+        let ch_w = ch.width().unwrap_or(0);
+        if cols + ch_w > max_width {
+            byte_end = byte_idx;
+            break;
+        }
+        cols += ch_w;
+    }
+    s[..byte_end].to_string()
+}
+
+/// Returns the logo lines for the welcome screen, each truncated to `max_width` display columns.
+pub fn generate_welcome_logo_lines(max_width: u16) -> Vec<Line<'static>> {
+    LOGO_LINES
+        .iter()
+        .map(|&line| Line::from(truncate_to_width(line, max_width as usize)))
+        .collect()
+}
+
+/// Returns a [`Line`] whose characters each carry their own span.  The foreground
+/// brightness of every span follows a Gaussian wave that travels left-to-right
+/// at 15 columns per second and loops after 50 virtual positions.  Because the
+/// text is only 33 characters wide the wave peak is sometimes outside the
+/// visible text, giving periods where the whole line appears dim.
+pub fn generate_welcome_action_line() -> Line<'static> {
+    const TEXT: &str = "Press enter to start the tutorial";
+
+    // Wave peak: travels 30 cols every 2 s → 15 cols/s; loops every 50 virtual cols.
+    // The text is only 33 chars wide, so the peak spends some of its loop period
+    // outside the visible text — giving intervals where the whole line is dim.
+    // Non-circular distance is intentional: no wrap-around continuity at the boundary.
+    let elapsed_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f32())
+        .unwrap_or(0.0);
+    // Virtual loop length is 50 columns; peak wraps to 0 after travelling 50 cols.
+    let peak_pos = (elapsed_secs * 15.0) % 50.0;
+
+    let spans: Vec<Span<'static>> = TEXT
+        .chars()
+        .enumerate()
+        .map(|(i, ch)| {
+            // Gaussian falloff: sigma ≈ 4  →  2σ² = 32
+            let dist = (i as f32 - peak_pos).abs();
+            let intensity = (-dist * dist / 32.0_f32).exp();
+            // Brightness range: 80 (dim) … 255 (peak)
+            let brightness = (80.0 + 175.0 * intensity) as u8;
+            let style = Style::default().fg(Color::Rgb(brightness, brightness, brightness));
+            Span::styled(ch.to_string(), style)
+        })
+        .collect();
+
+    Line::from(spans)
+}
 
 /// Tracks progress through the interactive tutorial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -220,17 +297,8 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
 
     match step {
         TutorialStep::Welcome => {
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                "Welcome to flyline!",
-                text_style.add_modifier(Modifier::BOLD),
-            )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                "To start the tutorial, press Enter. Navigate by clicking on the buttons.",
-                text_style,
-            )));
+            // Rendered separately as a logo screen; not handled by this function.
+            return None;
         }
         TutorialStep::RecommendedSettings => {
             lines.push(Line::from(Span::styled(

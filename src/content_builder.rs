@@ -409,6 +409,13 @@ impl Contents {
         self.cursor_pos.col = 0;
     }
 
+    /// Move the cursor to a specific row and column.
+    /// Row is clamped to the last buffer row; col is clamped to `self.width`.
+    pub fn move_cursor_to(&mut self, row: u16, col: u16) {
+        self.cursor_pos.row = row.min(self.buf.len().saturating_sub(1) as u16);
+        self.cursor_pos.col = col.min(self.width);
+    }
+
     /// Move to the next line (carriage return + line feed)
     pub fn newline(&mut self) {
         self.cursor_pos.row += 1;

@@ -1433,7 +1433,25 @@ impl<'a> App<'a> {
 
         // Render tutorial text above the prompt when a tutorial step is active.
         if self.mode.is_running() {
-            if let Some(tutorial_lines) = crate::tutorial::generate_tutorial_text(
+            if self.settings.tutorial_step == tutorial::TutorialStep::Welcome {
+                // Welcome step: draw the large block-art logo, then overlay the
+                // animated action prompt in the lower-right of the logo.
+                let logo_lines = crate::tutorial::generate_welcome_logo_lines(width);
+                for line in logo_lines {
+                    content.write_tagged_line(&TaggedLine::from_line(line, Tag::Tutorial), true);
+                }
+
+                // Move to the second-to-last logo row, column 30, and overwrite
+                // with the wave-animated "Press enter to start the tutorial" text.
+                let second_to_last = content.height().saturating_sub(2);
+                content.move_cursor_to(second_to_last, 30);
+                let action_line = crate::tutorial::generate_welcome_action_line();
+                content
+                    .write_tagged_line(&TaggedLine::from_line(action_line, Tag::Tutorial), false);
+
+                content.move_to_final_line();
+                content.newline();
+            } else if let Some(tutorial_lines) = crate::tutorial::generate_tutorial_text(
                 self.settings.tutorial_step,
                 &self.settings.color_palette,
             ) {
