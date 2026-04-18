@@ -671,6 +671,9 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
 /// Run `command_path --help` (falling back to stderr when stdout is empty),
 /// parse the output, and then flesh out each discovered subcommand by running
 /// `command_path <subcommand> --help` and parsing those results too.
+/// Subcommands are explored iteratively using a work-stack so that nested
+/// subcommands (sub-sub-commands, etc.) are also populated, up to a maximum
+/// nesting depth of [`MAX_SUBCOMMAND_DEPTH`].
 ///
 /// The `name` field of the returned [`Command`] is always set to the basename
 /// of `command_path` so that the generated completion script uses the correct
@@ -678,7 +681,7 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
 pub fn synthesize_completion(command_path: &str) -> anyhow::Result<Command> {
     // ── top-level help ───────────────────────────────────────────────────────
     let top_help = run_help(command_path, &[])?;
-    let mut cmd = parse_help(&top_help);
+    let mut root = parse_help(&top_help);
 
     // Always use the basename of the supplied path as the canonical name.
     let cmd_name = std::path::Path::new(command_path)
@@ -686,33 +689,78 @@ pub fn synthesize_completion(command_path: &str) -> anyhow::Result<Command> {
         .and_then(|s| s.to_str())
         .unwrap_or(command_path)
         .to_string();
-    cmd.name = Some(cmd_name);
+    root.name = Some(cmd_name);
 
-    // ── subcommand help ──────────────────────────────────────────────────────
-    for sub in &mut cmd.subcommands {
-        if let Some(sub_name) = sub.name.clone() {
-            match run_help(command_path, &[&sub_name]) {
-                Ok(sub_help) if !sub_help.trim().is_empty() => {
-                    let parsed_sub = parse_help(&sub_help);
-                    sub.args = parsed_sub.args;
-                    sub.subcommands = parsed_sub.subcommands;
-                    if sub.description.is_none() {
-                        sub.description = parsed_sub.description;
-                    }
+    // ── iterative subcommand exploration ─────────────────────────────────────
+    // Each stack entry is a path of subcommand names from the root, e.g.
+    // `["remote", "add"]`.  We use this path both to locate the node in the
+    // `Command` tree and to build the argv for the `--help` invocation.
+    const MAX_SUBCOMMAND_DEPTH: usize = 10;
+
+    // Seed the stack with every top-level subcommand.
+    let mut stack: Vec<Vec<String>> = root
+        .subcommands
+        .iter()
+        .filter_map(|s| s.name.clone().map(|n| vec![n]))
+        .collect();
+
+    while let Some(path) = stack.pop() {
+        if path.len() > MAX_SUBCOMMAND_DEPTH {
+            continue;
+        }
+
+        // Build the argv slice for the help invocation.
+        let path_strs: Vec<&str> = path.iter().map(String::as_str).collect();
+        let help_output = match run_help(command_path, &path_strs) {
+            Ok(s) if !s.trim().is_empty() => s,
+            Ok(_) => continue,
+            Err(e) => {
+                log::debug!(
+                    "comp-spec-synthesis: skipping '{}': {}",
+                    path_strs.join(" "),
+                    e
+                );
+                continue;
+            }
+        };
+
+        let parsed = parse_help(&help_output);
+
+        // Navigate to the target node in the tree and update it.
+        if let Some(node) = find_subcommand_mut(&mut root, &path) {
+            // Push newly discovered sub-subcommands onto the stack before
+            // overwriting them so we can explore them later.
+            for child in &parsed.subcommands {
+                if let Some(child_name) = &child.name {
+                    let mut child_path = path.clone();
+                    child_path.push(child_name.clone());
+                    stack.push(child_path);
                 }
-                Ok(_) => {}
-                Err(e) => {
-                    log::debug!(
-                        "comp-spec-synthesis: skipping subcommand '{}': {}",
-                        sub_name,
-                        e
-                    );
-                }
+            }
+
+            node.args = parsed.args;
+            node.subcommands = parsed.subcommands;
+            if node.description.is_none() {
+                node.description = parsed.description;
             }
         }
     }
 
-    Ok(cmd)
+    Ok(root)
+}
+
+/// Navigate the [`Command`] tree following `path` (a slice of subcommand
+/// names) and return a mutable reference to the deepest node, or `None` if
+/// any step along the path cannot be found.
+fn find_subcommand_mut<'a>(root: &'a mut Command, path: &[String]) -> Option<&'a mut Command> {
+    let mut current = root;
+    for name in path {
+        current = current
+            .subcommands
+            .iter_mut()
+            .find(|s| s.name.as_deref() == Some(name.as_str()))?;
+    }
+    Some(current)
 }
 
 /// Invoke `command_path [extra_args...] --help` and return the combined output.
@@ -1958,6 +2006,192 @@ Options:
         assert!(
             diff_longs.contains(&"--stat"),
             "diff subcommand should have --stat"
+        );
+    }
+
+    // ── find_subcommand_mut ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_find_subcommand_mut_nested() {
+        // Build a two-level tree: root → child → grandchild.
+        let mut root = Command {
+            name: Some("root".to_string()),
+            description: None,
+            args: vec![],
+            subcommands: vec![Command {
+                name: Some("child".to_string()),
+                description: None,
+                args: vec![],
+                subcommands: vec![Command {
+                    name: Some("grandchild".to_string()),
+                    description: None,
+                    args: vec![],
+                    subcommands: vec![],
+                    author: None,
+                }],
+                author: None,
+            }],
+            author: None,
+        };
+
+        // Navigate to grandchild via find_subcommand_mut.
+        let path = vec!["child".to_string(), "grandchild".to_string()];
+        let node = find_subcommand_mut(&mut root, &path).expect("grandchild should be found");
+        assert_eq!(node.name.as_deref(), Some("grandchild"));
+
+        // Populate it with an arg.
+        node.args.push(Arg {
+            long: Some("--verbose".to_string()),
+            short: Some("-v".to_string()),
+            description: Some("Be verbose".to_string()),
+            value_type: None,
+            num_args: None,
+        });
+
+        // Verify through the tree.
+        let grandchild = root
+            .subcommands
+            .first()
+            .and_then(|c| c.subcommands.first())
+            .expect("grandchild should exist");
+        assert_eq!(grandchild.args.len(), 1);
+        assert_eq!(grandchild.args[0].long.as_deref(), Some("--verbose"));
+    }
+
+    #[test]
+    fn test_find_subcommand_mut_missing() {
+        let mut root = Command {
+            name: Some("root".to_string()),
+            description: None,
+            args: vec![],
+            subcommands: vec![],
+            author: None,
+        };
+        // A path that doesn't exist should return None.
+        let path = vec!["nonexistent".to_string()];
+        assert!(find_subcommand_mut(&mut root, &path).is_none());
+    }
+
+    // ── Nested subcommand synthesis (static simulation) ───────────────────────
+    //
+    // Verify the stack-based iteration finds sub-sub-commands.  We simulate
+    // a two-level subcommand tree (remote → add/set-url) and confirm that
+    // args are populated at both levels.
+
+    const GIT_REMOTE_HELP: &str = r#"Usage: git remote [OPTIONS] <COMMAND>
+
+Commands:
+  add      Add a remote
+  set-url  Changes URLs for the remote
+  remove   Remove a remote
+  rename   Rename a remote
+
+Options:
+  -v, --verbose    Be verbose
+  -h, --help       Print help
+"#;
+
+    const GIT_REMOTE_ADD_HELP: &str = r#"usage: git remote add <name> <url>
+
+    -f, --fetch        Fetch after adding the remote
+    -t, --track <branch>
+                       Track given branch
+    --tags             Import all tags
+    --no-tags          Do not import tags
+"#;
+
+    const GIT_REMOTE_SET_URL_HELP: &str = r#"usage: git remote set-url [--push] <name> <new-url>
+
+    --push             Manipulate push URLs
+    --add              Add URL to list
+    --delete           Delete URL
+"#;
+
+    #[test]
+    fn test_nested_subcommand_synthesis_simulation() {
+        // Build the initial top-level tree.
+        let mut top = parse_help(GIT_HELP);
+
+        // Inject the `remote` subcommand as if git --help had listed it.
+        top.subcommands.push(Command {
+            name: Some("remote".to_string()),
+            description: Some("Manage set of tracked repositories".to_string()),
+            args: vec![],
+            subcommands: vec![],
+            author: None,
+        });
+
+        // Run the stack-based exploration manually (mirrors synthesize_completion
+        // internals) over just the remote subtree.
+        const MAX_DEPTH: usize = 10;
+        let mut stack: Vec<Vec<String>> = vec![vec!["remote".to_string()]];
+
+        // Lookup table: path -> help string.
+        let help_for = |path: &[String]| -> Option<&str> {
+            match path {
+                [a] if a == "remote" => Some(GIT_REMOTE_HELP),
+                [a, b] if a == "remote" && b == "add" => Some(GIT_REMOTE_ADD_HELP),
+                [a, b] if a == "remote" && b == "set-url" => Some(GIT_REMOTE_SET_URL_HELP),
+                _ => None,
+            }
+        };
+
+        while let Some(path) = stack.pop() {
+            if path.len() > MAX_DEPTH {
+                continue;
+            }
+            let help = match help_for(&path) {
+                Some(h) => h,
+                None => continue,
+            };
+            let parsed = parse_help(help);
+            if let Some(node) = find_subcommand_mut(&mut top, &path) {
+                for child in &parsed.subcommands {
+                    if let Some(child_name) = &child.name {
+                        let mut child_path = path.clone();
+                        child_path.push(child_name.clone());
+                        stack.push(child_path);
+                    }
+                }
+                node.args = parsed.args;
+                node.subcommands = parsed.subcommands;
+            }
+        }
+
+        // remote itself should have --verbose.
+        let remote =
+            subcommand_by_name(&top, "remote").expect("remote subcommand should be present");
+        assert!(
+            long_names(remote).contains(&"--verbose"),
+            "remote should have --verbose"
+        );
+
+        // remote add should have --fetch.
+        let remote_add =
+            subcommand_by_name(remote, "add").expect("remote add subcommand should be present");
+        assert!(
+            long_names(remote_add).contains(&"--fetch"),
+            "remote add should have --fetch"
+        );
+        assert!(
+            short_names(remote_add).contains(&"-f"),
+            "remote add should have -f"
+        );
+        assert_eq!(
+            arg_by_long(remote_add, "--track").and_then(|a| a.value_type.as_deref()),
+            Some("branch")
+        );
+
+        // remote set-url should have --push.
+        let remote_set_url = subcommand_by_name(remote, "set-url")
+            .expect("remote set-url subcommand should be present");
+        assert!(
+            long_names(remote_set_url).contains(&"--push"),
+            "remote set-url should have --push"
+        );
+        assert!(
+            long_names(remote_set_url).contains(&"--delete"),
+            "remote set-url should have --delete"
         );
     }
 }
