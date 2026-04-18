@@ -701,6 +701,7 @@ impl DParser {
         c: char,
         just_inserted_pos: usize,
     ) -> Option<char> {
+        // Never auto-close inside a comment.
         if tokens.iter().any(|t| {
             t.token
                 .byte_range()
@@ -711,49 +712,10 @@ impl DParser {
             return None;
         }
 
-        // Special case: `$(` → `)`, `$((` → `)`, and `${` → `}` should auto-close even when
-        // typed inside a matched double-quoted string, because `$` expansions are active inside
-        // double quotes.  Single-quoted strings treat `$` as a literal, so this exemption does
-        // not apply there.  We still respect `is_before_word` to avoid wrapping existing tokens.
-        if matches!(c, '(' | '{') {
-            let is_inside_single_quote = tokens.iter().any(|t| {
-                if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
-                    if t.token.kind == TokenKind::SingleQuote {
-                        let open_end = t.token.byte_range().end;
-                        let close_start = tokens[close_idx].token.byte_range().start;
-                        return open_end <= just_inserted_pos && just_inserted_pos <= close_start;
-                    }
-                }
-                false
-            });
-            if !is_inside_single_quote {
-                let is_before_word = tokens.iter().any(|t| {
-                    t.token.kind.is_word() && t.token.byte_range().contains(&just_inserted_pos)
-                });
-                if !is_before_word {
-                    let prev_token_kind = tokens
-                        .iter()
-                        .rev()
-                        .find(|t| t.token.byte_range().end == just_inserted_pos)
-                        .map(|t| &t.token.kind);
-                    let closing = match (c, prev_token_kind) {
-                        ('(', Some(TokenKind::Dollar | TokenKind::CmdSubst)) => Some(')'),
-                        ('{', Some(TokenKind::Dollar)) => Some('}'),
-                        _ => None,
-                    };
-                    if closing.is_some() {
-                        return closing;
-                    }
-                }
-            }
-        }
-
-        // If the insertion point is inside a matched single- or double-quoted string, the typed
-        // character is just literal content – don't auto-close. For example, inserting `'` in the
-        // middle of `"abcde"` should not produce a closing `'`.
-        let is_inside_matched_string = tokens.iter().any(|t| {
+        // Compute context flags once and reuse throughout.
+        let is_inside_single_quote = tokens.iter().any(|t| {
             if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
-                if matches!(t.token.kind, TokenKind::Quote | TokenKind::SingleQuote) {
+                if t.token.kind == TokenKind::SingleQuote {
                     let open_end = t.token.byte_range().end;
                     let close_start = tokens[close_idx].token.byte_range().start;
                     return open_end <= just_inserted_pos && just_inserted_pos <= close_start;
@@ -761,9 +723,17 @@ impl DParser {
             }
             false
         });
-        if is_inside_matched_string {
-            return None;
-        }
+
+        let is_inside_double_quote = tokens.iter().any(|t| {
+            if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
+                if t.token.kind == TokenKind::Quote {
+                    let open_end = t.token.byte_range().end;
+                    let close_start = tokens[close_idx].token.byte_range().start;
+                    return open_end <= just_inserted_pos && just_inserted_pos <= close_start;
+                }
+            }
+            false
+        });
 
         // If a word token starts at or contains `just_inserted_pos`, we are inserting the quote
         // immediately before (or inside) an existing word. Auto-closing would wrap only an empty
@@ -772,6 +742,29 @@ impl DParser {
         let is_before_word = tokens
             .iter()
             .any(|t| t.token.kind.is_word() && t.token.byte_range().contains(&just_inserted_pos));
+
+        // Inside a matched quoted string the typed character is literal content – don't
+        // auto-close. Exception: `$` expansions are active inside double quotes, so `$(` → `)`
+        // and `${` → `}` are still auto-closed there (but not inside single quotes).
+        if is_inside_single_quote || is_inside_double_quote {
+            if is_inside_double_quote && !is_before_word && matches!(c, '(' | '{') {
+                let prev_token_kind = tokens
+                    .iter()
+                    .rev()
+                    .find(|t| t.token.byte_range().end == just_inserted_pos)
+                    .map(|t| &t.token.kind);
+                let closing = match (c, prev_token_kind) {
+                    ('(', Some(TokenKind::Dollar | TokenKind::CmdSubst)) => Some(')'),
+                    ('{', Some(TokenKind::Dollar)) => Some('}'),
+                    _ => None,
+                };
+                if closing.is_some() {
+                    return closing;
+                }
+            }
+            return None;
+        }
+
         if is_before_word {
             return None;
         }
