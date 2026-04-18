@@ -361,7 +361,6 @@ Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl
 
 ![Fuzzy history demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_history.gif)
 
-
 **Inline suggestions:**
 Inline suggestions appear as you type based on the most recent matching history entry. Accept them with `Right`/`End`.
 
@@ -381,8 +380,6 @@ Recommended settings
 - If keybindings are not working properly, you can debug by [Toggling Keyboard Shortcuts Troubleshooting](https://code.visualstudio.com/docs/configure/keybindings#_troubleshooting-keyboard-shortcuts).
 
 ## macOS
-> [!NOTE]
-> These notes are for when the terminal emulator is running on macOS and flyline is running within a remote Linux shell
 
 `Command+<KEY>` shortcuts are often captured by the terminal emulator and not forwarded to the shell.
 Two possible fixes are:
@@ -505,3 +502,27 @@ flyline set-color --default-theme light --matching-char "bold blue"
 flyline set-color --recognised-command "green" --unrecognised-command "bold red"
 flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
 ```
+
+## Keybindings
+
+List all keybindings with `flyline key list`.
+Flyline allows configurable keybindings with the `flyline key set [KEY SEQUENCE] [SCOPED ACTION]` subcommand.
+Certain actions are only possible in certain scopes.
+This allows a key sequence to trigger different actions under different circumstances.
+
+For instance:
+```bash
+flyline key set Enter default::submit_or_newline
+flyline key set Enter tab_completion::accept_entry        # defined last -> higher priority
+```
+When you press `Enter`, flyline will accept the tab completion entry if the `tab_completion` scope is active (i.e. if are currently browsing tab completion suggestions).
+If the `tab_completion` scope is not active, then it will try the next keybinding for `Enter` and run that action if the scope is active.
+The `default` is always active.
+
+It is possible to remap keys entirely with:
+```bash
+flyline key remap Alt Ctrl       # Pressing Alt now acts like pesssing Ctrl
+flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effectively swapped.
+```
+
+Tab completions exist for both key sequences and actions to make it easier to write keybindings.
