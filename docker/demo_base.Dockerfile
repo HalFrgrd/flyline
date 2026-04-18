@@ -34,7 +34,7 @@ RUN touch /home/john/.bashrc && \
     'alias ll="ls -alF"' \
     'export HISTTIMEFORMAT="%F %T  "' \
     'export HISTIGNORE="#*"' \
-    'PS1="\e[01;32m\u@\h\e[00m:\e[01;34m~\e[00m\$ "' \
+    'PS1="\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\$ "' \
     'RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
     'flyline --log-level trace' \
@@ -172,7 +172,6 @@ RUN touch /home/john/.bash_history && \
  '#1771881658' \
  'cargo test --lib foo::tests::' \
     >> /home/john/.bash_history
-
 
 COPY tapes/demo_settings.tape .
 COPY tapes/demo_setup.tape .
