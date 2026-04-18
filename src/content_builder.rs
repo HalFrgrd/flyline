@@ -17,32 +17,32 @@ pub enum ClipboardTypes {
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
-    let mut i = 0;
-    while i < data.len() {
-        let b0 = data[i] as u32;
-        let b1 = if i + 1 < data.len() {
-            data[i + 1] as u32
+    let mut pos = 0;
+    while pos < data.len() {
+        let b0 = data[pos] as u32;
+        let b1 = if pos + 1 < data.len() {
+            data[pos + 1] as u32
         } else {
             0
         };
-        let b2 = if i + 2 < data.len() {
-            data[i + 2] as u32
+        let b2 = if pos + 2 < data.len() {
+            data[pos + 2] as u32
         } else {
             0
         };
         out.push(CHARS[((b0 >> 2) & 0x3F) as usize] as char);
         out.push(CHARS[(((b0 << 4) | (b1 >> 4)) & 0x3F) as usize] as char);
-        if i + 1 < data.len() {
+        if pos + 1 < data.len() {
             out.push(CHARS[(((b1 << 2) | (b2 >> 6)) & 0x3F) as usize] as char);
         } else {
             out.push('=');
         }
-        if i + 2 < data.len() {
+        if pos + 2 < data.len() {
             out.push(CHARS[(b2 & 0x3F) as usize] as char);
         } else {
             out.push('=');
         }
-        i += 3;
+        pos += 3;
     }
     out
 }
