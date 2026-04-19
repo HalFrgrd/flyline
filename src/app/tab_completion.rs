@@ -307,36 +307,7 @@ pub(crate) fn gen_completions_internal(
                             .into_iter()
                             .map(|c| {
                                 let value = c.get_value().to_string_lossy().to_string();
-                                let description = if let Some(easing) =
-                                    CursorEasing::try_from_value_name(&value)
-                                {
-                                    match flag {
-                                        Some("--effect-easing") => {
-                                            SuggestionDescription::Animation(
-                                                cursor_effect_animation_frames(easing),
-                                            )
-                                        }
-                                        Some("--interpolate-easing") => {
-                                            SuggestionDescription::Animation(
-                                                easing_animation_frames(easing),
-                                            )
-                                        }
-                                        _ => {
-                                            let help = c
-                                                .get_help()
-                                                .map(|h| h.to_string())
-                                                .filter(|h| !h.is_empty());
-                                            match help {
-                                                Some(h) => {
-                                                    SuggestionDescription::Animation(vec![h])
-                                                }
-                                                None => {
-                                                    SuggestionDescription::Static(String::new())
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
+                                let help_description = || {
                                     let help = c
                                         .get_help()
                                         .map(|h| h.to_string())
@@ -346,6 +317,20 @@ pub(crate) fn gen_completions_internal(
                                         None => SuggestionDescription::Static(String::new()),
                                     }
                                 };
+                                let description =
+                                    match (flag, CursorEasing::try_from_value_name(&value)) {
+                                        (Some("--effect-easing"), Some(easing)) => {
+                                            SuggestionDescription::Animation(
+                                                cursor_effect_animation_frames(easing),
+                                            )
+                                        }
+                                        (Some("--interpolate-easing"), Some(easing)) => {
+                                            SuggestionDescription::Animation(
+                                                easing_animation_frames(easing),
+                                            )
+                                        }
+                                        _ => help_description(),
+                                    };
                                 let suffix = if value.ends_with('+') { " " } else { "" };
                                 MaybeProcessedSuggestion::Ready(
                                     ProcssedSuggestion::new(&value, "", suffix)
