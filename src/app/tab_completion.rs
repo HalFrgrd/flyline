@@ -81,7 +81,7 @@ impl PathPatternExpansion {
                 false,
                 false,
             );
-            let combined = format!("{}/{}", self.raw_prefix, quoted_rhs);
+            let combined = format!("{}{}{}", self.raw_prefix, if self.raw_prefix.is_empty() { "" } else { "/" }, quoted_rhs);
             (combined.clone(), quoted_rhs)
         } else {
             log::warn!(
@@ -977,6 +977,13 @@ impl App<'_> {
             "fl_comp_util_bashdefault --fallback-to-default *",
             &[&ProcssedSuggestion::new(r#"a.txt"#, "", " ")],
         );
+
+        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff2").unwrap();
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default \"ab*",
+            &[&ProcssedSuggestion::new(r#""abc (1).txt" "abc (2).txt""#, "", " ")],
+        );
+
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
