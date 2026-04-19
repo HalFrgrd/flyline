@@ -646,6 +646,10 @@ impl Contents {
     }
 
     pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, is_selected: bool) {
+        for _ in self.buf.len()..area.bottom() as usize {
+            self.increase_buf_single_row();
+        }
+
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
                 if let Some(row) = self.buf.get_mut(y as usize)
@@ -672,6 +676,15 @@ impl Contents {
                 self.write_tagged_span(&TaggedSpan::new(label_span, tag));
             }
         }
+    }
+
+    pub fn delete_rows(&mut self, start_row: u16, end_row: u16) {
+        // safely delete rows from start_row to end_row (exclusive), shifting up the rows below
+        if start_row >= end_row || start_row >= self.height() {
+            return;
+        }
+        let end_row = end_row.min(self.height());
+        self.buf.drain(start_row as usize..end_row as usize);
     }
 }
 

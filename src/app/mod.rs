@@ -1506,11 +1506,12 @@ impl<'a> App<'a> {
                     Constraint::Min(7),
                 ]);
 
-                let tutorial_start_row = content.height();
+                let tutorial_start_row = 1;
+                content.newline();
 
                 let [mut prev_block, text_block_outer, mut next_block] = Rect {
                     x: 0,
-                    y: tutorial_start_row,
+                    y: 0,
                     width,
                     height: BUTTON_HEIGHT,
                 }
@@ -1520,13 +1521,6 @@ impl<'a> App<'a> {
                     horizontal: 2,
                     vertical: 0,
                 });
-
-                // Allocate rows for the buttons before drawing them.
-                // `increase_buf_single_row` grows the buffer one row at a time, which is
-                // its existing public API for incremental allocation.
-                while content.buf.len() < (tutorial_start_row + BUTTON_HEIGHT) as usize {
-                    content.increase_buf_single_row();
-                }
 
                 // Draw prev and next buttons first.
                 let draw_prev_block = |block, content: &mut Contents| {
@@ -1591,11 +1585,8 @@ impl<'a> App<'a> {
                     content.set_cursor_col(text_block.x);
                 }
 
-                let drain_start = (text_end_row + 1) as usize;
-                let buttons_bottom_border = (tutorial_start_row + BUTTON_HEIGHT) as usize;
-                if drain_start < buttons_bottom_border {
-                    content.buf.drain(drain_start..buttons_bottom_border);
-                }
+                let drain_start = text_end_row + 2;
+                content.delete_rows(drain_start, tutorial_start_row + BUTTON_HEIGHT);
 
                 let final_height = content.height().max(7);
 
