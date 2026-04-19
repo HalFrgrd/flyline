@@ -5,6 +5,7 @@ use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
 use crate::content_utils::{ansi_string_to_spans, easing_animation_frames};
 use crate::cursor::{CursorEasing, cursor_effect_animation_frames};
+use crate::iter_first_last::FirstLast;
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
@@ -81,7 +82,12 @@ impl PathPatternExpansion {
                 false,
                 false,
             );
-            let combined = format!("{}{}{}", self.raw_prefix, if self.raw_prefix.is_empty() { "" } else { "/" }, quoted_rhs);
+            let combined = format!(
+                "{}{}{}",
+                self.raw_prefix,
+                if self.raw_prefix.is_empty() { "" } else { "/" },
+                quoted_rhs
+            );
             (combined.clone(), quoted_rhs)
         } else {
             log::warn!(
@@ -401,17 +407,28 @@ fn gen_secondary_completions(
             let completions_as_string = completions
                 .into_iter()
                 .map(|mut item| item.to_suggestion().s)
-                .fold(String::new(), |mut acc, s| {
-                    if !acc.is_empty() {
+                .flag_first_last()
+                .fold(String::new(), |mut acc, (is_first, is_last, s)| {
+                    if !is_first {
+                        acc.push(' ');
+                    }
+
+                    if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
+                        acc.push_str("\"");
+                    } else if comp_resultflags.quote_type == Some(QuoteType::SingleQuote) {
+                        acc.push_str("'");
+                    }
+
+                    acc.push_str(&s);
+
+                    if !is_last {
                         if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
-                            acc.push_str("\" ");
+                            acc.push_str("\"");
                         } else if comp_resultflags.quote_type == Some(QuoteType::SingleQuote) {
-                            acc.push_str("' ");
-                        } else {
-                            acc.push(' ');
+                            acc.push_str("'");
                         }
                     }
-                    acc.push_str(&s);
+
                     acc
                 });
             if completions_as_string.is_empty() {
@@ -420,15 +437,8 @@ fn gen_secondary_completions(
                     word_under_cursor
                 );
             } else {
-                // If the last completion is a directory (ends with '/'), don't
-                // append a trailing space so the cursor stays right after the slash.
-                let suffix = if completions_as_string.ends_with('/') {
-                    ""
-                } else {
-                    " "
-                };
                 return Some(
-                    ProcssedSuggestion::from_string_vec(vec![completions_as_string], "", suffix)
+                    ProcssedSuggestion::from_string_vec(vec![completions_as_string], "", "")
                         .into_iter()
                         .map(MaybeProcessedSuggestion::Ready)
                         .collect(),
@@ -981,9 +991,12 @@ impl App<'_> {
         std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff2").unwrap();
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default \"ab*",
-            &[&ProcssedSuggestion::new(r#""abc (1).txt" "abc (2).txt""#, "", " ")],
+            &[&ProcssedSuggestion::new(
+                r#""abc (1).txt" "abc (2).txt""#,
+                "",
+                " ",
+            )],
         );
-
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
