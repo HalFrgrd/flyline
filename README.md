@@ -358,6 +358,8 @@ When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>
 ### Dynamic descriptions
 If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab delimited frame at 24fps. Try `flyline set-cursor --effect-easing <Tab>` for an example.
 
+ANSI styling is supported in descriptions: any ANSI colour/style escape codes embedded in the tab-separated description text will be rendered as ratatui styled spans.
+
 Descriptions for files are the time since last modified.
 
 ### Automatically complete based on `--help`

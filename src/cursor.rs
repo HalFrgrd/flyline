@@ -3,6 +3,7 @@ use clap::ValueEnum;
 use easing_function::Easing as _;
 use easing_function::easings::StandardEasing;
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Span;
 use std::time::Instant;
 
 /// Cursor intensity used when the terminal has lost focus (or in modes where
@@ -114,17 +115,11 @@ pub fn fade_intensity(raw_t: f32, easing: CursorEasing) -> f32 {
     eased * 0.8 + 0.2
 }
 
-/// Map a normalised intensity ∈ [0.2, 1.0] to a Unicode block-shading character.
-fn intensity_to_block_char(intensity: f32) -> char {
-    if intensity < 0.35 {
-        '░'
-    } else if intensity < 0.55 {
-        '▒'
-    } else if intensity < 0.75 {
-        '▓'
-    } else {
-        '█'
-    }
+/// Map a normalised intensity ∈ [0.2, 1.0] to an Rgb colour value scaled from
+/// full white (255, 255, 255).
+fn intensity_to_rgb(intensity: f32) -> Color {
+    let v = (intensity * 255.0) as u8;
+    Color::Rgb(v, v, v)
 }
 
 /// Number of frames in each half of the cursor effect ping-pong animation.
@@ -133,22 +128,30 @@ const CURSOR_ANIM_HALF_FRAMES: usize = 16;
 /// Build ping-pong animation frames that show a block cursor fading in and out
 /// using `easing` to shape the intensity transition.
 ///
-/// Returns `2 * CURSOR_ANIM_HALF_FRAMES - 2` frames, each a single
-/// block-shading character (`░`, `▒`, `▓`, or `█`).
-pub fn cursor_effect_animation_frames(easing: CursorEasing) -> Vec<String> {
+/// Returns `2 * CURSOR_ANIM_HALF_FRAMES - 2` frames.  Each frame is a single
+/// space character whose background colour is set to the appropriate grey
+/// intensity, replacing the former block-shading-character approach.
+pub fn cursor_effect_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> {
     let half = CURSOR_ANIM_HALF_FRAMES;
     let total_frames = half * 2 - 2;
     let mut frames = Vec::with_capacity(total_frames);
 
+    let make_frame = |intensity: f32| -> Vec<Span<'static>> {
+        vec![Span::styled(
+            " ",
+            Style::new().bg(intensity_to_rgb(intensity)),
+        )]
+    };
+
     // Forward: raw_t goes 0 (dim) → 1 (bright)
     for i in 0..half {
         let raw_t = i as f32 / (half - 1) as f32;
-        frames.push(intensity_to_block_char(fade_intensity(raw_t, easing)).to_string());
+        frames.push(make_frame(fade_intensity(raw_t, easing)));
     }
     // Backward: raw_t goes from second-to-last back to 0 (skipping endpoints to avoid repeats)
     for i in (1..half - 1).rev() {
         let raw_t = i as f32 / (half - 1) as f32;
-        frames.push(intensity_to_block_char(fade_intensity(raw_t, easing)).to_string());
+        frames.push(make_frame(fade_intensity(raw_t, easing)));
     }
 
     frames

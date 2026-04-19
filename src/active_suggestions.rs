@@ -1,7 +1,7 @@
 use crate::bash_funcs;
 use crate::content_utils::{
-    easing_animation_frames, highlight_matching_indices, middle_truncate_spans, truncate_to_width,
-    ts_to_timeago_string_5chars, vec_spans_width,
+    ansi_string_to_spans, easing_animation_frames, highlight_matching_indices,
+    middle_truncate_spans, take_prefix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
 };
 use crate::cursor::CursorEasing;
 use crate::palette::Palette;
@@ -26,10 +26,12 @@ pub(crate) const COLUMN_PADDING: usize = 2;
 /// `LastMTime` > `EasingFunc` > `Animation` > `Static`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SuggestionDescription {
-    /// A single static string.  An empty string means no description is shown.
-    Static(String),
+    /// Pre-processed spans for a single static description.  An empty vec
+    /// means no description is shown.
+    Static(Vec<Span<'static>>),
     /// A multi-frame animated description.  Frames are cycled at ~24 fps.
-    Animation(Vec<String>),
+    /// Each frame is a pre-processed sequence of styled spans.
+    Animation(Vec<Vec<Span<'static>>>),
     /// Last-modification time of the associated file (Unix timestamp).
     /// Rendered as a right-aligned, ≤5-character "time ago" string.
     LastMTime(u64),
@@ -39,25 +41,27 @@ impl SuggestionDescription {
     /// Maximum display width (in terminal columns) across all frames.
     pub fn max_width(&self) -> usize {
         match self {
-            SuggestionDescription::Static(s) => s.width(),
+            SuggestionDescription::Static(spans) => vec_spans_width(spans),
             SuggestionDescription::Animation(frames) => {
-                frames.iter().map(|f| f.width()).max().unwrap_or(0)
+                frames.iter().map(|f| vec_spans_width(f)).max().unwrap_or(0)
             }
             SuggestionDescription::LastMTime(_) => 5,
         }
     }
 
-    /// Returns the string to display for `frame_index`, or `None` when the
+    /// Returns the spans to display for `frame_index`, or `None` when the
     /// description is empty.
-    pub fn frame_at(&self, frame_index: usize) -> Option<String> {
+    pub fn frame_at(&self, frame_index: usize) -> Option<Vec<Span<'static>>> {
         match self {
-            SuggestionDescription::Static(s) if s.is_empty() => None,
-            SuggestionDescription::Static(s) => Some(s.clone()),
+            SuggestionDescription::Static(spans) if spans.is_empty() => None,
+            SuggestionDescription::Static(spans) => Some(spans.clone()),
             SuggestionDescription::Animation(frames) if frames.is_empty() => None,
             SuggestionDescription::Animation(frames) => {
                 Some(frames[frame_index % frames.len()].clone())
             }
-            SuggestionDescription::LastMTime(ts) => Some(ts_to_timeago_string_5chars(*ts)),
+            SuggestionDescription::LastMTime(ts) => {
+                Some(vec![Span::raw(ts_to_timeago_string_5chars(*ts))])
+            }
         }
     }
 }
@@ -80,13 +84,14 @@ pub struct SuggestionFormatted {
     /// widest description frame so that the column does not resize during animation.
     pub display_width: usize,
     pub spans: Vec<Span<'static>>,
-    /// Raw description text for the current animation frame (empty if there is
+    /// Pre-processed description spans for the current animation frame (empty if there is
     /// no description). Truncation is decided at render time according to the
     /// available column width.
-    description_frame: String,
-    /// Style to apply to `description_frame` when rendered.
+    description_frame: Vec<Span<'static>>,
+    /// Style applied as a base when rendering description spans (patched by each
+    /// span's own style so that ANSI-encoded colours take precedence).
     description_style: Style,
-    /// Width of the current description frame text (excluding the separator).
+    /// Width of the current description frame (excluding the separator).
     description_frame_width: usize,
 }
 
@@ -123,9 +128,9 @@ impl SuggestionFormatted {
         let description_style = palette.secondary_text();
         let (description_frame, description_frame_width) =
             match suggestion.description.frame_at(frame_index) {
-                None => (String::new(), 0),
+                None => (vec![], 0),
                 Some(frame) => {
-                    let width = frame.width();
+                    let width = vec_spans_width(&frame);
                     (frame, width)
                 }
             };
@@ -223,8 +228,13 @@ impl SuggestionFormatted {
         // Append description if there is space for it.
         if desc_render_width > 0 {
             spans.push(Span::raw(Self::DESCRIPTION_SEPARATOR));
-            let (desc_text, _) = truncate_to_width(&self.description_frame, desc_render_width);
-            spans.push(Span::styled(desc_text, self.description_style));
+            let truncated = take_prefix_of_spans(&self.description_frame, desc_render_width);
+            for span in truncated {
+                spans.push(Span::styled(
+                    span.content,
+                    self.description_style.patch(span.style),
+                ));
+            }
         }
 
         spans
@@ -330,7 +340,7 @@ mod description_tests {
     fn suggestion_with_description_formatted_omits_description() {
         // formatted() must only include what gets inserted (s + prefix + suffix).
         let sug = ProcssedSuggestion::new("cmd", "", " ").with_description(
-            SuggestionDescription::Animation(vec!["description text".to_string()]),
+            SuggestionDescription::Animation(vec![vec![Span::raw("description text")]]),
         );
         assert_eq!(sug.formatted(), "cmd ");
         assert!(!sug.formatted().contains("description"));
@@ -340,9 +350,9 @@ mod description_tests {
     fn description_frame_cycling() {
         let sug = ProcssedSuggestion::new("x", "", "").with_description(
             SuggestionDescription::Animation(vec![
-                "a".to_string(),
-                "b".to_string(),
-                "c".to_string(),
+                vec![Span::raw("a")],
+                vec![Span::raw("b")],
+                vec![Span::raw("c")],
             ]),
         );
         let palette = crate::palette::Palette::default();
@@ -353,18 +363,18 @@ mod description_tests {
         // Frame 3 wraps back to frame 0.
         let f3 = SuggestionFormatted::new(&sug, 0, vec![], &palette, 3);
 
-        assert_eq!(f0.description_frame, "a");
-        assert_eq!(f1.description_frame, "b");
-        assert_eq!(f2.description_frame, "c");
-        assert_eq!(f3.description_frame, "a");
+        assert_eq!(f0.description_frame, vec![Span::raw("a")]);
+        assert_eq!(f1.description_frame, vec![Span::raw("b")]);
+        assert_eq!(f2.description_frame, vec![Span::raw("c")]);
+        assert_eq!(f3.description_frame, vec![Span::raw("a")]);
     }
 
     #[test]
     fn display_width_stable_across_frames() {
         let sug = ProcssedSuggestion::new("abc", "", "").with_description(
             SuggestionDescription::Animation(vec![
-                "short".to_string(),
-                "a much longer description".to_string(),
+                vec![Span::raw("short")],
+                vec![Span::raw("a much longer description")],
             ]),
         );
         let palette = crate::palette::Palette::default();
@@ -398,17 +408,18 @@ mod description_tests {
             .with_description(SuggestionDescription::LastMTime(0));
         let frame = sug.description.frame_at(0);
         assert!(frame.is_some());
-        let s = frame.unwrap();
-        assert_eq!(s.width(), 5, "LastMTime frame must be exactly 5 chars wide");
+        let spans = frame.unwrap();
+        let total_width: usize = spans.iter().map(|s| s.width()).sum();
+        assert_eq!(
+            total_width, 5,
+            "LastMTime frame must be exactly 5 chars wide"
+        );
     }
 
     #[test]
     fn static_empty_description_is_empty() {
         let sug = ProcssedSuggestion::new("foo", "", "");
-        assert_eq!(
-            sug.description,
-            SuggestionDescription::Static(String::new())
-        );
+        assert_eq!(sug.description, SuggestionDescription::Static(vec![]));
         assert_eq!(sug.description.max_width(), 0);
         assert!(sug.description.frame_at(0).is_none());
     }
@@ -416,11 +427,11 @@ mod description_tests {
     #[test]
     fn static_nonempty_description_frame() {
         let sug = ProcssedSuggestion::new("foo", "", "")
-            .with_description(SuggestionDescription::Static("hello".to_string()));
+            .with_description(SuggestionDescription::Static(vec![Span::raw("hello")]));
         assert_eq!(sug.description.max_width(), 5);
-        assert_eq!(sug.description.frame_at(0), Some("hello".to_string()));
+        assert_eq!(sug.description.frame_at(0), Some(vec![Span::raw("hello")]));
         // frame_at is stable for any index
-        assert_eq!(sug.description.frame_at(99), Some("hello".to_string()));
+        assert_eq!(sug.description.frame_at(99), Some(vec![Span::raw("hello")]));
     }
 }
 
@@ -435,7 +446,7 @@ impl ProcssedSuggestion {
             prefix: prefix.into(),
             suffix: suffix.into(),
             style: None,
-            description: SuggestionDescription::Static(String::new()),
+            description: SuggestionDescription::Static(vec![]),
         }
     }
 
@@ -649,9 +660,14 @@ pub fn post_process_completion(
     } else if let Some(easing) = CursorEasing::try_from_value_name(&sug) {
         SuggestionDescription::Animation(easing_animation_frames(easing))
     } else if !desc_frames.is_empty() {
-        SuggestionDescription::Animation(desc_frames)
+        SuggestionDescription::Animation(
+            desc_frames
+                .into_iter()
+                .map(|f| ansi_string_to_spans(&f))
+                .collect(),
+        )
     } else {
-        SuggestionDescription::Static(String::new())
+        SuggestionDescription::Static(vec![])
     };
 
     let suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();

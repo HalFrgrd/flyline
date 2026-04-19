@@ -1,31 +1,12 @@
 use crate::{cursor::CursorEasing, palette::Palette};
+use ansi_to_tui::IntoText;
 use itertools::Itertools;
 use ratatui::prelude::*;
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
 
 pub fn vec_spans_width(spans: &[Span<'static>]) -> usize {
     spans.iter().map(|s| s.width()).sum()
-}
-
-/// Truncate `s` so that it fits within `max_width` terminal columns.
-/// Returns the (possibly shortened) string and its actual rendered width.
-pub fn truncate_to_width(s: &str, max_width: usize) -> (String, usize) {
-    let total = s.width();
-    if total <= max_width {
-        return (s.to_string(), total);
-    }
-    let mut out = String::new();
-    let mut acc = 0usize;
-    for g in s.graphemes(true) {
-        let grapheme_width: usize = g.chars().map(|c| c.width().unwrap_or(0)).sum();
-        if acc + grapheme_width > max_width {
-            break;
-        }
-        out.push_str(g);
-        acc += grapheme_width;
-    }
-    (out, acc)
 }
 
 pub fn take_prefix_of_spans(spans: &[Span<'static>], mut n: usize) -> Vec<Span<'static>> {
@@ -379,18 +360,31 @@ const EASING_ANIM_TOTAL_WIDTH: usize = 7;
 /// Number of frames in each half of the ping-pong animation (forward + backward).
 const EASING_ANIM_HALF_FRAMES: usize = 16;
 
+/// Convert an ANSI-escaped string into a flat list of styled [`Span`]s.
+///
+/// The string is parsed through [`ansi_to_tui`] so that ANSI colour/style
+/// codes are converted to ratatui span styles.  If parsing fails the raw text
+/// is returned as a single unstyled span.  Spans from all resulting lines are
+/// flattened into one sequence (descriptions are expected to be single-line).
+pub fn ansi_string_to_spans(s: &str) -> Vec<Span<'static>> {
+    match s.to_owned().into_text() {
+        Ok(text) => text.lines.into_iter().flat_map(|l| l.spans).collect(),
+        Err(_) => vec![Span::raw(s.to_owned())],
+    }
+}
+
 /// Build the ping-pong animation frames for the given easing function.
 ///
 /// Returns `2 * EASING_ANIM_HALF_FRAMES - 2` frames showing a dot (`·`) that
 /// travels from the left edge to the right and back, using `easing` for the
-/// position curve in both directions.
-pub fn easing_animation_frames(easing: CursorEasing) -> Vec<String> {
+/// position curve in both directions.  Each frame is a `Vec<Span<'static>>`.
+pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> {
     let half = EASING_ANIM_HALF_FRAMES;
     let dot_range = (EASING_ANIM_TOTAL_WIDTH - 1) as f32;
     let total_frames = half * 2 - 2;
     let mut frames = Vec::with_capacity(total_frames);
 
-    let make_frame = |pos: usize| -> String {
+    let make_frame = |pos: usize| -> Vec<Span<'static>> {
         let mut s = String::with_capacity(EASING_ANIM_TOTAL_WIDTH);
         for j in 0..EASING_ANIM_TOTAL_WIDTH {
             if j == pos {
@@ -399,7 +393,7 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<String> {
                 s.push(' ');
             }
         }
-        s
+        vec![Span::raw(s)]
     };
 
     // Forward: t goes 0 → 1
