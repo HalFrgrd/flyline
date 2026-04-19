@@ -406,9 +406,9 @@ fn gen_secondary_completions(
             // Process each item eagerly here since we need the final text.
             let completions_as_string = completions
                 .into_iter()
-                .map(|mut item| item.to_suggestion().s)
+                .map(|mut item| item.to_suggestion())
                 .flag_first_last()
-                .fold(String::new(), |mut acc, (is_first, is_last, s)| {
+                .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
                     if !is_first {
                         acc.push(' ');
                     }
@@ -419,7 +419,7 @@ fn gen_secondary_completions(
                         acc.push_str("'");
                     }
 
-                    acc.push_str(&s);
+                    acc.push_str(&sug.s);
 
                     if !is_last {
                         if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
@@ -427,6 +427,8 @@ fn gen_secondary_completions(
                         } else if comp_resultflags.quote_type == Some(QuoteType::SingleQuote) {
                             acc.push_str("'");
                         }
+                    } else {
+                        acc.push_str(&sug.suffix);
                     }
 
                     acc
@@ -437,12 +439,9 @@ fn gen_secondary_completions(
                     word_under_cursor
                 );
             } else {
-                return Some(
-                    ProcssedSuggestion::from_string_vec(vec![completions_as_string], "", "")
-                        .into_iter()
-                        .map(MaybeProcessedSuggestion::Ready)
-                        .collect(),
-                );
+                return Some(vec![MaybeProcessedSuggestion::Ready(
+                    ProcssedSuggestion::new(completions_as_string, "", ""),
+                )]);
             }
         }
         Some(tab_completion_context::SecondaryCompType::FilenameExpansion) => {

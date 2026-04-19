@@ -440,13 +440,15 @@ impl ProcssedSuggestion {
         prefix: P,
         suffix: X,
     ) -> Self {
-        ProcssedSuggestion {
+        let p = ProcssedSuggestion {
             s: s.into(),
             prefix: prefix.into(),
             suffix: suffix.into(),
             style: None,
             description: SuggestionDescription::Static(vec![]),
-        }
+        };
+        log::debug!("Created new ProcssedSuggestion: {:?}", p);
+        p
     }
 
     /// Set the description on this suggestion.
@@ -578,13 +580,13 @@ pub(crate) fn split_completion_description(raw: &str) -> (&str, Vec<String>) {
 pub fn post_process_completion(
     raw_sug: &str,
     mut path_to_use: Option<std::path::PathBuf>,
-    comp_resultflags: bash_funcs::CompletionFlags,
+    comp_result_flags: bash_funcs::CompletionFlags,
     word_under_cursor: &str,
 ) -> ProcssedSuggestion {
     let (sug, desc_frames) = split_completion_description(raw_sug);
     let mut sug = sug.to_string();
 
-    if comp_resultflags.filename_completion_desired {
+    if comp_result_flags.filename_completion_desired {
         if path_to_use.is_none() {
             path_to_use = Some(std::path::PathBuf::from(bash_funcs::fully_expand_path(
                 &sug,
@@ -595,28 +597,28 @@ pub fn post_process_completion(
     let suffix_char = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
         sug = format!("{}/", sug);
         None
-    } else if comp_resultflags.quote_type.is_some_and(|q| {
+    } else if comp_result_flags.quote_type.is_some_and(|q| {
         q == bash_funcs::QuoteType::SingleQuote || q == bash_funcs::QuoteType::DoubleQuote
     }) {
         // If we put a space after a filename that is quoted, bash thinks we want a filename ending in a space.
         None
-    } else if comp_resultflags.no_suffix_desired {
+    } else if comp_result_flags.no_suffix_desired {
         None
-    } else if comp_resultflags.suffix_character == ' ' {
+    } else if comp_result_flags.suffix_character == ' ' {
         if sug.ends_with(" ") { None } else { Some(' ') }
     } else {
-        Some(comp_resultflags.suffix_character)
+        Some(comp_result_flags.suffix_character)
     };
 
-    let quoted = if comp_resultflags.filename_quoting_desired
-        && comp_resultflags.filename_completion_desired
+    let quoted = if comp_result_flags.filename_quoting_desired
+        && comp_result_flags.filename_completion_desired
     {
         if !word_under_cursor.is_empty()
             && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
         {
             let quoted_suffix = bash_funcs::quoting_function_rust(
                 new_suffix,
-                comp_resultflags.quote_type.unwrap_or_default(),
+                comp_result_flags.quote_type.unwrap_or_default(),
                 true,
                 false,
             );
@@ -624,7 +626,7 @@ pub fn post_process_completion(
         } else {
             bash_funcs::quoting_function_rust(
                 &sug,
-                comp_resultflags.quote_type.unwrap_or_default(),
+                comp_result_flags.quote_type.unwrap_or_default(),
                 true,
                 false,
             )
@@ -634,9 +636,10 @@ pub fn post_process_completion(
     };
 
     log::debug!(
-        "Post-processing completion: raw_sug={:?}, quoted={:?}",
+        "Post-processing completion: raw_sug={:?}, quoted={:?} suffix_char={:?}",
         raw_sug,
-        quoted
+        quoted,
+        &suffix_char
     );
 
     let style = path_to_use
@@ -1093,7 +1096,10 @@ impl ActiveSuggestions {
             [single_suggestion] => {
                 let suggestion = single_suggestion.to_suggestion();
                 self.accept_item(&suggestion, buffer);
-                log::debug!("Only one completion found: auto-accepted");
+                log::debug!(
+                    "Only one completion found: auto-accepted '{:?}'",
+                    suggestion
+                );
                 return None;
             }
             _ => {}
