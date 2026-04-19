@@ -193,6 +193,15 @@ impl Default for TaggedCell {
     }
 }
 
+/// Wrap `grapheme` in an OSC 8 hyperlink sequence for the given `url`.
+///
+/// The resulting string, when written to a terminal cell, causes
+/// supporting terminals to render `grapheme` as a clickable link:
+/// `ESC ] 8 ; ; url ST  grapheme  ESC ] 8 ; ; ST`
+fn osc8_hyperlink(url: &str, grapheme: &str) -> String {
+    format!("\x1b]8;;{url}\x1b\\{grapheme}\x1b]8;;\x1b\\")
+}
+
 impl TaggedCell {
     pub fn update(&mut self, graph: &StyledGrapheme, tag: Tag) {
         self.cell.set_symbol(graph.symbol).set_style(graph.style);
@@ -334,7 +343,7 @@ impl Contents {
                 if let Tag::HyperLink(url) = &tag {
                     // Wrap the grapheme in an OSC 8 hyperlink sequence so the
                     // terminal emulator renders it as a clickable link.
-                    let linked = format!("\x1b]8;;{url}\x1b\\{}\x1b]8;;\x1b\\", graph.symbol);
+                    let linked = osc8_hyperlink(url, graph.symbol);
                     cell.cell.set_symbol(&linked).set_style(graph.style);
                 } else {
                     cell.cell.set_symbol(graph.symbol).set_style(graph.style);

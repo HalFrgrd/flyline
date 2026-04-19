@@ -1573,10 +1573,9 @@ impl<'a> App<'a> {
                         let is_hovered = if let (
                             SpanTag::Constant(Tag::Clipboard(span_cb)),
                             Some(Tag::Clipboard(hover_cb)),
-                        ) =
-                            (&tagged_span.tag, self.last_mouse_over_cell.clone())
+                        ) = (&tagged_span.tag, &self.last_mouse_over_cell)
                         {
-                            span_cb == &hover_cb
+                            span_cb == hover_cb
                         } else {
                             false
                         };
