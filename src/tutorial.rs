@@ -232,11 +232,6 @@ fn zsh_history_recently_modified() -> bool {
 static SHOULD_RECOMMEND_ZSH_HISTORY: LazyLock<bool> =
     LazyLock::new(|| default_shell_is_zsh() || zsh_history_recently_modified());
 
-static RPS1_IS_SET: LazyLock<bool> = LazyLock::new(|| {
-    bash_funcs::get_envvar_value("RPS1").is_some_and(|v| !v.is_empty())
-        || bash_funcs::get_envvar_value("RPROMPT").is_some_and(|v| !v.is_empty())
-});
-
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
 pub fn generate_tutorial_text(
@@ -358,7 +353,10 @@ pub fn generate_tutorial_text(
                 ]));
             }
 
-            if !*RPS1_IS_SET {
+            let rps1_set = bash_funcs::get_envvar_value("RPS1").is_some_and(|v| !v.is_empty())
+                || bash_funcs::get_envvar_value("RPROMPT").is_some_and(|v| !v.is_empty());
+
+            if !rps1_set {
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
                 lines.push(tl(Span::styled(
                     "💡 How about showing the time in your right prompt:",
