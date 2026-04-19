@@ -119,12 +119,13 @@ pub enum TutorialStep {
     Autocompletions,
     AutoClosing,
     FineGrainDeletion,
+    AgentMode,
     FontDetection,
     End,
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 12] = [
+    const STEPS_IN_ORDER: [TutorialStep; 13] = [
         TutorialStep::Welcome,
         TutorialStep::TutorialsTutorial,
         TutorialStep::RecommendedSettings,
@@ -134,6 +135,7 @@ impl TutorialStep {
         TutorialStep::Autocompletions,
         TutorialStep::AutoClosing,
         TutorialStep::FineGrainDeletion,
+        TutorialStep::AgentMode,
         TutorialStep::FontDetection,
         TutorialStep::End,
         TutorialStep::NotRunning,
@@ -517,16 +519,27 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Toggle this feature with `flyline --auto-close-chars true/false`.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(
+                    Span::styled("Toggle this feature with ", text_style),
+                    Tag::Tutorial,
+                ),
+                ts_copiable(
+                    "flyline --auto-close-chars true/false".to_string(),
+                    ClipboardTypes::TutorialAutoClose,
+                ),
+                TaggedSpan::new(Span::styled(".", text_style), Tag::Tutorial),
+            ]));
         }
         TutorialStep::FineGrainDeletion => {
             lines.push(tl(Span::styled("Fine-Grained Deletion", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Ctrl+Backspace deletes one whitespace-delimited word to the left, and Alt+Backspace deletes one chunk to the left using finer punctuation or path-segment boundaries.",
+                "Ctrl+Backspace deletes one whitespace-delimited word to the left.",
+                text_style,
+            )));
+            lines.push(tl(Span::styled(
+                "Alt+Backspace deletes one chunk to the left using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
@@ -546,11 +559,35 @@ pub fn generate_tutorial_text(
                 ),
             ]));
         }
+        TutorialStep::AgentMode => {
+            lines.push(tl(Span::styled("Agent Mode", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
+                "Flyline can interface with your AI agent to help you write commands.",
+                text_style,
+            )));
+            lines.push(tl(Span::styled(
+                "Try activating agent mode and get help setting it up.",
+                text_style,
+            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("Type ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "list files older than three days".to_string(),
+                    ClipboardTypes::TuorialAgentMode,
+                ),
+                TaggedSpan::new(
+                    Span::styled(" and press Alt+Enter.", text_style),
+                    Tag::Tutorial,
+                ),
+            ]));
+            lines.push(empty());
+        }
         TutorialStep::FontDetection => {
             lines.push(tl(Span::styled("Font Detection", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Optional: for the best terminal experience, use a font that supports the Unicode legacy computing symbols (U+1FB00-U+1FB3B).",
+                "Optional: For the best terminal experience, use a font that supports the Unicode legacy computing symbols (U+1FB00-U+1FB3B).",
                 text_style,
             )));
             lines.push(empty());

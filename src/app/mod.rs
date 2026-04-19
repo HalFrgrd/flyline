@@ -2079,18 +2079,13 @@ impl<'a> App<'a> {
                     content.newline();
                     content.write_tagged_span(&TaggedSpan::new(
                         Span::styled(
-                            format!("Buffer with prefix: {}", suggested),
+                            format!(
+                                "Press Enter to launch agent mode with this prefixed buffer: {}",
+                                suggested
+                            ),
                             self.settings.color_palette.secondary_text(),
                         ),
                         Tag::Normal,
-                    ));
-                    content.newline();
-                    content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(
-                            "Press Enter to launch agent mode with this buffer.",
-                            self.settings.color_palette.secondary_text(),
-                        ),
-                        Tag::Blank,
                     ));
                 } else {
                     if !raw_output.is_empty() {

@@ -8,19 +8,19 @@
 # Copilot
 flyline set-agent-mode \
     --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
-    --trigger-prefix ': '
+    --trigger-prefix ': ' \
     --command 'copilot --reasoning-effort low --prompt'
 
 # Claude has a --system-prompt flag so we could use that instead of making flyline prepend its system prompt, but for consistency with other agents we'll just prepend the system prompt in flyline.
 flyline set-agent-mode \
     --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
-    --trigger-prefix ': '
+    --trigger-prefix ': ' \
     --command 'claude --effort low --prompt'
 
 # Codex:
 flyline set-agent-mode \
     --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
-    --trigger-prefix ': '
+    --trigger-prefix ': ' \
     --command 'codex -a never exec -m GPT-5.1-Codex-Mini --skip-git-repo-check --ephemeral --color always'
 
 # Feel free to add more agent examples!
