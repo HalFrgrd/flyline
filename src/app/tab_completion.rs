@@ -3,6 +3,8 @@ use crate::active_suggestions::{
 };
 use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
+use crate::content_utils::easing_animation_frames;
+use crate::cursor::{CursorEasing, cursor_effect_animation_frames};
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
@@ -244,6 +246,17 @@ fn post_process_completions(
         .collect()
 }
 
+/// Returns the last `--long-option` flag found in `cmd_before_cursor`.
+///
+/// Used to detect which flag's value is currently being completed so that
+/// animated descriptions can be tailored to the flag (e.g. `--effect-easing`
+/// or `--interpolate-easing`).
+fn preceding_flyline_flag(cmd_before_cursor: &str) -> Option<&str> {
+    cmd_before_cursor
+        .split_whitespace()
+        .rfind(|w| w.starts_with("--"))
+}
+
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
 ) -> Option<Vec<MaybeProcessedSuggestion>> {
@@ -289,18 +302,35 @@ pub(crate) fn gen_completions_internal(
                 // attached to each candidate) are preserved as-is.
                 match complete_flyline_args(&full_command, cursor_byte_pos) {
                     Ok(candidates) if !candidates.is_empty() => {
+                        let flag = preceding_flyline_flag(&full_command[..cursor_byte_pos]);
                         let suggestions: Vec<MaybeProcessedSuggestion> = candidates
                             .into_iter()
                             .map(|c| {
                                 let value = c.get_value().to_string_lossy().to_string();
-                                let help = c
-                                    .get_help()
-                                    .map(|h| h.to_string())
-                                    .filter(|h| !h.is_empty());
-                                let description = match help {
-                                    Some(h) => SuggestionDescription::Animation(vec![h]),
-                                    None => SuggestionDescription::Static(String::new()),
+                                let help_description = || {
+                                    let help = c
+                                        .get_help()
+                                        .map(|h| h.to_string())
+                                        .filter(|h| !h.is_empty());
+                                    match help {
+                                        Some(h) => SuggestionDescription::Animation(vec![h]),
+                                        None => SuggestionDescription::Static(String::new()),
+                                    }
                                 };
+                                let description =
+                                    match (flag, CursorEasing::try_from_value_name(&value)) {
+                                        (Some("--effect-easing"), Some(easing)) => {
+                                            SuggestionDescription::Animation(
+                                                cursor_effect_animation_frames(easing),
+                                            )
+                                        }
+                                        (Some("--interpolate-easing"), Some(easing)) => {
+                                            SuggestionDescription::Animation(
+                                                easing_animation_frames(easing),
+                                            )
+                                        }
+                                        _ => help_description(),
+                                    };
                                 let suffix = if value.ends_with('+') { " " } else { "" };
                                 MaybeProcessedSuggestion::Ready(
                                     ProcssedSuggestion::new(&value, "", suffix)
