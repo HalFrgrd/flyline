@@ -248,6 +248,7 @@ pub fn generate_tutorial_text(
     let text_style = palette.normal_text();
     let copiable_style = text_style.add_modifier(Modifier::UNDERLINED);
     let heading_style = palette.markdown_heading2();
+    let key_seq_style = palette.key_sequence_style();
     let mut lines: Vec<TaggedLine> = Vec::new();
 
     let empty = || -> TaggedLine<'static> { TaggedLine::from_line(Line::from(""), Tag::Tutorial) };
@@ -256,6 +257,12 @@ pub fn generate_tutorial_text(
     };
     let ts_copiable = |s: String, clip_type: ClipboardTypes| -> TaggedSpan<'static> {
         TaggedSpan::new(Span::styled(s, copiable_style), Tag::Clipboard(clip_type))
+    };
+    let ts_key = |s: &'static str| -> TaggedSpan<'static> {
+        TaggedSpan::new(Span::styled(s, key_seq_style), Tag::Tutorial)
+    };
+    let ts_text = |s: &'static str| -> TaggedSpan<'static> {
+        TaggedSpan::new(Span::styled(s, text_style), Tag::Tutorial)
     };
 
     match step {
@@ -270,10 +277,11 @@ pub fn generate_tutorial_text(
                 "• Click the prev and next buttons to navigate.",
                 text_style,
             )));
-            lines.push(tl(Span::styled(
-                "• Press Enter with an empty command buffer to move to the next tutorial screen.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                ts_text("• Press "),
+                ts_key("Enter"),
+                ts_text(" with an empty command buffer to move to the next tutorial screen."),
+            ]));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(
                     Span::styled(
@@ -385,10 +393,11 @@ pub fn generate_tutorial_text(
                 "1. Smart: mouse interactions are enabled when they work well (recommended).",
                 text_style,
             )));
-            lines.push(tl(Span::styled(
-                "2. Simple: mouse interactions are enabled by default and toggled when Escape is pressed.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                ts_text("2. Simple: mouse interactions are enabled by default and toggled when "),
+                ts_key("Escape"),
+                ts_text(" is pressed."),
+            ]));
             lines.push(tl(Span::styled(
                 "3. Disabled: mouse interactions are disabled.",
                 text_style,
@@ -421,19 +430,28 @@ pub fn generate_tutorial_text(
         TutorialStep::FuzzyHistorySearch => {
             lines.push(tl(Span::styled("Fuzzy History Search", heading_style)));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Press Ctrl+R to open fuzzy history search.",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "Type to filter, use arrow keys / Page Up/Down to browse results.",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "Press Enter to accept the selected command for editing.",
-                text_style,
-            )));
-            lines.push(tl(Span::styled("Press Escape to cancel.", text_style)));
+            lines.push(TaggedLine::from(vec![
+                ts_text("Press "),
+                ts_key("Ctrl+R"),
+                ts_text(" to open fuzzy history search."),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_text("Type to filter, use "),
+                ts_key("arrow keys"),
+                ts_text(" / "),
+                ts_key("Page Up/Down"),
+                ts_text(" to browse results."),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_text("Press "),
+                ts_key("Enter"),
+                ts_text(" to accept the selected command for editing."),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_text("Press "),
+                ts_key("Escape"),
+                ts_text(" to cancel."),
+            ]));
         }
         TutorialStep::Autocompletions => {
             lines.push(tl(Span::styled("Fuzzy Autocompletions", heading_style)));
@@ -444,21 +462,25 @@ pub fn generate_tutorial_text(
                     "grep --".to_string(),
                     ClipboardTypes::TutorialGrep,
                 ),
-                TaggedSpan::new(Span::styled(" and press Tab to trigger autocompletions. If nothing comes up, first set normal Bash completions (", text_style), Tag::Tutorial),
+                ts_text(" and press "),
+                ts_key("Tab"),
+                ts_text(" to trigger autocompletions. If nothing comes up, first set normal Bash completions ("),
                 ts_copiable(
                     "https://github.com/scop/bash-completion".to_string(),
                     ClipboardTypes::TutorialBashCompletion,
                 ),
                 TaggedSpan::new(Span::styled(")", text_style), Tag::Tutorial),
             ]));
-            lines.push(tl(Span::styled(
-                "Type to filter suggestions, use arrow keys or your mouse to navigate.",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "Press Enter or click a suggestion to accept it.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                ts_text("Type to filter suggestions, use "),
+                ts_key("arrow keys"),
+                ts_text(" or your mouse to navigate."),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_text("Press "),
+                ts_key("Enter"),
+                ts_text(" or click a suggestion to accept it."),
+            ]));
         }
         TutorialStep::ThemeColours => {
             lines.push(tl(Span::styled("Setting Theme Colours", heading_style)));
@@ -543,18 +565,22 @@ pub fn generate_tutorial_text(
         TutorialStep::FineGrainDeletion => {
             lines.push(tl(Span::styled("Fine-Grained Deletion", heading_style)));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Ctrl+Backspace deletes one whitespace-delimited word to the left.",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "Alt+Backspace deletes one chunk to the left using finer punctuation or path-segment boundaries.",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "Ctrl+Delete and Alt+Delete work similarly.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                ts_key("Ctrl+Backspace"),
+                ts_text(" deletes one whitespace-delimited word to the left."),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_key("Alt+Backspace"),
+                ts_text(
+                    " deletes one chunk to the left using finer punctuation or path-segment boundaries.",
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_key("Ctrl+Delete"),
+                ts_text(" and "),
+                ts_key("Alt+Delete"),
+                ts_text(" work similarly."),
+            ]));
             lines.push(empty());
             lines.push(tl(Span::styled(
                 "Try it out on this example command:",
@@ -585,16 +611,16 @@ pub fn generate_tutorial_text(
                     "list files older than three days".to_string(),
                     ClipboardTypes::TutorialAgentMode,
                 ),
-                TaggedSpan::new(
-                    Span::styled(" and press Alt+Enter.", text_style),
-                    Tag::Tutorial,
-                ),
+                ts_text(" and press "),
+                ts_key("Alt+Enter"),
+                ts_text("."),
             ]));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "When setting it up, you can specify a `--trigger-prefix`. If the buffer starts with this prefix, flyline will activate agent mode when you press Enter.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                ts_text("When setting it up, you can specify a `--trigger-prefix`. If the buffer starts with this prefix, flyline will activate agent mode when you press "),
+                ts_key("Enter"),
+                ts_text("."),
+            ]));
             lines.push(empty());
         }
         TutorialStep::FontDetection => {

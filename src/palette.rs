@@ -242,6 +242,10 @@ impl Palette {
         self.markdown_code_override.unwrap_or(self.markdown_code)
     }
 
+    pub fn key_sequence_style(&self) -> Style {
+        self.secondary_text()
+    }
+
     // ── Presets ──────────────────────────────────────────────────────
 
     /// Dark-terminal defaults (the original flyline palette).
