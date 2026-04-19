@@ -19,7 +19,7 @@ When Bash prompts you for a command, a library called [readline](https://www.gnu
 - [Rich prompt customizations, widgets, animations](#rich-prompts)
 - [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
-- [Improvements on Bash's tab completion](#tab-completion-improvements)
+- [Improvements to Bash's tab completion](#tab-completion-improvements)
 - Tooltips
 - Auto close brackets and quotes
 - Syntax highlighting
@@ -320,7 +320,7 @@ After setting up your agent with flyline, you can pass the buffer to your agent 
 
 [See the examples on how to set this up.](examples/agent_mode.sh) or simply press Alt+Enter and flyline will try to configure agent mode for you.
 
-Flyine will syntax highlight the suggested commands and render markdown output.
+Flyline will syntax highlight the suggested commands and render markdown output.
 
 # Mouse support
 
@@ -348,8 +348,8 @@ When you're presented with suggestions, you can type to fuzzily search through t
 Aliases are expanded before attempting tab completion so that Bash calls the desired completion function.
 For instance, if `gc` aliases to `git commit`, `gc --verbo<Tab>` will work as expected.
 
-### Nested command
-Tab completions inside subshell, command substitution, and process substitution expressions.
+### Nested command contexts
+Flyline supports tab completions inside subshell, command substitution, and process substitution expressions.
 For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's set up.
 
 ### Mid-word tab completions
@@ -361,7 +361,8 @@ If a suggestion contains a tab character, flyline displays the contents after th
 Descriptions for files are the time since last modified.
 
 ### Automatically complete based on `--help`
-Coming soon: if the command doesn't have a completion spec, flyline can run `your_command --help` in the background, parse the output, and intelligently generate tab completion suggestions on the fly.
+Automatic fallback for commands without a completion spec is still coming soon.
+For now, you can manually generate a Bash completion script with `flyline comp-spec-synthesis your_command`.
 
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
@@ -530,13 +531,13 @@ For instance:
 flyline key set Enter default::submit_or_newline
 flyline key set Enter tab_completion::accept_entry        # defined last -> higher priority
 ```
-When you press `Enter`, flyline will accept the tab completion entry if the `tab_completion` scope is active (i.e. if are currently browsing tab completion suggestions).
+When you press `Enter`, flyline will accept the tab completion entry if the `tab_completion` scope is active (i.e. if you are currently browsing tab completion suggestions).
 If the `tab_completion` scope is not active, then it will try the next keybinding for `Enter` and run that action if the scope is active.
 The `default` is always active.
 
 It is possible to remap keys entirely with:
 ```bash
-flyline key remap Alt Ctrl       # Pressing Alt now acts like pesssing Ctrl
+flyline key remap Alt Ctrl       # Pressing Alt now acts like pressing Ctrl
 flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effectively swapped.
 ```
 
