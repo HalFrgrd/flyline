@@ -5,21 +5,23 @@ use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
 use crate::content_utils::{ansi_string_to_spans, easing_animation_frames};
 use crate::cursor::{CursorEasing, cursor_effect_animation_frames};
+use crate::iter_first_last::FirstLast;
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
-use glob;
 
 #[derive(Debug)]
 struct PathPatternExpansion {
-    /// The part of the pattern before the last `/`, kept in its original form
-    /// (e.g. `~/foo` or `relative/dir`).
+    /// The part of the pattern before the last '/' that separates the pattern kept in its original form
+    /// (e.g. `~/foo` for `~/foo/baz*` or `relative/dir` for `relative/dir/*/*.txt`).
+    /// it might be empty : e.g. `baz*`
     raw_prefix: String,
     /// `raw_prefix` after tilde expansion, conversion to an absolute path, and
     /// environment-variable expansion (e.g. `/home/user/foo` or `/cwd/relative/dir`).
+    /// it might be empty: e.g. `/pro*/123*`.
     expanded_prefix: String,
-    /// The part of the pattern after the last `/` — the glob portion
-    /// (e.g. `ba*` or `*.txt`).
+    /// The part of the pattern after the separating`/`— the glob portion
+    /// (e.g. `baz*` or `*/*.txt`).
     rhs_pattern: String,
 }
 
@@ -58,23 +60,8 @@ impl PathPatternExpansion {
         }
     }
 
-    fn expanded_pattern(&self) -> String {
-        if self.expanded_prefix.is_empty() {
-            self.rhs_pattern.clone()
-        } else {
-            format!("{}/{}", self.expanded_prefix, self.rhs_pattern)
-        }
-    }
-
-    fn prefix_with_trailing_slash(&self) -> String {
-        let mut prefix = self.expanded_prefix.clone();
-        if prefix.is_empty() {
-            return prefix;
-        }
-        if !prefix.ends_with('/') {
-            prefix.push('/');
-        }
-        prefix
+    fn glob_pattern(&self) -> String {
+        format!("{}/{}", self.expanded_prefix, self.rhs_pattern)
     }
 
     fn wants_hidden(&self) -> bool {
@@ -86,28 +73,27 @@ impl PathPatternExpansion {
         expanded_match: &str,
         quote_type: Option<QuoteType>,
     ) -> (String, String) {
-        // Compute the relative path of the result compared to
-        // expanded_prefix, then reconstruct using raw_prefix so the
-        // suggestion preserves the user's original prefix spelling
-        // (e.g. `~/`, `$HOME/`, or a relative path segment).
-        if let Some(suffix) = expanded_match.strip_prefix(&self.prefix_with_trailing_slash()) {
-            let quoted_suffix = bash_funcs::quoting_function_rust(
-                suffix,
+        let expected_prefix = format!("{}/", self.expanded_prefix);
+
+        if let Some(rhs) = expanded_match.strip_prefix(&expected_prefix) {
+            let quoted_rhs = bash_funcs::quoting_function_rust(
+                rhs,
                 quote_type.unwrap_or_default(),
                 false,
                 false,
             );
-            if self.raw_prefix.is_empty() {
-                (quoted_suffix.clone(), quoted_suffix)
-            } else {
-                let combined = format!("{}/{}", self.raw_prefix, quoted_suffix);
-                (combined.clone(), quoted_suffix)
-            }
+            let combined = format!(
+                "{}{}{}",
+                self.raw_prefix,
+                if self.raw_prefix.is_empty() { "" } else { "/" },
+                quoted_rhs
+            );
+            (combined.clone(), quoted_rhs)
         } else {
             log::warn!(
                 "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
                 expanded_match,
-                self.prefix_with_trailing_slash()
+                expected_prefix
             );
             (expanded_match.to_string(), expanded_match.to_string())
         }
@@ -415,44 +401,56 @@ fn gen_secondary_completions(
             log::debug!("Glob expansion for: {:?}", word_under_cursor);
             let completions = tab_complete_glob_expansion(word_under_cursor, comp_resultflags);
 
-            // Unlike other completions, if there are multiple glob completions,
-            // we join them with spaces and insert them all at once.
-            // Process each item eagerly here since we need the final text.
-            let completions_as_string = completions
-                .into_iter()
-                .map(|mut item| item.to_suggestion().s)
-                .fold(String::new(), |mut acc, s| {
-                    if !acc.is_empty() {
-                        if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
-                            acc.push_str("\" ");
-                        } else if comp_resultflags.quote_type == Some(QuoteType::SingleQuote) {
-                            acc.push_str("' ");
-                        } else {
-                            acc.push(' ');
-                        }
-                    }
-                    acc.push_str(&s);
-                    acc
-                });
-            if completions_as_string.is_empty() {
-                log::debug!(
-                    "No glob expansion completions found for pattern: {}",
-                    word_under_cursor
-                );
-            } else {
-                // If the last completion is a directory (ends with '/'), don't
-                // append a trailing space so the cursor stays right after the slash.
-                let suffix = if completions_as_string.ends_with('/') {
-                    ""
-                } else {
-                    " "
-                };
-                return Some(
-                    ProcssedSuggestion::from_string_vec(vec![completions_as_string], "", suffix)
+            match completions.len() {
+                0 => {
+                    log::debug!(
+                        "No glob expansion completions found for pattern: {}",
+                        word_under_cursor
+                    );
+                    return None;
+                }
+                1 => {
+                    let single_completion = completions.into_iter().next().unwrap().to_suggestion();
+                    log::debug!(
+                        "Only one glob expansion completion found for pattern '{}': '{:?}'",
+                        word_under_cursor,
+                        single_completion
+                    );
+                    return Some(vec![MaybeProcessedSuggestion::Ready(single_completion)]);
+                }
+                _ => {
+                    // Unlike other completions, if there are multiple glob completions,
+                    // we join them with spaces and insert them all at once.
+                    // Process each item eagerly here since we need the final text.
+                    let completions_as_string = completions
                         .into_iter()
-                        .map(MaybeProcessedSuggestion::Ready)
-                        .collect(),
-                );
+                        .map(|mut item| item.to_suggestion())
+                        .flag_first_last()
+                        .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
+                            if !is_first {
+                                acc.push(' ');
+                            }
+
+                            acc.push_str(&sug.s);
+
+                            if !is_last {
+                                if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
+                                    acc.push_str("\"");
+                                } else if comp_resultflags.quote_type
+                                    == Some(QuoteType::SingleQuote)
+                                {
+                                    acc.push_str("'");
+                                }
+                            } else {
+                                acc.push_str(&sug.suffix);
+                            }
+
+                            acc
+                        });
+                    return Some(vec![MaybeProcessedSuggestion::Ready(
+                        ProcssedSuggestion::new(completions_as_string, "", ""),
+                    )]);
+                }
             }
         }
         Some(tab_completion_context::SecondaryCompType::FilenameExpansion) => {
@@ -535,15 +533,17 @@ fn tab_complete_glob_expansion(
     let expanded = PathPatternExpansion::new(pattern);
     log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
 
-    // Use glob to find matching paths
+    // Use globwalker to find matching paths
     let mut results = Vec::new();
 
-    const MAX_GLOB_RESULTS: usize = 1_000;
+    const MAX_GLOB_RESULTS: usize = 5_000;
 
-    let glob_pattern = expanded.expanded_pattern();
+    let glob_pattern = expanded.glob_pattern();
+
+    log::debug!("Using glob_pattern{:?}", glob_pattern);
 
     if let Ok(paths) = glob::glob(&glob_pattern) {
-        for (idx, path_result) in paths.enumerate() {
+        for (idx, path) in paths.filter_map(Result::ok).enumerate() {
             if idx >= MAX_GLOB_RESULTS {
                 log::debug!(
                     "Reached maximum glob results limit of {}. Stopping further processing.",
@@ -552,43 +552,41 @@ fn tab_complete_glob_expansion(
                 break;
             }
 
-            if let Ok(path) = path_result {
-                let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
-                    &path.to_string_lossy(),
-                    comp_resultflags.quote_type,
-                );
+            let path_str = path.to_string_lossy();
 
-                log::debug!(
-                    "Glob match: expanded='{}', unexpanded='{}', globbed_suffix='{}'",
-                    path.display(),
-                    unexpanded,
-                    globbed_suffix
-                );
+            let (unexpanded, quoted_rhs) = expanded
+                .convert_expanded_match_to_unexpanded(&path_str, comp_resultflags.quote_type);
 
-                // Tab completion ignores "." and ".."
-                if globbed_suffix == "." || globbed_suffix == ".." {
-                    continue;
-                }
+            log::debug!(
+                "Glob match: expanded='{}', unexpanded='{}', quoted_rhs='{}'",
+                path.display(),
+                unexpanded,
+                quoted_rhs
+            );
 
-                // Only include hidden if the pattern explicitly requested it
-                if !expanded.wants_hidden()
-                    && globbed_suffix.starts_with('.')
-                    && !globbed_suffix.starts_with("./")
-                {
-                    continue;
-                }
-
-                results.push(MaybeProcessedSuggestion::Raw {
-                    raw_text: unexpanded,
-                    full_path: Some(path),
-                    flags: comp_resultflags,
-                    // The glob expansion path already preserves the raw prefix in
-                    // `unexpanded` via PathPatternExpansion; pass "" here so
-                    // post_process_completion doesn't attempt a second
-                    // prefix split (filename_quoting_desired is false anyway).
-                    word_under_cursor: String::new(),
-                });
+            // Tab completion ignores "." and ".."
+            if quoted_rhs == "." || quoted_rhs == ".." {
+                continue;
             }
+
+            // Only include hidden if the pattern explicitly requested it
+            if !expanded.wants_hidden()
+                && quoted_rhs.starts_with('.')
+                && !quoted_rhs.starts_with("./")
+            {
+                continue;
+            }
+
+            results.push(MaybeProcessedSuggestion::Raw {
+                raw_text: unexpanded,
+                full_path: Some(path),
+                flags: comp_resultflags,
+                // The glob expansion path already preserves the raw prefix in
+                // `unexpanded` via PathPatternExpansion; pass "" here so
+                // post_process_completion doesn't attempt a second
+                // prefix split (filename_quoting_desired is false anyway).
+                word_under_cursor: String::new(),
+            });
         }
     }
 
@@ -972,8 +970,7 @@ impl App<'_> {
             &[&ProcssedSuggestion::new(r#"abc/foo/baz"#, "", " ")],
         );
 
-        // move to foo/glob_stuff dir:
-        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff").unwrap();
+        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff1").unwrap();
 
         // .* matches hidden files only. and should ignore . and ..
         run_test_on(
