@@ -440,15 +440,13 @@ impl ProcssedSuggestion {
         prefix: P,
         suffix: X,
     ) -> Self {
-        let p = ProcssedSuggestion {
+        ProcssedSuggestion {
             s: s.into(),
             prefix: prefix.into(),
             suffix: suffix.into(),
             style: None,
             description: SuggestionDescription::Static(vec![]),
-        };
-        log::debug!("Created new ProcssedSuggestion: {:?}", p);
-        p
+        }
     }
 
     /// Set the description on this suggestion.

@@ -401,47 +401,56 @@ fn gen_secondary_completions(
             log::debug!("Glob expansion for: {:?}", word_under_cursor);
             let completions = tab_complete_glob_expansion(word_under_cursor, comp_resultflags);
 
-            // Unlike other completions, if there are multiple glob completions,
-            // we join them with spaces and insert them all at once.
-            // Process each item eagerly here since we need the final text.
-            let completions_as_string = completions
-                .into_iter()
-                .map(|mut item| item.to_suggestion())
-                .flag_first_last()
-                .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
-                    if !is_first {
-                        acc.push(' ');
-                    }
+            match completions.len() {
+                0 => {
+                    log::debug!(
+                        "No glob expansion completions found for pattern: {}",
+                        word_under_cursor
+                    );
+                    return None;
+                }
+                1 => {
+                    let single_completion = completions.into_iter().next().unwrap().to_suggestion();
+                    log::debug!(
+                        "Only one glob expansion completion found for pattern '{}': '{:?}'",
+                        word_under_cursor,
+                        single_completion
+                    );
+                    return Some(vec![MaybeProcessedSuggestion::Ready(single_completion)]);
+                }
+                _ => {
+                    // Unlike other completions, if there are multiple glob completions,
+                    // we join them with spaces and insert them all at once.
+                    // Process each item eagerly here since we need the final text.
+                    let completions_as_string = completions
+                        .into_iter()
+                        .map(|mut item| item.to_suggestion())
+                        .flag_first_last()
+                        .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
+                            if !is_first {
+                                acc.push(' ');
+                            }
 
-                    if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
-                        acc.push_str("\"");
-                    } else if comp_resultflags.quote_type == Some(QuoteType::SingleQuote) {
-                        acc.push_str("'");
-                    }
+                            acc.push_str(&sug.s);
 
-                    acc.push_str(&sug.s);
+                            if !is_last {
+                                if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
+                                    acc.push_str("\"");
+                                } else if comp_resultflags.quote_type
+                                    == Some(QuoteType::SingleQuote)
+                                {
+                                    acc.push_str("'");
+                                }
+                            } else {
+                                acc.push_str(&sug.suffix);
+                            }
 
-                    if !is_last {
-                        if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
-                            acc.push_str("\"");
-                        } else if comp_resultflags.quote_type == Some(QuoteType::SingleQuote) {
-                            acc.push_str("'");
-                        }
-                    } else {
-                        acc.push_str(&sug.suffix);
-                    }
-
-                    acc
-                });
-            if completions_as_string.is_empty() {
-                log::debug!(
-                    "No glob expansion completions found for pattern: {}",
-                    word_under_cursor
-                );
-            } else {
-                return Some(vec![MaybeProcessedSuggestion::Ready(
-                    ProcssedSuggestion::new(completions_as_string, "", ""),
-                )]);
+                            acc
+                        });
+                    return Some(vec![MaybeProcessedSuggestion::Ready(
+                        ProcssedSuggestion::new(completions_as_string, "", ""),
+                    )]);
+                }
             }
         }
         Some(tab_completion_context::SecondaryCompType::FilenameExpansion) => {
