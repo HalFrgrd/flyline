@@ -104,6 +104,56 @@ impl CursorEasing {
     }
 }
 
+/// Compute the cursor intensity for the fade effect from a raw oscillation value
+/// `raw_t` ∈ [0, 1] (e.g. the output of a sine wave) and the given easing function.
+///
+/// Maps the eased value to [0.2, 1.0] so the cursor is always at least faintly visible.
+pub fn fade_intensity(raw_t: f32, easing: CursorEasing) -> f32 {
+    let eased = easing.apply(raw_t.clamp(0.0, 1.0));
+    // Map eased [0, 1] → [0.2, 1.0] so the cursor never fully disappears.
+    eased * 0.8 + 0.2
+}
+
+/// Map a normalised intensity ∈ [0.2, 1.0] to a Unicode block-shading character.
+fn intensity_to_block_char(intensity: f32) -> char {
+    if intensity < 0.35 {
+        '░'
+    } else if intensity < 0.55 {
+        '▒'
+    } else if intensity < 0.75 {
+        '▓'
+    } else {
+        '█'
+    }
+}
+
+/// Number of frames in each half of the cursor effect ping-pong animation.
+const CURSOR_ANIM_HALF_FRAMES: usize = 16;
+
+/// Build ping-pong animation frames that show a block cursor fading in and out
+/// using `easing` to shape the intensity transition.
+///
+/// Returns `2 * CURSOR_ANIM_HALF_FRAMES - 2` frames, each a single
+/// block-shading character (`░`, `▒`, `▓`, or `█`).
+pub fn cursor_effect_animation_frames(easing: CursorEasing) -> Vec<String> {
+    let half = CURSOR_ANIM_HALF_FRAMES;
+    let total_frames = half * 2 - 2;
+    let mut frames = Vec::with_capacity(total_frames);
+
+    // Forward: raw_t goes 0 (dim) → 1 (bright)
+    for i in 0..half {
+        let raw_t = i as f32 / (half - 1) as f32;
+        frames.push(intensity_to_block_char(fade_intensity(raw_t, easing)).to_string());
+    }
+    // Backward: raw_t goes from second-to-last back to 0 (skipping endpoints to avoid repeats)
+    for i in (1..half - 1).rev() {
+        let raw_t = i as f32 / (half - 1) as f32;
+        frames.push(intensity_to_block_char(fade_intensity(raw_t, easing)).to_string());
+    }
+
+    frames
+}
+
 /// Visual effect applied to the cursor.
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CursorEffect {
@@ -239,9 +289,7 @@ impl Cursor {
                 let elapsed = self.time_of_change.elapsed().as_secs_f32();
                 // Raw value in [0, 1] from a sine wave, scaled by effect_speed.
                 let raw = (elapsed * 4.0 * config.effect_speed).sin() * 0.5 + 0.5;
-                let eased = config.effect_easing.apply(raw.clamp(0.0, 1.0));
-                // Map eased [0, 1] → [0.2, 1.0] so the cursor never fully disappears.
-                Some(eased * 0.8 + 0.2)
+                Some(fade_intensity(raw, config.effect_easing))
             }
             CursorEffect::Blink => {
                 let elapsed = self.time_of_change.elapsed().as_secs_f32();
