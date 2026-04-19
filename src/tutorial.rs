@@ -93,6 +93,7 @@ pub enum TutorialStep {
     #[default]
     NotRunning,
     Welcome,
+    TutorialsTutorial,
     RecommendedSettings,
     MouseMode,
     ThemeColours,
@@ -105,8 +106,9 @@ pub enum TutorialStep {
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 11] = [
+    const STEPS_IN_ORDER: [TutorialStep; 12] = [
         TutorialStep::Welcome,
+        TutorialStep::TutorialsTutorial,
         TutorialStep::RecommendedSettings,
         TutorialStep::MouseMode,
         TutorialStep::ThemeColours,
@@ -300,6 +302,29 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
             // Rendered separately as a logo screen; not handled by this function.
             return None;
         }
+        TutorialStep::TutorialsTutorial => {
+            lines.push(Line::from(Span::styled(
+                "How to Use This Tutorial",
+                heading_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "• Click the prev and next buttons to navigate.",
+                text_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "• Press Enter with an empty command buffer to move to the next tutorial screen.",
+                text_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "• Click on the text to copy it to your clipboard and command buffer.",
+                text_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "• Remember to append commands to your ~/.bashrc so they persist.",
+                text_style,
+            )));
+        }
         TutorialStep::RecommendedSettings => {
             lines.push(Line::from(Span::styled(
                 "Recommended Settings",
@@ -457,6 +482,15 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
             )));
             lines.push(Line::from(Span::styled(
                 "Similarly, Ctrl+Delete deletes one whitespace-delimited word to the right, and Alt+Delete deletes one chunk to the right using finer punctuation or path-segment boundaries.",
+                text_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Click below to load an example command to try it out:",
+                text_style,
+            )));
+            lines.push(Line::from(Span::styled(
+                "  ls foo/bar_abc/qwe.txt oiu.txt",
                 text_style,
             )));
         }

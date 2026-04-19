@@ -423,11 +423,6 @@ impl<'a> App<'a> {
             last_activity_time: std::time::Instant::now(),
         };
 
-        if app.settings.tutorial_step == tutorial::TutorialStep::FineGrainDeletion {
-            app.buffer.replace_buffer("ls foo/bar_abc/qwe.txt oiu.txt");
-            app.on_possible_buffer_change();
-        }
-
         app
     }
 
@@ -998,11 +993,14 @@ impl<'a> App<'a> {
                         .as_ref()
                         .and_then(|c| c.contents.clipboards.get(&clipboard_type))
                     {
+                        let text = text.clone();
                         let encoded = osc52_base64(text.as_bytes());
                         use std::io::Write;
                         print!("\x1b]52;c;{}\x07", encoded);
                         std::io::stdout().flush().ok();
                         log::info!("Copied to clipboard via OSC 52 ({:?})", clipboard_type);
+                        self.buffer.replace_buffer(&text);
+                        update_buffer = true;
                     }
                 }
             }
@@ -1542,6 +1540,15 @@ impl<'a> App<'a> {
                     content.setup_clipboard(
                         ClipboardTypes::TutorialRecommendedSettings,
                         "settings placeholder".to_string(),
+                    );
+                } else if self.settings.tutorial_step == tutorial::TutorialStep::FineGrainDeletion {
+                    content.write_buffer(
+                        &text_buffer,
+                        Tag::Clipboard(ClipboardTypes::TutorialFineGrainDeletion),
+                    );
+                    content.setup_clipboard(
+                        ClipboardTypes::TutorialFineGrainDeletion,
+                        "ls foo/bar_abc/qwe.txt oiu.txt".to_string(),
                     );
                 } else {
                     content.write_buffer(&text_buffer, Tag::Tutorial);
