@@ -361,7 +361,7 @@ If a suggestion contains a tab character, flyline displays the contents after th
 Descriptions for files are the time since last modified.
 
 ### Automatically complete based on `--help`
-Automatic fallback for commands without a completion spec is still coming soon.
+Coming soon: Automatic fallback for commands without a completion spec is still coming soon.
 For now, you can manually generate a Bash completion script with `flyline comp-spec-synthesis your_command`.
 
 ### `LS_COLORS` styling
