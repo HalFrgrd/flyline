@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use crate::palette::Palette;
+
 /// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpanTag {
@@ -49,6 +51,16 @@ impl<'a> TaggedSpan<'a> {
         TaggedSpan {
             span,
             tag: SpanTag::PerGrapheme(tags),
+        }
+    }
+
+    /// Consume `self` and return a new `TaggedSpan` whose style is the
+    /// highlighted (reversed) variant of the original style.
+    pub fn convert_to_highlighted(self) -> Self {
+        let highlighted_style = Palette::convert_to_selected(self.span.style);
+        TaggedSpan {
+            span: self.span.style(highlighted_style),
+            tag: self.tag,
         }
     }
 }

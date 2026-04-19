@@ -1571,14 +1571,10 @@ impl<'a> App<'a> {
                             false
                         };
                         if is_hovered {
-                            let highlighted = TaggedSpan::new(
-                                ratatui::text::Span::styled(
-                                    tagged_span.span.content.clone(),
-                                    Palette::convert_to_selected(tagged_span.span.style),
-                                ),
-                                tagged_span.tag.get(0),
+                            content.write_tagged_span_dont_overwrite(
+                                &tagged_span.clone().convert_to_highlighted(),
+                                None,
                             );
-                            content.write_tagged_span_dont_overwrite(&highlighted, None);
                         } else {
                             content.write_tagged_span_dont_overwrite(tagged_span, None);
                         }
