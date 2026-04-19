@@ -367,7 +367,8 @@ const EASING_ANIM_HALF_FRAMES: usize = 16;
 /// is returned as a single unstyled span.  Spans from all resulting lines are
 /// flattened into one sequence (descriptions are expected to be single-line).
 pub fn ansi_string_to_spans(s: &str) -> Vec<Span<'static>> {
-    match s.to_owned().into_text() {
+    let owned = s.to_owned();
+    match owned.into_text() {
         Ok(text) => text.lines.into_iter().flat_map(|l| l.spans).collect(),
         Err(_) => vec![Span::raw(s.to_owned())],
     }

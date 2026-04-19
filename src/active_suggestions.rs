@@ -229,12 +229,11 @@ impl SuggestionFormatted {
         if desc_render_width > 0 {
             spans.push(Span::raw(Self::DESCRIPTION_SEPARATOR));
             let truncated = take_prefix_of_spans(&self.description_frame, desc_render_width);
-            for span in truncated {
-                spans.push(Span::styled(
-                    span.content,
-                    self.description_style.patch(span.style),
-                ));
-            }
+            spans.extend(
+                truncated.into_iter().map(|span| {
+                    Span::styled(span.content, self.description_style.patch(span.style))
+                }),
+            );
         }
 
         spans
