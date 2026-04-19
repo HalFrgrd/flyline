@@ -120,6 +120,7 @@ impl Coord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClipboardTypes {
     TutorialRecommendedSettings,
+    TutorialFineGrainDeletion,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

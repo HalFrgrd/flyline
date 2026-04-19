@@ -1386,7 +1386,7 @@ impl Flyline {
 
             self.content = match result {
                 Ok(app::ExitState::WithCommand(cmd)) => {
-                    if self.settings.tutorial_step.is_active() {
+                    if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
                         self.settings.tutorial_step.next();
                         log::info!(
                             "Tutorial step advanced to {:?}",
