@@ -10,6 +10,9 @@ use crate::shell_integration;
 /// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
 const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
 
+/// Example command used in the Fine-Grained Deletion tutorial step.
+pub const FINE_GRAIN_DELETION_EXAMPLE_CMD: &str = "ls foo/bar_abc/qwe.txt oiu.txt";
+
 /// Large block-art logo displayed on the welcome screen.
 const LOGO_LINES: &[&str] = &[
     "",
@@ -490,7 +493,7 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "  ls foo/bar_abc/qwe.txt oiu.txt",
+                format!("  {}", FINE_GRAIN_DELETION_EXAMPLE_CMD),
                 text_style,
             )));
         }

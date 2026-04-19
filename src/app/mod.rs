@@ -1548,7 +1548,7 @@ impl<'a> App<'a> {
                     );
                     content.setup_clipboard(
                         ClipboardTypes::TutorialFineGrainDeletion,
-                        "ls foo/bar_abc/qwe.txt oiu.txt".to_string(),
+                        tutorial::FINE_GRAIN_DELETION_EXAMPLE_CMD.to_string(),
                     );
                 } else {
                     content.write_buffer(&text_buffer, Tag::Tutorial);
