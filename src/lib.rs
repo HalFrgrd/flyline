@@ -407,7 +407,7 @@ enum Commands {
     /// all available actions interactively.
     ///
     /// Examples:
-    ///   flyline key set Ctrl+Enter normal::submit_or_newline
+    ///   flyline key set Ctrl+Enter default::submit_or_newline
     ///   flyline key list
     #[command(name = "key", verbatim_doc_comment)]
     Key {
@@ -462,21 +462,21 @@ enum KeySubcommands {
     /// Bind a key sequence to an action.
     ///
     /// KEY_SEQUENCE is a key combination such as "Ctrl+Enter" or "Alt+Left".
-    /// ACTION has the form scope::action_name, e.g. "normal::submit_or_newline".
+    /// ACTION has the form scope::action_name, e.g. "default::submit_or_newline".
     ///
-    /// Available scopes: normal, fuzzy_history_search, tab_completion,
-    ///   agent_mode_waiting, agent_output_selection, agent_error,
-    ///   inline_history_acceptable
+    /// Available scopes: default, fuzzy_history_search, tab_completion_waiting,
+    ///   tab_completion, agent_mode_waiting, agent_output_selection,
+    ///   agent_error, inline_history_acceptable, prompt_dir_select
     ///
     /// Examples:
-    ///   flyline key set Ctrl+Enter normal::submit_or_newline
-    ///   flyline key set Alt+Left normal::move_one_word_left_whitespace
+    ///   flyline key set Ctrl+Enter default::submit_or_newline
+    ///   flyline key set Alt+Left default::move_left_one_word_fine_grained
     #[command(name = "set", verbatim_doc_comment, disable_help_flag = true)]
     Set {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
         #[arg(num_args = 1, hide = true, add = ArgValueCompleter::new(actions::key_sequence_completer))]
         key_sequence: String,
-        /// Action in the form scope::action_name (e.g. "normal::submit_or_newline").
+        /// Action in the form scope::action_name (e.g. "default::submit_or_newline").
         #[arg(add = ArgValueCompleter::new(actions::possible_action_names), num_args = 1)]
         action: String,
     },
