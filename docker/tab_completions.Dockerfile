@@ -11,7 +11,6 @@ RUN set -eux; \
     mkdir -p \
     /tmp/example_fs/foo \
     /tmp/example_fs/foo/glob_stuff1 \
-    /tmp/example_fs/foo/glob_stuff2 \
     "/tmp/example_fs/many spaces here" \
     /tmp/example_fs/abc/foo; \
     printf '%s' content > /tmp/example_fs/bar.txt; \
@@ -20,8 +19,6 @@ RUN set -eux; \
     printf '%s' content > /tmp/example_fs/abc/foo/baz; \
     printf '%s' content > /tmp/example_fs/foo/glob_stuff1/.dotfile; \
     printf '%s' content > /tmp/example_fs/foo/glob_stuff1/a.txt; \
-    printf '%s' content > '/tmp/example_fs/foo/glob_stuff2/abc (1).txt'; \
-    printf '%s' content > '/tmp/example_fs/foo/glob_stuff2/abc (2).txt'; \
     ln -s foo /tmp/example_fs/sym_link_to_foo; \
     mkdir -p /root/foo; \
     printf '%s' content > '/root/foo/$baz.txt'

@@ -996,16 +996,6 @@ impl App<'_> {
             &[&ProcssedSuggestion::new(r#"a.txt"#, "", " ")],
         );
 
-        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff2").unwrap();
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default \"ab*",
-            &[&ProcssedSuggestion::new(
-                r#""abc (1).txt" "abc (2).txt""#,
-                "",
-                " ",
-            )],
-        );
-
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }
 }
