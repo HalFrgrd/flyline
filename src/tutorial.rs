@@ -56,7 +56,7 @@ pub fn generate_welcome_logo_lines(max_width: u16) -> Vec<Line<'static>> {
 /// text is only 33 characters wide the wave peak is sometimes outside the
 /// visible text, giving periods where the whole line appears dim.
 pub fn generate_welcome_action_line() -> Line<'static> {
-    const TEXT: &str = "Press enter to start the tutorial";
+    const TEXT: &str = "Press Enter to start the tutorial";
 
     // Wave peak: travels 30 cols every 2 s → 15 cols/s; loops every 50 virtual cols.
     // The text is only 33 chars wide, so the peak spends some of its loop period
@@ -386,7 +386,7 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
         }
         TutorialStep::ThemeColours => {
             lines.push(Line::from(Span::styled(
-                "Setting Theme Colors",
+                "Setting Theme Colours",
                 heading_style,
             )));
             lines.push(Line::from(""));
@@ -428,7 +428,7 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "Try typing: echo $(\" — watch how the closing \" ) are inserted for you.",
+                "Try typing `echo $(\"` and watch Flyline insert the closing `\")` for you.",
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
@@ -443,7 +443,7 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
         }
         TutorialStep::FineGrainDeletion => {
             lines.push(Line::from(Span::styled(
-                "Fine-Grain Deletion",
+                "Fine-Grained Deletion",
                 heading_style,
             )));
             lines.push(Line::from(""));
@@ -452,11 +452,11 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "Ctrl+Backspace deletes one whitespace-delimited word to the left, and Alt+Backspace deletes left using finer punctuation or path-segment boundaries.",
+                "Ctrl+Backspace deletes one whitespace-delimited word to the left, and Alt+Backspace deletes one chunk to the left using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
             lines.push(Line::from(Span::styled(
-                "Similarly, Ctrl+Delete deletes one whitespace-delimited word to the right, and Alt+Delete deletes right using finer punctuation or path-segment boundaries.",
+                "Similarly, Ctrl+Delete deletes one whitespace-delimited word to the right, and Alt+Delete deletes one chunk to the right using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
         }
