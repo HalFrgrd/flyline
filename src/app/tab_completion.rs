@@ -3,7 +3,7 @@ use crate::active_suggestions::{
 };
 use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
-use crate::content_utils::easing_animation_frames;
+use crate::content_utils::{ansi_string_to_spans, easing_animation_frames};
 use crate::cursor::{CursorEasing, cursor_effect_animation_frames};
 use crate::text_buffer::SubString;
 use crate::users;
@@ -313,8 +313,10 @@ pub(crate) fn gen_completions_internal(
                                         .map(|h| h.to_string())
                                         .filter(|h| !h.is_empty());
                                     match help {
-                                        Some(h) => SuggestionDescription::Animation(vec![h]),
-                                        None => SuggestionDescription::Static(String::new()),
+                                        Some(h) => SuggestionDescription::Animation(vec![
+                                            ansi_string_to_spans(&h),
+                                        ]),
+                                        None => SuggestionDescription::Static(vec![]),
                                     }
                                 };
                                 let description =
