@@ -262,6 +262,14 @@ Please check https://github.com/${REPO}/releases for available assets."
         say "Added flyline to ${BASHRC}"
     fi
 
+    # On bash < 4.4, flyline must be invoked once to properly initialize.
+    if is_bash_pre_4_4; then
+        if ! grep -qE '^flyline[[:space:]]' "$BASHRC" 2>/dev/null; then
+            printf '\nflyline --version # On bash pre 4.4 you must call flyline to properly initialize it\n' >> "$BASHRC"
+        fi
+    fi
+
+
     say ""
     say "Installation complete!"
     printf '    To activate in the current shell:\n        %s\n' "$ENABLE_CMD"
