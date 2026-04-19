@@ -3,10 +3,10 @@ use ratatui::text::{Line, Span};
 use std::sync::LazyLock;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::bash_funcs;
 use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
 use crate::palette::Palette;
 use crate::shell_integration;
+use crate::{bash_funcs, settings};
 
 /// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
 const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
@@ -229,22 +229,18 @@ fn zsh_history_recently_modified() -> bool {
     elapsed < std::time::Duration::from_secs(24 * 60 * 60)
 }
 
-/// Cached result of [`should_recommend_zsh_history`]. Evaluated lazily on
-/// first access; the underlying environment / filesystem state is not
-/// expected to change over the lifetime of the process.
 static SHOULD_RECOMMEND_ZSH_HISTORY: LazyLock<bool> =
     LazyLock::new(|| default_shell_is_zsh() || zsh_history_recently_modified());
 
-/// Returns true when flyline should recommend that the user enables Zsh
-/// history loading: the user's default shell is `zsh`, or there is a
-/// `$HOME/.zsh_history` file that was modified in the last 24 hours.
-fn should_recommend_zsh_history() -> bool {
-    *SHOULD_RECOMMEND_ZSH_HISTORY
-}
+static RPS1_IS_SET: LazyLock<bool> = LazyLock::new(|| {
+    bash_funcs::get_envvar_value("RPS1").is_some_and(|v| !v.is_empty())
+        || bash_funcs::get_envvar_value("RPROMPT").is_some_and(|v| !v.is_empty())
+});
 
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
 pub fn generate_tutorial_text(
+    settings: &settings::Settings,
     step: TutorialStep,
     palette: &Palette,
 ) -> Option<Vec<TaggedLine<'static>>> {
@@ -281,12 +277,21 @@ pub fn generate_tutorial_text(
                 "• Press Enter with an empty command buffer to move to the next tutorial screen.",
                 text_style,
             )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(
+                    Span::styled(
+                        "• Click on underlined text to copy it to your clipboard and command buffer: ",
+                        text_style,
+                    ),
+                    Tag::Tutorial,
+                ),
+                ts_copiable(
+                    "flyline --version".to_string(),
+                    ClipboardTypes::TutorialClickExample,
+                ),
+            ]));
             lines.push(tl(Span::styled(
-                "• Click on the text to copy it to your clipboard and command buffer.",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "• Remember to append settings to your ~/.bashrc so they persist!",
+                "• Remember to append settings to your `~/.bashrc` so they persist!",
                 text_style,
             )));
         }
@@ -338,7 +343,7 @@ pub fn generate_tutorial_text(
                 )));
             }
 
-            if should_recommend_zsh_history() {
+            if *SHOULD_RECOMMEND_ZSH_HISTORY {
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
                 lines.push(tl(Span::styled(
                     "💡 We detected that you use Zsh. Consider loading your Zsh history into flyline:",
@@ -349,6 +354,37 @@ pub fn generate_tutorial_text(
                     ts_copiable(
                         "flyline --load-zsh-history".to_string(),
                         ClipboardTypes::TutorialRecommendedSettings,
+                    ),
+                ]));
+            }
+
+            if !*RPS1_IS_SET {
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+                lines.push(tl(Span::styled(
+                    "💡 How about showing the time in your right prompt:",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from(vec![
+                    TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                    ts_copiable("RPS1='\\t'".to_string(), ClipboardTypes::TutorialRP1),
+                ]));
+            }
+
+            if settings
+                .custom_prompt_widgets
+                .values()
+                .all(|w| !matches!(w, settings::PromptWidget::MouseMode(_)))
+            {
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+                lines.push(tl(Span::styled(
+                    "💡 Consider display the mouse capture mode in your RPROMPT:",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from(vec![
+                    TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                    ts_copiable(
+                        "flyline create-prompt-widget mouse-mode --name MOUSE_MODE 'M' 'X' && RPS1=\" MOUSE_MODE $RPS1\"".to_string(),
+                        ClipboardTypes::TutorialMouseMode,
                     ),
                 ]));
             }

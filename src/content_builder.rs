@@ -137,6 +137,9 @@ impl Coord {
 /// Identifies which clipboard slot a [`Tag::Clipboard`] cell belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClipboardTypes {
+    TutorialClickExample,
+    TutorialRP1,
+    TutorialMouseMode,
     TutorialRecommendedSettings,
     TutorialFineGrainDeletion,
     TutorialSetColor1,
