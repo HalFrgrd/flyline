@@ -244,7 +244,14 @@ impl Contents {
 
     pub fn move_to_next_insertion_point(&mut self, graph: &StyledGrapheme, overwrite: bool) {
         let graph_w = graph.symbol.width() as u16;
+        const MAX_ITERATIONS: usize = 1000; // safety to prevent infinite loops
+        let mut iterations = 0;
         loop {
+            if iterations >= MAX_ITERATIONS {
+                break;
+            }
+            iterations += 1;
+
             if self.cursor_pos.row >= self.buf.len() as u16 {
                 self.increase_buf_single_row();
             } else if self.cursor_pos.col as usize + graph_w as usize > self.width as usize {
@@ -274,6 +281,10 @@ impl Contents {
         overwrite: bool,
         mark_nth_grapheme: Option<usize>,
     ) -> Option<Coord> {
+        if let SpanTag::Constant(Tag::Clipboard(cb_type)) = &tagged_span.tag {
+            self.setup_clipboard(*cb_type, tagged_span.span.content.to_string());
+        }
+
         let graphemes = tagged_span.span.styled_graphemes(tagged_span.span.style);
         let mut marked_graph_coord = None;
 
@@ -670,10 +681,26 @@ impl Contents {
             let label_width = label_span.width() as u16;
             if label_width < area.width {
                 let label_x = area.left() + (area.width - label_width) / 2;
-                let label_y = area.top() + (area.height / 2);
+                let label_y = area.top() + ((area.height - 1) / 2);
                 self.set_cursor_col(label_x);
                 self.cursor_pos.row = label_y;
                 self.write_tagged_span(&TaggedSpan::new(label_span, tag));
+            }
+        }
+    }
+
+    pub fn tag_rect(&mut self, area: Rect, tag: Tag) {
+        for _ in self.buf.len()..area.bottom() as usize {
+            self.increase_buf_single_row();
+        }
+
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                if let Some(row) = self.buf.get_mut(y as usize)
+                    && let Some(tagged_cell) = row.get_mut(x as usize)
+                {
+                    tagged_cell.tag = tag;
+                }
             }
         }
     }

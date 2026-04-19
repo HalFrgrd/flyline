@@ -11,9 +11,6 @@ use crate::shell_integration;
 /// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
 const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
 
-/// Example command used in the Fine-Grained Deletion tutorial step.
-pub const FINE_GRAIN_DELETION_EXAMPLE_CMD: &str = "ls foo/bar_abc/qwe.txt oiu.txt";
-
 /// Large block-art logo displayed on the welcome screen.
 const LOGO_LINES: &[&str] = &[
     "",
@@ -248,6 +245,8 @@ fn should_recommend_zsh_history() -> bool {
 /// Generate recommended settings text for the first tutorial step.
 pub fn generate_recommended_settings(palette: &Palette) -> Vec<TaggedLine<'static>> {
     let text_style = palette.normal_text();
+    let copiable_style = text_style.add_modifier(Modifier::UNDERLINED);
+
     let mut lines: Vec<TaggedLine> = Vec::new();
 
     let tl = |span: Span<'static>| -> TaggedLine<'static> {
@@ -305,7 +304,7 @@ pub fn generate_recommended_settings(palette: &Palette) -> Vec<TaggedLine<'stati
         lines.push(TaggedLine::from(vec![
             TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
             TaggedSpan::new(
-                Span::styled("flyline --load-zsh-history", text_style),
+                Span::styled("flyline --load-zsh-history", copiable_style),
                 Tag::Clipboard(ClipboardTypes::TutorialRecommendedSettings),
             ),
         ]));
@@ -325,6 +324,7 @@ pub fn generate_tutorial_text(
     }
 
     let text_style = palette.normal_text();
+    let copiable_style = text_style.add_modifier(Modifier::UNDERLINED);
     let heading_style = palette.markdown_heading2();
     let mut lines: Vec<TaggedLine> = Vec::new();
 
@@ -339,7 +339,7 @@ pub fn generate_tutorial_text(
             return None;
         }
         TutorialStep::TutorialsTutorial => {
-            lines.push(tl(Span::styled("How to Use This Tutorial", heading_style)));
+            lines.push(tl(Span::styled("How to use this tutorial", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
                 "• Click the prev and next buttons to navigate.",
@@ -354,7 +354,7 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "• Remember to append commands to your ~/.bashrc so they persist.",
+                "• Remember to append settings to your ~/.bashrc so they persist!",
                 text_style,
             )));
         }
@@ -465,7 +465,7 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "Try typing `echo $(\"` and watch Flyline insert the closing `\")` for you.",
+                "Try typing `echo \"$(` and watch Flyline insert the closing `)\"` for you.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
@@ -482,15 +482,11 @@ pub fn generate_tutorial_text(
             lines.push(tl(Span::styled("Fine-Grained Deletion", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Flyline provides more granular deletion commands in addition to Backspace and Delete.",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
                 "Ctrl+Backspace deletes one whitespace-delimited word to the left, and Alt+Backspace deletes one chunk to the left using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "Similarly, Ctrl+Delete deletes one whitespace-delimited word to the right, and Alt+Delete deletes one chunk to the right using finer punctuation or path-segment boundaries.",
+                "Ctrl+Delete and Alt+Delete work similarly.",
                 text_style,
             )));
             lines.push(empty());
@@ -501,7 +497,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("  ", text_style), Tag::Tutorial),
                 TaggedSpan::new(
-                    Span::styled(FINE_GRAIN_DELETION_EXAMPLE_CMD, text_style),
+                    Span::styled("ls foo/bar_abc/qwe.txt oiu.txt", copiable_style),
                     Tag::Clipboard(ClipboardTypes::TutorialFineGrainDeletion),
                 ),
             ]));
@@ -539,7 +535,7 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "For more information, check out the documentation and GitHub repo.",
+                "For more information, check out `flyline --help` and https://github.com/HalFrgrd/flyline.",
                 text_style,
             )));
         }

@@ -1501,26 +1501,21 @@ impl<'a> App<'a> {
                 const BUTTON_HEIGHT: u16 = 30;
 
                 let layout = Layout::horizontal([
-                    Constraint::Min(7),
-                    Constraint::Percentage(90),
-                    Constraint::Min(7),
+                    Constraint::Max(10),
+                    Constraint::Min(10),
+                    Constraint::Max(10),
                 ]);
 
                 let tutorial_start_row = 1;
                 content.newline();
 
-                let [mut prev_block, text_block_outer, mut next_block] = Rect {
+                let [mut prev_block, text_block, mut next_block] = Rect {
                     x: 0,
                     y: 0,
                     width,
                     height: BUTTON_HEIGHT,
                 }
                 .layout(&layout);
-
-                let text_block = text_block_outer.inner(Margin {
-                    horizontal: 2,
-                    vertical: 0,
-                });
 
                 // Draw prev and next buttons first.
                 let draw_prev_block = |block, content: &mut Contents| {
@@ -1529,6 +1524,13 @@ impl<'a> App<'a> {
                         "prev",
                         Tag::TutorialPrev,
                         self.last_mouse_over_cell == Some(Tag::TutorialPrev),
+                    );
+                    content.tag_rect(
+                        block.outer(Margin {
+                            horizontal: 1,
+                            vertical: 0,
+                        }),
+                        Tag::TutorialPrev,
                     );
                 };
 
@@ -1541,17 +1543,15 @@ impl<'a> App<'a> {
                         Tag::TutorialNext,
                         self.last_mouse_over_cell == Some(Tag::TutorialNext),
                     );
+                    content.tag_rect(
+                        block.outer(Margin {
+                            horizontal: 1,
+                            vertical: 0,
+                        }),
+                        Tag::TutorialNext,
+                    );
                 };
                 draw_next_block(next_block, &mut content);
-
-                // Collect clipboard content from tagged spans.
-                for tagged_line in &tutorial_tagged_lines {
-                    for tagged_span in &tagged_line.spans {
-                        if let SpanTag::Constant(Tag::Clipboard(cb_type)) = &tagged_span.tag {
-                            content.setup_clipboard(*cb_type, tagged_span.span.content.to_string());
-                        }
-                    }
-                }
 
                 // Move cursor to the start of the text area and write tutorial
                 // lines using overwrite=false so the text sits between the buttons.
@@ -1582,7 +1582,6 @@ impl<'a> App<'a> {
                     }
                     text_end_row = content.cursor_position().row;
                     content.newline();
-                    content.set_cursor_col(text_block.x);
                 }
 
                 let drain_start = text_end_row + 2;
