@@ -1523,7 +1523,9 @@ impl<'a> App<'a> {
                 });
 
                 // Allocate rows for the buttons before drawing them.
-                for _ in content.buf.len()..(tutorial_start_row + BUTTON_HEIGHT) as usize {
+                // `increase_buf_single_row` grows the buffer one row at a time, which is
+                // its existing public API for incremental allocation.
+                while content.buf.len() < (tutorial_start_row + BUTTON_HEIGHT) as usize {
                     content.increase_buf_single_row();
                 }
 
@@ -1565,11 +1567,13 @@ impl<'a> App<'a> {
                 }
 
                 // Delete the empty rows between where the text ends and where
-                // the buttons end (keeping the bottom border row).
+                // the buttons end. We keep the last row of the button area
+                // (BUTTON_HEIGHT - 1) because it holds the bottom border of
+                // the prev/next blocks, making them look visually complete.
                 let drain_start = (text_end_row + 1) as usize;
-                let drain_end = (tutorial_start_row + BUTTON_HEIGHT - 1) as usize;
-                if drain_start < drain_end {
-                    content.buf.drain(drain_start..drain_end);
+                let buttons_bottom_border = (tutorial_start_row + BUTTON_HEIGHT - 1) as usize;
+                if drain_start < buttons_bottom_border {
+                    content.buf.drain(drain_start..buttons_bottom_border);
                 }
 
                 content.move_to_final_line();
