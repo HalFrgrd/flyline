@@ -1061,11 +1061,18 @@ impl<'a> App<'a> {
                 })
                 .map(|(_, flyline_cmd)| flyline_cmd);
 
-            (
-                "Agent mode is not configured. Run `flyline set-agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
-                None,
-                setup_cmd,
-            )
+            match setup_cmd {
+                Some(cmd) => (
+                    "Agent mode is not configured. However, flyline can set it up for you:".to_string(),
+                    None,
+                    Some(cmd),
+                ),
+                None => (
+                    "Agent mode is not configured. Run `flyline set-agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
+                    None,
+                    setup_cmd,
+                )
+            }
         };
         self.content_mode = ContentMode::AgentError {
             message,

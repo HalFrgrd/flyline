@@ -430,7 +430,7 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "Press Enter to run the selected command, or Tab to accept it for editing.",
+                "Press Enter to accept the selected command for editing.",
                 text_style,
             )));
             lines.push(tl(Span::styled("Press Escape to cancel.", text_style)));
@@ -438,10 +438,19 @@ pub fn generate_tutorial_text(
         TutorialStep::Autocompletions => {
             lines.push(tl(Span::styled("Fuzzy Autocompletions", heading_style)));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Type `grep --` and press Tab to trigger autocompletions. If nothing comes up, first set normal Bash completions (https://github.com/scop/bash-completion).",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("Type ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "grep --".to_string(),
+                    ClipboardTypes::TutorialGrep,
+                ),
+                TaggedSpan::new(Span::styled(" and press Tab to trigger autocompletions. If nothing comes up, first set normal Bash completions (", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "https://github.com/scop/bash-completion".to_string(),
+                    ClipboardTypes::TutorialBashCompletion,
+                ),
+                TaggedSpan::new(Span::styled(")", text_style), Tag::Tutorial),
+            ]));
             lines.push(tl(Span::styled(
                 "Type to filter suggestions, use arrow keys or your mouse to navigate.",
                 text_style,
@@ -548,7 +557,7 @@ pub fn generate_tutorial_text(
             )));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Click below to load an example command to try it out:",
+                "Try it out on this example command:",
                 text_style,
             )));
             lines.push(TaggedLine::from(vec![
@@ -567,20 +576,25 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "Try activating agent mode and get help setting it up.",
+                "Try activating agent mode and get help setting it up:",
                 text_style,
             )));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("Type ", text_style), Tag::Tutorial),
                 ts_copiable(
                     "list files older than three days".to_string(),
-                    ClipboardTypes::TuorialAgentMode,
+                    ClipboardTypes::TutorialAgentMode,
                 ),
                 TaggedSpan::new(
                     Span::styled(" and press Alt+Enter.", text_style),
                     Tag::Tutorial,
                 ),
             ]));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
+                "When setting it up, you can specify a `--trigger-prefix`. If the buffer starts with this prefix, flyline will activate agent mode when you press Enter.",
+                text_style,
+            )));
             lines.push(empty());
         }
         TutorialStep::FontDetection => {
@@ -596,10 +610,17 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "If the symbols above are not rendering correctly, install a font that supports this range, such as Iosevka Term Sans Serif (https://github.com/be5invis/Iosevka).",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(
+                    "If the symbols above are not rendering correctly, install a font that supports this range, such as Iosevka Term Sans Serif (",
+                    text_style,
+                ), Tag::Tutorial),
+                ts_copiable(
+                    "https://github.com/be5invis/Iosevka".to_string(),
+                    ClipboardTypes::TutorialIosevka,
+                ),
+                TaggedSpan::new(Span::styled(").", text_style), Tag::Tutorial),
+            ]));
         }
         TutorialStep::End => {
             lines.push(tl(Span::styled(

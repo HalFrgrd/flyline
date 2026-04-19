@@ -149,7 +149,10 @@ pub enum ClipboardTypes {
     TutorialSetColor5,
     TutorialRunHelp,
     TutorialAutoClose,
-    TuorialAgentMode,
+    TutorialAgentMode,
+    TutorialGrep,
+    TutorialBashCompletion,
+    TutorialIosevka,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
