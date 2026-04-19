@@ -386,7 +386,7 @@ impl<'a> App<'a> {
 
         bash_funcs::reset_caches();
 
-        let mut app = App {
+        App {
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
@@ -420,9 +420,7 @@ impl<'a> App<'a> {
             needs_screen_cleared: false,
             last_keypress_action: None,
             last_activity_time: std::time::Instant::now(),
-        };
-
-        app
+        }
     }
 
     /// Return a mutable reference to the history manager for the given fuzzy source.
@@ -1063,11 +1061,18 @@ impl<'a> App<'a> {
                 })
                 .map(|(_, flyline_cmd)| flyline_cmd);
 
-            (
-                "Agent mode is not configured. Run `flyline set-agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
-                None,
-                setup_cmd,
-            )
+            match setup_cmd {
+                Some(cmd) => (
+                    "Agent mode is not configured. However, flyline can set it up for you:".to_string(),
+                    None,
+                    Some(cmd),
+                ),
+                None => (
+                    "Agent mode is not configured. Run `flyline set-agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
+                    None,
+                    setup_cmd,
+                )
+            }
         };
         self.content_mode = ContentMode::AgentError {
             message,
@@ -1462,6 +1467,8 @@ impl<'a> App<'a> {
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
 
+        let now = std::time::Instant::now();
+
         // When terminal log streaming is enabled, show the last 20 log lines at
         // the top of the content before anything else.
         if crate::logging::is_terminal_streaming() {
@@ -1485,72 +1492,74 @@ impl<'a> App<'a> {
                     content.write_tagged_line(&TaggedLine::from_line(line, Tag::Tutorial), true);
                 }
 
-                // Move to the second-to-last logo row, column 30, and overwrite
-                // with the wave-animated "Press enter to start the tutorial" text.
-                let second_to_last = content.height().saturating_sub(2);
-                content.move_cursor_to(second_to_last, 30);
-                let action_line = crate::tutorial::generate_welcome_action_line();
+                let second_to_last = content.height().saturating_sub(3);
+                let (offset, action_line) =
+                    crate::tutorial::generate_welcome_action_line(now, width);
+                content.move_cursor_to(second_to_last, offset);
                 content
                     .write_tagged_line(&TaggedLine::from_line(action_line, Tag::Tutorial), false);
 
                 content.move_to_final_line();
                 content.newline();
             } else if let Some(tutorial_tagged_lines) = crate::tutorial::generate_tutorial_text(
+                &self.settings,
                 self.settings.tutorial_step,
                 &self.settings.color_palette,
             ) {
                 const BUTTON_HEIGHT: u16 = 30;
 
                 let layout = Layout::horizontal([
-                    Constraint::Min(7),
-                    Constraint::Percentage(90),
-                    Constraint::Min(7),
+                    Constraint::Max(10),
+                    Constraint::Min(10),
+                    Constraint::Max(10),
                 ]);
 
-                let tutorial_start_row = content.height();
+                let tutorial_start_row = 1;
+                content.newline();
 
-                let [prev_block, text_block_outer, next_block] = Rect {
+                let [mut prev_block, text_block, mut next_block] = Rect {
                     x: 0,
-                    y: tutorial_start_row,
+                    y: 0,
                     width,
                     height: BUTTON_HEIGHT,
                 }
                 .layout(&layout);
 
-                let text_block = text_block_outer.inner(Margin {
-                    horizontal: 2,
-                    vertical: 0,
-                });
-
-                // Allocate rows for the buttons before drawing them.
-                // `increase_buf_single_row` grows the buffer one row at a time, which is
-                // its existing public API for incremental allocation.
-                while content.buf.len() < (tutorial_start_row + BUTTON_HEIGHT) as usize {
-                    content.increase_buf_single_row();
-                }
-
                 // Draw prev and next buttons first.
-                content.render_block(
-                    prev_block,
-                    "prev",
-                    Tag::TutorialPrev,
-                    self.last_mouse_over_cell == Some(Tag::TutorialPrev),
-                );
-                content.render_block(
-                    next_block,
-                    "next",
-                    Tag::TutorialNext,
-                    self.last_mouse_over_cell == Some(Tag::TutorialNext),
-                );
+                let draw_prev_block = |block, content: &mut Contents| {
+                    content.render_block(
+                        block,
+                        "prev",
+                        Tag::TutorialPrev,
+                        self.last_mouse_over_cell == Some(Tag::TutorialPrev),
+                    );
+                    content.tag_rect(
+                        block.outer(Margin {
+                            horizontal: 1,
+                            vertical: 0,
+                        }),
+                        Tag::TutorialPrev,
+                    );
+                };
 
-                // Collect clipboard content from tagged spans.
-                for tagged_line in &tutorial_tagged_lines {
-                    for tagged_span in &tagged_line.spans {
-                        if let SpanTag::Constant(Tag::Clipboard(cb_type)) = &tagged_span.tag {
-                            content.setup_clipboard(*cb_type, tagged_span.span.content.to_string());
-                        }
-                    }
-                }
+                draw_prev_block(prev_block, &mut content);
+
+                let draw_next_block = |block, content: &mut Contents| {
+                    content.render_block(
+                        block,
+                        "next",
+                        Tag::TutorialNext,
+                        self.last_mouse_over_cell == Some(Tag::TutorialNext),
+                    );
+                    content.tag_rect(
+                        block.outer(Margin {
+                            horizontal: 1,
+                            vertical: 0,
+                        }),
+                        Tag::TutorialNext,
+                    );
+                };
+                draw_next_block(next_block, &mut content);
 
                 // Move cursor to the start of the text area and write tutorial
                 // lines using overwrite=false so the text sits between the buttons.
@@ -1581,18 +1590,18 @@ impl<'a> App<'a> {
                     }
                     text_end_row = content.cursor_position().row;
                     content.newline();
-                    content.set_cursor_col(text_block.x);
                 }
 
-                // Delete the empty rows between where the text ends and where
-                // the buttons end. We keep the last row of the button area
-                // (BUTTON_HEIGHT - 1) because it holds the bottom border of
-                // the prev/next blocks, making them look visually complete.
-                let drain_start = (text_end_row + 1) as usize;
-                let buttons_bottom_border = (tutorial_start_row + BUTTON_HEIGHT - 1) as usize;
-                if drain_start < buttons_bottom_border {
-                    content.buf.drain(drain_start..buttons_bottom_border);
-                }
+                let drain_start = text_end_row + 2;
+                content.delete_rows(drain_start, tutorial_start_row + BUTTON_HEIGHT);
+
+                let final_height = content.height().max(7);
+
+                prev_block.height = final_height;
+                next_block.height = final_height;
+
+                draw_prev_block(prev_block, &mut content);
+                draw_next_block(next_block, &mut content);
 
                 content.move_to_final_line();
                 content.newline();
@@ -1640,8 +1649,6 @@ impl<'a> App<'a> {
 
         let mut line_idx = 0;
         let mut cursor_pos_maybe = None;
-
-        let now = std::time::Instant::now();
 
         for part in self.formatted_buffer_cache.parts.iter() {
             let span_to_draw = if part.token.token.kind == TokenKind::Newline {
@@ -2079,18 +2086,13 @@ impl<'a> App<'a> {
                     content.newline();
                     content.write_tagged_span(&TaggedSpan::new(
                         Span::styled(
-                            format!("Buffer with prefix: {}", suggested),
+                            format!(
+                                "Press Enter to launch agent mode with this prefixed buffer: {}",
+                                suggested
+                            ),
                             self.settings.color_palette.secondary_text(),
                         ),
                         Tag::Normal,
-                    ));
-                    content.newline();
-                    content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(
-                            "Press Enter to launch agent mode with this buffer.",
-                            self.settings.color_palette.secondary_text(),
-                        ),
-                        Tag::Blank,
                     ));
                 } else {
                     if !raw_output.is_empty() {

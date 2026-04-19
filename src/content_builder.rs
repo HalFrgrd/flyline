@@ -102,6 +102,12 @@ impl<'a> From<Vec<TaggedSpan<'a>>> for TaggedLine<'a> {
     }
 }
 
+impl<'a> From<TaggedSpan<'a>> for TaggedLine<'a> {
+    fn from(span: TaggedSpan<'a>) -> Self {
+        TaggedLine { spans: vec![span] }
+    }
+}
+
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,8 +137,22 @@ impl Coord {
 /// Identifies which clipboard slot a [`Tag::Clipboard`] cell belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClipboardTypes {
+    TutorialClickExample,
+    TutorialRP1,
+    TutorialMouseMode,
     TutorialRecommendedSettings,
     TutorialFineGrainDeletion,
+    TutorialSetColor1,
+    TutorialSetColor2,
+    TutorialSetColor3,
+    TutorialSetColor4,
+    TutorialSetColor5,
+    TutorialRunHelp,
+    TutorialAutoClose,
+    TutorialAgentMode,
+    TutorialGrep,
+    TutorialBashCompletion,
+    TutorialIosevka,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,7 +264,14 @@ impl Contents {
 
     pub fn move_to_next_insertion_point(&mut self, graph: &StyledGrapheme, overwrite: bool) {
         let graph_w = graph.symbol.width() as u16;
+        const MAX_ITERATIONS: usize = 1000; // safety to prevent infinite loops
+        let mut iterations = 0;
         loop {
+            if iterations >= MAX_ITERATIONS {
+                break;
+            }
+            iterations += 1;
+
             if self.cursor_pos.row >= self.buf.len() as u16 {
                 self.increase_buf_single_row();
             } else if self.cursor_pos.col as usize + graph_w as usize > self.width as usize {
@@ -274,6 +301,10 @@ impl Contents {
         overwrite: bool,
         mark_nth_grapheme: Option<usize>,
     ) -> Option<Coord> {
+        if let SpanTag::Constant(Tag::Clipboard(cb_type)) = &tagged_span.tag {
+            self.setup_clipboard(*cb_type, tagged_span.span.content.to_string());
+        }
+
         let graphemes = tagged_span.span.styled_graphemes(tagged_span.span.style);
         let mut marked_graph_coord = None;
 
@@ -646,6 +677,10 @@ impl Contents {
     }
 
     pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, is_selected: bool) {
+        for _ in self.buf.len()..area.bottom() as usize {
+            self.increase_buf_single_row();
+        }
+
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
                 if let Some(row) = self.buf.get_mut(y as usize)
@@ -666,12 +701,37 @@ impl Contents {
             let label_width = label_span.width() as u16;
             if label_width < area.width {
                 let label_x = area.left() + (area.width - label_width) / 2;
-                let label_y = area.top() + (area.height / 2);
+                let label_y = area.top() + ((area.height - 1) / 2);
                 self.set_cursor_col(label_x);
                 self.cursor_pos.row = label_y;
                 self.write_tagged_span(&TaggedSpan::new(label_span, tag));
             }
         }
+    }
+
+    pub fn tag_rect(&mut self, area: Rect, tag: Tag) {
+        for _ in self.buf.len()..area.bottom() as usize {
+            self.increase_buf_single_row();
+        }
+
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                if let Some(row) = self.buf.get_mut(y as usize)
+                    && let Some(tagged_cell) = row.get_mut(x as usize)
+                {
+                    tagged_cell.tag = tag;
+                }
+            }
+        }
+    }
+
+    pub fn delete_rows(&mut self, start_row: u16, end_row: u16) {
+        // safely delete rows from start_row to end_row (exclusive), shifting up the rows below
+        if start_row >= end_row || start_row >= self.height() {
+            return;
+        }
+        let end_row = end_row.min(self.height());
+        self.buf.drain(start_row as usize..end_row as usize);
     }
 }
 

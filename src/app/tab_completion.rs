@@ -652,6 +652,10 @@ impl App<'_> {
         // cursor.
         const MAX_FOR_COMMON_PREFIX: usize = 500;
         if sugs.len() < MAX_FOR_COMMON_PREFIX {
+            for sug in &mut sugs {
+                // This will quote the match which is needed for inserting the prefix
+                sug.to_suggestion();
+            }
             if let Some(common_prefix) = common_prefix_of_suggestions(&sugs) {
                 if common_prefix.len() > wuc_substring.s.len()
                     && common_prefix.starts_with(&*wuc_substring.s)

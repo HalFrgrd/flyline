@@ -1122,6 +1122,8 @@ impl Flyline {
                         self.settings.run_tutorial = enabled;
                         if enabled {
                             self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
+                            // clear the terminal:
+                            print!("\x1b[2J\x1b[H");
                         } else {
                             self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
                         }

@@ -1,33 +1,30 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::sync::LazyLock;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::bash_funcs;
 use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
 use crate::palette::Palette;
 use crate::shell_integration;
+use crate::{bash_funcs, settings};
 
 /// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
-const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
-
-/// Example command used in the Fine-Grained Deletion tutorial step.
-pub const FINE_GRAIN_DELETION_EXAMPLE_CMD: &str = "ls foo/bar_abc/qwe.txt oiu.txt";
+const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🯁🯂🯃 🬛 🮐 🮑 🮔 🮖 🮘";
 
 /// Large block-art logo displayed on the welcome screen.
 const LOGO_LINES: &[&str] = &[
     "",
-    "\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}             \u{2588}\u{2588}\u{2588}\u{2588}   \u{2588}\u{2588}\u{2588}                     ",
-    "\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}            \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2591}\u{2591}                      ",
-    " \u{2591}\u{2588}\u{2588}\u{2588}   \u{2588} \u{2591}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}    \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
-    " \u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}    \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}",
-    " \u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}\u{2588}    \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
-    " \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}     \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}  ",
-    " \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}       \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
-    "\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}       \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}   \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  \u{2591}\u{2591}\u{2591}\u{2591}\u{2591} \u{2591}\u{2591}\u{2591}\u{2591} \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  ",
-    "                    \u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}                                 ",
-    "                   \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}                                  ",
-    "                    \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}",
+    " ███████████ ████             ████   ███",
+    "░░███░░░░░░█░░███            ░░███  ░░░",
+    " ░███   █ ░  ░███  █████ ████ ░███  ████  ████████    ██████",
+    " ░███████    ░███ ░░███ ░███  ░███ ░░███ ░░███░░███  ███░░███",
+    " ░███░░░█    ░███  ░███ ░███  ░███  ░███  ░███ ░███ ░███████",
+    " ░███  ░     ░███  ░███ ░███  ░███  ░███  ░███ ░███ ░███░░░",
+    " █████       █████ ░░███████  █████ █████ ████ █████░░██████",
+    "░░░░░       ░░░░░   ░░░░░███ ░░░░░ ░░░░░ ░░░░ ░░░░░  ░░░░░░",
+    "                    ███ ░███",
+    "                   ░░██████",
+    "                    ░░░░░░",
 ];
 
 /// Truncates a `&str` to at most `max_width` display columns.
@@ -46,11 +43,34 @@ fn truncate_to_width(s: &str, max_width: usize) -> String {
     s[..byte_end].to_string()
 }
 
-/// Returns the logo lines for the welcome screen, each truncated to `max_width` display columns.
-pub fn generate_welcome_logo_lines(max_width: u16) -> Vec<Line<'static>> {
+pub fn generate_welcome_logo_lines(term_width: u16) -> Vec<Line<'static>> {
+    let log_width = LOGO_LINES
+        .iter()
+        .map(|line| line.width())
+        .max()
+        .unwrap_or(0) as u16;
+    let left_padding_width = (term_width).saturating_sub(log_width) / 2;
+    let right_padding_width = (term_width)
+        .saturating_sub(log_width)
+        .saturating_sub(left_padding_width);
+    let left_padding = " ".repeat(left_padding_width as usize);
+    let right_padding = " ".repeat(right_padding_width as usize);
     LOGO_LINES
         .iter()
-        .map(|&line| Line::from(truncate_to_width(line, max_width as usize)))
+        .map(|&line| {
+            // log::info!("line len: {}, width: {}", line.len(), line.width());
+            let truncated = Span::from(truncate_to_width(line, term_width as usize));
+            let padded = if truncated.width() < term_width as usize {
+                vec![
+                    Span::from(left_padding.to_owned()),
+                    truncated,
+                    Span::from(right_padding.to_owned()),
+                ]
+            } else {
+                vec![truncated]
+            };
+            Line::from(padded)
+        })
         .collect()
 }
 
@@ -59,19 +79,12 @@ pub fn generate_welcome_logo_lines(max_width: u16) -> Vec<Line<'static>> {
 /// at 15 columns per second and loops after 50 virtual positions.  Because the
 /// text is only 33 characters wide the wave peak is sometimes outside the
 /// visible text, giving periods where the whole line appears dim.
-pub fn generate_welcome_action_line() -> Line<'static> {
+pub fn generate_welcome_action_line(now: std::time::Instant, width: u16) -> (u16, Line<'static>) {
     const TEXT: &str = "Press Enter to start the tutorial";
+    static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
 
-    // Wave peak: travels 30 cols every 2 s → 15 cols/s; loops every 50 virtual cols.
-    // The text is only 33 chars wide, so the peak spends some of its loop period
-    // outside the visible text — giving intervals where the whole line is dim.
-    // Non-circular distance is intentional: no wrap-around continuity at the boundary.
-    let elapsed_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f32())
-        .unwrap_or(0.0);
-    // Virtual loop length is 50 columns; peak wraps to 0 after travelling 50 cols.
-    let peak_pos = (elapsed_secs * 15.0) % 50.0;
+    let elapsed_secs = now.duration_since(*START_TIME).as_secs_f32();
+    let peak_pos = (elapsed_secs * 25.0) % 45.0 - 5.0;
 
     let spans: Vec<Span<'static>> = TEXT
         .chars()
@@ -79,15 +92,16 @@ pub fn generate_welcome_action_line() -> Line<'static> {
         .map(|(i, ch)| {
             // Gaussian falloff: sigma ≈ 4  →  2σ² = 32
             let dist = (i as f32 - peak_pos).abs();
-            let intensity = (-dist * dist / 32.0_f32).exp();
-            // Brightness range: 80 (dim) … 255 (peak)
-            let brightness = (80.0 + 175.0 * intensity) as u8;
+            let intensity = (-dist * dist / 16.0_f32).exp();
+            let brightness = (100.0 + 175.0 * intensity) as u8;
             let style = Style::default().fg(Color::Rgb(brightness, brightness, brightness));
             Span::styled(ch.to_string(), style)
         })
         .collect();
 
-    Line::from(spans)
+    let offset = (width + 32).saturating_sub(TEXT.len() as u16) / 2;
+
+    (offset, Line::from(spans))
 }
 
 /// Tracks progress through the interactive tutorial.
@@ -105,12 +119,13 @@ pub enum TutorialStep {
     Autocompletions,
     AutoClosing,
     FineGrainDeletion,
+    AgentMode,
     FontDetection,
     End,
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 12] = [
+    const STEPS_IN_ORDER: [TutorialStep; 13] = [
         TutorialStep::Welcome,
         TutorialStep::TutorialsTutorial,
         TutorialStep::RecommendedSettings,
@@ -120,6 +135,7 @@ impl TutorialStep {
         TutorialStep::Autocompletions,
         TutorialStep::AutoClosing,
         TutorialStep::FineGrainDeletion,
+        TutorialStep::AgentMode,
         TutorialStep::FontDetection,
         TutorialStep::End,
         TutorialStep::NotRunning,
@@ -215,91 +231,13 @@ fn zsh_history_recently_modified() -> bool {
     elapsed < std::time::Duration::from_secs(24 * 60 * 60)
 }
 
-/// Cached result of [`should_recommend_zsh_history`]. Evaluated lazily on
-/// first access; the underlying environment / filesystem state is not
-/// expected to change over the lifetime of the process.
 static SHOULD_RECOMMEND_ZSH_HISTORY: LazyLock<bool> =
     LazyLock::new(|| default_shell_is_zsh() || zsh_history_recently_modified());
-
-/// Returns true when flyline should recommend that the user enables Zsh
-/// history loading: the user's default shell is `zsh`, or there is a
-/// `$HOME/.zsh_history` file that was modified in the last 24 hours.
-fn should_recommend_zsh_history() -> bool {
-    *SHOULD_RECOMMEND_ZSH_HISTORY
-}
-
-/// Generate recommended settings text for the first tutorial step.
-pub fn generate_recommended_settings(palette: &Palette) -> Vec<TaggedLine<'static>> {
-    let text_style = palette.normal_text();
-    let mut lines: Vec<TaggedLine> = Vec::new();
-
-    let tl = |span: Span<'static>| -> TaggedLine<'static> {
-        TaggedLine::from_line(Line::from(span), Tag::Tutorial)
-    };
-
-    lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
-
-    if is_vscode() {
-        lines.push(tl(Span::styled(
-            "You are running in VS Code. For the best experience, set these in settings.json (try ctrl+clicking the links):",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  • vscode://settings/terminal.integrated.minimumContrastRatio = 1",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  • vscode://settings/terminal.integrated.enableKittyKeyboardProtocol = true",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  • vscode://settings/terminal.integrated.macOptionIsMeta (if on macOS)",
-            text_style,
-        )));
-        lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
-    }
-
-    if detect_kitty_keyboard_support() {
-        lines.push(tl(Span::styled(
-            "✅ Your terminal supports the Kitty extended keyboard protocol.",
-            text_style,
-        )));
-    } else {
-        lines.push(tl(Span::styled(
-            "⚠ Your terminal may not support the Kitty extended keyboard protocol.",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  Consider using a terminal emulator that does (kitty, ghostty, wezterm, foot, rio).",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  This enables better key disambiguation for flyline.",
-            text_style,
-        )));
-    }
-
-    if should_recommend_zsh_history() {
-        lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
-        lines.push(tl(Span::styled(
-            "💡 We detected that you use Zsh. Consider loading your Zsh history into flyline:",
-            text_style,
-        )));
-        lines.push(TaggedLine::from(vec![
-            TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
-            TaggedSpan::new(
-                Span::styled("flyline --load-zsh-history", text_style),
-                Tag::Clipboard(ClipboardTypes::TutorialRecommendedSettings),
-            ),
-        ]));
-    }
-
-    lines
-}
 
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
 pub fn generate_tutorial_text(
+    settings: &settings::Settings,
     step: TutorialStep,
     palette: &Palette,
 ) -> Option<Vec<TaggedLine<'static>>> {
@@ -308,13 +246,17 @@ pub fn generate_tutorial_text(
     }
 
     let text_style = palette.normal_text();
+    let copiable_style = text_style.add_modifier(Modifier::UNDERLINED);
     let heading_style = palette.markdown_heading2();
     let mut lines: Vec<TaggedLine> = Vec::new();
 
+    let empty = || -> TaggedLine<'static> { TaggedLine::from_line(Line::from(""), Tag::Tutorial) };
     let tl = |span: Span<'static>| -> TaggedLine<'static> {
         TaggedLine::from_line(Line::from(span), Tag::Tutorial)
     };
-    let empty = || -> TaggedLine<'static> { TaggedLine::from_line(Line::from(""), Tag::Tutorial) };
+    let ts_copiable = |s: String, clip_type: ClipboardTypes| -> TaggedSpan<'static> {
+        TaggedSpan::new(Span::styled(s, copiable_style), Tag::Clipboard(clip_type))
+    };
 
     match step {
         TutorialStep::Welcome => {
@@ -322,7 +264,7 @@ pub fn generate_tutorial_text(
             return None;
         }
         TutorialStep::TutorialsTutorial => {
-            lines.push(tl(Span::styled("How to Use This Tutorial", heading_style)));
+            lines.push(tl(Span::styled("How to use this tutorial", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
                 "• Click the prev and next buttons to navigate.",
@@ -332,12 +274,25 @@ pub fn generate_tutorial_text(
                 "• Press Enter with an empty command buffer to move to the next tutorial screen.",
                 text_style,
             )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(
+                    Span::styled(
+                        "• Click on underlined text to copy it to your clipboard and command buffer: ",
+                        text_style,
+                    ),
+                    Tag::Tutorial,
+                ),
+                ts_copiable(
+                    "flyline --version".to_string(),
+                    ClipboardTypes::TutorialClickExample,
+                ),
+            ]));
             lines.push(tl(Span::styled(
-                "• Click on the text to copy it to your clipboard and command buffer.",
+                "• Exit the tutorial at any time with `flyline --run-tutorial false`.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "• Remember to append commands to your ~/.bashrc so they persist.",
+                "• Remember to append settings to your `~/.bashrc` so they persist!",
                 text_style,
             )));
         }
@@ -347,7 +302,77 @@ pub fn generate_tutorial_text(
                 "Flyline will detect your terminal and suggest optimal settings for the best experience:",
                 text_style,
             )));
-            lines.extend(generate_recommended_settings(palette));
+            lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+
+            if is_vscode() {
+                lines.push(tl(Span::styled(
+                    "You are running in VS Code. For the best experience, set these in settings.json (try ctrl+clicking the links):",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  • vscode://settings/terminal.integrated.minimumContrastRatio = 1",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  • vscode://settings/terminal.integrated.enableKittyKeyboardProtocol = true",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  • vscode://settings/terminal.integrated.macOptionIsMeta (if on macOS)",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+            }
+
+            if detect_kitty_keyboard_support() {
+                lines.push(tl(Span::styled(
+                    "✅ Your terminal supports the Kitty extended keyboard protocol.",
+                    text_style,
+                )));
+            } else {
+                lines.push(tl(Span::styled(
+                    "⚠ Your terminal may not support the Kitty extended keyboard protocol.",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  Consider using a terminal emulator that does (kitty, ghostty, wezterm, foot, rio).",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  This enables better key disambiguation for flyline.",
+                    text_style,
+                )));
+            }
+
+            if *SHOULD_RECOMMEND_ZSH_HISTORY {
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+                lines.push(tl(Span::styled(
+                    "💡 We detected that you use Zsh. Consider loading your Zsh history into flyline:",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from(vec![
+                    TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                    ts_copiable(
+                        "flyline --load-zsh-history".to_string(),
+                        ClipboardTypes::TutorialRecommendedSettings,
+                    ),
+                ]));
+            }
+
+            let rps1_set = bash_funcs::get_envvar_value("RPS1").is_some_and(|v| !v.is_empty())
+                || bash_funcs::get_envvar_value("RPROMPT").is_some_and(|v| !v.is_empty());
+
+            if !rps1_set {
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+                lines.push(tl(Span::styled(
+                    "💡 How about showing the time in your right prompt:",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from(vec![
+                    TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                    ts_copiable("RPS1='\\t'".to_string(), ClipboardTypes::TutorialRP1),
+                ]));
+            }
         }
         TutorialStep::MouseMode => {
             lines.push(tl(Span::styled("Mouse Interaction Modes", heading_style)));
@@ -373,6 +398,25 @@ pub fn generate_tutorial_text(
                 "Switch mouse interaction modes with `flyline --mouse-mode smart/simple/disabled`.",
                 text_style,
             )));
+
+            if settings
+                .custom_prompt_widgets
+                .values()
+                .all(|w| !matches!(w, settings::PromptWidget::MouseMode(_)))
+            {
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+                lines.push(tl(Span::styled(
+                    "💡 Consider display the mouse capture mode in your right prompt:",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from(vec![
+                    TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                    ts_copiable(
+                        "flyline create-prompt-widget mouse-mode --name MOUSE_MODE 'ON ' 'OFF' && RPS1=\" MOUSE_MODE $RPS1\"".to_string(),
+                        ClipboardTypes::TutorialMouseMode,
+                    ),
+                ]));
+            }
         }
         TutorialStep::FuzzyHistorySearch => {
             lines.push(tl(Span::styled("Fuzzy History Search", heading_style)));
@@ -386,7 +430,7 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "Press Enter to run the selected command, or Tab to accept it for editing.",
+                "Press Enter to accept the selected command for editing.",
                 text_style,
             )));
             lines.push(tl(Span::styled("Press Escape to cancel.", text_style)));
@@ -394,10 +438,19 @@ pub fn generate_tutorial_text(
         TutorialStep::Autocompletions => {
             lines.push(tl(Span::styled("Fuzzy Autocompletions", heading_style)));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Type `grep --` and press Tab to trigger autocompletions. If nothing comes up, first set normal Bash completions (https://github.com/scop/bash-completion).",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("Type ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "grep --".to_string(),
+                    ClipboardTypes::TutorialGrep,
+                ),
+                TaggedSpan::new(Span::styled(" and press Tab to trigger autocompletions. If nothing comes up, first set normal Bash completions (", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "https://github.com/scop/bash-completion".to_string(),
+                    ClipboardTypes::TutorialBashCompletion,
+                ),
+                TaggedSpan::new(Span::styled(")", text_style), Tag::Tutorial),
+            ]));
             lines.push(tl(Span::styled(
                 "Type to filter suggestions, use arrow keys or your mouse to navigate.",
                 text_style,
@@ -415,27 +468,46 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled("Examples:", text_style)));
-            lines.push(tl(Span::styled(
-                "  flyline set-color --default-theme dark",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "  flyline set-color --default-theme light",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "  flyline set-color --matching-char \"bold green\"",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "  flyline set-color --recognised-command \"green\" --unrecognised-command \"bold red\"",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --default-theme dark".to_string(),
+                    ClipboardTypes::TutorialSetColor1,
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --default-theme light".to_string(),
+                    ClipboardTypes::TutorialSetColor2,
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --matching-char \"bold green\"".to_string(),
+                    ClipboardTypes::TutorialSetColor3,
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --recognised-command \"green\" --unrecognised-command \"bold red\"".to_string(),
+                    ClipboardTypes::TutorialSetColor4,
+                ),
+            ]));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Run `flyline set-color --help` for all options.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("Run ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --help".to_string(),
+                    ClipboardTypes::TutorialSetColor5,
+                ),
+                TaggedSpan::new(
+                    Span::styled(" to see all options.", text_style),
+                    Tag::Tutorial,
+                ),
+            ]));
         }
         TutorialStep::AutoClosing => {
             lines.push(tl(Span::styled(
@@ -448,7 +520,7 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "Try typing `echo $(\"` and watch Flyline insert the closing `\")` for you.",
+                "Try typing `echo \"$(` and watch Flyline insert the closing `)\"` for you.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
@@ -456,44 +528,80 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Toggle this feature with `flyline --auto-close-chars true/false`.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(
+                    Span::styled("Toggle this feature with ", text_style),
+                    Tag::Tutorial,
+                ),
+                ts_copiable(
+                    "flyline --auto-close-chars true/false".to_string(),
+                    ClipboardTypes::TutorialAutoClose,
+                ),
+                TaggedSpan::new(Span::styled(".", text_style), Tag::Tutorial),
+            ]));
         }
         TutorialStep::FineGrainDeletion => {
             lines.push(tl(Span::styled("Fine-Grained Deletion", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Flyline provides more granular deletion commands in addition to Backspace and Delete.",
+                "Ctrl+Backspace deletes one whitespace-delimited word to the left.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "Ctrl+Backspace deletes one whitespace-delimited word to the left, and Alt+Backspace deletes one chunk to the left using finer punctuation or path-segment boundaries.",
+                "Alt+Backspace deletes one chunk to the left using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
-                "Similarly, Ctrl+Delete deletes one whitespace-delimited word to the right, and Alt+Delete deletes one chunk to the right using finer punctuation or path-segment boundaries.",
+                "Ctrl+Delete and Alt+Delete work similarly.",
                 text_style,
             )));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Click below to load an example command to try it out:",
+                "Try it out on this example command:",
                 text_style,
             )));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("  ", text_style), Tag::Tutorial),
-                TaggedSpan::new(
-                    Span::styled(FINE_GRAIN_DELETION_EXAMPLE_CMD, text_style),
-                    Tag::Clipboard(ClipboardTypes::TutorialFineGrainDeletion),
+                ts_copiable(
+                    "ls foo/bar_abc/qwe.txt oiu.txt".to_string(),
+                    ClipboardTypes::TutorialFineGrainDeletion,
                 ),
             ]));
+        }
+        TutorialStep::AgentMode => {
+            lines.push(tl(Span::styled("Agent Mode", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
+                "Flyline can interface with your AI agent to help you write commands.",
+                text_style,
+            )));
+            lines.push(tl(Span::styled(
+                "Try activating agent mode and get help setting it up:",
+                text_style,
+            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("Type ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "list files older than three days".to_string(),
+                    ClipboardTypes::TutorialAgentMode,
+                ),
+                TaggedSpan::new(
+                    Span::styled(" and press Alt+Enter.", text_style),
+                    Tag::Tutorial,
+                ),
+            ]));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
+                "When setting it up, you can specify a `--trigger-prefix`. If the buffer starts with this prefix, flyline will activate agent mode when you press Enter.",
+                text_style,
+            )));
+            lines.push(empty());
         }
         TutorialStep::FontDetection => {
             lines.push(tl(Span::styled("Font Detection", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Flyline uses symbols from the Unicode legacy computing supplement range. Here are some examples:",
+                "Optional: For the best terminal experience, use a font that supports the Unicode legacy computing symbols (U+1FB00-U+1FB3B).",
                 text_style,
             )));
             lines.push(empty());
@@ -502,14 +610,17 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "If the symbols above are not rendering correctly, install a font that supports this range,",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "such as Iosevka Term Sans Serif (https://github.com/be5invis/Iosevka).",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(
+                    "If the symbols above are not rendering correctly, install a font that supports this range, such as Iosevka Term Sans Serif (",
+                    text_style,
+                ), Tag::Tutorial),
+                ts_copiable(
+                    "https://github.com/be5invis/Iosevka".to_string(),
+                    ClipboardTypes::TutorialIosevka,
+                ),
+                TaggedSpan::new(Span::styled(").", text_style), Tag::Tutorial),
+            ]));
         }
         TutorialStep::End => {
             lines.push(tl(Span::styled(
@@ -521,10 +632,20 @@ pub fn generate_tutorial_text(
                 "Feel free to explore and experiment with flyline's features.",
                 text_style,
             )));
-            lines.push(tl(Span::styled(
-                "For more information, check out the documentation and GitHub repo.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(
+                    Span::styled("For more information, check out ", text_style),
+                    Tag::Tutorial,
+                ),
+                ts_copiable(
+                    "flyline --help".to_string(),
+                    ClipboardTypes::TutorialRunHelp,
+                ),
+                TaggedSpan::new(
+                    Span::styled(" and https://github.com/HalFrgrd/flyline.", text_style),
+                    Tag::Tutorial,
+                ),
+            ]));
         }
         TutorialStep::NotRunning => unreachable!(),
     }
