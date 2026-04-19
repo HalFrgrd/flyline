@@ -465,9 +465,9 @@ pub fn generate_tutorial_text(
                 ts_text(" and press "),
                 ts_key("Tab"),
                 ts_text(" to trigger autocompletions. If nothing comes up, first set normal Bash completions ("),
-                ts_copiable(
-                    "https://github.com/scop/bash-completion".to_string(),
-                    ClipboardTypes::TutorialBashCompletion,
+                TaggedSpan::new(
+                    Span::styled("https://github.com/scop/bash-completion", text_style),
+                    Tag::HyperLink("https://github.com/scop/bash-completion".to_string()),
                 ),
                 TaggedSpan::new(Span::styled(")", text_style), Tag::Tutorial),
             ]));
@@ -641,9 +641,9 @@ pub fn generate_tutorial_text(
                     "If the symbols above are not rendering correctly, install a font that supports this range, such as Iosevka Term Sans Serif (",
                     text_style,
                 ), Tag::Tutorial),
-                ts_copiable(
-                    "https://github.com/be5invis/Iosevka".to_string(),
-                    ClipboardTypes::TutorialIosevka,
+                TaggedSpan::new(
+                    Span::styled("https://github.com/be5invis/Iosevka", text_style),
+                    Tag::HyperLink("https://github.com/be5invis/Iosevka".to_string()),
                 ),
                 TaggedSpan::new(Span::styled(").", text_style), Tag::Tutorial),
             ]));
@@ -667,10 +667,12 @@ pub fn generate_tutorial_text(
                     "flyline --help".to_string(),
                     ClipboardTypes::TutorialRunHelp,
                 ),
+                TaggedSpan::new(Span::styled(" and ", text_style), Tag::Tutorial),
                 TaggedSpan::new(
-                    Span::styled(" and https://github.com/HalFrgrd/flyline.", text_style),
-                    Tag::Tutorial,
+                    Span::styled("https://github.com/HalFrgrd/flyline", text_style),
+                    Tag::HyperLink("https://github.com/HalFrgrd/flyline".to_string()),
                 ),
+                TaggedSpan::new(Span::styled(".", text_style), Tag::Tutorial),
             ]));
         }
         TutorialStep::NotRunning => unreachable!(),

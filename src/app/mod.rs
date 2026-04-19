@@ -314,7 +314,7 @@ impl DrawnContent {
                     | Tag::Clipboard(_)
             )
         }) {
-            return direct_contact.map(|cell| (cell.tag, true));
+            return direct_contact.map(|cell| (cell.tag.clone(), true));
         }
 
         content_buf_row
@@ -324,7 +324,7 @@ impl DrawnContent {
             .find(|(col_idx, tagged_cell)| {
                 *col_idx <= term_em_x as usize && matches!(tagged_cell.tag, Tag::Command(_))
             })
-            .map(|(_, cell)| (cell.tag, false))
+            .map(|(_, cell)| (cell.tag.clone(), false))
     }
 }
 
@@ -1573,7 +1573,8 @@ impl<'a> App<'a> {
                         let is_hovered = if let (
                             SpanTag::Constant(Tag::Clipboard(span_cb)),
                             Some(Tag::Clipboard(hover_cb)),
-                        ) = (&tagged_span.tag, self.last_mouse_over_cell)
+                        ) =
+                            (&tagged_span.tag, self.last_mouse_over_cell.clone())
                         {
                             span_cb == &hover_cb
                         } else {
@@ -1835,7 +1836,7 @@ impl<'a> App<'a> {
                                     formatted.render(col.width, *is_selected);
                                 let tag = Tag::Suggestion(formatted.suggestion_idx);
                                 for span in formatted_suggestion {
-                                    content.write_tagged_span(&TaggedSpan::new(span, tag));
+                                    content.write_tagged_span(&TaggedSpan::new(span, tag.clone()));
                                 }
                                 if *is_selected && selected_grid_row.is_none() {
                                     selected_grid_row = Some(row_idx as u16);

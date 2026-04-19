@@ -23,8 +23,8 @@ impl SpanTag {
     /// Return the tag for the grapheme at `idx`.
     pub fn get(&self, idx: usize) -> Tag {
         match self {
-            SpanTag::Constant(tag) => *tag,
-            SpanTag::PerGrapheme(tags) => tags.get(idx).copied().unwrap_or(Tag::Normal),
+            SpanTag::Constant(tag) => tag.clone(),
+            SpanTag::PerGrapheme(tags) => tags.get(idx).cloned().unwrap_or(Tag::Normal),
         }
     }
 }
@@ -85,7 +85,7 @@ impl<'a> TaggedLine<'a> {
             spans: line
                 .spans
                 .into_iter()
-                .map(|s| TaggedSpan::new(s, tag))
+                .map(|s| TaggedSpan::new(s, tag.clone()))
                 .collect(),
         }
     }
@@ -151,11 +151,9 @@ pub enum ClipboardTypes {
     TutorialAutoClose,
     TutorialAgentMode,
     TutorialGrep,
-    TutorialBashCompletion,
-    TutorialIosevka,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tag {
     Blank,
     Normal,
@@ -176,6 +174,8 @@ pub enum Tag {
     TutorialNext,
     Tutorial,
     Clipboard(ClipboardTypes),
+    /// An OSC 8 clickable hyperlink. The wrapped string is the target URI.
+    HyperLink(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -328,15 +328,27 @@ impl Contents {
             }
 
             let tag = tagged_span.tag.get(i);
-            self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
-                .update(&graph, tag);
+            {
+                let cell =
+                    &mut self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize];
+                if let Tag::HyperLink(url) = &tag {
+                    // Wrap the grapheme in an OSC 8 hyperlink sequence so the
+                    // terminal emulator renders it as a clickable link.
+                    let linked = format!("\x1b]8;;{url}\x1b\\{}\x1b]8;;\x1b\\", graph.symbol);
+                    cell.cell.set_symbol(&linked).set_style(graph.style);
+                } else {
+                    cell.cell.set_symbol(graph.symbol).set_style(graph.style);
+                }
+                cell.tag = tag.clone();
+            }
             self.cursor_pos.col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
             while self.cursor_pos.col < next_graph_x {
                 self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
                     .cell
                     .reset();
-                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag = tag;
+                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag =
+                    tag.clone();
                 self.cursor_pos.col += 1;
             }
         }
@@ -433,7 +445,7 @@ impl Contents {
                     if self.cursor_pos.col + graph_w > target_col {
                         break;
                     }
-                    let fill_tag = fill_grapheme_tags[idx % fill_grapheme_tags.len()];
+                    let fill_tag = fill_grapheme_tags[idx % fill_grapheme_tags.len()].clone();
                     let span = Span::styled(graph.symbol.to_string(), graph.style);
                     self.write_tagged_span(&TaggedSpan::new(span, fill_tag));
                     idx += 1;
@@ -587,9 +599,7 @@ impl Contents {
                     && let Some(tagged_cell) = row.get_mut(pos.x as usize)
                 {
                     tagged_cell.cell = cell.clone();
-                    tagged_cell.tag = tag;
-
-                    self.cursor_pos = Coord::new(pos.y, pos.x);
+                    tagged_cell.tag = tag.clone();
                 }
             }
         }
@@ -692,7 +702,7 @@ impl Contents {
                         .cell
                         .set_symbol(&char.to_string())
                         .set_style(ratatui::style::Style::default());
-                    tagged_cell.tag = tag;
+                    tagged_cell.tag = tag.clone();
                 }
             }
 
@@ -704,7 +714,7 @@ impl Contents {
                 let label_y = area.top() + ((area.height - 1) / 2);
                 self.set_cursor_col(label_x);
                 self.cursor_pos.row = label_y;
-                self.write_tagged_span(&TaggedSpan::new(label_span, tag));
+                self.write_tagged_span(&TaggedSpan::new(label_span, tag.clone()));
             }
         }
     }
@@ -719,7 +729,7 @@ impl Contents {
                 if let Some(row) = self.buf.get_mut(y as usize)
                     && let Some(tagged_cell) = row.get_mut(x as usize)
                 {
-                    tagged_cell.tag = tag;
+                    tagged_cell.tag = tag.clone();
                 }
             }
         }
