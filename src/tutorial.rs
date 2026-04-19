@@ -242,77 +242,6 @@ fn should_recommend_zsh_history() -> bool {
     *SHOULD_RECOMMEND_ZSH_HISTORY
 }
 
-/// Generate recommended settings text for the first tutorial step.
-pub fn generate_recommended_settings(palette: &Palette) -> Vec<TaggedLine<'static>> {
-    let text_style = palette.normal_text();
-    let copiable_style = text_style.add_modifier(Modifier::UNDERLINED);
-
-    let mut lines: Vec<TaggedLine> = Vec::new();
-
-    let tl = |span: Span<'static>| -> TaggedLine<'static> {
-        TaggedLine::from_line(Line::from(span), Tag::Tutorial)
-    };
-
-    lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
-
-    if is_vscode() {
-        lines.push(tl(Span::styled(
-            "You are running in VS Code. For the best experience, set these in settings.json (try ctrl+clicking the links):",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  • vscode://settings/terminal.integrated.minimumContrastRatio = 1",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  • vscode://settings/terminal.integrated.enableKittyKeyboardProtocol = true",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  • vscode://settings/terminal.integrated.macOptionIsMeta (if on macOS)",
-            text_style,
-        )));
-        lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
-    }
-
-    if detect_kitty_keyboard_support() {
-        lines.push(tl(Span::styled(
-            "✅ Your terminal supports the Kitty extended keyboard protocol.",
-            text_style,
-        )));
-    } else {
-        lines.push(tl(Span::styled(
-            "⚠ Your terminal may not support the Kitty extended keyboard protocol.",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  Consider using a terminal emulator that does (kitty, ghostty, wezterm, foot, rio).",
-            text_style,
-        )));
-        lines.push(tl(Span::styled(
-            "  This enables better key disambiguation for flyline.",
-            text_style,
-        )));
-    }
-
-    if should_recommend_zsh_history() {
-        lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
-        lines.push(tl(Span::styled(
-            "💡 We detected that you use Zsh. Consider loading your Zsh history into flyline:",
-            text_style,
-        )));
-        lines.push(TaggedLine::from(vec![
-            TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
-            TaggedSpan::new(
-                Span::styled("flyline --load-zsh-history", copiable_style),
-                Tag::Clipboard(ClipboardTypes::TutorialRecommendedSettings),
-            ),
-        ]));
-    }
-
-    lines
-}
-
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
 pub fn generate_tutorial_text(
@@ -328,10 +257,13 @@ pub fn generate_tutorial_text(
     let heading_style = palette.markdown_heading2();
     let mut lines: Vec<TaggedLine> = Vec::new();
 
+    let empty = || -> TaggedLine<'static> { TaggedLine::from_line(Line::from(""), Tag::Tutorial) };
     let tl = |span: Span<'static>| -> TaggedLine<'static> {
         TaggedLine::from_line(Line::from(span), Tag::Tutorial)
     };
-    let empty = || -> TaggedLine<'static> { TaggedLine::from_line(Line::from(""), Tag::Tutorial) };
+    let ts_copiable = |s: String, clip_type: ClipboardTypes| -> TaggedSpan<'static> {
+        TaggedSpan::new(Span::styled(s, copiable_style), Tag::Clipboard(clip_type))
+    };
 
     match step {
         TutorialStep::Welcome => {
@@ -364,7 +296,62 @@ pub fn generate_tutorial_text(
                 "Flyline will detect your terminal and suggest optimal settings for the best experience:",
                 text_style,
             )));
-            lines.extend(generate_recommended_settings(palette));
+            lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+
+            if is_vscode() {
+                lines.push(tl(Span::styled(
+                    "You are running in VS Code. For the best experience, set these in settings.json (try ctrl+clicking the links):",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  • vscode://settings/terminal.integrated.minimumContrastRatio = 1",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  • vscode://settings/terminal.integrated.enableKittyKeyboardProtocol = true",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  • vscode://settings/terminal.integrated.macOptionIsMeta (if on macOS)",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+            }
+
+            if detect_kitty_keyboard_support() {
+                lines.push(tl(Span::styled(
+                    "✅ Your terminal supports the Kitty extended keyboard protocol.",
+                    text_style,
+                )));
+            } else {
+                lines.push(tl(Span::styled(
+                    "⚠ Your terminal may not support the Kitty extended keyboard protocol.",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  Consider using a terminal emulator that does (kitty, ghostty, wezterm, foot, rio).",
+                    text_style,
+                )));
+                lines.push(tl(Span::styled(
+                    "  This enables better key disambiguation for flyline.",
+                    text_style,
+                )));
+            }
+
+            if should_recommend_zsh_history() {
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+                lines.push(tl(Span::styled(
+                    "💡 We detected that you use Zsh. Consider loading your Zsh history into flyline:",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from(vec![
+                    TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                    ts_copiable(
+                        "flyline --load-zsh-history".to_string(),
+                        ClipboardTypes::TutorialRecommendedSettings,
+                    ),
+                ]));
+            }
         }
         TutorialStep::MouseMode => {
             lines.push(tl(Span::styled("Mouse Interaction Modes", heading_style)));
@@ -432,27 +419,46 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(tl(Span::styled("Examples:", text_style)));
-            lines.push(tl(Span::styled(
-                "  flyline set-color --default-theme dark",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "  flyline set-color --default-theme light",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "  flyline set-color --matching-char \"bold green\"",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "  flyline set-color --recognised-command \"green\" --unrecognised-command \"bold red\"",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --default-theme dark".to_string(),
+                    ClipboardTypes::TutorialSetColor1,
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --default-theme light".to_string(),
+                    ClipboardTypes::TutorialSetColor2,
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --matching-char \"bold green\"".to_string(),
+                    ClipboardTypes::TutorialSetColor3,
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --recognised-command \"green\" --unrecognised-command \"bold red\"".to_string(),
+                    ClipboardTypes::TutorialSetColor4,
+                ),
+            ]));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Run `flyline set-color --help` for all options.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("Run ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-color --help".to_string(),
+                    ClipboardTypes::TutorialSetColor5,
+                ),
+                TaggedSpan::new(
+                    Span::styled(" to see all options.", text_style),
+                    Tag::Tutorial,
+                ),
+            ]));
         }
         TutorialStep::AutoClosing => {
             lines.push(tl(Span::styled(
@@ -496,9 +502,9 @@ pub fn generate_tutorial_text(
             )));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("  ", text_style), Tag::Tutorial),
-                TaggedSpan::new(
-                    Span::styled("ls foo/bar_abc/qwe.txt oiu.txt", copiable_style),
-                    Tag::Clipboard(ClipboardTypes::TutorialFineGrainDeletion),
+                ts_copiable(
+                    "ls foo/bar_abc/qwe.txt oiu.txt".to_string(),
+                    ClipboardTypes::TutorialFineGrainDeletion,
                 ),
             ]));
         }
@@ -534,10 +540,20 @@ pub fn generate_tutorial_text(
                 "Feel free to explore and experiment with flyline's features.",
                 text_style,
             )));
-            lines.push(tl(Span::styled(
-                "For more information, check out `flyline --help` and https://github.com/HalFrgrd/flyline.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(
+                    Span::styled("For more information, check out ", text_style),
+                    Tag::Tutorial,
+                ),
+                ts_copiable(
+                    "flyline --help".to_string(),
+                    ClipboardTypes::TutorialRunHelp,
+                ),
+                TaggedSpan::new(
+                    Span::styled(" and https://github.com/HalFrgrd/flyline.", text_style),
+                    Tag::Tutorial,
+                ),
+            ]));
         }
         TutorialStep::NotRunning => unreachable!(),
     }

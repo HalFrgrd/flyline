@@ -102,6 +102,12 @@ impl<'a> From<Vec<TaggedSpan<'a>>> for TaggedLine<'a> {
     }
 }
 
+impl<'a> From<TaggedSpan<'a>> for TaggedLine<'a> {
+    fn from(span: TaggedSpan<'a>) -> Self {
+        TaggedLine { spans: vec![span] }
+    }
+}
+
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +139,12 @@ impl Coord {
 pub enum ClipboardTypes {
     TutorialRecommendedSettings,
     TutorialFineGrainDeletion,
+    TutorialSetColor1,
+    TutorialSetColor2,
+    TutorialSetColor3,
+    TutorialSetColor4,
+    TutorialSetColor5,
+    TutorialRunHelp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
