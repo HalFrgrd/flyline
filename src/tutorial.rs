@@ -1,7 +1,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::sync::LazyLock;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::bash_funcs;
 use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
@@ -17,17 +17,17 @@ pub const FINE_GRAIN_DELETION_EXAMPLE_CMD: &str = "ls foo/bar_abc/qwe.txt oiu.tx
 /// Large block-art logo displayed on the welcome screen.
 const LOGO_LINES: &[&str] = &[
     "",
-    "\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}             \u{2588}\u{2588}\u{2588}\u{2588}   \u{2588}\u{2588}\u{2588}                     ",
-    "\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}            \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2591}\u{2591}                      ",
-    " \u{2591}\u{2588}\u{2588}\u{2588}   \u{2588} \u{2591}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}    \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
-    " \u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}    \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}",
-    " \u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}\u{2588}    \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
-    " \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}     \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588}  \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2591}  ",
-    " \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}       \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}  \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588} \u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588} ",
-    "\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}       \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}   \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2588}\u{2588}\u{2588} \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  \u{2591}\u{2591}\u{2591}\u{2591}\u{2591} \u{2591}\u{2591}\u{2591}\u{2591} \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}  ",
-    "                    \u{2588}\u{2588}\u{2588} \u{2591}\u{2588}\u{2588}\u{2588}                                 ",
-    "                   \u{2591}\u{2591}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}\u{2588}                                  ",
-    "                    \u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}",
+    " ███████████ ████             ████   ███",
+    "░░███░░░░░░█░░███            ░░███  ░░░",
+    " ░███   █ ░  ░███  █████ ████ ░███  ████  ████████    ██████",
+    " ░███████    ░███ ░░███ ░███  ░███ ░░███ ░░███░░███  ███░░███",
+    " ░███░░░█    ░███  ░███ ░███  ░███  ░███  ░███ ░███ ░███████",
+    " ░███  ░     ░███  ░███ ░███  ░███  ░███  ░███ ░███ ░███░░░",
+    " █████       █████ ░░███████  █████ █████ ████ █████░░██████",
+    "░░░░░       ░░░░░   ░░░░░███ ░░░░░ ░░░░░ ░░░░ ░░░░░  ░░░░░░",
+    "                    ███ ░███",
+    "                   ░░██████",
+    "                    ░░░░░░",
 ];
 
 /// Truncates a `&str` to at most `max_width` display columns.
@@ -46,11 +46,34 @@ fn truncate_to_width(s: &str, max_width: usize) -> String {
     s[..byte_end].to_string()
 }
 
-/// Returns the logo lines for the welcome screen, each truncated to `max_width` display columns.
-pub fn generate_welcome_logo_lines(max_width: u16) -> Vec<Line<'static>> {
+pub fn generate_welcome_logo_lines(term_width: u16) -> Vec<Line<'static>> {
+    let log_width = LOGO_LINES
+        .iter()
+        .map(|line| line.width())
+        .max()
+        .unwrap_or(0) as u16;
+    let left_padding_width = (term_width).saturating_sub(log_width) / 2;
+    let right_padding_width = (term_width)
+        .saturating_sub(log_width)
+        .saturating_sub(left_padding_width);
+    let left_padding = " ".repeat(left_padding_width as usize);
+    let right_padding = " ".repeat(right_padding_width as usize);
     LOGO_LINES
         .iter()
-        .map(|&line| Line::from(truncate_to_width(line, max_width as usize)))
+        .map(|&line| {
+            // log::info!("line len: {}, width: {}", line.len(), line.width());
+            let truncated = Span::from(truncate_to_width(line, term_width as usize));
+            let padded = if truncated.width() < term_width as usize {
+                vec![
+                    Span::from(left_padding.to_owned()),
+                    truncated,
+                    Span::from(right_padding.to_owned()),
+                ]
+            } else {
+                vec![truncated]
+            };
+            Line::from(padded)
+        })
         .collect()
 }
 
@@ -59,19 +82,12 @@ pub fn generate_welcome_logo_lines(max_width: u16) -> Vec<Line<'static>> {
 /// at 15 columns per second and loops after 50 virtual positions.  Because the
 /// text is only 33 characters wide the wave peak is sometimes outside the
 /// visible text, giving periods where the whole line appears dim.
-pub fn generate_welcome_action_line() -> Line<'static> {
+pub fn generate_welcome_action_line(now: std::time::Instant, width: u16) -> (u16, Line<'static>) {
     const TEXT: &str = "Press Enter to start the tutorial";
+    static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
 
-    // Wave peak: travels 30 cols every 2 s → 15 cols/s; loops every 50 virtual cols.
-    // The text is only 33 chars wide, so the peak spends some of its loop period
-    // outside the visible text — giving intervals where the whole line is dim.
-    // Non-circular distance is intentional: no wrap-around continuity at the boundary.
-    let elapsed_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f32())
-        .unwrap_or(0.0);
-    // Virtual loop length is 50 columns; peak wraps to 0 after travelling 50 cols.
-    let peak_pos = (elapsed_secs * 15.0) % 50.0;
+    let elapsed_secs = now.duration_since(*START_TIME).as_secs_f32();
+    let peak_pos = (elapsed_secs * 25.0) % 45.0 - 5.0;
 
     let spans: Vec<Span<'static>> = TEXT
         .chars()
@@ -79,15 +95,16 @@ pub fn generate_welcome_action_line() -> Line<'static> {
         .map(|(i, ch)| {
             // Gaussian falloff: sigma ≈ 4  →  2σ² = 32
             let dist = (i as f32 - peak_pos).abs();
-            let intensity = (-dist * dist / 32.0_f32).exp();
-            // Brightness range: 80 (dim) … 255 (peak)
-            let brightness = (80.0 + 175.0 * intensity) as u8;
+            let intensity = (-dist * dist / 16.0_f32).exp();
+            let brightness = (100.0 + 175.0 * intensity) as u8;
             let style = Style::default().fg(Color::Rgb(brightness, brightness, brightness));
             Span::styled(ch.to_string(), style)
         })
         .collect();
 
-    Line::from(spans)
+    let offset = (width + 32).saturating_sub(TEXT.len() as u16) / 2;
+
+    (offset, Line::from(spans))
 }
 
 /// Tracks progress through the interactive tutorial.

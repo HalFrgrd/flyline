@@ -1460,6 +1460,8 @@ impl<'a> App<'a> {
         // Then figure out how to fit that into the actual frame area
         let mut content = Contents::new(width);
 
+        let now = std::time::Instant::now();
+
         // When terminal log streaming is enabled, show the last 20 log lines at
         // the top of the content before anything else.
         if crate::logging::is_terminal_streaming() {
@@ -1483,11 +1485,10 @@ impl<'a> App<'a> {
                     content.write_tagged_line(&TaggedLine::from_line(line, Tag::Tutorial), true);
                 }
 
-                // Move to the second-to-last logo row, column 30, and overwrite
-                // with the wave-animated "Press enter to start the tutorial" text.
-                let second_to_last = content.height().saturating_sub(2);
-                content.move_cursor_to(second_to_last, 30);
-                let action_line = crate::tutorial::generate_welcome_action_line();
+                let second_to_last = content.height().saturating_sub(3);
+                let (offset, action_line) =
+                    crate::tutorial::generate_welcome_action_line(now, width);
+                content.move_cursor_to(second_to_last, offset);
                 content
                     .write_tagged_line(&TaggedLine::from_line(action_line, Tag::Tutorial), false);
 
@@ -1650,8 +1651,6 @@ impl<'a> App<'a> {
 
         let mut line_idx = 0;
         let mut cursor_pos_maybe = None;
-
-        let now = std::time::Instant::now();
 
         for part in self.formatted_buffer_cache.parts.iter() {
             let span_to_draw = if part.token.token.kind == TokenKind::Newline {
