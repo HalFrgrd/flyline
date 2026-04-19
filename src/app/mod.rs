@@ -6,7 +6,7 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, MaybeProcessedSuggestion};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
-use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
+use crate::content_builder::{ClipboardTypes, Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils::{split_line_to_terminal_rows, ts_to_timeago_string_5chars};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -40,6 +40,34 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
+
+/// Encode `data` as standard base64 (RFC 4648, no line breaks).
+/// Used to build OSC 52 clipboard sequences.
+fn osc52_base64(data: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[((n >> 18) & 0x3F) as usize]);
+        out.push(TABLE[((n >> 12) & 0x3F) as usize]);
+        out.push(if chunk.len() > 1 {
+            TABLE[((n >> 6) & 0x3F) as usize]
+        } else {
+            b'='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(n & 0x3F) as usize]
+        } else {
+            b'='
+        });
+    }
+    // SAFETY: `out` contains only bytes from `TABLE`, which is an ASCII
+    // slice, so it is always valid UTF-8.
+    String::from_utf8(out).unwrap()
+}
 
 fn build_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -284,6 +312,7 @@ impl DrawnContent {
                     | Tag::AiResult(_)
                     | Tag::TutorialPrev
                     | Tag::TutorialNext
+                    | Tag::Clipboard(_)
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
@@ -858,6 +887,9 @@ impl<'a> App<'a> {
             Some((tag @ Tag::TutorialNext, true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
+            Some((tag @ Tag::Clipboard(_), true)) => {
+                self.last_mouse_over_cell = Some(tag);
+            }
             Some((tag @ Tag::Ps1PromptCwd(_), _)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
@@ -957,6 +989,21 @@ impl<'a> App<'a> {
             Some(Tag::Ps1PromptCwd(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Down(_)) {
                     self.content_mode = ContentMode::PromptDirSelect(idx);
+                }
+            }
+            Some(Tag::Clipboard(clipboard_type)) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    if let Some(text) = self
+                        .last_contents
+                        .as_ref()
+                        .and_then(|c| c.contents.clipboards.get(&clipboard_type))
+                    {
+                        let encoded = osc52_base64(text.as_bytes());
+                        use std::io::Write;
+                        print!("\x1b]52;c;{}\x07", encoded);
+                        std::io::stdout().flush().ok();
+                        log::info!("Copied to clipboard via OSC 52 ({:?})", clipboard_type);
+                    }
                 }
             }
             _ => {}
@@ -1487,7 +1534,18 @@ impl<'a> App<'a> {
 
                 para.render(text_block, &mut text_buffer);
 
-                content.write_buffer(&text_buffer, Tag::Tutorial);
+                if self.settings.tutorial_step == tutorial::TutorialStep::RecommendedSettings {
+                    content.write_buffer(
+                        &text_buffer,
+                        Tag::Clipboard(ClipboardTypes::TutorialRecommendedSettings),
+                    );
+                    content.setup_clipboard(
+                        ClipboardTypes::TutorialRecommendedSettings,
+                        "settings placeholder".to_string(),
+                    );
+                } else {
+                    content.write_buffer(&text_buffer, Tag::Tutorial);
+                }
 
                 content.render_block(
                     prev_block,
