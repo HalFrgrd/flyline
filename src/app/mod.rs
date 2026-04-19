@@ -386,7 +386,7 @@ impl<'a> App<'a> {
 
         bash_funcs::reset_caches();
 
-        let mut app = App {
+        App {
             mode: AppRunningState::Running,
             buffer,
             formatted_buffer_cache,
@@ -420,9 +420,7 @@ impl<'a> App<'a> {
             needs_screen_cleared: false,
             last_keypress_action: None,
             last_activity_time: std::time::Instant::now(),
-        };
-
-        app
+        }
     }
 
     /// Return a mutable reference to the history manager for the given fuzzy source.
@@ -1509,7 +1507,7 @@ impl<'a> App<'a> {
 
                 let tutorial_start_row = content.height();
 
-                let [prev_block, text_block_outer, next_block] = Rect {
+                let [mut prev_block, text_block_outer, mut next_block] = Rect {
                     x: 0,
                     y: tutorial_start_row,
                     width,
@@ -1530,18 +1528,26 @@ impl<'a> App<'a> {
                 }
 
                 // Draw prev and next buttons first.
-                content.render_block(
-                    prev_block,
-                    "prev",
-                    Tag::TutorialPrev,
-                    self.last_mouse_over_cell == Some(Tag::TutorialPrev),
-                );
-                content.render_block(
-                    next_block,
-                    "next",
-                    Tag::TutorialNext,
-                    self.last_mouse_over_cell == Some(Tag::TutorialNext),
-                );
+                let draw_prev_block = |block, content: &mut Contents| {
+                    content.render_block(
+                        block,
+                        "prev",
+                        Tag::TutorialPrev,
+                        self.last_mouse_over_cell == Some(Tag::TutorialPrev),
+                    );
+                };
+
+                draw_prev_block(prev_block, &mut content);
+
+                let draw_next_block = |block, content: &mut Contents| {
+                    content.render_block(
+                        block,
+                        "next",
+                        Tag::TutorialNext,
+                        self.last_mouse_over_cell == Some(Tag::TutorialNext),
+                    );
+                };
+                draw_next_block(next_block, &mut content);
 
                 // Collect clipboard content from tagged spans.
                 for tagged_line in &tutorial_tagged_lines {
@@ -1584,15 +1590,19 @@ impl<'a> App<'a> {
                     content.set_cursor_col(text_block.x);
                 }
 
-                // Delete the empty rows between where the text ends and where
-                // the buttons end. We keep the last row of the button area
-                // (BUTTON_HEIGHT - 1) because it holds the bottom border of
-                // the prev/next blocks, making them look visually complete.
                 let drain_start = (text_end_row + 1) as usize;
-                let buttons_bottom_border = (tutorial_start_row + BUTTON_HEIGHT - 1) as usize;
+                let buttons_bottom_border = (tutorial_start_row + BUTTON_HEIGHT) as usize;
                 if drain_start < buttons_bottom_border {
                     content.buf.drain(drain_start..buttons_bottom_border);
                 }
+
+                let final_height = content.height().max(7);
+
+                prev_block.height = final_height;
+                next_block.height = final_height;
+
+                draw_prev_block(prev_block, &mut content);
+                draw_next_block(next_block, &mut content);
 
                 content.move_to_final_line();
                 content.newline();
