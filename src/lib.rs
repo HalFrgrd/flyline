@@ -695,6 +695,22 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
 
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Normally, the flyline_builtin_load function is automatically called by bash
+        // when the builtin is enabled. But this does not happen on older version of bash
+        // so we need to call it manually.
+        #[cfg(feature = "pre_bash_4_4")]
+        {
+            let initialized = FLYLINE_INSTANCE_PTR
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some();
+            if !initialized {
+                log::info!("Initializing flyline instance");
+                let empty_args: *const i8 = std::ptr::null();
+                flyline_builtin_load(empty_args);
+            }
+        }
+
         if let Some(boxed) = FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner())
