@@ -1559,7 +1559,29 @@ impl<'a> App<'a> {
                 let mut text_end_row = tutorial_start_row;
                 for tagged_line in &tutorial_tagged_lines {
                     for tagged_span in &tagged_line.spans {
-                        content.write_tagged_span_dont_overwrite(tagged_span, None);
+                        // If the mouse is hovering over a clipboard-tagged span,
+                        // apply the highlight (reversed) style to it.
+                        let is_hovered = if let (
+                            SpanTag::Constant(Tag::Clipboard(span_cb)),
+                            Some(Tag::Clipboard(hover_cb)),
+                        ) = (&tagged_span.tag, self.last_mouse_over_cell)
+                        {
+                            span_cb == &hover_cb
+                        } else {
+                            false
+                        };
+                        if is_hovered {
+                            let highlighted = TaggedSpan::new(
+                                ratatui::text::Span::styled(
+                                    tagged_span.span.content.clone(),
+                                    Palette::convert_to_selected(tagged_span.span.style),
+                                ),
+                                tagged_span.tag.get(0),
+                            );
+                            content.write_tagged_span_dont_overwrite(&highlighted, None);
+                        } else {
+                            content.write_tagged_span_dont_overwrite(tagged_span, None);
+                        }
                     }
                     text_end_row = content.cursor_position().row;
                     content.newline();
