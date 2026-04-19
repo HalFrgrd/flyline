@@ -81,12 +81,12 @@ impl PathPatternExpansion {
                 false,
             );
             let combined = format!("{}{}", self.raw_prefix, quoted_suffix);
-            (combined.clone(), quoted_suffix)  
+            (combined.clone(), quoted_suffix)
         } else {
             log::warn!(
                 "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
                 expanded_match,
-                self.prefix_with_trailing_slash()
+                self.expanded_prefix
             );
             (expanded_match.to_string(), expanded_match.to_string())
         }
@@ -543,12 +543,12 @@ fn tab_complete_glob_expansion(
                 break;
             }
 
-            let path_str = entry.path().to_string_lossy();
+            let path = entry.path().to_path_buf();
 
-            let (unexpanded, globbed_suffix) = expanded.convert_expanded_match_to_unexpanded(
-                &path_str,
-                comp_resultflags.quote_type,
-            );
+            let path_str = path.to_string_lossy();
+
+            let (unexpanded, globbed_suffix) = expanded
+                .convert_expanded_match_to_unexpanded(&path_str, comp_resultflags.quote_type);
 
             log::debug!(
                 "Glob match: expanded='{}', unexpanded='{}', globbed_suffix='{}'",
