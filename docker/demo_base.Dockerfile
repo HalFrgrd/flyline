@@ -37,7 +37,7 @@ RUN touch /home/john/.bashrc && \
     'PS1="\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\$ "' \
     'RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
-    'flyline --log-level trace' \
+    'flyline log level trace' \
     'flyline --auto-close-chars false' \
     'flyline --show-inline-history false' \
     'export PATH="/home/john/bin/:$PATH"' \
