@@ -2065,9 +2065,7 @@ impl<'a> App<'a> {
 
         // Smart mode: any keypress re-enables mouse capture, unless the user has
         // explicitly disabled it via a toggle action.
-        if self.settings.mouse_mode == MouseMode::Smart
-            && !self.mouse_state.is_explicitly_disabled_by_user()
-        {
+        if self.settings.mouse_mode == MouseMode::Smart {
             self.mouse_state.enable("smart mode: keypress detected");
         }
 

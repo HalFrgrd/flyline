@@ -286,6 +286,10 @@ pub fn generate_tutorial_text(
                 ),
             ]));
             lines.push(tl(Span::styled(
+                "• Exit the tutorial at any time with `flyline --run-tutorial false`.",
+                text_style,
+            )));
+            lines.push(tl(Span::styled(
                 "• Remember to append settings to your `~/.bashrc` so they persist!",
                 text_style,
             )));
@@ -367,25 +371,6 @@ pub fn generate_tutorial_text(
                     ts_copiable("RPS1='\\t'".to_string(), ClipboardTypes::TutorialRP1),
                 ]));
             }
-
-            if settings
-                .custom_prompt_widgets
-                .values()
-                .all(|w| !matches!(w, settings::PromptWidget::MouseMode(_)))
-            {
-                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
-                lines.push(tl(Span::styled(
-                    "💡 Consider display the mouse capture mode in your RPROMPT:",
-                    text_style,
-                )));
-                lines.push(TaggedLine::from(vec![
-                    TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
-                    ts_copiable(
-                        "flyline create-prompt-widget mouse-mode --name MOUSE_MODE 'M' 'X' && RPS1=\" MOUSE_MODE $RPS1\"".to_string(),
-                        ClipboardTypes::TutorialMouseMode,
-                    ),
-                ]));
-            }
         }
         TutorialStep::MouseMode => {
             lines.push(tl(Span::styled("Mouse Interaction Modes", heading_style)));
@@ -411,6 +396,25 @@ pub fn generate_tutorial_text(
                 "Switch mouse interaction modes with `flyline --mouse-mode smart/simple/disabled`.",
                 text_style,
             )));
+
+            if settings
+                .custom_prompt_widgets
+                .values()
+                .all(|w| !matches!(w, settings::PromptWidget::MouseMode(_)))
+            {
+                lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+                lines.push(tl(Span::styled(
+                    "💡 Consider display the mouse capture mode in your right prompt:",
+                    text_style,
+                )));
+                lines.push(TaggedLine::from(vec![
+                    TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                    ts_copiable(
+                        "flyline create-prompt-widget mouse-mode --name MOUSE_MODE 'ON ' 'OFF' && RPS1=\" MOUSE_MODE $RPS1\"".to_string(),
+                        ClipboardTypes::TutorialMouseMode,
+                    ),
+                ]));
+            }
         }
         TutorialStep::FuzzyHistorySearch => {
             lines.push(tl(Span::styled("Fuzzy History Search", heading_style)));
