@@ -9,7 +9,7 @@ use crate::shell_integration;
 use crate::{bash_funcs, settings};
 
 /// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
-const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🬀 🬁 🬂 🬃 🬄 🬅 🬆 🬇 🬈 🬉 🬊 🬋 🬌 🬍 🬎 🬏 🬐 🬑 🬒 🬓 🬔 🬕 🬖 🬗 🬘 🬙 🬚 🬛 🬜 🬝 🬞 🬟 🬠 🬡 🬢 🬣 🬤 🬥 🬦 🬧 🬨 🬩 🬪 🬫 🬬 🬭 🬮 🬯 🬰 🬱 🬲 🬳 🬴 🬵 🬶 🬷 🬸 🬹 🬺 🬻";
+const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🯁🯂🯃 🬛 🮐 🮑 🮔 🮖 🮘";
 
 /// Large block-art logo displayed on the welcome screen.
 const LOGO_LINES: &[&str] = &[
@@ -546,7 +546,7 @@ pub fn generate_tutorial_text(
             lines.push(tl(Span::styled("Font Detection", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Flyline uses symbols from the Unicode legacy computing supplement range. Here are some examples:",
+                "Optional: for the best terminal experience, use a font that supports the Unicode legacy computing symbols (U+1FB00-U+1FB3B).",
                 text_style,
             )));
             lines.push(empty());
@@ -556,11 +556,7 @@ pub fn generate_tutorial_text(
             )));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "If the symbols above are not rendering correctly, install a font that supports this range,",
-                text_style,
-            )));
-            lines.push(tl(Span::styled(
-                "such as Iosevka Term Sans Serif (https://github.com/be5invis/Iosevka).",
+                "If the symbols above are not rendering correctly, install a font that supports this range, such as Iosevka Term Sans Serif (https://github.com/be5invis/Iosevka).",
                 text_style,
             )));
         }
