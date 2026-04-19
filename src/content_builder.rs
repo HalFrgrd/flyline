@@ -116,6 +116,12 @@ impl Coord {
     }
 }
 
+/// Identifies which clipboard slot a [`Tag::Clipboard`] cell belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ClipboardTypes {
+    TutorialRecommendedSettings,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
     Blank,
@@ -136,6 +142,7 @@ pub enum Tag {
     TutorialPrev,
     TutorialNext,
     Tutorial,
+    Clipboard(ClipboardTypes),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +179,8 @@ pub struct Contents {
     pub focus_row: Option<u16>,
     pub prompt_start: Option<Coord>,
     pub prompt_end: Option<Coord>,
+    /// Clipboard content for each [`ClipboardTypes`] slot, populated via [`Contents::setup_clipboard`].
+    pub clipboards: HashMap<ClipboardTypes, String>,
 }
 
 impl Contents {
@@ -188,7 +197,17 @@ impl Contents {
             focus_row: None,
             prompt_start: None,
             prompt_end: None,
+            clipboards: HashMap::new(),
         }
+    }
+
+    /// Register clipboard content for the given `clipboard_type`.
+    /// The `text` is appended to any content already stored for that type.
+    pub fn setup_clipboard(&mut self, clipboard_type: ClipboardTypes, text: String) {
+        self.clipboards
+            .entry(clipboard_type)
+            .or_default()
+            .push_str(&text);
     }
 
     /// Set the focus row – the row that `get_row_range_to_show` will try to keep visible.
