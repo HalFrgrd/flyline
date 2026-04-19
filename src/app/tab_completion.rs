@@ -8,7 +8,6 @@ use crate::cursor::{CursorEasing, cursor_effect_animation_frames};
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
-use globwalker;
 
 #[derive(Debug)]
 struct PathPatternExpansion {
@@ -60,6 +59,10 @@ impl PathPatternExpansion {
         }
     }
 
+    fn glob_pattern(&self) -> String {
+        format!("{}/{}", self.expanded_prefix, self.rhs_pattern)
+    }
+
     fn wants_hidden(&self) -> bool {
         self.rhs_pattern.starts_with('.') && !self.rhs_pattern.starts_with("./")
     }
@@ -69,24 +72,22 @@ impl PathPatternExpansion {
         expanded_match: &str,
         quote_type: Option<QuoteType>,
     ) -> (String, String) {
-        // Compute the relative path of the result compared to
-        // expanded_prefix, then reconstruct using raw_prefix so the
-        // suggestion preserves the user's original prefix spelling
-        // (e.g. `~/`, `$HOME/`, or a relative path segment).
-        if let Some(suffix) = expanded_match.strip_prefix(&self.expanded_prefix) {
-            let quoted_suffix = bash_funcs::quoting_function_rust(
-                suffix,
+        let expected_prefix = format!("{}/", self.expanded_prefix);
+
+        if let Some(rhs) = expanded_match.strip_prefix(&expected_prefix) {
+            let quoted_rhs = bash_funcs::quoting_function_rust(
+                rhs,
                 quote_type.unwrap_or_default(),
                 false,
                 false,
             );
-            let combined = format!("{}{}", self.raw_prefix, quoted_suffix);
-            (combined.clone(), quoted_suffix)
+            let combined = format!("{}/{}", self.raw_prefix, quoted_rhs);
+            (combined.clone(), quoted_rhs)
         } else {
             log::warn!(
                 "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
                 expanded_match,
-                self.expanded_prefix
+                expected_prefix
             );
             (expanded_match.to_string(), expanded_match.to_string())
         }
@@ -519,22 +520,12 @@ fn tab_complete_glob_expansion(
 
     const MAX_GLOB_RESULTS: usize = 5_000;
 
-    // When expanded_prefix is empty, use the current directory as base_dir so
-    // globwalker has a concrete directory to walk, but track it separately so
-    // we can strip it from the returned absolute paths and recover the relative
-    // path that convert_expanded_match_to_unexpanded expects.
-    let base_dir = if expanded.expanded_prefix.is_empty() {
-        std::path::PathBuf::from("/")
-    } else {
-        std::path::PathBuf::from(&expanded.expanded_prefix)
-    };
+    let glob_pattern = expanded.glob_pattern();
 
-    let walker = globwalker::GlobWalkerBuilder::from_patterns(&base_dir, &[&expanded.rhs_pattern])
-        .follow_links(true)
-        .build();
+    log::debug!("Using glob_pattern{:?}", glob_pattern);
 
-    if let Ok(walker) = walker {
-        for (idx, entry) in walker.into_iter().filter_map(Result::ok).enumerate() {
+    if let Ok(paths) = glob::glob(&glob_pattern) {
+        for (idx, path) in paths.filter_map(Result::ok).enumerate() {
             if idx >= MAX_GLOB_RESULTS {
                 log::debug!(
                     "Reached maximum glob results limit of {}. Stopping further processing.",
@@ -543,29 +534,27 @@ fn tab_complete_glob_expansion(
                 break;
             }
 
-            let path = entry.path().to_path_buf();
-
             let path_str = path.to_string_lossy();
 
-            let (unexpanded, globbed_suffix) = expanded
+            let (unexpanded, quoted_rhs) = expanded
                 .convert_expanded_match_to_unexpanded(&path_str, comp_resultflags.quote_type);
 
             log::debug!(
-                "Glob match: expanded='{}', unexpanded='{}', globbed_suffix='{}'",
+                "Glob match: expanded='{}', unexpanded='{}', quoted_rhs='{}'",
                 path.display(),
                 unexpanded,
-                globbed_suffix
+                quoted_rhs
             );
 
             // Tab completion ignores "." and ".."
-            if globbed_suffix == "." || globbed_suffix == ".." {
+            if quoted_rhs == "." || quoted_rhs == ".." {
                 continue;
             }
 
             // Only include hidden if the pattern explicitly requested it
             if !expanded.wants_hidden()
-                && globbed_suffix.starts_with('.')
-                && !globbed_suffix.starts_with("./")
+                && quoted_rhs.starts_with('.')
+                && !quoted_rhs.starts_with("./")
             {
                 continue;
             }
@@ -963,8 +952,7 @@ impl App<'_> {
             &[&ProcssedSuggestion::new(r#"abc/foo/baz"#, "", " ")],
         );
 
-        // move to foo/glob_stuff dir:
-        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff").unwrap();
+        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff1").unwrap();
 
         // .* matches hidden files only. and should ignore . and ..
         run_test_on(
