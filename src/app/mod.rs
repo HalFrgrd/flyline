@@ -6,7 +6,7 @@ mod tab_completion;
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, MaybeProcessedSuggestion};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
-use crate::content_builder::{ClipboardTypes, Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
+use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils::{split_line_to_terminal_rows, ts_to_timeago_string_5chars};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -26,7 +26,6 @@ use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
-use ratatui::widgets::Paragraph;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
 use std::time::Duration;
@@ -1496,11 +1495,11 @@ impl<'a> App<'a> {
 
                 content.move_to_final_line();
                 content.newline();
-            } else if let Some(tutorial_lines) = crate::tutorial::generate_tutorial_text(
+            } else if let Some(tutorial_tagged_lines) = crate::tutorial::generate_tutorial_text(
                 self.settings.tutorial_step,
                 &self.settings.color_palette,
             ) {
-                let para = Paragraph::new(tutorial_lines);
+                const BUTTON_HEIGHT: u16 = 30;
 
                 let layout = Layout::horizontal([
                     Constraint::Min(7),
@@ -1508,52 +1507,27 @@ impl<'a> App<'a> {
                     Constraint::Min(7),
                 ]);
 
-                let [mut prev_block, mut text_block, mut next_block] = Rect {
+                let tutorial_start_row = content.height();
+
+                let [prev_block, text_block_outer, next_block] = Rect {
                     x: 0,
-                    y: 0,
+                    y: tutorial_start_row,
                     width,
-                    height: 1,
+                    height: BUTTON_HEIGHT,
                 }
                 .layout(&layout);
 
-                text_block = text_block.inner(Margin {
+                let text_block = text_block_outer.inner(Margin {
                     horizontal: 2,
                     vertical: 0,
                 });
 
-                let para_len = para.line_count(text_block.width);
-                let final_len = para_len.max(7) as u16;
-
-                prev_block.height = final_len;
-                text_block.height = final_len;
-                next_block.height = final_len;
-
-                let mut text_buffer = ratatui::buffer::Buffer::empty(text_block);
-
-                para.render(text_block, &mut text_buffer);
-
-                if self.settings.tutorial_step == tutorial::TutorialStep::RecommendedSettings {
-                    content.write_buffer(
-                        &text_buffer,
-                        Tag::Clipboard(ClipboardTypes::TutorialRecommendedSettings),
-                    );
-                    content.setup_clipboard(
-                        ClipboardTypes::TutorialRecommendedSettings,
-                        "settings placeholder".to_string(),
-                    );
-                } else if self.settings.tutorial_step == tutorial::TutorialStep::FineGrainDeletion {
-                    content.write_buffer(
-                        &text_buffer,
-                        Tag::Clipboard(ClipboardTypes::TutorialFineGrainDeletion),
-                    );
-                    content.setup_clipboard(
-                        ClipboardTypes::TutorialFineGrainDeletion,
-                        tutorial::FINE_GRAIN_DELETION_EXAMPLE_CMD.to_string(),
-                    );
-                } else {
-                    content.write_buffer(&text_buffer, Tag::Tutorial);
+                // Allocate rows for the buttons before drawing them.
+                for _ in content.buf.len()..(tutorial_start_row + BUTTON_HEIGHT) as usize {
+                    content.increase_buf_single_row();
                 }
 
+                // Draw prev and next buttons first.
                 content.render_block(
                     prev_block,
                     "prev",
@@ -1566,6 +1540,38 @@ impl<'a> App<'a> {
                     Tag::TutorialNext,
                     self.last_mouse_over_cell == Some(Tag::TutorialNext),
                 );
+
+                // Collect clipboard content from tagged spans.
+                for tagged_line in &tutorial_tagged_lines {
+                    for tagged_span in &tagged_line.spans {
+                        if let SpanTag::Constant(Tag::Clipboard(cb_type)) = &tagged_span.tag {
+                            content.setup_clipboard(*cb_type, tagged_span.span.content.to_string());
+                        }
+                    }
+                }
+
+                // Move cursor to the start of the text area and write tutorial
+                // lines using overwrite=false so the text sits between the buttons.
+                content.move_cursor_to(tutorial_start_row, text_block.x);
+
+                let mut text_end_row = tutorial_start_row;
+                for tagged_line in &tutorial_tagged_lines {
+                    for tagged_span in &tagged_line.spans {
+                        content.write_tagged_span_dont_overwrite(tagged_span, None);
+                    }
+                    text_end_row = content.cursor_position().row;
+                    content.newline();
+                    content.set_cursor_col(text_block.x);
+                }
+
+                // Delete the empty rows between where the text ends and where
+                // the buttons end (keeping the bottom border row).
+                let drain_start = (text_end_row + 1) as usize;
+                let drain_end = (tutorial_start_row + BUTTON_HEIGHT - 1) as usize;
+                if drain_start < drain_end {
+                    content.buf.drain(drain_start..drain_end);
+                }
+
                 content.move_to_final_line();
                 content.newline();
             }

@@ -1,9 +1,10 @@
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span, Text};
+use ratatui::text::{Line, Span};
 use std::sync::LazyLock;
 use unicode_width::UnicodeWidthChar;
 
 use crate::bash_funcs;
+use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
 use crate::palette::Palette;
 use crate::shell_integration;
 
@@ -228,77 +229,92 @@ fn should_recommend_zsh_history() -> bool {
 }
 
 /// Generate recommended settings text for the first tutorial step.
-pub fn generate_recommended_settings(palette: &Palette) -> Text<'static> {
+pub fn generate_recommended_settings(palette: &Palette) -> Vec<TaggedLine<'static>> {
     let text_style = palette.normal_text();
-    let mut lines: Vec<Line> = Vec::new();
+    let mut lines: Vec<TaggedLine> = Vec::new();
 
-    lines.push(Line::from(""));
+    let tl = |span: Span<'static>| -> TaggedLine<'static> {
+        TaggedLine::from_line(Line::from(span), Tag::Tutorial)
+    };
+
+    lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
 
     if is_vscode() {
-        lines.push(Line::from(Span::styled(
+        lines.push(tl(Span::styled(
             "You are running in VS Code. For the best experience, set these in settings.json (try ctrl+clicking the links):",
             text_style,
         )));
-        lines.push(Line::from(Span::styled(
+        lines.push(tl(Span::styled(
             "  • vscode://settings/terminal.integrated.minimumContrastRatio = 1",
             text_style,
         )));
-        lines.push(Line::from(Span::styled(
+        lines.push(tl(Span::styled(
             "  • vscode://settings/terminal.integrated.enableKittyKeyboardProtocol = true",
             text_style,
         )));
-        lines.push(Line::from(Span::styled(
+        lines.push(tl(Span::styled(
             "  • vscode://settings/terminal.integrated.macOptionIsMeta (if on macOS)",
             text_style,
         )));
-        lines.push(Line::from(""));
+        lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
     }
 
     if detect_kitty_keyboard_support() {
-        lines.push(Line::from(Span::styled(
+        lines.push(tl(Span::styled(
             "✅ Your terminal supports the Kitty extended keyboard protocol.",
             text_style,
         )));
     } else {
-        lines.push(Line::from(Span::styled(
+        lines.push(tl(Span::styled(
             "⚠ Your terminal may not support the Kitty extended keyboard protocol.",
             text_style,
         )));
-        lines.push(Line::from(Span::styled(
+        lines.push(tl(Span::styled(
             "  Consider using a terminal emulator that does (kitty, ghostty, wezterm, foot, rio).",
             text_style,
         )));
-        lines.push(Line::from(Span::styled(
+        lines.push(tl(Span::styled(
             "  This enables better key disambiguation for flyline.",
             text_style,
         )));
     }
 
     if should_recommend_zsh_history() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
+        lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
+        lines.push(tl(Span::styled(
             "💡 We detected that you use Zsh. Consider loading your Zsh history into flyline:",
             text_style,
         )));
-        lines.push(Line::from(Span::styled(
-            "    flyline --load-zsh-history",
-            text_style,
-        )));
+        lines.push(TaggedLine::from(vec![
+            TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+            TaggedSpan::new(
+                Span::styled("flyline --load-zsh-history", text_style),
+                Tag::Clipboard(ClipboardTypes::TutorialRecommendedSettings),
+            ),
+        ]));
     }
 
-    Text::from(lines)
+    lines
 }
 
 /// Generate the tutorial text for the current step.
 /// Returns `None` if the tutorial is not active.
-pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<Vec<Line<'static>>> {
+pub fn generate_tutorial_text(
+    step: TutorialStep,
+    palette: &Palette,
+) -> Option<Vec<TaggedLine<'static>>> {
     if !step.is_active() {
         return None;
     }
 
     let text_style = palette.normal_text();
     let heading_style = palette.markdown_heading2();
-    let mut lines: Vec<Line> = Vec::new();
+    let mut lines: Vec<TaggedLine> = Vec::new();
+
+    let tl = |span: Span<'static>| -> TaggedLine<'static> {
+        TaggedLine::from_line(Line::from(span), Tag::Tutorial)
+    };
+    let empty = || -> TaggedLine<'static> { TaggedLine::from_line(Line::from(""), Tag::Tutorial) };
 
     match step {
         TutorialStep::Welcome => {
@@ -306,230 +322,206 @@ pub fn generate_tutorial_text(step: TutorialStep, palette: &Palette) -> Option<V
             return None;
         }
         TutorialStep::TutorialsTutorial => {
-            lines.push(Line::from(Span::styled(
-                "How to Use This Tutorial",
-                heading_style,
-            )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("How to Use This Tutorial", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "• Click the prev and next buttons to navigate.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "• Press Enter with an empty command buffer to move to the next tutorial screen.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "• Click on the text to copy it to your clipboard and command buffer.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "• Remember to append commands to your ~/.bashrc so they persist.",
                 text_style,
             )));
         }
         TutorialStep::RecommendedSettings => {
-            lines.push(Line::from(Span::styled(
-                "Recommended Settings",
-                heading_style,
-            )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("Recommended Settings", heading_style)));
+            lines.push(tl(Span::styled(
                 "Flyline will detect your terminal and suggest optimal settings for the best experience:",
                 text_style,
             )));
-            let settings_text = generate_recommended_settings(palette);
-            for line in settings_text.lines {
-                lines.push(line);
-            }
+            lines.extend(generate_recommended_settings(palette));
         }
         TutorialStep::MouseMode => {
-            lines.push(Line::from(Span::styled(
-                "Mouse Interaction Modes",
-                heading_style,
-            )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("Mouse Interaction Modes", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Flyline has three mouse interaction modes:",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "1. Smart: mouse interactions are enabled when they work well (recommended).",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "2. Simple: mouse interactions are enabled by default and toggled when Escape is pressed.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "3. Disabled: mouse interactions are disabled.",
                 text_style,
             )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Switch mouse interaction modes with `flyline --mouse-mode smart/simple/disabled`.",
                 text_style,
             )));
         }
         TutorialStep::FuzzyHistorySearch => {
-            lines.push(Line::from(Span::styled(
-                "Fuzzy History Search",
-                heading_style,
-            )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("Fuzzy History Search", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Press Ctrl+R to open fuzzy history search.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "Type to filter, use arrow keys / Page Up/Down to browse results.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "Press Enter to run the selected command, or Tab to accept it for editing.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
-                "Press Escape to cancel.",
-                text_style,
-            )));
+            lines.push(tl(Span::styled("Press Escape to cancel.", text_style)));
         }
         TutorialStep::Autocompletions => {
-            lines.push(Line::from(Span::styled(
-                "Fuzzy Autocompletions",
-                heading_style,
-            )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("Fuzzy Autocompletions", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Type `grep --` and press Tab to trigger autocompletions. If nothing comes up, first set normal Bash completions (https://github.com/scop/bash-completion).",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "Type to filter suggestions, use arrow keys or your mouse to navigate.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "Press Enter or click a suggestion to accept it.",
                 text_style,
             )));
         }
         TutorialStep::ThemeColours => {
-            lines.push(Line::from(Span::styled(
-                "Setting Theme Colours",
-                heading_style,
-            )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("Setting Theme Colours", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Customise your colour theme with the `flyline set-color` command.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled("Examples:", text_style)));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("Examples:", text_style)));
+            lines.push(tl(Span::styled(
                 "  flyline set-color --default-theme dark",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "  flyline set-color --default-theme light",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "  flyline set-color --matching-char \"bold green\"",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "  flyline set-color --recognised-command \"green\" --unrecognised-command \"bold red\"",
                 text_style,
             )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Run `flyline set-color --help` for all options.",
                 text_style,
             )));
         }
         TutorialStep::AutoClosing => {
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "Auto-Closing Quotes & Brackets",
                 heading_style,
             )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Flyline automatically inserts closing characters when you type an opening one.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "Try typing `echo $(\"` and watch Flyline insert the closing `\")` for you.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "This works for parentheses (), square brackets [], curly braces {}, and quotes \" \".",
                 text_style,
             )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Toggle this feature with `flyline --auto-close-chars true/false`.",
                 text_style,
             )));
         }
         TutorialStep::FineGrainDeletion => {
-            lines.push(Line::from(Span::styled(
-                "Fine-Grained Deletion",
-                heading_style,
-            )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("Fine-Grained Deletion", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Flyline provides more granular deletion commands in addition to Backspace and Delete.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "Ctrl+Backspace deletes one whitespace-delimited word to the left, and Alt+Backspace deletes one chunk to the left using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "Similarly, Ctrl+Delete deletes one whitespace-delimited word to the right, and Alt+Delete deletes one chunk to the right using finer punctuation or path-segment boundaries.",
                 text_style,
             )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Click below to load an example command to try it out:",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
-                format!("  {}", FINE_GRAIN_DELETION_EXAMPLE_CMD),
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("  ", text_style), Tag::Tutorial),
+                TaggedSpan::new(
+                    Span::styled(FINE_GRAIN_DELETION_EXAMPLE_CMD, text_style),
+                    Tag::Clipboard(ClipboardTypes::TutorialFineGrainDeletion),
+                ),
+            ]));
         }
         TutorialStep::FontDetection => {
-            lines.push(Line::from(Span::styled("Font Detection", heading_style)));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled("Font Detection", heading_style)));
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Flyline uses symbols from the Unicode legacy computing supplement range. Here are some examples:",
                 text_style,
             )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 LEGACY_COMPUTING_SYMBOLS_SAMPLE,
                 text_style,
             )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "If the symbols above are not rendering correctly, install a font that supports this range,",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "such as Iosevka Term Sans Serif (https://github.com/be5invis/Iosevka).",
                 text_style,
             )));
         }
         TutorialStep::End => {
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "You've reached the end of the tutorial!",
                 text_style.add_modifier(Modifier::BOLD),
             )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
+            lines.push(empty());
+            lines.push(tl(Span::styled(
                 "Feel free to explore and experiment with flyline's features.",
                 text_style,
             )));
-            lines.push(Line::from(Span::styled(
+            lines.push(tl(Span::styled(
                 "For more information, check out the documentation and GitHub repo.",
                 text_style,
             )));

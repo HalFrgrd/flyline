@@ -533,6 +533,7 @@ impl Contents {
         }
     }
 
+    #[allow(dead_code)]
     pub fn write_buffer(&mut self, buffer: &ratatui::buffer::Buffer, tag: Tag) {
         for pos in buffer.area().positions() {
             for _ in self.buf.len()..=pos.y as usize {
