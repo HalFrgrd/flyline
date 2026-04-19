@@ -667,6 +667,20 @@ enum PromptWidgetSubcommands {
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
+
+#[cfg(feature = "pre_bash_4_4")]
+fn initialize_flyline_instance() {
+    let initialized = FLYLINE_INSTANCE_PTR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    if !initialized {
+        log::info!("Initializing flyline instance");
+        let empty_args: *const i8 = std::ptr::null();
+        flyline_builtin_load(empty_args);
+    }
+}
+
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
     if let Some(boxed) = FLYLINE_INSTANCE_PTR
@@ -695,6 +709,10 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
 
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        
+        #[cfg(feature = "pre_bash_4_4")]
+        initialize_flyline_instance();
+
         if let Some(boxed) = FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner())
