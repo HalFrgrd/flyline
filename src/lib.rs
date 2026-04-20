@@ -668,7 +668,7 @@ enum PromptWidgetSubcommands {
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
 // Set to true by the .init_array constructor (pre_bash_4_4 builds only) so that
-// flyline_builtin_load can detect a double-call and skip re-initialisation.
+// flyline_builtin_load can detect a double-call and skip re-initialization.
 #[cfg(feature = "pre_bash_4_4")]
 static FLYLINE_LOADED_BY_INIT_ARRAY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
