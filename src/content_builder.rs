@@ -153,6 +153,25 @@ pub enum ClipboardTypes {
     TutorialGrep,
 }
 
+/// Pre-computed OSC 8 hyperlink escape parts for a specific URL.
+///
+/// Storing the already-formatted `pre_grapheme` and `post_grapheme` strings
+/// avoids re-computing them on every cell write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HyperLinkData {
+    /// The opening escape sequence: `ESC ] 8 ; id={hash} ; {url} ST`
+    pub pre_grapheme: String,
+    /// The closing escape sequence: `ESC ] 8 ; ; ST`
+    pub post_grapheme: String,
+}
+
+impl HyperLinkData {
+    /// Wrap `grapheme` in the OSC 8 open/close sequences for this hyperlink.
+    pub fn get_osc8_for_graph(&self, grapheme: &str) -> String {
+        format!("{}{}{}", self.pre_grapheme, grapheme, self.post_grapheme)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tag {
     Blank,
@@ -174,8 +193,39 @@ pub enum Tag {
     TutorialNext,
     Tutorial,
     Clipboard(ClipboardTypes),
-    /// An OSC 8 clickable hyperlink. The wrapped string is the target URI.
-    HyperLink(String),
+    /// An OSC 8 clickable hyperlink. Holds pre-computed escape sequences.
+    HyperLink(HyperLinkData),
+}
+
+impl Tag {
+    /// Compute a simple djb2-style hash of `url` for use as the OSC 8 link id.
+    fn hash_url(url: &str) -> u64 {
+        url.bytes()
+            .fold(5381u64, |h, b| h.wrapping_mul(33).wrapping_add(b as u64))
+    }
+
+    /// Create a `Tag::HyperLink` for the given `url`.
+    ///
+    /// The link id in the OSC 8 params is derived from a hash of the URL so
+    /// that adjacent cells with the same URL share an id and are treated as a
+    /// single link by the terminal emulator.
+    pub fn new_hyperlink(url: &str) -> Self {
+        let id = Self::hash_url(url);
+        Tag::HyperLink(HyperLinkData {
+            pre_grapheme: format!("\x1b]8;id={id:016x};{url}\x1b\\"),
+            post_grapheme: "\x1b]8;;\x1b\\".to_string(),
+        })
+    }
+
+    /// If this tag is a [`Tag::HyperLink`], return the full OSC 8 escape
+    /// string wrapping `grapheme`; otherwise return `None`.
+    pub fn get_osc8_for_graph(&self, grapheme: &str) -> Option<String> {
+        if let Tag::HyperLink(data) = self {
+            Some(data.get_osc8_for_graph(grapheme))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,15 +241,6 @@ impl Default for TaggedCell {
             tag: Tag::Blank,
         }
     }
-}
-
-/// Wrap `grapheme` in an OSC 8 hyperlink sequence for the given `url`.
-///
-/// The resulting string, when written to a terminal cell, causes
-/// supporting terminals to render `grapheme` as a clickable link:
-/// `ESC ] 8 ; ; url ST  grapheme  ESC ] 8 ; ; ST`
-fn osc8_hyperlink(url: &str, grapheme: &str) -> String {
-    format!("\x1b]8;;{url}\x1b\\{grapheme}\x1b]8;;\x1b\\")
 }
 
 impl TaggedCell {
@@ -340,10 +381,7 @@ impl Contents {
             {
                 let cell =
                     &mut self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize];
-                if let Tag::HyperLink(url) = &tag {
-                    // Wrap the grapheme in an OSC 8 hyperlink sequence so the
-                    // terminal emulator renders it as a clickable link.
-                    let linked = osc8_hyperlink(url, graph.symbol);
+                if let Some(linked) = tag.get_osc8_for_graph(graph.symbol) {
                     cell.cell.set_symbol(&linked).set_style(graph.style);
                 } else {
                     cell.cell.set_symbol(graph.symbol).set_style(graph.style);

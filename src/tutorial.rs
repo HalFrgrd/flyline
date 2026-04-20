@@ -467,7 +467,7 @@ pub fn generate_tutorial_text(
                 ts_text(" to trigger autocompletions. If nothing comes up, first set normal Bash completions ("),
                 TaggedSpan::new(
                     Span::styled("https://github.com/scop/bash-completion", text_style),
-                    Tag::HyperLink("https://github.com/scop/bash-completion".to_string()),
+                    Tag::new_hyperlink("https://github.com/scop/bash-completion"),
                 ),
                 TaggedSpan::new(Span::styled(")", text_style), Tag::Tutorial),
             ]));
@@ -643,7 +643,7 @@ pub fn generate_tutorial_text(
                 ), Tag::Tutorial),
                 TaggedSpan::new(
                     Span::styled("https://github.com/be5invis/Iosevka", text_style),
-                    Tag::HyperLink("https://github.com/be5invis/Iosevka".to_string()),
+                    Tag::new_hyperlink("https://github.com/be5invis/Iosevka"),
                 ),
                 TaggedSpan::new(Span::styled(").", text_style), Tag::Tutorial),
             ]));
@@ -670,7 +670,7 @@ pub fn generate_tutorial_text(
                 TaggedSpan::new(Span::styled(" and ", text_style), Tag::Tutorial),
                 TaggedSpan::new(
                     Span::styled("https://github.com/HalFrgrd/flyline", text_style),
-                    Tag::HyperLink("https://github.com/HalFrgrd/flyline".to_string()),
+                    Tag::new_hyperlink("https://github.com/HalFrgrd/flyline"),
                 ),
                 TaggedSpan::new(Span::styled(".", text_style), Tag::Tutorial),
             ]));
