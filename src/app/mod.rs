@@ -138,7 +138,7 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
 
     // Set up terminal features. Mouse capture is handled separately inside
-    // MouseState::initialize (called in App::new) based on the configured mode.
+    // MouseState:::initialize (called in App::new) based on the configured mode.
     crossterm::execute!(
         std::io::stdout(),
         crossterm::event::EnableBracketedPaste,
