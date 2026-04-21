@@ -399,11 +399,21 @@ Recommended settings
 
 I find that Copilot can't interact with the terminal if flyline runs with certain settings. If you run into this problem, add this to the end of your `.bashrc`:
 ```bash
-if [[ "$TERM_PROGRAM" == "vscode" ]]; then
+if [[ -n "${COPILOT_TERMINAl:-}" ]]; then
     RPS1=''
     flyline set-cursor --backend terminal --interpolate none
+    flyline --show-inline-history false
 fi
 ``` 
+and set this in your `settings.json`:
+```json
+  "chat.tools.terminal.terminalProfile.linux": {
+    "env": {
+      "COPILOT_TERMINAl": "1"
+    },
+    "path": "bash",
+  }
+```
 
 ## macOS
 

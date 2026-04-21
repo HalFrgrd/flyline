@@ -1173,6 +1173,7 @@ impl Flyline {
                         effect_speed,
                         effect_easing,
                     }) => {
+                        // set backend first since it affects the validity of other options
                         if let Some(b) = backend {
                             log::info!("Cursor backend set to {:?}", b);
                             self.settings.cursor_config.backend = b;

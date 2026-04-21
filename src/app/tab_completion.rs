@@ -319,7 +319,7 @@ pub(crate) fn gen_completions_internal(
                                         }
                                         _ => help_description(),
                                     };
-                                let suffix = if value.ends_with('+') { " " } else { "" };
+                                let suffix = if value.ends_with('+') { "" } else { " " };
                                 MaybeProcessedSuggestion::Ready(
                                     ProcssedSuggestion::new(&value, "", suffix)
                                         .with_description(description),
