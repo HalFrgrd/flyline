@@ -667,33 +667,6 @@ enum PromptWidgetSubcommands {
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
-// Set to true by the .init_array constructor (pre_bash_4_4 builds only) so that
-// flyline_builtin_load can detect a double-call and skip re-initialization.
-#[cfg(feature = "pre_bash_4_4")]
-static FLYLINE_LOADED_BY_INIT_ARRAY: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-// On pre-bash-4.4 builds, register a shared-library constructor so that flyline
-// is initialised as soon as the library is loaded via `enable -f`, without
-// requiring a separate `flyline` call in .bashrc.
-//
-// Linux uses the ELF .init_array section; macOS uses __DATA,__mod_init_func.
-#[cfg(feature = "pre_bash_4_4")]
-extern "C" fn flyline_init_array_ctor() {
-    FLYLINE_LOADED_BY_INIT_ARRAY.store(true, std::sync::atomic::Ordering::SeqCst);
-    flyline_builtin_load(std::ptr::null());
-}
-
-#[cfg(all(feature = "pre_bash_4_4", target_os = "linux"))]
-#[unsafe(link_section = ".init_array")]
-#[used]
-static FLYLINE_INIT_CTOR: extern "C" fn() = flyline_init_array_ctor;
-
-#[cfg(all(feature = "pre_bash_4_4", target_os = "macos"))]
-#[unsafe(link_section = "__DATA,__mod_init_func")]
-#[used]
-static FLYLINE_INIT_CTOR: extern "C" fn() = flyline_init_array_ctor;
-
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
     if let Some(boxed) = FLYLINE_INSTANCE_PTR
@@ -1480,27 +1453,43 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     handle: std::ptr::null(),
 };
 
+// On pre-bash-4.4 builds, register a shared-library constructor so that flyline
+// is initialised as soon as the library is loaded via `enable -f`.
+// On newer versions of bash `flyline_builtin_load` is called automatically by bash during enable.
+
+// Linux uses the ELF .init_array section; macOS uses __DATA,__mod_init_func.
+#[cfg(feature = "pre_bash_4_4")]
+extern "C" fn flyline_init_array_ctor() {
+    let _ = flyline_load_common();
+}
+
+#[cfg(all(feature = "pre_bash_4_4", target_os = "linux"))]
+#[unsafe(link_section = ".init_array")]
+#[used]
+static FLYLINE_INIT_CTOR: extern "C" fn() = flyline_init_array_ctor;
+
+#[cfg(all(feature = "pre_bash_4_4", target_os = "macos"))]
+#[unsafe(link_section = "__DATA,__mod_init_func")]
+#[used]
+static FLYLINE_INIT_CTOR: extern "C" fn() = flyline_init_array_ctor;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
+    flyline_load_common()
+}
+
+fn flyline_load_common() -> c_int {
     // Returning 0 means the load fails
     const SUCCESS: c_int = 1;
     const FAILURE: c_int = 0;
 
-    // On pre-bash-4.4 builds, flyline_init_array_ctor() runs as a shared-library
-    // constructor the moment the library is dlopen'd.  Bash may still call this
-    // function afterwards; detect that case and skip re-initialisation.
-    #[cfg(feature = "pre_bash_4_4")]
-    if FLYLINE_LOADED_BY_INIT_ARRAY.load(std::sync::atomic::Ordering::SeqCst) {
-        let already_initialized = FLYLINE_INSTANCE_PTR
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_some();
-        if already_initialized {
-            log::trace!(
-                "flyline_builtin_load: already initialized by .init_array constructor, skipping"
-            );
-            return SUCCESS;
-        }
+    let already_initialized = FLYLINE_INSTANCE_PTR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    if already_initialized {
+        log::info!("flyline_builtin_load: already initialized, skipping");
+        return SUCCESS;
     }
 
     logging::init().unwrap_or_else(|e| {
