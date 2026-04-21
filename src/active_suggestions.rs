@@ -634,7 +634,7 @@ pub fn post_process_completion(
     };
 
     let prefix = if comp_result_flags.filename_completion_desired {
-        if word_under_cursor.ends_with("/") {
+        if word_under_cursor.ends_with("/") || !word_under_cursor.contains("/") {
             word_under_cursor.to_string()
         } else {
             let parent = Path::new(word_under_cursor)
@@ -655,9 +655,10 @@ pub fn post_process_completion(
     let quoted_no_prefix = quoted.strip_prefix(&prefix).unwrap_or(&quoted).to_string();
 
     log::debug!(
-        "Post-processing completion: raw_sug={:?}, prefix={:?},  quoted_no_prefix={:?},suffix_char={:?}",
+        "Post-processing completion: raw_sug={:?}, prefix={:?}, word_under_cursor={:?}, quoted_no_prefix={:?},suffix_char={:?}",
         raw_sug,
         prefix,
+        word_under_cursor,
         quoted_no_prefix,
         &suffix_char
     );
