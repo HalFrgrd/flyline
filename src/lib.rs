@@ -1,5 +1,6 @@
 use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 use clap_complete::{ArgValueCompleter, Shell, generate};
+use ctor::ctor;
 use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
@@ -697,22 +698,6 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
 
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        // Normally, the flyline_builtin_load function is automatically called by bash
-        // when the builtin is enabled. But this does not happen on older version of bash
-        // so we need to call it manually.
-        #[cfg(feature = "pre_bash_4_4")]
-        {
-            let initialized = FLYLINE_INSTANCE_PTR
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .is_some();
-            if !initialized {
-                log::info!("Initializing flyline instance");
-                let empty_args: *const i8 = std::ptr::null();
-                flyline_builtin_load(empty_args);
-            }
-        }
-
         if let Some(boxed) = FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -1471,11 +1456,35 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
     handle: std::ptr::null(),
 };
 
+// On pre-bash-4.4 builds, register a shared-library constructor so that flyline
+// is initialised as soon as the library is loaded via `enable -f`.
+// On newer versions of bash `flyline_builtin_load` is called automatically by bash during enable.
+#[cfg(feature = "pre_bash_4_4")]
+#[ctor]
+fn flyline_builtin_load_ctor() {
+    let _ = flyline_load_common();
+}
+
+#[cfg(not(feature = "pre_bash_4_4"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
+    flyline_load_common()
+}
+
+fn flyline_load_common() -> c_int {
+    log::info!("flyline_builtin_load called, initializing flyline");
     // Returning 0 means the load fails
     const SUCCESS: c_int = 1;
     const FAILURE: c_int = 0;
+
+    let already_initialized = FLYLINE_INSTANCE_PTR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some();
+    if already_initialized {
+        log::info!("flyline_builtin_load: already initialized, skipping");
+        return SUCCESS;
+    }
 
     logging::init().unwrap_or_else(|e| {
         eprintln!("Flyline failed to setup logging: {}", e);
@@ -1604,8 +1613,12 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     SUCCESS
 }
 
+// Its easier to just not unload on older bash versions
+// Maybe I could use a fini_array function to unload, but I doubt its worth the effort.
+#[cfg(not(feature = "pre_bash_4_4"))]
 #[unsafe(no_mangle)]
-pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
+pub extern "C" fn flyline_builtin_unload_common() {
+    log::info!("flyline_builtin_unload called, unloading flyline");
     let had_instance = FLYLINE_INSTANCE_PTR
         .lock()
         .unwrap_or_else(|e| e.into_inner())
