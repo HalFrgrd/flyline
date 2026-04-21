@@ -636,7 +636,7 @@ pub fn post_process_completion(
     let prefix = if comp_result_flags.filename_completion_desired {
         if !word_under_cursor.contains("/") {
             "".to_string()
-        }else if word_under_cursor.ends_with("/")  {
+        } else if word_under_cursor.ends_with("/") {
             word_under_cursor.to_string()
         } else {
             let parent = Path::new(word_under_cursor)
