@@ -1473,12 +1473,14 @@ static FLYLINE_INIT_CTOR: extern "C" fn() = flyline_init_array_ctor;
 #[used]
 static FLYLINE_INIT_CTOR: extern "C" fn() = flyline_init_array_ctor;
 
+#[cfg(not(feature = "pre_bash_4_4"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     flyline_load_common()
 }
 
 fn flyline_load_common() -> c_int {
+    log::info!("flyline_builtin_load called, initializing flyline");
     // Returning 0 means the load fails
     const SUCCESS: c_int = 1;
     const FAILURE: c_int = 0;
@@ -1619,26 +1621,38 @@ fn flyline_load_common() -> c_int {
     SUCCESS
 }
 
+#[cfg(all(feature = "pre_bash_4_4", target_os = "linux"))]
+#[unsafe(link_section = ".fini_array")]
+#[used]
+static FLYLINE_DEINIT_CTOR: extern "C" fn() = flyline_builtin_unload_common;
+
+#[cfg(all(feature = "pre_bash_4_4", target_os = "macos"))]
+#[unsafe(link_section = "__DATA,__mod_term_func")]
+#[used]
+static FLYLINE_DEINIT_CTOR: extern "C" fn() = flyline_builtin_unload_common;
+
+#[cfg(not(feature = "pre_bash_4_4"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
-    // On pre-bash-4.4, the instance was created by the .init_array constructor and
-    // cannot be re-created by bash on demand.  Keep the instance alive so that
-    // re-enabling the builtin (enable flyline) works without reloading the library.
-    #[cfg(feature = "pre_bash_4_4")]
-    let had_instance = FLYLINE_INSTANCE_PTR
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_some();
+    flyline_builtin_unload_common();
+}
+
+pub extern "C" fn flyline_builtin_unload_common() {
+    println!("flyline_builtin_unload called, unloading flyline");
+    return;
+    // log::info!("flyline_builtin_unload called, unloading flyline");
 
     #[cfg(not(feature = "pre_bash_4_4"))]
-    let had_instance = FLYLINE_INSTANCE_PTR
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take()
-        .is_some();
+    {
+        let had_instance = FLYLINE_INSTANCE_PTR
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+            .is_some();
 
-    if !had_instance {
-        return;
+        if !had_instance {
+            return;
+        }
     }
 
     unsafe {
