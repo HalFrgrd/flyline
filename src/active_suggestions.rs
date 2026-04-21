@@ -1139,7 +1139,7 @@ impl ActiveSuggestions {
         match self.all_maybe_processed_suggestions.as_mut_slice() {
             [] => {
                 log::debug!("No completions found. all_maybe_processed_suggestions is empty");
-                return None;
+                return Some(self);
             }
             [single_suggestion] => {
                 let suggestion = single_suggestion.to_suggestion();
