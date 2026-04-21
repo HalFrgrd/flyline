@@ -1193,6 +1193,10 @@ fn lscolors_style_to_ratatui(style: &lscolors::Style) -> Style {
     ratatui_style
 }
 
+pub fn read_terminating_signal() -> c_int {
+    unsafe { (&raw const crate::bash_symbols::terminating_signal).read_volatile() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

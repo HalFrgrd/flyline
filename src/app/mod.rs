@@ -726,30 +726,20 @@ impl<'a> App<'a> {
                 redraw = true;
             }
 
-            unsafe {
-                // TODO: I might be able to get away with just checking terminating_signals for both versions
-                // Check if a terminating signal has been received.
-                // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
-                // bash receives a terminating signal. In older versions, we fall
-                // back to checking the terminating_signal global directly.
-                #[cfg(not(feature = "pre_bash_4_4"))]
-                let got_signal = (&raw const crate::bash_symbols::rl_signal_event_hook)
-                    .read()
-                    .is_some();
-                #[cfg(feature = "pre_bash_4_4")]
-                let got_signal = (&raw const crate::bash_symbols::terminating_signal).read() != 0;
+            // Check if a terminating signal has been received.
+            // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
+            // bash receives a terminating signal.
+            // But just checking for terminating_signal works on all versions of bash, and is more direct.
 
-                if got_signal {
-                    let sig = (&raw const crate::bash_symbols::terminating_signal).read();
+            let terminating_signal = bash_funcs::read_terminating_signal();
 
-                    log::info!(
-                        "Signal {} received, exiting immediately",
-                        signal_to_str(sig)
-                    );
-
-                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
-                    break 'main_loop;
-                }
+            if terminating_signal != 0 {
+                log::info!(
+                    "Signal {} received, exiting immediately",
+                    signal_to_str(terminating_signal)
+                );
+                self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                break 'main_loop;
             }
         }
 
