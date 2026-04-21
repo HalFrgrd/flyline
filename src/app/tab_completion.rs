@@ -956,7 +956,7 @@ impl App<'_> {
         // $HOME/foo/ should complete to $HOME/foo/\$baz.txt (not \$HOME/foo/\$baz.txt).
         run_test_on(
             "fl_comp_util --env-var-test $HOME/foo/",
-            &[&ProcssedSuggestion::new(r#"$HOME/foo/\$baz.txt"#, "", " ")],
+            &[&ProcssedSuggestion::new(r#"\$baz.txt"#, "$HOME/foo/", " ")],
         );
 
         // Test glob expansion with glob characters in directory components
