@@ -1,5 +1,6 @@
 use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 use clap_complete::{ArgValueCompleter, Shell, generate};
+use ctor::ctor;
 use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
@@ -1456,22 +1457,11 @@ pub static mut flyline_struct: bash_symbols::BashBuiltin = bash_symbols::BashBui
 // On pre-bash-4.4 builds, register a shared-library constructor so that flyline
 // is initialised as soon as the library is loaded via `enable -f`.
 // On newer versions of bash `flyline_builtin_load` is called automatically by bash during enable.
-
-// Linux uses the ELF .init_array section; macOS uses __DATA,__mod_init_func.
 #[cfg(feature = "pre_bash_4_4")]
-extern "C" fn flyline_init_array_ctor() {
+#[ctor]
+fn flyline_builtin_load_ctor() {
     let _ = flyline_load_common();
 }
-
-#[cfg(all(feature = "pre_bash_4_4", target_os = "linux"))]
-#[unsafe(link_section = ".init_array")]
-#[used]
-static FLYLINE_INIT_CTOR: extern "C" fn() = flyline_init_array_ctor;
-
-#[cfg(all(feature = "pre_bash_4_4", target_os = "macos"))]
-#[unsafe(link_section = "__DATA,__mod_init_func")]
-#[used]
-static FLYLINE_INIT_CTOR: extern "C" fn() = flyline_init_array_ctor;
 
 #[cfg(not(feature = "pre_bash_4_4"))]
 #[unsafe(no_mangle)]
@@ -1621,38 +1611,20 @@ fn flyline_load_common() -> c_int {
     SUCCESS
 }
 
-#[cfg(all(feature = "pre_bash_4_4", target_os = "linux"))]
-#[unsafe(link_section = ".fini_array")]
-#[used]
-static FLYLINE_DEINIT_CTOR: extern "C" fn() = flyline_builtin_unload_common;
-
-#[cfg(all(feature = "pre_bash_4_4", target_os = "macos"))]
-#[unsafe(link_section = "__DATA,__mod_term_func")]
-#[used]
-static FLYLINE_DEINIT_CTOR: extern "C" fn() = flyline_builtin_unload_common;
-
+// Its easier to just not unload on older bash versions
+// Maybe I could use a fini_array function to unload, but I doubt its worth the effort.
 #[cfg(not(feature = "pre_bash_4_4"))]
 #[unsafe(no_mangle)]
-pub extern "C" fn flyline_builtin_unload(_arg: *const c_char) {
-    flyline_builtin_unload_common();
-}
-
 pub extern "C" fn flyline_builtin_unload_common() {
-    println!("flyline_builtin_unload called, unloading flyline");
-    return;
-    // log::info!("flyline_builtin_unload called, unloading flyline");
+    log::info!("flyline_builtin_unload called, unloading flyline");
+    let had_instance = FLYLINE_INSTANCE_PTR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+        .is_some();
 
-    #[cfg(not(feature = "pre_bash_4_4"))]
-    {
-        let had_instance = FLYLINE_INSTANCE_PTR
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-            .is_some();
-
-        if !had_instance {
-            return;
-        }
+    if !had_instance {
+        return;
     }
 
     unsafe {
