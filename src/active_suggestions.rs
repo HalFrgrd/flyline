@@ -1004,32 +1004,45 @@ impl ActiveSuggestions {
                 break;
             }
         }
-
         // Second round, try not to truncate the selected column, and truncate other columns if needed to fit within max_width.
         let mut total_width = 0;
 
         let final_grid = grid
             .into_iter()
-            .enumerate()
-            .sorted_by_key(|(_local_col_idx, col_info)| {
-                col_info
-                    .global_col_idx
-                    .checked_signed_diff(self.selected_col)
-                    .map(|d| d.abs() as usize)
-                    .unwrap_or(0)
+            // Truncation priority:
+            // 1) selected col
+            // 2) columns to the left of selected, moving outward
+            // 3) columns to the right of selected, moving outward
+            .sorted_by_key(|col_info| {
+                let col_idx = col_info.global_col_idx;
+                if col_idx == self.selected_col {
+                    (0usize, 0usize)
+                } else if col_idx < self.selected_col {
+                    (1usize, self.selected_col - col_idx)
+                } else {
+                    (2usize, col_idx - self.selected_col)
+                }
             })
-            .map(|(local_col_idx, mut col)| {
+            .enumerate()
+            .map(|(num_cols_drawn_so_far, mut col)| {
+                let padding_for_col = if num_cols_drawn_so_far == 0 {
+                    0
+                } else {
+                    COLUMN_PADDING
+                };
+
                 if col.is_selected_col {
                     // Don't truncate the selected column, so count its full width.
                     col.width = col.width.min(max_width);
                 } else {
                     const MIN_COL_WIDTH: usize = 10;
-                    let truncated_col_width = if total_width + COLUMN_PADDING + col.width
+
+                    let truncated_col_width = if total_width + padding_for_col + col.width
                         > max_width
                     {
-                        if max_width.saturating_sub(total_width + COLUMN_PADDING) > MIN_COL_WIDTH {
+                        if max_width.saturating_sub(total_width + padding_for_col) > MIN_COL_WIDTH {
                             // We can still fit MIN_COL_WIDTH chars of this col so it should be alright.
-                            max_width - total_width - COLUMN_PADDING
+                            max_width - total_width - padding_for_col
                         } else {
                             0
                         }
@@ -1039,11 +1052,7 @@ impl ActiveSuggestions {
                     col.width = truncated_col_width;
                 }
 
-                total_width += if local_col_idx == 0 {
-                    col.width
-                } else {
-                    COLUMN_PADDING + col.width
-                };
+                total_width += col.width + padding_for_col;
                 col
             })
             .filter(|col_info| col_info.width > 0)
