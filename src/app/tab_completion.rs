@@ -435,6 +435,11 @@ fn gen_secondary_completions(
                                 acc.push(' ');
                             }
 
+                            match comp_resultflags.quote_type {
+                                Some(QuoteType::DoubleQuote) => acc.push_str("\""),
+                                Some(QuoteType::SingleQuote) => acc.push_str("'"),
+                                _ => {}
+                            }
                             acc.push_str(&sug.s);
 
                             if !is_last {
