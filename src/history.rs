@@ -79,8 +79,6 @@ impl HistoryManager {
     /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
     #[allow(dead_code)]
     fn parse_bash_history_from_file() -> Vec<HistoryEntry> {
-        let start_time = std::time::Instant::now();
-
         let hist_path = std::env::var("HISTFILE").unwrap_or_else(|_| {
             let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
             format!("{}/.bash_history", home)
@@ -89,14 +87,12 @@ impl HistoryManager {
         log::debug!("Reading bash history from: {}", hist_path);
 
         let content = std::fs::read_to_string(hist_path).unwrap_or_default();
-        let res = HistoryManager::parse_bash_history_str(&content);
-
-        let duration = start_time.elapsed();
-        log::debug!(
-            "Parsed bash history ({} entries) in {:?}",
-            res.len(),
-            duration
+        let res = time_it!(
+            "parse bash history",
+            HistoryManager::parse_bash_history_str(&content)
         );
+
+        log::debug!("Parsed bash history ({} entries)", res.len());
         res
     }
 
@@ -149,8 +145,6 @@ impl HistoryManager {
     }
 
     fn parse_zsh_history(custom_path: Option<&str>) -> Vec<HistoryEntry> {
-        let start_time = std::time::Instant::now();
-
         let hist_path = match custom_path {
             Some(p) if !p.is_empty() => p.to_string(),
             _ => {
@@ -184,14 +178,12 @@ impl HistoryManager {
                 String::new()
             }
         };
-        let res = HistoryManager::parse_zsh_history_str(&content);
-
-        let duration = start_time.elapsed();
-        log::debug!(
-            "Parsed Zsh history ({} entries) in {:?}",
-            res.len(),
-            duration
+        let res = time_it!(
+            "parse zsh history",
+            HistoryManager::parse_zsh_history_str(&content)
         );
+
+        log::debug!("Parsed Zsh history ({} entries)", res.len());
         res
     }
 

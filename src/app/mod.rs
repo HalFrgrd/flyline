@@ -169,9 +169,7 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
 
     let runtime = build_runtime();
 
-    let t_app_create = std::time::Instant::now();
-    let app = App::new(settings);
-    log::trace!("startup: app creation: {:?}", t_app_create.elapsed());
+    let app = time_it!("startup: app creation", App::new(settings));
 
     let end_state = runtime.block_on(app.run(backend));
 
@@ -464,30 +462,32 @@ impl<'a> App<'a> {
         let t_run = std::time::Instant::now();
 
         // Send execution finished escape codes (previous command has completed).
-        let t_escape = std::time::Instant::now();
-        if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
-            let last_command_exit_value = unsafe { crate::bash_symbols::last_command_exit_value };
-            let hostname = bash_funcs::get_hostname();
-            let cwd = bash_funcs::get_cwd();
+        time_it!("startup: escape codes", {
+            if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
+                let last_command_exit_value =
+                    unsafe { crate::bash_symbols::last_command_exit_value };
+                let hostname = bash_funcs::get_hostname();
+                let cwd = bash_funcs::get_cwd();
 
-            shell_integration::write_startup_codes(last_command_exit_value, &hostname, &cwd)
-                .unwrap_or_else(|e| {
-                    log::error!("Failed to write execution finished escape codes: {}", e);
-                });
-        }
-        log::trace!("startup: escape codes: {:?}", t_escape.elapsed());
+                shell_integration::write_startup_codes(last_command_exit_value, &hostname, &cwd)
+                    .unwrap_or_else(|e| {
+                        log::error!("Failed to write execution finished escape codes: {}", e);
+                    });
+            }
+        });
 
-        let t_terminal_setup = std::time::Instant::now();
-        crossterm::terminal::enable_raw_mode().unwrap();
+        let mut terminal = time_it!("startup: terminal setup", {
+            crossterm::terminal::enable_raw_mode().unwrap();
 
-        let options = TerminalOptions {
-            viewport: Viewport::Inline(0),
-        };
-        let mut terminal =
-            ratatui::Terminal::with_options(backend, options).expect("Failed to create terminal");
+            let options = TerminalOptions {
+                viewport: Viewport::Inline(0),
+            };
+            let terminal = ratatui::Terminal::with_options(backend, options)
+                .expect("Failed to create terminal");
 
-        bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
-        log::trace!("startup: terminal setup: {:?}", t_terminal_setup.elapsed());
+            bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
+            terminal
+        });
 
         let mut redraw = true;
         let mut last_terminal_size = terminal.size().unwrap();

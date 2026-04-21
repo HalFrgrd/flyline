@@ -9,6 +9,8 @@ use crate::{
     cursor::CursorStyleConfig,
 };
 
+#[macro_use]
+mod macros;
 mod active_suggestions;
 mod agent_mode;
 mod app;
