@@ -33,11 +33,8 @@ parse-style = { version = "0.4.0" }
 easing-function = "0.1.1"
 
 
-[dependencies.tokio]
-version = "1.47.1"
-features = ["rt"]
-default-features = false
-
+# tokio is not used directly by flyline; it remains a transitive dependency pulled
+# in by `skim` (via `interprocess` and `tokio-util`).
 [features]
 integration-tests = []
 pre_bash_4_4 = []
