@@ -67,5 +67,13 @@ static ALL_USERS: LazyLock<Vec<User>> = LazyLock::new(|| {
 });
 
 pub fn get_all_users() -> &'static [User] {
+    for user in ALL_USERS.iter() {
+        log::debug!(
+            "Loaded user: username={}, home_dir={}",
+            user.username,
+            user.home_dir
+        );
+    }
+
     &ALL_USERS
 }

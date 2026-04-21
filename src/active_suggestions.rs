@@ -640,7 +640,13 @@ pub fn post_process_completion(
             let parent = Path::new(word_under_cursor)
                 .parent()
                 .and_then(|p| p.to_str())
-                .map(|s| format!("{}/", s));
+                .map(|s| {
+                    if !s.ends_with("/") {
+                        format!("{}/", s)
+                    } else {
+                        s.to_string()
+                    }
+                });
 
             if let Some(p) = parent {
                 p
