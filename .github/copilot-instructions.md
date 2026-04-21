@@ -66,3 +66,4 @@ CI runs both test suites via `.github/workflows/ci.yml`.
 - Keep `unsafe` blocks as small as possible and document why each one is necessary.
 - Do not introduce new dependencies without a clear justification; check the advisory database for known vulnerabilities before adding any.
 - Always run `cargo fmt` before committing code.
+- In Rust tests, do not add custom failure messages to `assert!` calls (e.g. avoid `assert!(x, "expected …")`). Use plain `assert!(x)` to match the existing test style in this codebase.
