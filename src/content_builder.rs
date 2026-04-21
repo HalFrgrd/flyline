@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use crate::iter_first_last::FirstLast;
 use crate::palette::Palette;
 
 /// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
@@ -167,7 +168,7 @@ pub struct HyperLinkData {
 
 impl HyperLinkData {
     /// Wrap `grapheme` in the OSC 8 open/close sequences for this hyperlink.
-    pub fn get_osc8_for_graph(&self, grapheme: &str) -> String {
+    pub fn get_osc8_encoded(&self, grapheme: &str) -> String {
         format!("{}{}{}", self.pre_grapheme, grapheme, self.post_grapheme)
     }
 }
@@ -217,11 +218,9 @@ impl Tag {
         })
     }
 
-    /// If this tag is a [`Tag::HyperLink`], return the full OSC 8 escape
-    /// string wrapping `grapheme`; otherwise return `None`.
-    pub fn get_osc8_for_graph(&self, grapheme: &str) -> Option<String> {
+    pub fn get_osc8_encoded(&self, s: &str) -> Option<String> {
         if let Tag::HyperLink(data) = self {
-            Some(data.get_osc8_for_graph(grapheme))
+            Some(data.get_osc8_encoded(s))
         } else {
             None
         }
@@ -358,7 +357,7 @@ impl Contents {
         let graphemes = tagged_span.span.styled_graphemes(tagged_span.span.style);
         let mut marked_graph_coord = None;
 
-        for (i, graph) in graphemes.enumerate() {
+        for (i, (is_first, is_last, graph)) in graphemes.flag_first_last().enumerate() {
             let graph_w = graph.symbol.width() as u16;
             if graph_w == 0 {
                 continue;
@@ -381,8 +380,22 @@ impl Contents {
             {
                 let cell =
                     &mut self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize];
-                if let Some(linked) = tag.get_osc8_for_graph(graph.symbol) {
-                    cell.cell.set_symbol(&linked).set_style(graph.style);
+                if let Some(linked) = tag.get_osc8_encoded(&tagged_span.span.content) {
+                    if is_first {
+                        let encoded =
+                            encode_osc8(&tagged_span.span.content, &tagged_span.span.content);
+                        // log::debug!("Writing OSC 8 hyperlink for URL in tag at row {}, col {}: {}", self.cursor_pos.row, self.cursor_pos.col, encoded);
+
+                        cell.cell
+                            .set_symbol(&encoded)
+                            .set_style(graph.style)
+                            .set_skip(false);
+                    } else {
+                        cell.cell
+                            .set_symbol(" ")
+                            .set_style(graph.style)
+                            .set_skip(true);
+                    }
                 } else {
                     cell.cell.set_symbol(graph.symbol).set_style(graph.style);
                 }

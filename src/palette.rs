@@ -246,6 +246,12 @@ impl Palette {
         self.secondary_text()
     }
 
+    pub fn hyperlink_style(&self) -> Style {
+        Style::default()
+            .fg(Color::Blue)
+            .add_modifier(Modifier::UNDERLINED)
+    }
+
     // ── Presets ──────────────────────────────────────────────────────
 
     /// Dark-terminal defaults (the original flyline palette).
