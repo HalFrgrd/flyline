@@ -8,21 +8,31 @@ pub struct StatefulSlidingWindow {
     index_of_interest: usize,
     window_size: usize,
     max_index: usize,
+    desired_buffer: Option<usize>,
 }
 
 impl StatefulSlidingWindow {
-    pub fn new(index_of_interest: usize, window_size: usize, max_index: usize) -> Self {
+    pub fn new(
+        index_of_interest: usize,
+        window_size: usize,
+        max_index: usize,
+        desired_buffer: Option<usize>,
+    ) -> Self {
         let mut self_instance = Self {
             start_index: 0,
             index_of_interest,
             window_size,
             max_index,
+            desired_buffer,
         };
         self_instance.fix_window();
         self_instance
     }
 
     fn buffer(&self) -> usize {
+        if let Some(desired) = self.desired_buffer {
+            return desired.min(self.window_size.saturating_sub(1) / 2);
+        }
         match self.window_size {
             0..=2 => 0,
             3 | 4 => 1,
@@ -82,13 +92,13 @@ mod tests {
 
     #[test]
     fn test_stateful_sliding_window() {
-        let mut window = StatefulSlidingWindow::new(0, 1, 2);
+        let mut window = StatefulSlidingWindow::new(0, 1, 2, None);
         assert_eq!(window.get_window_range(), 0..1);
 
         window.move_index_to(1);
         assert_eq!(window.get_window_range(), 1..2);
 
-        let mut window = StatefulSlidingWindow::new(0, 5, 10);
+        let mut window = StatefulSlidingWindow::new(0, 5, 1 + 10, None);
         assert_eq!(window.get_window_range(), 0..5);
 
         window.move_index_to(1);
@@ -120,14 +130,14 @@ mod tests {
 
     #[test]
     fn test_going_to_max_index() {
-        let mut window = StatefulSlidingWindow::new(0, 5, 10);
+        let mut window = StatefulSlidingWindow::new(0, 5, 10, None);
         window.move_index_to(9);
         assert_eq!(window.get_window_range(), 5..10);
     }
 
     #[test]
     fn test_window_size_larger_than_max_index() {
-        let mut window = StatefulSlidingWindow::new(0, 15, 10);
+        let mut window = StatefulSlidingWindow::new(0, 15, 10, None);
         assert_eq!(window.get_window_range(), 0..10);
         window.move_index_to(5);
         assert_eq!(window.get_window_range(), 0..10);

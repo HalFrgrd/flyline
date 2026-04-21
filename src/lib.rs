@@ -1,9 +1,11 @@
 use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 use clap_complete::{ArgValueCompleter, Shell, generate};
-use ctor::ctor;
 use libc::{c_char, c_int};
 use ratatui::style::Style;
 use std::sync::Mutex;
+
+#[cfg(feature = "pre_bash_4_4")]
+use ctor::ctor;
 
 use crate::{
     app::actions::{self},

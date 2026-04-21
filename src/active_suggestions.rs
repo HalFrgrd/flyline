@@ -766,7 +766,7 @@ impl std::fmt::Debug for ActiveSuggestions {
     }
 }
 pub struct ColumnInfo {
-    pub idx: usize,
+    pub global_col_idx: usize,
     pub items: Vec<(SuggestionFormatted, bool)>,
     pub width: usize,
     pub is_selected_col: bool,
@@ -788,7 +788,7 @@ impl ActiveSuggestions {
             word_under_cursor_dequoted: bash_funcs::dequoting_function_rust(&word_under_cursor.s),
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
-            col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len),
+            col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
         };
 
@@ -945,6 +945,7 @@ impl ActiveSuggestions {
             // Build the column, processing each item lazily.
             let start = col_idx * max_rows;
             let end = (start + max_rows).min(n);
+
             let col_items: Vec<(SuggestionFormatted, bool)> = (start..end)
                 .map(|filtered_idx| {
                     {
@@ -976,8 +977,9 @@ impl ActiveSuggestions {
                         palette,
                         frame_index,
                     );
-                    let is_selected = filtered_idx == selected_1d;
-                    (formatted, is_selected)
+                    let is_selected_entry = filtered_idx == selected_1d;
+
+                    (formatted, is_selected_entry)
                 })
                 .collect();
 
@@ -993,12 +995,12 @@ impl ActiveSuggestions {
                 COLUMN_PADDING + untruncated_col_width
             };
             grid.push(ColumnInfo {
-                idx: col_idx,
+                global_col_idx: col_idx,
                 items: col_items,
                 width: untruncated_col_width,
                 is_selected_col: col_idx == self.selected_col,
             });
-            if untruncated_total_width > max_width {
+            if untruncated_total_width > max_width && col_idx >= self.selected_col {
                 break;
             }
         }
@@ -1008,14 +1010,15 @@ impl ActiveSuggestions {
 
         let final_grid = grid
             .into_iter()
-            .sorted_by_key(|col_info| {
+            .enumerate()
+            .sorted_by_key(|(_local_col_idx, col_info)| {
                 col_info
-                    .idx
+                    .global_col_idx
                     .checked_signed_diff(self.selected_col)
                     .map(|d| d.abs() as usize)
                     .unwrap_or(0)
             })
-            .map(|mut col| {
+            .map(|(local_col_idx, mut col)| {
                 if col.is_selected_col {
                     // Don't truncate the selected column, so count its full width.
                     col.width = col.width.min(max_width);
@@ -1036,7 +1039,7 @@ impl ActiveSuggestions {
                     col.width = truncated_col_width;
                 }
 
-                total_width += if col.idx == 0 {
+                total_width += if local_col_idx == 0 {
                     col.width
                 } else {
                     COLUMN_PADDING + col.width
@@ -1044,16 +1047,12 @@ impl ActiveSuggestions {
                 col
             })
             .filter(|col_info| col_info.width > 0)
-            .sorted_by_key(|col_info| col_info.idx)
+            .sorted_by_key(|col_info| col_info.global_col_idx)
             .collect::<Vec<_>>();
 
-        let first_col_len = final_grid
-            .first()
-            .map(|col| col.items.len())
-            .unwrap_or(max_rows);
-
         self.last_num_visible_cols = final_grid.len();
-        self.last_num_rows_per_col = max_rows.min(first_col_len);
+
+        self.last_num_rows_per_col = max_rows;
         final_grid
     }
 

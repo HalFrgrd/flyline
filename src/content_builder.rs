@@ -513,7 +513,7 @@ impl Contents {
 
     pub fn get_row_range_to_show(&self, term_height: u16) -> std::ops::Range<u16> {
         let mut window =
-            StatefulSlidingWindow::new(0, term_height as usize, self.height() as usize);
+            StatefulSlidingWindow::new(0, term_height as usize, self.height() as usize, None);
         if let Some(focus_row) = self.focus_row {
             window.move_index_to(focus_row as usize);
         } else if let Some(term_cursor_pos) = self.term_cursor_pos {

@@ -552,7 +552,7 @@ impl FuzzyHistorySearch {
             cache_command: None,
             global_index: 0,
             cache_index: 0,
-            window: StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0),
+            window: StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0, None),
         }
     }
 
@@ -561,7 +561,7 @@ impl FuzzyHistorySearch {
         self.cache_command = None;
         self.global_index = 0;
         self.cache_index = 0;
-        self.window = StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0);
+        self.window = StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0, None);
     }
 
     fn get_fuzzy_search_results(
@@ -580,7 +580,7 @@ impl FuzzyHistorySearch {
             self.global_index = 0;
             desired_visual_row = Some(self.window.visual_index_of_interest());
             self.cache_index = 0;
-            self.window = StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0);
+            self.window = StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0, None);
         }
 
         self.grow_fuzzy_search_cache(entries, current_cmd);
