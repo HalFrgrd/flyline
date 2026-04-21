@@ -278,6 +278,7 @@ pub fn parse_help_clap(help: &str) -> Command {
             || trimmed == "Flags:"
             || trimmed == "Global Flags:"
             || trimmed == "Global Options:"
+            || trimmed == "Options are:"
         {
             i += 1;
             while i < lines.len() {
@@ -302,10 +303,33 @@ pub fn parse_help_clap(help: &str) -> Command {
                     continue;
                 }
 
-                let (short, long, value_type) = parse_flag_tokens(flag_part);
-                // Collect description: next lines indented more than flag_indent.
-                let (desc, next_i) = collect_continuation(&lines, i + 1, flag_indent);
+                // Only parse tokens up to the first double-space to avoid
+                // treating description text as flag tokens.
+                let token_part = flag_part
+                    .find("  ")
+                    .map(|pos| &flag_part[..pos])
+                    .unwrap_or(flag_part);
+                let (short, long, value_type) = parse_flag_tokens(token_part);
+
+                // Capture inline description (text after first double-space on
+                // the flag line), then append any deeper-indented continuation.
+                let inline_desc: Option<String> = flag_part.find("  ").and_then(|pos| {
+                    let d = flag_part[pos..].trim();
+                    if d.is_empty() {
+                        None
+                    } else {
+                        Some(d.to_string())
+                    }
+                });
+                let (cont_desc, next_i) = collect_continuation(&lines, i + 1, flag_indent);
                 i = next_i;
+
+                let description = match (inline_desc, cont_desc.as_str()) {
+                    (Some(d), "") => Some(d),
+                    (None, d) if !d.is_empty() => Some(d.to_string()),
+                    (Some(d), rest) => Some(format!("{} {}", d, rest)),
+                    (None, _) => None,
+                };
 
                 let num_args = if value_type.is_some() {
                     Some("1".to_string())
@@ -316,7 +340,7 @@ pub fn parse_help_clap(help: &str) -> Command {
                 cmd.args.push(Arg {
                     short,
                     long,
-                    description: if desc.is_empty() { None } else { Some(desc) },
+                    description,
                     value_type,
                     num_args,
                 });
@@ -414,7 +438,13 @@ pub fn parse_help_argparse(help: &str) -> Command {
 
                 // argparse flag lines start with '-' for flags or a word for positional.
                 let (short, long, value_type) = if flag_part.starts_with('-') {
-                    parse_flag_tokens(flag_part)
+                    // Only parse tokens up to the first double-space to avoid
+                    // treating description text as flag tokens.
+                    let token_part = flag_part
+                        .find("  ")
+                        .map(|pos| &flag_part[..pos])
+                        .unwrap_or(flag_part);
+                    parse_flag_tokens(token_part)
                 } else {
                     // Positional argument: first word is the name.
                     let name_token = flag_part.split_whitespace().next().unwrap_or("");
@@ -513,7 +543,13 @@ pub fn parse_help_generic(help: &str) -> Command {
 
         if flag_part.starts_with('-') {
             let flag_indent = indent_of(line);
-            let (short, long, value_type) = parse_flag_tokens(flag_part);
+            // Only parse tokens up to the first double-space to avoid
+            // treating description text as flag tokens.
+            let token_part = flag_part
+                .find("  ")
+                .map(|pos| &flag_part[..pos])
+                .unwrap_or(flag_part);
+            let (short, long, value_type) = parse_flag_tokens(token_part);
 
             let inline_desc: Option<String> = if let Some(pos) = flag_part.find("  ") {
                 let d = flag_part[pos..].trim();
@@ -2089,5 +2125,124 @@ Options:
             .expect("remote set-url subcommand should be present");
         assert!(long_names(remote_set_url).contains(&"--push"));
         assert!(long_names(remote_set_url).contains(&"--delete"));
+    }
+
+    // ── readelf --help ────────────────────────────────────────────────────────
+    //
+    // readelf uses a non-standard "Options are:" section header and inline
+    // descriptions, making it a useful real-world test for the generic
+    // section-header recognition and the inline-description capture paths.
+
+    const READELF_HELP: &str = r#"Usage: readelf <option(s)> elf-file(s)
+ Display information about the contents of ELF format files
+ Options are:
+  -a --all               Equivalent to: -h -l -S -s -r -d -V -A -I
+  -h --file-header       Display the ELF file header
+  -l --program-headers   Display the program headers
+     --segments          An alias for --program-headers
+  -S --section-headers   Display the sections' header
+     --sections          An alias for --section-headers
+  -g --section-groups    Display the section groups
+  -t --section-details   Display the section details
+  -e --headers           Equivalent to: -h -l -S
+  -s --syms              Display the symbol table
+     --symbols           An alias for --syms
+     --dyn-syms          Display the dynamic symbol table
+     --lto-syms          Display LTO symbol tables
+     --sym-base=[0|8|10|16] 
+                         Force base for symbol sizes.  The options are 
+                         mixed (the default), octal, decimal, hexadecimal.
+  -C --demangle[=STYLE]  Decode mangled/processed symbol names
+                           STYLE can be "none", "auto", "gnu-v3", "java",
+                           "gnat", "dlang", "rust"
+     --no-demangle       Do not demangle low-level symbol names.  (default)
+     --recurse-limit     Enable a demangling recursion limit.  (default)
+     --no-recurse-limit  Disable a demangling recursion limit
+  -n --notes             Display the contents of note sections (if present)
+  -r --relocs            Display the relocations (if present)
+  -u --unwind            Display the unwind info (if present)
+  -d --dynamic           Display the dynamic section (if present)
+  -V --version-info      Display the version sections (if present)
+  -A --arch-specific     Display architecture specific information (if any)
+  -c --archive-index     Display the symbol/file index in an archive
+  -D --use-dynamic       Use the dynamic section info when displaying symbols
+  -L --lint|--enable-checks
+                         Display warning messages for possible problems
+  -x --hex-dump=<number|name>
+                         Dump the contents of section <number|name> as bytes
+  -p --string-dump=<number|name>
+                         Dump the contents of section <number|name> as strings
+  -R --relocated-dump=<number|name>
+                         Dump the relocated contents of section <number|name>
+  -z --decompress        Decompress section before dumping it
+  -I --histogram         Display histogram of bucket list lengths
+  -W --wide              Allow output width to exceed 80 characters
+  -T --silent-truncation If a symbol name is truncated, do not add [...] suffix
+  -H --help              Display this information
+  -v --version           Display the version number of readelf
+Report bugs to <https://sourceware.org/bugzilla/>
+"#;
+
+    #[test]
+    fn test_readelf_help() {
+        let cmd = parse_help(READELF_HELP);
+        assert_eq!(cmd.name.as_deref(), Some("readelf"));
+
+        // Key short flags.
+        let shorts = short_names(&cmd);
+        assert!(shorts.contains(&"-a"), "expected -a; got {shorts:?}");
+        assert!(shorts.contains(&"-h"), "expected -h; got {shorts:?}");
+        assert!(shorts.contains(&"-l"), "expected -l; got {shorts:?}");
+        assert!(shorts.contains(&"-S"), "expected -S; got {shorts:?}");
+        assert!(shorts.contains(&"-r"), "expected -r; got {shorts:?}");
+        assert!(shorts.contains(&"-d"), "expected -d; got {shorts:?}");
+        assert!(shorts.contains(&"-n"), "expected -n; got {shorts:?}");
+        assert!(shorts.contains(&"-W"), "expected -W; got {shorts:?}");
+        assert!(shorts.contains(&"-H"), "expected -H; got {shorts:?}");
+        assert!(shorts.contains(&"-v"), "expected -v; got {shorts:?}");
+
+        // Key long flags.
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--all"), "expected --all; got {longs:?}");
+        assert!(
+            longs.contains(&"--file-header"),
+            "expected --file-header; got {longs:?}"
+        );
+        assert!(
+            longs.contains(&"--program-headers"),
+            "expected --program-headers; got {longs:?}"
+        );
+        assert!(
+            longs.contains(&"--section-headers"),
+            "expected --section-headers; got {longs:?}"
+        );
+        assert!(
+            longs.contains(&"--relocs"),
+            "expected --relocs; got {longs:?}"
+        );
+        assert!(
+            longs.contains(&"--dynamic"),
+            "expected --dynamic; got {longs:?}"
+        );
+        assert!(
+            longs.contains(&"--notes"),
+            "expected --notes; got {longs:?}"
+        );
+        assert!(longs.contains(&"--wide"), "expected --wide; got {longs:?}");
+        assert!(longs.contains(&"--help"), "expected --help; got {longs:?}");
+        assert!(
+            longs.contains(&"--version"),
+            "expected --version; got {longs:?}"
+        );
+        assert!(
+            longs.contains(&"--hex-dump"),
+            "expected --hex-dump; got {longs:?}"
+        );
+
+        // Value type extracted from --hex-dump=<number|name>.
+        assert_eq!(
+            arg_by_long(&cmd, "--hex-dump").and_then(|a| a.value_type.as_deref()),
+            Some("number|name")
+        );
     }
 }
