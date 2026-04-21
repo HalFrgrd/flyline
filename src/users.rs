@@ -35,7 +35,8 @@ static ALL_USERS: LazyLock<Vec<User>> = LazyLock::new(|| {
     // 2. Scan /home/
     if let Ok(entries) = std::fs::read_dir("/home") {
         for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            // `DirEntry::file_type()` does not follow symlinks; `Path::is_dir()` does.
+            if entry.path().is_dir() {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 let home_dir = format!("/home/{}", name);
                 add_user(name, home_dir);
@@ -46,7 +47,8 @@ static ALL_USERS: LazyLock<Vec<User>> = LazyLock::new(|| {
     // 3. Scan /Users/ (macOS default home directory location)
     if let Ok(entries) = std::fs::read_dir("/Users") {
         for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+            // `DirEntry::file_type()` does not follow symlinks; `Path::is_dir()` does.
+            if entry.path().is_dir() {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 // Skip macOS system directories like Shared
                 if name == "Shared" {
@@ -63,11 +65,7 @@ static ALL_USERS: LazyLock<Vec<User>> = LazyLock::new(|| {
         add_user("root".to_string(), "/root".to_string());
     }
 
-    users
-});
-
-pub fn get_all_users() -> &'static [User] {
-    for user in ALL_USERS.iter() {
+    for user in users.iter() {
         log::debug!(
             "Loaded user: username={}, home_dir={}",
             user.username,
@@ -75,5 +73,9 @@ pub fn get_all_users() -> &'static [User] {
         );
     }
 
+    users
+});
+
+pub fn get_all_users() -> &'static [User] {
     &ALL_USERS
 }
