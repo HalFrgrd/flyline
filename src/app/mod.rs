@@ -1794,13 +1794,6 @@ impl<'a> App<'a> {
 
                 // Early exit when there are no suggestions to display.
                 if active_suggestions.filtered_suggestions_len() == 0 {
-                    content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(
-                            "No suggestions",
-                            self.settings.color_palette.secondary_text(),
-                        ),
-                        Tag::TabSuggestion,
-                    ));
                 } else {
                     let grid_start_row = content.cursor_position().row;
                     let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
@@ -1840,6 +1833,18 @@ impl<'a> App<'a> {
                         content.set_focus_row(grid_start_row + sel_row);
                     }
                 }
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        format!(
+                            "# {} / {} suggestions",
+                            active_suggestions.filtered_suggestions_len(),
+                            active_suggestions.all_suggestions_len()
+                        ),
+                        self.settings.color_palette.secondary_text(),
+                    ),
+                    Tag::TabSuggestion,
+                ));
             }
             ContentMode::TabCompletionWaiting { .. } if self.mode.is_running() => {
                 content.newline();

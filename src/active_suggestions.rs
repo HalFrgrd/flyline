@@ -1070,6 +1070,10 @@ impl ActiveSuggestions {
         self.filtered_suggestions.len()
     }
 
+    pub fn all_suggestions_len(&self) -> usize {
+        self.all_maybe_processed_suggestions.len()
+    }
+
     fn fuzzy_match_for_suggestion(
         &self,
         idx: usize,

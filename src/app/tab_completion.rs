@@ -721,6 +721,7 @@ impl App<'_> {
             }
             Ok(None) => {
                 // No suggestions generated.
+                self.finish_tab_complete(vec![], wuc_substring);
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Thread hasn't finished yet; enter waiting mode.
