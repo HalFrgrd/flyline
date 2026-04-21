@@ -125,14 +125,21 @@ fn intensity_to_rgb(intensity: f32) -> Color {
 /// Number of frames in each half of the cursor effect ping-pong animation.
 const CURSOR_ANIM_HALF_FRAMES: usize = 16;
 
+fn cursor_effect_half_frames(effect_speed: f32) -> usize {
+    let scaled = (CURSOR_ANIM_HALF_FRAMES as f32 / effect_speed.max(f32::EPSILON)).round();
+    scaled.max(2.0).min((CURSOR_ANIM_HALF_FRAMES * 8) as f32) as usize
+}
+
 /// Build ping-pong animation frames that show a block cursor fading in and out
 /// using `easing` to shape the intensity transition.
 ///
-/// Returns `2 * CURSOR_ANIM_HALF_FRAMES - 2` frames.  Each frame is a single
-/// space character whose background colour is set to the appropriate grey
-/// intensity, replacing the former block-shading-character approach.
-pub fn cursor_effect_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> {
-    let half = CURSOR_ANIM_HALF_FRAMES;
+/// The frame count is scaled by `effect_speed` so the preview animation loops
+/// at the same relative speed as the configured cursor effect.
+pub fn cursor_effect_animation_frames(
+    easing: CursorEasing,
+    effect_speed: f32,
+) -> Vec<Vec<Span<'static>>> {
+    let half = cursor_effect_half_frames(effect_speed);
     let total_frames = half * 2 - 2;
     let mut frames = Vec::with_capacity(total_frames);
 

@@ -29,13 +29,15 @@ pub enum SuggestionDescription {
     /// Pre-processed spans for a single static description.  An empty vec
     /// means no description is shown.
     Static(Vec<Span<'static>>),
-    /// A multi-frame animated description.  Frames are cycled at ~24 fps.
+    /// A multi-frame animated description.  Frames are cycled at ANIMATION_FRAME_FPS fps.
     /// Each frame is a pre-processed sequence of styled spans.
     Animation(Vec<Vec<Span<'static>>>),
     /// Last-modification time of the associated file (Unix timestamp).
     /// Rendered as a right-aligned, ≤5-character "time ago" string.
     LastMTime(u64),
 }
+
+pub const ANIMATION_FRAME_FPS: u64 = 24;
 
 impl SuggestionDescription {
     /// Maximum display width (in terminal columns) across all frames.
@@ -924,10 +926,10 @@ impl ActiveSuggestions {
             return vec![];
         }
 
-        // Compute the animation frame index at 24 fps from the current wall-clock time.
+        // Compute the animation frame index at ANIMATION_FRAME_FPS fps from the current wall-clock time.
         let frame_index: usize = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| (d.as_millis() / (1000 / 24)) as usize)
+            .map(|d| (d.as_millis() / (1000 / ANIMATION_FRAME_FPS as u128)) as usize)
             .unwrap_or(0);
 
         let mut grid: Vec<ColumnInfo> = vec![];
