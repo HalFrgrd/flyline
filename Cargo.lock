@@ -831,7 +831,6 @@ dependencies = [
  "shlex",
  "skim",
  "timeago",
- "tokio",
  "unicode-segmentation",
  "unicode-width",
 ]

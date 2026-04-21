@@ -68,13 +68,6 @@ fn osc52_base64(data: &[u8]) -> String {
     String::from_utf8(out).unwrap()
 }
 
-fn build_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-}
-
 fn restore_terminal(extended_key_codes: bool) {
     crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
         // Likely from the master pty fd being closed.
@@ -167,11 +160,9 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         });
     }
 
-    let runtime = build_runtime();
-
     let app = time_it!("startup: app creation", App::new(settings));
 
-    let end_state = runtime.block_on(app.run(backend));
+    let end_state = app.run(backend);
 
     restore_terminal(extended_key_codes);
 
@@ -449,7 +440,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub async fn run(
+    pub fn run(
         mut self,
         backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
     ) -> ExitState {
