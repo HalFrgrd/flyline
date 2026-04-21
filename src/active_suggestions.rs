@@ -29,13 +29,15 @@ pub enum SuggestionDescription {
     /// Pre-processed spans for a single static description.  An empty vec
     /// means no description is shown.
     Static(Vec<Span<'static>>),
-    /// A multi-frame animated description.  Frames are cycled at ~24 fps.
+    /// A multi-frame animated description.  Frames are cycled at ANIMATION_FRAME_FPS fps.
     /// Each frame is a pre-processed sequence of styled spans.
     Animation(Vec<Vec<Span<'static>>>),
     /// Last-modification time of the associated file (Unix timestamp).
     /// Rendered as a right-aligned, ≤5-character "time ago" string.
     LastMTime(u64),
 }
+
+pub const ANIMATION_FRAME_FPS: u64 = 24;
 
 impl SuggestionDescription {
     /// Maximum display width (in terminal columns) across all frames.
@@ -766,7 +768,7 @@ impl std::fmt::Debug for ActiveSuggestions {
     }
 }
 pub struct ColumnInfo {
-    pub idx: usize,
+    pub global_col_idx: usize,
     pub items: Vec<(SuggestionFormatted, bool)>,
     pub width: usize,
     pub is_selected_col: bool,
@@ -788,7 +790,7 @@ impl ActiveSuggestions {
             word_under_cursor_dequoted: bash_funcs::dequoting_function_rust(&word_under_cursor.s),
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
-            col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len),
+            col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
         };
 
@@ -924,10 +926,10 @@ impl ActiveSuggestions {
             return vec![];
         }
 
-        // Compute the animation frame index at 24 fps from the current wall-clock time.
+        // Compute the animation frame index at ANIMATION_FRAME_FPS fps from the current wall-clock time.
         let frame_index: usize = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| (d.as_millis() / (1000 / 24)) as usize)
+            .map(|d| (d.as_millis() / (1000 / ANIMATION_FRAME_FPS as u128)) as usize)
             .unwrap_or(0);
 
         let mut grid: Vec<ColumnInfo> = vec![];
@@ -945,6 +947,7 @@ impl ActiveSuggestions {
             // Build the column, processing each item lazily.
             let start = col_idx * max_rows;
             let end = (start + max_rows).min(n);
+
             let col_items: Vec<(SuggestionFormatted, bool)> = (start..end)
                 .map(|filtered_idx| {
                     {
@@ -976,8 +979,9 @@ impl ActiveSuggestions {
                         palette,
                         frame_index,
                     );
-                    let is_selected = filtered_idx == selected_1d;
-                    (formatted, is_selected)
+                    let is_selected_entry = filtered_idx == selected_1d;
+
+                    (formatted, is_selected_entry)
                 })
                 .collect();
 
@@ -993,40 +997,54 @@ impl ActiveSuggestions {
                 COLUMN_PADDING + untruncated_col_width
             };
             grid.push(ColumnInfo {
-                idx: col_idx,
+                global_col_idx: col_idx,
                 items: col_items,
                 width: untruncated_col_width,
                 is_selected_col: col_idx == self.selected_col,
             });
-            if untruncated_total_width > max_width {
+            if untruncated_total_width > max_width && col_idx >= self.selected_col {
                 break;
             }
         }
-
         // Second round, try not to truncate the selected column, and truncate other columns if needed to fit within max_width.
         let mut total_width = 0;
 
         let final_grid = grid
             .into_iter()
+            // Truncation priority:
+            // 1) selected col
+            // 2) columns to the left of selected, moving outward
+            // 3) columns to the right of selected, moving outward
             .sorted_by_key(|col_info| {
-                col_info
-                    .idx
-                    .checked_signed_diff(self.selected_col)
-                    .map(|d| d.abs() as usize)
-                    .unwrap_or(0)
+                let col_idx = col_info.global_col_idx;
+                if col_idx == self.selected_col {
+                    (0usize, 0usize)
+                } else if col_idx < self.selected_col {
+                    (1usize, self.selected_col - col_idx)
+                } else {
+                    (2usize, col_idx - self.selected_col)
+                }
             })
-            .map(|mut col| {
+            .enumerate()
+            .map(|(num_cols_drawn_so_far, mut col)| {
+                let padding_for_col = if num_cols_drawn_so_far == 0 {
+                    0
+                } else {
+                    COLUMN_PADDING
+                };
+
                 if col.is_selected_col {
                     // Don't truncate the selected column, so count its full width.
                     col.width = col.width.min(max_width);
                 } else {
                     const MIN_COL_WIDTH: usize = 10;
-                    let truncated_col_width = if total_width + COLUMN_PADDING + col.width
+
+                    let truncated_col_width = if total_width + padding_for_col + col.width
                         > max_width
                     {
-                        if max_width.saturating_sub(total_width + COLUMN_PADDING) > MIN_COL_WIDTH {
+                        if max_width.saturating_sub(total_width + padding_for_col) > MIN_COL_WIDTH {
                             // We can still fit MIN_COL_WIDTH chars of this col so it should be alright.
-                            max_width - total_width - COLUMN_PADDING
+                            max_width - total_width - padding_for_col
                         } else {
                             0
                         }
@@ -1036,30 +1054,26 @@ impl ActiveSuggestions {
                     col.width = truncated_col_width;
                 }
 
-                total_width += if col.idx == 0 {
-                    col.width
-                } else {
-                    COLUMN_PADDING + col.width
-                };
+                total_width += col.width + padding_for_col;
                 col
             })
             .filter(|col_info| col_info.width > 0)
-            .sorted_by_key(|col_info| col_info.idx)
+            .sorted_by_key(|col_info| col_info.global_col_idx)
             .collect::<Vec<_>>();
 
-        let first_col_len = final_grid
-            .first()
-            .map(|col| col.items.len())
-            .unwrap_or(max_rows);
-
         self.last_num_visible_cols = final_grid.len();
-        self.last_num_rows_per_col = max_rows.min(first_col_len);
+
+        self.last_num_rows_per_col = max_rows;
         final_grid
     }
 
     /// Number of suggestions currently shown (after fuzzy filtering).
     pub fn filtered_suggestions_len(&self) -> usize {
         self.filtered_suggestions.len()
+    }
+
+    pub fn all_suggestions_len(&self) -> usize {
+        self.all_maybe_processed_suggestions.len()
     }
 
     fn fuzzy_match_for_suggestion(
@@ -1127,7 +1141,7 @@ impl ActiveSuggestions {
         match self.all_maybe_processed_suggestions.as_mut_slice() {
             [] => {
                 log::debug!("No completions found. all_maybe_processed_suggestions is empty");
-                return None;
+                return Some(self);
             }
             [single_suggestion] => {
                 let suggestion = single_suggestion.to_suggestion();

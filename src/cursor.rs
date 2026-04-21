@@ -1,3 +1,4 @@
+use crate::active_suggestions::ANIMATION_FRAME_FPS;
 use crate::content_builder::Coord;
 use clap::ValueEnum;
 use easing_function::Easing as _;
@@ -122,18 +123,27 @@ fn intensity_to_rgb(intensity: f32) -> Color {
     Color::Rgb(v, v, v)
 }
 
-/// Number of frames in each half of the cursor effect ping-pong animation.
-const CURSOR_ANIM_HALF_FRAMES: usize = 16;
+/// Angular speed constant used by the runtime fade effect.
+const CURSOR_FADE_ANGULAR_SPEED: f32 = 4.0;
 
-/// Build ping-pong animation frames that show a block cursor fading in and out
-/// using `easing` to shape the intensity transition.
+fn cursor_effect_total_frames(effect_speed: f32) -> usize {
+    let cycle_duration_secs =
+        std::f32::consts::TAU / (CURSOR_FADE_ANGULAR_SPEED * effect_speed.max(f32::EPSILON));
+    (cycle_duration_secs * ANIMATION_FRAME_FPS as f32)
+        .round()
+        .max(2.0) as usize
+}
+
+/// Build animation frames that show a block cursor fading in and out using
+/// `easing` to shape the intensity transition.
 ///
-/// Returns `2 * CURSOR_ANIM_HALF_FRAMES - 2` frames.  Each frame is a single
-/// space character whose background colour is set to the appropriate grey
-/// intensity, replacing the former block-shading-character approach.
-pub fn cursor_effect_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> {
-    let half = CURSOR_ANIM_HALF_FRAMES;
-    let total_frames = half * 2 - 2;
+/// The preview is played back at `ANIMATION_FRAME_FPS`, so the frame count is
+/// derived from the runtime fade period implied by `effect_speed`.
+pub fn cursor_effect_animation_frames(
+    easing: CursorEasing,
+    effect_speed: f32,
+) -> Vec<Vec<Span<'static>>> {
+    let total_frames = cursor_effect_total_frames(effect_speed);
     let mut frames = Vec::with_capacity(total_frames);
 
     let make_frame = |intensity: f32| -> Vec<Span<'static>> {
@@ -143,14 +153,13 @@ pub fn cursor_effect_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'sta
         )]
     };
 
-    // Forward: raw_t goes 0 (dim) → 1 (bright)
-    for i in 0..half {
-        let raw_t = i as f32 / (half - 1) as f32;
-        frames.push(make_frame(fade_intensity(raw_t, easing)));
-    }
-    // Backward: raw_t goes from second-to-last back to 0 (skipping endpoints to avoid repeats)
-    for i in (1..half - 1).rev() {
-        let raw_t = i as f32 / (half - 1) as f32;
+    for i in 0..total_frames {
+        let phase = i as f32 / total_frames as f32;
+        let raw_t = if phase < 0.5 {
+            phase * 2.0
+        } else {
+            (1.0 - phase) * 2.0
+        };
         frames.push(make_frame(fade_intensity(raw_t, easing)));
     }
 

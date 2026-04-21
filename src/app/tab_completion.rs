@@ -245,6 +245,7 @@ fn preceding_flyline_flag(cmd_before_cursor: &str) -> Option<&str> {
 
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
+    cursor_config: &crate::cursor::CursorConfig,
 ) -> Option<Vec<MaybeProcessedSuggestion>> {
     log::debug!("Completion context: {:#?}", completion_context);
 
@@ -309,7 +310,10 @@ pub(crate) fn gen_completions_internal(
                                     match (flag, CursorEasing::try_from_value_name(&value)) {
                                         (Some("--effect-easing"), Some(easing)) => {
                                             SuggestionDescription::Animation(
-                                                cursor_effect_animation_frames(easing),
+                                                cursor_effect_animation_frames(
+                                                    easing,
+                                                    cursor_config.effect_speed,
+                                                ),
                                             )
                                         }
                                         (Some("--interpolate-easing"), Some(easing)) => {
@@ -319,7 +323,7 @@ pub(crate) fn gen_completions_internal(
                                         }
                                         _ => help_description(),
                                     };
-                                let suffix = if value.ends_with('+') { " " } else { "" };
+                                let suffix = if value.ends_with('+') { "" } else { " " };
                                 MaybeProcessedSuggestion::Ready(
                                     ProcssedSuggestion::new(&value, "", suffix)
                                         .with_description(description),
@@ -431,15 +435,18 @@ fn gen_secondary_completions(
                                 acc.push(' ');
                             }
 
+                            match comp_resultflags.quote_type {
+                                Some(QuoteType::DoubleQuote) => acc.push_str("\""),
+                                Some(QuoteType::SingleQuote) => acc.push_str("'"),
+                                _ => {}
+                            }
                             acc.push_str(&sug.s);
 
                             if !is_last {
-                                if comp_resultflags.quote_type == Some(QuoteType::DoubleQuote) {
-                                    acc.push_str("\"");
-                                } else if comp_resultflags.quote_type
-                                    == Some(QuoteType::SingleQuote)
-                                {
-                                    acc.push_str("'");
+                                match comp_resultflags.quote_type {
+                                    Some(QuoteType::DoubleQuote) => acc.push_str("\""),
+                                    Some(QuoteType::SingleQuote) => acc.push_str("'"),
+                                    _ => {}
                                 }
                             } else {
                                 acc.push_str(&sug.suffix);
@@ -698,8 +705,10 @@ impl App<'_> {
 
         let completion_context_owned = completion_context.into_owned();
 
+        let cursor_settings = self.settings.cursor_config.clone();
+
         let thread_handle = std::thread::spawn(move || {
-            let suggestions = gen_completions_internal(&completion_context_owned);
+            let suggestions = gen_completions_internal(&completion_context_owned, &cursor_settings);
             if suggestions.is_none() {
                 log::debug!(
                     "No suggestions generated for completion context: {:?}",
@@ -721,6 +730,7 @@ impl App<'_> {
             }
             Ok(None) => {
                 // No suggestions generated.
+                self.finish_tab_complete(vec![], wuc_substring);
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Thread hasn't finished yet; enter waiting mode.
@@ -759,7 +769,8 @@ impl App<'_> {
                 self.buffer.buffer(),
                 self.buffer.cursor_byte_pos(),
             );
-            let some_suggestions = gen_completions_internal(&comp_context);
+            let some_suggestions =
+                gen_completions_internal(&comp_context, &self.settings.cursor_config);
 
             if some_suggestions.is_none() {
                 if expected_suggestions.is_empty() {

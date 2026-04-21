@@ -124,6 +124,7 @@ impl AppRunningState {
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum LastKeyPressAction {
     InsertedAutoClosing { char: char, byte_pos: usize },
+    AffectedMouseState,
 }
 
 pub fn get_command(settings: &mut Settings) -> ExitState {
@@ -726,30 +727,20 @@ impl<'a> App<'a> {
                 redraw = true;
             }
 
-            unsafe {
-                // TODO: I might be able to get away with just checking terminating_signals for both versions
-                // Check if a terminating signal has been received.
-                // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
-                // bash receives a terminating signal. In older versions, we fall
-                // back to checking the terminating_signal global directly.
-                #[cfg(not(feature = "pre_bash_4_4"))]
-                let got_signal = (&raw const crate::bash_symbols::rl_signal_event_hook)
-                    .read()
-                    .is_some();
-                #[cfg(feature = "pre_bash_4_4")]
-                let got_signal = (&raw const crate::bash_symbols::terminating_signal).read() != 0;
+            // Check if a terminating signal has been received.
+            // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
+            // bash receives a terminating signal.
+            // But just checking for terminating_signal works on all versions of bash, and is more direct.
 
-                if got_signal {
-                    let sig = (&raw const crate::bash_symbols::terminating_signal).read();
+            let terminating_signal = bash_funcs::read_terminating_signal();
 
-                    log::info!(
-                        "Signal {} received, exiting immediately",
-                        signal_to_str(sig)
-                    );
-
-                    self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
-                    break 'main_loop;
-                }
+            if terminating_signal != 0 {
+                log::info!(
+                    "Signal {} received, exiting immediately",
+                    signal_to_str(terminating_signal)
+                );
+                self.mode = AppRunningState::Exiting(ExitState::WithoutCommand);
+                break 'main_loop;
             }
         }
 
@@ -1195,6 +1186,17 @@ impl<'a> App<'a> {
             && self.buffer.cursor_byte_pos() != 0
         {
             self.content_mode = ContentMode::Normal;
+        }
+
+        if self
+            .last_keypress_action
+            .as_ref()
+            .is_some_and(|a| *a != LastKeyPressAction::AffectedMouseState)
+        {
+            // Smart mode: any keypress re-enables mouse capture
+            if self.settings.mouse_mode == MouseMode::Smart {
+                self.mouse_state.enable("smart mode: keypress detected");
+            }
         }
 
         // Cancel a pending tab-completion background thread when the word under
@@ -1794,13 +1796,6 @@ impl<'a> App<'a> {
 
                 // Early exit when there are no suggestions to display.
                 if active_suggestions.filtered_suggestions_len() == 0 {
-                    content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(
-                            "No suggestions",
-                            self.settings.color_palette.secondary_text(),
-                        ),
-                        Tag::TabSuggestion,
-                    ));
                 } else {
                     let grid_start_row = content.cursor_position().row;
                     let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
@@ -1840,6 +1835,18 @@ impl<'a> App<'a> {
                         content.set_focus_row(grid_start_row + sel_row);
                     }
                 }
+
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        format!(
+                            "# {} / {} suggestions",
+                            active_suggestions.filtered_suggestions_len(),
+                            active_suggestions.all_suggestions_len()
+                        ),
+                        self.settings.color_palette.secondary_text(),
+                    ),
+                    Tag::TabSuggestion,
+                ));
             }
             ContentMode::TabCompletionWaiting { .. } if self.mode.is_running() => {
                 content.newline();
