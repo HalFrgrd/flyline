@@ -957,7 +957,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
                 app.settings.mouse_mode,
                 MouseMode::Simple | MouseMode::Smart
             ) {
-                app.toggle_mouse_state("Escape pressed");
+                log::info!("Toggling mouse state due to toggle_mouse action");
+                app.toggle_mouse_state("toggle_mouse action");
             }
         },
     ),
@@ -2062,12 +2063,6 @@ impl<'a> App<'a> {
         log::trace!("Key event: {:?}", key);
 
         self.last_keypress_action = None; // reset last keypress action, to be set by specific actions as needed
-
-        // Smart mode: any keypress re-enables mouse capture, unless the user has
-        // explicitly disabled it via a toggle action.
-        if self.settings.mouse_mode == MouseMode::Smart {
-            self.mouse_state.enable("smart mode: keypress detected");
-        }
 
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);

@@ -124,6 +124,7 @@ impl AppRunningState {
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum LastKeyPressAction {
     InsertedAutoClosing { char: char, byte_pos: usize },
+    AffectedMouseState,
 }
 
 pub fn get_command(settings: &mut Settings) -> ExitState {
@@ -1185,6 +1186,17 @@ impl<'a> App<'a> {
             && self.buffer.cursor_byte_pos() != 0
         {
             self.content_mode = ContentMode::Normal;
+        }
+
+        if self
+            .last_keypress_action
+            .as_ref()
+            .is_some_and(|a| *a != LastKeyPressAction::AffectedMouseState)
+        {
+            // Smart mode: any keypress re-enables mouse capture
+            if self.settings.mouse_mode == MouseMode::Smart {
+                self.mouse_state.enable("smart mode: keypress detected");
+            }
         }
 
         // Cancel a pending tab-completion background thread when the word under
