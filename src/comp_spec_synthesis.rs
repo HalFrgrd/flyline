@@ -2190,54 +2190,30 @@ Report bugs to <https://sourceware.org/bugzilla/>
 
         // Key short flags.
         let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-a"), "expected -a; got {shorts:?}");
-        assert!(shorts.contains(&"-h"), "expected -h; got {shorts:?}");
-        assert!(shorts.contains(&"-l"), "expected -l; got {shorts:?}");
-        assert!(shorts.contains(&"-S"), "expected -S; got {shorts:?}");
-        assert!(shorts.contains(&"-r"), "expected -r; got {shorts:?}");
-        assert!(shorts.contains(&"-d"), "expected -d; got {shorts:?}");
-        assert!(shorts.contains(&"-n"), "expected -n; got {shorts:?}");
-        assert!(shorts.contains(&"-W"), "expected -W; got {shorts:?}");
-        assert!(shorts.contains(&"-H"), "expected -H; got {shorts:?}");
-        assert!(shorts.contains(&"-v"), "expected -v; got {shorts:?}");
+        assert!(shorts.contains(&"-a"));
+        assert!(shorts.contains(&"-h"));
+        assert!(shorts.contains(&"-l"));
+        assert!(shorts.contains(&"-S"));
+        assert!(shorts.contains(&"-r"));
+        assert!(shorts.contains(&"-d"));
+        assert!(shorts.contains(&"-n"));
+        assert!(shorts.contains(&"-W"));
+        assert!(shorts.contains(&"-H"));
+        assert!(shorts.contains(&"-v"));
 
         // Key long flags.
         let longs = long_names(&cmd);
-        assert!(longs.contains(&"--all"), "expected --all; got {longs:?}");
-        assert!(
-            longs.contains(&"--file-header"),
-            "expected --file-header; got {longs:?}"
-        );
-        assert!(
-            longs.contains(&"--program-headers"),
-            "expected --program-headers; got {longs:?}"
-        );
-        assert!(
-            longs.contains(&"--section-headers"),
-            "expected --section-headers; got {longs:?}"
-        );
-        assert!(
-            longs.contains(&"--relocs"),
-            "expected --relocs; got {longs:?}"
-        );
-        assert!(
-            longs.contains(&"--dynamic"),
-            "expected --dynamic; got {longs:?}"
-        );
-        assert!(
-            longs.contains(&"--notes"),
-            "expected --notes; got {longs:?}"
-        );
-        assert!(longs.contains(&"--wide"), "expected --wide; got {longs:?}");
-        assert!(longs.contains(&"--help"), "expected --help; got {longs:?}");
-        assert!(
-            longs.contains(&"--version"),
-            "expected --version; got {longs:?}"
-        );
-        assert!(
-            longs.contains(&"--hex-dump"),
-            "expected --hex-dump; got {longs:?}"
-        );
+        assert!(longs.contains(&"--all"));
+        assert!(longs.contains(&"--file-header"));
+        assert!(longs.contains(&"--program-headers"));
+        assert!(longs.contains(&"--section-headers"));
+        assert!(longs.contains(&"--relocs"));
+        assert!(longs.contains(&"--dynamic"));
+        assert!(longs.contains(&"--notes"));
+        assert!(longs.contains(&"--wide"));
+        assert!(longs.contains(&"--help"));
+        assert!(longs.contains(&"--version"));
+        assert!(longs.contains(&"--hex-dump"));
 
         // Value type extracted from --hex-dump=<number|name>.
         assert_eq!(
