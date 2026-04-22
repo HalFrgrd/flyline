@@ -638,7 +638,7 @@ impl App<'_> {
     /// completed with no trailing space), enabling chained path completion.
     pub(crate) fn restart_tab_complete_if_slash(&mut self) {
         let cursor = self.buffer.cursor_byte_pos();
-        if cursor > 0 && self.buffer.buffer().as_bytes()[cursor - 1] == b'/' {
+        if self.buffer.buffer()[..cursor].ends_with('/') {
             self.start_tab_complete();
         }
     }
