@@ -64,8 +64,7 @@ impl<'a> CompletionContext<'a> {
 
         let mut comp_types = vec![];
 
-        if word_under_cursor.as_ref().starts_with("~") && !word_under_cursor.as_ref().contains("/")
-        {
+        if CompType::from(word_under_cursor.as_ref()) == CompType::TildeExpansion {
             log::debug!("Detected tilde expansion context");
             comp_types.push(CompType::TildeExpansion);
         }
