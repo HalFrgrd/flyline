@@ -1658,7 +1658,7 @@ fn flyline_load_common() -> c_int {
 // Maybe I could use a fini_array function to unload, but I doubt its worth the effort.
 #[cfg(not(feature = "pre_bash_4_4"))]
 #[unsafe(no_mangle)]
-pub extern "C" fn flyline_builtin_unload_common() {
+pub extern "C" fn flyline_builtin_unload() {
     log::info!("flyline_builtin_unload called, unloading flyline");
     let had_instance = FLYLINE_INSTANCE_PTR
         .lock()
