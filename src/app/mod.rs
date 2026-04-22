@@ -1585,6 +1585,23 @@ impl<'a> App<'a> {
                     content.newline();
                 }
 
+                if !self.mouse_state.enabled() {
+                    let red = Style::default().fg(Color::Red);
+                    let escape_hint = TaggedLine::from(vec![
+                        TaggedSpan::new(Span::styled("Press ", red), Tag::Tutorial),
+                        TaggedSpan::new(Span::styled("Escape", red), Tag::Tutorial),
+                        TaggedSpan::new(
+                            Span::styled(" to re-enable mouse mode.", red),
+                            Tag::Tutorial,
+                        ),
+                    ]);
+                    for tagged_span in &escape_hint.spans {
+                        content.write_tagged_span_dont_overwrite(tagged_span, None);
+                    }
+                    text_end_row = content.cursor_position().row;
+                    content.newline();
+                }
+
                 let drain_start = text_end_row + 2;
                 content.delete_rows(drain_start, tutorial_start_row + BUTTON_HEIGHT);
 
