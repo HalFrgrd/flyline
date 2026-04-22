@@ -30,7 +30,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 ### Who is it for?
 1. You want an out-of-the-box great shell experience without setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts.
-2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you, contributions welcome!
+2. You're a terminal power user who wants to fine-tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you; contributions welcome!
 
 # Installation
 
@@ -325,7 +325,7 @@ Flyline will syntax highlight the suggested commands and render markdown output.
 # Mouse support
 
 Click to move your cursor, select suggestions, and hover for tooltips.
-Flyline must capture mouse events for the entire terminal which isn't always desirable.
+Flyline must capture mouse events for the entire terminal, which isn't always desirable.
 For instance, you might want to select text above the current prompt with your mouse.
 
 Flyline offers three mouse modes:
@@ -353,17 +353,17 @@ Flyline supports tab completions inside subshell, command substitution, and proc
 For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's set up.
 
 ### Mid-word tab completions
-When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
+When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`), the left-hand side will be used in the programmable completion function, but the suggestions will be fuzzily searched using the entire word.
 
 ### Dynamic descriptions
-If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab delimited frame at 24fps. Try `flyline set-cursor --effect-easing <Tab>` for an example.
+If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab-delimited frame at 24fps. Try `flyline set-cursor --effect-easing <Tab>` for an example.
 
 ANSI styling is supported in descriptions: any ANSI colour/style escape codes embedded in the tab-separated description text will be rendered as ratatui styled spans.
 
 Descriptions for files are the time since last modified.
 
 ### Automatically complete based on `--help`
-Coming soon: Automatic fallback for commands without a completion spec is still coming soon.
+Automatic fallback for commands without a completion spec isn't implemented yet.
 For now, you can manually generate a Bash completion script with `flyline comp-spec-synthesis your_command`.
 
 ### `LS_COLORS` styling
@@ -399,7 +399,7 @@ Recommended settings
 
 I find that Copilot can't interact with the terminal if flyline runs with certain settings. If you run into this problem, add this to the end of your `.bashrc`:
 ```bash
-if [[ -n "${COPILOT_TERMINAl:-}" ]]; then
+if [[ -n "${COPILOT_TERMINAL:-}" ]]; then
     RPS1=''
     flyline set-cursor --backend terminal --interpolate none
     flyline --show-inline-history false
@@ -409,9 +409,9 @@ and set this in your `settings.json`:
 ```json
   "chat.tools.terminal.terminalProfile.linux": {
     "env": {
-      "COPILOT_TERMINAl": "1"
+      "COPILOT_TERMINAL": "1"
     },
-    "path": "bash",
+    "path": "bash"
   }
 ```
 
@@ -423,7 +423,7 @@ Two possible fixes are:
 - Use a terminal emulator that supports [Kitty's extended keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/). This allows flyline to receive `Command+<KEY>` events.
 
 ## Shell integration
-Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escape codes to integrate the shell with the terminal. These are on by default and can be disabled with `flyline --send-shell-integration-codes none`.
+Flyline prints [OSC 133](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) and [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escape codes to integrate the shell with the terminal. The default level is `full`, and you can disable them with `flyline --send-shell-integration-codes none`. Passing `flyline --send-shell-integration-codes` with no value uses `only-prompt-pos`.
 
 # Settings
 
@@ -482,7 +482,7 @@ Options:
           - smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
 
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
-          Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
+          Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full. The default is `full`; passing the flag without a value uses `only-prompt-pos`
 
           Possible values:
           - none:            Send no shell integration codes

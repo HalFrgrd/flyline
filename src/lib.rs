@@ -126,7 +126,8 @@ struct FlylineArgs {
     /// Mouse capture mode (disabled, simple, smart). Default is smart.
     #[arg(long = "mouse-mode", value_name = "MODE")]
     mouse_mode: Option<settings::MouseMode>,
-    /// Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
+    /// Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full.
+    /// The default is `full`; passing the flag without a value uses `only-prompt-pos`.
     #[arg(long = "send-shell-integration-codes", default_missing_value = "only-prompt-pos", num_args = 0..=1)]
     send_shell_integration_codes: Option<settings::ShellIntegrationLevel>,
     /// Whether to request the use of extended (kitty-protocol) keyboard codes during startup.

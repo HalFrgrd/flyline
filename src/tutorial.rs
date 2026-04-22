@@ -296,7 +296,7 @@ pub fn generate_tutorial_text(
                 ),
             ]));
             lines.push(tl(Span::styled(
-                "• Exit the tutorial at any time with `flyline --run-tutorial false`.",
+                "• Exit the tutorial at any time with `flyline run-tutorial false`.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
@@ -404,7 +404,7 @@ pub fn generate_tutorial_text(
             )));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Switch mouse interaction modes with `flyline --mouse-mode smart/simple/disabled`.",
+                "Switch mouse interaction modes with `flyline --mouse-mode smart`, `flyline --mouse-mode simple`, or `flyline --mouse-mode disabled`.",
                 text_style,
             )));
 
@@ -415,7 +415,7 @@ pub fn generate_tutorial_text(
             {
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
                 lines.push(tl(Span::styled(
-                    "💡 Consider display the mouse capture mode in your right prompt:",
+                    "💡 Consider displaying the mouse capture mode in your right prompt:",
                     text_style,
                 )));
                 lines.push(TaggedLine::from(vec![
