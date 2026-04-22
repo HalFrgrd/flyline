@@ -222,6 +222,7 @@ enum ContentMode {
     TabCompletionWaiting {
         handle: TabCompletionHandle,
         wuc_substring: SubString,
+        start_time: std::time::Instant,
     },
     /// AI command is running as a child process.  The child is polled each
     /// event-loop iteration with `try_wait`; on drop it is killed and reaped.
@@ -564,15 +565,17 @@ impl<'a> App<'a> {
             if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
                 match handle.receiver.try_recv() {
                     Ok(Some(sugs)) => {
-                        // Take ownership of wuc_substring from the waiting state.
-                        let wuc =
+                        // Take ownership of wuc_substring and start_time from the waiting state.
+                        let (wuc, load_time) =
                             match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
-                                ContentMode::TabCompletionWaiting { wuc_substring, .. } => {
-                                    wuc_substring
-                                }
+                                ContentMode::TabCompletionWaiting {
+                                    wuc_substring,
+                                    start_time,
+                                    ..
+                                } => (wuc_substring, start_time.elapsed()),
                                 _ => unreachable!(),
                             };
-                        self.finish_tab_complete(sugs, wuc);
+                        self.finish_tab_complete(sugs, wuc, load_time);
                         redraw = true;
                     }
                     Ok(None) => {
@@ -1856,9 +1859,10 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(
-                            "# {} / {} suggestions",
+                            "# {} / {} suggestions [{}ms]",
                             active_suggestions.filtered_suggestions_len(),
-                            active_suggestions.all_suggestions_len()
+                            active_suggestions.all_suggestions_len(),
+                            active_suggestions.load_time.as_millis(),
                         ),
                         self.settings.color_palette.secondary_text(),
                     ),

@@ -661,6 +661,7 @@ impl App<'_> {
         &mut self,
         mut sugs: Vec<MaybeProcessedSuggestion>,
         wuc_substring: SubString,
+        load_time: std::time::Duration,
     ) {
         let mut final_wuc = wuc_substring.clone();
         // Phase 2: if there are fewer than 500 suggestions, find any common
@@ -697,7 +698,7 @@ impl App<'_> {
         }
 
         // Phase 3: hand the suggestions off to the UI layer.
-        self.try_accept_tab_completion(ActiveSuggestions::new(sugs, final_wuc));
+        self.try_accept_tab_completion(ActiveSuggestions::new(sugs, final_wuc, load_time));
     }
 
     pub fn start_tab_complete(&mut self) {
@@ -718,6 +719,8 @@ impl App<'_> {
 
         let cursor_settings = self.settings.cursor_config.clone();
 
+        let start_time = std::time::Instant::now();
+
         let thread_handle = std::thread::spawn(move || {
             let suggestions = gen_completions_internal(&completion_context_owned, &cursor_settings);
             if suggestions.is_none() {
@@ -737,11 +740,11 @@ impl App<'_> {
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(Some(sugs)) => {
-                self.finish_tab_complete(sugs, wuc_substring);
+                self.finish_tab_complete(sugs, wuc_substring, start_time.elapsed());
             }
             Ok(None) => {
                 // No suggestions generated.
-                self.finish_tab_complete(vec![], wuc_substring);
+                self.finish_tab_complete(vec![], wuc_substring, start_time.elapsed());
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Thread hasn't finished yet; enter waiting mode.
@@ -751,6 +754,7 @@ impl App<'_> {
                         thread: Some(thread_handle),
                     },
                     wuc_substring,
+                    start_time,
                 };
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
