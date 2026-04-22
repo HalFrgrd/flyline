@@ -118,9 +118,14 @@ fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>, Option<Str
             } else {
                 long = Some(piece.trim_end_matches(',').to_string());
             }
-        } else if piece.starts_with('-') && piece.len() <= 3 {
-            // Short flag like -v or -v,
-            short = Some(piece.trim_end_matches(',').to_string());
+        } else if let Some(short_candidate) = piece.strip_prefix('-') {
+            let short_candidate = short_candidate.trim_end_matches(',');
+            // Only treat single-character forms like `-v` as clap short flags.
+            // Multi-character forms such as `-wk`, `-wK`, or `-U[dlexhi]` are
+            // command-specific syntax, not plain one-letter short options.
+            if short_candidate.chars().count() == 1 {
+                short = Some(format!("-{short_candidate}"));
+            }
         } else if piece.starts_with('<') || piece.starts_with('[') {
             // Meta-variable — only capture the first one found so that description
             // text like `[default: 10]` does not overwrite an already-parsed hint.
@@ -629,6 +634,8 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
         clap_cmd = clap_cmd.about(leak_string(desc.clone()));
     }
 
+    let mut used_short_flags = std::collections::HashSet::new();
+
     for arg in &cmd.args {
         // Strip leading dashes from the long flag once; reuse for both the
         // argument identifier and the `.long()` call.
@@ -654,7 +661,15 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
 
         if let Some(short) = &arg.short {
             if let Some(c) = short.trim_start_matches('-').chars().next() {
-                clap_arg = clap_arg.short(c);
+                if used_short_flags.insert(c) {
+                    clap_arg = clap_arg.short(c);
+                } else {
+                    log::debug!(
+                        "comp-spec-synthesis: dropping duplicate short flag '-{}' for arg {:?}",
+                        c,
+                        id
+                    );
+                }
             }
         }
 
@@ -1694,6 +1709,45 @@ Options:
         assert!(script.contains("greet"));
     }
 
+    #[test]
+    fn test_to_clap_command_drops_duplicate_short_flags() {
+        let cmd = Command {
+            name: Some("readelf".to_string()),
+            description: Some("A test tool with duplicate short flags.".to_string()),
+            args: vec![
+                Arg {
+                    long: Some("--debug-dump[a/".to_string()),
+                    short: Some("-w".to_string()),
+                    description: Some("DWARF debug dump selector.".to_string()),
+                    value_type: None,
+                    num_args: None,
+                },
+                Arg {
+                    long: Some("--debug-dump".to_string()),
+                    short: Some("-w".to_string()),
+                    description: Some("DWARF debug dump mode.".to_string()),
+                    value_type: Some("links".to_string()),
+                    num_args: None,
+                },
+            ],
+            subcommands: vec![],
+            author: None,
+        };
+
+        let mut clap_cmd = to_clap_command(&cmd);
+        let bin_name = clap_cmd.get_name().to_string();
+        let mut out = Vec::new();
+        clap_complete::generate(
+            clap_complete::Shell::Bash,
+            &mut clap_cmd,
+            &bin_name,
+            &mut out,
+        );
+        let script = String::from_utf8(out).expect("completion output is valid utf-8");
+        assert!(!script.is_empty());
+        assert!(script.contains("readelf"));
+    }
+
     // ── git --help ───────────────────────────────────────────────────────────
     //
     // A simplified version of `git --help` using a standard Commands: section
@@ -2219,6 +2273,23 @@ Report bugs to <https://sourceware.org/bugzilla/>
         assert_eq!(
             arg_by_long(&cmd, "--hex-dump").and_then(|a| a.value_type.as_deref()),
             Some("number|name")
+        );
+    }
+
+    #[test]
+    fn test_parse_flag_tokens_ignores_multi_character_short_forms() {
+        let (short, long, value_type) = parse_flag_tokens("-wk --debug-dump=links");
+        assert_eq!(short, None);
+        assert_eq!(long.as_deref(), Some("--debug-dump"));
+        assert_eq!(value_type.as_deref(), Some("links"));
+
+        let (short, long, value_type) =
+            parse_flag_tokens("-U[dlexhi] --unicode=[default|locale|escape|hex|highlight|invalid]");
+        assert_eq!(short, None);
+        assert_eq!(long.as_deref(), Some("--unicode"));
+        assert_eq!(
+            value_type.as_deref(),
+            Some("[default|locale|escape|hex|highlight|invalid]")
         );
     }
 }

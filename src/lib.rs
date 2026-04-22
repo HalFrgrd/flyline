@@ -1179,7 +1179,11 @@ impl Flyline {
                     }
                     Some(Commands::CompSpecSynthesis { command }) => {
                         match comp_spec_synthesis::synthesize_completion(&command, |args| {
-                            comp_spec_synthesis::run_help(&command, args)
+                            let prev_sigchld =
+                                unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+                            let ret = comp_spec_synthesis::run_help(&command, args);
+                            unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
+                            ret
                         }) {
                             Ok(parsed_cmd) => {
                                 let cmd_name = std::path::Path::new(&command)
