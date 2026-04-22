@@ -1,5 +1,8 @@
 use flash::lexer::TokenKind;
-use std::borrow::{Cow, ToOwned};
+use std::{
+    borrow::{Cow, ToOwned},
+    vec,
+};
 
 use crate::{
     dparser::{DParser, ToInclusiveRange},
@@ -59,24 +62,31 @@ impl<'a> CompletionContext<'a> {
             dbg!(&word_under_cursor);
         }
 
-        let comp_type = if context.trim().is_empty()
-            || !context_until_cursor.chars().any(|c| c.is_whitespace())
+        let mut comp_types = vec![];
+
+        if word_under_cursor.as_ref().starts_with("~") && !word_under_cursor.as_ref().contains("/")
         {
-            CompType::FirstWord
+            log::debug!("Detected tilde expansion context");
+            comp_types.push(CompType::TildeExpansion);
+        }
+
+        if context.trim().is_empty() || !context_until_cursor.chars().any(|c| c.is_whitespace()) {
+            comp_types.push(CompType::FirstWord);
         } else {
-            CompType::CommandComp {
+            comp_types.push(CompType::CommandComp {
                 command_word: context.split_whitespace().next().unwrap_or("").to_string(),
-            }
-        };
+            });
+        }
 
         let secondary_comp_type = CompType::from(word_under_cursor.as_ref());
+        comp_types.push(secondary_comp_type);
 
         CompletionContext {
             buffer: Cow::Borrowed(buffer),
             context_until_cursor: Cow::Borrowed(context_until_cursor),
             context: Cow::Borrowed(context),
             word_under_cursor,
-            comp_types: vec![comp_type, secondary_comp_type],
+            comp_types,
         }
     }
 

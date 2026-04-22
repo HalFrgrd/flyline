@@ -662,14 +662,14 @@ pub fn post_process_completion(
     let quoted_no_prefix = quoted.strip_prefix(&prefix).unwrap_or(&quoted).to_string();
 
     // TODO: get rid of logging after verifying it works well
-    log::debug!(
-        "Post-processing completion: raw_sug={:?}, prefix={:?}, word_under_cursor={:?}, quoted_no_prefix={:?},suffix_char={:?}",
-        raw_sug,
-        prefix,
-        word_under_cursor,
-        quoted_no_prefix,
-        &suffix_char
-    );
+    // log::debug!(
+    //     "Post-processing completion: raw_sug={:?}, prefix={:?}, word_under_cursor={:?}, quoted_no_prefix={:?},suffix_char={:?}",
+    //     raw_sug,
+    //     prefix,
+    //     word_under_cursor,
+    //     quoted_no_prefix,
+    //     &suffix_char
+    // );
 
     let style = path_to_use
         .as_ref()
@@ -1172,10 +1172,6 @@ impl ActiveSuggestions {
         match self.filtered_suggestions.as_slice() {
             [] => {
                 log::debug!("No completions found. filtered_suggestions is empty");
-                log::debug!(
-                    "all_maybe_processed_suggestions: {:#?}",
-                    self.all_maybe_processed_suggestions
-                );
                 return Some(self);
             }
             [_filtered_item] => {

@@ -593,11 +593,11 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
     };
 
     // `~` alone — suggest the current user's home directory as `~/`
-    if user_pattern.is_empty() {
-        return vec![MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
-            "~/", "", "",
-        ))];
-    }
+    // if user_pattern.is_empty() {
+    //     return vec![MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
+    //         "~/", "", "",
+    //     ))];
+    // }
 
     // `~username` — find matching users from the users module
     let mut suggestions = Vec::new();
@@ -605,7 +605,11 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
     for user in users::get_all_users() {
         if user.username.starts_with(user_pattern) {
             suggestions.push(MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
-                format!("{}/", user.home_dir),
+                if user.home_dir.ends_with('/') {
+                    user.home_dir.clone()
+                } else {
+                    format!("{}/", user.home_dir)
+                },
                 "",
                 "",
             )));
@@ -613,6 +617,7 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
     }
 
     suggestions.sort_by(|a, b| a.match_text().cmp(b.match_text()));
+    suggestions.dedup_by(|a, b| a.match_text() == b.match_text());
     suggestions
 }
 
