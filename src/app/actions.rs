@@ -937,7 +937,14 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Move to the next tab completion suggestion",
         Scope::TabCompletion,
         |app, _key| {
-            if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+            let no_suggestions = matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(s) if s.filtered_suggestions_len() == 0
+            );
+            if no_suggestions {
+                app.content_mode = ContentMode::Normal;
+                app.start_tab_complete();
+            } else if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_tab(false);
             }
         },
