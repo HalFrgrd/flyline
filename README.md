@@ -436,7 +436,7 @@ Usage: flyline [OPTIONS] [COMMAND]
 Commands:
   set-agent-mode        Configure AI agent mode.
   create-prompt-widget  Create a custom prompt widget.
-  set-color             Configure the colour palette.
+  set-colour             Configure the colour palette.
   set-cursor            Configure the cursor appearance and animation.
   key                   Manage keybindings.
   log                   Logging commands: dump, configure level, or stream logs.
@@ -509,8 +509,8 @@ Flyline ships with two built-in colour presets (dark and light) and lets you ove
 ### Presets
 
 ```bash
-flyline set-color --default-theme dark   # original palette, optimised for dark terminals
-flyline set-color --default-theme light  # preset optimised for light terminals
+flyline set-colour --default-theme dark   # original palette, optimised for dark terminals
+flyline set-colour --default-theme light  # preset optimised for light terminals
 ```
 
 ### Custom colours
@@ -525,10 +525,10 @@ Colours can be specified by name (`red`, `green`, `blue`, `magenta`, `cyan`, `ye
 hex code (`#ff5500`) or `rgb(r,g,b)` form.
 
 ```bash
-flyline set-color --inline-suggestion "dim italic"
-flyline set-color --default-theme light --matching-char "bold blue"
-flyline set-color --recognised-command "green" --unrecognised-command "bold red"
-flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
+flyline set-colour --inline-suggestion "dim italic"
+flyline set-colour --default-theme light --matching-char "bold blue"
+flyline set-colour --recognised-command "green" --unrecognised-command "bold red"
+flyline set-colour --secondary-text "dim" --tutorial-hint "bold italic"
 ```
 
 ## Keybindings

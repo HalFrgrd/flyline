@@ -284,12 +284,11 @@ enum Commands {
     ///   flyline set-color --default-theme light --matching-char "bold blue"
     ///   flyline set-color --recognised-command "green" --unrecognised-command "bold red"
     ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
-    ///   flyline set-color --key-sequence-style "dim"
-    #[command(name = "set-color", verbatim_doc_comment)]
-    SetColor {
+    #[command(name = "set-colour", verbatim_doc_comment)]
+    SetColour {
         /// Apply a built-in colour preset for dark or light terminals.
         #[arg(long = "default-theme", value_name = "MODE")]
-        default_theme: Option<settings::ColorTheme>,
+        default_theme: Option<settings::ColourTheme>,
         /// Style for recognised (valid) commands (e.g. "green").
         #[arg(long = "recognised-command", value_name = "STYLE")]
         recognised_command: Option<String>,
@@ -997,7 +996,7 @@ impl Flyline {
                             );
                         }
                     },
-                    Some(Commands::SetColor {
+                    Some(Commands::SetColour {
                         default_theme,
                         recognised_command,
                         unrecognised_command,
@@ -1018,8 +1017,8 @@ impl Flyline {
                         key_sequence_style,
                     }) => {
                         if let Some(preset) = default_theme {
-                            self.settings.color_palette.apply_theme(preset);
-                            log::info!("Color theme set to {:?}", self.settings.color_theme);
+                            self.settings.colour_palette.apply_theme(preset);
+                            log::info!("Colour theme set to {:?}", self.settings.colour_theme);
                         }
 
                         let style_overrides: &[(
@@ -1080,12 +1079,12 @@ impl Flyline {
                             if let Some(style_str) = opt {
                                 match palette::parse_str_to_style(style_str) {
                                     Ok(style) => {
-                                        setter(&mut self.settings.color_palette, style);
+                                        setter(&mut self.settings.colour_palette, style);
                                         log::info!("{} style set to {:?}", flag_name, style_str);
                                     }
                                     Err(e) => {
                                         eprintln!(
-                                            "flyline set-color: invalid --{} style {:?}: {}",
+                                            "flyline set-colour: invalid --{} style {:?}: {}",
                                             flag_name, style_str, e
                                         );
                                         return bash_symbols::BuiltinExitCode::Usage as c_int;

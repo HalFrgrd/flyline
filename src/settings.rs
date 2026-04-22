@@ -10,7 +10,7 @@ use clap::ValueEnum;
 
 /// Which theme the user has configured for the colour palette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
-pub enum ColorTheme {
+pub enum ColourTheme {
     /// Dark-terminal preset (the original flyline palette). This is the default.
     #[default]
     Dark,
@@ -174,9 +174,9 @@ pub struct Settings {
     /// terminal misbehaves when the request is sent. Enabled by default.
     pub enable_extended_key_codes: bool,
     /// Configurable colour palette for UI elements.
-    pub color_palette: Palette,
+    pub colour_palette: Palette,
     /// Which colour theme the user has selected (dark or light).
-    pub color_theme: ColorTheme,
+    pub colour_theme: ColourTheme,
     /// User defined keybindings
     pub keybindings: Vec<actions::Binding>,
     /// User defined key remappings (applied before matching bindings).
@@ -208,8 +208,8 @@ impl Default for Settings {
             frame_rate: 24,
             send_shell_integration_codes: ShellIntegrationLevel::default(),
             enable_extended_key_codes: true,
-            color_palette: Palette::default(),
-            color_theme: ColorTheme::default(),
+            colour_palette: Palette::default(),
+            colour_theme: ColourTheme::default(),
             keybindings: Vec::new(),
             key_remappings: Vec::new(),
             cancelled_command_history_manager: HistoryManager::new_empty(),

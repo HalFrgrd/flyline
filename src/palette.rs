@@ -1,7 +1,7 @@
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::cursor::CursorStyleConfig;
-use crate::settings::ColorTheme;
+use crate::settings::ColourTheme;
 
 /// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
 /// Returns an error message if the string cannot be parsed.
@@ -365,10 +365,10 @@ impl Palette {
 
     /// Apply a new theme preset to the default style values, leaving any
     /// user-specified overrides intact.
-    pub fn apply_theme(&mut self, mode: ColorTheme) {
+    pub fn apply_theme(&mut self, mode: ColourTheme) {
         let template = match mode {
-            ColorTheme::Dark => Self::dark(),
-            ColorTheme::Light => Self::light(),
+            ColourTheme::Dark => Self::dark(),
+            ColourTheme::Light => Self::light(),
         };
         self.recognised_command = template.recognised_command;
         self.unrecognised_command = template.unrecognised_command;
