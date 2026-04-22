@@ -116,6 +116,7 @@ pub enum TutorialStep {
     MouseMode,
     ThemeColours,
     FuzzyHistorySearch,
+    Keybindings,
     Autocompletions,
     AutoClosing,
     FineGrainDeletion,
@@ -125,13 +126,14 @@ pub enum TutorialStep {
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 13] = [
+    const STEPS_IN_ORDER: [TutorialStep; 14] = [
         TutorialStep::Welcome,
         TutorialStep::TutorialsTutorial,
         TutorialStep::RecommendedSettings,
         TutorialStep::MouseMode,
         TutorialStep::ThemeColours,
         TutorialStep::FuzzyHistorySearch,
+        TutorialStep::Keybindings,
         TutorialStep::Autocompletions,
         TutorialStep::AutoClosing,
         TutorialStep::FineGrainDeletion,
@@ -451,6 +453,55 @@ pub fn generate_tutorial_text(
                 ts_text("Press "),
                 ts_key("Escape"),
                 ts_text(" to cancel."),
+            ]));
+        }
+        TutorialStep::Keybindings => {
+            lines.push(tl(Span::styled("Keybindings", heading_style)));
+            lines.push(empty());
+            lines.push(TaggedLine::from(vec![
+                ts_text("Run "),
+                ts_copiable(
+                    "flyline key list".to_string(),
+                    ClipboardTypes::TutorialKeybindingsList,
+                ),
+                ts_text(" to see all current keybindings."),
+            ]));
+            lines.push(empty());
+            lines.push(tl(Span::styled("Common custom keybindings:", text_style)));
+            lines.push(TaggedLine::from(vec![
+                ts_text("• Accept and immediately run the selected fuzzy history entry (instead of accepting for editing):"),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline key bind Enter fuzzy_history_search::accept_and_run".to_string(),
+                    ClipboardTypes::TutorialKeybindingsBind1,
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_text("• Temporarily dismiss an inline history suggestion with "),
+                ts_key("Escape"),
+                ts_text(":"),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline key bind Escape inline_history_acceptable::dismiss_suggestion"
+                        .to_string(),
+                    ClipboardTypes::TutorialKeybindingsBind2,
+                ),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_text("• Accept an inline history suggestion with "),
+                ts_key("Tab"),
+                ts_text(":"),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline key bind Tab inline_history_acceptable::accept_suggestion".to_string(),
+                    ClipboardTypes::TutorialKeybindingsBind3,
+                ),
             ]));
         }
         TutorialStep::Autocompletions => {

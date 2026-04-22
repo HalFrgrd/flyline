@@ -700,6 +700,14 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
+        "dismiss_suggestion",
+        "Temporarily dismiss the inline history suggestion",
+        Scope::InlineHistoryAcceptable,
+        |app, _key| {
+            app.inline_history_suggestion = None;
+        },
+    ),
+    Action::new(
         "select_next",
         "Move down in agent output selection",
         Scope::AgentOutputSelection,
@@ -920,6 +928,15 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         Scope::FuzzyHistorySearch,
         |app, _key| {
             app.accept_fuzzy_history_search();
+        },
+    ),
+    Action::new(
+        "accept_and_run",
+        "Accept the current fuzzy history search suggestion and immediately run it",
+        Scope::FuzzyHistorySearch,
+        |app, _key| {
+            app.accept_fuzzy_history_search();
+            app.try_submit_current_buffer();
         },
     ),
     Action::new(
