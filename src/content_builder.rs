@@ -153,6 +153,10 @@ pub enum ClipboardTypes {
     TutorialGrep,
     TutorialBashCompletion,
     TutorialIosevka,
+    TutorialKeybindingsList,
+    TutorialKeybindingsBind1,
+    TutorialKeybindingsBind2,
+    TutorialKeybindingsBind3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
