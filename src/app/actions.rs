@@ -704,6 +704,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Temporarily dismiss the inline history suggestion",
         Scope::InlineHistoryAcceptable,
         |app, _key| {
+            app.dismissed_inline_suggestion_buffer = Some(app.buffer_for_history().to_owned());
             app.inline_history_suggestion = None;
         },
     ),
