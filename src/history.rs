@@ -75,6 +75,63 @@ pub enum HistorySearchDirection {
 }
 
 impl HistoryManager {
+    fn log_recent_entries(entries: &[HistoryEntry], source: &str) {
+        if entries.is_empty() {
+            log::warn!("No {} history entries found", source);
+            return;
+        }
+
+        log::debug!("Loaded {} {} history entries", entries.len(), source);
+        for entry in entries.iter().rev().take(3) {
+            log::debug!("{}_entries => {:?}", source, entry);
+        }
+    }
+
+    fn push_deduped_entry(entries: &mut Vec<HistoryEntry>, mut entry: HistoryEntry) {
+        if entries.last().is_some_and(|prev| prev.command == entry.command) {
+            return;
+        }
+
+        entry.index = entries.len();
+        entries.push(entry);
+    }
+
+    fn normalize_entries(entries: Vec<HistoryEntry>) -> Vec<HistoryEntry> {
+        let mut normalized = Vec::with_capacity(entries.len());
+        for entry in entries {
+            Self::push_deduped_entry(&mut normalized, entry);
+        }
+        normalized
+    }
+
+    fn merge_history_entries(
+        zsh_entries: Vec<HistoryEntry>,
+        bash_entries: Vec<HistoryEntry>,
+    ) -> Vec<HistoryEntry> {
+        let mut merged = Vec::with_capacity(zsh_entries.len() + bash_entries.len());
+        let mut zsh_iter = zsh_entries.into_iter().peekable();
+        let mut bash_iter = bash_entries.into_iter().peekable();
+
+        while let (Some(zsh_entry), Some(bash_entry)) = (zsh_iter.peek(), bash_iter.peek()) {
+            let take_zsh = zsh_entry.timestamp.unwrap_or(0) <= bash_entry.timestamp.unwrap_or(0);
+            if take_zsh {
+                Self::push_deduped_entry(&mut merged, zsh_iter.next().unwrap());
+            } else {
+                Self::push_deduped_entry(&mut merged, bash_iter.next().unwrap());
+            }
+        }
+
+        for entry in zsh_iter {
+            Self::push_deduped_entry(&mut merged, entry);
+        }
+
+        for entry in bash_iter {
+            Self::push_deduped_entry(&mut merged, entry);
+        }
+
+        merged
+    }
+
     /// Read the user's bash history file into a Vec<String>.
     /// Tries $HISTFILE first, otherwise falls back to $HOME/.bash_history.
     #[allow(dead_code)]
@@ -97,7 +154,7 @@ impl HistoryManager {
     }
 
     pub fn parse_bash_history_from_memory() -> Vec<HistoryEntry> {
-        let mut res = Vec::new();
+        let mut res = Vec::with_capacity(4096);
         unsafe {
             let hist_array = bash_symbols::history_list();
             if hist_array.is_null() {
@@ -191,46 +248,21 @@ impl HistoryManager {
         // Bash will load the history into memory, so we can read it from there
         // Bash parses it after bashrc is loaded.
         let bash_entries = Self::parse_bash_history_from_memory();
-        // Print last 5 bash entries for debugging
-        if bash_entries.is_empty() {
-            log::warn!("No bash history entries found");
-        } else {
-            log::debug!("Loaded {} bash history entries", bash_entries.len());
-            for entry in bash_entries.iter().rev().take(5) {
-                log::debug!("bash_entries => {:?}", entry);
-            }
-        }
+        Self::log_recent_entries(&bash_entries, "bash");
 
         // Alternative is to do it ourselves
         // let bash_entries = Self::parse_bash_history_from_file();
 
-        let mut entries: Vec<_> = if let Some(ref zsh_path) = settings.zsh_history_path {
+        let entries = if let Some(ref zsh_path) = settings.zsh_history_path {
             // As a Zsh user migrating to Bash, I want to have my Zsh history available too
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
-            log::debug!("Loaded {} Zsh history entries", zsh_entries.len());
-            for entry in zsh_entries.iter().rev().take(5) {
-                log::debug!("zsh_entries => {:?}", entry);
-            }
-            zsh_entries
-                .into_iter()
-                .merge_by(bash_entries, |a, b| {
-                    a.timestamp.unwrap_or(0) <= b.timestamp.unwrap_or(0)
-                })
-                .collect()
+            Self::log_recent_entries(&zsh_entries, "Zsh");
+            Self::merge_history_entries(zsh_entries, bash_entries)
         } else {
-            bash_entries
+            Self::normalize_entries(bash_entries)
         };
 
-        entries.dedup_by(|a, b| a.command == b.command);
-
-        let mut i = 0;
-        for entry in &mut entries {
-            entry.index = i;
-            i += 1;
-        }
-
         let index = entries.len();
-        // SAFETY: We transmute the lifetime to 'static because entries lives as long as HistoryManager
         HistoryManager {
             entries,
             index,
@@ -826,5 +858,44 @@ git status
             .count();
 
         assert_eq!(echo_hi_count, 2);
+    }
+
+    #[test]
+    fn test_normalize_entries_dedups_adjacent_and_reindexes() {
+        let entries = vec![
+            HistoryEntry::new(Some(1), 99, "echo hi".to_string()),
+            HistoryEntry::new(Some(2), 42, "echo hi".to_string()),
+            HistoryEntry::new(Some(3), 7, "pwd".to_string()),
+        ];
+
+        let normalized = HistoryManager::normalize_entries(entries);
+
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0].command, "echo hi");
+        assert_eq!(normalized[0].index, 0);
+        assert_eq!(normalized[1].command, "pwd");
+        assert_eq!(normalized[1].index, 1);
+    }
+
+    #[test]
+    fn test_merge_history_entries_dedups_adjacent_and_reindexes() {
+        let zsh_entries = vec![
+            HistoryEntry::new(Some(1), 10, "echo hi".to_string()),
+            HistoryEntry::new(Some(3), 11, "pwd".to_string()),
+        ];
+        let bash_entries = vec![
+            HistoryEntry::new(Some(2), 20, "echo hi".to_string()),
+            HistoryEntry::new(Some(4), 21, "ls".to_string()),
+        ];
+
+        let merged = HistoryManager::merge_history_entries(zsh_entries, bash_entries);
+
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].command, "echo hi");
+        assert_eq!(merged[0].index, 0);
+        assert_eq!(merged[1].command, "pwd");
+        assert_eq!(merged[1].index, 1);
+        assert_eq!(merged[2].command, "ls");
+        assert_eq!(merged[2].index, 2);
     }
 }
