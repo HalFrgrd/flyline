@@ -1511,6 +1511,9 @@ pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     flyline_load_common()
 }
 
+const FLYLINE_ENV_VAR_NAME: &str = "FLYLINE_VERSION";
+const FLYLINE_ENV_VAR_VALUE: &str = env!("CARGO_PKG_VERSION");
+
 fn flyline_load_common() -> c_int {
     log::info!("flyline_builtin_load called, initializing flyline");
     // Returning 0 means the load fails
@@ -1577,6 +1580,14 @@ fn flyline_load_common() -> c_int {
         *FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(Box::new(Flyline::new()));
+
+        bash_funcs::set_env_var(FLYLINE_ENV_VAR_NAME, FLYLINE_ENV_VAR_VALUE).unwrap_or_else(|e| {
+            log::error!(
+                "Failed to set environment variable '{}': {}",
+                FLYLINE_ENV_VAR_NAME,
+                e
+            );
+        });
     };
 
     unsafe {
@@ -1659,6 +1670,15 @@ fn flyline_load_common() -> c_int {
 #[unsafe(no_mangle)]
 pub extern "C" fn flyline_builtin_unload() {
     log::info!("flyline_builtin_unload called, unloading flyline");
+
+    bash_funcs::unset_env_var(FLYLINE_ENV_VAR_NAME).unwrap_or_else(|e| {
+        log::error!(
+            "Failed to unset environment variable '{}': {}",
+            FLYLINE_ENV_VAR_NAME,
+            e
+        );
+    });
+
     let had_instance = FLYLINE_INSTANCE_PTR
         .lock()
         .unwrap_or_else(|e| e.into_inner())

@@ -1197,6 +1197,35 @@ pub fn read_terminating_signal() -> c_int {
     unsafe { (&raw const crate::bash_symbols::terminating_signal).read_volatile() }
 }
 
+pub fn set_env_var(name: &str, value: &str) -> Result<()> {
+    unsafe {
+        let name_cstr = std::ffi::CString::new(name)?;
+        let value_cstr = std::ffi::CString::new(value)?;
+        let res = bash_symbols::bind_variable(name_cstr.as_ptr(), value_cstr.as_ptr(), 0);
+        if res.is_null() {
+            return Err(anyhow::anyhow!(
+                "Failed to create environment variable '{}'",
+                name
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub fn unset_env_var(name: &str) -> Result<()> {
+    unsafe {
+        let name_cstr = std::ffi::CString::new(name)?;
+        let res = bash_symbols::unbind_variable(name_cstr.as_ptr());
+        if res != 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to unset environment variable '{}'",
+                name
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -338,6 +338,15 @@ unsafe extern "C" {
     // SHELL_VAR * find_variable (const char *name)
     pub fn find_variable(name: *const c_char) -> *mut ShellVar;
 
+    /* Bind a variable NAME to VALUE.  This conses up the name
+    and value strings.  If we have a temporary environment, we bind there
+    first, then we bind into shell_variables. */
+    // SHELL_VAR * bind_variable (     const char *name,      char *value,     int flags;
+    pub fn bind_variable(name: *const c_char, value: *const c_char, flags: c_int) -> *mut ShellVar;
+
+    // int unbind_variable (name)  const char *name;
+    pub fn unbind_variable(name: *const c_char) -> c_int;
+
     // common.h
     // int evalstring (char *string, const char *from_file, int flags)
     #[cfg(not(feature = "pre_bash_4_4"))]
