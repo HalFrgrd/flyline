@@ -1,3 +1,5 @@
+use crate::active_suggestions::ANIMATION_FRAME_FPS;
+use crate::unicode_helpers::{BRAILLE_BLANK, OctantDots, OctantStyle, octant};
 use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;
@@ -354,12 +356,6 @@ pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
     format!("{:>5}", s.trim_start_matches('0'))
 }
 
-/// Total width (in terminal columns) of the easing-function dot animation.
-const EASING_ANIM_TOTAL_WIDTH: usize = 7;
-
-/// Number of frames in each half of the ping-pong animation (forward + backward).
-const EASING_ANIM_HALF_FRAMES: usize = 16;
-
 /// Convert an ANSI-escaped string into a flat list of styled [`Span`]s.
 ///
 /// The string is parsed through [`ansi_to_tui`] so that ANSI colour/style
@@ -375,39 +371,71 @@ pub fn ansi_string_to_spans(s: &str) -> Vec<Span<'static>> {
 }
 
 /// Build the ping-pong animation frames for the given easing function.
-///
-/// Returns `2 * EASING_ANIM_HALF_FRAMES - 2` frames showing a dot (`·`) that
-/// travels from the left edge to the right and back, using `easing` for the
-/// position curve in both directions.  Each frame is a `Vec<Span<'static>>`.
 pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> {
-    let half = EASING_ANIM_HALF_FRAMES;
-    let dot_range = (EASING_ANIM_TOTAL_WIDTH - 1) as f32;
-    let total_frames = half * 2 - 2;
-    let mut frames = Vec::with_capacity(total_frames);
+    /// Easing preview cycle frequency in hertz.
+    const EASING_ANIM_TARGET_HZ: f32 = 0.5;
 
-    let make_frame = |pos: usize| -> Vec<Span<'static>> {
+    /// Total width (in terminal columns) of the easing-function dot animation.
+    const EASING_ANIM_TOTAL_WIDTH: usize = 10;
+    /// Dot can be in the left or right half of a cell, so logical width is double the total width.
+    const EASING_ANIM_LOGICAL_WIDTH: usize = EASING_ANIM_TOTAL_WIDTH * 2;
+
+    /// Inner boundary start column (inclusive) that represents easing value 0.0.
+    const EASING_ANIM_BOUNDARY_START: usize = 1;
+    const EASING_ANIM_BOUNDARY_LOGICAL_START: usize = EASING_ANIM_BOUNDARY_START * 2;
+
+    /// Inner boundary end column (inclusive) that represents easing value 1.0.
+    const EASING_ANIM_BOUNDARY_END: usize = EASING_ANIM_TOTAL_WIDTH.saturating_sub(2);
+    const EASING_ANIM_BOUNDARY_LOGICAL_END: usize = EASING_ANIM_BOUNDARY_END * 2;
+
+    fn braille_char(dots: OctantDots) -> char {
+        octant(dots, OctantStyle::Braille).unwrap_or(BRAILLE_BLANK)
+    }
+
+    fn logical_to_dot(logical_pos: usize, row: usize) -> OctantDots {
+        match (logical_pos % 2, row) {
+            (0, 0) => OctantDots::TOP_LEFT,
+            (0, 1) => OctantDots::UPPER_MID_LEFT,
+            (0, 2) => OctantDots::LOWER_MID_LEFT,
+            (1, 0) => OctantDots::TOP_RIGHT,
+            (1, 1) => OctantDots::UPPER_MID_RIGHT,
+            (1, 2) => OctantDots::LOWER_MID_RIGHT,
+            _ => OctantDots::NONE,
+        }
+    }
+
+    let cycle_frames =
+        ((ANIMATION_FRAME_FPS as f32 / EASING_ANIM_TARGET_HZ).round() as usize).max(2);
+    let dot_logical_range =
+        (EASING_ANIM_BOUNDARY_LOGICAL_END - EASING_ANIM_BOUNDARY_LOGICAL_START) as f32;
+    let mut frames = Vec::with_capacity(cycle_frames);
+
+    let make_frame = |pos: isize| -> Vec<Span<'static>> {
         let mut s = String::with_capacity(EASING_ANIM_TOTAL_WIDTH);
-        for j in 0..EASING_ANIM_TOTAL_WIDTH {
-            if j == pos {
-                s.push('·');
-            } else {
-                s.push(' ');
+        let mut cells = [OctantDots::NONE; EASING_ANIM_TOTAL_WIDTH];
+
+        for j in 0..EASING_ANIM_LOGICAL_WIDTH {
+            if j >= EASING_ANIM_BOUNDARY_LOGICAL_START && j <= EASING_ANIM_BOUNDARY_LOGICAL_END {
+                cells[j / 2] |= logical_to_dot(j, 0);
+                cells[j / 2] |= logical_to_dot(j, 2);
             }
         }
+
+        let clamped_pos = pos.clamp(0, EASING_ANIM_LOGICAL_WIDTH as isize - 1) as usize;
+        cells[clamped_pos / 2] |= logical_to_dot(clamped_pos, 1);
+
+        for bits in cells {
+            s.push(braille_char(bits));
+        }
+
         vec![Span::raw(s)]
     };
 
-    // Forward: t goes 0 → 1
-    for i in 0..half {
-        let t = i as f32 / (half - 1) as f32;
-        let pos = (easing.apply(t) * dot_range).round() as usize;
-        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
-    }
-    // Backward: t goes from the second-to-last back to 0 (skip first and last to avoid repeats)
-    for i in (1..half - 1).rev() {
-        let t = i as f32 / (half - 1) as f32;
-        let pos = (easing.apply(t) * dot_range).round() as usize;
-        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
+    for i in 0..cycle_frames {
+        let t = i as f32 / (cycle_frames - 1) as f32;
+        let pos = (EASING_ANIM_BOUNDARY_LOGICAL_START as f32 + easing.apply(t) * dot_logical_range)
+            .round() as isize;
+        frames.push(make_frame(pos));
     }
 
     frames

@@ -118,9 +118,14 @@ fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>, Option<Str
             } else {
                 long = Some(piece.trim_end_matches(',').to_string());
             }
-        } else if piece.starts_with('-') && piece.len() <= 3 {
-            // Short flag like -v or -v,
-            short = Some(piece.trim_end_matches(',').to_string());
+        } else if let Some(short_candidate) = piece.strip_prefix('-') {
+            let short_candidate = short_candidate.trim_end_matches(',');
+            // Only treat single-character forms like `-v` as clap short flags.
+            // Multi-character forms such as `-wk`, `-wK`, or `-U[dlexhi]` are
+            // command-specific syntax, not plain one-letter short options.
+            if short_candidate.chars().count() == 1 {
+                short = Some(format!("-{short_candidate}"));
+            }
         } else if piece.starts_with('<') || piece.starts_with('[') {
             // Meta-variable — only capture the first one found so that description
             // text like `[default: 10]` does not overwrite an already-parsed hint.
@@ -629,32 +634,65 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
         clap_cmd = clap_cmd.about(leak_string(desc.clone()));
     }
 
+    let mut used_short_flags = std::collections::HashSet::new();
+    let mut used_long_flags = std::collections::HashSet::new();
+    let mut used_arg_ids = std::collections::HashSet::new();
+
     for arg in &cmd.args {
         // Strip leading dashes from the long flag once; reuse for both the
         // argument identifier and the `.long()` call.
-        let long_bare: Option<&'static str> = arg
+        let long_bare: Option<String> = arg
             .long
             .as_deref()
-            .map(|l| leak_string(l.trim_start_matches('-').to_string()));
+            .map(|l| l.trim_start_matches('-').to_string());
 
-        // Derive a stable identifier for the argument.
-        let id: &'static str = long_bare
+        if let Some(long) = &long_bare {
+            if !used_long_flags.insert(long.clone()) {
+                log::debug!(
+                    "comp-spec-synthesis: dropping duplicate long flag '--{}'",
+                    long
+                );
+                continue;
+            }
+        }
+
+        // Derive a stable identifier for the argument, then make it unique for
+        // clap even when the parsed help contains repeated or unnamed args.
+        let base_id = long_bare
+            .clone()
             .or_else(|| {
                 arg.short
                     .as_deref()
-                    .map(|s| leak_string(s.trim_start_matches('-').to_string()))
+                    .map(|s| s.trim_start_matches('-').to_string())
             })
-            .unwrap_or("arg");
+            .unwrap_or_else(|| "arg".to_string());
+
+        let mut id = base_id.clone();
+        let mut suffix = 2;
+        while !used_arg_ids.insert(id.clone()) {
+            id = format!("{}-{}", base_id, suffix);
+            suffix += 1;
+        }
+
+        let id = leak_string(id);
 
         let mut clap_arg = clap::Arg::new(id);
 
-        if let Some(long) = long_bare {
-            clap_arg = clap_arg.long(long);
+        if let Some(long) = &long_bare {
+            clap_arg = clap_arg.long(leak_string(long.clone()));
         }
 
         if let Some(short) = &arg.short {
             if let Some(c) = short.trim_start_matches('-').chars().next() {
-                clap_arg = clap_arg.short(c);
+                if used_short_flags.insert(c) {
+                    clap_arg = clap_arg.short(c);
+                } else {
+                    log::debug!(
+                        "comp-spec-synthesis: dropping duplicate short flag '-{}' for arg {:?}",
+                        c,
+                        id
+                    );
+                }
             }
         }
 
@@ -873,7 +911,7 @@ mod tests {
 Commands:
   set-agent-mode        Configure AI agent mode.
   create-prompt-widget  Create a custom prompt widget.
-  set-color             Configure the colour palette.
+  set-colour             Configure the colour palette.
   set-cursor            Configure the cursor appearance and animation.
   key                   Manage keybindings.
   dump-logs             Dump in-memory logs to file.
@@ -912,7 +950,7 @@ Options:
           Run matrix animation in the terminal background. Use `on` to always show it, `off` to disable it, or an integer number of seconds to show it after that many seconds of inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a value is equivalent to `on`
 
       --frame-rate <FPS>
-          Render frame rate in frames per second (1–120, default 30)
+          Render frame rate in frames per second (1–120, default 24)
 
       --mouse-mode <MODE>
           Mouse capture mode (disabled, simple, smart). Default is smart.
@@ -940,7 +978,7 @@ Read more at https://github.com/HalFrgrd/flyline
         let subs = subcommand_names(&cmd);
         assert!(subs.contains(&"set-agent-mode"));
         assert!(subs.contains(&"create-prompt-widget"));
-        assert!(subs.contains(&"set-color"));
+        assert!(subs.contains(&"set-colour"));
         assert!(subs.contains(&"key"));
         assert!(subs.contains(&"dump-logs"));
         assert!(subs.contains(&"stream-logs"));
@@ -1694,6 +1732,84 @@ Options:
         assert!(script.contains("greet"));
     }
 
+    #[test]
+    fn test_to_clap_command_drops_duplicate_short_flags() {
+        let cmd = Command {
+            name: Some("readelf".to_string()),
+            description: Some("A test tool with duplicate short flags.".to_string()),
+            args: vec![
+                Arg {
+                    long: Some("--debug-dump[a/".to_string()),
+                    short: Some("-w".to_string()),
+                    description: Some("DWARF debug dump selector.".to_string()),
+                    value_type: None,
+                    num_args: None,
+                },
+                Arg {
+                    long: Some("--debug-dump".to_string()),
+                    short: Some("-w".to_string()),
+                    description: Some("DWARF debug dump mode.".to_string()),
+                    value_type: Some("links".to_string()),
+                    num_args: None,
+                },
+            ],
+            subcommands: vec![],
+            author: None,
+        };
+
+        let mut clap_cmd = to_clap_command(&cmd);
+        let bin_name = clap_cmd.get_name().to_string();
+        let mut out = Vec::new();
+        clap_complete::generate(
+            clap_complete::Shell::Bash,
+            &mut clap_cmd,
+            &bin_name,
+            &mut out,
+        );
+        let script = String::from_utf8(out).expect("completion output is valid utf-8");
+        assert!(!script.is_empty());
+        assert!(script.contains("readelf"));
+    }
+
+    #[test]
+    fn test_to_clap_command_drops_duplicate_long_flags() {
+        let cmd = Command {
+            name: Some("readelf".to_string()),
+            description: Some("A test tool with duplicate long flags.".to_string()),
+            args: vec![
+                Arg {
+                    long: Some("--debug-dump".to_string()),
+                    short: Some("-w".to_string()),
+                    description: Some("DWARF debug dump selector.".to_string()),
+                    value_type: Some("a/".to_string()),
+                    num_args: None,
+                },
+                Arg {
+                    long: Some("--debug-dump".to_string()),
+                    short: None,
+                    description: Some("DWARF debug dump links mode.".to_string()),
+                    value_type: Some("links".to_string()),
+                    num_args: None,
+                },
+            ],
+            subcommands: vec![],
+            author: None,
+        };
+
+        let mut clap_cmd = to_clap_command(&cmd);
+        let bin_name = clap_cmd.get_name().to_string();
+        let mut out = Vec::new();
+        clap_complete::generate(
+            clap_complete::Shell::Bash,
+            &mut clap_cmd,
+            &bin_name,
+            &mut out,
+        );
+        let script = String::from_utf8(out).expect("completion output is valid utf-8");
+        assert!(!script.is_empty());
+        assert!(script.contains("readelf"));
+    }
+
     // ── git --help ───────────────────────────────────────────────────────────
     //
     // A simplified version of `git --help` using a standard Commands: section
@@ -2219,6 +2335,23 @@ Report bugs to <https://sourceware.org/bugzilla/>
         assert_eq!(
             arg_by_long(&cmd, "--hex-dump").and_then(|a| a.value_type.as_deref()),
             Some("number|name")
+        );
+    }
+
+    #[test]
+    fn test_parse_flag_tokens_ignores_multi_character_short_forms() {
+        let (short, long, value_type) = parse_flag_tokens("-wk --debug-dump=links");
+        assert_eq!(short, None);
+        assert_eq!(long.as_deref(), Some("--debug-dump"));
+        assert_eq!(value_type.as_deref(), Some("links"));
+
+        let (short, long, value_type) =
+            parse_flag_tokens("-U[dlexhi] --unicode=[default|locale|escape|hex|highlight|invalid]");
+        assert_eq!(short, None);
+        assert_eq!(long.as_deref(), Some("--unicode"));
+        assert_eq!(
+            value_type.as_deref(),
+            Some("[default|locale|escape|hex|highlight|invalid]")
         );
     }
 }

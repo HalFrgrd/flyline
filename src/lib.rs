@@ -120,7 +120,7 @@ struct FlylineArgs {
     /// value is equivalent to `on`.
     #[arg(long = "matrix-animation", default_missing_value = "on", num_args = 0..=1, value_parser = parse_matrix_animation)]
     matrix_animation: Option<settings::MatrixAnimation>,
-    /// Render frame rate in frames per second (1–120, default 30)
+    /// Render frame rate in frames per second (1–120, default 24)
     #[arg(long = "frame-rate", value_name = "FPS", value_parser = clap::value_parser!(u8).range(1..=120))]
     frame_rate: Option<u8>,
     /// Mouse capture mode (disabled, simple, smart). Default is smart.
@@ -284,12 +284,11 @@ enum Commands {
     ///   flyline set-color --default-theme light --matching-char "bold blue"
     ///   flyline set-color --recognised-command "green" --unrecognised-command "bold red"
     ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
-    ///   flyline set-color --key-sequence-style "dim"
-    #[command(name = "set-color", verbatim_doc_comment)]
-    SetColor {
+    #[command(name = "set-colour", verbatim_doc_comment)]
+    SetColour {
         /// Apply a built-in colour preset for dark or light terminals.
         #[arg(long = "default-theme", value_name = "MODE")]
-        default_theme: Option<settings::ColorTheme>,
+        default_theme: Option<settings::ColourTheme>,
         /// Style for recognised (valid) commands (e.g. "green").
         #[arg(long = "recognised-command", value_name = "STYLE")]
         recognised_command: Option<String>,
@@ -676,6 +675,22 @@ enum PromptWidgetSubcommands {
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
+fn catch_unwind_safe<T>(f: impl FnOnce() -> T) -> Result<T, ()> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).map_err(|_| ())
+}
+
+fn report_stderr_no_panic(message: &str) {
+    let _ = catch_unwind_safe(|| {
+        eprintln!("{message}");
+    });
+}
+
+fn report_error_no_panic(message: &str) {
+    let _ = catch_unwind_safe(|| {
+        log::error!("{message}");
+    });
+}
+
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
     if let Some(boxed) = FLYLINE_INSTANCE_PTR
@@ -683,10 +698,23 @@ extern "C" fn flyline_get_char() -> c_int {
         .unwrap_or_else(|e| e.into_inner())
         .as_mut()
     {
-        return boxed.get();
+        match catch_unwind_safe(|| boxed.get()) {
+            Ok(c) => c,
+            Err(_) => {
+                // writing to stderr can panic if master pty side has been closed.
+                report_stderr_no_panic(
+                    "flyline: app panicked; recovering with empty command. Please create an issue with the steps to reproduce at https://github.com/HalFrgrd/flyline/issues.",
+                );
+                report_error_no_panic("app panicked; recovering with empty command");
+
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                bash_symbols::EOF
+            }
+        }
+    } else {
+        report_stderr_no_panic("flyline_get_char: FLYLINE_INSTANCE_PTR is None");
+        bash_symbols::EOF
     }
-    eprintln!("flyline_get_char: FLYLINE_INSTANCE_PTR is None");
-    bash_symbols::EOF
 }
 
 // C-compatible ungetter function that bash will call
@@ -696,14 +724,21 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
         .unwrap_or_else(|e| e.into_inner())
         .as_mut()
     {
-        return boxed.unget(c);
+        return match catch_unwind_safe(|| boxed.unget(c)) {
+            Ok(unget_char) => unget_char,
+            Err(_) => {
+                report_stderr_no_panic("flyline: unget handler panicked; ignoring.");
+                report_error_no_panic("flyline_unget_char panicked; returning original character");
+                c
+            }
+        };
     }
-    eprintln!("flyline_unget_char: FLYLINE_INSTANCE_PTR is None");
+    report_stderr_no_panic("flyline_unget_char: FLYLINE_INSTANCE_PTR is None");
     c
 }
 
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let result = catch_unwind_safe(|| {
         if let Some(boxed) = FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -711,14 +746,14 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
         {
             return boxed.call(words);
         }
-        eprintln!("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
+        report_stderr_no_panic("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
         0
-    }));
+    });
     match result {
         Ok(code) => code,
         Err(_) => {
-            eprintln!("flyline: command handler panicked; ignoring.");
-            log::error!("flyline_call_command panicked; returning failure");
+            report_stderr_no_panic("flyline: command handler panicked; ignoring.");
+            report_error_no_panic("flyline_call_command panicked; returning failure");
             bash_symbols::BuiltinExitCode::Usage as c_int
         }
     }
@@ -961,7 +996,7 @@ impl Flyline {
                             );
                         }
                     },
-                    Some(Commands::SetColor {
+                    Some(Commands::SetColour {
                         default_theme,
                         recognised_command,
                         unrecognised_command,
@@ -982,8 +1017,8 @@ impl Flyline {
                         key_sequence_style,
                     }) => {
                         if let Some(preset) = default_theme {
-                            self.settings.color_palette.apply_theme(preset);
-                            log::info!("Color theme set to {:?}", self.settings.color_theme);
+                            self.settings.colour_palette.apply_theme(preset);
+                            log::info!("Colour theme set to {:?}", self.settings.colour_theme);
                         }
 
                         let style_overrides: &[(
@@ -1044,12 +1079,12 @@ impl Flyline {
                             if let Some(style_str) = opt {
                                 match palette::parse_str_to_style(style_str) {
                                     Ok(style) => {
-                                        setter(&mut self.settings.color_palette, style);
+                                        setter(&mut self.settings.colour_palette, style);
                                         log::info!("{} style set to {:?}", flag_name, style_str);
                                     }
                                     Err(e) => {
                                         eprintln!(
-                                            "flyline set-color: invalid --{} style {:?}: {}",
+                                            "flyline set-colour: invalid --{} style {:?}: {}",
                                             flag_name, style_str, e
                                         );
                                         return bash_symbols::BuiltinExitCode::Usage as c_int;
@@ -1143,7 +1178,11 @@ impl Flyline {
                     }
                     Some(Commands::CompSpecSynthesis { command }) => {
                         match comp_spec_synthesis::synthesize_completion(&command, |args| {
-                            comp_spec_synthesis::run_help(&command, args)
+                            let prev_sigchld =
+                                unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+                            let ret = comp_spec_synthesis::run_help(&command, args);
+                            unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
+                            ret
                         }) {
                             Ok(parsed_cmd) => {
                                 let cmd_name = std::path::Path::new(&command)
@@ -1381,9 +1420,7 @@ impl Flyline {
             // thread depends on SIGCHLD disposition at this instant.
             let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
 
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                app::get_command(&mut self.settings)
-            }));
+            let result = app::get_command(&mut self.settings);
 
             unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 
@@ -1401,7 +1438,7 @@ impl Flyline {
             // }
 
             self.content = match result {
-                Ok(app::ExitState::WithCommand(cmd)) => {
+                app::ExitState::WithCommand(cmd) => {
                     if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
                         self.settings.tutorial_step.next();
                         log::info!(
@@ -1414,19 +1451,11 @@ impl Flyline {
                     }
                     cmd.into_bytes()
                 }
-                Ok(app::ExitState::EOF) => {
+                app::ExitState::EOF => {
                     log::info!("App signaled EOF");
                     return bash_symbols::EOF;
                 }
-                Ok(app::ExitState::WithoutCommand) => vec![],
-                Err(_) => {
-                    eprintln!(
-                        "flyline: app panicked; recovering with empty command. Please create an issue with the steps to reproduce at https://github.com/HalFrgrd/flyline/issues."
-                    );
-                    log::error!("app panicked; recovering with empty command");
-                    std::thread::sleep(std::time::Duration::from_millis(1000));
-                    vec![]
-                }
+                app::ExitState::WithoutCommand => vec![],
             };
             log::info!("---------------------- App finished ------------------------");
             self.content.push(b'\n');
@@ -1481,6 +1510,9 @@ fn flyline_builtin_load_ctor() {
 pub extern "C" fn flyline_builtin_load(_arg: *const c_char) -> c_int {
     flyline_load_common()
 }
+
+const FLYLINE_ENV_VAR_NAME: &str = "FLYLINE_VERSION";
+const FLYLINE_ENV_VAR_VALUE: &str = env!("CARGO_PKG_VERSION");
 
 fn flyline_load_common() -> c_int {
     log::info!("flyline_builtin_load called, initializing flyline");
@@ -1548,6 +1580,14 @@ fn flyline_load_common() -> c_int {
         *FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(Box::new(Flyline::new()));
+
+        bash_funcs::set_env_var(FLYLINE_ENV_VAR_NAME, FLYLINE_ENV_VAR_VALUE).unwrap_or_else(|e| {
+            log::error!(
+                "Failed to set environment variable '{}': {}",
+                FLYLINE_ENV_VAR_NAME,
+                e
+            );
+        });
     };
 
     unsafe {
@@ -1628,8 +1668,17 @@ fn flyline_load_common() -> c_int {
 // Maybe I could use a fini_array function to unload, but I doubt its worth the effort.
 #[cfg(not(feature = "pre_bash_4_4"))]
 #[unsafe(no_mangle)]
-pub extern "C" fn flyline_builtin_unload_common() {
+pub extern "C" fn flyline_builtin_unload() {
     log::info!("flyline_builtin_unload called, unloading flyline");
+
+    bash_funcs::unset_env_var(FLYLINE_ENV_VAR_NAME).unwrap_or_else(|e| {
+        log::error!(
+            "Failed to unset environment variable '{}': {}",
+            FLYLINE_ENV_VAR_NAME,
+            e
+        );
+    });
+
     let had_instance = FLYLINE_INSTANCE_PTR
         .lock()
         .unwrap_or_else(|e| e.into_inner())

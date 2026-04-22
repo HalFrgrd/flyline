@@ -1,7 +1,7 @@
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::cursor::CursorStyleConfig;
-use crate::settings::ColorTheme;
+use crate::settings::ColourTheme;
 
 /// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
 /// Returns an error message if the string cannot be parsed.
@@ -311,18 +311,18 @@ impl Palette {
     /// Light-terminal defaults.
     pub fn light() -> Self {
         Palette {
-            recognised_command: Style::default().fg(Color::DarkGray),
+            recognised_command: Style::default().fg(Color::Green).bold(),
             recognised_command_override: None,
-            unrecognised_command: Style::default().fg(Color::Red),
+            unrecognised_command: Style::default().fg(Color::Red).bold(),
             unrecognised_command_override: None,
-            single_quoted_text: Style::default().fg(Color::Yellow),
+            single_quoted_text: Style::default().fg(Color::Magenta),
             single_quoted_text_override: None,
             double_quoted_text: Style::default().fg(Color::Magenta),
             double_quoted_text_override: None,
-            secondary_text: Style::default().fg(Color::DarkGray),
+            secondary_text: Style::default().dim().bold(),
             secondary_text_override: None,
             inline_suggestion: Style::default()
-                .fg(Color::DarkGray)
+                .fg(Color::Blue)
                 .add_modifier(Modifier::ITALIC),
             inline_suggestion_override: None,
             tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
@@ -365,10 +365,10 @@ impl Palette {
 
     /// Apply a new theme preset to the default style values, leaving any
     /// user-specified overrides intact.
-    pub fn apply_theme(&mut self, mode: ColorTheme) {
+    pub fn apply_theme(&mut self, mode: ColourTheme) {
         let template = match mode {
-            ColorTheme::Dark => Self::dark(),
-            ColorTheme::Light => Self::light(),
+            ColourTheme::Dark => Self::dark(),
+            ColourTheme::Light => Self::light(),
         };
         self.recognised_command = template.recognised_command;
         self.unrecognised_command = template.unrecognised_command;

@@ -40,7 +40,7 @@ flyline create-prompt-widget animation --name "john" --ping-pong --fps 3 \
 
 
 # Experiment with higher frame rates for smooth transitions:
-flyline create-prompt-widget animation --name "john" --fps 30 \
+flyline create-prompt-widget animation --name "john" --fps 24 \
     '\e[38;2;255;0;0m\u' \
     '\e[38;2;255;16;0m\u' \
     '\e[38;2;255;32;0m\u' \

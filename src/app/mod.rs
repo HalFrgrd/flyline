@@ -385,23 +385,29 @@ impl<'a> App<'a> {
             cursor: Cursor::new(),
             term_has_focus: true,
             unfinished_from_prev_command,
-            prompt_manager: PromptManager::new(
-                unfinished_from_prev_command,
-                &settings
-                    .custom_animations
-                    .values()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                &settings
-                    .custom_prompt_widgets
-                    .values()
-                    .cloned()
-                    .collect::<Vec<_>>(),
+            prompt_manager: time_it!(
+                "startup: prompt manager",
+                PromptManager::new(
+                    unfinished_from_prev_command,
+                    &settings
+                        .custom_animations
+                        .values()
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    &settings
+                        .custom_prompt_widgets
+                        .values()
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                )
             ),
-            history_manager: HistoryManager::new(settings),
+            history_manager: time_it!("startup: history manager", HistoryManager::new(settings)),
             buffer_before_history_navigation: None,
             inline_history_suggestion: None,
-            mouse_state: MouseState::initialize(&settings.mouse_mode),
+            mouse_state: time_it!(
+                "startup: mouse state",
+                MouseState::initialize(&settings.mouse_mode)
+            ),
             content_mode: ContentMode::Normal,
             last_contents: None,
             last_mouse_over_cell: None,
@@ -535,7 +541,7 @@ impl<'a> App<'a> {
                     Ok(raw_output) => match parse_ai_output(&raw_output) {
                         Ok(parsed) => {
                             self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.color_palette),
+                                AiOutputSelection::new(parsed, &self.settings.colour_palette),
                             );
                         }
                         Err(e) => {
@@ -1279,7 +1285,7 @@ impl<'a> App<'a> {
             self.buffer.cursor_byte_pos(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
-            &self.settings.color_palette,
+            &self.settings.colour_palette,
         );
 
         self.tooltip = None;
@@ -1500,7 +1506,7 @@ impl<'a> App<'a> {
             } else if let Some(tutorial_tagged_lines) = crate::tutorial::generate_tutorial_text(
                 &self.settings,
                 self.settings.tutorial_step,
-                &self.settings.color_palette,
+                &self.settings.colour_palette,
             ) {
                 const BUTTON_HEIGHT: u16 = 30;
 
@@ -1697,7 +1703,7 @@ impl<'a> App<'a> {
                 content.newline();
                 let ps2 = Span::styled(
                     format!("{}∙", line_idx + 1),
-                    self.settings.color_palette.secondary_text(),
+                    self.settings.colour_palette.secondary_text(),
                 );
                 content.write_tagged_span(&TaggedSpan::new(ps2, Tag::Ps2Prompt));
             }
@@ -1761,7 +1767,7 @@ impl<'a> App<'a> {
                     content.write_tagged_span_dont_overwrite(
                         &TaggedSpan::new(
                             Span::from(line.to_owned())
-                                .style(self.settings.color_palette.secondary_text()),
+                                .style(self.settings.colour_palette.secondary_text()),
                             Tag::HistorySuggestion,
                         ),
                         None,
@@ -1777,7 +1783,7 @@ impl<'a> App<'a> {
                         content.write_tagged_span_dont_overwrite(
                             &TaggedSpan::new(
                                 Span::from(extra_info_text)
-                                    .style(self.settings.color_palette.inline_suggestion()),
+                                    .style(self.settings.colour_palette.inline_suggestion()),
                                 Tag::HistorySuggestion,
                             ),
                             None,
@@ -1788,7 +1794,7 @@ impl<'a> App<'a> {
                                 &TaggedSpan::new(
                                     Span::styled(
                                         " 💡 Press → or End to accept",
-                                        self.settings.color_palette.tutorial_hint(),
+                                        self.settings.colour_palette.tutorial_hint(),
                                     ),
                                     Tag::Tutorial,
                                 ),
@@ -1825,7 +1831,7 @@ impl<'a> App<'a> {
                     let grid = active_suggestions.into_grid(
                         num_rows_for_suggestions as usize,
                         width as usize,
-                        &self.settings.color_palette,
+                        &self.settings.colour_palette,
                     );
 
                     for row_idx in 0..grid[0].items.len() {
@@ -1864,7 +1870,7 @@ impl<'a> App<'a> {
                             active_suggestions.all_suggestions_len(),
                             active_suggestions.load_time.as_millis(),
                         ),
-                        self.settings.color_palette.secondary_text(),
+                        self.settings.colour_palette.secondary_text(),
                     ),
                     Tag::TabSuggestion,
                 ));
@@ -1874,7 +1880,7 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         "Loading completions…",
-                        self.settings.color_palette.secondary_text(),
+                        self.settings.colour_palette.secondary_text(),
                     ),
                     Tag::Normal,
                 ));
@@ -1935,7 +1941,7 @@ impl<'a> App<'a> {
                         num_digits_for_score,
                         header_prefix_width,
                         available_cols,
-                        &self.settings.color_palette,
+                        &self.settings.colour_palette,
                     ) {
                         content.newline();
                         content.write_tagged_line(
@@ -1954,7 +1960,7 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!("# {}: {}/{}", source.label(), num_results, num_searched),
-                        self.settings.color_palette.secondary_text(),
+                        self.settings.colour_palette.secondary_text(),
                     ),
                     Tag::FuzzySearch,
                 ));
@@ -1964,7 +1970,7 @@ impl<'a> App<'a> {
                     content.newline();
                     let tooltip_line = Line::from(Span::styled(
                         tooltip.clone(),
-                        self.settings.color_palette.secondary_text(),
+                        self.settings.colour_palette.secondary_text(),
                     ));
 
                     let max_tool_tip_rows: u16 = 3;
@@ -1989,7 +1995,7 @@ impl<'a> App<'a> {
                             content.set_cursor_col(last_col);
                         }
                         content.write_tagged_span(&TaggedSpan::new(
-                            Span::styled("…", self.settings.color_palette.secondary_text()),
+                            Span::styled("…", self.settings.colour_palette.secondary_text()),
                             Tag::Tooltip,
                         ));
                     }
@@ -2005,7 +2011,7 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!("Running: {} [{}s]", command_display, elapsed_secs),
-                        self.settings.color_palette.secondary_text(),
+                        self.settings.colour_palette.secondary_text(),
                     ),
                     Tag::Normal,
                 ));
@@ -2024,11 +2030,11 @@ impl<'a> App<'a> {
                     let indicator = if is_selected { "▐" } else { " " };
                     let indicator_style = if is_selected {
                         self.settings
-                            .color_palette
+                            .colour_palette
                             .matching_char()
                             .remove_modifier(Modifier::UNDERLINED)
                     } else {
-                        self.settings.color_palette.secondary_text()
+                        self.settings.colour_palette.secondary_text()
                     };
                     content.write_tagged_span(&TaggedSpan::new(
                         Span::styled(indicator, indicator_style),
@@ -2036,9 +2042,9 @@ impl<'a> App<'a> {
                     ));
                     // Description line
                     let desc_style = if is_selected {
-                        Palette::convert_to_selected(self.settings.color_palette.secondary_text())
+                        Palette::convert_to_selected(self.settings.colour_palette.secondary_text())
                     } else {
-                        self.settings.color_palette.secondary_text()
+                        self.settings.colour_palette.secondary_text()
                     };
                     content.write_tagged_span(&TaggedSpan::new(
                         Span::styled(suggestion.description.clone(), desc_style),
@@ -2062,7 +2068,7 @@ impl<'a> App<'a> {
                         cmd.len(),
                         cmd.len(),
                         false,
-                        &self.settings.color_palette,
+                        &self.settings.colour_palette,
                     );
                     for part in &formatted_cmd.parts {
                         if matches!(part.token.token.kind, TokenKind::Newline) {
@@ -2109,7 +2115,7 @@ impl<'a> App<'a> {
                                 "Press Enter to launch agent mode with this prefixed buffer: {}",
                                 suggested
                             ),
-                            self.settings.color_palette.secondary_text(),
+                            self.settings.colour_palette.secondary_text(),
                         ),
                         Tag::Normal,
                     ));
@@ -2120,7 +2126,7 @@ impl<'a> App<'a> {
                             content.write_tagged_span(&TaggedSpan::new(
                                 Span::styled(
                                     line.to_string(),
-                                    self.settings.color_palette.secondary_text(),
+                                    self.settings.colour_palette.secondary_text(),
                                 ),
                                 Tag::Normal,
                             ));
@@ -2133,7 +2139,7 @@ impl<'a> App<'a> {
                         "Press Enter to run `flyline set-agent-mode --help`.".to_string()
                     };
                     content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(hint, self.settings.color_palette.secondary_text()),
+                        Span::styled(hint, self.settings.colour_palette.secondary_text()),
                         Tag::Blank,
                     ));
                 }

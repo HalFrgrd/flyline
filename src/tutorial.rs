@@ -298,7 +298,7 @@ pub fn generate_tutorial_text(
                 ),
             ]));
             lines.push(tl(Span::styled(
-                "• Exit the tutorial at any time with `flyline --run-tutorial false`.",
+                "• Exit the tutorial at any time with `flyline run-tutorial false`.",
                 text_style,
             )));
             lines.push(tl(Span::styled(
@@ -417,7 +417,7 @@ pub fn generate_tutorial_text(
             {
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
                 lines.push(tl(Span::styled(
-                    "💡 Consider display the mouse capture mode in your right prompt:",
+                    "💡 Consider displaying the mouse capture mode in your right prompt:",
                     text_style,
                 )));
                 lines.push(TaggedLine::from(vec![
@@ -537,35 +537,35 @@ pub fn generate_tutorial_text(
             lines.push(tl(Span::styled("Setting Theme Colours", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Customise your colour theme with the `flyline set-color` command.",
+                "Customise your colour theme with the `flyline set-colour` command.",
                 text_style,
             )));
             lines.push(tl(Span::styled("Examples:", text_style)));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline set-color --default-theme dark".to_string(),
+                    "flyline set-colour --default-theme dark".to_string(),
                     ClipboardTypes::TutorialSetColor1,
                 ),
             ]));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline set-color --default-theme light".to_string(),
+                    "flyline set-colour --default-theme light".to_string(),
                     ClipboardTypes::TutorialSetColor2,
                 ),
             ]));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline set-color --matching-char \"bold green\"".to_string(),
+                    "flyline set-colour --matching-char \"bold green\"".to_string(),
                     ClipboardTypes::TutorialSetColor3,
                 ),
             ]));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline set-color --recognised-command \"green\" --unrecognised-command \"bold red\"".to_string(),
+                    "flyline set-colour --recognised-command \"green\" --unrecognised-command \"bold red\"".to_string(),
                     ClipboardTypes::TutorialSetColor4,
                 ),
             ]));
@@ -573,7 +573,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("Run ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline set-color --help".to_string(),
+                    "flyline set-colour --help".to_string(),
                     ClipboardTypes::TutorialSetColor5,
                 ),
                 TaggedSpan::new(
