@@ -1,3 +1,5 @@
+use crate::active_suggestions::ANIMATION_FRAME_FPS;
+use crate::unicode_helpers::{BRAILLE_BLANK, BrailleDots, OctantDots, OctantStyle, octant};
 use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;
@@ -354,12 +356,6 @@ pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
     format!("{:>5}", s.trim_start_matches('0'))
 }
 
-/// Total width (in terminal columns) of the easing-function dot animation.
-const EASING_ANIM_TOTAL_WIDTH: usize = 7;
-
-/// Number of frames in each half of the ping-pong animation (forward + backward).
-const EASING_ANIM_HALF_FRAMES: usize = 16;
-
 /// Convert an ANSI-escaped string into a flat list of styled [`Span`]s.
 ///
 /// The string is parsed through [`ansi_to_tui`] so that ANSI colour/style
@@ -375,39 +371,58 @@ pub fn ansi_string_to_spans(s: &str) -> Vec<Span<'static>> {
 }
 
 /// Build the ping-pong animation frames for the given easing function.
-///
-/// Returns `2 * EASING_ANIM_HALF_FRAMES - 2` frames showing a dot (`·`) that
-/// travels from the left edge to the right and back, using `easing` for the
-/// position curve in both directions.  Each frame is a `Vec<Span<'static>>`.
 pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> {
-    let half = EASING_ANIM_HALF_FRAMES;
-    let dot_range = (EASING_ANIM_TOTAL_WIDTH - 1) as f32;
-    let total_frames = half * 2 - 2;
-    let mut frames = Vec::with_capacity(total_frames);
+    /// Total width (in terminal columns) of the easing-function dot animation.
+    const EASING_ANIM_TOTAL_WIDTH: usize = 10;
 
-    let make_frame = |pos: usize| -> Vec<Span<'static>> {
+    /// Easing preview cycle frequency in hertz.
+    const EASING_ANIM_TARGET_HZ: f32 = 0.4;
+
+    /// Inner boundary start column (inclusive) that represents easing value 0.0.
+    const EASING_ANIM_BOUNDARY_START: isize = 1;
+
+    /// Inner boundary end column (inclusive) that represents easing value 1.0.
+    const EASING_ANIM_BOUNDARY_END: isize = EASING_ANIM_TOTAL_WIDTH as isize - 2;
+
+    fn braille_char(dots: BrailleDots) -> char {
+        octant(OctantDots::from_braille(dots), OctantStyle::Braille).unwrap_or(BRAILLE_BLANK)
+    }
+
+    let cycle_frames =
+        ((ANIMATION_FRAME_FPS as f32 / EASING_ANIM_TARGET_HZ).round() as usize).max(2);
+    let dot_range = (EASING_ANIM_BOUNDARY_END - EASING_ANIM_BOUNDARY_START) as f32;
+    let mut frames = Vec::with_capacity(cycle_frames);
+
+    let boundary_bits = (BrailleDots::DOT_1 | BrailleDots::DOT_3).0;
+    let marker_bits = BrailleDots::DOT_2.0;
+
+    let make_frame = |pos: isize| -> Vec<Span<'static>> {
         let mut s = String::with_capacity(EASING_ANIM_TOTAL_WIDTH);
+        let mut cells = [0u8; EASING_ANIM_TOTAL_WIDTH];
+
         for j in 0..EASING_ANIM_TOTAL_WIDTH {
-            if j == pos {
-                s.push('·');
-            } else {
-                s.push(' ');
+            let j = j as isize;
+            if j == EASING_ANIM_BOUNDARY_START || j == EASING_ANIM_BOUNDARY_END {
+                cells[j as usize] = boundary_bits;
             }
         }
+
+        let clamped_pos = pos.clamp(0, EASING_ANIM_TOTAL_WIDTH as isize - 1) as usize;
+        cells[clamped_pos] |= marker_bits;
+
+        for bits in cells {
+            s.push(braille_char(BrailleDots(bits)));
+        }
+
         vec![Span::raw(s)]
     };
 
-    // Forward: t goes 0 → 1
-    for i in 0..half {
-        let t = i as f32 / (half - 1) as f32;
-        let pos = (easing.apply(t) * dot_range).round() as usize;
-        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
-    }
-    // Backward: t goes from the second-to-last back to 0 (skip first and last to avoid repeats)
-    for i in (1..half - 1).rev() {
-        let t = i as f32 / (half - 1) as f32;
-        let pos = (easing.apply(t) * dot_range).round() as usize;
-        frames.push(make_frame(pos.min(EASING_ANIM_TOTAL_WIDTH - 1)));
+    // Forward only: t goes 0 → 1
+    for i in 0..cycle_frames {
+        let t = i as f32 / (cycle_frames - 1) as f32;
+        let pos =
+            (EASING_ANIM_BOUNDARY_START as f32 + easing.apply(t) * dot_range).round() as isize;
+        frames.push(make_frame(pos));
     }
 
     frames

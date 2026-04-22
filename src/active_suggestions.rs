@@ -21,9 +21,6 @@ use unicode_width::UnicodeWidthStr;
 pub(crate) const COLUMN_PADDING: usize = 2;
 
 /// Describes what to display alongside a suggestion as a visual suffix.
-///
-/// The priority when choosing which variant to use (in `post_process_completion`) is:
-/// `LastMTime` > `EasingFunc` > `Animation` > `Static`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SuggestionDescription {
     /// Pre-processed spans for a single static description.  An empty vec
@@ -685,10 +682,6 @@ pub fn post_process_completion(
         .map(|d| d.as_secs());
 
     // Determine description type by priority:
-    // 1. LastMTime (filename completion with available mtime)
-    // 2. EasingFunc (suggestion name is a CursorEasing value)
-    // 3. Animation (tab-separated frames in the raw completion string)
-    // 4. Static (empty — no description)
     let description = if let Some(ts) = mtime {
         SuggestionDescription::LastMTime(ts)
     } else if let Some(easing) = CursorEasing::try_from_value_name(&sug) {
