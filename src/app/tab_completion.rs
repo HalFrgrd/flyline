@@ -232,17 +232,6 @@ fn post_process_completions(
         .collect()
 }
 
-/// Returns the last `--long-option` flag found in `cmd_before_cursor`.
-///
-/// Used to detect which flag's value is currently being completed so that
-/// animated descriptions can be tailored to the flag (e.g. `--effect-easing`
-/// or `--interpolate-easing`).
-fn preceding_flyline_flag(cmd_before_cursor: &str) -> Option<&str> {
-    cmd_before_cursor
-        .split_whitespace()
-        .rfind(|w| w.starts_with("--"))
-}
-
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
     cursor_config: &crate::cursor::CursorConfig,
@@ -251,239 +240,257 @@ pub(crate) fn gen_completions_internal(
 
     let word_under_cursor = &completion_context.word_under_cursor;
 
-    match &completion_context.comp_type {
-        tab_completion_context::CompType::FirstWord => {
-            let completions = tab_complete_first_word(word_under_cursor.as_ref());
-            log::debug!("Primary completions for first word: {:?}", completions);
-            if !completions.is_empty() {
-                return Some(completions);
-            }
-        }
-        tab_completion_context::CompType::CommandComp {
-            command_word: initial_command_word,
-        } => {
-            // This isn't just for commands like `git`, `cargo`
-            // Because we call bash_symbols::programmable_completions
-            // Bash also completes env vars (`echo $HO`) and other useful completions.
-            // Bash doesn't handle alias expansion well:
-            // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
-            // Since aliases are the highest priority in command word resolution,
-            // If it is an alias, lets expand it here for better completion results.
-            let AliasExpandedCompletion {
-                command_word,
-                full_command,
-                cursor_byte_pos,
-                word_under_cursor_end,
-            } = expand_alias_for_completion(
-                initial_command_word.to_string(),
-                word_under_cursor,
-                completion_context.context.as_ref(),
-                completion_context.context_until_cursor.as_ref(),
-            );
+    let mut comp_res_flags = bash_funcs::CompletionFlags::default();
 
-            if command_word == "flyline" {
-                // Flyline's own subcommand/flag completions are produced by
-                // clap_complete and are already escaped/finalized. Skip the
-                // bash post-processing pipeline entirely and build
-                // ProcssedSuggestions directly so descriptions (the help text
-                // attached to each candidate) are preserved as-is.
-                match complete_flyline_args(&full_command, cursor_byte_pos) {
-                    Ok(candidates) if !candidates.is_empty() => {
-                        let flag = preceding_flyline_flag(&full_command[..cursor_byte_pos]);
-                        let suggestions: Vec<MaybeProcessedSuggestion> = candidates
-                            .into_iter()
-                            .map(|c| {
-                                let value = c.get_value().to_string_lossy().to_string();
-                                let help_description = || {
-                                    let help = c
-                                        .get_help()
-                                        .map(|h| h.to_string())
-                                        .filter(|h| !h.is_empty());
-                                    match help {
-                                        Some(h) => SuggestionDescription::Animation(vec![
-                                            ansi_string_to_spans(&h),
-                                        ]),
-                                        None => SuggestionDescription::Static(vec![]),
-                                    }
-                                };
-                                let description =
-                                    match (flag, CursorEasing::try_from_value_name(&value)) {
-                                        (Some("--effect-easing"), Some(easing)) => {
-                                            SuggestionDescription::Animation(
-                                                cursor_effect_animation_frames(
-                                                    easing,
-                                                    cursor_config.effect_speed,
-                                                ),
-                                            )
-                                        }
-                                        (Some("--interpolate-easing"), Some(easing)) => {
-                                            SuggestionDescription::Animation(
-                                                easing_animation_frames(easing),
-                                            )
-                                        }
-                                        _ => help_description(),
-                                    };
-                                let suffix = if value.ends_with('+') { "" } else { " " };
-                                MaybeProcessedSuggestion::Ready(
-                                    ProcssedSuggestion::new(&value, "", suffix)
-                                        .with_description(description),
-                                )
-                            })
-                            .collect();
-                        return Some(suggestions);
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        log::error!("Error generating flyline completions: {}", e);
-                    }
+    for comp_type in &completion_context.comp_types {
+        log::debug!("Processing completion type: {:?}", comp_type);
+        match comp_type {
+            tab_completion_context::CompType::FirstWord => {
+                log::debug!("First word completion for: {:?}", word_under_cursor);
+                let completions = tab_complete_first_word(word_under_cursor.as_ref());
+                if completions.is_empty() {
+                    log::debug!(
+                        "No first word completions found for prefix: {}",
+                        word_under_cursor.as_ref()
+                    );
+                } else {
+                    return Some(completions);
                 }
-            } else {
-                let poss_completions = bash_funcs::run_programmable_completions(
-                    &full_command,
-                    &command_word,
-                    word_under_cursor.as_ref(),
+            }
+            tab_completion_context::CompType::CommandComp {
+                command_word: initial_command_word,
+            } => {
+                // This isn't just for commands like `git`, `cargo`
+                // Because we call bash_symbols::programmable_completions
+                // Bash also completes env vars (`echo $HO`) and other useful completions.
+                // Bash doesn't handle alias expansion well:
+                // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
+                // Since aliases are the highest priority in command word resolution,
+                // If it is an alias, lets expand it here for better completion results.
+                let AliasExpandedCompletion {
+                    command_word,
+                    full_command,
                     cursor_byte_pos,
                     word_under_cursor_end,
+                } = expand_alias_for_completion(
+                    initial_command_word.to_string(),
+                    word_under_cursor,
+                    completion_context.context.as_ref(),
+                    completion_context.context_until_cursor.as_ref(),
                 );
 
-                match poss_completions {
-                    Ok(comp_result) if !comp_result.completions.is_empty() => {
-                        log::debug!(
-                            "Programmable completion results for command: {}",
-                            full_command
-                        );
-                        log::debug!("Completions: {:#?}", comp_result);
+                if command_word == "flyline" {
+                    // Flyline's own subcommand/flag completions are produced by
+                    // clap_complete and are already escaped/finalized. Skip the
+                    // bash post-processing pipeline entirely and build
+                    // ProcssedSuggestions directly so descriptions (the help text
+                    // attached to each candidate) are preserved as-is.
+                    match complete_flyline_args(&full_command, cursor_byte_pos) {
+                        Ok(candidates) if !candidates.is_empty() => {
+                            fn preceding_flyline_flag(cmd_before_cursor: &str) -> Option<&str> {
+                                cmd_before_cursor
+                                    .split_whitespace()
+                                    .rfind(|w| w.starts_with("--"))
+                            }
 
-                        let suggestions = post_process_completions(
-                            comp_result.completions,
-                            comp_result.flags,
-                            word_under_cursor.as_ref(),
-                        );
-                        return Some(suggestions);
+                            let flag = preceding_flyline_flag(&full_command[..cursor_byte_pos]);
+                            let suggestions: Vec<MaybeProcessedSuggestion> = candidates
+                                .into_iter()
+                                .map(|c| {
+                                    let value = c.get_value().to_string_lossy().to_string();
+                                    let help_description = || {
+                                        let help = c
+                                            .get_help()
+                                            .map(|h| h.to_string())
+                                            .filter(|h| !h.is_empty());
+                                        match help {
+                                            Some(h) => SuggestionDescription::Animation(vec![
+                                                ansi_string_to_spans(&h),
+                                            ]),
+                                            None => SuggestionDescription::Static(vec![]),
+                                        }
+                                    };
+                                    let description =
+                                        match (flag, CursorEasing::try_from_value_name(&value)) {
+                                            (Some("--effect-easing"), Some(easing)) => {
+                                                SuggestionDescription::Animation(
+                                                    cursor_effect_animation_frames(
+                                                        easing,
+                                                        cursor_config.effect_speed,
+                                                    ),
+                                                )
+                                            }
+                                            (Some("--interpolate-easing"), Some(easing)) => {
+                                                SuggestionDescription::Animation(
+                                                    easing_animation_frames(easing),
+                                                )
+                                            }
+                                            _ => help_description(),
+                                        };
+                                    let suffix = if value.ends_with('+') { "" } else { " " };
+                                    MaybeProcessedSuggestion::Ready(
+                                        ProcssedSuggestion::new(&value, "", suffix)
+                                            .with_description(description),
+                                    )
+                                })
+                                .collect();
+                            return Some(suggestions);
+                        }
+                        Ok(_) => {
+                            log::debug!(
+                                "No flyline completions found for command '{}'",
+                                full_command
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("Error generating flyline completions: {}", e);
+                        }
                     }
-                    Ok(comp_result) => {
-                        // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
-                        // Always try to produce secondary completions
-                        return gen_secondary_completions(completion_context, comp_result.flags);
+                } else {
+                    let poss_completions = bash_funcs::run_programmable_completions(
+                        &full_command,
+                        &command_word,
+                        word_under_cursor.as_ref(),
+                        cursor_byte_pos,
+                        word_under_cursor_end,
+                    );
+
+                    match poss_completions {
+                        Ok(comp_result) if !comp_result.completions.is_empty() => {
+                            log::debug!(
+                                "Programmable completion results for command: {}",
+                                full_command
+                            );
+                            log::debug!("Completions: {:#?}", comp_result);
+
+                            let suggestions = post_process_completions(
+                                comp_result.completions,
+                                comp_result.flags,
+                                word_under_cursor.as_ref(),
+                            );
+                            return Some(suggestions);
+                        }
+                        Ok(comp_result) => {
+                            // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
+                            // Always try to produce secondary completions
+                            comp_res_flags = comp_result.flags;
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
-        }
-    }
 
-    log::debug!(
-        "No programmable completions found completion_context: {:#?}. Falling back to secondary completions.",
-        completion_context
-    );
-
-    gen_secondary_completions(completion_context, bash_funcs::CompletionFlags::default())
-}
-
-fn gen_secondary_completions(
-    completion_context: &tab_completion_context::CompletionContext,
-    comp_resultflags: bash_funcs::CompletionFlags,
-) -> Option<Vec<MaybeProcessedSuggestion>> {
-    let word_under_cursor = completion_context.word_under_cursor.as_ref();
-    match completion_context.comp_type_secondary {
-        Some(tab_completion_context::SecondaryCompType::EnvVariable) => {
-            log::debug!("Environment variable completion {:?}", word_under_cursor);
-            let matching_vars = bash_funcs::get_all_variables_with_prefix(word_under_cursor);
-            return Some(
-                ProcssedSuggestion::from_string_vec(matching_vars, "", " ")
-                    .into_iter()
-                    .map(MaybeProcessedSuggestion::Ready)
-                    .collect(),
-            );
-        }
-        Some(tab_completion_context::SecondaryCompType::TildeExpansion) => {
-            log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
-            let completions = tab_complete_tilde_expansion(word_under_cursor);
-            return Some(completions);
-        }
-        Some(tab_completion_context::SecondaryCompType::GlobExpansion) => {
-            log::debug!("Glob expansion for: {:?}", word_under_cursor);
-            let completions = tab_complete_glob_expansion(word_under_cursor, comp_resultflags);
-
-            match completions.len() {
-                0 => {
+            tab_completion_context::CompType::EnvVariable => {
+                log::debug!("Environment variable completion {:?}", word_under_cursor);
+                let matching_vars =
+                    bash_funcs::get_all_variables_with_prefix(word_under_cursor.as_ref());
+                if matching_vars.is_empty() {
                     log::debug!(
-                        "No glob expansion completions found for pattern: {}",
-                        word_under_cursor
+                        "No environment variable completions found for prefix: {}",
+                        word_under_cursor.as_ref()
                     );
-                    return None;
+                } else {
+                    return Some(
+                        ProcssedSuggestion::from_string_vec(matching_vars, "", " ")
+                            .into_iter()
+                            .map(MaybeProcessedSuggestion::Ready)
+                            .collect(),
+                    );
                 }
-                1 => {
-                    let single_completion = completions.into_iter().next().unwrap().to_suggestion();
+            }
+            tab_completion_context::CompType::TildeExpansion => {
+                log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
+                let completions = tab_complete_tilde_expansion(word_under_cursor.as_ref());
+                if completions.is_empty() {
                     log::debug!(
-                        "Only one glob expansion completion found for pattern '{}': '{:?}'",
-                        word_under_cursor,
-                        single_completion
+                        "No tilde expansion completions found for pattern: {}",
+                        word_under_cursor.as_ref()
                     );
-                    return Some(vec![MaybeProcessedSuggestion::Ready(single_completion)]);
+                } else {
+                    return Some(completions);
                 }
-                _ => {
-                    // Unlike other completions, if there are multiple glob completions,
-                    // we join them with spaces and insert them all at once.
-                    // Process each item eagerly here since we need the final text.
-                    let completions_as_string = completions
-                        .into_iter()
-                        .map(|mut item| item.to_suggestion())
-                        .flag_first_last()
-                        .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
-                            if !is_first {
-                                acc.push(' ');
-                            }
+            }
+            tab_completion_context::CompType::GlobExpansion => {
+                log::debug!("Glob expansion for: {:?}", word_under_cursor);
+                let completions =
+                    tab_complete_glob_expansion(word_under_cursor.as_ref(), comp_res_flags);
 
-                            match comp_resultflags.quote_type {
-                                Some(QuoteType::DoubleQuote) => acc.push_str("\""),
-                                Some(QuoteType::SingleQuote) => acc.push_str("'"),
-                                _ => {}
-                            }
-                            acc.push_str(&sug.s);
+                match completions.len() {
+                    0 => {
+                        log::debug!(
+                            "No glob expansion completions found for pattern: {}",
+                            word_under_cursor.as_ref()
+                        );
+                    }
+                    1 => {
+                        let single_completion =
+                            completions.into_iter().next().unwrap().to_suggestion();
+                        log::debug!(
+                            "Only one glob expansion completion found for pattern '{}': '{:?}'",
+                            word_under_cursor.as_ref(),
+                            single_completion
+                        );
+                        return Some(vec![MaybeProcessedSuggestion::Ready(single_completion)]);
+                    }
+                    _ => {
+                        // Unlike other completions, if there are multiple glob completions,
+                        // we join them with spaces and insert them all at once.
+                        // Process each item eagerly here since we need the final text.
+                        let completions_as_string = completions
+                            .into_iter()
+                            .map(|mut item| item.to_suggestion())
+                            .flag_first_last()
+                            .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
+                                if !is_first {
+                                    acc.push(' ');
+                                }
 
-                            if !is_last {
-                                match comp_resultflags.quote_type {
+                                match comp_res_flags.quote_type {
                                     Some(QuoteType::DoubleQuote) => acc.push_str("\""),
                                     Some(QuoteType::SingleQuote) => acc.push_str("'"),
                                     _ => {}
                                 }
-                            } else {
-                                acc.push_str(&sug.suffix);
-                            }
+                                acc.push_str(&sug.s);
 
-                            acc
-                        });
-                    return Some(vec![MaybeProcessedSuggestion::Ready(
-                        ProcssedSuggestion::new(completions_as_string, "", ""),
-                    )]);
+                                if !is_last {
+                                    match comp_res_flags.quote_type {
+                                        Some(QuoteType::DoubleQuote) => acc.push_str("\""),
+                                        Some(QuoteType::SingleQuote) => acc.push_str("'"),
+                                        _ => {}
+                                    }
+                                } else {
+                                    acc.push_str(&sug.suffix);
+                                }
+
+                                acc
+                            });
+                        return Some(vec![MaybeProcessedSuggestion::Ready(
+                            ProcssedSuggestion::new(completions_as_string, "", ""),
+                        )]);
+                    }
+                }
+            }
+            tab_completion_context::CompType::FilenameExpansion => {
+                log::debug!("Filename expansion for: {:?}", word_under_cursor);
+                let completions = tab_complete_glob_expansion(
+                    &(word_under_cursor.as_ref().to_string() + "*"),
+                    comp_res_flags,
+                );
+
+                if completions.is_empty() {
+                    log::debug!(
+                        "No filename expansion completions found for pattern: {}",
+                        word_under_cursor.as_ref()
+                    );
+                } else {
+                    return Some(completions);
                 }
             }
         }
-        Some(tab_completion_context::SecondaryCompType::FilenameExpansion) => {
-            log::debug!("Filename expansion for: {:?}", word_under_cursor);
-            let completions = tab_complete_glob_expansion(
-                &(word_under_cursor.to_string() + "*"),
-                comp_resultflags,
-            );
-
-            if completions.is_empty() {
-                log::debug!(
-                    "No filename expansion completions found for pattern: {}",
-                    word_under_cursor
-                );
-            } else {
-                return Some(completions);
-            }
-        }
-        None => {
-            log::debug!(
-                "No secondary completion type detected for: {:?}",
-                word_under_cursor
-            );
-        }
     }
 
+    // gen_secondary_completions(completion_context, bash_funcs::CompletionFlags::default())
+    log::debug!("No completion types produced result");
     None
 }
 
@@ -609,11 +616,11 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
     };
 
     // `~` alone — suggest the current user's home directory as `~/`
-    if user_pattern.is_empty() {
-        return vec![MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
-            "~/", "", "",
-        ))];
-    }
+    // if user_pattern.is_empty() {
+    //     return vec![MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
+    //         "~/", "", "",
+    //     ))];
+    // }
 
     // `~username` — find matching users from the users module
     let mut suggestions = Vec::new();
@@ -621,7 +628,11 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
     for user in users::get_all_users() {
         if user.username.starts_with(user_pattern) {
             suggestions.push(MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
-                format!("{}/", user.home_dir),
+                if user.home_dir.ends_with('/') {
+                    user.home_dir.clone()
+                } else {
+                    format!("{}/", user.home_dir)
+                },
                 "",
                 "",
             )));
@@ -629,6 +640,7 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
     }
 
     suggestions.sort_by(|a, b| a.match_text().cmp(b.match_text()));
+    suggestions.dedup_by(|a, b| a.match_text() == b.match_text());
     suggestions
 }
 
