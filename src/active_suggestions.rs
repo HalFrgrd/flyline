@@ -744,6 +744,8 @@ pub struct ActiveSuggestions {
     last_num_visible_cols: usize,
     col_window_to_show: StatefulSlidingWindow,
     fuzzy_matcher: ArinaeMatcher,
+    /// How long it took to generate the completions.
+    pub load_time: std::time::Duration,
 }
 
 impl std::fmt::Debug for ActiveSuggestions {
@@ -777,6 +779,7 @@ impl ActiveSuggestions {
     pub fn new<'underlying_buffer>(
         suggestions: Vec<MaybeProcessedSuggestion>,
         word_under_cursor: SubString,
+        load_time: std::time::Duration,
     ) -> Self {
         let filtered_suggestions = vec![];
         let sug_len = suggestions.len();
@@ -792,6 +795,7 @@ impl ActiveSuggestions {
             last_num_visible_cols: 0,
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
+            load_time,
         };
 
         active_sug.update_word_under_cursor(word_under_cursor);
