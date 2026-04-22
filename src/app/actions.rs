@@ -839,6 +839,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.accept_selected_filtered_item(&mut app.buffer);
                 app.content_mode = ContentMode::Normal;
+                app.restart_tab_complete_if_slash();
             }
         },
     ),

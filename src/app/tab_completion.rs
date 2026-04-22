@@ -633,10 +633,21 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
 }
 
 impl App<'_> {
+    /// After accepting a tab completion entry, restart tab completion if the
+    /// character immediately before the cursor is `/` (i.e. a directory was
+    /// completed with no trailing space), enabling chained path completion.
+    pub(crate) fn restart_tab_complete_if_slash(&mut self) {
+        let cursor = self.buffer.cursor_byte_pos();
+        if cursor > 0 && self.buffer.buffer().as_bytes()[cursor - 1] == b'/' {
+            self.start_tab_complete();
+        }
+    }
+
     fn try_accept_tab_completion(&mut self, suggs: ActiveSuggestions) {
         match suggs.try_accept(&mut self.buffer) {
             None => {
                 self.content_mode = ContentMode::Normal;
+                self.restart_tab_complete_if_slash();
             }
             Some(suggestions) => {
                 self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
