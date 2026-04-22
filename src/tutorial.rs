@@ -474,7 +474,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline key bind Enter fuzzy_history_search::accept_and_run".to_string(),
+                    "flyline key set Enter fuzzy_history_search::accept_and_run".to_string(),
                     ClipboardTypes::TutorialKeybindingsBind1,
                 ),
             ]));
@@ -486,7 +486,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline key bind Escape inline_history_acceptable::dismiss_suggestion"
+                    "flyline key set Escape inline_history_acceptable::dismiss_suggestion"
                         .to_string(),
                     ClipboardTypes::TutorialKeybindingsBind2,
                 ),
@@ -499,7 +499,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline key bind Tab inline_history_acceptable::accept_suggestion".to_string(),
+                    "flyline key set Tab inline_history_acceptable::accept_suggestion".to_string(),
                     ClipboardTypes::TutorialKeybindingsBind3,
                 ),
             ]));
@@ -657,12 +657,12 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(TaggedLine::from(vec![
-                TaggedSpan::new(Span::styled("Type ", text_style), Tag::Tutorial),
+                TaggedSpan::new(Span::styled("Type `", text_style), Tag::Tutorial),
                 ts_copiable(
                     "list files older than three days".to_string(),
                     ClipboardTypes::TutorialAgentMode,
                 ),
-                ts_text(" and press "),
+                ts_text("` and press "),
                 ts_key("Alt+Enter"),
                 ts_text("."),
             ]));
