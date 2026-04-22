@@ -246,9 +246,14 @@ pub(crate) fn gen_completions_internal(
         log::debug!("Processing completion type: {:?}", comp_type);
         match comp_type {
             tab_completion_context::CompType::FirstWord => {
+                log::debug!("First word completion for: {:?}", word_under_cursor);
                 let completions = tab_complete_first_word(word_under_cursor.as_ref());
-                log::debug!("Primary completions for first word: {:?}", completions);
-                if !completions.is_empty() {
+                if completions.is_empty() {
+                    log::debug!(
+                        "No first word completions found for prefix: {}",
+                        word_under_cursor.as_ref()
+                    );
+                } else {
                     return Some(completions);
                 }
             }
@@ -331,7 +336,12 @@ pub(crate) fn gen_completions_internal(
                                 .collect();
                             return Some(suggestions);
                         }
-                        Ok(_) => {}
+                        Ok(_) => {
+                            log::debug!(
+                                "No flyline completions found for command '{}'",
+                                full_command
+                            );
+                        }
                         Err(e) => {
                             log::error!("Error generating flyline completions: {}", e);
                         }
@@ -374,17 +384,31 @@ pub(crate) fn gen_completions_internal(
                 log::debug!("Environment variable completion {:?}", word_under_cursor);
                 let matching_vars =
                     bash_funcs::get_all_variables_with_prefix(word_under_cursor.as_ref());
-                return Some(
-                    ProcssedSuggestion::from_string_vec(matching_vars, "", " ")
-                        .into_iter()
-                        .map(MaybeProcessedSuggestion::Ready)
-                        .collect(),
-                );
+                if matching_vars.is_empty() {
+                    log::debug!(
+                        "No environment variable completions found for prefix: {}",
+                        word_under_cursor.as_ref()
+                    );
+                } else {
+                    return Some(
+                        ProcssedSuggestion::from_string_vec(matching_vars, "", " ")
+                            .into_iter()
+                            .map(MaybeProcessedSuggestion::Ready)
+                            .collect(),
+                    );
+                }
             }
             tab_completion_context::CompType::TildeExpansion => {
                 log::debug!("Tilde expansion completion: {:?}", word_under_cursor);
                 let completions = tab_complete_tilde_expansion(word_under_cursor.as_ref());
-                return Some(completions);
+                if completions.is_empty() {
+                    log::debug!(
+                        "No tilde expansion completions found for pattern: {}",
+                        word_under_cursor.as_ref()
+                    );
+                } else {
+                    return Some(completions);
+                }
             }
             tab_completion_context::CompType::GlobExpansion => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
@@ -397,7 +421,6 @@ pub(crate) fn gen_completions_internal(
                             "No glob expansion completions found for pattern: {}",
                             word_under_cursor.as_ref()
                         );
-                        return None;
                     }
                     1 => {
                         let single_completion =
