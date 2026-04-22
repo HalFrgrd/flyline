@@ -397,9 +397,11 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
             (0, 0) => OctantDots::TOP_LEFT,
             (0, 1) => OctantDots::UPPER_MID_LEFT,
             (0, 2) => OctantDots::LOWER_MID_LEFT,
+            (0, 3) => OctantDots::BOT_LEFT,
             (1, 0) => OctantDots::TOP_RIGHT,
             (1, 1) => OctantDots::UPPER_MID_RIGHT,
             (1, 2) => OctantDots::LOWER_MID_RIGHT,
+            (1, 3) => OctantDots::BOT_RIGHT,
             _ => OctantDots::NONE,
         }
     }
@@ -417,12 +419,13 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
         for j in 0..EASING_ANIM_LOGICAL_WIDTH {
             if j >= EASING_ANIM_BOUNDARY_LOGICAL_START && j <= EASING_ANIM_BOUNDARY_LOGICAL_END {
                 cells[j / 2] |= logical_to_dot(j, 0);
-                cells[j / 2] |= logical_to_dot(j, 2);
+                cells[j / 2] |= logical_to_dot(j, 3);
             }
         }
 
         let clamped_pos = pos.clamp(0, EASING_ANIM_LOGICAL_WIDTH as isize - 1) as usize;
         cells[clamped_pos / 2] |= logical_to_dot(clamped_pos, 1);
+        cells[clamped_pos / 2] |= logical_to_dot(clamped_pos, 2);
 
         for bits in cells {
             s.push(braille_char(bits));
