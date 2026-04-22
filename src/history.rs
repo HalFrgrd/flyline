@@ -88,7 +88,10 @@ impl HistoryManager {
     }
 
     fn push_deduped_entry(entries: &mut Vec<HistoryEntry>, mut entry: HistoryEntry) {
-        if entries.last().is_some_and(|prev| prev.command == entry.command) {
+        if entries
+            .last()
+            .is_some_and(|prev| prev.command == entry.command)
+        {
             return;
         }
 

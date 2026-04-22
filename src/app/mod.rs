@@ -385,23 +385,29 @@ impl<'a> App<'a> {
             cursor: Cursor::new(),
             term_has_focus: true,
             unfinished_from_prev_command,
-            prompt_manager: PromptManager::new(
-                unfinished_from_prev_command,
-                &settings
-                    .custom_animations
-                    .values()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                &settings
-                    .custom_prompt_widgets
-                    .values()
-                    .cloned()
-                    .collect::<Vec<_>>(),
+            prompt_manager: time_it!(
+                "startup: prompt manager",
+                PromptManager::new(
+                    unfinished_from_prev_command,
+                    &settings
+                        .custom_animations
+                        .values()
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    &settings
+                        .custom_prompt_widgets
+                        .values()
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                )
             ),
-            history_manager: HistoryManager::new(settings),
+            history_manager: time_it!("startup: history manager", HistoryManager::new(settings)),
             buffer_before_history_navigation: None,
             inline_history_suggestion: None,
-            mouse_state: MouseState::initialize(&settings.mouse_mode),
+            mouse_state: time_it!(
+                "startup: mouse state",
+                MouseState::initialize(&settings.mouse_mode)
+            ),
             content_mode: ContentMode::Normal,
             last_contents: None,
             last_mouse_over_cell: None,

@@ -1166,7 +1166,7 @@ impl ActiveSuggestions {
                     "all_maybe_processed_suggestions: {:#?}",
                     self.all_maybe_processed_suggestions
                 );
-                None
+                return Some(self);
             }
             [_filtered_item] => {
                 self.accept_selected_filtered_item(buffer);
