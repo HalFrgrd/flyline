@@ -672,6 +672,18 @@ pub fn generate_tutorial_text(
                     Tag::Tutorial,
                 ),
             ]));
+            lines.push(empty());
+            lines.push(TaggedLine::from(vec![
+                ts_text("Press "),
+                TaggedSpan::new(
+                    Span::styled("Escape", Style::default().fg(Color::Red)),
+                    Tag::Tutorial,
+                ),
+                TaggedSpan::new(
+                    Span::styled(" to re-enable mouse mode.", Style::default().fg(Color::Red)),
+                    Tag::Tutorial,
+                ),
+            ]));
         }
         TutorialStep::NotRunning => unreachable!(),
     }
