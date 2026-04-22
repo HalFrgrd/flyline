@@ -1,5 +1,5 @@
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
-use crate::unicode_helpers::{BRAILLE_BLANK, BrailleDots, OctantDots, OctantStyle, octant};
+use crate::unicode_helpers::{BRAILLE_BLANK, OctantDots, OctantStyle, octant};
 use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;
@@ -379,7 +379,7 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
     const EASING_ANIM_LOGICAL_WIDTH: usize = EASING_ANIM_TOTAL_WIDTH * 2;
 
     /// Easing preview cycle frequency in hertz.
-    const EASING_ANIM_TARGET_HZ: f32 = 0.4;
+    const EASING_ANIM_TARGET_HZ: f32 = 0.5;
 
     /// Inner boundary start column (inclusive) that represents easing value 0.0.
     const EASING_ANIM_BOUNDARY_START: usize = 1;
@@ -418,11 +418,8 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
         let mut cells = [OctantDots::NONE; EASING_ANIM_TOTAL_WIDTH];
 
         for j in 0..EASING_ANIM_LOGICAL_WIDTH {
-            if j == EASING_ANIM_BOUNDARY_LOGICAL_START {
-                cells[j / 2] |= logical_to_dot(j, 0);
-                cells[j / 2] |= logical_to_dot(j, 2);
-            }
-            if j == EASING_ANIM_BOUNDARY_LOGICAL_END {
+            if j >= EASING_ANIM_BOUNDARY_LOGICAL_START && j <= EASING_ANIM_BOUNDARY_LOGICAL_END {
+            // if j == EASING_ANIM_BOUNDARY_LOGICAL_START || j == EASING_ANIM_BOUNDARY_LOGICAL_END {
                 cells[j / 2] |= logical_to_dot(j, 0);
                 cells[j / 2] |= logical_to_dot(j, 2);
             }
