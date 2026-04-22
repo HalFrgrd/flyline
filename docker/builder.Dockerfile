@@ -38,18 +38,18 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS flyline-builder
 ARG CARGO_FEATURES
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook ${CARGO_FEATURES:+--features $CARGO_FEATURES} --recipe-path recipe.json
+RUN cargo chef cook --release ${CARGO_FEATURES:+--features $CARGO_FEATURES} --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
 COPY examples ./examples
-RUN cargo build ${CARGO_FEATURES:+--features $CARGO_FEATURES}
+RUN cargo build --release ${CARGO_FEATURES:+--features $CARGO_FEATURES}
 
 FROM flyline-builder AS flyline-lib-tests
 ARG CARGO_FEATURES
-RUN cargo test ${CARGO_FEATURES:+--features $CARGO_FEATURES} --lib
+RUN cargo test --release ${CARGO_FEATURES:+--features $CARGO_FEATURES} --lib
 
 
 # Build image with output. This won't have anything in the file system apart from the built library
 # this makes it convenient to copy the built library without creating a container
 FROM scratch AS flyline-built-artifact
-COPY --from=flyline-builder /app/target/debug/libflyline.so /libflyline.so
+COPY --from=flyline-builder /app/target/release/libflyline.so /libflyline.so
