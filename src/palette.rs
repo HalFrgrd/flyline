@@ -311,18 +311,18 @@ impl Palette {
     /// Light-terminal defaults.
     pub fn light() -> Self {
         Palette {
-            recognised_command: Style::default().fg(Color::DarkGray),
+            recognised_command: Style::default().fg(Color::Green).bold(),
             recognised_command_override: None,
-            unrecognised_command: Style::default().fg(Color::Red),
+            unrecognised_command: Style::default().fg(Color::Red).bold(),
             unrecognised_command_override: None,
-            single_quoted_text: Style::default().fg(Color::Yellow),
+            single_quoted_text: Style::default().fg(Color::Magenta),
             single_quoted_text_override: None,
             double_quoted_text: Style::default().fg(Color::Magenta),
             double_quoted_text_override: None,
-            secondary_text: Style::default().fg(Color::DarkGray),
+            secondary_text: Style::default().dim().bold(),
             secondary_text_override: None,
             inline_suggestion: Style::default()
-                .fg(Color::DarkGray)
+                .fg(Color::Blue)
                 .add_modifier(Modifier::ITALIC),
             inline_suggestion_override: None,
             tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
