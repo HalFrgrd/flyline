@@ -375,53 +375,73 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
     /// Total width (in terminal columns) of the easing-function dot animation.
     const EASING_ANIM_TOTAL_WIDTH: usize = 10;
 
+    // Braille dot can be either left or right
+    const EASING_ANIM_LOGICAL_WIDTH: usize = EASING_ANIM_TOTAL_WIDTH * 2;
+
     /// Easing preview cycle frequency in hertz.
     const EASING_ANIM_TARGET_HZ: f32 = 0.4;
 
     /// Inner boundary start column (inclusive) that represents easing value 0.0.
-    const EASING_ANIM_BOUNDARY_START: isize = 1;
+    const EASING_ANIM_BOUNDARY_START: usize = 1;
+
+    const EASING_ANIM_BOUNDARY_LOGICAL_START: usize = EASING_ANIM_BOUNDARY_START * 2;
 
     /// Inner boundary end column (inclusive) that represents easing value 1.0.
-    const EASING_ANIM_BOUNDARY_END: isize = EASING_ANIM_TOTAL_WIDTH as isize - 2;
+    const EASING_ANIM_BOUNDARY_END: usize = EASING_ANIM_TOTAL_WIDTH.saturating_sub(2);
 
-    fn braille_char(dots: BrailleDots) -> char {
-        octant(OctantDots::from_braille(dots), OctantStyle::Braille).unwrap_or(BRAILLE_BLANK)
+    const EASING_ANIM_BOUNDARY_LOGICAL_END: usize = EASING_ANIM_BOUNDARY_END * 2;
+
+    fn braille_char(dots: OctantDots) -> char {
+        octant(dots, OctantStyle::Braille).unwrap_or(BRAILLE_BLANK)
+    }
+
+    fn logical_to_dot(logical_pos: usize, row: usize) -> OctantDots {
+        match (logical_pos % 2, row) {
+            (0, 0) => OctantDots::TOP_LEFT,
+            (0, 1) => OctantDots::UPPER_MID_LEFT,
+            (0, 2) => OctantDots::LOWER_MID_LEFT,
+            (1, 0) => OctantDots::TOP_RIGHT,
+            (1, 1) => OctantDots::UPPER_MID_RIGHT,
+            (1, 2) => OctantDots::LOWER_MID_RIGHT,
+            _ => OctantDots::NONE,
+        }
     }
 
     let cycle_frames =
         ((ANIMATION_FRAME_FPS as f32 / EASING_ANIM_TARGET_HZ).round() as usize).max(2);
-    let dot_range = (EASING_ANIM_BOUNDARY_END - EASING_ANIM_BOUNDARY_START) as f32;
+    let dot_logical_range =
+        (EASING_ANIM_BOUNDARY_LOGICAL_END - EASING_ANIM_BOUNDARY_LOGICAL_START) as f32;
     let mut frames = Vec::with_capacity(cycle_frames);
-
-    let boundary_bits = (BrailleDots::DOT_1 | BrailleDots::DOT_3).0;
-    let marker_bits = BrailleDots::DOT_2.0;
 
     let make_frame = |pos: isize| -> Vec<Span<'static>> {
         let mut s = String::with_capacity(EASING_ANIM_TOTAL_WIDTH);
-        let mut cells = [0u8; EASING_ANIM_TOTAL_WIDTH];
+        let mut cells = [OctantDots::NONE; EASING_ANIM_TOTAL_WIDTH];
 
-        for j in 0..EASING_ANIM_TOTAL_WIDTH {
-            let j = j as isize;
-            if j == EASING_ANIM_BOUNDARY_START || j == EASING_ANIM_BOUNDARY_END {
-                cells[j as usize] = boundary_bits;
+        for j in 0..EASING_ANIM_LOGICAL_WIDTH {
+            if j == EASING_ANIM_BOUNDARY_LOGICAL_START {
+                cells[j / 2] |= logical_to_dot(j, 0);
+                cells[j / 2] |= logical_to_dot(j, 2);
+            }
+            if j == EASING_ANIM_BOUNDARY_LOGICAL_END {
+                cells[j / 2] |= logical_to_dot(j, 0);
+                cells[j / 2] |= logical_to_dot(j, 2);
             }
         }
 
-        let clamped_pos = pos.clamp(0, EASING_ANIM_TOTAL_WIDTH as isize - 1) as usize;
-        cells[clamped_pos] |= marker_bits;
+        let clamped_pos = pos.clamp(0, EASING_ANIM_LOGICAL_WIDTH as isize - 1) as usize;
+        cells[clamped_pos / 2] |= logical_to_dot(clamped_pos, 1);
 
         for bits in cells {
-            s.push(braille_char(BrailleDots(bits)));
+            s.push(braille_char(bits));
         }
 
         vec![Span::raw(s)]
     };
 
-    // Forward only: t goes 0 → 1
     for i in 0..cycle_frames {
         let t = i as f32 / (cycle_frames - 1) as f32;
-        let pos =
-            (EASING_ANIM_BOUNDARY_START as f32 + easing.apply(t) * dot_range).round() as isize;
+        let pos = (EASING_ANIM_BOUNDARY_LOGICAL_START as f32 + easing.apply(t) * dot_logical_range)
+            .round() as isize;
         frames.push(make_frame(pos));
     }
 
