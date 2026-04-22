@@ -30,7 +30,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 ### Who is it for?
 1. You want an out-of-the-box great shell experience without the hassle of setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts (anyone of which might phone home).
-2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you, contributions welcome!
+2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you; contributions welcome!
 
 # Installation
 
@@ -353,17 +353,17 @@ Flyline supports tab completions inside subshell, command substitution, and proc
 For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's set up.
 
 ### Mid-word tab completions
-When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`) the left hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
+When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`), the left-hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
 
 ### Dynamic descriptions
-If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab delimited frame at 24fps. Try `flyline set-cursor --effect-easing <Tab>` for an example.
+If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab-delimited frame at 24fps. Try `flyline set-cursor --effect-easing <Tab>` for an example.
 
 ANSI styling is supported in descriptions: any ANSI colour/style escape codes embedded in the tab-separated description text will be rendered as ratatui styled spans.
 
 Descriptions for files are the time since last modified.
 
 ### Automatically complete based on `--help`
-Coming soon: Automatic fallback for commands without a completion spec is still coming soon.
+Coming soon: Automatically generate a completion spec for commands without one.
 For now, you can manually generate a Bash completion script with `flyline comp-spec-synthesis your_command`.
 
 ### `LS_COLORS` styling
@@ -399,7 +399,7 @@ Recommended settings
 
 I find that Copilot can't interact with the terminal if flyline runs with certain settings. If you run into this problem, add this to the end of your `.bashrc`:
 ```bash
-if [[ -n "${COPILOT_TERMINAl:-}" ]]; then
+if [[ -n "${COPILOT_TERMINAL:-}" ]]; then
     RPS1=''
     flyline set-cursor --backend terminal --interpolate none
     flyline --show-inline-history false
@@ -409,7 +409,7 @@ and set this in your `settings.json`:
 ```json
   "chat.tools.terminal.terminalProfile.linux": {
     "env": {
-      "COPILOT_TERMINAl": "1"
+      "COPILOT_TERMINAL": "1"
     },
     "path": "bash",
   }
