@@ -284,6 +284,7 @@ enum Commands {
     ///   flyline set-color --default-theme light --matching-char "bold blue"
     ///   flyline set-color --recognised-command "green" --unrecognised-command "bold red"
     ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
+    ///   flyline set-color --key-sequence-style "dim"
     #[command(name = "set-color", verbatim_doc_comment)]
     SetColor {
         /// Apply a built-in colour preset for dark or light terminals.
@@ -337,6 +338,9 @@ enum Commands {
         /// Style for markdown inline/block code (e.g. "dim").
         #[arg(long = "markdown-code", value_name = "STYLE")]
         markdown_code: Option<String>,
+        /// Style for key sequences shown in the tutorial (e.g. "dim").
+        #[arg(long = "key-sequence-style", value_name = "STYLE")]
+        key_sequence_style: Option<String>,
     },
     /// Configure the cursor appearance and animation.
     ///
@@ -975,6 +979,7 @@ impl Flyline {
                         markdown_heading2,
                         markdown_heading3,
                         markdown_code,
+                        key_sequence_style,
                     }) => {
                         if let Some(preset) = default_theme {
                             self.settings.color_palette.apply_theme(preset);
@@ -1029,6 +1034,9 @@ impl Flyline {
                             }),
                             (&markdown_code, "markdown-code", |p, s| {
                                 p.markdown_code_override = Some(s)
+                            }),
+                            (&key_sequence_style, "key-sequence-style", |p, s| {
+                                p.key_sequence_style_override = Some(s)
                             }),
                         ];
 

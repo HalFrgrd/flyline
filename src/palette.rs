@@ -164,6 +164,9 @@ pub struct Palette {
 
     markdown_code: Style,
     pub markdown_code_override: Option<Style>,
+
+    key_sequence_style: Style,
+    pub key_sequence_style_override: Option<Style>,
 }
 
 impl Palette {
@@ -243,7 +246,8 @@ impl Palette {
     }
 
     pub fn key_sequence_style(&self) -> Style {
-        self.secondary_text()
+        self.key_sequence_style_override
+            .unwrap_or(self.key_sequence_style)
     }
 
     // ── Presets ──────────────────────────────────────────────────────
@@ -299,6 +303,8 @@ impl Palette {
             markdown_heading3_override: None,
             markdown_code: Style::default().add_modifier(Modifier::DIM),
             markdown_code_override: None,
+            key_sequence_style: Style::default().add_modifier(Modifier::DIM),
+            key_sequence_style_override: None,
         }
     }
 
@@ -352,6 +358,8 @@ impl Palette {
             markdown_heading3_override: None,
             markdown_code: Style::default().add_modifier(Modifier::DIM),
             markdown_code_override: None,
+            key_sequence_style: Style::default().fg(Color::DarkGray),
+            key_sequence_style_override: None,
         }
     }
 
@@ -378,6 +386,7 @@ impl Palette {
         self.markdown_heading2 = template.markdown_heading2;
         self.markdown_heading3 = template.markdown_heading3;
         self.markdown_code = template.markdown_code;
+        self.key_sequence_style = template.key_sequence_style;
     }
 
     // ── Derived / constant styles ───────────────────────────────────
