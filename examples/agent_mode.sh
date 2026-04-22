@@ -1,7 +1,7 @@
 # This file is compiled into flyline to help with auto setup.
 
 # I recommend using trigger prefixes.
-# When you type `: how do I find files older than 3 days?`, 
+# When you type `: how do I find files older than 3 days?`,
 # flyline sees that the buffer starts with the trigger prefix `: ` and sends `how do I find files older than 3 days?` (without the prefix)
 # to the agent command configured for that trigger prefix.
 

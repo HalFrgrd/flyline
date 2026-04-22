@@ -120,7 +120,7 @@ struct FlylineArgs {
     /// value is equivalent to `on`.
     #[arg(long = "matrix-animation", default_missing_value = "on", num_args = 0..=1, value_parser = parse_matrix_animation)]
     matrix_animation: Option<settings::MatrixAnimation>,
-    /// Render frame rate in frames per second (1–120, default 30)
+    /// Render frame rate in frames per second (1–120, default 24)
     #[arg(long = "frame-rate", value_name = "FPS", value_parser = clap::value_parser!(u8).range(1..=120))]
     frame_rate: Option<u8>,
     /// Mouse capture mode (disabled, simple, smart). Default is smart.

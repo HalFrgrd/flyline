@@ -912,7 +912,7 @@ Options:
           Run matrix animation in the terminal background. Use `on` to always show it, `off` to disable it, or an integer number of seconds to show it after that many seconds of inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a value is equivalent to `on`
 
       --frame-rate <FPS>
-          Render frame rate in frames per second (1–120, default 30)
+          Render frame rate in frames per second (1–120, default 24)
 
       --mouse-mode <MODE>
           Mouse capture mode (disabled, simple, smart). Default is smart.
