@@ -746,6 +746,7 @@ pub struct ActiveSuggestions {
     fuzzy_matcher: ArinaeMatcher,
     /// How long it took to generate the completions.
     pub load_time: std::time::Duration,
+    should_fuzzy_match: bool,
 }
 
 impl std::fmt::Debug for ActiveSuggestions {
@@ -796,9 +797,14 @@ impl ActiveSuggestions {
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
             load_time,
+            should_fuzzy_match: true,
         };
 
         active_sug.update_word_under_cursor(word_under_cursor);
+
+        if active_sug.filtered_suggestions_len() == 0 {
+            active_sug.should_fuzzy_match = false;
+        }
         active_sug
     }
 
@@ -1085,6 +1091,17 @@ impl ActiveSuggestions {
         idx: usize,
         item: &MaybeProcessedSuggestion,
     ) -> Option<FilteredItem> {
+        let was_for_raw = matches!(item, MaybeProcessedSuggestion::Raw { .. });
+
+        if !self.should_fuzzy_match {
+            return Some(FilteredItem {
+                score: 0,
+                suggestion_idx: idx,
+                matching_indices: vec![],
+                was_for_raw,
+            });
+        }
+
         let pattern = match item {
             MaybeProcessedSuggestion::Raw { .. } => &self.word_under_cursor_dequoted,
             MaybeProcessedSuggestion::Ready(sug) => {
@@ -1101,7 +1118,7 @@ impl ActiveSuggestions {
                 score,
                 suggestion_idx: idx,
                 matching_indices: indices,
-                was_for_raw: matches!(item, MaybeProcessedSuggestion::Raw { .. }),
+                was_for_raw,
             })
     }
 
