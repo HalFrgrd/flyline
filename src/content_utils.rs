@@ -372,23 +372,20 @@ pub fn ansi_string_to_spans(s: &str) -> Vec<Span<'static>> {
 
 /// Build the ping-pong animation frames for the given easing function.
 pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> {
-    /// Total width (in terminal columns) of the easing-function dot animation.
-    const EASING_ANIM_TOTAL_WIDTH: usize = 10;
-
-    // Braille dot can be either left or right
-    const EASING_ANIM_LOGICAL_WIDTH: usize = EASING_ANIM_TOTAL_WIDTH * 2;
-
     /// Easing preview cycle frequency in hertz.
     const EASING_ANIM_TARGET_HZ: f32 = 0.5;
 
+    /// Total width (in terminal columns) of the easing-function dot animation.
+    const EASING_ANIM_TOTAL_WIDTH: usize = 10;
+    /// Dot can be in the left or right half of a cell, so logical width is double the total width.
+    const EASING_ANIM_LOGICAL_WIDTH: usize = EASING_ANIM_TOTAL_WIDTH * 2;
+
     /// Inner boundary start column (inclusive) that represents easing value 0.0.
     const EASING_ANIM_BOUNDARY_START: usize = 1;
-
     const EASING_ANIM_BOUNDARY_LOGICAL_START: usize = EASING_ANIM_BOUNDARY_START * 2;
 
     /// Inner boundary end column (inclusive) that represents easing value 1.0.
     const EASING_ANIM_BOUNDARY_END: usize = EASING_ANIM_TOTAL_WIDTH.saturating_sub(2);
-
     const EASING_ANIM_BOUNDARY_LOGICAL_END: usize = EASING_ANIM_BOUNDARY_END * 2;
 
     fn braille_char(dots: OctantDots) -> char {
@@ -419,7 +416,6 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
 
         for j in 0..EASING_ANIM_LOGICAL_WIDTH {
             if j >= EASING_ANIM_BOUNDARY_LOGICAL_START && j <= EASING_ANIM_BOUNDARY_LOGICAL_END {
-            // if j == EASING_ANIM_BOUNDARY_LOGICAL_START || j == EASING_ANIM_BOUNDARY_LOGICAL_END {
                 cells[j / 2] |= logical_to_dot(j, 0);
                 cells[j / 2] |= logical_to_dot(j, 2);
             }
