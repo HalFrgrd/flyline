@@ -676,6 +676,22 @@ enum PromptWidgetSubcommands {
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
 
+fn catch_unwind_safe<T>(f: impl FnOnce() -> T) -> Result<T, ()> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).map_err(|_| ())
+}
+
+fn report_stderr_no_panic(message: &str) {
+    let _ = catch_unwind_safe(|| {
+        eprintln!("{message}");
+    });
+}
+
+fn report_error_no_panic(message: &str) {
+    let _ = catch_unwind_safe(|| {
+        log::error!("{message}");
+    });
+}
+
 // C-compatible getter function that bash will call
 extern "C" fn flyline_get_char() -> c_int {
     if let Some(boxed) = FLYLINE_INSTANCE_PTR
@@ -683,10 +699,23 @@ extern "C" fn flyline_get_char() -> c_int {
         .unwrap_or_else(|e| e.into_inner())
         .as_mut()
     {
-        return boxed.get();
+        match catch_unwind_safe(|| boxed.get()) {
+            Ok(c) => c,
+            Err(_) => {
+                // writing to stderr can panic if master pty side has been closed.
+                report_stderr_no_panic(
+                    "flyline: app panicked; recovering with empty command. Please create an issue with the steps to reproduce at https://github.com/HalFrgrd/flyline/issues.",
+                );
+                report_error_no_panic("app panicked; recovering with empty command");
+
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                bash_symbols::EOF
+            }
+        }
+    } else {
+        report_stderr_no_panic("flyline_get_char: FLYLINE_INSTANCE_PTR is None");
+        bash_symbols::EOF
     }
-    eprintln!("flyline_get_char: FLYLINE_INSTANCE_PTR is None");
-    bash_symbols::EOF
 }
 
 // C-compatible ungetter function that bash will call
@@ -696,14 +725,21 @@ extern "C" fn flyline_unget_char(c: c_int) -> c_int {
         .unwrap_or_else(|e| e.into_inner())
         .as_mut()
     {
-        return boxed.unget(c);
+        return match catch_unwind_safe(|| boxed.unget(c)) {
+            Ok(unget_char) => unget_char,
+            Err(_) => {
+                report_stderr_no_panic("flyline: unget handler panicked; ignoring.");
+                report_error_no_panic("flyline_unget_char panicked; returning original character");
+                c
+            }
+        };
     }
-    eprintln!("flyline_unget_char: FLYLINE_INSTANCE_PTR is None");
+    report_stderr_no_panic("flyline_unget_char: FLYLINE_INSTANCE_PTR is None");
     c
 }
 
 extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_int {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let result = catch_unwind_safe(|| {
         if let Some(boxed) = FLYLINE_INSTANCE_PTR
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -711,14 +747,14 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
         {
             return boxed.call(words);
         }
-        eprintln!("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
+        report_stderr_no_panic("flyline_call_command: FLYLINE_INSTANCE_PTR is None");
         0
-    }));
+    });
     match result {
         Ok(code) => code,
         Err(_) => {
-            eprintln!("flyline: command handler panicked; ignoring.");
-            log::error!("flyline_call_command panicked; returning failure");
+            report_stderr_no_panic("flyline: command handler panicked; ignoring.");
+            report_error_no_panic("flyline_call_command panicked; returning failure");
             bash_symbols::BuiltinExitCode::Usage as c_int
         }
     }
@@ -1381,9 +1417,7 @@ impl Flyline {
             // thread depends on SIGCHLD disposition at this instant.
             let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
 
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                app::get_command(&mut self.settings)
-            }));
+            let result = app::get_command(&mut self.settings);
 
             unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 
@@ -1401,7 +1435,7 @@ impl Flyline {
             // }
 
             self.content = match result {
-                Ok(app::ExitState::WithCommand(cmd)) => {
+                app::ExitState::WithCommand(cmd) => {
                     if self.settings.tutorial_step.is_active() && cmd.trim().is_empty() {
                         self.settings.tutorial_step.next();
                         log::info!(
@@ -1414,19 +1448,11 @@ impl Flyline {
                     }
                     cmd.into_bytes()
                 }
-                Ok(app::ExitState::EOF) => {
+                app::ExitState::EOF => {
                     log::info!("App signaled EOF");
                     return bash_symbols::EOF;
                 }
-                Ok(app::ExitState::WithoutCommand) => vec![],
-                Err(_) => {
-                    eprintln!(
-                        "flyline: app panicked; recovering with empty command. Please create an issue with the steps to reproduce at https://github.com/HalFrgrd/flyline/issues."
-                    );
-                    log::error!("app panicked; recovering with empty command");
-                    std::thread::sleep(std::time::Duration::from_millis(1000));
-                    vec![]
-                }
+                app::ExitState::WithoutCommand => vec![],
             };
             log::info!("---------------------- App finished ------------------------");
             self.content.push(b'\n');
