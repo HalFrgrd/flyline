@@ -334,6 +334,9 @@ pub(crate) struct App<'a> {
     history_manager: HistoryManager,
     buffer_before_history_navigation: Option<String>,
     inline_history_suggestion: Option<(HistoryEntry, String)>,
+    /// Buffer contents at the time the user last dismissed the inline suggestion.
+    /// While the buffer equals this value the suggestion is suppressed.
+    dismissed_inline_suggestion_buffer: Option<String>,
     mouse_state: MouseState,
     content_mode: ContentMode,
     last_contents: Option<DrawnContent>,
@@ -404,6 +407,7 @@ impl<'a> App<'a> {
             history_manager: time_it!("startup: history manager", HistoryManager::new(settings)),
             buffer_before_history_navigation: None,
             inline_history_suggestion: None,
+            dismissed_inline_suggestion_buffer: None,
             mouse_state: time_it!(
                 "startup: mouse state",
                 MouseState::initialize(&settings.mouse_mode)
@@ -1272,13 +1276,25 @@ impl<'a> App<'a> {
         self.dparser_tokens_cache = new_tokens;
 
         let history_buffer = self.buffer_for_history().to_owned();
-        self.inline_history_suggestion =
-            if !self.settings.show_inline_history || history_buffer.is_empty() {
-                None
-            } else {
-                self.history_manager
-                    .get_command_suggestion_suffix(&history_buffer)
-            };
+
+        // If the buffer has changed since the user dismissed the suggestion, re-enable it.
+        if self
+            .dismissed_inline_suggestion_buffer
+            .as_deref()
+            .is_some_and(|b| b != history_buffer)
+        {
+            self.dismissed_inline_suggestion_buffer = None;
+        }
+
+        self.inline_history_suggestion = if !self.settings.show_inline_history
+            || history_buffer.is_empty()
+            || self.dismissed_inline_suggestion_buffer.is_some()
+        {
+            None
+        } else {
+            self.history_manager
+                .get_command_suggestion_suffix(&history_buffer)
+        };
 
         self.formatted_buffer_cache = format_buffer(
             &self.dparser_tokens_cache,
