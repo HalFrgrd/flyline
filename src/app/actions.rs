@@ -1583,7 +1583,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &expand_variations!["Ctrl+Delete", "Alt+D"],
+            &expand_variations!["Ctrl+Delete"],
             Scope::Default,
             "delete_right_one_word_whitespace",
         )
