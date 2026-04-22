@@ -16,7 +16,7 @@
 When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
-- [Rich prompt customizations, widgets, animations](#rich-prompts)
+- [Rich prompt customizations, (asynchronous) widgets, animations](#rich-prompts)
 - [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
 - [Improvements to Bash's tab completion](#tab-completion-improvements)
@@ -29,7 +29,7 @@ When Bash prompts you for a command, a library called [readline](https://www.gnu
 Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is written in Rust and uses [ratatui.rs](https://ratatui.rs/) to more easily draw complex user interfaces.
 
 ### Who is it for?
-1. You want an out-of-the-box great shell experience without setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts.
+1. You want an out-of-the-box great shell experience without the hassle of setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts (anyone of which might phone home).
 2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you, contributions welcome!
 
 # Installation
