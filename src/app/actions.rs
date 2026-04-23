@@ -857,18 +857,6 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         Scope::AgentError,
         |app, _key| match &app.content_mode {
             ContentMode::AgentError {
-                suggested_buffer: Some(buf),
-                ..
-            } => {
-                let buf = buf.clone();
-                app.buffer.replace_buffer(&buf);
-                app.on_possible_buffer_change();
-                app.content_mode = ContentMode::Normal;
-                if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
-                    app.start_agent_mode(agent_cmd, &buffer);
-                }
-            }
-            ContentMode::AgentError {
                 suggested_setup_command: Some(setup_cmd),
                 ..
             } => {

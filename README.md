@@ -356,9 +356,9 @@ For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's s
 When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`), the left-hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
 
 ### Dynamic descriptions
-If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab-delimited frame at 24fps. Try `flyline set-cursor --interpolate-easing <Tab>` for an example:
-
-![Tab completion easing demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_tab_completion_easing.gif)
+If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab-delimited frame at 24fps. Try `flyline set-cursor --interpolate-easing <Tab>` for an example.
+<!-- This demo requires a smooth frame which the github runner recording it does not deliver. Hiding it for now since it deserves better.-->
+<!-- ![Tab completion easing demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_tab_completion_easing.gif) -->
 
 ANSI styling is supported in descriptions: any ANSI colour/style escape codes embedded in the tab-separated description text will be rendered as ratatui styled spans.
 

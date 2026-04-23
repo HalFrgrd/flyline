@@ -8,7 +8,7 @@ use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils::{
-    animated_text_line, split_line_to_terminal_rows, ts_to_timeago_string_5chars,
+    gaussian_wave_animated, split_line_to_terminal_rows, ts_to_timeago_string_5chars,
 };
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -150,12 +150,14 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
         log::error!("Failed to set terminal features: {}", e);
     });
     if extended_key_codes {
+        // Enabling REPORT_ALL_KEYS_AS_ESCAPE_CODES causes Ctrl+C to not copy to clipboard in VS Code with default settings
+        // because it causes the press of Ctrl to be sent as a key code thus clearing the selection before 'c' is pressed.
+        // https://blog.fsck.com/releases/2026/02/26/terminal-keyboard-protocol/ is a good reference for understanding the terminal key code problem.
         crossterm::execute!(
             std::io::stdout(),
             crossterm::event::PushKeyboardEnhancementFlags(
                 crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
                     | crossterm::event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-                    | crossterm::event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
             )
         )
         .unwrap_or_else(|e| {
@@ -236,14 +238,11 @@ enum ContentMode {
     /// AI output has been parsed; user is selecting a suggestion from the list.
     AgentOutputSelection(AiOutputSelection),
     /// AI command or JSON parsing failed; stores the error message and any raw output.
-    /// When `suggested_buffer` is set, the error is a "no default agent but prefix-only config"
-    /// case: pressing Enter will launch agent mode with that buffer instead of running help.
     /// When `suggested_setup_command` is set, an agent from the example file was found on PATH;
     /// pressing Enter will run that `flyline set-agent-mode ...` command to configure it.
     AgentError {
         message: String,
         raw_output: String,
-        suggested_buffer: Option<String>,
         suggested_setup_command: Option<String>,
     },
     /// User is navigating the CWD path segments displayed in the prompt.
@@ -464,8 +463,6 @@ impl<'a> App<'a> {
             return ExitState::WithoutCommand;
         }
 
-        let t_run = std::time::Instant::now();
-
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
@@ -496,114 +493,13 @@ impl<'a> App<'a> {
 
         let mut redraw = true;
         let mut last_terminal_size = terminal.size().unwrap();
-        let mut initial_render_logged = false;
-        let mut t_after_first_render: Option<std::time::Instant> = None;
 
         'main_loop: loop {
-            // Poll AI background task: check if the child process has finished.
-            let ai_result: Option<Result<String, (String, String)>> =
-                if let ContentMode::AgentModeWaiting { ref mut child, .. } = self.content_mode {
-                    match child.0.try_wait() {
-                        Ok(Some(status)) => {
-                            // Process has exited; drain the pipes synchronously.
-                            // This is safe because the child has exited (all write
-                            // ends of the pipes are closed) so read_to_string returns
-                            // immediately after consuming the buffered data.
-                            let stdout =
-                                child.0.stdout.take().map_or_else(String::new, |mut out| {
-                                    let mut buf = String::new();
-                                    let _ = std::io::Read::read_to_string(&mut out, &mut buf);
-                                    buf
-                                });
-                            let stdout = stdout.trim().to_string();
-                            if status.success() {
-                                Some(Ok(stdout))
-                            } else {
-                                let stderr =
-                                    child.0.stderr.take().map_or_else(String::new, |mut err| {
-                                        let mut buf = String::new();
-                                        let _ = std::io::Read::read_to_string(&mut err, &mut buf);
-                                        buf
-                                    });
-                                let stderr = stderr.trim().to_string();
-                                log::warn!("AI command exited with {}: {}", status, stderr);
-                                Some(Err((
-                                    format!("AI command exited with {}", status),
-                                    format!("stdout: {}\nstderr: {}", stdout, stderr),
-                                )))
-                            }
-                        }
-                        Ok(None) => None,
-                        Err(e) => {
-                            log::warn!("AI task: try_wait error: {}", e);
-                            Some(Err((format!("AI task failed: {}", e), String::new())))
-                        }
-                    }
-                } else {
-                    None
-                };
-            if let Some(result) = ai_result {
-                match result {
-                    Ok(raw_output) => match parse_ai_output(&raw_output) {
-                        Ok(parsed) => {
-                            self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.colour_palette),
-                            );
-                        }
-                        Err(e) => {
-                            log::warn!("AI command returned no suggestions: {}", e);
-                            self.content_mode = ContentMode::AgentError {
-                                message: format!("Failed to parse AI output: {}", e),
-                                raw_output,
-                                suggested_buffer: None,
-                                suggested_setup_command: None,
-                            };
-                        }
-                    },
-                    Err((msg, raw_output)) => {
-                        log::error!("AI command failed: {}", msg);
-                        self.content_mode = ContentMode::AgentError {
-                            message: msg,
-                            raw_output,
-                            suggested_buffer: None,
-                            suggested_setup_command: None,
-                        };
-                    }
-                }
+            if self.poll_agent() {
                 redraw = true;
             }
-
-            // Poll tab-completion background thread: check if results have arrived.
-            if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
-                match handle.receiver.try_recv() {
-                    Ok(Some(sugs)) => {
-                        // Take ownership of wuc_substring and start_time from the waiting state.
-                        let (wuc, load_time) =
-                            match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
-                                ContentMode::TabCompletionWaiting {
-                                    wuc_substring,
-                                    start_time,
-                                    ..
-                                } => (wuc_substring, start_time.elapsed()),
-                                _ => unreachable!(),
-                            };
-                        self.finish_tab_complete(sugs, wuc, load_time);
-                        redraw = true;
-                    }
-                    Ok(None) => {
-                        // No suggestions generated.
-                        self.content_mode = ContentMode::Normal;
-                        redraw = true;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        // Still waiting; keep TabCompletionWaiting mode.
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        log::warn!("Tab completion thread disconnected unexpectedly");
-                        self.content_mode = ContentMode::Normal;
-                        redraw = true;
-                    }
-                }
+            if self.poll_tab_completion() {
+                redraw = true;
             }
 
             if redraw {
@@ -625,22 +521,10 @@ impl<'a> App<'a> {
                         log::error!("Failed to set viewport height: {}", e);
                     });
 
-                // Only time the very first draw; subsequent redraws are not startup.
-                let t_draw = if !initial_render_logged {
-                    Some(std::time::Instant::now())
-                } else {
-                    None
-                };
                 let prev_contents = std::mem::take(&mut self.last_contents);
                 match terminal.draw(|f| self.ui(f, content)) {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
-
-                        if let Some(t) = t_draw {
-                            log::trace!("startup: initial render: {:?}", t.elapsed());
-                            t_after_first_render = Some(std::time::Instant::now());
-                            initial_render_logged = true;
-                        }
 
                         if matches!(
                             self.settings.send_shell_integration_codes,
@@ -684,11 +568,6 @@ impl<'a> App<'a> {
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
 
-            if let Some(t) = t_after_first_render.take() {
-                log::trace!("startup: until waiting on stdin: {:?}", t.elapsed());
-                log::trace!("startup: total: {:?}", t_run.elapsed());
-            }
-
             redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
                     CrosstermEvent::Key(key) => {
@@ -706,7 +585,6 @@ impl<'a> App<'a> {
                             width: new_cols,
                             height: new_rows,
                         };
-
                         true
                     }
                     CrosstermEvent::FocusLost => {
@@ -726,7 +604,6 @@ impl<'a> App<'a> {
                     }
                     CrosstermEvent::Paste(pasted) => {
                         log::trace!("Pasted content: {}", pasted);
-                        log::trace!("Pasted content as bytes: {:?}", pasted.as_bytes());
                         self.buffer.insert_str(&pasted);
                         self.on_possible_buffer_change();
                         true
@@ -746,7 +623,6 @@ impl<'a> App<'a> {
             // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
             // bash receives a terminating signal.
             // But just checking for terminating_signal works on all versions of bash, and is more direct.
-
             let terminating_signal = bash_funcs::read_terminating_signal();
 
             if terminating_signal != 0 {
@@ -1024,32 +900,117 @@ impl<'a> App<'a> {
         self.content_mode = ContentMode::Normal;
     }
 
-    /// Show an error explaining that agent mode is not configured, with links to help resources.
-    /// If the user has agent mode configured with a trigger prefix but no default (None-keyed)
-    /// command, offer to prepend that prefix to the current buffer and launch agent mode.
-    /// If no agent is configured at all, search the example file for a command that is available
-    /// on the system and offer to run the corresponding `flyline set-agent-mode` command.
-    fn show_agent_mode_not_configured_error(&mut self) {
-        // Find a trigger-prefix-based command (a Some(prefix) key) if any exists.
-        // Sort prefixes for deterministic selection.
-        let prefix = self
-            .settings
-            .agent_commands
-            .keys()
-            .filter_map(|k| k.as_deref())
-            .min();
+    /// Poll the AI background task; returns `true` if a redraw is needed.
+    fn poll_agent(&mut self) -> bool {
+        let ai_result: Option<Result<String, (String, String)>> =
+            if let ContentMode::AgentModeWaiting { ref mut child, .. } = self.content_mode {
+                match child.0.try_wait() {
+                    Ok(Some(status)) => {
+                        // Process has exited; drain the pipes synchronously.
+                        // This is safe because the child has exited (all write
+                        // ends of the pipes are closed) so read_to_string returns
+                        // immediately after consuming the buffered data.
+                        let stdout = child.0.stdout.take().map_or_else(String::new, |mut out| {
+                            let mut buf = String::new();
+                            let _ = std::io::Read::read_to_string(&mut out, &mut buf);
+                            buf
+                        });
+                        let stdout = stdout.trim().to_string();
+                        if status.success() {
+                            Some(Ok(stdout))
+                        } else {
+                            let stderr =
+                                child.0.stderr.take().map_or_else(String::new, |mut err| {
+                                    let mut buf = String::new();
+                                    let _ = std::io::Read::read_to_string(&mut err, &mut buf);
+                                    buf
+                                });
+                            let stderr = stderr.trim().to_string();
+                            log::warn!("AI command exited with {}: {}", status, stderr);
+                            Some(Err((
+                                format!("AI command exited with {}", status),
+                                format!("stdout: {}\nstderr: {}", stdout, stderr),
+                            )))
+                        }
+                    }
+                    Ok(None) => None,
+                    Err(e) => {
+                        log::warn!("AI task: try_wait error: {}", e);
+                        Some(Err((format!("AI task failed: {}", e), String::new())))
+                    }
+                }
+            } else {
+                None
+            };
+        if let Some(result) = ai_result {
+            match result {
+                Ok(raw_output) => match parse_ai_output(&raw_output) {
+                    Ok(parsed) => {
+                        self.content_mode = ContentMode::AgentOutputSelection(
+                            AiOutputSelection::new(parsed, &self.settings.colour_palette),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("AI command returned no suggestions: {}", e);
+                        self.content_mode = ContentMode::AgentError {
+                            message: format!("Failed to parse AI output: {}", e),
+                            raw_output,
+                            suggested_setup_command: None,
+                        };
+                    }
+                },
+                Err((msg, raw_output)) => {
+                    log::error!("AI command failed: {}", msg);
+                    self.content_mode = ContentMode::AgentError {
+                        message: msg,
+                        raw_output,
+                        suggested_setup_command: None,
+                    };
+                }
+            }
+            return true;
+        }
+        false
+    }
 
-        let (message, suggested_buffer, suggested_setup_command) = if let Some(prefix) = prefix {
-            let suggested_buf = format!("{} {}", prefix, self.buffer.buffer());
-            (
-                format!(
-                    "No default agent mode configured, but you have agent mode configured with trigger prefix \"{}\".",
-                    prefix
-                ),
-                Some(suggested_buf),
-                None,
-            )
-        } else {
+    /// Poll the tab-completion background thread; returns `true` if a redraw is needed.
+    fn poll_tab_completion(&mut self) -> bool {
+        if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
+            match handle.receiver.try_recv() {
+                Ok(Some(sugs)) => {
+                    // Take ownership of wuc_substring and start_time from the waiting state.
+                    let (wuc, load_time) =
+                        match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
+                            ContentMode::TabCompletionWaiting {
+                                wuc_substring,
+                                start_time,
+                                ..
+                            } => (wuc_substring, start_time.elapsed()),
+                            _ => unreachable!(),
+                        };
+                    self.finish_tab_complete(sugs, wuc, load_time);
+                    return true;
+                }
+                Ok(None) => {
+                    // No suggestions generated.
+                    self.content_mode = ContentMode::Normal;
+                    return true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Still waiting; keep TabCompletionWaiting mode.
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    log::warn!("Tab completion thread disconnected unexpectedly");
+                    self.content_mode = ContentMode::Normal;
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn show_agent_mode_not_configured_error(&mut self) {
+        let (message, suggested_setup_command) = {
             // No agent configured at all — try to find a suitable one from the example file.
             let setup_cmd = crate::agent_mode::parse_example_agent_commands()
                 .into_iter()
@@ -1061,12 +1022,10 @@ impl<'a> App<'a> {
             match setup_cmd {
                 Some(cmd) => (
                     "Agent mode is not configured. However, flyline can set it up for you:".to_string(),
-                    None,
                     Some(cmd),
                 ),
                 None => (
                     "Agent mode is not configured. Run `flyline set-agent-mode --help` or see https://github.com/HalFrgrd/flyline#agent-mode".to_string(),
-                    None,
                     setup_cmd,
                 )
             }
@@ -1074,13 +1033,12 @@ impl<'a> App<'a> {
         self.content_mode = ContentMode::AgentError {
             message,
             raw_output: String::new(),
-            suggested_buffer,
             suggested_setup_command,
         };
     }
 
     /// Resolve which agent command to use for Alt+Enter.
-    /// First tries to find a trigger-prefix match, then falls back to the `None`-keyed default.
+    /// First tries to find a trigger-prefix match, then falls back to the `None`-keyed default and then any available command if prefix is not required.
     fn resolve_agent_command(
         &self,
         needs_prefix: bool,
@@ -1101,11 +1059,21 @@ impl<'a> App<'a> {
             return None;
         }
 
-        let buf = self.buffer.buffer().to_string();
-        self.settings
+        let none_prefix_cmd = self
+            .settings
             .agent_commands
             .get(&None)
-            .map(|cmd| (cmd.clone(), buf))
+            .map(|cmd| (cmd.clone(), buf.to_string()));
+
+        if none_prefix_cmd.is_some() {
+            return none_prefix_cmd;
+        }
+        // Ignore the prefixing and just get any command.
+        self.settings
+            .agent_commands
+            .values()
+            .next()
+            .map(|cmd| (cmd.clone(), buf.to_string()))
     }
 
     /// Spawn the configured AI command as a child process and transition to `AgentModeWaiting`.
@@ -1172,7 +1140,6 @@ impl<'a> App<'a> {
                 self.content_mode = ContentMode::AgentError {
                     message: format!("Failed to run AI command: {}", e),
                     raw_output: String::new(),
-                    suggested_buffer: None,
                     suggested_setup_command: None,
                 };
             }
@@ -1248,7 +1215,7 @@ impl<'a> App<'a> {
                     active_suggestions.word_under_cursor.s,
                     word_under_cursor.s
                 );
-                active_suggestions.update_word_under_cursor(word_under_cursor);
+                active_suggestions.update_word_under_cursor(&word_under_cursor);
             } else {
                 log::debug!(
                     "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
@@ -1613,15 +1580,11 @@ impl<'a> App<'a> {
                 }
 
                 if !self.mouse_state.enabled() {
-                    let red = Style::default().fg(Color::Red);
-                    let escape_hint = TaggedLine::from(vec![
-                        TaggedSpan::new(Span::styled("Press ", red), Tag::Tutorial),
-                        TaggedSpan::new(Span::styled("Escape", red), Tag::Tutorial),
-                        TaggedSpan::new(
-                            Span::styled(" to re-enable mouse mode.", red),
-                            Tag::Tutorial,
-                        ),
-                    ]);
+                    let red = Style::default().fg(Color::Red).slow_blink();
+                    let escape_hint = TaggedLine::from(vec![TaggedSpan::new(
+                        Span::styled("Press Escape  to re-enable mouse mode.", red),
+                        Tag::Tutorial,
+                    )]);
                     for tagged_span in &escape_hint.spans {
                         content.write_tagged_span_dont_overwrite(tagged_span, None);
                     }
@@ -1895,7 +1858,7 @@ impl<'a> App<'a> {
             }
             ContentMode::TabCompletionWaiting { start_time, .. } if self.mode.is_running() => {
                 content.newline();
-                let line = animated_text_line("Loading completions…", now, *start_time);
+                let line = gaussian_wave_animated("Loading completions…", now, *start_time);
                 content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
             }
             ContentMode::FuzzyHistorySearch(_) if self.mode.is_running() => {
@@ -2021,9 +1984,17 @@ impl<'a> App<'a> {
             } if self.mode.is_running() => {
                 content.newline();
                 let elapsed_secs = start_time.elapsed().as_secs();
-                let text = format!("Running: {} [{}s]", command_display, elapsed_secs);
-                let line = animated_text_line(&text, now, *start_time);
+                let text = format!("Running [{}s]: ", elapsed_secs);
+                let line = gaussian_wave_animated(&text, now, *start_time);
                 content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
+                let command_display_span = TaggedSpan::new(
+                    Span::styled(
+                        command_display.clone(),
+                        self.settings.colour_palette.secondary_text(),
+                    ),
+                    Tag::Normal,
+                );
+                content.write_tagged_span(&command_display_span);
             }
             ContentMode::AgentOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
@@ -2108,7 +2079,6 @@ impl<'a> App<'a> {
             ContentMode::AgentError {
                 message,
                 raw_output,
-                suggested_buffer,
                 suggested_setup_command,
             } if self.mode.is_running() => {
                 content.newline();
@@ -2116,42 +2086,29 @@ impl<'a> App<'a> {
                     Span::styled(message.clone(), Style::default().fg(Color::Red)),
                     Tag::Normal,
                 ));
-                if let Some(suggested) = suggested_buffer {
-                    content.newline();
-                    content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(
-                            format!(
-                                "Press Enter to launch agent mode with this prefixed buffer: {}",
-                                suggested
+
+                if !raw_output.is_empty() {
+                    for line in raw_output.lines().take(5) {
+                        content.newline();
+                        content.write_tagged_span(&TaggedSpan::new(
+                            Span::styled(
+                                line.to_string(),
+                                self.settings.colour_palette.secondary_text(),
                             ),
-                            self.settings.colour_palette.secondary_text(),
-                        ),
-                        Tag::Normal,
-                    ));
-                } else {
-                    if !raw_output.is_empty() {
-                        for line in raw_output.lines().take(5) {
-                            content.newline();
-                            content.write_tagged_span(&TaggedSpan::new(
-                                Span::styled(
-                                    line.to_string(),
-                                    self.settings.colour_palette.secondary_text(),
-                                ),
-                                Tag::Normal,
-                            ));
-                        }
+                            Tag::Normal,
+                        ));
                     }
-                    content.newline();
-                    let hint = if let Some(setup_cmd) = suggested_setup_command {
-                        format!("Press Enter to run `{}`.", setup_cmd)
-                    } else {
-                        "Press Enter to run `flyline set-agent-mode --help`.".to_string()
-                    };
-                    content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(hint, self.settings.colour_palette.secondary_text()),
-                        Tag::Blank,
-                    ));
                 }
+                content.newline();
+                let hint = if let Some(setup_cmd) = suggested_setup_command {
+                    format!("Press Enter to run `{}`.", setup_cmd)
+                } else {
+                    "Press Enter to run `flyline set-agent-mode --help`.".to_string()
+                };
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(hint, self.settings.colour_palette.secondary_text()),
+                    Tag::Blank,
+                ));
             }
             _ => {}
         }

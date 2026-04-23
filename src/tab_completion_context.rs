@@ -12,7 +12,6 @@ use crate::{
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
     FirstWord, // the first word under the cursor. cursor might be in the middle of it
-
     CommandComp {
         // "git commi asdf" with cursor just after com
         command_word: String, // "git"
@@ -21,22 +20,6 @@ pub enum CompType {
     TildeExpansion,    // the tilde under the cursor, e.g. "~us|erna"
     GlobExpansion,     // the glob pattern under the cursor, e.g. "*.rs|t"
     FilenameExpansion, // the filename under the cursor, e.g. "fi|le.txt"
-}
-
-impl CompType {
-    fn from(word: &str) -> Self {
-        // TODO test these
-        if (word.starts_with('$') || word.starts_with("\"$")) && !word.contains("/") {
-            Self::EnvVariable
-        } else if word.starts_with('~') && !word.contains("/") {
-            Self::TildeExpansion
-        } else if word.contains('*') || word.contains('?') || word.contains('[') {
-            // TODO "*.md will match this. need some better logic here
-            Self::GlobExpansion
-        } else {
-            Self::FilenameExpansion
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -62,9 +45,13 @@ impl<'a> CompletionContext<'a> {
             dbg!(&word_under_cursor);
         }
 
+        let wuc = word_under_cursor.as_ref();
         let mut comp_types = vec![];
 
-        if CompType::from(word_under_cursor.as_ref()) == CompType::TildeExpansion {
+        // We could just rely on CompType::CommandComp and let bash do this expansion
+        // but flyline is better and handles more edge cases around tilde expansion.
+        // So we prioritize TildeExpansion over CommandComp if the word under cursor looks like it could be a tilde expansion.
+        if wuc.starts_with('~') && !wuc.contains("/") {
             log::debug!("Detected tilde expansion context");
             comp_types.push(CompType::TildeExpansion);
         }
@@ -72,13 +59,20 @@ impl<'a> CompletionContext<'a> {
         if context.trim().is_empty() || !context_until_cursor.chars().any(|c| c.is_whitespace()) {
             comp_types.push(CompType::FirstWord);
         } else {
-            comp_types.push(CompType::CommandComp {
-                command_word: context.split_whitespace().next().unwrap_or("").to_string(),
-            });
+            let command_word = context.split_whitespace().next().unwrap_or("").to_string();
+
+            comp_types.push(CompType::CommandComp { command_word });
         }
 
-        let secondary_comp_type = CompType::from(word_under_cursor.as_ref());
-        comp_types.push(secondary_comp_type);
+        if (wuc.starts_with('$') || wuc.starts_with("\"$")) && !wuc.contains("/") {
+            comp_types.push(CompType::EnvVariable);
+        } else if wuc.starts_with('~') && !wuc.contains("/") {
+            comp_types.push(CompType::TildeExpansion);
+        } else if wuc.contains('*') || wuc.contains('?') || wuc.contains('[') {
+            comp_types.push(CompType::GlobExpansion);
+        } else {
+            comp_types.push(CompType::FilenameExpansion);
+        }
 
         CompletionContext {
             buffer: Cow::Borrowed(buffer),
@@ -404,14 +398,17 @@ mod tests {
             "echo $(git rev-parse HEAD) résumé"
         );
 
-        match res.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
-                assert_eq!(command_word, "echo");
-                assert_eq!(res.word_under_cursor.as_ref(), "résumé");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
+        assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
+        assert_eq!(res.word_under_cursor.as_ref(), "résumé");
+        assert_eq!(
+            res.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FilenameExpansion
+            ]
+        );
     }
 
     #[test]
@@ -643,10 +640,10 @@ mod tests {
         assert_eq!(res.context, "x <( echo too )");
         assert_eq!(res.context_until_cursor, "x");
         assert_eq!(res.word_under_cursor.as_ref(), "x");
-        match res.comp_types.first().unwrap() {
-            CompType::FirstWord => {}
-            _ => panic!("Expected FirstWord"),
-        }
+        assert_eq!(
+            res.comp_types,
+            vec![CompType::FirstWord, CompType::FilenameExpansion]
+        );
     }
 
     #[test]
@@ -656,10 +653,10 @@ mod tests {
         assert_eq!(res.context, "diff <(cat a) <(cat b)");
         assert_eq!(res.context_until_cursor, "diff");
         assert_eq!(res.word_under_cursor.as_ref(), "diff");
-        match res.comp_types.first().unwrap() {
-            CompType::FirstWord => {}
-            _ => panic!("Expected FirstWord"),
-        }
+        assert_eq!(
+            res.comp_types,
+            vec![CompType::FirstWord, CompType::FilenameExpansion]
+        );
     }
 
     #[test]
@@ -669,10 +666,10 @@ mod tests {
         assert_eq!(res.context, "echo $(git rev-parse HEAD)");
         assert_eq!(res.context_until_cursor, "echo");
         assert_eq!(res.word_under_cursor.as_ref(), "echo");
-        match res.comp_types.first().unwrap() {
-            CompType::FirstWord => {}
-            _ => panic!("Expected FirstWord"),
-        }
+        assert_eq!(
+            res.comp_types,
+            vec![CompType::FirstWord, CompType::FilenameExpansion]
+        );
     }
 
     #[test]
@@ -682,10 +679,10 @@ mod tests {
         assert_eq!(res.context, "tee >(gzip > file.gz)");
         assert_eq!(res.context_until_cursor, "tee");
         assert_eq!(res.word_under_cursor.as_ref(), "tee");
-        match res.comp_types.first().unwrap() {
-            CompType::FirstWord => {}
-            _ => panic!("Expected FirstWord"),
-        }
+        assert_eq!(
+            res.comp_types,
+            vec![CompType::FirstWord, CompType::FilenameExpansion]
+        );
     }
 
     #[test]
@@ -695,12 +692,15 @@ mod tests {
         assert_eq!(res.context, "diff file <(echo too)");
         assert_eq!(res.context_until_cursor, "diff file");
         assert_eq!(res.word_under_cursor.as_ref(), "file");
-        match res.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "diff");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
+        assert_eq!(
+            res.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "diff".to_string()
+                },
+                CompType::FilenameExpansion
+            ]
+        );
     }
 
     #[test]
@@ -1132,132 +1132,143 @@ mod tests {
     fn test_word_with_backslash_2() {
         let ctx = run_inline(r#"cd foo\ █"#);
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "cd");
-                assert_eq!(ctx.word_under_cursor.as_ref(), "foo\\ ");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
+        assert_eq!(ctx.word_under_cursor.as_ref(), "foo\\ ");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "cd".to_string()
+                },
+                CompType::FilenameExpansion
+            ]
+        );
     }
 
     #[test]
     fn test_past_newline() {
         let ctx = run_inline("echo \"\n█");
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor.as_ref(), "");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
+        assert_eq!(ctx.word_under_cursor.as_ref(), "");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FilenameExpansion
+            ]
+        );
     }
 
     #[test]
     fn test_env_var_completion() {
         let ctx = run_inline("echo $HOM█");
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
-
-        assert_eq!(ctx.comp_types[1], CompType::EnvVariable);
+        assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::EnvVariable
+            ]
+        );
     }
 
     #[test]
     fn test_env_var_completion_in_double_quotes() {
         let ctx = run_inline("echo \"$HOM█\"");
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
-
-        assert_eq!(ctx.comp_types[1], CompType::EnvVariable);
+        assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::EnvVariable
+            ]
+        );
     }
 
     #[test]
     fn test_env_var_path_completion_in_double_quotes() {
         let ctx = run_inline("echo \"$HOME/abc█\"");
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor.as_ref(), "\"$HOME/abc");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
-
-        assert_eq!(ctx.comp_types[1], CompType::FilenameExpansion);
+        assert_eq!(ctx.word_under_cursor.as_ref(), "\"$HOME/abc");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FilenameExpansion
+            ]
+        );
     }
 
     #[test]
     fn test_second_env_var_completion_in_double_quotes() {
         let ctx = run_inline("echo \"$FOO$HOM█\"");
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
-
-        assert_eq!(ctx.comp_types[1], CompType::EnvVariable);
+        assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::EnvVariable
+            ]
+        );
     }
 
     #[test]
     fn test_env_var_completion_in_double_quotes_trailingspace() {
         let ctx = run_inline("echo \"asdf $HOM█ \"");
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "echo");
-                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
-            }
-            _ => panic!("Expected CommandComp"),
-        }
-
-        assert_eq!(ctx.comp_types[1], CompType::EnvVariable);
+        assert_eq!(ctx.word_under_cursor.as_ref(), "$HOM");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::EnvVariable
+            ]
+        );
     }
 
     #[test]
     fn test_start_with_env_var() {
         let ctx = run_inline("$HOME/█");
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::FirstWord => {
-                assert_eq!(ctx.word_under_cursor.as_ref(), "$HOME/");
-            }
-            _ => panic!("Expected FirstWord"),
-        }
+        assert_eq!(ctx.word_under_cursor.as_ref(), "$HOME/");
 
-        assert_eq!(ctx.comp_types[1], CompType::FilenameExpansion);
+        assert_eq!(
+            ctx.comp_types,
+            vec![CompType::FirstWord, CompType::FilenameExpansion]
+        );
     }
 
     #[test]
     fn test_env_var_at_start_but_not_end() {
         let ctx = run_inline(r#"ll $HOME/projects/flyline/qwe\ asd/\$█"#);
 
-        match ctx.comp_types.first().unwrap() {
-            CompType::CommandComp { command_word } => {
-                assert_eq!(command_word, "ll");
-                assert_eq!(
-                    ctx.word_under_cursor.as_ref(),
-                    r#"$HOME/projects/flyline/qwe\ asd/\$"#
-                );
-            }
-            _ => panic!("Expected CommandComp"),
-        }
+        assert_eq!(
+            ctx.word_under_cursor.as_ref(),
+            r#"$HOME/projects/flyline/qwe\ asd/\$"#
+        );
 
-        assert_eq!(ctx.comp_types[1], CompType::FilenameExpansion);
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "ll".to_string()
+                },
+                CompType::FilenameExpansion
+            ]
+        );
     }
 }

@@ -177,12 +177,6 @@ impl FormattedBufferPart {
         let span = Span::styled(token.token.value.clone(), style);
 
         let cursor_grapheme_idx = cursor_byte_pos_in_token.map(|byte_pos| {
-            log::debug!(
-                "Calculating cursor_grapheme_idx for byte_pos {} in token '{}'",
-                byte_pos,
-                token.token.value
-            );
-
             let mut graph_idx = 0;
             let mut byte_count = 0;
             for g in token.token.value.graphemes(true) {
@@ -195,15 +189,6 @@ impl FormattedBufferPart {
             }
             graph_idx
         });
-
-        if let Some(idx) = cursor_grapheme_idx {
-            log::debug!(
-                "Cursor byte position {} corresponds to grapheme index {} in token '{}'",
-                cursor_byte_pos_in_token.unwrap_or(0),
-                idx,
-                token.token.value
-            );
-        }
 
         let animated_span_fn: Option<
             Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync>,
