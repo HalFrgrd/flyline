@@ -201,7 +201,7 @@ impl Default for CursorStyleConfig {
 pub struct CursorConfig {
     /// Which backend renders the cursor.
     pub backend: CursorBackend,
-    /// Interpolation speed (cells per second).  `None` disables position
+    /// Interpolation speed.  `None` disables position
     /// interpolation and the cursor jumps instantly to its target.
     /// Default is `Some(16.0)`.
     pub interpolate: Option<f32>,
