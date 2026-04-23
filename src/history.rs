@@ -204,6 +204,69 @@ impl HistoryManager {
         res
     }
 
+    /// Read history entries from an atuin SQLite database.
+    ///
+    /// The atuin schema stores each command in a `history` table with
+    /// nanosecond `timestamp` and a nullable `deleted_at` column for soft
+    /// deletes.  The database is opened read-only.  Returns an empty vector
+    /// on any failure (missing file, corrupt schema, etc.) — failures are
+    /// logged at warn/error level.
+    fn parse_atuin_history(db_path: &str) -> Vec<HistoryEntry> {
+        log::debug!("Reading atuin history from: {}", db_path);
+
+        if !std::path::Path::new(db_path).exists() {
+            eprintln!("flyline: atuin database not found: {}", db_path);
+            log::warn!("atuin database not found: {}", db_path);
+            return Vec::new();
+        }
+
+        let res = time_it!(
+            "parse atuin history",
+            Self::parse_atuin_history_inner(db_path)
+        );
+
+        match res {
+            Ok(entries) => {
+                log::debug!("Parsed atuin history ({} entries)", entries.len());
+                entries
+            }
+            Err(e) => {
+                eprintln!("flyline: failed to read atuin database {}: {}", db_path, e);
+                log::error!("Failed to read atuin database {}: {}", db_path, e);
+                Vec::new()
+            }
+        }
+    }
+
+    fn parse_atuin_history_inner(db_path: &str) -> Result<Vec<HistoryEntry>, sqlite::Error> {
+        // Open the database read-only so we never modify the user's atuin DB.
+        let connection = sqlite::Connection::open_with_flags(
+            db_path,
+            sqlite::OpenFlags::new().with_read_only(),
+        )?;
+
+        // Atuin stores timestamps as nanoseconds since the Unix epoch and
+        // marks soft-deleted entries by setting `deleted_at`.
+        let query = "SELECT timestamp, command FROM history \
+                     WHERE deleted_at IS NULL \
+                     ORDER BY timestamp ASC";
+        let mut statement = connection.prepare(query)?;
+
+        let mut entries: Vec<HistoryEntry> = Vec::new();
+        while let sqlite::State::Row = statement.next()? {
+            let ts_ns: i64 = statement.read::<i64, _>(0)?;
+            let command: String = statement.read::<String, _>(1)?;
+            let timestamp = if ts_ns > 0 {
+                Some((ts_ns as u64) / 1_000_000_000)
+            } else {
+                None
+            };
+            // Index is reassigned by `push_deduped_entry` / `normalize_entries`.
+            entries.push(HistoryEntry::new(timestamp, 0, command));
+        }
+        Ok(entries)
+    }
+
     fn parse_zsh_history(custom_path: Option<&str>) -> Vec<HistoryEntry> {
         let hist_path = match custom_path {
             Some(p) if !p.is_empty() => p.to_string(),
@@ -248,13 +311,22 @@ impl HistoryManager {
     }
 
     pub fn new(settings: &Settings) -> HistoryManager {
-        // Bash will load the history into memory, so we can read it from there
-        // Bash parses it after bashrc is loaded.
-        let bash_entries = Self::parse_bash_history_from_memory();
-        Self::log_recent_entries(&bash_entries, "bash");
+        // When --atuin-db is set, load history from the atuin SQLite database
+        // instead of parsing it from bash.
+        let bash_entries = if let Some(ref atuin_path) = settings.atuin_db_path {
+            let atuin_entries = Self::parse_atuin_history(atuin_path);
+            Self::log_recent_entries(&atuin_entries, "atuin");
+            atuin_entries
+        } else {
+            // Bash will load the history into memory, so we can read it from there
+            // Bash parses it after bashrc is loaded.
+            let bash_entries = Self::parse_bash_history_from_memory();
+            Self::log_recent_entries(&bash_entries, "bash");
+            bash_entries
 
-        // Alternative is to do it ourselves
-        // let bash_entries = Self::parse_bash_history_from_file();
+            // Alternative is to do it ourselves
+            // let bash_entries = Self::parse_bash_history_from_file();
+        };
 
         let entries = if let Some(ref zsh_path) = settings.zsh_history_path {
             // As a Zsh user migrating to Bash, I want to have my Zsh history available too
@@ -775,6 +847,59 @@ cd /home/user2
         check(None, 3, "#cd /asdf/asdf");
         check(None, 4, "cd /home/user");
         check(Some(1625078460), 5, "cd /home/user2");
+    }
+
+    #[test]
+    fn test_parse_atuin_history() {
+        // Build an in-memory atuin-shaped database, populate a few rows, persist
+        // it to a temp file, and then read it back via parse_atuin_history.
+        let mut tmp = std::env::temp_dir();
+        tmp.push(format!("flyline_atuin_test_{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+
+        {
+            let conn = sqlite::Connection::open(&tmp).unwrap();
+            conn.execute(
+                "CREATE TABLE history (
+                    id TEXT PRIMARY KEY,
+                    timestamp INTEGER NOT NULL,
+                    duration INTEGER NOT NULL,
+                    exit INTEGER NOT NULL,
+                    command TEXT NOT NULL,
+                    cwd TEXT NOT NULL,
+                    session TEXT NOT NULL,
+                    hostname TEXT NOT NULL,
+                    deleted_at INTEGER
+                );",
+            )
+            .unwrap();
+            // Insert out of order to verify ORDER BY timestamp ASC.
+            conn.execute(
+                "INSERT INTO history VALUES \
+                 ('a', 1625078460000000000, 0, 0, 'echo hi',  '/', 's', 'h', NULL), \
+                 ('b', 1625078400000000000, 0, 0, 'ls -al',   '/', 's', 'h', NULL), \
+                 ('c', 1625078500000000000, 0, 0, 'gone',     '/', 's', 'h', 1625078600000000000), \
+                 ('d', 1625078520000000000, 0, 0, 'cd /tmp',  '/', 's', 'h', NULL);",
+            )
+            .unwrap();
+        }
+
+        let entries = HistoryManager::parse_atuin_history(tmp.to_str().unwrap());
+        let _ = std::fs::remove_file(&tmp);
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].command, "ls -al");
+        assert_eq!(entries[0].timestamp, Some(1625078400));
+        assert_eq!(entries[1].command, "echo hi");
+        assert_eq!(entries[1].timestamp, Some(1625078460));
+        assert_eq!(entries[2].command, "cd /tmp");
+        assert_eq!(entries[2].timestamp, Some(1625078520));
+    }
+
+    #[test]
+    fn test_parse_atuin_history_missing_file() {
+        let entries = HistoryManager::parse_atuin_history("/nonexistent/path/to/atuin/history.db");
+        assert!(entries.is_empty());
     }
 
     #[test]
