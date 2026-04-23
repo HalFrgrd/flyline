@@ -1,5 +1,5 @@
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
-use crate::unicode_helpers::{BRAILLE_BLANK, OctantDots, OctantStyle, octant};
+use crate::unicode_helpers::{OctantStyle, octant_from_grid};
 use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;
@@ -427,24 +427,6 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
     const EASING_ANIM_BOUNDARY_END: usize = EASING_ANIM_TOTAL_WIDTH.saturating_sub(2);
     const EASING_ANIM_BOUNDARY_LOGICAL_END: usize = EASING_ANIM_BOUNDARY_END * 2;
 
-    fn braille_char(dots: OctantDots) -> char {
-        octant(dots, OctantStyle::Braille).unwrap_or(BRAILLE_BLANK)
-    }
-
-    fn logical_to_dot(logical_pos: usize, row: usize) -> OctantDots {
-        match (logical_pos % 2, row) {
-            (0, 0) => OctantDots::TOP_LEFT,
-            (0, 1) => OctantDots::UPPER_MID_LEFT,
-            (0, 2) => OctantDots::LOWER_MID_LEFT,
-            (0, 3) => OctantDots::BOT_LEFT,
-            (1, 0) => OctantDots::TOP_RIGHT,
-            (1, 1) => OctantDots::UPPER_MID_RIGHT,
-            (1, 2) => OctantDots::LOWER_MID_RIGHT,
-            (1, 3) => OctantDots::BOT_RIGHT,
-            _ => OctantDots::NONE,
-        }
-    }
-
     let cycle_frames =
         ((ANIMATION_FRAME_FPS as f32 / EASING_ANIM_TARGET_HZ).round() as usize).max(2);
     let dot_logical_range =
@@ -452,24 +434,25 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
     let mut frames = Vec::with_capacity(cycle_frames);
 
     let make_frame = |pos: isize| -> Vec<Span<'static>> {
-        let mut s = String::with_capacity(EASING_ANIM_TOTAL_WIDTH);
-        let mut cells = [OctantDots::NONE; EASING_ANIM_TOTAL_WIDTH];
-
-        for j in 0..EASING_ANIM_LOGICAL_WIDTH {
-            if j >= EASING_ANIM_BOUNDARY_LOGICAL_START && j <= EASING_ANIM_BOUNDARY_LOGICAL_END {
-                cells[j / 2] |= logical_to_dot(j, 0);
-                cells[j / 2] |= logical_to_dot(j, 3);
-            }
-        }
-
         let clamped_pos = pos.clamp(0, EASING_ANIM_LOGICAL_WIDTH as isize - 1) as usize;
-        cells[clamped_pos / 2] |= logical_to_dot(clamped_pos, 1);
-        cells[clamped_pos / 2] |= logical_to_dot(clamped_pos, 2);
 
-        for bits in cells {
-            s.push(braille_char(bits));
+        // Build a 4-row × EASING_ANIM_LOGICAL_WIDTH-col bool grid (row-major).
+        let mut grid = vec![vec![false; EASING_ANIM_LOGICAL_WIDTH]; 4];
+
+        // Rows 0 and 3: "rails" spanning the boundary region.
+        for j in EASING_ANIM_BOUNDARY_LOGICAL_START..=EASING_ANIM_BOUNDARY_LOGICAL_END {
+            grid[0][j] = true;
+            grid[3][j] = true;
         }
 
+        // Rows 1 and 2: the moving dot at the current logical position.
+        grid[1][clamped_pos] = true;
+        grid[2][clamped_pos] = true;
+
+        let s = octant_from_grid(&grid, OctantStyle::Braille)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
         vec![Span::raw(s)]
     };
 

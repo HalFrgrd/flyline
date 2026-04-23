@@ -493,6 +493,20 @@ impl Quadrant {
     pub const LOWER_LEFT: Self = Quadrant(1 << 2);
     pub const LOWER_RIGHT: Self = Quadrant(1 << 3);
     pub const ALL: Self = Quadrant(0b0000_1111);
+
+    /// Construct from a 2-column × 2-row boolean grid where `grid[col][row]`
+    /// is `true` if that position is filled.
+    ///
+    /// - `grid[0]` = left column (rows 0–1 from top to bottom)
+    /// - `grid[1]` = right column (rows 0–1 from top to bottom)
+    pub fn from_grid(grid: [[bool; 2]; 2]) -> Self {
+        Quadrant(
+            (grid[0][0] as u8)           // row 0, col 0 → UPPER_LEFT  (bit 0)
+            | ((grid[1][0] as u8) << 1)  // row 0, col 1 → UPPER_RIGHT (bit 1)
+            | ((grid[0][1] as u8) << 2)  // row 1, col 0 → LOWER_LEFT  (bit 2)
+            | ((grid[1][1] as u8) << 3), // row 1, col 1 → LOWER_RIGHT (bit 3)
+        )
+    }
 }
 
 impl std::ops::BitOr for Quadrant {
@@ -570,6 +584,29 @@ pub fn quadrant(q: Quadrant, style: QuadrantStyle) -> Option<char> {
     }
 }
 
+/// Convert a 2D boolean grid into lines of quadrant characters.
+///
+/// The input `grid` is row-major: `grid[row][col]`.  Each output character
+/// covers a 2-column × 2-row cell.  Empty cells at the end of each line are
+/// stripped, so lines may differ in length.
+///
+/// # Example
+/// ```
+/// use flyline::unicode_helpers::{QuadrantStyle, quadrant_from_grid};
+/// // A 2-row × 4-col grid → one line of 2 quadrant chars.
+/// let grid: Vec<Vec<bool>> = vec![
+///     vec![true,  false, false, true],
+///     vec![false, true,  true,  false],
+/// ];
+/// let lines = quadrant_from_grid(&grid, QuadrantStyle::Full);
+/// assert_eq!(lines.len(), 1);
+/// ```
+pub fn quadrant_from_grid(grid: &[impl AsRef<[bool]>], style: QuadrantStyle) -> Vec<String> {
+    from_grid_inner::<2>(grid, ' ', |cell| {
+        quadrant(Quadrant::from_grid(cell), style).unwrap_or(' ')
+    })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Symbols for Legacy Computing  U+1FB00–U+1FBFF
 // ─────────────────────────────────────────────────────────────────────────────
@@ -603,6 +640,22 @@ impl Sextant {
     pub const BOT_LEFT: Self = Sextant(1 << 4); // position 5
     pub const BOT_RIGHT: Self = Sextant(1 << 5); // position 6
     pub const ALL: Self = Sextant(0b0011_1111);
+
+    /// Construct from a 2-column × 3-row boolean grid where `grid[col][row]`
+    /// is `true` if that position is filled.
+    ///
+    /// - `grid[0]` = left column (rows 0–2 from top to bottom)
+    /// - `grid[1]` = right column (rows 0–2 from top to bottom)
+    pub fn from_grid(grid: [[bool; 3]; 2]) -> Self {
+        Sextant(
+            (grid[0][0] as u8)           // row 0, col 0 → TOP_LEFT  (bit 0)
+            | ((grid[1][0] as u8) << 1)  // row 0, col 1 → TOP_RIGHT (bit 1)
+            | ((grid[0][1] as u8) << 2)  // row 1, col 0 → MID_LEFT  (bit 2)
+            | ((grid[1][1] as u8) << 3)  // row 1, col 1 → MID_RIGHT (bit 3)
+            | ((grid[0][2] as u8) << 4)  // row 2, col 0 → BOT_LEFT  (bit 4)
+            | ((grid[1][2] as u8) << 5), // row 2, col 1 → BOT_RIGHT (bit 5)
+        )
+    }
 }
 
 impl std::ops::BitOr for Sextant {
@@ -657,6 +710,30 @@ pub fn sextant(sextants_visible: Sextant, style: SextantStyle) -> Option<char> {
         SextantStyle::Separated => 0x1CE51,
     };
     char::from_u32(base + offset)
+}
+
+/// Convert a 2D boolean grid into lines of sextant characters.
+///
+/// The input `grid` is row-major: `grid[row][col]`.  Each output character
+/// covers a 2-column × 3-row cell.  Empty cells at the end of each line are
+/// stripped, so lines may differ in length.
+///
+/// # Example
+/// ```
+/// use flyline::unicode_helpers::{SextantStyle, sextant_from_grid};
+/// // A 3-row × 2-col grid → one line of 1 sextant char.
+/// let grid: Vec<Vec<bool>> = vec![
+///     vec![true, false],
+///     vec![false, true],
+///     vec![true, true],
+/// ];
+/// let lines = sextant_from_grid(&grid, SextantStyle::Full);
+/// assert_eq!(lines.len(), 1);
+/// ```
+pub fn sextant_from_grid(grid: &[impl AsRef<[bool]>], style: SextantStyle) -> Vec<String> {
+    from_grid_inner::<3>(grid, ' ', |cell| {
+        sextant(Sextant::from_grid(cell), style).unwrap_or(' ')
+    })
 }
 
 // ── Octant block elements ─────────────────────────────────────────────────────
@@ -823,6 +900,100 @@ pub fn octant(dots: OctantDots, style: OctantStyle) -> Option<char> {
             char::from_u32(0x1CE00 + offset)
         }
     }
+}
+
+/// Convert a 2D boolean grid into lines of octant characters.
+///
+/// The input `grid` is row-major: `grid[row][col]`.  Each output character
+/// covers a 2-column × 4-row cell.  Empty cells at the end of each line are
+/// stripped, so lines may differ in length.  When `style` is
+/// [`OctantStyle::Braille`], the "empty" character is [`BRAILLE_BLANK`]
+/// (U+2800); for other styles it is a space.
+///
+/// A grid with 4 or fewer rows always produces a single-element [`Vec`].
+///
+/// # Example
+/// ```
+/// use flyline::unicode_helpers::{OctantStyle, octant_from_grid};
+/// // A 4-row × 4-col grid → one line of 2 Braille characters.
+/// let grid: Vec<Vec<bool>> = vec![
+///     vec![true,  false, false, false],
+///     vec![false, false, false, false],
+///     vec![false, false, false, true ],
+///     vec![false, false, false, false],
+/// ];
+/// let lines = octant_from_grid(&grid, OctantStyle::Braille);
+/// assert_eq!(lines.len(), 1);
+/// assert_eq!(lines[0].chars().count(), 2);
+/// ```
+pub fn octant_from_grid(grid: &[impl AsRef<[bool]>], style: OctantStyle) -> Vec<String> {
+    // For Braille every pattern maps to a valid character (including BRAILLE_BLANK
+    // for the empty pattern), so the empty sentinel is BRAILLE_BLANK.
+    // For Full/Separated, octant() returns None for the empty pattern, so we use ' '.
+    let empty_char = match style {
+        OctantStyle::Braille => BRAILLE_BLANK,
+        _ => ' ',
+    };
+    from_grid_inner::<4>(grid, empty_char, |cell| {
+        octant(OctantDots::from_grid(cell), style).unwrap_or(empty_char)
+    })
+}
+
+/// Shared implementation for all `*_from_grid` functions.
+///
+/// `R` is the number of rows consumed per output character.  Each character
+/// covers a fixed 2-column × R-row cell.  `render_cell` maps a `[[bool; R]; 2]`
+/// col-major cell (left column first) to the output character; it should
+/// return `empty_char` for a completely empty cell.  Trailing `empty_char`
+/// entries are stripped from each output line.
+fn from_grid_inner<const R: usize>(
+    grid: &[impl AsRef<[bool]>],
+    empty_char: char,
+    mut render_cell: impl FnMut([[bool; R]; 2]) -> char,
+) -> Vec<String> {
+    if grid.is_empty() {
+        return vec![];
+    }
+    let num_rows = grid.len();
+    let num_cols = grid.iter().map(|r| r.as_ref().len()).max().unwrap_or(0);
+    if num_cols == 0 {
+        return vec![];
+    }
+
+    let char_cols = num_cols.div_ceil(2);
+    let num_lines = num_rows.div_ceil(R);
+
+    let mut result = Vec::with_capacity(num_lines);
+    for line_idx in 0..num_lines {
+        let row_start = line_idx * R;
+        let mut chars: Vec<char> = Vec::with_capacity(char_cols);
+
+        for char_col in 0..char_cols {
+            let col_start = char_col * 2;
+
+            let mut cell = [[false; R]; 2];
+            for r in 0..R {
+                let row = row_start + r;
+                if row < num_rows {
+                    let row_data = grid[row].as_ref();
+                    for c in 0..2 {
+                        let col = col_start + c;
+                        if col < row_data.len() {
+                            cell[c][r] = row_data[col];
+                        }
+                    }
+                }
+            }
+
+            chars.push(render_cell(cell));
+        }
+
+        while chars.last() == Some(&empty_char) {
+            chars.pop();
+        }
+        result.push(chars.into_iter().collect());
+    }
+    result
 }
 
 // ── Additional Symbols for Legacy Computing constants ─────────────────────────
@@ -1171,5 +1342,198 @@ mod tests {
             sextant(Sextant::TOP_LEFT, SextantStyle::Separated),
             char::from_u32(0x1CE51)
         );
+    }
+
+    // ── Quadrant::from_grid ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_quadrant_from_grid_upper_left() {
+        let q = Quadrant::from_grid([[true, false], [false, false]]);
+        assert_eq!(q, Quadrant::UPPER_LEFT);
+    }
+
+    #[test]
+    fn test_quadrant_from_grid_all() {
+        let q = Quadrant::from_grid([[true, true], [true, true]]);
+        assert_eq!(q, Quadrant::ALL);
+        assert_eq!(quadrant(q, QuadrantStyle::Full), Some('█'));
+    }
+
+    #[test]
+    fn test_quadrant_from_grid_lower_right() {
+        let q = Quadrant::from_grid([[false, false], [false, true]]);
+        assert_eq!(q, Quadrant::LOWER_RIGHT);
+    }
+
+    // ── Sextant::from_grid ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_sextant_from_grid_top_left() {
+        let s = Sextant::from_grid([[true, false, false], [false, false, false]]);
+        assert_eq!(s, Sextant::TOP_LEFT);
+    }
+
+    #[test]
+    fn test_sextant_from_grid_all() {
+        let s = Sextant::from_grid([[true, true, true], [true, true, true]]);
+        assert_eq!(s, Sextant::ALL);
+    }
+
+    #[test]
+    fn test_sextant_from_grid_mid_right() {
+        let s = Sextant::from_grid([[false, false, false], [false, true, false]]);
+        assert_eq!(s, Sextant::MID_RIGHT);
+    }
+
+    // ── octant_from_grid ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_octant_from_grid_empty() {
+        let grid: Vec<Vec<bool>> = vec![];
+        assert!(octant_from_grid(&grid, OctantStyle::Braille).is_empty());
+    }
+
+    #[test]
+    fn test_octant_from_grid_single_cell_4_rows() {
+        // A 4-row × 2-col grid → 1 output line, 1 Braille char (left col filled).
+        let grid: Vec<Vec<bool>> = vec![
+            vec![true, false],
+            vec![true, false],
+            vec![true, false],
+            vec![true, false],
+        ];
+        let lines = octant_from_grid(&grid, OctantStyle::Braille);
+        assert_eq!(lines.len(), 1);
+        // Left column all filled → TOP_LEFT|UPPER_MID_LEFT|LOWER_MID_LEFT|BOT_LEFT
+        let expected = octant(
+            OctantDots::TOP_LEFT
+                | OctantDots::UPPER_MID_LEFT
+                | OctantDots::LOWER_MID_LEFT
+                | OctantDots::BOT_LEFT,
+            OctantStyle::Braille,
+        )
+        .unwrap()
+        .to_string();
+        assert_eq!(lines[0], expected);
+    }
+
+    #[test]
+    fn test_octant_from_grid_trailing_stripped_braille() {
+        // A 4-row × 4-col grid with only the first 2 cols filled → 1 char, trailing blank stripped.
+        let grid: Vec<Vec<bool>> = vec![
+            vec![true, false, false, false],
+            vec![false, false, false, false],
+            vec![false, false, false, false],
+            vec![false, false, false, false],
+        ];
+        let lines = octant_from_grid(&grid, OctantStyle::Braille);
+        assert_eq!(lines.len(), 1);
+        // Only first cell (cols 0-1) has a dot; second cell (cols 2-3) is blank → stripped.
+        assert_eq!(lines[0].chars().count(), 1);
+    }
+
+    #[test]
+    fn test_octant_from_grid_two_lines() {
+        // An 8-row × 2-col grid → 2 output lines.
+        let mut grid: Vec<Vec<bool>> = vec![vec![false, false]; 8];
+        grid[0][0] = true; // top of line 1
+        grid[4][1] = true; // top of line 2
+        let lines = octant_from_grid(&grid, OctantStyle::Braille);
+        assert_eq!(lines.len(), 2);
+    }
+
+    #[test]
+    fn test_octant_from_grid_four_rows_is_single_line() {
+        // Exactly 4 rows → always 1 output line.
+        let grid: Vec<Vec<bool>> = vec![
+            vec![true, true],
+            vec![true, true],
+            vec![true, true],
+            vec![true, true],
+        ];
+        let lines = octant_from_grid(&grid, OctantStyle::Braille);
+        assert_eq!(lines.len(), 1);
+    }
+
+    // ── sextant_from_grid ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_sextant_from_grid_empty() {
+        let grid: Vec<Vec<bool>> = vec![];
+        assert!(sextant_from_grid(&grid, SextantStyle::Full).is_empty());
+    }
+
+    #[test]
+    fn test_sextant_from_grid_three_rows_single_line() {
+        // 3-row × 2-col grid → 1 output line.
+        let grid: Vec<Vec<bool>> = vec![vec![true, false], vec![false, true], vec![true, false]];
+        let lines = sextant_from_grid(&grid, SextantStyle::Full);
+        assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn test_sextant_from_grid_four_rows_two_lines() {
+        // 4-row grid → 2 lines; second line only has top-third data (row 3).
+        let mut grid: Vec<Vec<bool>> = vec![vec![false, false]; 4];
+        grid[3][0] = true; // row 3, col 0 → top of sextant on line 2
+        let lines = sextant_from_grid(&grid, SextantStyle::Full);
+        assert_eq!(lines.len(), 2);
+        // Line 2 has a filled top-left sextant position.
+        assert!(!lines[1].is_empty());
+    }
+
+    #[test]
+    fn test_sextant_from_grid_trailing_stripped() {
+        // A 3-row × 4-col grid with only first 2 cols filled → 1 char on output.
+        let grid: Vec<Vec<bool>> = vec![
+            vec![true, false, false, false],
+            vec![false, false, false, false],
+            vec![false, false, false, false],
+        ];
+        let lines = sextant_from_grid(&grid, SextantStyle::Full);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].chars().count(), 1);
+    }
+
+    // ── quadrant_from_grid ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_quadrant_from_grid_fn_empty() {
+        let grid: Vec<Vec<bool>> = vec![];
+        assert!(quadrant_from_grid(&grid, QuadrantStyle::Full).is_empty());
+    }
+
+    #[test]
+    fn test_quadrant_from_grid_fn_two_rows_single_line() {
+        // 2-row × 4-col grid → 1 output line of 2 chars.
+        let grid: Vec<Vec<bool>> = vec![
+            vec![true, false, false, true],
+            vec![false, true, true, false],
+        ];
+        let lines = quadrant_from_grid(&grid, QuadrantStyle::Full);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].chars().count(), 2);
+    }
+
+    #[test]
+    fn test_quadrant_from_grid_fn_trailing_stripped() {
+        // 2-row × 4-col grid with only first 2 cols filled → 1 char output.
+        let grid: Vec<Vec<bool>> = vec![
+            vec![true, false, false, false],
+            vec![false, false, false, false],
+        ];
+        let lines = quadrant_from_grid(&grid, QuadrantStyle::Full);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].chars().count(), 1);
+    }
+
+    #[test]
+    fn test_quadrant_from_grid_fn_four_rows_two_lines() {
+        // 4-row grid → 2 output lines.
+        let mut grid: Vec<Vec<bool>> = vec![vec![false, false]; 4];
+        grid[0][0] = true;
+        grid[2][0] = true;
+        let lines = quadrant_from_grid(&grid, QuadrantStyle::Full);
+        assert_eq!(lines.len(), 2);
     }
 }

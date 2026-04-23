@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::unicode_helpers::{BRAILLE_BLANK, OctantDots, OctantStyle, octant};
+use crate::unicode_helpers::{BRAILLE_BLANK, OctantStyle, octant_from_grid};
 
 struct Coord {
     x: usize,
@@ -119,35 +119,18 @@ impl SnakeAnimation {
         self.body.push(Coord { x, y });
     }
 
-    fn body_as_grid(&self) -> Vec<[bool; 4]> {
-        let mut grid: Vec<[bool; 4]> = vec![];
-        for coord in self.body.iter() {
-            if coord.x >= grid.len() {
-                grid.resize(coord.x + 1, [false; 4]);
-            }
-            grid[coord.x][coord.y] = true;
+    fn body_as_grid(&self) -> [[bool; Self::MAX_X]; Self::MAX_Y] {
+        let mut grid = [[false; Self::MAX_X]; Self::MAX_Y];
+        for coord in &self.body {
+            grid[coord.y][coord.x] = true;
         }
-
         grid
     }
 
     fn to_string(&self) -> String {
-        let mut res = String::new();
         let grid = self.body_as_grid();
-        for poss_col_pair in grid.chunks(2) {
-            let col_pair: [[bool; 4]; 2] = if poss_col_pair.len() % 2 == 1 {
-                assert!(poss_col_pair.len() == 1);
-                [poss_col_pair[0], [false; 4]]
-            } else {
-                [poss_col_pair[0], poss_col_pair[1]]
-            };
-
-            // Build OctantDots from the 2-column × 4-row grid and render as Braille.
-            let ch = octant(OctantDots::from_grid(col_pair), OctantStyle::Braille)
-                .unwrap_or(BRAILLE_BLANK);
-            res.push(ch);
-        }
-        res
+        let lines = octant_from_grid(&grid, OctantStyle::Braille);
+        lines.into_iter().next().unwrap_or_default()
     }
 }
 
