@@ -197,6 +197,11 @@ target "demo-fuzzy-history-extracted-gif" {
     dockerfile = "docker/demo_fuzzy_history.Dockerfile"
 }
 
+target "demo-tab-completion-easing-extracted-gif" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_tab_completion_easing.Dockerfile"
+}
+
 group "demos" {
     targets = [
         "demo-overview-extracted-gif",
@@ -205,7 +210,8 @@ group "demos" {
         "demo-custom-animation-extracted-gif",
         "demo-agent-mode-extracted-gif",
         "demo-ls-colors-extracted-gif",
-        "demo-fuzzy-history-extracted-gif"
+        "demo-fuzzy-history-extracted-gif",
+        "demo-tab-completion-easing-extracted-gif"
     ]
 }
 
