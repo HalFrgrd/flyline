@@ -369,7 +369,7 @@ enum Commands {
         #[arg(long)]
         backend: Option<cursor::CursorBackend>,
         /// Interpolation speed in cells per second, or `none` to disable
-        /// interpolation.  Default is `16`.
+        /// interpolation.  Default is `200`.
         #[arg(long, value_name = "SPEED|none")]
         interpolate: Option<String>,
         /// Easing function for position interpolation.  Default is `linear`.
