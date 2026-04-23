@@ -23,22 +23,6 @@ pub enum CompType {
     FilenameExpansion, // the filename under the cursor, e.g. "fi|le.txt"
 }
 
-impl CompType {
-    fn from(word: &str) -> Self {
-        // TODO test these
-        if (word.starts_with('$') || word.starts_with("\"$")) && !word.contains("/") {
-            Self::EnvVariable
-        } else if word.starts_with('~') && !word.contains("/") {
-            Self::TildeExpansion
-        } else if word.contains('*') || word.contains('?') || word.contains('[') {
-            // TODO "*.md will match this. need some better logic here
-            Self::GlobExpansion
-        } else {
-            Self::FilenameExpansion
-        }
-    }
-}
-
 #[derive(Debug, Eq, PartialEq)]
 pub struct CompletionContext<'a> {
     pub buffer: Cow<'a, str>,
@@ -64,7 +48,9 @@ impl<'a> CompletionContext<'a> {
 
         let mut comp_types = vec![];
 
-        if CompType::from(word_under_cursor.as_ref()) == CompType::TildeExpansion {
+        let wuc = word_under_cursor.as_ref();
+
+        if wuc.starts_with('~') && !wuc.contains("/") {
             log::debug!("Detected tilde expansion context");
             comp_types.push(CompType::TildeExpansion);
         }
@@ -77,8 +63,15 @@ impl<'a> CompletionContext<'a> {
             });
         }
 
-        let secondary_comp_type = CompType::from(word_under_cursor.as_ref());
-        comp_types.push(secondary_comp_type);
+        if (wuc.starts_with('$') || wuc.starts_with("\"$")) && !wuc.contains("/") {
+            comp_types.push(CompType::EnvVariable);
+        } else if wuc.starts_with('~') && !wuc.contains("/") {
+            comp_types.push(CompType::TildeExpansion);
+        } else if wuc.contains('*') || wuc.contains('?') || wuc.contains('[') {
+            comp_types.push(CompType::GlobExpansion);
+        } else {
+            comp_types.push(CompType::FilenameExpansion);
+        }
 
         CompletionContext {
             buffer: Cow::Borrowed(buffer),
