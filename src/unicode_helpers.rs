@@ -653,51 +653,9 @@ pub fn quadrant(q: Quadrant, style: QuadrantStyle) -> Option<char> {
 /// assert_eq!(lines.len(), 1);
 /// ```
 pub fn quadrant_from_grid(grid: &[impl AsRef<[bool]>], style: QuadrantStyle) -> Vec<String> {
-    if grid.is_empty() {
-        return vec![];
-    }
-    let num_rows = grid.len();
-    let num_cols = grid.iter().map(|r| r.as_ref().len()).max().unwrap_or(0);
-    if num_cols == 0 {
-        return vec![];
-    }
-
-    let char_cols = num_cols.div_ceil(2);
-    let num_lines = num_rows.div_ceil(2);
-
-    let mut result = Vec::with_capacity(num_lines);
-    for line_idx in 0..num_lines {
-        let row_start = line_idx * 2;
-        let mut chars: Vec<char> = Vec::with_capacity(char_cols);
-
-        for char_col in 0..char_cols {
-            let col_start = char_col * 2;
-
-            // Build 2×2 col-major cell grid for Quadrant::from_grid.
-            let mut cell = [[false; 2]; 2];
-            for r in 0..2 {
-                let row = row_start + r;
-                if row < num_rows {
-                    let row_data = grid[row].as_ref();
-                    for c in 0..2 {
-                        let col = col_start + c;
-                        if col < row_data.len() {
-                            cell[c][r] = row_data[col];
-                        }
-                    }
-                }
-            }
-
-            let q = Quadrant::from_grid(cell);
-            chars.push(quadrant(q, style).unwrap_or(' '));
-        }
-
-        while chars.last() == Some(&' ') {
-            chars.pop();
-        }
-        result.push(chars.into_iter().collect());
-    }
-    result
+    from_grid_inner::<2>(grid, ' ', |cell| {
+        quadrant(Quadrant::from_grid(cell), style).unwrap_or(' ')
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -824,51 +782,9 @@ pub fn sextant(sextants_visible: Sextant, style: SextantStyle) -> Option<char> {
 /// assert_eq!(lines.len(), 1);
 /// ```
 pub fn sextant_from_grid(grid: &[impl AsRef<[bool]>], style: SextantStyle) -> Vec<String> {
-    if grid.is_empty() {
-        return vec![];
-    }
-    let num_rows = grid.len();
-    let num_cols = grid.iter().map(|r| r.as_ref().len()).max().unwrap_or(0);
-    if num_cols == 0 {
-        return vec![];
-    }
-
-    let char_cols = num_cols.div_ceil(2);
-    let num_lines = num_rows.div_ceil(3);
-
-    let mut result = Vec::with_capacity(num_lines);
-    for line_idx in 0..num_lines {
-        let row_start = line_idx * 3;
-        let mut chars: Vec<char> = Vec::with_capacity(char_cols);
-
-        for char_col in 0..char_cols {
-            let col_start = char_col * 2;
-
-            // Build 2×3 col-major cell grid for Sextant::from_grid.
-            let mut cell = [[false; 3]; 2];
-            for r in 0..3 {
-                let row = row_start + r;
-                if row < num_rows {
-                    let row_data = grid[row].as_ref();
-                    for c in 0..2 {
-                        let col = col_start + c;
-                        if col < row_data.len() {
-                            cell[c][r] = row_data[col];
-                        }
-                    }
-                }
-            }
-
-            let s = Sextant::from_grid(cell);
-            chars.push(sextant(s, style).unwrap_or(' '));
-        }
-
-        while chars.last() == Some(&' ') {
-            chars.pop();
-        }
-        result.push(chars.into_iter().collect());
-    }
-    result
+    from_grid_inner::<3>(grid, ' ', |cell| {
+        sextant(Sextant::from_grid(cell), style).unwrap_or(' ')
+    })
 }
 
 // ── Octant block elements ─────────────────────────────────────────────────────
@@ -1089,6 +1005,30 @@ pub fn octant(dots: OctantDots, style: OctantStyle) -> Option<char> {
 /// assert_eq!(lines[0].chars().count(), 2);
 /// ```
 pub fn octant_from_grid(grid: &[impl AsRef<[bool]>], style: OctantStyle) -> Vec<String> {
+    // For Braille every pattern maps to a valid character (including BRAILLE_BLANK
+    // for the empty pattern), so the empty sentinel is BRAILLE_BLANK.
+    // For Full/Separated, octant() returns None for the empty pattern, so we use ' '.
+    let empty_char = match style {
+        OctantStyle::Braille => BRAILLE_BLANK,
+        _ => ' ',
+    };
+    from_grid_inner::<4>(grid, empty_char, |cell| {
+        octant(OctantDots::from_grid(cell), style).unwrap_or(empty_char)
+    })
+}
+
+/// Shared implementation for all `*_from_grid` functions.
+///
+/// `R` is the number of rows consumed per output character.  Each character
+/// covers a fixed 2-column × R-row cell.  `render_cell` maps a `[[bool; R]; 2]`
+/// col-major cell (left column first) to the output character; it should
+/// return `empty_char` for a completely empty cell.  Trailing `empty_char`
+/// entries are stripped from each output line.
+fn from_grid_inner<const R: usize>(
+    grid: &[impl AsRef<[bool]>],
+    empty_char: char,
+    mut render_cell: impl FnMut([[bool; R]; 2]) -> char,
+) -> Vec<String> {
     if grid.is_empty() {
         return vec![];
     }
@@ -1099,27 +1039,18 @@ pub fn octant_from_grid(grid: &[impl AsRef<[bool]>], style: OctantStyle) -> Vec<
     }
 
     let char_cols = num_cols.div_ceil(2);
-    let num_lines = num_rows.div_ceil(4);
-
-    // For Braille every pattern maps to a valid character (including BRAILLE_BLANK
-    // for the empty pattern), so the empty sentinel is BRAILLE_BLANK.
-    // For Full/Separated, octant() returns None for the empty pattern, so we use ' '.
-    let empty_char = match style {
-        OctantStyle::Braille => BRAILLE_BLANK,
-        _ => ' ',
-    };
+    let num_lines = num_rows.div_ceil(R);
 
     let mut result = Vec::with_capacity(num_lines);
     for line_idx in 0..num_lines {
-        let row_start = line_idx * 4;
+        let row_start = line_idx * R;
         let mut chars: Vec<char> = Vec::with_capacity(char_cols);
 
         for char_col in 0..char_cols {
             let col_start = char_col * 2;
 
-            // Build 2×4 col-major cell grid for OctantDots::from_grid.
-            let mut cell = [[false; 4]; 2];
-            for r in 0..4 {
+            let mut cell = [[false; R]; 2];
+            for r in 0..R {
                 let row = row_start + r;
                 if row < num_rows {
                     let row_data = grid[row].as_ref();
@@ -1132,8 +1063,7 @@ pub fn octant_from_grid(grid: &[impl AsRef<[bool]>], style: OctantStyle) -> Vec<
                 }
             }
 
-            let dots = OctantDots::from_grid(cell);
-            chars.push(octant(dots, style).unwrap_or(empty_char));
+            chars.push(render_cell(cell));
         }
 
         while chars.last() == Some(&empty_char) {
