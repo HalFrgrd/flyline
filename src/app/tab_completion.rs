@@ -192,14 +192,15 @@ fn expand_alias_for_completion(
     }
 }
 
-/// Find the longest string that is a prefix of every suggestion's match text.
-/// Returns `None` if there are no suggestions or the common prefix is empty.
-fn common_prefix_of_suggestions(suggestions: &[MaybeProcessedSuggestion]) -> Option<String> {
-    let mut iter = suggestions.iter();
-    let first_text = iter.next()?.match_text();
+/// Very important that we post process these now since we want to operate on their final form
+/// that will be inserted into the buffer.
+fn common_prefix_of_suggestions(suggestions: &mut [MaybeProcessedSuggestion]) -> Option<String> {
+    let mut iter = suggestions
+        .iter_mut()
+        .map(|sug| sug.to_processed_sug().formatted());
+    let first_text = iter.next()?;
 
-    let prefix_byte_len = iter.fold(first_text.len(), |acc, sug| {
-        let text = sug.match_text();
+    let prefix_byte_len = iter.fold(first_text.len(), |acc, text| {
         let common: usize = first_text
             .chars()
             .zip(text.chars())
@@ -665,35 +666,28 @@ impl App<'_> {
         load_time: std::time::Duration,
     ) {
         let mut final_wuc = wuc_substring.clone();
-        // Phase 2: if there are fewer than 500 suggestions, find any common
-        // prefix and automatically insert it when it extends the word under
-        // cursor.
-        const MAX_FOR_COMMON_PREFIX: usize = 500;
+        // Phase 2: if there are fewer than 1000 suggestions, find any common
+        // prefix and automatically insert it. Even when the word under cursor
+        // does match the common prefix. e.g. ~foo<TAB> might produce /home/foobar and /home/foobaz,
+        // which have common prefix /home/foo that should be inserted to aid fuzzy matching.
+        const MAX_FOR_COMMON_PREFIX: usize = 1000;
         if sugs.len() < MAX_FOR_COMMON_PREFIX {
-            for sug in &mut sugs {
-                // This will quote the match which is needed for inserting the prefix
-                sug.to_processed_sug();
-            }
-            if let Some(common_prefix) = common_prefix_of_suggestions(&sugs) {
-                if common_prefix.len() > wuc_substring.s.len()
-                    && common_prefix.starts_with(&*wuc_substring.s)
+            if let Some(common_prefix) = common_prefix_of_suggestions(&mut sugs) {
+                match self
+                    .buffer
+                    .replace_word_under_cursor(&common_prefix, &wuc_substring)
                 {
-                    match self
-                        .buffer
-                        .replace_word_under_cursor(&common_prefix, &wuc_substring)
-                    {
-                        Ok(new_wuc) => {
-                            log::info!(
-                                "New word under cursor after inserting common prefix: '{:?}'",
-                                new_wuc
-                            );
-                            final_wuc = new_wuc;
-                        }
-                        Err(e) => log::warn!(
-                            "Failed to replace word under cursor with common prefix: {}",
-                            e
-                        ),
+                    Ok(new_wuc) => {
+                        log::info!(
+                            "New word under cursor after inserting common prefix: '{:?}'",
+                            new_wuc
+                        );
+                        final_wuc = new_wuc;
                     }
+                    Err(e) => log::warn!(
+                        "Failed to replace word under cursor with common prefix: {}",
+                        e
+                    ),
                 }
             }
         }
