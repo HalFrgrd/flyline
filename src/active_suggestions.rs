@@ -66,7 +66,7 @@ impl SuggestionDescription {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcssedSuggestion {
+pub struct ProcessedSuggestion {
     pub s: String,
     pub prefix: String,
     pub suffix: String,
@@ -107,7 +107,7 @@ impl SuggestionFormatted {
     const MIN_DESCRIPTION_WIDTH: usize = 20;
 
     pub fn new(
-        suggestion: &ProcssedSuggestion,
+        suggestion: &ProcessedSuggestion,
         suggestion_idx: usize,
         matching_indices: Vec<usize>,
         palette: &Palette,
@@ -337,7 +337,7 @@ mod description_tests {
     #[test]
     fn suggestion_with_description_formatted_omits_description() {
         // formatted() must only include what gets inserted (s + prefix + suffix).
-        let sug = ProcssedSuggestion::new("cmd", "", " ").with_description(
+        let sug = ProcessedSuggestion::new("cmd", "", " ").with_description(
             SuggestionDescription::Animation(vec![vec![Span::raw("description text")]]),
         );
         assert_eq!(sug.formatted(), "cmd ");
@@ -346,7 +346,7 @@ mod description_tests {
 
     #[test]
     fn description_frame_cycling() {
-        let sug = ProcssedSuggestion::new("x", "", "").with_description(
+        let sug = ProcessedSuggestion::new("x", "", "").with_description(
             SuggestionDescription::Animation(vec![
                 vec![Span::raw("a")],
                 vec![Span::raw("b")],
@@ -369,7 +369,7 @@ mod description_tests {
 
     #[test]
     fn display_width_stable_across_frames() {
-        let sug = ProcssedSuggestion::new("abc", "", "").with_description(
+        let sug = ProcessedSuggestion::new("abc", "", "").with_description(
             SuggestionDescription::Animation(vec![
                 vec![Span::raw("short")],
                 vec![Span::raw("a much longer description")],
@@ -387,7 +387,7 @@ mod description_tests {
 
     #[test]
     fn no_description_display_width_equals_text_width() {
-        let sug = ProcssedSuggestion::new("hello", "", "");
+        let sug = ProcessedSuggestion::new("hello", "", "");
         let palette = crate::palette::Palette::default();
         let fw = SuggestionFormatted::new(&sug, 0, vec![], &palette, 0).display_width;
         assert_eq!(fw, "hello".len());
@@ -395,14 +395,14 @@ mod description_tests {
 
     #[test]
     fn last_mtime_description_max_width_is_5() {
-        let sug = ProcssedSuggestion::new("file.txt", "", " ")
+        let sug = ProcessedSuggestion::new("file.txt", "", " ")
             .with_description(SuggestionDescription::LastMTime(0));
         assert_eq!(sug.description.max_width(), 5);
     }
 
     #[test]
     fn last_mtime_description_frame_is_nonempty() {
-        let sug = ProcssedSuggestion::new("file.txt", "", " ")
+        let sug = ProcessedSuggestion::new("file.txt", "", " ")
             .with_description(SuggestionDescription::LastMTime(0));
         let frame = sug.description.frame_at(0);
         assert!(frame.is_some());
@@ -416,7 +416,7 @@ mod description_tests {
 
     #[test]
     fn static_empty_description_is_empty() {
-        let sug = ProcssedSuggestion::new("foo", "", "");
+        let sug = ProcessedSuggestion::new("foo", "", "");
         assert_eq!(sug.description, SuggestionDescription::Static(vec![]));
         assert_eq!(sug.description.max_width(), 0);
         assert!(sug.description.frame_at(0).is_none());
@@ -424,7 +424,7 @@ mod description_tests {
 
     #[test]
     fn static_nonempty_description_frame() {
-        let sug = ProcssedSuggestion::new("foo", "", "")
+        let sug = ProcessedSuggestion::new("foo", "", "")
             .with_description(SuggestionDescription::Static(vec![Span::raw("hello")]));
         assert_eq!(sug.description.max_width(), 5);
         assert_eq!(sug.description.frame_at(0), Some(vec![Span::raw("hello")]));
@@ -433,13 +433,13 @@ mod description_tests {
     }
 }
 
-impl ProcssedSuggestion {
+impl ProcessedSuggestion {
     pub fn new<S: Into<String>, P: Into<String>, X: Into<String>>(
         s: S,
         prefix: P,
         suffix: X,
     ) -> Self {
-        ProcssedSuggestion {
+        ProcessedSuggestion {
             s: s.into(),
             prefix: prefix.into(),
             suffix: suffix.into(),
@@ -468,7 +468,7 @@ impl ProcssedSuggestion {
         suggestions: Vec<String>,
         prefix: &str,
         suffix: &str,
-    ) -> Vec<ProcssedSuggestion> {
+    ) -> Vec<ProcessedSuggestion> {
         suggestions
             .into_iter()
             .map(|s| {
@@ -477,18 +477,18 @@ impl ProcssedSuggestion {
                 } else {
                     suffix.to_string()
                 };
-                ProcssedSuggestion::new(s, prefix.to_string(), new_suffix)
+                ProcessedSuggestion::new(s, prefix.to_string(), new_suffix)
             })
             .collect()
     }
 }
 
-impl PartialOrd for ProcssedSuggestion {
+impl PartialOrd for ProcessedSuggestion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.s.partial_cmp(&other.s)
     }
 }
-impl Ord for ProcssedSuggestion {
+impl Ord for ProcessedSuggestion {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.s.cmp(&other.s)
     }
@@ -506,7 +506,7 @@ impl Ord for ProcssedSuggestion {
 /// actually rendered or accepted.
 #[derive(Debug, Clone)]
 pub enum MaybeProcessedSuggestion {
-    Ready(ProcssedSuggestion),
+    Ready(ProcessedSuggestion),
     Raw {
         raw_text: String,
         full_path: Option<PathBuf>,
@@ -530,9 +530,7 @@ impl MaybeProcessedSuggestion {
         }
     }
 
-    /// Produce the fully processed [`Suggestion`], running post-processing
-    /// for `Raw` items or returning the existing suggestion for `Ready` items.
-    pub fn to_suggestion(&mut self) -> ProcssedSuggestion {
+    pub fn to_processed_sug(&mut self) -> ProcessedSuggestion {
         match self {
             MaybeProcessedSuggestion::Ready(s) => s.clone(),
             MaybeProcessedSuggestion::Raw {
@@ -579,7 +577,7 @@ pub fn post_process_completion(
     mut path_to_use: Option<std::path::PathBuf>,
     comp_result_flags: bash_funcs::CompletionFlags,
     word_under_cursor: &str,
-) -> ProcssedSuggestion {
+) -> ProcessedSuggestion {
     let (sug, desc_frames) = split_completion_description(raw_sug);
     let mut sug = sug.to_string();
 
@@ -698,7 +696,7 @@ pub fn post_process_completion(
     };
 
     let suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();
-    let suggestion = ProcssedSuggestion::new(quoted_no_prefix, prefix, &suffix_str)
+    let suggestion = ProcessedSuggestion::new(quoted_no_prefix, prefix, &suffix_str)
         .with_description(description);
     match style {
         Some(s) => suggestion.with_style(s),
@@ -955,7 +953,7 @@ impl ActiveSuggestions {
                 .map(|filtered_idx| {
                     {
                         let fi: &FilteredItem = &self.filtered_suggestions[filtered_idx];
-                        self.all_maybe_processed_suggestions[fi.suggestion_idx].to_suggestion();
+                        self.all_maybe_processed_suggestions[fi.suggestion_idx].to_processed_sug();
 
                         let unprocessed_suggestion =
                             &self.all_maybe_processed_suggestions[fi.suggestion_idx];
@@ -973,7 +971,7 @@ impl ActiveSuggestions {
 
                     let fi = &self.filtered_suggestions[filtered_idx];
                     let suggestion =
-                        self.all_maybe_processed_suggestions[fi.suggestion_idx].to_suggestion();
+                        self.all_maybe_processed_suggestions[fi.suggestion_idx].to_processed_sug();
 
                     let formatted = SuggestionFormatted::new(
                         &suggestion,
@@ -1158,7 +1156,7 @@ impl ActiveSuggestions {
                 return Some(self);
             }
             [single_suggestion] => {
-                let suggestion = single_suggestion.to_suggestion();
+                let suggestion = single_suggestion.to_processed_sug();
                 self.accept_item(&suggestion, buffer);
                 log::debug!(
                     "Only one completion found: auto-accepted '{:?}'",
@@ -1200,7 +1198,7 @@ impl ActiveSuggestions {
             .get_mut(filtered_item.suggestion_idx)
         {
             Some(s) => {
-                let suggestion = s.to_suggestion();
+                let suggestion = s.to_processed_sug();
                 self.accept_item(&suggestion, buffer);
             }
             None => {
@@ -1214,7 +1212,7 @@ impl ActiveSuggestions {
         };
     }
 
-    fn accept_item(&self, item: &ProcssedSuggestion, buffer: &mut TextBuffer) {
+    fn accept_item(&self, item: &ProcessedSuggestion, buffer: &mut TextBuffer) {
         if let Err(e) = buffer.replace_word_under_cursor(&item.formatted(), &self.word_under_cursor)
         {
             log::error!("Failed to apply suggestion: {}", e);

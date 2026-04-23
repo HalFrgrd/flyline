@@ -1,5 +1,5 @@
 use crate::active_suggestions::{
-    ActiveSuggestions, MaybeProcessedSuggestion, ProcssedSuggestion, SuggestionDescription,
+    ActiveSuggestions, MaybeProcessedSuggestion, ProcessedSuggestion, SuggestionDescription,
 };
 use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
@@ -329,7 +329,7 @@ pub(crate) fn gen_completions_internal(
                                         };
                                     let suffix = if value.ends_with('+') { "" } else { " " };
                                     MaybeProcessedSuggestion::Ready(
-                                        ProcssedSuggestion::new(&value, "", suffix)
+                                        ProcessedSuggestion::new(&value, "", suffix)
                                             .with_description(description),
                                     )
                                 })
@@ -391,7 +391,7 @@ pub(crate) fn gen_completions_internal(
                     );
                 } else {
                     return Some(
-                        ProcssedSuggestion::from_string_vec(matching_vars, "", " ")
+                        ProcessedSuggestion::from_string_vec(matching_vars, "", " ")
                             .into_iter()
                             .map(MaybeProcessedSuggestion::Ready)
                             .collect(),
@@ -424,7 +424,7 @@ pub(crate) fn gen_completions_internal(
                     }
                     1 => {
                         let single_completion =
-                            completions.into_iter().next().unwrap().to_suggestion();
+                            completions.into_iter().next().unwrap().to_processed_sug();
                         log::debug!(
                             "Only one glob expansion completion found for pattern '{}': '{:?}'",
                             word_under_cursor.as_ref(),
@@ -438,7 +438,7 @@ pub(crate) fn gen_completions_internal(
                         // Process each item eagerly here since we need the final text.
                         let completions_as_string = completions
                             .into_iter()
-                            .map(|mut item| item.to_suggestion())
+                            .map(|mut item| item.to_processed_sug())
                             .flag_first_last()
                             .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
                                 if !is_first {
@@ -465,7 +465,7 @@ pub(crate) fn gen_completions_internal(
                                 acc
                             });
                         return Some(vec![MaybeProcessedSuggestion::Ready(
-                            ProcssedSuggestion::new(completions_as_string, "", ""),
+                            ProcessedSuggestion::new(completions_as_string, "", ""),
                         )]);
                     }
                 }
@@ -514,7 +514,7 @@ fn tab_complete_first_word(command: &str) -> Vec<MaybeProcessedSuggestion> {
         // No prefix matches found, fall back to fuzzy search
         log::debug!("No prefix matches for '{}', trying fuzzy search", command);
         res = bash_funcs::get_fuzzy_first_word_completions(command);
-        return ProcssedSuggestion::from_string_vec(res, "", " ")
+        return ProcessedSuggestion::from_string_vec(res, "", " ")
             .into_iter()
             .map(MaybeProcessedSuggestion::Ready)
             .collect();
@@ -523,7 +523,7 @@ fn tab_complete_first_word(command: &str) -> Vec<MaybeProcessedSuggestion> {
     // TODO: could prioritize based on frequency of use
     res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
     res.dedup();
-    ProcssedSuggestion::from_string_vec(res, "", " ")
+    ProcessedSuggestion::from_string_vec(res, "", " ")
         .into_iter()
         .map(MaybeProcessedSuggestion::Ready)
         .collect()
@@ -627,7 +627,7 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
 
     for user in users::get_all_users() {
         if user.username.starts_with(user_pattern) {
-            suggestions.push(MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
+            suggestions.push(MaybeProcessedSuggestion::Ready(ProcessedSuggestion::new(
                 if user.home_dir.ends_with('/') {
                     user.home_dir.clone()
                 } else {
@@ -672,7 +672,7 @@ impl App<'_> {
         if sugs.len() < MAX_FOR_COMMON_PREFIX {
             for sug in &mut sugs {
                 // This will quote the match which is needed for inserting the prefix
-                sug.to_suggestion();
+                sug.to_processed_sug();
             }
             if let Some(common_prefix) = common_prefix_of_suggestions(&sugs) {
                 if common_prefix.len() > wuc_substring.s.len()
@@ -773,7 +773,7 @@ impl App<'_> {
         log::set_max_level(log::LevelFilter::Debug);
         logging::stream_logs("stderr".into()).unwrap();
 
-        let mut run_test_on = |command: &str, expected_suggestions: &[&ProcssedSuggestion]| {
+        let mut run_test_on = |command: &str, expected_suggestions: &[&ProcessedSuggestion]| {
             log::info!(
                 "\n\n---------------------------------------------------------------------------------"
             );
@@ -803,7 +803,7 @@ impl App<'_> {
                 }
             }
 
-            let mut suggestions: Vec<ProcssedSuggestion> = some_suggestions
+            let mut suggestions: Vec<ProcessedSuggestion> = some_suggestions
                 .unwrap()
                 .iter_mut()
                 .map(|item| item.to_suggestion())
@@ -869,33 +869,33 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util --filenames ",
             &[
-                &ProcssedSuggestion::new(r#"abc/"#, "", ""),
-                &ProcssedSuggestion::new(r#"bar.txt"#, "", " "),
-                &ProcssedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
-                &ProcssedSuggestion::new(r#"foo/"#, "", ""),
-                &ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &ProcssedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
+                &ProcessedSuggestion::new(r#"abc/"#, "", ""),
+                &ProcessedSuggestion::new(r#"bar.txt"#, "", " "),
+                &ProcessedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
+                &ProcessedSuggestion::new(r#"foo/"#, "", ""),
+                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &ProcessedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
         run_test_on(
             "fl_comp_util --quoting-desired ",
-            &[&ProcssedSuggestion::new(r#"multi\ word\ option"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"multi\ word\ option"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util --suppress-quote ",
-            &[&ProcssedSuggestion::new(r#"multi word option"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"multi word option"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util --dont-suppress-append ",
-            &[&ProcssedSuggestion::new(r#"foo"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"foo"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util --suppress-append ",
-            &[&ProcssedSuggestion::new(r#"foo"#, "", "")],
+            &[&ProcessedSuggestion::new(r#"foo"#, "", "")],
         );
 
         run_test_on(
@@ -904,38 +904,38 @@ impl App<'_> {
                 // &Suggestion::new(r#"bar.txt"#, "", " "),
                 // &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
                 // &Suggestion::new(r#"foo/"#, "", ""),
-                &ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
             ],
         );
 
         run_test_on(
             "fl_comp_util --fallback-to-default $FOOBARBA",
-            &[&ProcssedSuggestion::new(r#"$FOOBARBAZ"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"$FOOBARBAZ"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default ma*",
-            &[&ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", "")],
+            &[&ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", "")],
         );
 
         run_test_on(
             "fl_comp_util_dirnames --fallback-to-default-filenames ",
             &[
-                &ProcssedSuggestion::new(r#"abc/"#, "", ""),
-                &ProcssedSuggestion::new(r#"foo/"#, "", ""),
-                &ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &ProcssedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
+                &ProcessedSuggestion::new(r#"abc/"#, "", ""),
+                &ProcessedSuggestion::new(r#"foo/"#, "", ""),
+                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &ProcessedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
         run_test_on(
             "fl_comp_util_plusdirs --quoting-desired ",
             &[
-                &ProcssedSuggestion::new(r#"abc/"#, "", ""),
-                &ProcssedSuggestion::new(r#"foo/"#, "", ""),
-                &ProcssedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &ProcssedSuggestion::new(r#"multi\ word\ option"#, "", " "),
-                &ProcssedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
+                &ProcessedSuggestion::new(r#"abc/"#, "", ""),
+                &ProcessedSuggestion::new(r#"foo/"#, "", ""),
+                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
+                &ProcessedSuggestion::new(r#"multi\ word\ option"#, "", " "),
+                &ProcessedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
             ],
         );
 
@@ -944,16 +944,16 @@ impl App<'_> {
         run_test_on(
             "fl_comp_alias ",
             &[
-                &ProcssedSuggestion::new(r#"apple"#, "", " "),
-                &ProcssedSuggestion::new(r#"banana"#, "", " "),
-                &ProcssedSuggestion::new(r#"cherry"#, "", " "),
+                &ProcessedSuggestion::new(r#"apple"#, "", " "),
+                &ProcessedSuggestion::new(r#"banana"#, "", " "),
+                &ProcessedSuggestion::new(r#"cherry"#, "", " "),
             ],
         );
 
         // Test that we don't quote the prefix but do quote the part of the path filled in by tab completion
         run_test_on(
             "fl_comp_util --fallback-to-default $PWD/man",
-            &[&ProcssedSuggestion::new(
+            &[&ProcessedSuggestion::new(
                 r#"$PWD/many\ spaces\ here/"#,
                 "",
                 "",
@@ -962,7 +962,7 @@ impl App<'_> {
 
         run_test_on(
             r#"fl_comp_util --fallback-to-default $PWD/many\ spac"#,
-            &[&ProcssedSuggestion::new(
+            &[&ProcessedSuggestion::new(
                 r#"$PWD/many\ spaces\ here/"#,
                 "",
                 "",
@@ -971,7 +971,7 @@ impl App<'_> {
 
         run_test_on(
             r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
-            &[&ProcssedSuggestion::new(
+            &[&ProcessedSuggestion::new(
                 r#""$PWD/many spaces here/"#,
                 "",
                 "",
@@ -983,18 +983,18 @@ impl App<'_> {
         // $HOME/foo/ should complete to $HOME/foo/\$baz.txt (not \$HOME/foo/\$baz.txt).
         run_test_on(
             "fl_comp_util --env-var-test $HOME/foo/",
-            &[&ProcssedSuggestion::new(r#"\$baz.txt"#, "$HOME/foo/", " ")],
+            &[&ProcessedSuggestion::new(r#"\$baz.txt"#, "$HOME/foo/", " ")],
         );
 
         // Test glob expansion with glob characters in directory components
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default foo*/ba*",
-            &[&ProcssedSuggestion::new(r#"foo/baz"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"foo/baz"#, "", " ")],
         );
 
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default abc/foo*/ba*",
-            &[&ProcssedSuggestion::new(r#"abc/foo/baz"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"abc/foo/baz"#, "", " ")],
         );
 
         std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff1").unwrap();
@@ -1002,25 +1002,25 @@ impl App<'_> {
         // .* matches hidden files only. and should ignore . and ..
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default .*",
-            &[&ProcssedSuggestion::new(r#".dotfile"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#".dotfile"#, "", " ")],
         );
 
         // ./.* matches hidden files only. and should ignore . and ..
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default ./.*",
-            &[&ProcssedSuggestion::new(r#"./.dotfile"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"./.dotfile"#, "", " ")],
         );
 
         // ./* matches all non hidden
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default ./*",
-            &[&ProcssedSuggestion::new(r#"./a.txt"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"./a.txt"#, "", " ")],
         );
 
         // * matches all non hidden
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default *",
-            &[&ProcssedSuggestion::new(r#"a.txt"#, "", " ")],
+            &[&ProcessedSuggestion::new(r#"a.txt"#, "", " ")],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
