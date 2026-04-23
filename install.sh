@@ -142,16 +142,6 @@ verify_sha256() {
     fi
 }
 
-# Portable in-place sed: BSD sed (macOS) requires an explicit empty backup
-# extension; GNU sed (Linux) does not.
-sed_inplace() {
-    if [ "$(uname -s)" = "Darwin" ]; then
-        sed -i '' "$@"
-    else
-        sed -i "$@"
-    fi
-}
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -255,7 +245,8 @@ Please check https://github.com/${REPO}/releases for available assets."
     # Update or add 'enable -f ... flyline' in ~/.bashrc (or ~/.bash_profile on macOS).
     ENABLE_CMD="enable -f ${LIB_PATH} flyline"
     if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
-        sed_inplace -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC"
+        new_content=$(sed -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC")
+        printf '%s' "$new_content" > "$BASHRC"
         say "Updated flyline configuration in ${BASHRC}"
     else
         printf '\n# Flyline - enhanced Bash experience\n%s\n' "$ENABLE_CMD" >> "$BASHRC"
