@@ -659,16 +659,6 @@ pub fn post_process_completion(
 
     let quoted_no_prefix = quoted.strip_prefix(&prefix).unwrap_or(&quoted).to_string();
 
-    // TODO: get rid of logging after verifying it works well
-    // log::debug!(
-    //     "Post-processing completion: raw_sug={:?}, prefix={:?}, word_under_cursor={:?}, quoted_no_prefix={:?},suffix_char={:?}",
-    //     raw_sug,
-    //     prefix,
-    //     word_under_cursor,
-    //     quoted_no_prefix,
-    //     &suffix_char
-    // );
-
     let style = path_to_use
         .as_ref()
         .and_then(|p| bash_funcs::style_for_path(p));
@@ -791,10 +781,11 @@ impl ActiveSuggestions {
             should_fuzzy_match: true,
         };
 
-        active_sug.update_word_under_cursor(word_under_cursor);
+        active_sug.update_word_under_cursor(&word_under_cursor);
 
         if active_sug.filtered_suggestions_len() == 0 {
             active_sug.should_fuzzy_match = false;
+            active_sug.update_word_under_cursor(&word_under_cursor);
         }
         active_sug
     }
@@ -1114,7 +1105,7 @@ impl ActiveSuggestions {
     }
 
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
-    pub fn update_word_under_cursor(&mut self, new_word_under_cursor: SubString) {
+    pub fn update_word_under_cursor(&mut self, new_word_under_cursor: &SubString) {
         self.word_under_cursor = new_word_under_cursor.clone();
 
         let raw_pattern = self.word_under_cursor.s.as_str();

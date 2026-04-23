@@ -1227,7 +1227,7 @@ impl<'a> App<'a> {
                     active_suggestions.word_under_cursor.s,
                     word_under_cursor.s
                 );
-                active_suggestions.update_word_under_cursor(word_under_cursor);
+                active_suggestions.update_word_under_cursor(&word_under_cursor);
             } else {
                 log::debug!(
                     "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
