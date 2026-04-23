@@ -1592,15 +1592,11 @@ impl<'a> App<'a> {
                 }
 
                 if !self.mouse_state.enabled() {
-                    let red = Style::default().fg(Color::Red);
-                    let escape_hint = TaggedLine::from(vec![
-                        TaggedSpan::new(Span::styled("Press ", red), Tag::Tutorial),
-                        TaggedSpan::new(Span::styled("Escape", red), Tag::Tutorial),
-                        TaggedSpan::new(
-                            Span::styled(" to re-enable mouse mode.", red),
-                            Tag::Tutorial,
-                        ),
-                    ]);
+                    let red = Style::default().fg(Color::Red).slow_blink();
+                    let escape_hint = TaggedLine::from(vec![TaggedSpan::new(
+                        Span::styled("Press Escape  to re-enable mouse mode.", red),
+                        Tag::Tutorial,
+                    )]);
                     for tagged_span in &escape_hint.spans {
                         content.write_tagged_span_dont_overwrite(tagged_span, None);
                     }

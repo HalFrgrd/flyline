@@ -75,9 +75,6 @@ pub fn generate_welcome_logo_lines(term_width: u16) -> Vec<Line<'static>> {
         .collect()
 }
 
-/// Returns a [`Line`] whose characters each carry their own span styled with
-/// the animated Gaussian wave effect.  The offset centres the text within the
-/// terminal width.
 pub fn generate_welcome_action_line(now: std::time::Instant, width: u16) -> (u16, Line<'static>) {
     const TEXT: &str = "Press Enter to start the tutorial";
     static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
@@ -91,22 +88,22 @@ pub fn generate_welcome_action_line(now: std::time::Instant, width: u16) -> (u16
 /// Tracks progress through the interactive tutorial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TutorialStep {
-    /// Tutorial is not active.
-    #[default]
-    NotRunning,
     Welcome,
     TutorialsTutorial,
     RecommendedSettings,
     MouseMode,
-    ThemeColours,
+    AgentMode,
     FuzzyHistorySearch,
-    Keybindings,
     Autocompletions,
     AutoClosing,
     FineGrainDeletion,
-    AgentMode,
+    ThemeColours,
+    Keybindings,
     FontDetection,
     End,
+    /// Tutorial is not active.
+    #[default]
+    NotRunning,
 }
 
 impl TutorialStep {
@@ -115,13 +112,13 @@ impl TutorialStep {
         TutorialStep::TutorialsTutorial,
         TutorialStep::RecommendedSettings,
         TutorialStep::MouseMode,
-        TutorialStep::ThemeColours,
+        TutorialStep::AgentMode,
         TutorialStep::FuzzyHistorySearch,
-        TutorialStep::Keybindings,
         TutorialStep::Autocompletions,
         TutorialStep::AutoClosing,
         TutorialStep::FineGrainDeletion,
-        TutorialStep::AgentMode,
+        TutorialStep::ThemeColours,
+        TutorialStep::Keybindings,
         TutorialStep::FontDetection,
         TutorialStep::End,
         TutorialStep::NotRunning,
@@ -369,25 +366,31 @@ pub fn generate_tutorial_text(
             }
         }
         TutorialStep::MouseMode => {
-            lines.push(tl(Span::styled("Mouse Interaction Modes", heading_style)));
+            lines.push(tl(Span::styled("Mouse Capture", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Flyline has three mouse interaction modes:",
+                "Click to move your cursor, select suggestions, and hover for tooltips. Flyline must capture mouse events for the entire terminal which isn't always desirable. For instance, you might want to select text above the current prompt with your mouse.",
                 text_style,
             )));
+            lines.push(empty());
             lines.push(tl(Span::styled(
-                "1. Smart: mouse interactions are enabled when they work well (recommended).",
+                "Flyline offers three mouse modes:",
                 text_style,
             )));
             lines.push(TaggedLine::from(vec![
-                ts_text("2. Simple: mouse interactions are enabled by default and toggled when "),
+                ts_key("  Disabled:"),
+                ts_text(" Never capture mouse events"),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                ts_key("  Simple:"),
+                ts_text(" Mouse interactions are enabled by default and toggled when "),
                 ts_key("Escape"),
                 ts_text(" is pressed."),
             ]));
-            lines.push(tl(Span::styled(
-                "3. Disabled: mouse interactions are disabled.",
-                text_style,
-            )));
+            lines.push(TaggedLine::from(vec![
+                ts_key("  Smart:"),
+                ts_text(" (default): Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained"),
+            ]));
             lines.push(empty());
             lines.push(tl(Span::styled(
                 "Switch mouse interaction modes with `flyline --mouse-mode smart/simple/disabled`.",
@@ -531,6 +534,7 @@ pub fn generate_tutorial_text(
                     "flyline set-colour --default-theme dark".to_string(),
                     ClipboardTypes::TutorialSetColor1,
                 ),
+                ts_text(" (if your terminal background is dark)"),
             ]));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
@@ -538,6 +542,7 @@ pub fn generate_tutorial_text(
                     "flyline set-colour --default-theme light".to_string(),
                     ClipboardTypes::TutorialSetColor2,
                 ),
+                ts_text(" (if your terminal background is light)"),
             ]));
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),

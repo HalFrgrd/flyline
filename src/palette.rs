@@ -293,9 +293,7 @@ impl Palette {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
             markdown_heading1_override: None,
-            markdown_heading2: Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
+            markdown_heading2: Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             markdown_heading2_override: None,
             markdown_heading3: Style::default()
                 .fg(Color::Magenta)
@@ -348,9 +346,7 @@ impl Palette {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
             markdown_heading1_override: None,
-            markdown_heading2: Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
+            markdown_heading2: Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             markdown_heading2_override: None,
             markdown_heading3: Style::default()
                 .fg(Color::Magenta)
