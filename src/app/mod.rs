@@ -585,7 +585,6 @@ impl<'a> App<'a> {
                             width: new_cols,
                             height: new_rows,
                         };
-
                         true
                     }
                     CrosstermEvent::FocusLost => {
@@ -605,7 +604,6 @@ impl<'a> App<'a> {
                     }
                     CrosstermEvent::Paste(pasted) => {
                         log::trace!("Pasted content: {}", pasted);
-                        log::trace!("Pasted content as bytes: {:?}", pasted.as_bytes());
                         self.buffer.insert_str(&pasted);
                         self.on_possible_buffer_change();
                         true
