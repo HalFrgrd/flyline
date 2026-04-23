@@ -1,4 +1,4 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use std::sync::LazyLock;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -74,34 +74,17 @@ pub fn generate_welcome_logo_lines(term_width: u16) -> Vec<Line<'static>> {
         .collect()
 }
 
-/// Returns a [`Line`] whose characters each carry their own span.  The foreground
-/// brightness of every span follows a Gaussian wave that travels left-to-right
-/// at 15 columns per second and loops after 50 virtual positions.  Because the
-/// text is only 33 characters wide the wave peak is sometimes outside the
-/// visible text, giving periods where the whole line appears dim.
+/// Returns a [`Line`] whose characters each carry their own span styled with
+/// the animated Gaussian wave effect.  The offset centres the text within the
+/// terminal width.
 pub fn generate_welcome_action_line(now: std::time::Instant, width: u16) -> (u16, Line<'static>) {
     const TEXT: &str = "Press Enter to start the tutorial";
     static START_TIME: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
 
-    let elapsed_secs = now.duration_since(*START_TIME).as_secs_f32();
-    let peak_pos = (elapsed_secs * 25.0) % 45.0 - 5.0;
-
-    let spans: Vec<Span<'static>> = TEXT
-        .chars()
-        .enumerate()
-        .map(|(i, ch)| {
-            // Gaussian falloff: sigma ≈ 4  →  2σ² = 32
-            let dist = (i as f32 - peak_pos).abs();
-            let intensity = (-dist * dist / 16.0_f32).exp();
-            let brightness = (100.0 + 175.0 * intensity) as u8;
-            let style = Style::default().fg(Color::Rgb(brightness, brightness, brightness));
-            Span::styled(ch.to_string(), style)
-        })
-        .collect();
-
+    let line = crate::content_utils::animated_text_line(TEXT, now, *START_TIME);
     let offset = (width + 32).saturating_sub(TEXT.len() as u16) / 2;
 
-    (offset, Line::from(spans))
+    (offset, line)
 }
 
 /// Tracks progress through the interactive tutorial.

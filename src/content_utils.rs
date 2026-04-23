@@ -7,6 +7,45 @@ use ratatui::prelude::*;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+/// Returns a [`Line`] whose characters each carry their own span styled with
+/// the animated Gaussian wave effect used for the "Press Enter to start the
+/// tutorial" prompt.
+///
+/// The foreground brightness of every span follows a Gaussian wave that
+/// travels left-to-right at 25 columns per second and loops after 45 virtual
+/// positions.  Because the wave peak is sometimes outside the visible text,
+/// there are periods where the whole line appears dim.
+///
+/// # Parameters
+/// * `text`  – the text to render.
+/// * `now`   – the current instant; used together with `START_TIME` to compute
+///             elapsed time.
+/// * `start_time` – the instant the animation began (caller owns this so the
+///                  phase is consistent across frames).
+pub fn animated_text_line(
+    text: &str,
+    now: std::time::Instant,
+    start_time: std::time::Instant,
+) -> Line<'static> {
+    let elapsed_secs = now.duration_since(start_time).as_secs_f32();
+    let peak_pos = (elapsed_secs * 25.0) % 45.0 - 5.0;
+
+    let spans: Vec<Span<'static>> = text
+        .chars()
+        .enumerate()
+        .map(|(i, ch)| {
+            // Gaussian falloff: sigma ≈ 4  →  2σ² = 32
+            let dist = (i as f32 - peak_pos).abs();
+            let intensity = (-dist * dist / 16.0_f32).exp();
+            let brightness = (100.0 + 175.0 * intensity) as u8;
+            let style = Style::default().fg(Color::Rgb(brightness, brightness, brightness));
+            Span::styled(ch.to_string(), style)
+        })
+        .collect();
+
+    Line::from(spans)
+}
+
 pub fn vec_spans_width(spans: &[Span<'static>]) -> usize {
     spans.iter().map(|s| s.width()).sum()
 }
