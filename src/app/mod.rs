@@ -7,7 +7,9 @@ use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, MaybeProcesse
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
-use crate::content_utils::{split_line_to_terminal_rows, ts_to_timeago_string_5chars};
+use crate::content_utils::{
+    animated_text_line, split_line_to_terminal_rows, ts_to_timeago_string_5chars,
+};
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
@@ -1891,15 +1893,10 @@ impl<'a> App<'a> {
                     Tag::TabSuggestion,
                 ));
             }
-            ContentMode::TabCompletionWaiting { .. } if self.mode.is_running() => {
+            ContentMode::TabCompletionWaiting { start_time, .. } if self.mode.is_running() => {
                 content.newline();
-                content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(
-                        "Loading completions…",
-                        self.settings.colour_palette.secondary_text(),
-                    ),
-                    Tag::Normal,
-                ));
+                let line = animated_text_line("Loading completions…", now, *start_time);
+                content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
             }
             ContentMode::FuzzyHistorySearch(_) if self.mode.is_running() => {
                 let source = fuzzy_source_for_render.as_ref().unwrap();
@@ -2024,13 +2021,9 @@ impl<'a> App<'a> {
             } if self.mode.is_running() => {
                 content.newline();
                 let elapsed_secs = start_time.elapsed().as_secs();
-                content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(
-                        format!("Running: {} [{}s]", command_display, elapsed_secs),
-                        self.settings.colour_palette.secondary_text(),
-                    ),
-                    Tag::Normal,
-                ));
+                let text = format!("Running: {} [{}s]", command_display, elapsed_secs);
+                let line = animated_text_line(&text, now, *start_time);
+                content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
             }
             ContentMode::AgentOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
