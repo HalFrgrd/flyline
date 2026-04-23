@@ -11,3 +11,13 @@ rustflags = [
 rustflags = [
     "-C", "target-feature=-crt-static",
 ]
+
+# Bash symbols (e.g. _bash_input, _bind_variable) are not available at link
+# time; they are provided by the Bash process that dlopen()s this dylib at
+# runtime.  Tell the macOS linker to defer their resolution instead of
+# erroring out.
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-args=-undefined dynamic_lookup"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-args=-undefined dynamic_lookup"]
