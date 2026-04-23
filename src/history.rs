@@ -694,7 +694,7 @@ impl FuzzyHistorySearch {
             _ => 30,
         };
 
-        let mut new_cache_entries = vec![];
+        let mut new_cache_entries = Vec::with_capacity(256);
 
         // Process as many entries as possible within the time budget
         for (iter_idx, _) in entries.iter().rev().skip(self.global_index).enumerate() {
