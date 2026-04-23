@@ -18,10 +18,10 @@ use unicode_width::UnicodeWidthStr;
 ///
 /// # Parameters
 /// * `text`  – the text to render.
-/// * `now`   – the current instant; used together with `START_TIME` to compute
+/// * `now`   – the current instant; used together with `start_time` to compute
 ///             elapsed time.
-/// * `start_time` – the instant the animation began (caller owns this so the
-///                  phase is consistent across frames).
+/// * `start_time` – the instant when the animation began; used to maintain
+///                  consistent phase across frames.
 pub fn animated_text_line(
     text: &str,
     now: std::time::Instant,
