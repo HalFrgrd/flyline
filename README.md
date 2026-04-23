@@ -438,7 +438,7 @@ Usage: flyline [OPTIONS] [COMMAND]
 Commands:
   set-agent-mode        Configure AI agent mode.
   create-prompt-widget  Create a custom prompt widget.
-  set-colour             Configure the colour palette.
+  set-colour            Configure the colour palette.
   set-cursor            Configure the cursor appearance and animation.
   key                   Manage keybindings.
   log                   Logging commands: dump, configure level, or stream logs.
