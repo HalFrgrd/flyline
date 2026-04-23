@@ -203,7 +203,7 @@ pub struct CursorConfig {
     pub backend: CursorBackend,
     /// Interpolation speed (cells per second).  `None` disables position
     /// interpolation and the cursor jumps instantly to its target.
-    /// Default is `Some(200.0)`.
+    /// Default is `Some(16.0)`.
     pub interpolate: Option<f32>,
     /// Easing function applied to position interpolation.  Default: `Linear`.
     pub interpolate_easing: CursorEasing,
@@ -221,7 +221,7 @@ impl Default for CursorConfig {
     fn default() -> Self {
         Self {
             backend: CursorBackend::Flyline,
-            interpolate: Some(200.0),
+            interpolate: Some(16.0),
             interpolate_easing: CursorEasing::Linear,
             style: CursorStyleConfig::Default,
             effect: CursorEffect::Fade,
@@ -264,18 +264,13 @@ impl Cursor {
         match config.interpolate {
             None => self.target_pos,
             Some(speed) => {
-                let distance = self.prev_pos.abs_diff(&self.target_pos) as f32;
-
-                // Snap small movements instantly to avoid sub-frame jitter.
-                if distance <= 2.0 {
-                    return self.target_pos;
-                }
-
-                // speed is in cells per second: the animation completes after
-                // (distance / speed) seconds, so factor reaches 1.0 exactly when
-                // the cursor has "travelled" the full distance at the given speed.
                 let time_since_change = self.time_of_change.elapsed().as_secs_f32();
-                let factor = time_since_change * speed / distance;
+                let mut factor = time_since_change * speed;
+
+                // Adjust factor for small movements
+                if self.prev_pos.abs_diff(&self.target_pos) <= 2 {
+                    factor = 1.0;
+                }
 
                 let t = factor.min(1.0);
                 let eased_t = config.interpolate_easing.apply(t);
