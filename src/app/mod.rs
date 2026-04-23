@@ -463,8 +463,6 @@ impl<'a> App<'a> {
             return ExitState::WithoutCommand;
         }
 
-        let t_run = std::time::Instant::now();
-
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {
@@ -495,112 +493,13 @@ impl<'a> App<'a> {
 
         let mut redraw = true;
         let mut last_terminal_size = terminal.size().unwrap();
-        let mut initial_render_logged = false;
-        let mut t_after_first_render: Option<std::time::Instant> = None;
 
         'main_loop: loop {
-            // Poll AI background task: check if the child process has finished.
-            let ai_result: Option<Result<String, (String, String)>> =
-                if let ContentMode::AgentModeWaiting { ref mut child, .. } = self.content_mode {
-                    match child.0.try_wait() {
-                        Ok(Some(status)) => {
-                            // Process has exited; drain the pipes synchronously.
-                            // This is safe because the child has exited (all write
-                            // ends of the pipes are closed) so read_to_string returns
-                            // immediately after consuming the buffered data.
-                            let stdout =
-                                child.0.stdout.take().map_or_else(String::new, |mut out| {
-                                    let mut buf = String::new();
-                                    let _ = std::io::Read::read_to_string(&mut out, &mut buf);
-                                    buf
-                                });
-                            let stdout = stdout.trim().to_string();
-                            if status.success() {
-                                Some(Ok(stdout))
-                            } else {
-                                let stderr =
-                                    child.0.stderr.take().map_or_else(String::new, |mut err| {
-                                        let mut buf = String::new();
-                                        let _ = std::io::Read::read_to_string(&mut err, &mut buf);
-                                        buf
-                                    });
-                                let stderr = stderr.trim().to_string();
-                                log::warn!("AI command exited with {}: {}", status, stderr);
-                                Some(Err((
-                                    format!("AI command exited with {}", status),
-                                    format!("stdout: {}\nstderr: {}", stdout, stderr),
-                                )))
-                            }
-                        }
-                        Ok(None) => None,
-                        Err(e) => {
-                            log::warn!("AI task: try_wait error: {}", e);
-                            Some(Err((format!("AI task failed: {}", e), String::new())))
-                        }
-                    }
-                } else {
-                    None
-                };
-            if let Some(result) = ai_result {
-                match result {
-                    Ok(raw_output) => match parse_ai_output(&raw_output) {
-                        Ok(parsed) => {
-                            self.content_mode = ContentMode::AgentOutputSelection(
-                                AiOutputSelection::new(parsed, &self.settings.colour_palette),
-                            );
-                        }
-                        Err(e) => {
-                            log::warn!("AI command returned no suggestions: {}", e);
-                            self.content_mode = ContentMode::AgentError {
-                                message: format!("Failed to parse AI output: {}", e),
-                                raw_output,
-                                suggested_setup_command: None,
-                            };
-                        }
-                    },
-                    Err((msg, raw_output)) => {
-                        log::error!("AI command failed: {}", msg);
-                        self.content_mode = ContentMode::AgentError {
-                            message: msg,
-                            raw_output,
-                            suggested_setup_command: None,
-                        };
-                    }
-                }
+            if self.poll_agent() {
                 redraw = true;
             }
-
-            // Poll tab-completion background thread: check if results have arrived.
-            if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
-                match handle.receiver.try_recv() {
-                    Ok(Some(sugs)) => {
-                        // Take ownership of wuc_substring and start_time from the waiting state.
-                        let (wuc, load_time) =
-                            match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
-                                ContentMode::TabCompletionWaiting {
-                                    wuc_substring,
-                                    start_time,
-                                    ..
-                                } => (wuc_substring, start_time.elapsed()),
-                                _ => unreachable!(),
-                            };
-                        self.finish_tab_complete(sugs, wuc, load_time);
-                        redraw = true;
-                    }
-                    Ok(None) => {
-                        // No suggestions generated.
-                        self.content_mode = ContentMode::Normal;
-                        redraw = true;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        // Still waiting; keep TabCompletionWaiting mode.
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        log::warn!("Tab completion thread disconnected unexpectedly");
-                        self.content_mode = ContentMode::Normal;
-                        redraw = true;
-                    }
-                }
+            if self.poll_tab_completion() {
+                redraw = true;
             }
 
             if redraw {
@@ -622,22 +521,10 @@ impl<'a> App<'a> {
                         log::error!("Failed to set viewport height: {}", e);
                     });
 
-                // Only time the very first draw; subsequent redraws are not startup.
-                let t_draw = if !initial_render_logged {
-                    Some(std::time::Instant::now())
-                } else {
-                    None
-                };
                 let prev_contents = std::mem::take(&mut self.last_contents);
                 match terminal.draw(|f| self.ui(f, content)) {
                     Ok(_) => {
                         self.last_draw_time = std::time::Instant::now();
-
-                        if let Some(t) = t_draw {
-                            log::trace!("startup: initial render: {:?}", t.elapsed());
-                            t_after_first_render = Some(std::time::Instant::now());
-                            initial_render_logged = true;
-                        }
 
                         if matches!(
                             self.settings.send_shell_integration_codes,
@@ -680,11 +567,6 @@ impl<'a> App<'a> {
                 self.settings.frame_rate as f64
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
-
-            if let Some(t) = t_after_first_render.take() {
-                log::trace!("startup: until waiting on stdin: {:?}", t.elapsed());
-                log::trace!("startup: total: {:?}", t_run.elapsed());
-            }
 
             redraw = if event::poll(min_refresh_rate).unwrap() {
                 match event::read().unwrap() {
@@ -743,7 +625,6 @@ impl<'a> App<'a> {
             // In bash >= 4.4 (readline 6.0+), rl_signal_event_hook is set when
             // bash receives a terminating signal.
             // But just checking for terminating_signal works on all versions of bash, and is more direct.
-
             let terminating_signal = bash_funcs::read_terminating_signal();
 
             if terminating_signal != 0 {
@@ -1019,6 +900,115 @@ impl<'a> App<'a> {
             self.buffer.replace_buffer(new_command.as_str());
         }
         self.content_mode = ContentMode::Normal;
+    }
+
+    /// Poll the AI background task; returns `true` if a redraw is needed.
+    fn poll_agent(&mut self) -> bool {
+        let ai_result: Option<Result<String, (String, String)>> =
+            if let ContentMode::AgentModeWaiting { ref mut child, .. } = self.content_mode {
+                match child.0.try_wait() {
+                    Ok(Some(status)) => {
+                        // Process has exited; drain the pipes synchronously.
+                        // This is safe because the child has exited (all write
+                        // ends of the pipes are closed) so read_to_string returns
+                        // immediately after consuming the buffered data.
+                        let stdout = child.0.stdout.take().map_or_else(String::new, |mut out| {
+                            let mut buf = String::new();
+                            let _ = std::io::Read::read_to_string(&mut out, &mut buf);
+                            buf
+                        });
+                        let stdout = stdout.trim().to_string();
+                        if status.success() {
+                            Some(Ok(stdout))
+                        } else {
+                            let stderr =
+                                child.0.stderr.take().map_or_else(String::new, |mut err| {
+                                    let mut buf = String::new();
+                                    let _ = std::io::Read::read_to_string(&mut err, &mut buf);
+                                    buf
+                                });
+                            let stderr = stderr.trim().to_string();
+                            log::warn!("AI command exited with {}: {}", status, stderr);
+                            Some(Err((
+                                format!("AI command exited with {}", status),
+                                format!("stdout: {}\nstderr: {}", stdout, stderr),
+                            )))
+                        }
+                    }
+                    Ok(None) => None,
+                    Err(e) => {
+                        log::warn!("AI task: try_wait error: {}", e);
+                        Some(Err((format!("AI task failed: {}", e), String::new())))
+                    }
+                }
+            } else {
+                None
+            };
+        if let Some(result) = ai_result {
+            match result {
+                Ok(raw_output) => match parse_ai_output(&raw_output) {
+                    Ok(parsed) => {
+                        self.content_mode = ContentMode::AgentOutputSelection(
+                            AiOutputSelection::new(parsed, &self.settings.colour_palette),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("AI command returned no suggestions: {}", e);
+                        self.content_mode = ContentMode::AgentError {
+                            message: format!("Failed to parse AI output: {}", e),
+                            raw_output,
+                            suggested_setup_command: None,
+                        };
+                    }
+                },
+                Err((msg, raw_output)) => {
+                    log::error!("AI command failed: {}", msg);
+                    self.content_mode = ContentMode::AgentError {
+                        message: msg,
+                        raw_output,
+                        suggested_setup_command: None,
+                    };
+                }
+            }
+            return true;
+        }
+        false
+    }
+
+    /// Poll the tab-completion background thread; returns `true` if a redraw is needed.
+    fn poll_tab_completion(&mut self) -> bool {
+        if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
+            match handle.receiver.try_recv() {
+                Ok(Some(sugs)) => {
+                    // Take ownership of wuc_substring and start_time from the waiting state.
+                    let (wuc, load_time) =
+                        match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
+                            ContentMode::TabCompletionWaiting {
+                                wuc_substring,
+                                start_time,
+                                ..
+                            } => (wuc_substring, start_time.elapsed()),
+                            _ => unreachable!(),
+                        };
+                    self.finish_tab_complete(sugs, wuc, load_time);
+                    return true;
+                }
+                Ok(None) => {
+                    // No suggestions generated.
+                    self.content_mode = ContentMode::Normal;
+                    return true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Still waiting; keep TabCompletionWaiting mode.
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    log::warn!("Tab completion thread disconnected unexpectedly");
+                    self.content_mode = ContentMode::Normal;
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn show_agent_mode_not_configured_error(&mut self) {

@@ -59,9 +59,9 @@ impl<'a> CompletionContext<'a> {
         if context.trim().is_empty() || !context_until_cursor.chars().any(|c| c.is_whitespace()) {
             comp_types.push(CompType::FirstWord);
         } else {
-            comp_types.push(CompType::CommandComp {
-                command_word: context.split_whitespace().next().unwrap_or("").to_string(),
-            });
+            let command_word = context.split_whitespace().next().unwrap_or("").to_string();
+
+            comp_types.push(CompType::CommandComp { command_word });
         }
 
         if (wuc.starts_with('$') || wuc.starts_with("\"$")) && !wuc.contains("/") {
