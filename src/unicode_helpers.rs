@@ -36,57 +36,6 @@
 /// Useful as a sentinel value when overlaying Braille on text.
 pub const BRAILLE_BLANK: char = '\u{2800}';
 
-/// Bitflag representing which dots are raised in an 8-dot Braille cell,
-/// using the traditional braille dot numbering (column-major layout).
-///
-/// Standard Braille dot layout:
-/// ```text
-/// 1  4
-/// 2  5
-/// 3  6
-/// 7  8
-/// ```
-/// Dots 1–6 form the traditional 6-dot Braille cell; dots 7 and 8 extend it
-/// for 8-dot Braille (computer Braille).
-///
-/// To get a Braille character from a [`BrailleDots`] value, convert it to
-/// [`OctantDots`] via [`OctantDots::from_braille`] and call
-/// [`octant`] with [`OctantStyle::Braille`].
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub struct BrailleDots(pub u8);
-
-impl BrailleDots {
-    pub const EMPTY: Self = BrailleDots(0);
-    pub const DOT_1: Self = BrailleDots(1 << 0); // top-left
-    pub const DOT_2: Self = BrailleDots(1 << 1); // mid-left
-    pub const DOT_3: Self = BrailleDots(1 << 2); // lower-left
-    pub const DOT_4: Self = BrailleDots(1 << 3); // top-right
-    pub const DOT_5: Self = BrailleDots(1 << 4); // mid-right
-    pub const DOT_6: Self = BrailleDots(1 << 5); // lower-right
-    pub const DOT_7: Self = BrailleDots(1 << 6); // bottom-left (8-dot)
-    pub const DOT_8: Self = BrailleDots(1 << 7); // bottom-right (8-dot)
-}
-
-impl std::ops::BitOr for BrailleDots {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        BrailleDots(self.0 | rhs.0)
-    }
-}
-
-impl std::ops::BitOrAssign for BrailleDots {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.0 |= rhs.0;
-    }
-}
-
-impl std::ops::BitAnd for BrailleDots {
-    type Output = Self;
-    fn bitand(self, rhs: Self) -> Self {
-        BrailleDots(self.0 & rhs.0)
-    }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // I Ching – Trigrams (U+2630–U+2637) and Hexagrams (U+4DC0–U+4DFF)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -777,33 +726,6 @@ impl OctantDots {
             | ((grid[1][3] as u8) << 7), // row 3, col 1 → BOT_RIGHT       (bit 7)
         )
     }
-
-    /// Construct from a [`BrailleDots`] value, converting from the traditional
-    /// column-major braille dot numbering to the reading-order grid used by
-    /// [`OctantDots`].
-    ///
-    /// Equivalent to calling `octant(OctantDots::from_braille(bd), OctantStyle::Braille)`.
-    pub fn from_braille(bd: BrailleDots) -> Self {
-        // Braille dot layout (column-major): DOT_1=bit0, DOT_2=bit1, DOT_3=bit2,
-        // DOT_4=bit3, DOT_5=bit4, DOT_6=bit5, DOT_7=bit6, DOT_8=bit7.
-        // OctantDots layout (reading order): TOP_LEFT=bit0, TOP_RIGHT=bit1,
-        // UPPER_MID_LEFT=bit2, UPPER_MID_RIGHT=bit3, LOWER_MID_LEFT=bit4,
-        // LOWER_MID_RIGHT=bit5, BOT_LEFT=bit6, BOT_RIGHT=bit7.
-        //
-        // Mapping: Braille DOT_1(bit0)→OctantDots bit0, DOT_2(bit1)→bit2,
-        //          DOT_3(bit2)→bit4, DOT_4(bit3)→bit1, DOT_5(bit4)→bit3,
-        //          DOT_6(bit5)→bit5, DOT_7(bit6)→bit6, DOT_8(bit7)→bit7.
-        let b = bd.0;
-        OctantDots(
-            (b & 0x01)           // braille bit0 → octant bit0
-            | ((b & 0x02) << 1)  // braille bit1 → octant bit2
-            | ((b & 0x04) << 2)  // braille bit2 → octant bit4
-            | ((b & 0x08) >> 2)  // braille bit3 → octant bit1
-            | ((b & 0x10) >> 1)  // braille bit4 → octant bit3
-            | (b & 0x20)         // braille bit5 → octant bit5
-            | (b & 0xC0), // braille bits6,7 → octant bits6,7
-        )
-    }
 }
 
 impl std::ops::BitOr for OctantDots {
@@ -1034,18 +956,6 @@ mod tests {
             OctantStyle::Braille,
         );
         assert_eq!(via_grid, manual);
-    }
-
-    // ── OctantDots::from_braille ──────────────────────────────────────────────
-
-    #[test]
-    fn test_from_braille_roundtrip() {
-        // Converting BrailleDots → OctantDots → octant(Braille) should produce
-        // the same character as using the raw braille bit pattern directly.
-        let bd = BrailleDots::DOT_1 | BrailleDots::DOT_4;
-        let via_convert = octant(OctantDots::from_braille(bd), OctantStyle::Braille);
-        // DOT_1 + DOT_4 → '⠉'
-        assert_eq!(via_convert, Some('⠉'));
     }
 
     // ── Full octant (U+1CD00) ─────────────────────────────────────────────────
