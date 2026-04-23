@@ -12,7 +12,6 @@ use crate::{
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
     FirstWord, // the first word under the cursor. cursor might be in the middle of it
-
     CommandComp {
         // "git commi asdf" with cursor just after com
         command_word: String, // "git"
@@ -46,10 +45,12 @@ impl<'a> CompletionContext<'a> {
             dbg!(&word_under_cursor);
         }
 
+        let wuc = word_under_cursor.as_ref();
         let mut comp_types = vec![];
 
-        let wuc = word_under_cursor.as_ref();
-
+        // We could just rely on CompType::CommandComp and let bash do this expansion
+        // but flyline is better and handles more edge cases around tilde expansion.
+        // So we prioritize TildeExpansion over CommandComp if the word under cursor looks like it could be a tilde expansion.
         if wuc.starts_with('~') && !wuc.contains("/") {
             log::debug!("Detected tilde expansion context");
             comp_types.push(CompType::TildeExpansion);
