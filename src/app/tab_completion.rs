@@ -800,7 +800,7 @@ impl App<'_> {
             let mut suggestions: Vec<ProcessedSuggestion> = some_suggestions
                 .unwrap()
                 .iter_mut()
-                .map(|item| item.to_suggestion())
+                .map(|item| item.to_processed_sug())
                 .collect();
 
             suggestions.sort_by(|a, b| a.s.cmp(&b.s));
