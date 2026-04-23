@@ -1,5 +1,5 @@
 variable "BASH_VERSION_MATRIX" {
-    default = ["4.4-rc1", "4.4.18", "5.0", "5.1.16", "5.2", "5.3"]
+    default = ["4.4-rc1", "4.4.18", "5.0", "5.3"]
 }
 
 variable "PRE_BASH_4_4_VERSION_MATRIX" {

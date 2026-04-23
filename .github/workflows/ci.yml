@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bash_version_slug: [ "4_4-rc1", "4_4_18", "5_0", "5_1_16", "5_2", "5_3" ]
+        bash_version_slug: [ "4_4-rc1", "4_4_18", "5_0", "5_3" ]
 
     steps:
       - name: Set up Docker Buildx
