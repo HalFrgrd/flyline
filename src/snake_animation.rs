@@ -119,32 +119,17 @@ impl SnakeAnimation {
         self.body.push(Coord { x, y });
     }
 
-    fn body_as_grid(&self) -> Vec<[bool; 4]> {
-        let mut grid: Vec<[bool; 4]> = vec![];
-        for coord in self.body.iter() {
-            if coord.x >= grid.len() {
-                grid.resize(coord.x + 1, [false; 4]);
-            }
-            grid[coord.x][coord.y] = true;
+    fn body_as_grid(&self) -> [[bool; Self::MAX_X]; Self::MAX_Y] {
+        let mut grid = [[false; Self::MAX_X]; Self::MAX_Y];
+        for coord in &self.body {
+            grid[coord.y][coord.x] = true;
         }
-
         grid
     }
 
     fn to_string(&self) -> String {
-        let col_grid = self.body_as_grid();
-        let num_cols = col_grid.len();
-
-        // Convert col-major grid[col][row] to row-major grid[row][col] for octant_from_grid.
-        let row_grid: Vec<Vec<bool>> = (0..Self::MAX_Y)
-            .map(|row| {
-                (0..num_cols)
-                    .map(|col| col_grid.get(col).map_or(false, |c| c[row]))
-                    .collect()
-            })
-            .collect();
-
-        let lines = octant_from_grid(&row_grid, OctantStyle::Braille);
+        let grid = self.body_as_grid();
+        let lines = octant_from_grid(&grid, OctantStyle::Braille);
         lines.into_iter().next().unwrap_or_default()
     }
 }
