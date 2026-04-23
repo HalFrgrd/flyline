@@ -139,6 +139,9 @@ pub struct Settings {
     /// When `Some`, Zsh history is loaded in addition to Bash history; an empty string or no
     /// value means use the default path (`$HOME/.zsh_history`).
     pub zsh_history_path: Option<String>,
+    /// Optional path to an atuin SQLite database. When `Some`, history is loaded from
+    /// the atuin DB instead of parsing from Bash.
+    pub atuin_db_path: Option<String>,
     /// Whether the interactive tutorial is active.
     pub run_tutorial: bool,
     /// Current tutorial step.
@@ -194,6 +197,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             zsh_history_path: None,
+            atuin_db_path: None,
             run_tutorial: false,
             tutorial_step: TutorialStep::default(),
             show_animations: true,

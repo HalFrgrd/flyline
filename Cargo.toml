@@ -32,9 +32,12 @@ rand = "0.10.0"
 parse-style = { version = "0.4.0" }
 easing-function = "0.1.1"
 ctor = "0.10.0"
+atuin-client = { version = "18.15.2", default-features = false }
+tokio = { version = "1", features = ["rt"] }
+sqlx = { version = "0.8", features = ["sqlite"], default-features = false }
 
-# tokio is not used directly by flyline; it remains a transitive dependency pulled
-# in by `skim` (via `interprocess` and `tokio-util`).
+# tokio is not used directly by flyline for most features; atuin-client pulls in
+# the tokio runtime.  The `tokio` dep above makes it explicit.
 [features]
 integration-tests = []
 pre_bash_4_4 = []

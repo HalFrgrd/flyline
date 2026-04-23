@@ -105,6 +105,11 @@ struct FlylineArgs {
     /// Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file
     #[arg(long = "load-zsh-history", value_name = "PATH", default_missing_value = "", num_args = 0..=1)]
     load_zsh_history: Option<String>,
+    /// Load history from an atuin SQLite database instead of Bash history.
+    /// Specify the path to the atuin history.db file (e.g. ~/.local/share/atuin/history.db).
+    /// When set, Bash history is not parsed; Zsh history may still be loaded via --load-zsh-history.
+    #[arg(long = "atuin-db", value_name = "PATH")]
+    atuin_db: Option<String>,
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
@@ -816,6 +821,11 @@ impl Flyline {
 
                 if let Some(path) = parsed.load_zsh_history {
                     self.settings.zsh_history_path = Some(path);
+                }
+
+                if let Some(path) = parsed.atuin_db {
+                    log::info!("Atuin DB path set to {:?}", path);
+                    self.settings.atuin_db_path = Some(path);
                 }
 
                 if let Some(enabled) = parsed.show_animations {

@@ -247,11 +247,103 @@ impl HistoryManager {
         res
     }
 
+    /// Read history from an atuin SQLite database.
+    ///
+    /// Opens the database at `db_path` using atuin-client's `Sqlite` backend and
+    /// queries the `history` table ordered by timestamp (oldest first).  Entries
+    /// that have been soft-deleted (`deleted_at IS NOT NULL`) are excluded.
+    ///
+    /// The atuin timestamp is stored as nanoseconds since the Unix epoch (i64);
+    /// it is converted to whole seconds (`u64`) for the `HistoryEntry`.
+    fn parse_atuin_history(db_path: &str) -> Vec<HistoryEntry> {
+        use atuin_client::database::Sqlite;
+        use sqlx::Row;
+
+        log::debug!("Reading atuin history from: {}", db_path);
+
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                log::error!("Failed to build tokio runtime for atuin: {}", e);
+                return Vec::new();
+            }
+        };
+
+        let entries = rt.block_on(async {
+            let db = match Sqlite::new(db_path, 5.0).await {
+                Ok(db) => db,
+                Err(e) => {
+                    log::error!("Failed to open atuin DB at {}: {}", db_path, e);
+                    return Vec::new();
+                }
+            };
+
+            let rows: Vec<sqlx::sqlite::SqliteRow> = match sqlx::query(
+                "SELECT command, timestamp FROM history \
+                 WHERE deleted_at IS NULL \
+                 ORDER BY timestamp ASC",
+            )
+            .fetch_all(&db.pool)
+            .await
+            {
+                Ok(rows) => rows,
+                Err(e) => {
+                    log::error!("Failed to query atuin history: {}", e);
+                    return Vec::new();
+                }
+            };
+
+            let mut res = Vec::with_capacity(rows.len());
+            for row in &rows {
+                let command: String = match row.try_get("command") {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::warn!("Failed to read command from atuin row: {}", e);
+                        continue;
+                    }
+                };
+                if command.trim().is_empty() {
+                    continue;
+                }
+                let timestamp_ns: i64 = match row.try_get("timestamp") {
+                    Ok(ts) => ts,
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to read timestamp from atuin row for {:?}: {}",
+                            command,
+                            e
+                        );
+                        0
+                    }
+                };
+                // atuin stores nanoseconds; convert to seconds
+                let timestamp_secs = (timestamp_ns / 1_000_000_000) as u64;
+                let entry = HistoryEntry::new(Some(timestamp_secs), res.len(), command);
+                res.push(entry);
+            }
+            res
+        });
+
+        log::debug!("Parsed atuin history ({} entries)", entries.len());
+        entries
+    }
+
     pub fn new(settings: &Settings) -> HistoryManager {
-        // Bash will load the history into memory, so we can read it from there
-        // Bash parses it after bashrc is loaded.
-        let bash_entries = Self::parse_bash_history_from_memory();
-        Self::log_recent_entries(&bash_entries, "bash");
+        // When an atuin DB path is configured, load history from it instead of Bash.
+        let base_entries = if let Some(ref atuin_path) = settings.atuin_db_path {
+            let atuin_entries = Self::parse_atuin_history(atuin_path.as_str());
+            Self::log_recent_entries(&atuin_entries, "atuin");
+            atuin_entries
+        } else {
+            // Bash will load the history into memory, so we can read it from there.
+            // Bash parses it after bashrc is loaded.
+            let bash_entries = Self::parse_bash_history_from_memory();
+            Self::log_recent_entries(&bash_entries, "bash");
+            bash_entries
+        };
 
         // Alternative is to do it ourselves
         // let bash_entries = Self::parse_bash_history_from_file();
@@ -260,9 +352,9 @@ impl HistoryManager {
             // As a Zsh user migrating to Bash, I want to have my Zsh history available too
             let zsh_entries = Self::parse_zsh_history(Some(zsh_path.as_str()));
             Self::log_recent_entries(&zsh_entries, "Zsh");
-            Self::merge_history_entries(zsh_entries, bash_entries)
+            Self::merge_history_entries(zsh_entries, base_entries)
         } else {
-            Self::normalize_entries(bash_entries)
+            Self::normalize_entries(base_entries)
         };
 
         let index = entries.len();
@@ -582,7 +674,7 @@ impl FuzzyHistorySearch {
 
     fn new() -> Self {
         FuzzyHistorySearch {
-            matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
+            matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true, false),
             cache: Vec::new(),
             cache_command: None,
             global_index: 0,
