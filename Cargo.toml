@@ -23,7 +23,7 @@ unicode-segmentation = "1.13.2"
 itertools = "0.14.0"
 glob = "0.3.3"
 flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "e515077183c61ff21a7d66f9fe8a8198acc01b64" }
-skim = { version = "3.6.1", default-features =  false, features = []}
+skim = { git = "https://github.com/HalFrgrd/skim", rev = "7908ee85a5f6cd49575925fcc0bdef3999409d26", default-features =  false, features = ["algos_only"]}
 lscolors = "0.21.0"
 serde_json = "1.0"
 pulldown-cmark = { version = "0.13", default-features = false }
