@@ -178,9 +178,50 @@ jobs:
           version="${{ needs.create-release.outputs.version }}"
           gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
 
+  build-release-linux-pre-bash-4-4:
+    name: Build pre_bash_4_4 (x86_64-unknown-linux-gnu)
+    needs: create-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build x86_64-unknown-linux-gnu with pre_bash_4_4 feature
+        run: cross build --release --target x86_64-unknown-linux-gnu --features pre_bash_4_4
+
+      - name: Prepare release artifact
+        run: |
+          ARCHIVE="libflyline-${{ github.ref_name }}-x86_64-unknown-linux-gnu_pre_bash_4_4"
+          echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
+
+      - name: Build archive
+        shell: bash
+        run: |
+          tar czf "$ARCHIVE.tar.gz" -C "target/x86_64-unknown-linux-gnu/release" libflyline.so
+          shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
+          echo "ASSET=$ARCHIVE.tar.gz" >> $GITHUB_ENV
+          echo "ASSET_SUM=$ARCHIVE.tar.gz.sha256" >> $GITHUB_ENV
+
+      - name: Upload release archive
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          version="${{ needs.create-release.outputs.version }}"
+          gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
+
   publish-release:
     name: publish-release
-    needs: [create-release, build-release, build-release-macos, build-release-macos-pre-bash-4-4]
+    needs: [create-release, build-release, build-release-linux-pre-bash-4-4, build-release-macos, build-release-macos-pre-bash-4-4]
     runs-on: ubuntu-latest
     steps:
       - name: Mark release as prerelease
