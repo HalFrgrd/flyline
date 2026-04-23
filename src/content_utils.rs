@@ -22,7 +22,7 @@ use unicode_width::UnicodeWidthStr;
 ///             elapsed time.
 /// * `start_time` – the instant when the animation began; used to maintain
 ///                  consistent phase across frames.
-pub fn animated_text_line(
+pub fn gaussian_wave_animated(
     text: &str,
     now: std::time::Instant,
     start_time: std::time::Instant,

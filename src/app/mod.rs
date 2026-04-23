@@ -8,7 +8,7 @@ use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils::{
-    animated_text_line, split_line_to_terminal_rows, ts_to_timeago_string_5chars,
+    gaussian_wave_animated, split_line_to_terminal_rows, ts_to_timeago_string_5chars,
 };
 use crate::cursor::{Cursor, CursorBackend};
 use crate::dparser::{AnnotatedToken, ToInclusiveRange};
@@ -1895,7 +1895,7 @@ impl<'a> App<'a> {
             }
             ContentMode::TabCompletionWaiting { start_time, .. } if self.mode.is_running() => {
                 content.newline();
-                let line = animated_text_line("Loading completions…", now, *start_time);
+                let line = gaussian_wave_animated("Loading completions…", now, *start_time);
                 content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
             }
             ContentMode::FuzzyHistorySearch(_) if self.mode.is_running() => {
@@ -2021,9 +2021,17 @@ impl<'a> App<'a> {
             } if self.mode.is_running() => {
                 content.newline();
                 let elapsed_secs = start_time.elapsed().as_secs();
-                let text = format!("Running: {} [{}s]", command_display, elapsed_secs);
-                let line = animated_text_line(&text, now, *start_time);
+                let text = format!("Running [{}s]: ", elapsed_secs);
+                let line = gaussian_wave_animated(&text, now, *start_time);
                 content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
+                let command_display_span = TaggedSpan::new(
+                    Span::styled(
+                        command_display.clone(),
+                        self.settings.colour_palette.secondary_text(),
+                    ),
+                    Tag::Normal,
+                );
+                content.write_tagged_span(&command_display_span);
             }
             ContentMode::AgentOutputSelection(selection) if self.mode.is_running() => {
                 content.newline();
