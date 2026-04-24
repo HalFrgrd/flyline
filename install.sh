@@ -177,16 +177,16 @@ main() {
             BASHRC="${HOME}/.bash_profile"
         fi
 
-        # macOS ships with bash 3.2. Flyline requires bash 4.4+; guide the user.
+       
         if is_bash_pre_4_4; then
             BREW_BASH="$(find_homebrew_bash)"
             if [ -n "$BREW_BASH" ]; then
-                err "Your system bash is older than 4.4. Flyline requires bash 4.4 or later.
+                err "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support.
 A suitable Homebrew bash was found at: ${BREW_BASH}
 Please re-run this installer with it:
     ${BREW_BASH} -c \"\$(curl -sSfL https://raw.githubusercontent.com/${REPO}/master/install.sh)\""
             else
-                err "Your system bash is older than 4.4. Flyline requires bash 4.4 or later.
+                err "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support.
 Please install a newer bash via Homebrew and then re-run this installer:
     /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
     brew install bash"
