@@ -262,8 +262,10 @@ impl FormattedBufferPart {
         let total = self.grapheme_count();
         let n = n.min(total);
 
-        let left_content: String = self.span.content.graphemes(true).take(n).collect();
-        let right_content: String = self.span.content.graphemes(true).skip(n).collect();
+        let graphemes: Vec<&str> = self.span.content.graphemes(true).collect();
+        let (left_graphemes, right_graphemes) = graphemes.split_at(n);
+        let left_content: String = left_graphemes.concat();
+        let right_content: String = right_graphemes.concat();
         let left_span = Span::styled(left_content, self.span.style);
         let right_span = Span::styled(right_content, self.span.style);
 
