@@ -240,6 +240,79 @@ impl FormattedBufferPart {
         self.span.clone()
     }
 
+    /// Returns the number of graphemes in this part's normal span.
+    #[allow(dead_code)]
+    fn grapheme_count(&self) -> usize {
+        self.span.content.graphemes(true).count()
+    }
+
+    /// Split this part at grapheme index `n`. Returns `(left, right)` where
+    /// `left` contains the first `n` graphemes of the original part and
+    /// `right` contains the remaining graphemes.
+    ///
+    /// Both halves share the original `token` and `tooltip`. The
+    /// `cursor_grapheme_idx` is moved to whichever half it falls into. If an
+    /// `animated_span_fn` is present, both halves get a wrapped copy that
+    /// invokes the original closure and then takes the first `n` graphemes
+    /// (left) or skips the first `n` graphemes (right) of its result.
+    ///
+    /// `n` is clamped to the range `[0, grapheme_count]`.
+    #[allow(dead_code)]
+    pub fn split_at(&self, n: usize) -> (FormattedBufferPart, FormattedBufferPart) {
+        let total = self.grapheme_count();
+        let n = n.min(total);
+
+        let left_content: String = self.span.content.graphemes(true).take(n).collect();
+        let right_content: String = self.span.content.graphemes(true).skip(n).collect();
+        let left_span = Span::styled(left_content, self.span.style);
+        let right_span = Span::styled(right_content, self.span.style);
+
+        let (left_cursor_idx, right_cursor_idx) = match self.cursor_grapheme_idx {
+            Some(idx) if idx < n => (Some(idx), None),
+            Some(idx) => (None, Some(idx - n)),
+            None => (None, None),
+        };
+
+        let (left_anim_fn, right_anim_fn) = match &self.animated_span_fn {
+            Some(orig) => {
+                let orig_left = orig.clone();
+                let orig_right = orig.clone();
+                let take_n = n;
+                let skip_n = n;
+                let left_fn: Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync> =
+                    Arc::new(move |now| {
+                        let span = orig_left(now);
+                        let content: String = span.content.graphemes(true).take(take_n).collect();
+                        Span::styled(content, span.style)
+                    });
+                let right_fn: Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync> =
+                    Arc::new(move |now| {
+                        let span = orig_right(now);
+                        let content: String = span.content.graphemes(true).skip(skip_n).collect();
+                        Span::styled(content, span.style)
+                    });
+                (Some(left_fn), Some(right_fn))
+            }
+            None => (None, None),
+        };
+
+        let left = FormattedBufferPart {
+            token: self.token.clone(),
+            span: left_span,
+            animated_span_fn: left_anim_fn,
+            cursor_grapheme_idx: left_cursor_idx,
+            tooltip: self.tooltip.clone(),
+        };
+        let right = FormattedBufferPart {
+            token: self.token.clone(),
+            span: right_span,
+            animated_span_fn: right_anim_fn,
+            cursor_grapheme_idx: right_cursor_idx,
+            tooltip: self.tooltip.clone(),
+        };
+        (left, right)
+    }
+
     fn check_anim_span_matches_graph_boundaries<'a>(
         normal_span: &Span<'a>,
         new_alt: Span<'a>,
@@ -393,5 +466,105 @@ mod tests {
         let braces = parts_with_value(&fb, "{");
         assert_eq!(braces.len(), 1);
         assert!(braces[0].token.annotations.opening.is_some());
+    }
+
+    // ── FormattedBufferPart::split_at ────────────────────────────────────
+
+    fn first_word_part(input: &str, value: &str) -> FormattedBufferPart {
+        let fb = FormattedBuffer::from(input, input.len());
+        fb.parts
+            .into_iter()
+            .find(|p| p.token.token.value == value)
+            .expect("expected to find the requested token in the formatted buffer")
+    }
+
+    #[test]
+    fn split_at_zero_yields_empty_left() {
+        let part = first_word_part("hello", "hello");
+        let (left, right) = part.split_at(0);
+        assert_eq!(left.normal_span().content, "");
+        assert_eq!(right.normal_span().content, "hello");
+    }
+
+    #[test]
+    fn split_at_full_length_yields_empty_right() {
+        let part = first_word_part("hello", "hello");
+        let total = part.grapheme_count();
+        let (left, right) = part.split_at(total);
+        assert_eq!(left.normal_span().content, "hello");
+        assert_eq!(right.normal_span().content, "");
+    }
+
+    #[test]
+    fn split_at_in_middle_partitions_graphemes() {
+        let part = first_word_part("hello", "hello");
+        let (left, right) = part.split_at(2);
+        assert_eq!(left.normal_span().content, "he");
+        assert_eq!(right.normal_span().content, "llo");
+    }
+
+    #[test]
+    fn split_at_clamps_oversized_index() {
+        let part = first_word_part("hi", "hi");
+        let (left, right) = part.split_at(99);
+        assert_eq!(left.normal_span().content, "hi");
+        assert_eq!(right.normal_span().content, "");
+    }
+
+    #[test]
+    fn split_at_routes_cursor_into_correct_half() {
+        // Cursor positioned after "he" in "hello".
+        let fb = FormattedBuffer::from("hello", 2);
+        let part = fb
+            .parts
+            .into_iter()
+            .find(|p| p.token.token.value == "hello")
+            .unwrap();
+        assert_eq!(part.cursor_grapheme_idx, Some(2));
+
+        // Split before the cursor — cursor moves to the right half.
+        let (left, right) = part.clone().split_at(1);
+        assert_eq!(left.cursor_grapheme_idx, None);
+        assert_eq!(right.cursor_grapheme_idx, Some(1));
+
+        // Split after the cursor — cursor stays in the left half.
+        let (left, right) = part.clone().split_at(3);
+        assert_eq!(left.cursor_grapheme_idx, Some(2));
+        assert_eq!(right.cursor_grapheme_idx, None);
+
+        // Split exactly at the cursor — cursor goes to the right half (index 0).
+        let (left, right) = part.split_at(2);
+        assert_eq!(left.cursor_grapheme_idx, None);
+        assert_eq!(right.cursor_grapheme_idx, Some(0));
+    }
+
+    #[test]
+    fn split_at_preserves_grapheme_boundaries_for_multi_byte() {
+        // "a世b" — three graphemes, the middle one is multi-byte.
+        let part = first_word_part("a世b", "a世b");
+        let (left, right) = part.split_at(2);
+        assert_eq!(left.normal_span().content, "a世");
+        assert_eq!(right.normal_span().content, "b");
+    }
+
+    #[test]
+    fn split_at_propagates_animated_span_fn() {
+        use std::sync::Arc;
+
+        // Build a part with an animated span fn returning "ABCDE" so we can
+        // verify the wrapped left/right closures slice graphemes correctly.
+        let part = first_word_part("hello", "hello");
+        let style = part.normal_span().style;
+        let animated: Arc<dyn Fn(std::time::Instant) -> Span<'static> + Send + Sync> =
+            Arc::new(move |_| Span::styled("ABCDE", style));
+        let part = FormattedBufferPart {
+            animated_span_fn: Some(animated),
+            ..part
+        };
+
+        let (left, right) = part.split_at(2);
+        let now = std::time::Instant::now();
+        assert_eq!(left.get_possible_animated_span(now).content, "AB");
+        assert_eq!(right.get_possible_animated_span(now).content, "CDE");
     }
 }

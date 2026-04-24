@@ -23,7 +23,7 @@ use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser, tutorial};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
-use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
+use crossterm::event::{self, Event as CrosstermEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
@@ -44,7 +44,7 @@ const IDLE_FRAME_RATE: f64 = 0.2;
 
 /// Encode `data` as standard base64 (RFC 4648, no line breaks).
 /// Used to build OSC 52 clipboard sequences.
-fn osc52_base64(data: &[u8]) -> String {
+pub(crate) fn osc52_base64(data: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = Vec::with_capacity((data.len() + 2) / 3 * 4);
     for chunk in data.chunks(3) {
@@ -822,8 +822,23 @@ impl<'a> App<'a> {
                     mouse.kind,
                     MouseEventKind::Up(_) | MouseEventKind::Down(_) | MouseEventKind::Drag(_)
                 ) {
+                    let extend_selection = matches!(mouse.kind, MouseEventKind::Drag(_))
+                        || mouse.modifiers.contains(KeyModifiers::SHIFT);
+                    if extend_selection {
+                        // Anchor a selection at the current cursor position before
+                        // moving so the user can extend it by dragging or shift-clicking.
+                        self.buffer.start_selection_if_none();
+                    } else if matches!(mouse.kind, MouseEventKind::Down(_)) {
+                        // A plain mouse press without Shift starts a fresh selection.
+                        self.buffer.clear_selection();
+                    }
                     self.buffer
                         .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                    if matches!(mouse.kind, MouseEventKind::Down(_)) && !extend_selection {
+                        // After moving on a plain press, anchor a new (empty) selection
+                        // at the click point so a following drag forms a selection.
+                        self.buffer.start_selection_if_none();
+                    }
                     update_buffer = true;
                 }
             }
