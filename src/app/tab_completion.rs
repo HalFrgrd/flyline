@@ -626,7 +626,7 @@ fn tab_complete_glob_expansion(
 }
 
 /// List all files in the directory implied by `word_under_cursor` and return
-/// those that fuzzy-match the last path segment using the Ariane matcher.
+/// those that fuzzy-match the last path segment using the Arinae matcher.
 ///
 /// This is the fallback when [`tab_complete_glob_expansion`] (prefix matching)
 /// finds no results: e.g. typing `src/tm` won't prefix-match `src/tab_completion.rs`,
