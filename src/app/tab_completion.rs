@@ -9,6 +9,8 @@ use crate::iter_first_last::FirstLast;
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
+use skim::fuzzy_matcher::FuzzyMatcher;
+use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 #[derive(Debug)]
 struct PathPatternExpansion {
@@ -487,6 +489,20 @@ pub(crate) fn gen_completions_internal(
                     return Some(completions);
                 }
             }
+            tab_completion_context::CompType::FuzzyFilenameExpansion => {
+                log::debug!("Fuzzy filename expansion for: {:?}", word_under_cursor);
+                let completions =
+                    tab_complete_fuzzy_filename(word_under_cursor.as_ref(), comp_res_flags);
+
+                if completions.is_empty() {
+                    log::debug!(
+                        "No fuzzy filename completions found for: {}",
+                        word_under_cursor.as_ref()
+                    );
+                } else {
+                    return Some(completions);
+                }
+            }
         }
     }
 
@@ -607,6 +623,57 @@ fn tab_complete_glob_expansion(
 
     results.sort_by(|a, b| a.match_text().cmp(b.match_text()));
     results
+}
+
+/// List all files in the directory implied by `word_under_cursor` and return
+/// those that fuzzy-match the last path segment using the Ariane matcher.
+///
+/// This is the fallback when [`tab_complete_glob_expansion`] (prefix matching)
+/// finds no results: e.g. typing `src/tm` won't prefix-match `src/tab_completion.rs`,
+/// but the fuzzy matcher will.
+fn tab_complete_fuzzy_filename(
+    word_under_cursor: &str,
+    comp_res_flags: bash_funcs::CompletionFlags,
+) -> Vec<MaybeProcessedSuggestion> {
+    // Split at the last '/' to separate the directory prefix from the filename
+    // fragment that will be used as the fuzzy-match pattern.
+    let (dir_glob_pattern, filename_fragment) =
+        if let Some(slash_pos) = word_under_cursor.rfind('/') {
+            (
+                word_under_cursor[..slash_pos + 1].to_string() + "*",
+                word_under_cursor[slash_pos + 1..].to_string(),
+            )
+        } else {
+            ("*".to_string(), word_under_cursor.to_string())
+        };
+
+    // Nothing to fuzzy-match against — let the caller fall through.
+    if filename_fragment.is_empty() {
+        return vec![];
+    }
+
+    let dequoted_fragment = bash_funcs::dequoting_function_rust(&filename_fragment);
+
+    let all_files = tab_complete_glob_expansion(&dir_glob_pattern, comp_res_flags);
+
+    let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+
+    let mut scored: Vec<(i64, MaybeProcessedSuggestion)> = all_files
+        .into_iter()
+        .filter_map(|sug| {
+            // Match only against the last path segment so that e.g. the
+            // directory prefix doesn't inflate the score.
+            let match_text = sug.match_text();
+            let filename = match_text.rsplit('/').next().unwrap_or(match_text);
+            matcher
+                .fuzzy_match(filename, &dequoted_fragment)
+                .map(|score| (score, sug))
+        })
+        .collect();
+
+    // Best matches first.
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.into_iter().map(|(_, sug)| sug).collect()
 }
 
 fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> {

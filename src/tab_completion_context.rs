@@ -16,10 +16,11 @@ pub enum CompType {
         // "git commi asdf" with cursor just after com
         command_word: String, // "git"
     },
-    EnvVariable,       // the env variable under the cursor, with the leading $
-    TildeExpansion,    // the tilde under the cursor, e.g. "~us|erna"
-    GlobExpansion,     // the glob pattern under the cursor, e.g. "*.rs|t"
-    FilenameExpansion, // the filename under the cursor, e.g. "fi|le.txt"
+    EnvVariable,            // the env variable under the cursor, with the leading $
+    TildeExpansion,         // the tilde under the cursor, e.g. "~us|erna"
+    GlobExpansion,          // the glob pattern under the cursor, e.g. "*.rs|t"
+    FilenameExpansion,      // the filename under the cursor, e.g. "fi|le.txt"
+    FuzzyFilenameExpansion, // fuzzy-match files in the parent directory when FilenameExpansion finds nothing
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -72,6 +73,7 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::GlobExpansion);
         } else {
             comp_types.push(CompType::FilenameExpansion);
+            comp_types.push(CompType::FuzzyFilenameExpansion);
         }
 
         CompletionContext {
@@ -406,7 +408,8 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FilenameExpansion
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
             ]
         );
     }
@@ -642,7 +645,11 @@ mod tests {
         assert_eq!(res.word_under_cursor.as_ref(), "x");
         assert_eq!(
             res.comp_types,
-            vec![CompType::FirstWord, CompType::FilenameExpansion]
+            vec![
+                CompType::FirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
         );
     }
 
@@ -655,7 +662,11 @@ mod tests {
         assert_eq!(res.word_under_cursor.as_ref(), "diff");
         assert_eq!(
             res.comp_types,
-            vec![CompType::FirstWord, CompType::FilenameExpansion]
+            vec![
+                CompType::FirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
         );
     }
 
@@ -668,7 +679,11 @@ mod tests {
         assert_eq!(res.word_under_cursor.as_ref(), "echo");
         assert_eq!(
             res.comp_types,
-            vec![CompType::FirstWord, CompType::FilenameExpansion]
+            vec![
+                CompType::FirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
         );
     }
 
@@ -681,7 +696,11 @@ mod tests {
         assert_eq!(res.word_under_cursor.as_ref(), "tee");
         assert_eq!(
             res.comp_types,
-            vec![CompType::FirstWord, CompType::FilenameExpansion]
+            vec![
+                CompType::FirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
         );
     }
 
@@ -698,7 +717,8 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "diff".to_string()
                 },
-                CompType::FilenameExpansion
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
             ]
         );
     }
@@ -1139,7 +1159,8 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "cd".to_string()
                 },
-                CompType::FilenameExpansion
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
             ]
         );
     }
@@ -1155,7 +1176,8 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FilenameExpansion
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
             ]
         );
     }
@@ -1203,7 +1225,8 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FilenameExpansion
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
             ]
         );
     }
@@ -1248,7 +1271,11 @@ mod tests {
 
         assert_eq!(
             ctx.comp_types,
-            vec![CompType::FirstWord, CompType::FilenameExpansion]
+            vec![
+                CompType::FirstWord,
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
         );
     }
 
@@ -1267,7 +1294,8 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "ll".to_string()
                 },
-                CompType::FilenameExpansion
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
             ]
         );
     }
