@@ -57,6 +57,10 @@ pub struct TextBuffer {
     // Need to ensure it lines up with grapheme boundaries.
     // The cursor is on the left of the grapheme at this index.
     cursor_byte: usize,
+    /// The anchor byte position for an active text selection. The selection
+    /// spans from `selection_byte` to `cursor_byte` (in either order). When
+    /// `None`, no selection is active.
+    selection_byte: Option<usize>,
     undo_redo: SnapshotManager,
 }
 
@@ -66,8 +70,114 @@ impl TextBuffer {
         TextBuffer {
             buf: starting_str.to_string(),
             cursor_byte: starting_str.len(),
+            selection_byte: None,
             undo_redo: SnapshotManager::new(),
         }
+    }
+}
+
+///////////////////////////////////////////////////////// text selection
+impl TextBuffer {
+    /// Anchor a new selection at the current cursor position if one is not
+    /// already active. Call this before performing a movement that should
+    /// extend the selection.
+    pub fn start_selection_if_none(&mut self) {
+        if self.selection_byte.is_none() {
+            self.selection_byte = Some(self.cursor_byte);
+        }
+    }
+
+    /// Clear any active selection.
+    pub fn clear_selection(&mut self) {
+        self.selection_byte = None;
+    }
+
+    /// Returns the current selection anchor byte position, or `None` if no
+    /// selection is active.
+    #[allow(dead_code)]
+    pub fn selection_byte(&self) -> Option<usize> {
+        self.selection_byte
+    }
+
+    /// Returns the byte range of the current selection, sorted so that
+    /// `start <= end`. Returns `None` when no selection is active or when the
+    /// selection is empty (anchor equal to cursor).
+    pub fn selection_range(&self) -> Option<std::ops::Range<usize>> {
+        let anchor = self.selection_byte?;
+        if anchor == self.cursor_byte {
+            return None;
+        }
+        let start = anchor.min(self.cursor_byte);
+        let end = anchor.max(self.cursor_byte);
+        Some(start..end)
+    }
+
+    /// Returns the currently selected text, or `None` if no selection is
+    /// active or it is empty.
+    pub fn selected_text(&self) -> Option<String> {
+        self.selection_range().map(|r| self.buf[r].to_string())
+    }
+}
+
+#[cfg(test)]
+mod test_selection {
+    use super::*;
+
+    #[test]
+    fn no_selection_by_default() {
+        let tb = TextBuffer::new("hello");
+        assert!(tb.selection_byte().is_none());
+        assert!(tb.selection_range().is_none());
+        assert!(tb.selected_text().is_none());
+    }
+
+    #[test]
+    fn start_selection_anchors_at_cursor() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.start_selection_if_none();
+        assert_eq!(tb.selection_byte(), Some(0));
+        // Empty selection — anchor equals cursor — yields no range.
+        assert!(tb.selection_range().is_none());
+        tb.move_right();
+        tb.move_right();
+        assert_eq!(tb.selection_range(), Some(0..2));
+        assert_eq!(tb.selected_text().as_deref(), Some("he"));
+    }
+
+    #[test]
+    fn start_selection_is_idempotent() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.start_selection_if_none();
+        tb.move_right();
+        tb.start_selection_if_none(); // should not move the anchor
+        assert_eq!(tb.selection_byte(), Some(0));
+        assert_eq!(tb.selection_range(), Some(0..1));
+    }
+
+    #[test]
+    fn selection_range_is_normalised_when_cursor_left_of_anchor() {
+        let mut tb = TextBuffer::new("hello");
+        // Cursor is at end (5).
+        tb.start_selection_if_none();
+        tb.move_left();
+        tb.move_left();
+        assert_eq!(tb.selection_byte(), Some(5));
+        assert_eq!(tb.selection_range(), Some(3..5));
+        assert_eq!(tb.selected_text().as_deref(), Some("lo"));
+    }
+
+    #[test]
+    fn clear_selection_removes_anchor() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.start_selection_if_none();
+        tb.move_right();
+        assert!(tb.selection_range().is_some());
+        tb.clear_selection();
+        assert!(tb.selection_byte().is_none());
+        assert!(tb.selection_range().is_none());
     }
 }
 
