@@ -661,34 +661,31 @@ impl App<'_> {
     /// prefix insertion and handing suggestions to the UI).
     pub(crate) fn finish_tab_complete(
         &mut self,
-        mut sugs: Vec<MaybeProcessedSuggestion>,
+        sugs: Vec<MaybeProcessedSuggestion>,
+        common_prefix: Option<String>,
         wuc_substring: SubString,
         load_time: std::time::Duration,
     ) {
         let mut final_wuc = wuc_substring.clone();
-        // Phase 2: if there are fewer than 1000 suggestions, find any common
-        // prefix and automatically insert it. Even when the word under cursor
-        // does match the common prefix. e.g. ~foo<TAB> might produce /home/foobar and /home/foobaz,
+        // Phase 2: if the background thread found a common prefix, insert it.
+        // e.g. ~foo<TAB> might produce /home/foobar and /home/foobaz,
         // which have common prefix /home/foo that should be inserted to aid fuzzy matching.
-        const MAX_FOR_COMMON_PREFIX: usize = 1000;
-        if sugs.len() < MAX_FOR_COMMON_PREFIX {
-            if let Some(common_prefix) = common_prefix_of_suggestions(&mut sugs) {
-                match self
-                    .buffer
-                    .replace_word_under_cursor(&common_prefix, &wuc_substring)
-                {
-                    Ok(new_wuc) => {
-                        log::info!(
-                            "New word under cursor after inserting common prefix: '{:?}'",
-                            new_wuc
-                        );
-                        final_wuc = new_wuc;
-                    }
-                    Err(e) => log::warn!(
-                        "Failed to replace word under cursor with common prefix: {}",
-                        e
-                    ),
+        if let Some(common_prefix) = common_prefix {
+            match self
+                .buffer
+                .replace_word_under_cursor(&common_prefix, &wuc_substring)
+            {
+                Ok(new_wuc) => {
+                    log::info!(
+                        "New word under cursor after inserting common prefix: '{:?}'",
+                        new_wuc
+                    );
+                    final_wuc = new_wuc;
                 }
+                Err(e) => log::warn!(
+                    "Failed to replace word under cursor with common prefix: {}",
+                    e
+                ),
             }
         }
 
@@ -708,7 +705,8 @@ impl App<'_> {
 
         let wuc_substring = completion_context.word_under_cursor.clone();
 
-        let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<MaybeProcessedSuggestion>>>();
+        let (tx, rx) =
+            std::sync::mpsc::channel::<Option<(Vec<MaybeProcessedSuggestion>, Option<String>)>>();
 
         let completion_context_owned = completion_context.into_owned();
 
@@ -724,7 +722,16 @@ impl App<'_> {
                     completion_context_owned
                 );
             }
-            if let Err(e) = tx.send(suggestions) {
+            let result = suggestions.map(|mut sugs| {
+                const MAX_FOR_COMMON_PREFIX: usize = 1000;
+                let common_prefix = if sugs.len() < MAX_FOR_COMMON_PREFIX {
+                    common_prefix_of_suggestions(&mut sugs)
+                } else {
+                    None
+                };
+                (sugs, common_prefix)
+            });
+            if let Err(e) = tx.send(result) {
                 log::warn!(
                     "Tab completion: failed to send result (receiver dropped): {:?}",
                     e
@@ -734,12 +741,12 @@ impl App<'_> {
 
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(Some(sugs)) => {
-                self.finish_tab_complete(sugs, wuc_substring, start_time.elapsed());
+            Ok(Some((sugs, common_prefix))) => {
+                self.finish_tab_complete(sugs, common_prefix, wuc_substring, start_time.elapsed());
             }
             Ok(None) => {
                 // No suggestions generated.
-                self.finish_tab_complete(vec![], wuc_substring, start_time.elapsed());
+                self.finish_tab_complete(vec![], None, wuc_substring, start_time.elapsed());
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Thread hasn't finished yet; enter waiting mode.
