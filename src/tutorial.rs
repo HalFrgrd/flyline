@@ -393,7 +393,7 @@ pub fn generate_tutorial_text(
             ]));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Switch mouse interaction modes with `flyline --mouse-mode smart/simple/disabled`.",
+                "Switch mouse interaction modes with `flyline --mouse-mode smart`, `flyline --mouse-mode simple`, or `flyline --mouse-mode disabled`.",
                 text_style,
             )));
 
@@ -596,10 +596,13 @@ pub fn generate_tutorial_text(
                     Tag::Tutorial,
                 ),
                 ts_copiable(
-                    "flyline --auto-close-chars true/false".to_string(),
+                    "flyline --auto-close-chars true".to_string(),
                     ClipboardTypes::TutorialAutoClose,
                 ),
-                TaggedSpan::new(Span::styled(".", text_style), Tag::Tutorial),
+                TaggedSpan::new(
+                    Span::styled(" (or `flyline --auto-close-chars false`).", text_style),
+                    Tag::Tutorial,
+                ),
             ]));
         }
         TutorialStep::FineGrainDeletion => {
