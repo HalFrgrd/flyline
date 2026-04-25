@@ -1,5 +1,4 @@
 use crate::app::{App, ContentMode, FuzzyHistorySource};
-use crate::bash_symbols;
 use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
 use crate::text_buffer::WordDelim;
@@ -980,11 +979,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Send EOF to Bash if ignoreeof is non-zero",
         Scope::Default,
         |app, _key| {
-            if app.buffer.buffer().is_empty() && unsafe { bash_symbols::ignoreeof != 0 } {
-                app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
-            } else {
-                app.buffer.delete_right();
-            }
+            // We shouldn't check bash_symbols::ignoreeof here.
+            // Bash handles this itself.
+            app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
         }
     ),
     Action::new(
