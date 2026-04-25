@@ -1171,7 +1171,13 @@ impl Flyline {
                         if enabled {
                             self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
                             // clear the terminal:
-                            print!("\x1b[2J\x1b[H");
+                            if let Err(e) = crossterm::execute!(
+                                std::io::stdout(),
+                                crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+                                crossterm::cursor::MoveTo(0, 0)
+                            ) {
+                                log::warn!("Failed to clear terminal: {}", e);
+                            }
                         } else {
                             self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
                         }
