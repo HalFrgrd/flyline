@@ -426,10 +426,10 @@ impl Binding {
     pub fn matches(&self, key: KeyEvent) -> bool {
         self.key_events.iter().any(|k| match k {
             KeyEventMatch::Exact(action_binding) => {
-                action_binding.code == key.code && key.modifiers.contains(action_binding.modifiers)
+                action_binding.code == key.code && action_binding.modifiers == key.modifiers
             }
             KeyEventMatch::AnyCharAndMods(mods) => {
-                matches!(key.code, KeyCode::Char(_)) && key.modifiers.contains(*mods)
+                matches!(key.code, KeyCode::Char(_)) && key.modifiers == *mods
             }
         })
     }
@@ -2129,20 +2129,19 @@ const ANSI_RESET: &str = "\x1b[0m";
 
 fn key_event_a_shadows_b(a: &KeyEventMatch, b: &KeyEventMatch) -> bool {
     match (a, b) {
-        // If b contains more modifiers than a, a will shadow b.
         (KeyEventMatch::Exact(ea), KeyEventMatch::Exact(eb)) => {
-            ea.code == eb.code && eb.modifiers.contains(ea.modifiers)
+            ea.code == eb.code && ea.modifiers == eb.modifiers
         }
         (KeyEventMatch::AnyCharAndMods(mods_a), KeyEventMatch::AnyCharAndMods(mods_b)) => {
-            mods_b.contains(*mods_a)
+            mods_a == mods_b
         }
         // AnyCharAndMods overlaps with an Exact char pattern, but not with a
         // non-char key (e.g. Enter, Tab) since AnyCharAndMods only fires on chars.
         (KeyEventMatch::AnyCharAndMods(mods), KeyEventMatch::Exact(e)) => {
-            e.modifiers.contains(*mods) && matches!(e.code, KeyCode::Char(_))
+            e.modifiers == *mods && matches!(e.code, KeyCode::Char(_))
         }
         (KeyEventMatch::Exact(e), KeyEventMatch::AnyCharAndMods(mods)) => {
-            matches!(e.code, KeyCode::Char(_)) && mods.contains(e.modifiers)
+            matches!(e.code, KeyCode::Char(_)) && e.modifiers == *mods
         }
     }
 }
@@ -2715,10 +2714,18 @@ mod tests {
     }
 
     #[test]
+    fn test_overlap_exact_same_key_shift_does_not_shadow_unmodified() {
+        let a = KeyEventMatch::Exact(key(KeyCode::Home));
+        let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT));
+        assert!(!key_event_a_shadows_b(&a, &b));
+        assert!(!key_event_a_shadows_b(&b, &a));
+    }
+
+    #[test]
     fn test_overlap_anychar_and_anychar() {
         let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
         let b = KeyEventMatch::AnyCharAndMods(KeyModifiers::CONTROL);
-        assert!(key_event_a_shadows_b(&a, &b));
+        assert!(!key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
@@ -2730,10 +2737,31 @@ mod tests {
     }
 
     #[test]
+    fn test_overlap_anychar_and_exact_char_different_modifiers() {
+        let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
+        let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('q'), KeyModifiers::SHIFT));
+        assert!(!key_event_a_shadows_b(&a, &b));
+        assert!(!key_event_a_shadows_b(&b, &a));
+    }
+
+    #[test]
     fn test_overlap_anychar_and_exact_nonchar() {
         let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
         let b = KeyEventMatch::Exact(key(KeyCode::Tab));
         assert!(!key_event_a_shadows_b(&a, &b));
         assert!(!key_event_a_shadows_b(&b, &a));
+    }
+
+    #[test]
+    fn test_binding_matches_requires_exact_modifiers() {
+        let binding = Binding::try_new(
+            &["Home"],
+            Scope::Default,
+            "move_left_start_of_line",
+        )
+        .unwrap();
+
+        assert!(binding.matches(key(KeyCode::Home)));
+        assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
     }
 }
