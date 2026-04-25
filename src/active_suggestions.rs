@@ -878,10 +878,20 @@ impl ActiveSuggestions {
         let next_row = self.selected_row + 1;
         let next_idx = self.selected_col * self.last_num_rows_per_col + next_row;
         if next_row < self.last_num_rows_per_col && next_idx < n {
+            // Normal case: move down within the same column.
             self.selected_row = next_row;
         } else {
-            // Wrap to row 0 within this column.
-            self.selected_row = 0;
+            // At the bottom of this column: move to the top of the next column.
+            let next_col = self.selected_col + 1;
+            let next_col_start = next_col * self.last_num_rows_per_col;
+            if next_col_start < n {
+                self.selected_col = next_col;
+                self.selected_row = 0;
+            } else {
+                // Wrap to the very first suggestion.
+                self.selected_col = 0;
+                self.selected_row = 0;
+            }
         }
     }
 
@@ -891,11 +901,21 @@ impl ActiveSuggestions {
             return;
         }
         if self.selected_row > 0 {
+            // Normal case: move up within the same column.
             self.selected_row -= 1;
-        } else {
-            // Wrap to the last populated row in this column.
-            let col_start = self.selected_col * self.last_num_rows_per_col;
+        } else if self.selected_col > 0 {
+            // At the top of this column: move to the bottom of the previous column.
+            let prev_col = self.selected_col - 1;
+            let col_start = prev_col * self.last_num_rows_per_col;
             let col_end = (col_start + self.last_num_rows_per_col).min(n);
+            self.selected_col = prev_col;
+            self.selected_row = col_end - col_start - 1;
+        } else {
+            // At the top of column 0: wrap to the last populated row of the last column.
+            let last_col = (n - 1) / self.last_num_rows_per_col;
+            let col_start = last_col * self.last_num_rows_per_col;
+            let col_end = (col_start + self.last_num_rows_per_col).min(n);
+            self.selected_col = last_col;
             self.selected_row = col_end - col_start - 1;
         }
     }
