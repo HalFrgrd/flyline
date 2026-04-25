@@ -1050,7 +1050,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete until start of line",
         Scope::Default,
         |app, _key| {
-            app.buffer.clear_selection();
+            if app.buffer.delete_selection() {
+                return;
+            }
             app.buffer.delete_until_start_of_line()
         },
     ),
@@ -1059,7 +1061,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete one word to the left stopping at punctuation or path segment boundaries",
         Scope::Default,
         |app, _key| {
-            app.buffer.clear_selection();
+            if app.buffer.delete_selection() {
+                return;
+            }
             app.buffer.delete_one_word_left(WordDelim::FineGrained)
         },
     ),
@@ -1068,7 +1072,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete one word to the left, using whitespace as delimiter",
         Scope::Default,
         |app, _key| {
-            app.buffer.clear_selection();
+            if app.buffer.delete_selection() {
+                return;
+            }
             app.buffer.delete_one_word_left(WordDelim::WhiteSpace)
         },
     ),
@@ -1077,11 +1083,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete character before cursor",
         Scope::Default,
         |app, _key| {
-            log::info!(
-                "Performing delete_left action selection: {:?}",
-                app.buffer.selection_range()
-            );
-            app.buffer.clear_selection();
+            if app.buffer.delete_selection() {
+                return;
+            }
             if app.settings.auto_close_chars {
                 // Backspace: if the char to the right of the cursor is an auto-inserted closing token
                 // paired with the char about to be deleted, remove it as well.
@@ -1095,7 +1099,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete until end of line",
         Scope::Default,
         |app, _key| {
-            app.buffer.clear_selection();
+            if app.buffer.delete_selection() {
+                return;
+            }
             app.buffer.delete_until_end_of_line()
         },
     ),
@@ -1104,7 +1110,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete one word to the right stopping at punctuation or path segment boundaries",
         Scope::Default,
         |app, _key| {
-            app.buffer.clear_selection();
+            if app.buffer.delete_selection() {
+                return;
+            }
             app.buffer.delete_right_one_word(WordDelim::FineGrained)
         },
     ),
@@ -1113,7 +1121,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete one word to the right, using whitespace as delimiter",
         Scope::Default,
         |app, _key| {
-            app.buffer.clear_selection();
+            if app.buffer.delete_selection() {
+                return;
+            }
             app.buffer.delete_right_one_word(WordDelim::WhiteSpace)
         },
     ),
@@ -1122,7 +1132,9 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete character after cursor",
         Scope::Default,
         |app, _key| {
-            app.buffer.clear_selection();
+            if app.buffer.delete_selection() {
+                return;
+            }
             app.buffer.delete_right()
         },
     ),
@@ -1264,7 +1276,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Insert character",
         Scope::Default,
         |app, key| {
-            app.buffer.clear_selection();
+            app.buffer.delete_selection();
             if let KeyCode::Char(c) = key.code {
                 if app.settings.auto_close_chars {
                     app.last_keypress_action = app.handle_char_insertion(c);

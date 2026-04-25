@@ -24,9 +24,12 @@ pub struct FormattedBuffer {
 
 impl FormattedBuffer {
     pub fn get_part_from_byte_pos(&self, byte_pos: usize) -> Option<&FormattedBufferPart> {
-        self.parts
-            .iter()
-            .find(|part| part.token.token.byte_range().contains(&byte_pos))
+        self.parts.iter().find(|part| {
+            let start = part.byte_start_in_buffer;
+            let end = start + part.normal_span().content.len();
+            (start..end).contains(&byte_pos)
+                || (part.normal_span().content.is_empty() && start == byte_pos)
+        })
     }
 
     /// Create a `FormattedBuffer` from a raw string and cursor position. Only intended for use in tests.
@@ -35,7 +38,35 @@ impl FormattedBuffer {
         let mut parser = crate::dparser::DParser::from(input);
         parser.walk_to_end();
         let tokens = parser.tokens().to_vec();
-        format_buffer(&tokens, cursor_pos, input.len(), false, &Palette::dark())
+        format_buffer(
+            &tokens,
+            cursor_pos,
+            None,
+            input.len(),
+            false,
+            &Palette::dark(),
+        )
+    }
+
+    /// Create a `FormattedBuffer` from a raw string with a cursor position
+    /// and an active text selection anchor. Only intended for use in tests.
+    #[cfg(test)]
+    pub fn from_with_selection(
+        input: &str,
+        cursor_pos: usize,
+        selection_byte: Option<usize>,
+    ) -> Self {
+        let mut parser = crate::dparser::DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens().to_vec();
+        format_buffer(
+            &tokens,
+            cursor_pos,
+            selection_byte,
+            input.len(),
+            false,
+            &Palette::dark(),
+        )
     }
 }
 
@@ -61,6 +92,14 @@ pub struct FormattedBufferPart {
     /// Where to draw the cursor if it is on this token. This is a grapheme index, not a byte index.
     pub cursor_grapheme_idx: Option<usize>,
     pub tooltip: Option<String>,
+    /// Absolute byte position in the underlying buffer of the first grapheme
+    /// of this part. Initially equal to `token.token.byte_range().start`, but
+    /// updated by `split_at` so that sub-parts of a split token still
+    /// reference the correct buffer position (used for tagging cells with
+    /// their byte position so that mouse clicks resolve to the right place).
+    pub byte_start_in_buffer: usize,
+    /// True when this part lies fully within the active text selection.
+    pub is_selected: bool,
 }
 
 impl std::fmt::Debug for FormattedBufferPart {
@@ -74,6 +113,8 @@ impl std::fmt::Debug for FormattedBufferPart {
             )
             .field("cursor_grapheme_idx", &self.cursor_grapheme_idx)
             .field("tooltip", &self.tooltip)
+            .field("byte_start_in_buffer", &self.byte_start_in_buffer)
+            .field("is_selected", &self.is_selected)
             .finish()
     }
 }
@@ -210,11 +251,13 @@ impl FormattedBufferPart {
         };
 
         Self {
+            byte_start_in_buffer: token.token.byte_range().start,
             token: token.clone(),
             span,
             animated_span_fn,
             cursor_grapheme_idx,
             tooltip,
+            is_selected: false,
         }
     }
 
@@ -296,12 +339,16 @@ impl FormattedBufferPart {
             None => (None, None),
         };
 
+        let left_byte_len = left_graphemes.iter().map(|g| g.len()).sum::<usize>();
+
         let left = FormattedBufferPart {
             token: self.token.clone(),
             span: left_span,
             animated_span_fn: left_anim_fn,
             cursor_grapheme_idx: left_cursor_idx,
             tooltip: self.tooltip.clone(),
+            byte_start_in_buffer: self.byte_start_in_buffer,
+            is_selected: self.is_selected,
         };
         let right = FormattedBufferPart {
             token: self.token.clone(),
@@ -309,6 +356,8 @@ impl FormattedBufferPart {
             animated_span_fn: right_anim_fn,
             cursor_grapheme_idx: right_cursor_idx,
             tooltip: self.tooltip.clone(),
+            byte_start_in_buffer: self.byte_start_in_buffer + left_byte_len,
+            is_selected: self.is_selected,
         };
         (left, right)
     }
@@ -395,16 +444,92 @@ pub fn format_buffer(
             };
             FormattedBufferPart::new(tok, highlight, cursor_pos_in_token, palette)
         })
-        .flat_map(|part| {
-            if let Some(selection_range) = 
-            vec![part]
-        })
+        .flat_map(|part| split_part_for_selection(part, cursor_byte_pos, selection_byte_pos))
         .collect();
 
     FormattedBuffer {
         parts: spans,
         draw_cursor_at_end: cursor_byte_pos >= buffer_byte_length,
     }
+}
+
+/// If a non-empty selection is active (i.e. `selection_byte_pos` is
+/// `Some(s)` with `s != cursor_byte_pos`), split `part` at the selection
+/// boundary points (`s` and `cursor_byte_pos`) so that any sub-part lying
+/// fully within the selection range is marked `is_selected = true`.
+///
+/// Returns 1, 2, or 3 sub-parts depending on how the selection range
+/// intersects the part. Newline tokens are also split: a newline whose byte
+/// falls inside the selection range will be marked selected as a single
+/// part.
+fn split_part_for_selection(
+    part: FormattedBufferPart,
+    cursor_byte_pos: usize,
+    selection_byte_pos: Option<usize>,
+) -> Vec<FormattedBufferPart> {
+    let Some(anchor) = selection_byte_pos else {
+        return vec![part];
+    };
+    if anchor == cursor_byte_pos {
+        return vec![part];
+    }
+    let sel_start = anchor.min(cursor_byte_pos);
+    let sel_end = anchor.max(cursor_byte_pos);
+
+    let part_start = part.byte_start_in_buffer;
+    let part_byte_len = part.span.content.len();
+    let part_end = part_start + part_byte_len;
+
+    // No overlap with selection.
+    if sel_end <= part_start || sel_start >= part_end {
+        return vec![part];
+    }
+
+    // Newline tokens are 1 byte wide and cannot be split usefully — mark
+    // them whole if they lie in the selection range.
+    if matches!(part.token.token.kind, TokenKind::Newline) {
+        let mut p = part;
+        if sel_start <= p.byte_start_in_buffer && p.byte_start_in_buffer < sel_end {
+            p.is_selected = true;
+        }
+        return vec![p];
+    }
+
+    // Convert byte offsets within the part into grapheme indices.
+    let sel_start_in_part = sel_start.saturating_sub(part_start);
+    let sel_end_in_part = (sel_end - part_start).min(part_byte_len);
+
+    let mut left_g = 0usize;
+    let mut right_g = 0usize;
+    let mut byte = 0usize;
+    for (g_idx, grapheme) in part.span.content.graphemes(true).enumerate() {
+        let g_end = byte + grapheme.len();
+        if g_end <= sel_start_in_part {
+            left_g = g_idx + 1;
+        }
+        if g_end <= sel_end_in_part {
+            right_g = g_idx + 1;
+        }
+        byte = g_end;
+    }
+    if right_g <= left_g {
+        // Empty selection inside this part — nothing to mark.
+        return vec![part];
+    }
+
+    let (left, rest) = part.split_at(left_g);
+    let (mut mid, right) = rest.split_at(right_g - left_g);
+    mid.is_selected = true;
+
+    let mut out = Vec::with_capacity(3);
+    if !left.span.content.is_empty() {
+        out.push(left);
+    }
+    out.push(mid);
+    if !right.span.content.is_empty() {
+        out.push(right);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -571,5 +696,69 @@ mod tests {
         let now = std::time::Instant::now();
         assert_eq!(left.get_possible_animated_span(now).content, "AB");
         assert_eq!(right.get_possible_animated_span(now).content, "CDE");
+    }
+
+    // ── format_buffer selection splitting ─────────────────────────────────
+
+    fn selected_contents(fb: &FormattedBuffer) -> Vec<&str> {
+        fb.parts
+            .iter()
+            .filter(|p| p.is_selected)
+            .map(|p| p.normal_span().content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn format_buffer_no_selection_marks_nothing_selected() {
+        let fb = FormattedBuffer::from_with_selection("hello world", 0, None);
+        assert!(fb.parts.iter().all(|p| !p.is_selected));
+    }
+
+    #[test]
+    fn format_buffer_empty_selection_marks_nothing_selected() {
+        // anchor == cursor -> no real selection.
+        let fb = FormattedBuffer::from_with_selection("hello world", 3, Some(3));
+        assert!(fb.parts.iter().all(|p| !p.is_selected));
+    }
+
+    #[test]
+    fn format_buffer_splits_part_at_selection_boundary() {
+        // Cursor at byte 0, anchor at byte 3 — selection spans first 3 bytes
+        // of "hello", so the "hello" token should be split into "hel"
+        // (selected) and "lo" (not selected).
+        let fb = FormattedBuffer::from_with_selection("hello world", 0, Some(3));
+        assert_eq!(selected_contents(&fb), vec!["hel"]);
+        // The remainder of "hello" should be kept as a separate, unselected part.
+        let hel_pos = fb.parts.iter().position(|p| p.is_selected).unwrap();
+        assert_eq!(fb.parts[hel_pos + 1].normal_span().content, "lo");
+    }
+
+    #[test]
+    fn format_buffer_selection_spans_multiple_tokens() {
+        // "hello world" with cursor at 0, anchor at 8 covers "hello wo".
+        // Tokens: "hello" (0..5), " " (5..6), "world" (6..11).
+        let fb = FormattedBuffer::from_with_selection("hello world", 0, Some(8));
+        let selected: Vec<&str> = selected_contents(&fb);
+        assert_eq!(selected, vec!["hello", " ", "wo"]);
+    }
+
+    #[test]
+    fn format_buffer_byte_start_in_buffer_tracks_split_offsets() {
+        // Selecting "ello" inside "hello" should split into "h", "ello", and
+        // remaining bytes.
+        let fb = FormattedBuffer::from_with_selection("hello", 1, Some(5));
+        // Find each split sub-part.
+        let parts: Vec<(&str, usize, bool)> = fb
+            .parts
+            .iter()
+            .map(|p| {
+                (
+                    p.normal_span().content.as_ref(),
+                    p.byte_start_in_buffer,
+                    p.is_selected,
+                )
+            })
+            .collect();
+        assert_eq!(parts, vec![("h", 0, false), ("ello", 1, true)]);
     }
 }

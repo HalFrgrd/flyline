@@ -117,6 +117,22 @@ impl TextBuffer {
     pub fn selected_text(&self) -> Option<String> {
         self.selection_range().map(|r| self.buf[r].to_string())
     }
+
+    /// If a non-empty selection is active, delete the selected text, move the
+    /// cursor to the start of the selection, and clear the selection. Returns
+    /// `true` if a deletion was performed. A snapshot is pushed so the
+    /// deletion can be undone.
+    pub fn delete_selection(&mut self) -> bool {
+        let Some(range) = self.selection_range() else {
+            self.selection_byte = None;
+            return false;
+        };
+        self.push_snapshot(false);
+        self.buf.drain(range.clone());
+        self.cursor_byte = range.start;
+        self.selection_byte = None;
+        true
+    }
 }
 
 #[cfg(test)]
@@ -178,6 +194,56 @@ mod test_selection {
         tb.clear_selection();
         assert!(tb.selection_byte().is_none());
         assert!(tb.selection_range().is_none());
+    }
+
+    #[test]
+    fn delete_selection_removes_selected_text() {
+        let mut tb = TextBuffer::new("hello world");
+        tb.move_to_start();
+        tb.start_selection_if_none();
+        tb.move_right();
+        tb.move_right();
+        tb.move_right();
+        tb.move_right();
+        tb.move_right();
+        assert_eq!(tb.selected_text().as_deref(), Some("hello"));
+        assert!(tb.delete_selection());
+        assert_eq!(tb.buffer(), " world");
+        assert_eq!(tb.cursor_byte, 0);
+        assert!(tb.selection_byte().is_none());
+    }
+
+    #[test]
+    fn delete_selection_with_cursor_left_of_anchor() {
+        let mut tb = TextBuffer::new("hello");
+        // Cursor at end (5), select backwards.
+        tb.start_selection_if_none();
+        tb.move_left();
+        tb.move_left();
+        assert_eq!(tb.selection_range(), Some(3..5));
+        assert!(tb.delete_selection());
+        assert_eq!(tb.buffer(), "hel");
+        assert_eq!(tb.cursor_byte, 3);
+    }
+
+    #[test]
+    fn delete_selection_with_no_selection_is_noop() {
+        let mut tb = TextBuffer::new("hello");
+        assert!(!tb.delete_selection());
+        assert_eq!(tb.buffer(), "hello");
+    }
+
+    #[test]
+    fn delete_selection_can_be_undone() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.start_selection_if_none();
+        tb.move_right();
+        tb.move_right();
+        assert!(tb.delete_selection());
+        assert_eq!(tb.buffer(), "llo");
+        tb.undo();
+        assert_eq!(tb.buffer(), "hello");
     }
 }
 
