@@ -931,7 +931,7 @@ pub fn octant_from_grid(grid: &[impl AsRef<[bool]>], style: OctantStyle) -> Vec<
     // for the empty pattern), so the empty sentinel is BRAILLE_BLANK.
     // For Full/Separated, octant() returns None for the empty pattern, so we use ' '.
     let empty_char = match style {
-        OctantStyle::Braille => BRAILLE_BLANK,
+        // OctantStyle::Braille => BRAILLE_BLANK, // this caused some problems with the interpolate easing anim.
         _ => ' ',
     };
     from_grid_inner::<4>(grid, empty_char, |cell| {
