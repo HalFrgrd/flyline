@@ -42,34 +42,6 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
-/// Encode `data` as standard base64 (RFC 4648, no line breaks).
-/// Used to build OSC 52 clipboard sequences.
-fn osc52_base64(data: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = Vec::with_capacity((data.len() + 2) / 3 * 4);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(TABLE[((n >> 18) & 0x3F) as usize]);
-        out.push(TABLE[((n >> 12) & 0x3F) as usize]);
-        out.push(if chunk.len() > 1 {
-            TABLE[((n >> 6) & 0x3F) as usize]
-        } else {
-            b'='
-        });
-        out.push(if chunk.len() > 2 {
-            TABLE[(n & 0x3F) as usize]
-        } else {
-            b'='
-        });
-    }
-    // SAFETY: `out` contains only bytes from `TABLE`, which is an ASCII
-    // slice, so it is always valid UTF-8.
-    String::from_utf8(out).unwrap()
-}
-
 fn restore_terminal(extended_key_codes: bool) {
     crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
         // Likely from the master pty fd being closed.
@@ -864,10 +836,13 @@ impl<'a> App<'a> {
                         .and_then(|c| c.contents.clipboards.get(&clipboard_type))
                     {
                         let text = text.clone();
-                        let encoded = osc52_base64(text.as_bytes());
-                        use std::io::Write;
-                        print!("\x1b]52;c;{}\x07", encoded);
-                        std::io::stdout().flush().ok();
+                        crossterm::execute!(
+                            std::io::stdout(),
+                            crossterm::clipboard::CopyToClipboard::to_clipboard_from(
+                                text.as_bytes()
+                            )
+                        )
+                        .ok();
                         log::info!("Copied to clipboard via OSC 52 ({:?})", clipboard_type);
                         self.buffer.replace_buffer(&text);
                         update_buffer = true;
