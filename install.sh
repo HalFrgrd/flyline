@@ -15,6 +15,7 @@ BASHRC="${HOME}/.bashrc"
 say() { printf '\033[1;34m==> \033[0m%s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 err() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+err_no_exit() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; }
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || err "Required command not found: $1"
@@ -66,6 +67,21 @@ is_bash_pre_4_4() {
     major="${version_str%% *}"
     minor="${version_str##* }"
     ! is_bash_version_4_4_or_later "$major" "$minor"
+}
+
+# Returns the path to a Homebrew-installed bash >= 4.4, or an empty string.
+find_homebrew_bash() {
+    for candidate in "/opt/homebrew/bin/bash" "/usr/local/bin/bash"; do
+        if [ -x "$candidate" ]; then
+            v="$("$candidate" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0")"
+            major="${v%% *}"; minor="${v##* }"
+            if is_bash_version_4_4_or_later "$major" "$minor"; then
+                echo "$candidate"
+                return
+            fi
+        fi
+    done
+    echo ""
 }
 
 detect_os() {
@@ -166,9 +182,16 @@ main() {
         # Flyline can run on the 3.2.57 version of bash.
         # However, the bash binary on macOS is often compiled without linkable symbols required to load the Flyline plugin.
         if is_bash_pre_4_4; then
-            warn "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support."
-            warn "Please install a newer bash before trying to use flyline:"
-            warn "    brew install bash"
+            BREW_BASH="$(find_homebrew_bash)"
+            if [ -n "$BREW_BASH" ]; then
+                warn "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support."
+                warn "Ensure that you use $BREW_BASH for flyline."
+                is_bash_pre_4_4=false
+            else
+                err_no_exit "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support."
+                err_no_exit "Please install a newer bash before trying to use flyline:"
+                err "    brew install bash"
+            fi
         fi
     else
         LIBC="$(detect_libc)"
@@ -195,7 +218,6 @@ main() {
 
     ARCHIVE_STEM="libflyline-${VERSION}-${TARGET}"
 
-    # On Linux, when bash is older than 4.4, use the pre-bash-4.4 build.
     if is_bash_pre_4_4; then
         say "Detected bash < 4.4, using pre-bash-4.4 build..."
         ARCHIVE="${ARCHIVE_STEM}_pre_bash_4_4.tar.gz"
