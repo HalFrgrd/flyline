@@ -238,12 +238,14 @@ fn post_process_completions(
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
     cursor_config: &crate::cursor::CursorConfig,
-) -> Option<Vec<MaybeProcessedSuggestion>> {
+) -> Option<(Vec<MaybeProcessedSuggestion>, bool)> {
     log::debug!("Completion context: {:#?}", completion_context);
 
     let word_under_cursor = &completion_context.word_under_cursor;
 
     let mut comp_res_flags = bash_funcs::CompletionFlags::default();
+
+    const REPLACE_WITH_COMMON_PREFIX: bool = true;
 
     for comp_type in &completion_context.comp_types {
         log::debug!("Processing completion type: {:?}", comp_type);
@@ -257,7 +259,7 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some(completions);
+                    return Some((completions, REPLACE_WITH_COMMON_PREFIX));
                 }
             }
             tab_completion_context::CompType::CommandComp {
@@ -337,7 +339,7 @@ pub(crate) fn gen_completions_internal(
                                     )
                                 })
                                 .collect();
-                            return Some(suggestions);
+                            return Some((suggestions, REPLACE_WITH_COMMON_PREFIX));
                         }
                         Ok(_) => {
                             log::debug!(
@@ -371,7 +373,7 @@ pub(crate) fn gen_completions_internal(
                                 comp_result.flags,
                                 word_under_cursor.as_ref(),
                             );
-                            return Some(suggestions);
+                            return Some((suggestions, REPLACE_WITH_COMMON_PREFIX));
                         }
                         Ok(comp_result) => {
                             // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
@@ -393,12 +395,13 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some(
+                    return Some((
                         ProcessedSuggestion::from_string_vec(matching_vars, "", " ")
                             .into_iter()
                             .map(MaybeProcessedSuggestion::Ready)
                             .collect(),
-                    );
+                        REPLACE_WITH_COMMON_PREFIX,
+                    ));
                 }
             }
             tab_completion_context::CompType::TildeExpansion => {
@@ -410,7 +413,7 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some(completions);
+                    return Some((completions, REPLACE_WITH_COMMON_PREFIX));
                 }
             }
             tab_completion_context::CompType::GlobExpansion => {
@@ -433,7 +436,10 @@ pub(crate) fn gen_completions_internal(
                             word_under_cursor.as_ref(),
                             single_completion
                         );
-                        return Some(vec![MaybeProcessedSuggestion::Ready(single_completion)]);
+                        return Some((
+                            vec![MaybeProcessedSuggestion::Ready(single_completion)],
+                            REPLACE_WITH_COMMON_PREFIX,
+                        ));
                     }
                     _ => {
                         // Unlike other completions, if there are multiple glob completions,
@@ -467,9 +473,14 @@ pub(crate) fn gen_completions_internal(
 
                                 acc
                             });
-                        return Some(vec![MaybeProcessedSuggestion::Ready(
-                            ProcessedSuggestion::new(completions_as_string, "", ""),
-                        )]);
+                        return Some((
+                            vec![MaybeProcessedSuggestion::Ready(ProcessedSuggestion::new(
+                                completions_as_string,
+                                "",
+                                "",
+                            ))],
+                            REPLACE_WITH_COMMON_PREFIX,
+                        ));
                     }
                 }
             }
@@ -486,7 +497,7 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some(completions);
+                    return Some((completions, REPLACE_WITH_COMMON_PREFIX));
                 }
             }
             tab_completion_context::CompType::FuzzyFilenameExpansion => {
@@ -500,7 +511,7 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some(completions);
+                    return Some((completions, false));
                 }
             }
         }
@@ -790,13 +801,14 @@ impl App<'_> {
                     completion_context_owned
                 );
             }
-            let result = suggestions.map(|mut sugs| {
+            let result = suggestions.map(|(mut sugs, replace_with_common_prefix)| {
                 const MAX_FOR_COMMON_PREFIX: usize = 1000;
-                let common_prefix = if sugs.len() < MAX_FOR_COMMON_PREFIX {
-                    common_prefix_of_suggestions(&mut sugs)
-                } else {
-                    None
-                };
+                let common_prefix =
+                    if replace_with_common_prefix && sugs.len() < MAX_FOR_COMMON_PREFIX {
+                        common_prefix_of_suggestions(&mut sugs)
+                    } else {
+                        None
+                    };
                 (sugs, common_prefix)
             });
             if let Err(e) = tx.send(result) {
