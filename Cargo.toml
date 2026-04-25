@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 clap = { version = "4.6.0", features = ["derive"] }
 clap_complete = { version = "4.6.2", features = ["unstable-dynamic"] }
 ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default", "unstable-rendered-line-info"] }
-crossterm ="0.29.0"
+crossterm = { version = "0.29.0", features = ["osc52"] }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
