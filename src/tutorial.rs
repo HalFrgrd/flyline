@@ -98,6 +98,7 @@ pub enum TutorialStep {
     AutoClosing,
     FineGrainDeletion,
     ThemeColours,
+    CursorStyleEffects,
     Keybindings,
     FontDetection,
     End,
@@ -107,7 +108,7 @@ pub enum TutorialStep {
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 14] = [
+    const STEPS_IN_ORDER: [TutorialStep; 15] = [
         TutorialStep::Welcome,
         TutorialStep::TutorialsTutorial,
         TutorialStep::RecommendedSettings,
@@ -118,6 +119,7 @@ impl TutorialStep {
         TutorialStep::AutoClosing,
         TutorialStep::FineGrainDeletion,
         TutorialStep::ThemeColours,
+        TutorialStep::CursorStyleEffects,
         TutorialStep::Keybindings,
         TutorialStep::FontDetection,
         TutorialStep::End,
@@ -569,6 +571,78 @@ pub fn generate_tutorial_text(
                     Span::styled(" to see all options.", text_style),
                     Tag::Tutorial,
                 ),
+            ]));
+        }
+        TutorialStep::CursorStyleEffects => {
+            lines.push(tl(Span::styled("Cursor Style & Effects", heading_style)));
+            lines.push(empty());
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled("Use ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-cursor --help".to_string(),
+                    ClipboardTypes::TutorialCursor0,
+                ),
+                ts_text(" to control how the cursor looks and animates."),
+            ]));
+            lines.push(tl(Span::styled(
+                "Style and effect options require the `flyline` cursor backend. The `terminal` backend leaves cursor rendering to your terminal emulator.",
+                text_style,
+            )));
+            lines.push(empty());
+            lines.push(tl(Span::styled("Examples:", text_style)));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-cursor --backend terminal".to_string(),
+                    ClipboardTypes::TutorialCursor1,
+                ),
+                ts_text(" (your terminal emulator will render the cursor)"),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-cursor --backend flyline --style \"reverse\"".to_string(),
+                    ClipboardTypes::TutorialCursor2,
+                ),
+                ts_text(" (invert the character under the cursor)"),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-cursor --backend flyline --style \"#ff4d00 on black bold\""
+                        .to_string(),
+                    ClipboardTypes::TutorialCursor3,
+                ),
+                ts_text(" (custom foreground, background, and style)"),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-cursor --backend flyline --effect blink --effect-speed 2.0"
+                        .to_string(),
+                    ClipboardTypes::TutorialCursor4,
+                ),
+                ts_text(" (faster blinking cursor)"),
+            ]));
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(Span::styled(" ", text_style), Tag::Tutorial),
+                ts_copiable(
+                    "flyline set-cursor --backend flyline --style \"#33ccff\" --effect fade --effect-easing in-out-sine --interpolate-easing out-elastic --interpolate 2".to_string(),
+                    ClipboardTypes::TutorialCursor5,
+                ),
+                ts_text(" (RGB fade effect with smooth easing and bouncing interpolation when the cursor moves)"),
+            ]));
+            lines.push(empty());
+            lines.push(TaggedLine::from(vec![
+                TaggedSpan::new(
+                    Span::styled("Try tab completing ", text_style),
+                    Tag::Tutorial,
+                ),
+                ts_copiable(
+                    "flyline set-cursor --interpolate-easing ".to_string(),
+                    ClipboardTypes::TutorialCursor6,
+                ),
+                ts_text(" for an example of flyline's dynamic tab completion descriptions!"),
             ]));
         }
         TutorialStep::AutoClosing => {
