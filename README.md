@@ -34,13 +34,6 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 # Installation
 
-To install flyline, you need to:
-1. Acquire `libflyline.so`
-2. Run `enable -f /path/to/libflyline.so flyline` (preferably in your `.bashrc`)
-3. Optional but recommended: `flyline run-tutorial`
-
-From easiest to hardest:
-
 ### Quick install: run `install.sh`
 
 > [!TIP]
@@ -50,6 +43,8 @@ From easiest to hardest:
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
 
+> [!IMPORTANT]
+> On macOS you must first install a version of bash that supports custom builtins: `brew install bash`
 
 ### Download from releases
 
@@ -67,6 +62,7 @@ Clone the repo and run:
 ```bash
 cargo build
 enable -f /path/to/flyline_checkout/target/debug/libflyline.so flyline
+flyline run-tutorial
 ```
 
 

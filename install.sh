@@ -253,6 +253,7 @@ Please check https://github.com/${REPO}/releases for available assets."
     # Prompt for install directory; read from /dev/tty so it works when piped.
     # Falls back to the default when no terminal is available (e.g. CI).
     say "Enter install directory (leave blank to use: ~/.local/lib)"
+    printf '> ' >&2
     input_dir=""
     if [ -t 0 ]; then
         read -r input_dir || true
@@ -290,8 +291,10 @@ Please check https://github.com/${REPO}/releases for available assets."
 
     say ""
     say "Installation complete!"
-    printf '    To activate in the current shell:\n        %s\n' "$ENABLE_CMD"
-    printf '    Or open a new terminal.\n'
+    say '    To activate in the current shell:'
+    say "        $ENABLE_CMD"
+    say '    Or open a new terminal and run the tutorial:'
+    say "        flyline run-tutorial"
 }
 
 main "$@"
