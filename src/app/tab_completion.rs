@@ -652,7 +652,7 @@ fn tab_complete_fuzzy_filename(
         return vec![];
     }
 
-    // glob expansion handles dequoting the pattern, so we only need to dequote 
+    // glob expansion handles dequoting the pattern, so we only need to dequote
     let dequoted_fragment = bash_funcs::dequoting_function_rust(&filename_fragment);
 
     let all_files = tab_complete_glob_expansion(&dir_glob_pattern, comp_res_flags);
@@ -1059,24 +1059,23 @@ impl App<'_> {
             &[&ProcessedSuggestion::new(r#"abc/foo/baz"#, "", " ")],
         );
 
-
         // Fuzzy tab completion tests
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default spaces",
             &[
                 &ProcessedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
-                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", "")
+                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
             ],
         );
 
-                run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default spaces",
-            &[
-                &ProcessedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
-                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", "")
-            ],
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default many\\ spaces\\ here/here",
+            &[&ProcessedSuggestion::new(
+                r#"many\ spaces\ here/and\ more\ spaces\ here.txt"#,
+                "",
+                " ",
+            )],
         );
-
 
         std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff1").unwrap();
 
@@ -1102,7 +1101,7 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default *",
             &[&ProcessedSuggestion::new(r#"a.txt"#, "", " ")],
-        );        
+        );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
     }

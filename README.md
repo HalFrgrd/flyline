@@ -339,10 +339,16 @@ I'd recommend [setting up a mouse mode widget](#mouse-mode-widget) to know when 
 Flyline extends Bash's tab completion feature in many ways.
 Note that you will need to have [set up completions in normal Bash first](https://github.com/scop/bash-completion).
 
-### Fuzzy tab completions
+### Fuzzy tab completion search
 When you're presented with suggestions, you can type to fuzzily search through the list:
 
 ![Fuzzy suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_suggestions.gif)
+
+### Fuzzy path completion
+The last path segment will be fuzzily matched on the directory contents:
+
+![Fuzzy path suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_path_suggestions.gif)
+
 
 ### Alias expansion
 Aliases are expanded before attempting tab completion so that Bash calls the desired completion function.

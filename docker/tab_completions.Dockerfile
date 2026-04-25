@@ -14,6 +14,7 @@ RUN set -eux; \
     touch     /tmp/example_fs/foo/glob_stuff1/.dotfile; \
     touch     /tmp/example_fs/foo/glob_stuff1/a.txt; \
     mkdir -p "/tmp/example_fs/many spaces here"; \
+    touch    "/tmp/example_fs/many spaces here/and more spaces here.txt"; \
     touch    "/tmp/example_fs/file with spaces.txt"; \
     mkdir -p  /tmp/example_fs/abc/foo; \
     touch     /tmp/example_fs/abc/foo/baz; \
