@@ -177,6 +177,11 @@ target "demo-fuzzy-suggestions-extracted-gif" {
     dockerfile = "docker/demo_fuzzy_suggestions.Dockerfile"
 }
 
+target "demo-fuzzy-path-suggestions-extracted-gif" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_fuzzy_path_suggestions.Dockerfile"
+}
+
 target "demo-custom-animation-extracted-gif" {
     inherits = ["_demo-base"]
     dockerfile = "docker/demo_custom_animation.Dockerfile"
@@ -207,6 +212,7 @@ group "demos" {
         "demo-overview-extracted-gif",
         "demo-prompts-extracted-gif",
         "demo-fuzzy-suggestions-extracted-gif",
+        "demo-fuzzy-path-suggestions-extracted-gif",
         "demo-custom-animation-extracted-gif",
         "demo-agent-mode-extracted-gif",
         "demo-ls-colors-extracted-gif",
