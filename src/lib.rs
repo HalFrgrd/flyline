@@ -278,12 +278,12 @@ enum Commands {
     /// (e.g. red, #ff0000, rgb(255,0,0), color(196)).
     ///
     /// Examples:
-    ///   flyline set-color --default-theme dark
-    ///   flyline set-color --inline-suggestion "dim italic"
-    ///   flyline set-color --matching-char "bold green"
-    ///   flyline set-color --default-theme light --matching-char "bold blue"
-    ///   flyline set-color --recognised-command "green" --unrecognised-command "bold red"
-    ///   flyline set-color --secondary-text "dim" --tutorial-hint "bold italic"
+    ///   flyline set-colour --default-theme dark
+    ///   flyline set-colour --inline-suggestion "dim italic"
+    ///   flyline set-colour --matching-char "bold green"
+    ///   flyline set-colour --default-theme light --matching-char "bold blue"
+    ///   flyline set-colour --recognised-command "green" --unrecognised-command "bold red"
+    ///   flyline set-colour --secondary-text "dim" --tutorial-hint "bold italic"
     #[command(name = "set-colour", verbatim_doc_comment)]
     SetColour {
         /// Apply a built-in colour preset for dark or light terminals.

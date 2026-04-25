@@ -23,3 +23,5 @@ There might not be any changes to make since you have run on previous events.
 Find any typos or grammatical errors in the documentation and fix those as well.
 
 After checking, write a brief summary of all changes you made (or confirm no changes were needed) to a file called copilot_summary.md.
+
+Ignore lines that are marked with NO_FMT.

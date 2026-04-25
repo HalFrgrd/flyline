@@ -29,8 +29,8 @@ When Bash prompts you for a command, a library called [readline](https://www.gnu
 Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is written in Rust and uses [ratatui.rs](https://ratatui.rs/) to more easily draw complex user interfaces.
 
 ### Who is it for?
-1. You want an out-of-the-box great shell experience without the hassle of setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts (anyone of which might phone home).
-2. You're a terminal power user who wants to fine tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you; contributions welcome!
+1. You want an out-of-the-box great shell experience without the hassle of setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts (any one of which might phone home).
+2. You're a terminal power user who wants to fine-tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you; contributions welcome!
 
 # Installation
 
