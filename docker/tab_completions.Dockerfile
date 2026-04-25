@@ -13,15 +13,15 @@ RUN set -eux; \
     /tmp/example_fs/foo/glob_stuff1 \
     "/tmp/example_fs/many spaces here" \
     /tmp/example_fs/abc/foo; \
-    printf '%s' content > /tmp/example_fs/bar.txt; \
-    printf '%s' content > "/tmp/example_fs/file with spaces.txt"; \
-    printf '%s' content > /tmp/example_fs/foo/baz; \
-    printf '%s' content > /tmp/example_fs/abc/foo/baz; \
-    printf '%s' content > /tmp/example_fs/foo/glob_stuff1/.dotfile; \
-    printf '%s' content > /tmp/example_fs/foo/glob_stuff1/a.txt; \
+    touch /tmp/example_fs/bar.txt; \
+    touch "/tmp/example_fs/file with spaces.txt"; \
+    touch /tmp/example_fs/foo/baz; \
+    touch /tmp/example_fs/abc/foo/baz; \
+    touch /tmp/example_fs/foo/glob_stuff1/.dotfile; \
+    touch /tmp/example_fs/foo/glob_stuff1/a.txt; \
     ln -s foo /tmp/example_fs/sym_link_to_foo; \
     mkdir -p /root/foo; \
-    printf '%s' content > '/root/foo/$baz.txt'
+    touch '/root/foo/$baz.txt'
 
 RUN set -eux; \
     cat > /root/tab_completion_test_bashrc <<'EOF'

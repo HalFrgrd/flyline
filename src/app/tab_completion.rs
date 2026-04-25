@@ -1069,6 +1069,14 @@ impl App<'_> {
             ],
         );
 
+                run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default spaces",
+            &[
+                &ProcessedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
+                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", "")
+            ],
+        );
+
 
         std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff1").unwrap();
 
