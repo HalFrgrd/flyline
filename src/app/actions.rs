@@ -868,7 +868,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
             }
             ContentMode::AgentError { .. } => {
                 app.content_mode = ContentMode::Normal;
-                app.buffer.replace_buffer("flyline agent-mode --help");
+                app.buffer.replace_buffer("flyline set-agent-mode --help");
                 app.on_possible_buffer_change();
                 app.try_submit_current_buffer();
             }

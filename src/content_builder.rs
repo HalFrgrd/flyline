@@ -1,3 +1,4 @@
+use crate::stateful_sliding_window::StatefulSlidingWindow;
 use rand::prelude::*;
 use ratatui::buffer::Cell;
 use ratatui::layout::Rect;
@@ -108,8 +109,6 @@ impl<'a> From<TaggedSpan<'a>> for TaggedLine<'a> {
     }
 }
 
-use crate::stateful_sliding_window::StatefulSlidingWindow;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Coord {
     pub row: u16,
@@ -141,6 +140,13 @@ pub enum ClipboardTypes {
     TutorialRP1,
     TutorialMouseMode,
     TutorialRecommendedSettings,
+    TutorialCursor0,
+    TutorialCursor1,
+    TutorialCursor2,
+    TutorialCursor3,
+    TutorialCursor4,
+    TutorialCursor5,
+    TutorialCursor6,
     TutorialFineGrainDeletion,
     TutorialSetColor1,
     TutorialSetColor2,
@@ -616,16 +622,16 @@ impl Contents {
             return char;
         }
 
-        // match char {
-        //     '╭' => '╔',
-        //     '╮' => '╗',
-        //     '╰' => '╚',
-        //     '╯' => '╝',
-        //     '─' => '═', // if y == area.top() { '▂' } else { '🬂' },
-        //     '│' => '║', // if x == area.left() { '🮇' } else { '🯏' },
-        //     ' ' => '🮖', // 🮖 █
-        //     _ => char
-        // }
+        match char {
+            '╭' => '╔',
+            '╮' => '╗',
+            '╰' => '╚',
+            '╯' => '╝',
+            '─' => '═', // if y == area.top() { '▂' } else { '🬂' },
+            '│' => '║', // if x == area.left() { '🮇' } else { '🯏' },
+            // ' ' => unicode_helpers::FULL_BLOCK, // 🮖 █
+            _ => char,
+        }
         // match char {
         //     '╭' => '▗',
         //     '╮' => '▖',
@@ -656,28 +662,28 @@ impl Contents {
         //     ' ' => '🮐', // 🮖 █
         //     _ => char
         // }
-        match char {
-            // '╭' => '🬆',
-            // '╮' => '🬊',
-            // '╰' => '🬱',
-            // '╯' => '🬵',
-            '─' => {
-                if y == area.top() {
-                    '🮏'
-                } else {
-                    '🮎'
-                }
-            }
-            '│' => {
-                if x == area.left() {
-                    '🮍'
-                } else {
-                    '🮌'
-                }
-            }
-            ' ' => '🮐', // 🮖 █
-            _ => char,
-        }
+        // match char {                    // These ones are good but generally people dont have the font to render them
+        //     // '╭' => '🬆',
+        //     // '╮' => '🬊',
+        //     // '╰' => '🬱',
+        //     // '╯' => '🬵',
+        //     '─' => {
+        //         if y == area.top() {
+        //             '🮏'
+        //         } else {
+        //             '🮎'
+        //         }
+        //     }
+        //     '│' => {
+        //         if x == area.left() {
+        //             '🮍'
+        //         } else {
+        //             '🮌'
+        //         }
+        //     }
+        //     ' ' => '🮐', // 🮖 █
+        //     _ => char,
+        // }
     }
 
     pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, is_selected: bool) {
@@ -692,10 +698,16 @@ impl Contents {
                 {
                     let char = Self::get_char(x, y, area, is_selected);
 
+                    let style = if is_selected {
+                        Palette::convert_to_selected(ratatui::style::Style::default())
+                    } else {
+                        ratatui::style::Style::default()
+                    };
+
                     tagged_cell
                         .cell
                         .set_symbol(&char.to_string())
-                        .set_style(ratatui::style::Style::default());
+                        .set_style(style);
                     tagged_cell.tag = tag;
                 }
             }
