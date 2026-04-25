@@ -53,9 +53,6 @@ jobs:
           # macOS (native cargo)
           - { target: x86_64-apple-darwin,        os: macos-latest,  build_tool: cargo, lib: libflyline.dylib, feature_flags: "",                        suffix: "" }
           - { target: aarch64-apple-darwin,       os: macos-latest,  build_tool: cargo, lib: libflyline.dylib, feature_flags: "",                        suffix: "" }
-          # macOS pre_bash_4_4
-          - { target: x86_64-apple-darwin,        os: macos-latest,  build_tool: cargo, lib: libflyline.dylib, feature_flags: "--features pre_bash_4_4", suffix: "_pre_bash_4_4" }
-          - { target: aarch64-apple-darwin,       os: macos-latest,  build_tool: cargo, lib: libflyline.dylib, feature_flags: "--features pre_bash_4_4", suffix: "_pre_bash_4_4" }
 
     steps:
       - name: Checkout

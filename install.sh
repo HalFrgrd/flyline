@@ -13,7 +13,9 @@ BASHRC="${HOME}/.bashrc"
 # ---------------------------------------------------------------------------
 
 say() { printf '\033[1;34m==> \033[0m%s\n' "$*"; }
+warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 err() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+err_no_exit() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; }
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || err "Required command not found: $1"
@@ -53,14 +55,33 @@ detect_bash_version_parts() {
     "$bash_bin" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0"
 }
 
+# Returns 0 (true) if the given major.minor version is >= 4.4, 1 (false) otherwise.
+is_bash_version_4_4_or_later() {
+    major="$1"; minor="$2"
+    [ "${major:-0}" -gt 4 ] || { [ "${major:-0}" -eq 4 ] && [ "${minor:-0}" -ge 4 ]; }
+}
+
 # Returns 0 (true) if the system bash is older than 4.4, 1 (false) otherwise.
 is_bash_pre_4_4() {
     version_str="$(detect_bash_version_parts)"
     major="${version_str%% *}"
     minor="${version_str##* }"
-    major="${major:-0}"
-    minor="${minor:-0}"
-    [ "$major" -lt 4 ] || { [ "$major" -eq 4 ] && [ "$minor" -lt 4 ]; }
+    ! is_bash_version_4_4_or_later "$major" "$minor"
+}
+
+# Returns the path to a Homebrew-installed bash >= 4.4, or an empty string.
+find_homebrew_bash() {
+    for candidate in "/opt/homebrew/bin/bash" "/usr/local/bin/bash"; do
+        if [ -x "$candidate" ]; then
+            v="$("$candidate" -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null || echo "0 0")"
+            major="${v%% *}"; minor="${v##* }"
+            if is_bash_version_4_4_or_later "$major" "$minor"; then
+                echo "$candidate"
+                return
+            fi
+        fi
+    done
+    echo ""
 }
 
 detect_os() {
@@ -157,6 +178,21 @@ main() {
         if [ ! -f "${HOME}/.bashrc" ] && [ -f "${HOME}/.bash_profile" ]; then
             BASHRC="${HOME}/.bash_profile"
         fi
+
+        # Flyline can run on the 3.2.57 version of bash.
+        # However, the bash binary on macOS is often compiled without linkable symbols required to load the Flyline plugin.
+        if is_bash_pre_4_4; then
+            BREW_BASH="$(find_homebrew_bash)"
+            if [ -n "$BREW_BASH" ]; then
+                warn "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support."
+                warn "Ensure that you use $BREW_BASH for flyline."
+                is_bash_pre_4_4=false
+            else
+                err_no_exit "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support."
+                err_no_exit "Please install a newer bash before trying to use flyline:"
+                err "    brew install bash"
+            fi
+        fi
     else
         LIBC="$(detect_libc)"
         TARGET="${ARCH}-unknown-linux-${LIBC}"
@@ -182,8 +218,6 @@ main() {
 
     ARCHIVE_STEM="libflyline-${VERSION}-${TARGET}"
 
-    # When the system bash is older than 4.4 (e.g. macOS ships with 3.2.57),
-    # use the pre-bash-4.4 build.
     if is_bash_pre_4_4; then
         say "Detected bash < 4.4, using pre-bash-4.4 build..."
         ARCHIVE="${ARCHIVE_STEM}_pre_bash_4_4.tar.gz"
@@ -219,6 +253,7 @@ Please check https://github.com/${REPO}/releases for available assets."
     # Prompt for install directory; read from /dev/tty so it works when piped.
     # Falls back to the default when no terminal is available (e.g. CI).
     say "Enter install directory (leave blank to use: ~/.local/lib)"
+    printf '> ' >&2
     input_dir=""
     if [ -t 0 ]; then
         read -r input_dir || true
@@ -256,8 +291,10 @@ Please check https://github.com/${REPO}/releases for available assets."
 
     say ""
     say "Installation complete!"
-    printf '    To activate in the current shell:\n        %s\n' "$ENABLE_CMD"
-    printf '    Or open a new terminal.\n'
+    say '    To activate in the current shell:'
+    say "        $ENABLE_CMD"
+    say '    Or open a new terminal and run the tutorial:'
+    say "        flyline run-tutorial"
 }
 
 main "$@"
