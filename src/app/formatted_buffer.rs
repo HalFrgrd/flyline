@@ -241,7 +241,6 @@ impl FormattedBufferPart {
     }
 
     /// Returns the number of graphemes in this part's normal span.
-    #[allow(dead_code)]
     fn grapheme_count(&self) -> usize {
         self.span.content.graphemes(true).count()
     }
@@ -257,7 +256,6 @@ impl FormattedBufferPart {
     /// (left) or skips the first `n` graphemes (right) of its result.
     ///
     /// `n` is clamped to the range `[0, grapheme_count]`.
-    #[allow(dead_code)]
     pub fn split_at(&self, n: usize) -> (FormattedBufferPart, FormattedBufferPart) {
         let total = self.grapheme_count();
         let n = n.min(total);
@@ -338,6 +336,7 @@ impl FormattedBufferPart {
 pub fn format_buffer(
     annotated_tokens: &[AnnotatedToken],
     cursor_byte_pos: usize,
+    selection_byte_pos: Option<usize>,
     buffer_byte_length: usize,
     app_is_running: bool,
     palette: &Palette,
@@ -395,6 +394,10 @@ pub fn format_buffer(
                 None
             };
             FormattedBufferPart::new(tok, highlight, cursor_pos_in_token, palette)
+        })
+        .flat_map(|part| {
+            if let Some(selection_range) = 
+            vec![part]
         })
         .collect();
 

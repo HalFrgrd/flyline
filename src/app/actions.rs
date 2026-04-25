@@ -1090,6 +1090,10 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Delete character before cursor",
         Scope::Default,
         |app, _key| {
+            log::info!(
+                "Performing delete_left action selection: {:?}",
+                app.buffer.selection_range()
+            );
             app.buffer.clear_selection();
             if app.settings.auto_close_chars {
                 // Backspace: if the char to the right of the cursor is an auto-inserted closing token
@@ -2754,12 +2758,8 @@ mod tests {
 
     #[test]
     fn test_binding_matches_requires_exact_modifiers() {
-        let binding = Binding::try_new(
-            &["Home"],
-            Scope::Default,
-            "move_left_start_of_line",
-        )
-        .unwrap();
+        let binding =
+            Binding::try_new(&["Home"], Scope::Default, "move_left_start_of_line").unwrap();
 
         assert!(binding.matches(key(KeyCode::Home)));
         assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
