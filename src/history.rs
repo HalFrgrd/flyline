@@ -39,6 +39,7 @@ impl HistoryEntry {
             let formatted = crate::app::formatted_buffer::format_buffer(
                 &tokens,
                 self.command.len(),
+                None,
                 self.command.len(),
                 false,
                 palette,

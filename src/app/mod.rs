@@ -43,6 +43,9 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
+/// Background colour used to highlight the active text selection.
+const SELECTION_BG: Color = Color::LightRed;
+
 /// Encode `data` as standard base64 (RFC 4648, no line breaks).
 /// Used to build OSC 52 clipboard sequences.
 pub(crate) fn osc52_base64(data: &[u8]) -> String {
@@ -1383,6 +1386,7 @@ impl<'a> App<'a> {
         self.formatted_buffer_cache = format_buffer(
             &self.dparser_tokens_cache,
             self.buffer.cursor_byte_pos(),
+            self.buffer.selection_byte(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
             &self.settings.colour_palette,
@@ -1797,7 +1801,7 @@ impl<'a> App<'a> {
         let mut cursor_pos_maybe = None;
 
         for part in self.formatted_buffer_cache.parts.iter() {
-            let span_to_draw = if part.token.token.kind == TokenKind::Newline {
+            let mut span_to_draw = if part.token.token.kind == TokenKind::Newline {
                 // For newlines, draw a space instead so that we can have a place to put the cursor
                 Span::from(" ")
             } else if self.mode.is_running() && self.settings.show_animations {
@@ -1806,11 +1810,15 @@ impl<'a> App<'a> {
                 part.normal_span().clone()
             };
 
+            if part.is_selected {
+                span_to_draw.style = span_to_draw.style.patch(Style::new().bg(SELECTION_BG));
+            }
+
             let graph_idx_to_tag: Vec<Tag> = part
                 .normal_span()
                 .content
                 .graphemes(true)
-                .scan(part.token.token.byte_range().start, |acc, graph| {
+                .scan(part.byte_start_in_buffer, |acc, graph| {
                     let tag = Tag::Command(*acc);
                     *acc += graph.len();
                     Some(tag)
@@ -2192,6 +2200,7 @@ impl<'a> App<'a> {
                     let formatted_cmd = format_buffer(
                         &tokens,
                         cmd.len(),
+                        None,
                         cmd.len(),
                         false,
                         &self.settings.colour_palette,
