@@ -30,6 +30,7 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
+use std::io::{Error, ErrorKind, IsTerminal};
 use std::time::Duration;
 use std::vec;
 use unicode_segmentation::UnicodeSegmentation;
@@ -76,6 +77,35 @@ fn set_panic_hook(extended_key_codes: bool) {
     }));
 }
 
+fn stdin_unavailable_reason() -> Option<&'static str> {
+    // If stdin has been closed outright, bail out before crossterm enters its
+    // Unix event loop. In crossterm 0.29 that path can spin on closed input.
+    if unsafe { libc::fcntl(libc::STDIN_FILENO, libc::F_GETFD) } == -1
+        && Error::last_os_error().raw_os_error() == Some(libc::EBADF)
+    {
+        return Some("stdin file descriptor is closed");
+    }
+
+    if !std::io::stdin().is_terminal() {
+        return Some("stdin is no longer attached to a terminal");
+    }
+
+    None
+}
+
+fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<CrosstermEvent>> {
+    if let Some(reason) = stdin_unavailable_reason() {
+        log::error!("Cannot read terminal events: {}", reason);
+        return Err(Error::new(ErrorKind::UnexpectedEof, reason));
+    }
+
+    if event::poll(timeout)? {
+        event::read().map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ExitState {
     WithCommand(String),
@@ -102,6 +132,16 @@ pub enum LastKeyPressAction {
 }
 
 pub fn get_command(settings: &mut Settings) -> ExitState {
+    // If stdin is closed, bash expects us to just return EOF a few times
+    if let Some(reason) = stdin_unavailable_reason() {
+        log::error!(
+            "Standard input is not available: {}. Exiting without command.",
+            reason
+        );
+
+        return ExitState::EOF;
+    }
+
     let extended_key_codes = settings.enable_extended_key_codes;
     set_panic_hook(extended_key_codes);
 
@@ -563,55 +603,61 @@ impl<'a> App<'a> {
 
             let is_idle = self.last_activity_time.elapsed() >= IDLE_TIMEOUT;
             let effective_fps = if is_idle {
-                IDLE_FRAME_RATE
+                IDLE_FRAME_RATE.min(self.settings.frame_rate as f64)
             } else {
                 self.settings.frame_rate as f64
             };
             let min_refresh_rate: Duration = Duration::from_millis((1000.0 / effective_fps) as u64);
 
-            redraw = if event::poll(min_refresh_rate).unwrap() {
-                match event::read().unwrap() {
-                    CrosstermEvent::Key(key) => {
-                        self.last_activity_time = std::time::Instant::now();
-                        self.handle_key_event(key);
-                        true
-                    }
-                    CrosstermEvent::Mouse(mouse) => {
-                        self.last_activity_time = std::time::Instant::now();
-                        self.on_mouse(mouse)
-                    }
-                    CrosstermEvent::Resize(new_cols, new_rows) => {
-                        // log::trace!("Terminal resized to {}x{}", new_cols, new_rows);
-                        last_terminal_size = Size {
-                            width: new_cols,
-                            height: new_rows,
-                        };
-                        true
-                    }
-                    CrosstermEvent::FocusLost => {
-                        // log::trace!("Terminal focus lost");
-                        self.term_has_focus = false;
-                        false
-                    }
-                    CrosstermEvent::FocusGained => {
-                        // log::trace!("Terminal focus gained");
-                        self.term_has_focus = true;
-                        if self.settings.mouse_mode == MouseMode::Smart
-                            && !self.mouse_state.is_explicitly_disabled_by_user()
-                        {
-                            self.mouse_state.enable("smart mode: focus gained");
+            redraw = match poll_terminal_event(min_refresh_rate) {
+                Ok(Some(event)) => {
+                    match event {
+                        CrosstermEvent::Key(key) => {
+                            self.last_activity_time = std::time::Instant::now();
+                            self.handle_key_event(key);
+                            true
                         }
-                        false
-                    }
-                    CrosstermEvent::Paste(pasted) => {
-                        log::trace!("Pasted content: {}", pasted);
-                        self.buffer.insert_str(&pasted);
-                        self.on_possible_buffer_change();
-                        true
+                        CrosstermEvent::Mouse(mouse) => {
+                            self.last_activity_time = std::time::Instant::now();
+                            self.on_mouse(mouse)
+                        }
+                        CrosstermEvent::Resize(new_cols, new_rows) => {
+                            // log::trace!("Terminal resized to {}x{}", new_cols, new_rows);
+                            last_terminal_size = Size {
+                                width: new_cols,
+                                height: new_rows,
+                            };
+                            true
+                        }
+                        CrosstermEvent::FocusLost => {
+                            // log::trace!("Terminal focus lost");
+                            self.term_has_focus = false;
+                            false
+                        }
+                        CrosstermEvent::FocusGained => {
+                            // log::trace!("Terminal focus gained");
+                            self.term_has_focus = true;
+                            if self.settings.mouse_mode == MouseMode::Smart
+                                && !self.mouse_state.is_explicitly_disabled_by_user()
+                            {
+                                self.mouse_state.enable("smart mode: focus gained");
+                            }
+                            false
+                        }
+                        CrosstermEvent::Paste(pasted) => {
+                            log::trace!("Pasted content: {}", pasted);
+                            self.buffer.insert_str(&pasted);
+                            self.on_possible_buffer_change();
+                            true
+                        }
                     }
                 }
-            } else {
-                true
+                Ok(None) => true,
+                Err(err) => {
+                    log::info!("Terminal input problem, exiting: {}", err);
+                    self.mode = AppRunningState::Exiting(ExitState::EOF);
+                    break 'main_loop;
+                }
             };
 
             if std::time::Instant::now().duration_since(self.last_draw_time) > min_refresh_rate {

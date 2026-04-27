@@ -58,16 +58,17 @@ impl Log for MemoryLogger {
             return;
         }
 
-        let timestamp = Local::now().to_rfc3339();
+        let timestamp = Local::now().format("%Y-%m-%dT%H:%M:%S%.6f").to_string();
         let file = record.file().unwrap_or("?");
         let line = record
             .line()
             .map(|l| l.to_string())
             .unwrap_or("?".to_string());
         let entry = format!(
-            "{} [{}] {}:{} {}: {}",
+            "{} [{}] (pid={}) {}:{} {}: {}",
             timestamp,
             record.level(),
+            std::process::id(),
             file,
             line,
             record.target(),
