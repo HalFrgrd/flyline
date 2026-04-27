@@ -141,6 +141,8 @@ enum PromptSegment {
         enabled_text: Vec<TaggedSpan<'static>>,
         disabled_text: Vec<TaggedSpan<'static>>,
     },
+    /// A clickable widget that copies the current command buffer to the clipboard.
+    WidgetCopyBuffer { text: Vec<TaggedSpan<'static>> },
     /// A custom-command widget.  On each render the child process is polled
     /// with `try_wait`; once it exits the output (processed through
     /// `expand_prompt_through_bash`) is shown.  While still pending the
@@ -502,6 +504,7 @@ impl<'a> PromptStringBuilder<'a> {
                     .filter_map(|widget| {
                         let name = match widget {
                             PromptWidget::MouseMode(w) => w.name.as_str(),
+                            PromptWidget::CopyBuffer(w) => w.name.as_str(),
                             PromptWidget::Custom(w) if !w.command.is_empty() => w.name.as_str(),
                             PromptWidget::Custom(_) => return None,
                         };
@@ -596,6 +599,9 @@ fn make_widget_segment(widget: &PromptWidget, base_style: Style) -> PromptSegmen
         PromptWidget::MouseMode(w) => PromptSegment::WidgetMouseMode {
             enabled_text: stdout_to_tagged_spans(w.enabled_text.clone()),
             disabled_text: stdout_to_tagged_spans(w.disabled_text.clone()),
+        },
+        PromptWidget::CopyBuffer(w) => PromptSegment::WidgetCopyBuffer {
+            text: stdout_to_tagged_spans_with_tag(w.text.clone(), Tag::Ps1PromptCopyBuffer),
         },
         PromptWidget::Custom(w) => {
             let state = match spawn_widget_child(&w.command) {
@@ -859,13 +865,17 @@ fn split_into_spans(path: &str, style: ratatui::style::Style, result: &mut Vec<S
 /// [`expand_prompt_through_bash`] and each resulting span is wrapped in a
 /// [`TaggedSpan`] with [`Tag::Ps1Prompt`].
 fn stdout_to_tagged_spans(stdout: String) -> Vec<TaggedSpan<'static>> {
+    stdout_to_tagged_spans_with_tag(stdout, Tag::Ps1Prompt)
+}
+
+fn stdout_to_tagged_spans_with_tag(stdout: String, tag: Tag) -> Vec<TaggedSpan<'static>> {
     expand_prompt_through_bash(stdout)
         .unwrap_or_default()
         .into_iter()
         .flat_map(|line| {
             line.spans
                 .into_iter()
-                .map(|span| TaggedSpan::new(span, Tag::Ps1Prompt))
+                .map(|span| TaggedSpan::new(span, tag))
         })
         .collect()
 }
@@ -980,6 +990,7 @@ fn format_prompt_line(
                     };
                     tagged.clone()
                 }
+                PromptSegment::WidgetCopyBuffer { text } => text.clone(),
                 PromptSegment::WidgetCustom { state, base_style } => {
                     let raw_spans = match state {
                         WidgetCustomState::Pending { placeholder, .. } => placeholder.clone(),
@@ -1341,7 +1352,7 @@ impl PromptManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::{PromptWidgetCustom, PromptWidgetMouseMode};
+    use crate::settings::{PromptWidgetCopyBuffer, PromptWidgetCustom, PromptWidgetMouseMode};
     use chrono::TimeZone;
 
     fn fixed_time(ms: i64) -> chrono::DateTime<chrono::Local> {
@@ -2047,6 +2058,41 @@ mod tests {
         match &segs[2] {
             PromptSegment::Static(s) => assert_eq!(s.content, " after"),
             _ => panic!("expected Static at index 2"),
+        }
+    }
+
+    #[test]
+    fn test_format_prompt_line_widget_copy_buffer() {
+        let segments = vec![PromptSegment::WidgetCopyBuffer {
+            text: vec![TaggedSpan::new(Span::raw("copy"), Tag::Ps1PromptCopyBuffer)],
+        }];
+        let line = format_prompt_line(&segments, &fixed_time(0), false);
+        assert_eq!(line.spans[0].span.content, "copy");
+        assert_eq!(
+            line.spans[0].tag,
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCopyBuffer)
+        );
+    }
+
+    #[test]
+    fn test_expand_span_widget_copy_buffer_name_only() {
+        let widget = PromptWidget::CopyBuffer(PromptWidgetCopyBuffer {
+            name: "COPY_WIDGET".to_string(),
+            text: "copy".to_string(),
+        });
+        let widgets = [widget];
+        let builder = PromptStringBuilder::new(vec![], &widgets);
+        let segs = builder.expand_span_to_segments(Span::raw("COPY_WIDGET"));
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            PromptSegment::WidgetCopyBuffer { text } => {
+                assert_eq!(text[0].span.content, "copy");
+                assert_eq!(
+                    text[0].tag,
+                    crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCopyBuffer)
+                );
+            }
+            _ => panic!("expected WidgetCopyBuffer"),
         }
     }
 

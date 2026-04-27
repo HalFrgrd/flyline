@@ -258,12 +258,14 @@ enum Commands {
     /// Widget types:
     ///   animation   Cycles through a list of frames at a given fps.
     ///   mouse-mode  Shows different text depending on whether mouse capture is enabled.
+    ///   copy-buffer Shows clickable text that copies the current buffer to the clipboard.
     ///   custom      Runs a shell command and displays its output.
     ///
     /// Examples:
     ///   flyline create-prompt-widget animation --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
     ///   flyline create-prompt-widget animation --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
     ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
+    ///   flyline create-prompt-widget copy-buffer --name COPY_BUFFER '[copy]'
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder 10
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
     #[command(name = "create-prompt-widget", verbatim_doc_comment)]
@@ -613,7 +615,7 @@ enum PromptWidgetSubcommands {
     /// with ENABLED_TEXT when mouse capture is on, and DISABLED_TEXT when off.
     ///
     /// Examples:
-    ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE '🖱️' '🔴'
+    ///   flyline create-prompt-widget mouse-mode '🖱️' '🔴'
     ///   # Now use FLYLINE_MOUSE_MODE in your prompt:
     ///   PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
     ///
@@ -621,12 +623,32 @@ enum PromptWidgetSubcommands {
     #[command(name = "mouse-mode", verbatim_doc_comment)]
     MouseMode {
         /// Name to embed in prompt strings as the widget placeholder.
-        #[arg(long)]
+        /// Defaults to `FLYLINE_MOUSE_MODE`.
+        #[arg(long, default_value = "FLYLINE_MOUSE_MODE")]
         name: String,
         /// Text to display when mouse capture is enabled.
         enabled_text: String,
         /// Text to display when mouse capture is disabled.
         disabled_text: String,
+    },
+    /// Show clickable text that copies the current command buffer to the clipboard.
+    ///
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// with TEXT. Clicking the rendered widget copies the current command buffer
+    /// to the clipboard via OSC 52.
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget copy-buffer '[copy]'
+    ///   # Now use FLYLINE_COPY_BUFFER in your prompt:
+    ///   RPS1=' FLYLINE_COPY_BUFFER'
+    #[command(name = "copy-buffer", verbatim_doc_comment)]
+    CopyBuffer {
+        /// Name to embed in prompt strings as the widget placeholder.
+        /// Defaults to `FLYLINE_COPY_BUFFER`.
+        #[arg(long, default_value = "FLYLINE_COPY_BUFFER")]
+        name: String,
+        /// Text to display in the prompt.
+        text: String,
     },
     /// Run a shell command and display its output in the prompt.
     ///
@@ -935,6 +957,19 @@ impl Flyline {
                                         enabled_text,
                                         disabled_text,
                                     },
+                                ),
+                            );
+                        }
+                        PromptWidgetSubcommands::CopyBuffer { name, text } => {
+                            log::info!(
+                                "Registering copy-buffer widget '{}' (text={:?})",
+                                name,
+                                text
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::CopyBuffer(
+                                    settings::PromptWidgetCopyBuffer { name, text },
                                 ),
                             );
                         }

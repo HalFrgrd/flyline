@@ -313,6 +313,7 @@ impl DrawnContent {
                     | Tag::AiResult(_)
                     | Tag::TutorialPrev
                     | Tag::TutorialNext
+                    | Tag::Ps1PromptCopyBuffer
                     | Tag::Clipboard(_)
             )
         }) {
@@ -802,6 +803,9 @@ impl<'a> App<'a> {
             Some((tag @ Tag::Clipboard(_), true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
+            Some((tag @ Tag::Ps1PromptCopyBuffer, true)) => {
+                self.last_mouse_over_cell = Some(tag);
+            }
             Some((tag @ Tag::Ps1PromptCwd(_), _)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
@@ -825,6 +829,7 @@ impl<'a> App<'a> {
         }
 
         let mut update_buffer = false;
+        let mut handled_mouse_action = false;
 
         match self.last_mouse_over_cell {
             Some(Tag::Suggestion(idx)) => {
@@ -911,16 +916,20 @@ impl<'a> App<'a> {
                         .and_then(|c| c.contents.clipboards.get(&clipboard_type))
                     {
                         let text = text.clone();
-                        crossterm::execute!(
-                            std::io::stdout(),
-                            crossterm::clipboard::CopyToClipboard::to_clipboard_from(
-                                text.as_bytes()
-                            )
-                        )
-                        .ok();
-                        log::info!("Copied to clipboard via OSC 52 ({:?})", clipboard_type);
+                        if self.copy_to_clipboard(text.as_bytes()) {
+                            log::info!("Copied to clipboard via OSC 52 ({:?})", clipboard_type);
+                        }
                         self.buffer.replace_buffer(&text);
                         update_buffer = true;
+                    }
+                }
+            }
+            Some(Tag::Ps1PromptCopyBuffer) => {
+                if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                    let text = self.buffer.buffer().to_string();
+                    if self.copy_to_clipboard(text.as_bytes()) {
+                        log::info!("Copied current buffer to clipboard via copy-buffer widget");
+                        handled_mouse_action = true;
                     }
                 }
             }
@@ -931,7 +940,20 @@ impl<'a> App<'a> {
             self.on_possible_buffer_change();
             true
         } else {
-            false
+            handled_mouse_action
+        }
+    }
+
+    fn copy_to_clipboard(&self, text: &[u8]) -> bool {
+        match crossterm::execute!(
+            std::io::stdout(),
+            crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
+        ) {
+            Ok(()) => true,
+            Err(e) => {
+                log::error!("Failed to copy to clipboard via OSC 52: {}", e);
+                false
+            }
         }
     }
 
@@ -1663,6 +1685,37 @@ impl<'a> App<'a> {
         let (mut lprompt, rprompt, fill_span) = self
             .prompt_manager
             .get_ps1_lines(self.settings.show_animations, self.mouse_state.enabled());
+
+        let copy_buffer_hovered = self.last_mouse_over_cell == Some(Tag::Ps1PromptCopyBuffer);
+        if copy_buffer_hovered {
+            for line in &mut lprompt {
+                for span in &mut line.spans {
+                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                        span.span.style = Palette::convert_to_selected(span.span.style);
+                    }
+                }
+            }
+        }
+
+        let mut rprompt = rprompt;
+        if copy_buffer_hovered {
+            for line in &mut rprompt {
+                for span in &mut line.spans {
+                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                        span.span.style = Palette::convert_to_selected(span.span.style);
+                    }
+                }
+            }
+        }
+
+        let mut fill_span = fill_span;
+        if copy_buffer_hovered {
+            for span in &mut fill_span.spans {
+                if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                    span.span.style = Palette::convert_to_selected(span.span.style);
+                }
+            }
+        }
 
         // When in PromptCwdEdit mode, highlight the selected CWD path segment.
         if let ContentMode::PromptDirSelect(cwd_index) = self.content_mode {
