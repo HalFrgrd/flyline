@@ -15,6 +15,7 @@ pub enum Scope {
     TabCompletionWaiting,
     TabCompletion,
     TabCompletionAvailable,
+    TabCompletionMultiColAvailable,
     AgentModeWaiting,
     AgentOutputSelection,
     AgentError,
@@ -42,6 +43,11 @@ impl Scope {
                 &app.content_mode,
                 crate::app::ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.filtered_suggestions_len() > 0
+            ),
+            Scope::TabCompletionMultiColAvailable => matches!(
+                &app.content_mode,
+                crate::app::ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.last_num_visible_cols > 1
             ),
             Scope::AgentModeWaiting => matches!(
                 app.content_mode,
@@ -75,6 +81,7 @@ impl AsRef<str> for Scope {
             Scope::TabCompletionWaiting => "tab_completion_waiting",
             Scope::TabCompletion => "tab_completion",
             Scope::TabCompletionAvailable => "tab_completion_available",
+            Scope::TabCompletionMultiColAvailable => "tab_completion_multi_col_available",
             Scope::AgentModeWaiting => "agent_mode_waiting",
             Scope::AgentOutputSelection => "agent_output_selection",
             Scope::AgentError => "agent_error",
@@ -94,6 +101,7 @@ impl TryFrom<&str> for Scope {
             "tab_completion_waiting" => Ok(Scope::TabCompletionWaiting),
             "tab_completion" => Ok(Scope::TabCompletion),
             "tab_completion_available" => Ok(Scope::TabCompletionAvailable),
+            "tab_completion_multi_col_available" => Ok(Scope::TabCompletionMultiColAvailable),
             "agent_mode_waiting" => Ok(Scope::AgentModeWaiting),
             "agent_output_selection" => Ok(Scope::AgentOutputSelection),
             "agent_error" => Ok(Scope::AgentError),
@@ -758,7 +766,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "move_left",
         "Move left in tab completion suggestions",
-        Scope::TabCompletionAvailable,
+        Scope::TabCompletionMultiColAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_left_arrow();
@@ -768,7 +776,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "move_right",
         "Move right in tab completion suggestions",
-        Scope::TabCompletionAvailable,
+        Scope::TabCompletionMultiColAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_right_arrow();
@@ -1435,8 +1443,18 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 66]> = LazyLock::new(|| {
         Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
         Binding::try_new(&["Up"], Scope::TabCompletionAvailable, "move_up").unwrap(),
         Binding::try_new(&["Down"], Scope::TabCompletionAvailable, "move_down").unwrap(),
-        Binding::try_new(&["Left"], Scope::TabCompletionAvailable, "move_left").unwrap(),
-        Binding::try_new(&["Right"], Scope::TabCompletionAvailable, "move_right").unwrap(),
+        Binding::try_new(
+            &["Left"],
+            Scope::TabCompletionMultiColAvailable,
+            "move_left",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Right"],
+            Scope::TabCompletionMultiColAvailable,
+            "move_right",
+        )
+        .unwrap(),
         Binding::try_new(&["Up"], Scope::FuzzyHistorySearch, "select_prev").unwrap(),
         Binding::try_new(
             &["Down", "Ctrl+s"],
