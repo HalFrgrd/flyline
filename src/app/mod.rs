@@ -1688,10 +1688,9 @@ impl<'a> App<'a> {
                         if is_hovered {
                             content.write_tagged_span_dont_overwrite(
                                 &tagged_span.clone().convert_to_highlighted(),
-                                None,
                             );
                         } else {
-                            content.write_tagged_span_dont_overwrite(tagged_span, None);
+                            content.write_tagged_span_dont_overwrite(tagged_span);
                         }
                     }
                     text_end_row = content.cursor_position().row;
@@ -1705,7 +1704,7 @@ impl<'a> App<'a> {
                         Tag::Tutorial,
                     )]);
                     for tagged_span in &escape_hint.spans {
-                        content.write_tagged_span_dont_overwrite(tagged_span, None);
+                        content.write_tagged_span_dont_overwrite(tagged_span);
                     }
                     text_end_row = content.cursor_position().row;
                     content.newline();
@@ -1799,9 +1798,10 @@ impl<'a> App<'a> {
 
         let mut line_idx = 0;
         let mut cursor_pos_maybe = None;
+        let selection_range = self.buffer.selection_range();
 
         for part in self.formatted_buffer_cache.parts.iter() {
-            let mut span_to_draw = if part.token.token.kind == TokenKind::Newline {
+            let display_span = if part.token.token.kind == TokenKind::Newline {
                 // For newlines, draw a space instead so that we can have a place to put the cursor
                 Span::from(" ")
             } else if self.mode.is_running() && self.settings.show_animations {
@@ -1810,27 +1810,24 @@ impl<'a> App<'a> {
                 part.normal_span().clone()
             };
 
-            if part.is_selected {
-                span_to_draw.style = span_to_draw.style.patch(Style::new().bg(SELECTION_BG));
-            }
+            for (mut sub_span, tags, is_cursor, _is_sel_byte, is_in_selection) in
+                part.get_spans(display_span, selection_range.clone())
+            {
+                if is_in_selection {
+                    sub_span.style = sub_span.style.patch(Style::new().bg(SELECTION_BG));
+                }
 
-            let graph_idx_to_tag: Vec<Tag> = part
-                .normal_span()
-                .content
-                .graphemes(true)
-                .scan(part.byte_start_in_buffer, |acc, graph| {
-                    let tag = Tag::Command(*acc);
-                    *acc += graph.len();
-                    Some(tag)
-                })
-                .collect();
+                if is_cursor && cursor_pos_maybe.is_none() {
+                    // Skip past any already-filled cells so cursor_position()
+                    // reflects the actual cell the cursor grapheme will land
+                    // on. This mirrors the skip done inside write_span_internal.
+                    if let Some(g) = sub_span.styled_graphemes(sub_span.style).next() {
+                        content.move_to_next_insertion_point(&g, false);
+                    }
+                    cursor_pos_maybe = Some(content.cursor_position());
+                }
 
-            let poss_cursor_anim_pos = content.write_tagged_span_dont_overwrite(
-                &TaggedSpan::per_grapheme(span_to_draw, graph_idx_to_tag),
-                part.cursor_grapheme_idx,
-            );
-            if cursor_pos_maybe.is_none() {
-                cursor_pos_maybe = poss_cursor_anim_pos;
+                content.write_tagged_span_dont_overwrite(&TaggedSpan::per_grapheme(sub_span, tags));
             }
 
             if part.token.token.kind == TokenKind::Newline {
@@ -1899,14 +1896,11 @@ impl<'a> App<'a> {
                         content.newline();
                     }
 
-                    content.write_tagged_span_dont_overwrite(
-                        &TaggedSpan::new(
-                            Span::from(line.to_owned())
-                                .style(self.settings.colour_palette.secondary_text()),
-                            Tag::HistorySuggestion,
-                        ),
-                        None,
-                    );
+                    content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
+                        Span::from(line.to_owned())
+                            .style(self.settings.colour_palette.secondary_text()),
+                        Tag::HistorySuggestion,
+                    ));
 
                     if is_last {
                         let mut extra_info_text = format!(" #idx={}", sug.index);
@@ -1915,26 +1909,20 @@ impl<'a> App<'a> {
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
-                        content.write_tagged_span_dont_overwrite(
-                            &TaggedSpan::new(
-                                Span::from(extra_info_text)
-                                    .style(self.settings.colour_palette.inline_suggestion()),
-                                Tag::HistorySuggestion,
-                            ),
-                            None,
-                        );
+                        content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
+                            Span::from(extra_info_text)
+                                .style(self.settings.colour_palette.inline_suggestion()),
+                            Tag::HistorySuggestion,
+                        ));
 
                         if self.settings.run_tutorial {
-                            content.write_tagged_span_dont_overwrite(
-                                &TaggedSpan::new(
-                                    Span::styled(
-                                        " 💡 Press → or End to accept",
-                                        self.settings.colour_palette.tutorial_hint(),
-                                    ),
-                                    Tag::Tutorial,
+                            content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
+                                Span::styled(
+                                    " 💡 Press → or End to accept",
+                                    self.settings.colour_palette.tutorial_hint(),
                                 ),
-                                None,
-                            );
+                                Tag::Tutorial,
+                            ));
                         }
                     }
                 });
