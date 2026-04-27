@@ -722,7 +722,7 @@ pub struct ActiveSuggestions {
     last_num_rows_per_col: usize,
     /// Number of columns that were actually visible in the last rendered
     /// grid.  Used to compute the scroll offset.
-    last_num_visible_cols: usize,
+    pub last_num_visible_cols: usize,
     col_window_to_show: StatefulSlidingWindow,
     fuzzy_matcher: ArinaeMatcher,
     /// How long it took to generate the completions.

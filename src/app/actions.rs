@@ -14,6 +14,8 @@ pub enum Scope {
     FuzzyHistorySearch,
     TabCompletionWaiting,
     TabCompletion,
+    TabCompletionAvailable,
+    TabCompletionMultiColAvailable,
     AgentModeWaiting,
     AgentOutputSelection,
     AgentError,
@@ -36,6 +38,16 @@ impl Scope {
             Scope::TabCompletion => matches!(
                 app.content_mode,
                 crate::app::ContentMode::TabCompletion { .. }
+            ),
+            Scope::TabCompletionAvailable => matches!(
+                &app.content_mode,
+                crate::app::ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.filtered_suggestions_len() > 0
+            ),
+            Scope::TabCompletionMultiColAvailable => matches!(
+                &app.content_mode,
+                crate::app::ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.last_num_visible_cols > 1
             ),
             Scope::AgentModeWaiting => matches!(
                 app.content_mode,
@@ -68,6 +80,8 @@ impl AsRef<str> for Scope {
             Scope::FuzzyHistorySearch => "fuzzy_history_search",
             Scope::TabCompletionWaiting => "tab_completion_waiting",
             Scope::TabCompletion => "tab_completion",
+            Scope::TabCompletionAvailable => "tab_completion_available",
+            Scope::TabCompletionMultiColAvailable => "tab_completion_multi_col_available",
             Scope::AgentModeWaiting => "agent_mode_waiting",
             Scope::AgentOutputSelection => "agent_output_selection",
             Scope::AgentError => "agent_error",
@@ -86,6 +100,8 @@ impl TryFrom<&str> for Scope {
             "fuzzy_history_search" => Ok(Scope::FuzzyHistorySearch),
             "tab_completion_waiting" => Ok(Scope::TabCompletionWaiting),
             "tab_completion" => Ok(Scope::TabCompletion),
+            "tab_completion_available" => Ok(Scope::TabCompletionAvailable),
+            "tab_completion_multi_col_available" => Ok(Scope::TabCompletionMultiColAvailable),
             "agent_mode_waiting" => Ok(Scope::AgentModeWaiting),
             "agent_output_selection" => Ok(Scope::AgentOutputSelection),
             "agent_error" => Ok(Scope::AgentError),
@@ -730,7 +746,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "move_up",
         "Move up in tab completion suggestions",
-        Scope::TabCompletion,
+        Scope::TabCompletionAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_up_arrow();
@@ -740,17 +756,17 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "move_down",
         "Move down in tab completion suggestions",
-        Scope::TabCompletion,
+        Scope::TabCompletionAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
-                active_suggestions.on_down_arrow(); // TODO combine this with tab?
+                active_suggestions.on_down_arrow();
             }
         },
     ),
     Action::new(
         "move_left",
         "Move left in tab completion suggestions",
-        Scope::TabCompletion,
+        Scope::TabCompletionMultiColAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_left_arrow();
@@ -760,7 +776,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "move_right",
         "Move right in tab completion suggestions",
-        Scope::TabCompletion,
+        Scope::TabCompletionMultiColAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_right_arrow();
@@ -842,7 +858,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "accept_entry",
         "Accept the currently selected suggestion",
-        Scope::TabCompletion,
+        Scope::TabCompletionAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.accept_selected_filtered_item(&mut app.buffer);
@@ -903,7 +919,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "prev_suggestion",
         "Move to the previous tab completion suggestion",
-        Scope::TabCompletion,
+        Scope::TabCompletionAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_tab(true);
@@ -940,7 +956,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     Action::new(
         "next_suggestion",
         "Move to the next tab completion suggestion",
-        Scope::TabCompletion,
+        Scope::TabCompletionAvailable,
         |app, _key| {
             let no_suggestions = matches!(
                 &app.content_mode,
@@ -1292,6 +1308,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
             Scope::FuzzyHistorySearch,
             Scope::TabCompletionWaiting,
             Scope::TabCompletion,
+            Scope::TabCompletionAvailable,
             Scope::AgentModeWaiting,
             Scope::AgentOutputSelection,
             Scope::AgentError,
@@ -1420,14 +1437,24 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 66]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
-        Binding::try_new(&["Up"], Scope::TabCompletion, "move_up").unwrap(),
-        Binding::try_new(&["Down"], Scope::TabCompletion, "move_down").unwrap(),
-        Binding::try_new(&["Left"], Scope::TabCompletion, "move_left").unwrap(),
-        Binding::try_new(&["Right"], Scope::TabCompletion, "move_right").unwrap(),
+        Binding::try_new(&["Up"], Scope::TabCompletionAvailable, "move_up").unwrap(),
+        Binding::try_new(&["Down"], Scope::TabCompletionAvailable, "move_down").unwrap(),
+        Binding::try_new(
+            &["Left"],
+            Scope::TabCompletionMultiColAvailable,
+            "move_left",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Right"],
+            Scope::TabCompletionMultiColAvailable,
+            "move_right",
+        )
+        .unwrap(),
         Binding::try_new(&["Up"], Scope::FuzzyHistorySearch, "select_prev").unwrap(),
         Binding::try_new(
             &["Down", "Ctrl+s"],
@@ -1457,7 +1484,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            Scope::TabCompletion,
+            Scope::TabCompletionAvailable,
             "accept_entry",
         )
         .unwrap(),
@@ -1488,7 +1515,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(
             &expand_variations!["BackTab"],
-            Scope::TabCompletion,
+            Scope::TabCompletionAvailable,
             "prev_suggestion",
         )
         .unwrap(),
@@ -1501,7 +1528,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(&["Tab"], Scope::AgentOutputSelection, "next_suggestion").unwrap(),
-        Binding::try_new(&["Tab"], Scope::TabCompletion, "next_suggestion").unwrap(),
+        Binding::try_new(&["Tab"], Scope::TabCompletionAvailable, "next_suggestion").unwrap(),
         Binding::try_new(&["Tab"], Scope::Default, "run_tab_completion").unwrap(),
         Binding::try_new(&["Esc"], Scope::AgentError, "escape_to_normal_mode").unwrap(),
         Binding::try_new(&["Esc"], Scope::AgentModeWaiting, "escape_to_normal_mode").unwrap(),
@@ -1513,6 +1540,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 65]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(&["Esc"], Scope::FuzzyHistorySearch, "escape_to_normal_mode").unwrap(),
         Binding::try_new(&["Esc"], Scope::PromptDirSelect, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            Scope::TabCompletionAvailable,
+            "escape_to_normal_mode",
+        )
+        .unwrap(),
         Binding::try_new(&["Esc"], Scope::TabCompletion, "escape_to_normal_mode").unwrap(),
         Binding::try_new(
             &["Esc"],
