@@ -180,10 +180,6 @@ main() {
     if [ "$OS" = "darwin" ]; then
         TARGET="${ARCH}-apple-darwin"
         LIB_NAME="libflyline.dylib"
-        # On macOS, bash reads ~/.bash_profile by default; fall back to ~/.bashrc.
-        if [ ! -f "${HOME}/.bashrc" ] && [ -f "${HOME}/.bash_profile" ]; then
-            BASHRC="${HOME}/.bash_profile"
-        fi
 
         # Flyline can run on the 3.2.57 version of bash.
         # However, the bash binary on macOS is often compiled without linkable symbols required to load the Flyline plugin.
@@ -283,7 +279,7 @@ Please check https://github.com/${REPO}/releases for available assets."
     LIB_PATH="${INSTALL_DIR}/${LIB_NAME}"
     say "Installed: ${LIB_PATH}"
 
-    # Update or add 'enable -f ... flyline' in ~/.bashrc (or ~/.bash_profile on macOS).
+    # Update or add 'enable -f ... flyline' in ~/.bashrc.
     ENABLE_CMD="enable -f ${LIB_PATH} flyline"
     if [ -f "$BASHRC" ] && grep -qE '^enable( -f [^ ]*)? flyline( |$)' "$BASHRC"; then
         new_content=$(sed -E "s|^enable( -f [^ ]*)? flyline( .*)?$|${ENABLE_CMD}|" "$BASHRC")
@@ -294,6 +290,25 @@ Please check https://github.com/${REPO}/releases for available assets."
         say "Added flyline to ${BASHRC}"
     fi
 
+
+    # On macOS, login shells read ~/.bash_profile (not ~/.bashrc).
+    # Warn the user if ~/.bash_profile does not appear to source ~/.bashrc.
+    if [ "$OS" = "darwin" ]; then
+        BASH_PROFILE="${HOME}/.bash_profile"
+        if [ -f "$BASH_PROFILE" ]; then
+            if ! grep -qE '(source|\.)[[:space:]]+(~|\$\{?HOME\}?)/\.bashrc([[:space:]]|$)' "$BASH_PROFILE"; then
+                warn "Your ${BASH_PROFILE} does not appear to source ~/.bashrc."
+                warn "On macOS, login shells read ~/.bash_profile, so flyline may not load in new terminals."
+                warn "Consider adding the following to ${BASH_PROFILE}:"
+                warn '    if [ -f ~/.bashrc ]; then . ~/.bashrc; fi'
+            fi
+        else
+            warn "${BASH_PROFILE} does not exist."
+            warn "On macOS, login shells read ~/.bash_profile, so flyline may not load in new terminals."
+            warn "Consider creating ${BASH_PROFILE} with the following content:"
+            warn '    if [ -f ~/.bashrc ]; then . ~/.bashrc; fi'
+        fi
+    fi
 
     say ""
     say "Installation complete!"
