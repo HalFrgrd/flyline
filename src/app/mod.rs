@@ -93,27 +93,12 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
         return Some("stdin is no longer attached to a terminal");
     }
 
-    let mut pollfd = libc::pollfd {
-        fd: stdin_fd,
-        events: (libc::POLLIN | libc::POLLERR | libc::POLLHUP) as i16,
-        revents: 0,
-    };
-
-    match unsafe { libc::poll(&mut pollfd, 1, 0) } {
-        0 => None,
-        -1 if Error::last_os_error().raw_os_error() == Some(libc::EBADF) => {
-            Some("stdin file descriptor is closed")
-        }
-        -1 => None,
-        _ if pollfd.revents & ((libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) as i16) != 0 => {
-            Some("stdin has been disconnected")
-        }
-        _ => None,
-    }
+    None
 }
 
 fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<CrosstermEvent>> {
     if let Some(reason) = stdin_unavailable_reason() {
+        log::error!("Cannot read terminal events: {}", reason);
         return Err(Error::new(ErrorKind::UnexpectedEof, reason));
     }
 
@@ -150,6 +135,15 @@ pub enum LastKeyPressAction {
 }
 
 pub fn get_command(settings: &mut Settings) -> ExitState {
+    if let Some(reason) = stdin_unavailable_reason() {
+        log::error!(
+            "Standard input is not available: {}. Exiting without command.",
+            reason
+        );
+
+        return ExitState::EOF;
+    }
+
     let extended_key_codes = settings.enable_extended_key_codes;
     set_panic_hook(extended_key_codes);
 
@@ -619,7 +613,6 @@ impl<'a> App<'a> {
 
             redraw = match poll_terminal_event(min_refresh_rate) {
                 Ok(Some(event)) => {
-                    log::info!("Event received, refreshing UI");
                     match event {
                         CrosstermEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
@@ -661,13 +654,7 @@ impl<'a> App<'a> {
                         }
                     }
                 }
-                Ok(None) => {
-                    log::info!(
-                        "No events received for {:?}, applying idle refresh logic",
-                        min_refresh_rate
-                    );
-                    true
-                }
+                Ok(None) => true,
                 Err(err) if err.kind() == ErrorKind::UnexpectedEof => {
                     log::info!("Terminal input closed, exiting: {}", err);
                     self.mode = AppRunningState::Exiting(ExitState::EOF);
