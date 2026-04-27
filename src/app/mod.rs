@@ -109,8 +109,6 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
     std::io::Write::flush(&mut stdout).unwrap();
     crossterm::terminal::enable_raw_mode().unwrap();
 
-    let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
-
     // Set up terminal features. Mouse capture is handled separately inside
     // MouseState::initialize (called in App::new) based on the configured mode.
     crossterm::execute!(
@@ -139,7 +137,7 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
 
     let app = time_it!("startup: app creation", App::new(settings));
 
-    let end_state = app.run(backend);
+    let end_state = app.run();
 
     restore_terminal(extended_key_codes);
 
@@ -425,10 +423,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub fn run(
-        mut self,
-        backend: ratatui::backend::CrosstermBackend<std::io::Stdout>,
-    ) -> ExitState {
+    pub fn run(mut self) -> ExitState {
         #[cfg(feature = "integration-tests")]
         if self.settings.run_tab_completion_tests {
             self.test_tab_completions();
@@ -453,11 +448,34 @@ impl<'a> App<'a> {
         let mut terminal = time_it!("startup: terminal setup", {
             crossterm::terminal::enable_raw_mode().unwrap();
 
-            let options = TerminalOptions {
-                viewport: Viewport::Inline(0),
+            let terminal = match ratatui::Terminal::with_options(
+                ratatui::backend::CrosstermBackend::new(std::io::stdout()),
+                TerminalOptions {
+                    viewport: Viewport::Inline(0),
+                },
+            ) {
+                Ok(terminal) => terminal,
+                Err(err)
+                    if err.to_string().contains(
+                        "The cursor position could not be read within a normal duration",
+                    ) =>
+                {
+                    // We could just bomb out here.
+                    // I sometimes get this when running flyline in zellij.
+                    log::error!(
+                        "Inline viewport startup failed ({}); falling back to fullscreen viewport",
+                        err
+                    );
+                    ratatui::Terminal::with_options(
+                        ratatui::backend::CrosstermBackend::new(std::io::stdout()),
+                        TerminalOptions {
+                            viewport: Viewport::Fullscreen,
+                        },
+                    )
+                    .expect("Failed to create terminal with fullscreen viewport")
+                }
+                Err(err) => panic!("Failed to create terminal: {}", err),
             };
-            let terminal = ratatui::Terminal::with_options(backend, options)
-                .expect("Failed to create terminal");
 
             bash_symbols::set_readline_state(bash_symbols::RL_STATE_TERMPREPPED);
             terminal
