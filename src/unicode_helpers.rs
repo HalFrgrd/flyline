@@ -1411,7 +1411,6 @@ mod tests {
         assert_eq!(lines[0], expected);
     }
 
-
     #[test]
     fn test_octant_from_grid_two_lines() {
         // An 8-row × 2-col grid → 2 output lines.
