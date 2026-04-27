@@ -466,6 +466,17 @@ impl<'a> App<'a> {
                         "Inline viewport startup failed ({}); falling back to fullscreen viewport",
                         err
                     );
+
+                    crossterm::execute!(
+                        std::io::stdout(),
+                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+                        crossterm::cursor::MoveTo(0, 0)
+                    )
+                    .unwrap_or_else(|e| {
+                        log::error!("Failed to clear terminal: {}", e);
+                    });
+
+                    // The cursor is often still messed up here.
                     ratatui::Terminal::with_options(
                         ratatui::backend::CrosstermBackend::new(std::io::stdout()),
                         TerminalOptions {
