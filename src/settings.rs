@@ -43,6 +43,15 @@ pub struct PromptWidgetMouseMode {
     pub disabled_text: String,
 }
 
+/// A prompt widget that copies the current command buffer to the clipboard when clicked.
+#[derive(Debug, Clone)]
+pub struct PromptWidgetCopyBuffer {
+    /// Name used as placeholder in prompt strings (e.g., `FLYLINE_COPY_BUFFER`).
+    pub name: String,
+    /// Text shown in the prompt.
+    pub text: String,
+}
+
 /// What to show as a placeholder while a non-blocking (or timed-out blocking)
 /// custom widget command is still running.
 #[derive(Debug, Clone, Default)]
@@ -79,6 +88,7 @@ pub struct PromptWidgetCustom {
 #[derive(Debug, Clone)]
 pub enum PromptWidget {
     MouseMode(PromptWidgetMouseMode),
+    CopyBuffer(PromptWidgetCopyBuffer),
     Custom(PromptWidgetCustom),
 }
 

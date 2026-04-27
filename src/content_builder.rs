@@ -173,6 +173,7 @@ pub enum Tag {
     Ps1PromptCwd(usize),
     Ps1PromptDynamicTime,
     Ps1PromptAnimation,
+    Ps1PromptCopyBuffer,
     Ps2Prompt,
     Command(usize),
     TabSuggestion,
