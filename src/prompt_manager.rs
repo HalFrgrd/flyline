@@ -1520,7 +1520,7 @@ mod tests {
     fn test_format_prompt_line_animation_substitution() {
         // At t=0 ms, fps=10 → 100 ms/frame → frame 0 ("f0").
         let anim = make_processed_anim("SPIN", 10.0, &["f0", "f1"]);
-        let mut segments = vec![
+        let segments = vec![
             PromptSegment::Static(Span::raw("before ")),
             PromptSegment::Animation(Box::new(anim)),
             PromptSegment::Static(Span::raw(" after")),
@@ -1535,7 +1535,7 @@ mod tests {
     fn test_format_prompt_line_animation_frame_advances() {
         // At t=100 ms, fps=10 → frame 1 ("f1").
         let anim = make_processed_anim("SPIN", 10.0, &["f0", "f1"]);
-        let mut segments = vec![PromptSegment::Animation(Box::new(anim))];
+        let segments = vec![PromptSegment::Animation(Box::new(anim))];
         let line = format_prompt_line(&segments, &fixed_time(100), false);
         let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
         assert_eq!(content, "f1");
@@ -1544,7 +1544,7 @@ mod tests {
     #[test]
     fn test_format_prompt_line_animation_tag() {
         let anim = make_processed_anim("SPIN", 10.0, &["f0"]);
-        let mut segments = vec![PromptSegment::Animation(Box::new(anim))];
+        let segments = vec![PromptSegment::Animation(Box::new(anim))];
         let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert!(
             line.spans.iter().all(
@@ -1595,7 +1595,7 @@ mod tests {
         let now = fixed_time(0);
         let formatted_time = now.format("%H:%M:%S").to_string();
 
-        let mut segments = vec![
+        let segments = vec![
             PromptSegment::Static(Span::raw("[")),
             PromptSegment::DynamicTime {
                 strftime: "%H:%M:%S".to_string(),
@@ -1833,7 +1833,7 @@ mod tests {
         // "~" is leftmost selectable → index 2, "foo" → index 1, "bar" → index 0.
         // "/" separators get Ps1Prompt (not selectable).
         let spans = split_cwd_text_into_spans("~/foo/bar", ratatui::style::Style::default());
-        let mut segments = vec![PromptSegment::Cwd(spans)];
+        let segments = vec![PromptSegment::Cwd(spans)];
         let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 5);
         // "~" → index 2
@@ -1866,7 +1866,7 @@ mod tests {
     #[test]
     fn test_format_prompt_line_cwd_single_segment_tag() {
         let spans = split_cwd_text_into_spans("~", ratatui::style::Style::default());
-        let mut segments = vec![PromptSegment::Cwd(spans)];
+        let segments = vec![PromptSegment::Cwd(spans)];
         let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
@@ -1877,7 +1877,7 @@ mod tests {
 
     #[test]
     fn test_format_prompt_line_dynamic_time_tag() {
-        let mut segments = vec![PromptSegment::DynamicTime {
+        let segments = vec![PromptSegment::DynamicTime {
             strftime: "%H:%M".to_string(),
             style: ratatui::style::Style::default(),
         }];
@@ -1891,7 +1891,7 @@ mod tests {
 
     #[test]
     fn test_format_prompt_line_static_tag() {
-        let mut segments = vec![PromptSegment::Static(Span::raw("$ "))];
+        let segments = vec![PromptSegment::Static(Span::raw("$ "))];
         let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
@@ -1979,7 +1979,7 @@ mod tests {
 
     #[test]
     fn test_format_prompt_line_widget_mouse_mode_enabled() {
-        let mut segments = vec![PromptSegment::WidgetMouseMode {
+        let segments = vec![PromptSegment::WidgetMouseMode {
             enabled_text: vec![TaggedSpan::new(Span::raw("mouse on"), Tag::Ps1Prompt)],
             disabled_text: vec![TaggedSpan::new(Span::raw("mouse off"), Tag::Ps1Prompt)],
         }];
@@ -1990,7 +1990,7 @@ mod tests {
 
     #[test]
     fn test_format_prompt_line_widget_mouse_mode_disabled() {
-        let mut segments = vec![PromptSegment::WidgetMouseMode {
+        let segments = vec![PromptSegment::WidgetMouseMode {
             enabled_text: vec![TaggedSpan::new(Span::raw("mouse on"), Tag::Ps1Prompt)],
             disabled_text: vec![TaggedSpan::new(Span::raw("mouse off"), Tag::Ps1Prompt)],
         }];
@@ -2062,7 +2062,7 @@ mod tests {
             .stderr(std::process::Stdio::piped())
             .spawn()
             .expect("failed to spawn sleep for test");
-        let mut segs = vec![PromptSegment::WidgetCustom {
+        let segs = vec![PromptSegment::WidgetCustom {
             state: WidgetCustomState::Pending {
                 placeholder: vec![TaggedSpan::new(Span::raw("   "), Tag::Ps1Prompt)],
                 child: KillOnDropChild::new(child),
@@ -2081,7 +2081,7 @@ mod tests {
     fn test_format_prompt_line_widget_custom_done() {
         // A done custom widget renders the pre-tagged result spans.
         let result_spans = vec![TaggedSpan::new(Span::raw("output"), Tag::Ps1Prompt)];
-        let mut segs = vec![PromptSegment::WidgetCustom {
+        let segs = vec![PromptSegment::WidgetCustom {
             state: WidgetCustomState::Done(result_spans),
             base_style: Style::default(),
         }];
@@ -2093,7 +2093,7 @@ mod tests {
     #[test]
     fn test_format_prompt_line_widget_custom_failed() {
         // A failed custom widget renders the "command failed (exit N)" error text.
-        let mut segs = vec![PromptSegment::WidgetCustom {
+        let segs = vec![PromptSegment::WidgetCustom {
             state: WidgetCustomState::Failed(WidgetFailure {
                 exit_code: Some(1),
                 stdout: String::new(),
@@ -2109,7 +2109,7 @@ mod tests {
     #[test]
     fn test_format_prompt_line_widget_custom_failed_no_exit_code() {
         // When there's no exit code (spawn failure), renders "command failed".
-        let mut segs = vec![PromptSegment::WidgetCustom {
+        let segs = vec![PromptSegment::WidgetCustom {
             state: WidgetCustomState::Failed(WidgetFailure {
                 exit_code: None,
                 stdout: String::new(),
