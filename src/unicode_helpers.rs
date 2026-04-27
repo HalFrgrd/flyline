@@ -602,7 +602,7 @@ pub fn quadrant(q: Quadrant, style: QuadrantStyle) -> Option<char> {
 /// assert_eq!(lines.len(), 1);
 /// ```
 pub fn quadrant_from_grid(grid: &[impl AsRef<[bool]>], style: QuadrantStyle) -> Vec<String> {
-    from_grid_inner::<2>(grid, ' ', |cell| {
+    from_grid_inner::<2>(grid, |cell| {
         quadrant(Quadrant::from_grid(cell), style).unwrap_or(' ')
     })
 }
@@ -731,7 +731,7 @@ pub fn sextant(sextants_visible: Sextant, style: SextantStyle) -> Option<char> {
 /// assert_eq!(lines.len(), 1);
 /// ```
 pub fn sextant_from_grid(grid: &[impl AsRef<[bool]>], style: SextantStyle) -> Vec<String> {
-    from_grid_inner::<3>(grid, ' ', |cell| {
+    from_grid_inner::<3>(grid, |cell| {
         sextant(Sextant::from_grid(cell), style).unwrap_or(' ')
     })
 }
@@ -931,10 +931,10 @@ pub fn octant_from_grid(grid: &[impl AsRef<[bool]>], style: OctantStyle) -> Vec<
     // for the empty pattern), so the empty sentinel is BRAILLE_BLANK.
     // For Full/Separated, octant() returns None for the empty pattern, so we use ' '.
     let empty_char = match style {
-        // OctantStyle::Braille => BRAILLE_BLANK, // this caused some problems with the interpolate easing anim.
+        OctantStyle::Braille => BRAILLE_BLANK,
         _ => ' ',
     };
-    from_grid_inner::<4>(grid, empty_char, |cell| {
+    from_grid_inner::<4>(grid, |cell| {
         octant(OctantDots::from_grid(cell), style).unwrap_or(empty_char)
     })
 }
@@ -943,12 +943,9 @@ pub fn octant_from_grid(grid: &[impl AsRef<[bool]>], style: OctantStyle) -> Vec<
 ///
 /// `R` is the number of rows consumed per output character.  Each character
 /// covers a fixed 2-column × R-row cell.  `render_cell` maps a `[[bool; R]; 2]`
-/// col-major cell (left column first) to the output character; it should
-/// return `empty_char` for a completely empty cell.  Trailing `empty_char`
-/// entries are stripped from each output line.
+/// col-major cell (left column first) to the output character
 fn from_grid_inner<const R: usize>(
     grid: &[impl AsRef<[bool]>],
-    empty_char: char,
     mut render_cell: impl FnMut([[bool; R]; 2]) -> char,
 ) -> Vec<String> {
     if grid.is_empty() {
@@ -988,9 +985,6 @@ fn from_grid_inner<const R: usize>(
             chars.push(render_cell(cell));
         }
 
-        while chars.last() == Some(&empty_char) {
-            chars.pop();
-        }
         result.push(chars.into_iter().collect());
     }
     result
@@ -1417,20 +1411,6 @@ mod tests {
         assert_eq!(lines[0], expected);
     }
 
-    #[test]
-    fn test_octant_from_grid_trailing_stripped_braille() {
-        // A 4-row × 4-col grid with only the first 2 cols filled → 1 char, trailing blank stripped.
-        let grid: Vec<Vec<bool>> = vec![
-            vec![true, false, false, false],
-            vec![false, false, false, false],
-            vec![false, false, false, false],
-            vec![false, false, false, false],
-        ];
-        let lines = octant_from_grid(&grid, OctantStyle::Braille);
-        assert_eq!(lines.len(), 1);
-        // Only first cell (cols 0-1) has a dot; second cell (cols 2-3) is blank → stripped.
-        assert_eq!(lines[0].chars().count(), 1);
-    }
 
     #[test]
     fn test_octant_from_grid_two_lines() {
@@ -1482,19 +1462,6 @@ mod tests {
         assert!(!lines[1].is_empty());
     }
 
-    #[test]
-    fn test_sextant_from_grid_trailing_stripped() {
-        // A 3-row × 4-col grid with only first 2 cols filled → 1 char on output.
-        let grid: Vec<Vec<bool>> = vec![
-            vec![true, false, false, false],
-            vec![false, false, false, false],
-            vec![false, false, false, false],
-        ];
-        let lines = sextant_from_grid(&grid, SextantStyle::Full);
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].chars().count(), 1);
-    }
-
     // ── quadrant_from_grid ────────────────────────────────────────────────────
 
     #[test]
@@ -1513,18 +1480,6 @@ mod tests {
         let lines = quadrant_from_grid(&grid, QuadrantStyle::Full);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].chars().count(), 2);
-    }
-
-    #[test]
-    fn test_quadrant_from_grid_fn_trailing_stripped() {
-        // 2-row × 4-col grid with only first 2 cols filled → 1 char output.
-        let grid: Vec<Vec<bool>> = vec![
-            vec![true, false, false, false],
-            vec![false, false, false, false],
-        ];
-        let lines = quadrant_from_grid(&grid, QuadrantStyle::Full);
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].chars().count(), 1);
     }
 
     #[test]
