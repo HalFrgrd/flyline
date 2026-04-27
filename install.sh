@@ -296,7 +296,7 @@ Please check https://github.com/${REPO}/releases for available assets."
     if [ "$OS" = "darwin" ]; then
         BASH_PROFILE="${HOME}/.bash_profile"
         if [ -f "$BASH_PROFILE" ]; then
-            if ! grep -qE '(source|\.)[[:space:]]+.*\.bashrc' "$BASH_PROFILE"; then
+            if ! grep -qE '(source|\.)[[:space:]]+(~|\$\{?HOME\}?)/\.bashrc([[:space:]]|$)' "$BASH_PROFILE"; then
                 warn "Your ${BASH_PROFILE} does not appear to source ~/.bashrc."
                 warn "On macOS, login shells read ~/.bash_profile, so flyline may not load in new terminals."
                 warn "Consider adding the following to ${BASH_PROFILE}:"
