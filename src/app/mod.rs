@@ -23,7 +23,6 @@ use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser, tutorial};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
-use core::panic;
 use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
 use flash::lexer::TokenKind;
 use itertools::Itertools;
@@ -79,11 +78,9 @@ fn set_panic_hook(extended_key_codes: bool) {
 }
 
 fn stdin_unavailable_reason() -> Option<&'static str> {
-    let stdin_fd = libc::STDIN_FILENO;
-
-    // If fd 0 has been closed outright, bail out before crossterm enters its
+    // If stdin has been closed outright, bail out before crossterm enters its
     // Unix event loop. In crossterm 0.29 that path can spin on closed input.
-    if unsafe { libc::fcntl(stdin_fd, libc::F_GETFD) } == -1
+    if unsafe { libc::fcntl(libc::STDIN_FILENO, libc::F_GETFD) } == -1
         && Error::last_os_error().raw_os_error() == Some(libc::EBADF)
     {
         return Some("stdin file descriptor is closed");
@@ -135,6 +132,7 @@ pub enum LastKeyPressAction {
 }
 
 pub fn get_command(settings: &mut Settings) -> ExitState {
+    // If stdin is closed, bash expects us to just return EOF a few times
     if let Some(reason) = stdin_unavailable_reason() {
         log::error!(
             "Standard input is not available: {}. Exiting without command.",
@@ -655,12 +653,11 @@ impl<'a> App<'a> {
                     }
                 }
                 Ok(None) => true,
-                Err(err) if err.kind() == ErrorKind::UnexpectedEof => {
-                    log::info!("Terminal input closed, exiting: {}", err);
+                Err(err) => {
+                    log::info!("Terminal input problem, exiting: {}", err);
                     self.mode = AppRunningState::Exiting(ExitState::EOF);
                     break 'main_loop;
                 }
-                Err(err) => panic!("Failed to read terminal event: {}", err),
             };
 
             if std::time::Instant::now().duration_since(self.last_draw_time) > min_refresh_rate {
