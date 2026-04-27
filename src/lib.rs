@@ -615,7 +615,7 @@ enum PromptWidgetSubcommands {
     /// with ENABLED_TEXT when mouse capture is on, and DISABLED_TEXT when off.
     ///
     /// Examples:
-    ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE '🖱️' '🔴'
+    ///   flyline create-prompt-widget mouse-mode '🖱️' '🔴'
     ///   # Now use FLYLINE_MOUSE_MODE in your prompt:
     ///   PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
     ///
@@ -623,7 +623,8 @@ enum PromptWidgetSubcommands {
     #[command(name = "mouse-mode", verbatim_doc_comment)]
     MouseMode {
         /// Name to embed in prompt strings as the widget placeholder.
-        #[arg(long)]
+        /// Defaults to `FLYLINE_MOUSE_MODE`.
+        #[arg(long, default_value = "FLYLINE_MOUSE_MODE")]
         name: String,
         /// Text to display when mouse capture is enabled.
         enabled_text: String,
@@ -637,13 +638,14 @@ enum PromptWidgetSubcommands {
     /// to the clipboard via OSC 52.
     ///
     /// Examples:
-    ///   flyline create-prompt-widget copy-buffer --name COPY_BUFFER '[copy]'
-    ///   # Now use COPY_BUFFER in your prompt:
-    ///   RPS1=' COPY_BUFFER'
+    ///   flyline create-prompt-widget copy-buffer '[copy]'
+    ///   # Now use FLYLINE_COPY_BUFFER in your prompt:
+    ///   RPS1=' FLYLINE_COPY_BUFFER'
     #[command(name = "copy-buffer", verbatim_doc_comment)]
     CopyBuffer {
         /// Name to embed in prompt strings as the widget placeholder.
-        #[arg(long)]
+        /// Defaults to `FLYLINE_COPY_BUFFER`.
+        #[arg(long, default_value = "FLYLINE_COPY_BUFFER")]
         name: String,
         /// Text to display in the prompt.
         text: String,
