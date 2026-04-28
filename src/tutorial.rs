@@ -670,7 +670,7 @@ pub fn generate_tutorial_text(
                     Tag::Tutorial,
                 ),
                 ts_copiable(
-                    "flyline --auto-close-chars true/false".to_string(), // NO_FMT
+                    "flyline editor --auto-close-chars true/false".to_string(), // NO_FMT
                     ClipboardTypes::TutorialAutoClose,
                 ),
                 TaggedSpan::new(Span::styled(".", text_style), Tag::Tutorial),

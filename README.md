@@ -406,7 +406,7 @@ I find that Copilot can't interact with the terminal if flyline runs with certai
 if [[ -n "${COPILOT_TERMINAL:-}" ]]; then
     RPS1=''
     flyline set-cursor --backend terminal --interpolate none
-    flyline --show-inline-history false
+    flyline editor --show-inline-history false
 fi
 ``` 
 and set this in your `settings.json`:
@@ -445,6 +445,7 @@ Commands:
   key                   Manage keybindings.
   log                   Logging commands: dump, configure level, or stream logs.
   run-tutorial          Run the interactive tutorial for first-time users.
+  editor                Configure the inline editor.
   comp-spec-synthesis   Run a command with --help, parse the output, and print a Bash completion
                         script to stdout.
   help                  Print this message or the help of the given subcommand(s)
@@ -458,16 +459,6 @@ Options:
 
       --show-animations [<SHOW_ANIMATIONS>]
           Show animations
-          
-          [possible values: true, false]
-
-      --show-inline-history [<SHOW_INLINE_HISTORY>]
-          Show inline history suggestions
-          
-          [possible values: true, false]
-
-      --auto-close-chars [<AUTO_CLOSE_CHARS>]
-          Enable automatic closing character insertion (e.g. insert `)` after `(`)
           
           [possible values: true, false]
 

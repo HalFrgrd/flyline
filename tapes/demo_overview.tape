@@ -8,7 +8,7 @@ Require claude
 
 Hide
 Sleep 50ms
-Type `flyline --auto-close-chars true && clear`
+Type `flyline editor --auto-close-chars true && clear`
 Enter
 Show
 

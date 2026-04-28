@@ -2,4 +2,5 @@
 flyline --load-zsh-history
 flyline set-cursor --backend terminal
 flyline --mouse-mode disabled
-flyline --show-inline-history false
+flyline editor --show-inline-history false
+flyline editor --select-with-mouse false

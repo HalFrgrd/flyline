@@ -870,7 +870,8 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::Command(byte_pos))
-                if matches!(mouse.kind, MouseEventKind::Down(event::MouseButton::Left)) =>
+                if self.settings.select_with_mouse
+                    && matches!(mouse.kind, MouseEventKind::Down(event::MouseButton::Left)) =>
             {
                 {
                     let left_click_count = self.mouse_state.record_left_click_down(byte_pos);
@@ -908,7 +909,10 @@ impl<'a> App<'a> {
                     update_buffer = true;
                 }
             }
-            Some(Tag::Command(byte_pos)) if matches!(mouse.kind, MouseEventKind::Drag(_)) => {
+            Some(Tag::Command(byte_pos))
+                if self.settings.select_with_mouse
+                    && matches!(mouse.kind, MouseEventKind::Drag(_)) =>
+            {
                 match (
                     self.mouse_state.get_click_count(),
                     self.mouse_state.get_last_click_buffer_pos(),

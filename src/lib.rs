@@ -108,12 +108,6 @@ struct FlylineArgs {
     /// Show animations
     #[arg(long = "show-animations", default_missing_value = "true", num_args = 0..=1)]
     show_animations: Option<bool>,
-    /// Show inline history suggestions
-    #[arg(long = "show-inline-history", default_missing_value = "true", num_args = 0..=1)]
-    show_inline_history: Option<bool>,
-    /// Enable automatic closing character insertion (e.g. insert `)` after `(`)
-    #[arg(long = "auto-close-chars", default_missing_value = "true", num_args = 0..=1)]
-    auto_close_chars: Option<bool>,
     /// Run matrix animation in the terminal background. Use `on` to always show it, `off` to
     /// disable it, or an integer number of seconds to show it after that many seconds of
     /// inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a
@@ -448,6 +442,31 @@ enum Commands {
         /// Enable or disable the tutorial. Defaults to `true`.
         #[arg(default_missing_value = "true", num_args = 0..=1)]
         enabled: Option<bool>,
+    },
+    /// Configure the inline editor.
+    ///
+    /// Controls behaviours of the buffer editor: automatic closing of bracket
+    /// pairs and quotes, inline history suggestions, and whether mouse clicks
+    /// and drags change the buffer cursor and selection.
+    ///
+    /// Examples:
+    ///   flyline editor --auto-close-chars false
+    ///   flyline editor --show-inline-history false
+    ///   flyline editor --select-with-mouse false
+    ///   flyline editor --auto-close-chars true --select-with-mouse true
+    #[command(name = "editor", verbatim_doc_comment)]
+    Editor {
+        /// Enable automatic closing character insertion (e.g. insert `)` after `(`).
+        #[arg(long = "auto-close-chars", default_missing_value = "true", num_args = 0..=1)]
+        auto_close_chars: Option<bool>,
+        /// Show inline history suggestions.
+        #[arg(long = "show-inline-history", default_missing_value = "true", num_args = 0..=1)]
+        show_inline_history: Option<bool>,
+        /// Whether mouse clicks and drags on the command buffer change the
+        /// cursor position and selection. Default is `true`. When `false`,
+        /// mouse interaction with the buffer does not change the selection.
+        #[arg(long = "select-with-mouse", default_missing_value = "true", num_args = 0..=1)]
+        select_with_mouse: Option<bool>,
     },
     /// Run a command with --help, parse the output, and print a Bash completion
     /// script to stdout.
@@ -845,16 +864,6 @@ impl Flyline {
                     self.settings.show_animations = enabled;
                 }
 
-                if let Some(enabled) = parsed.show_inline_history {
-                    log::info!("Inline history suggestions set to {}", enabled);
-                    self.settings.show_inline_history = enabled;
-                }
-
-                if let Some(enabled) = parsed.auto_close_chars {
-                    log::info!("Auto closing char set to {}", enabled);
-                    self.settings.auto_close_chars = enabled;
-                }
-
                 if let Some(val) = parsed.matrix_animation {
                     log::info!("Matrix animation set to {:?}", val);
                     self.settings.matrix_animation = val;
@@ -1215,6 +1224,24 @@ impl Flyline {
                             }
                         } else {
                             self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
+                        }
+                    }
+                    Some(Commands::Editor {
+                        auto_close_chars,
+                        show_inline_history,
+                        select_with_mouse,
+                    }) => {
+                        if let Some(enabled) = auto_close_chars {
+                            log::info!("Auto closing char set to {}", enabled);
+                            self.settings.auto_close_chars = enabled;
+                        }
+                        if let Some(enabled) = show_inline_history {
+                            log::info!("Inline history suggestions set to {}", enabled);
+                            self.settings.show_inline_history = enabled;
+                        }
+                        if let Some(enabled) = select_with_mouse {
+                            log::info!("Select with mouse set to {}", enabled);
+                            self.settings.select_with_mouse = enabled;
                         }
                     }
                     Some(Commands::CompSpecSynthesis { command }) => {

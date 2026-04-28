@@ -159,6 +159,10 @@ pub struct Settings {
     pub show_inline_history: bool,
     /// Whether to automatically close opening characters (e.g., parentheses, brackets, quotes).
     pub auto_close_chars: bool,
+    /// Whether mouse clicks and drags on the command buffer change the cursor
+    /// position and selection. When `false`, mouse interaction with the buffer
+    /// does not change the buffer selection or cursor position.
+    pub select_with_mouse: bool,
     /// Cursor appearance and animation settings (set via `flyline set-cursor`).
     pub cursor_config: CursorConfig,
     /// Mouse capture mode.
@@ -209,6 +213,7 @@ impl Default for Settings {
             show_animations: true,
             show_inline_history: true,
             auto_close_chars: true,
+            select_with_mouse: true,
             cursor_config: CursorConfig::default(),
             mouse_mode: MouseMode::default(),
             agent_commands: HashMap::new(),
