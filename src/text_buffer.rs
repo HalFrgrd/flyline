@@ -94,7 +94,6 @@ impl TextBuffer {
 
     /// Returns the current selection anchor byte position, or `None` if no
     /// selection is active.
-    #[allow(dead_code)]
     pub fn selection_byte(&self) -> Option<usize> {
         self.selection_byte
     }
@@ -155,8 +154,8 @@ mod test_selection {
         assert_eq!(tb.selection_byte(), Some(0));
         // Empty selection — anchor equals cursor — yields no range.
         assert!(tb.selection_range().is_none());
-        tb.move_right();
-        tb.move_right();
+        tb.move_right_selection();
+        tb.move_right_selection();
         assert_eq!(tb.selection_range(), Some(0..2));
         assert_eq!(tb.selected_text().as_deref(), Some("he"));
     }
@@ -166,7 +165,7 @@ mod test_selection {
         let mut tb = TextBuffer::new("hello");
         tb.move_to_start();
         tb.start_selection_if_none();
-        tb.move_right();
+        tb.move_right_selection();
         tb.start_selection_if_none(); // should not move the anchor
         assert_eq!(tb.selection_byte(), Some(0));
         assert_eq!(tb.selection_range(), Some(0..1));
@@ -176,9 +175,8 @@ mod test_selection {
     fn selection_range_is_normalised_when_cursor_left_of_anchor() {
         let mut tb = TextBuffer::new("hello");
         // Cursor is at end (5).
-        tb.start_selection_if_none();
-        tb.move_left();
-        tb.move_left();
+        tb.move_left_selection();
+        tb.move_left_selection();
         assert_eq!(tb.selection_byte(), Some(5));
         assert_eq!(tb.selection_range(), Some(3..5));
         assert_eq!(tb.selected_text().as_deref(), Some("lo"));
@@ -188,8 +186,7 @@ mod test_selection {
     fn clear_selection_removes_anchor() {
         let mut tb = TextBuffer::new("hello");
         tb.move_to_start();
-        tb.start_selection_if_none();
-        tb.move_right();
+        tb.move_right_selection();
         assert!(tb.selection_range().is_some());
         tb.clear_selection();
         assert!(tb.selection_byte().is_none());
@@ -200,12 +197,11 @@ mod test_selection {
     fn delete_selection_removes_selected_text() {
         let mut tb = TextBuffer::new("hello world");
         tb.move_to_start();
-        tb.start_selection_if_none();
-        tb.move_right();
-        tb.move_right();
-        tb.move_right();
-        tb.move_right();
-        tb.move_right();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
         assert_eq!(tb.selected_text().as_deref(), Some("hello"));
         assert!(tb.delete_selection());
         assert_eq!(tb.buffer(), " world");
@@ -217,9 +213,8 @@ mod test_selection {
     fn delete_selection_with_cursor_left_of_anchor() {
         let mut tb = TextBuffer::new("hello");
         // Cursor at end (5), select backwards.
-        tb.start_selection_if_none();
-        tb.move_left();
-        tb.move_left();
+        tb.move_left_selection();
+        tb.move_left_selection();
         assert_eq!(tb.selection_range(), Some(3..5));
         assert!(tb.delete_selection());
         assert_eq!(tb.buffer(), "hel");
@@ -237,9 +232,8 @@ mod test_selection {
     fn delete_selection_can_be_undone() {
         let mut tb = TextBuffer::new("hello");
         tb.move_to_start();
-        tb.start_selection_if_none();
-        tb.move_right();
-        tb.move_right();
+        tb.move_right_selection();
+        tb.move_right_selection();
         assert!(tb.delete_selection());
         assert_eq!(tb.buffer(), "llo");
         tb.undo();
@@ -262,18 +256,45 @@ mod test_misc {
 ///////////////////////////////////////////////////////// movement
 impl TextBuffer {
     pub fn move_left(&mut self) {
-        self.cursor_byte = self
-            .buf
+        if let Some(selection_range) = self.selection_range() {
+            // When moving left with an active selection, move to the start of the selection and clear it.
+            self.cursor_byte = selection_range.start;
+            self.clear_selection();
+            return;
+        }
+        self.clear_selection();
+
+        self.cursor_byte = self.left_move_pos();
+    }
+
+    fn left_move_pos(&self) -> usize {
+        // the previous grapheme boundary before the cursor
+        self.buf
             .grapheme_indices(true)
             .take_while(|(i, _)| *i < self.cursor_byte)
             .last()
-            .map_or(0, |(i, _)| i);
+            .map_or(0, |(i, _)| i)
+    }
+
+    pub fn move_left_selection(&mut self) {
+        self.start_selection_if_none();
+        self.cursor_byte = self.left_move_pos();
     }
 
     pub fn move_right(&mut self) {
+        if let Some(selection_range) = self.selection_range() {
+            // When moving right with an active selection, move to the end of the selection and clear it.
+            self.cursor_byte = selection_range.end;
+            self.clear_selection();
+            log::debug!(
+                "Moving right with active selection, moving to end of selection at byte index {}",
+                self.cursor_byte
+            );
+            return;
+        }
+        self.clear_selection();
         self.cursor_byte = self.right_move_pos();
     }
-
     fn right_move_pos(&self) -> usize {
         // the next grapheme boundary after the cursor
         self.buf
@@ -281,6 +302,15 @@ impl TextBuffer {
             .skip_while(|(i, _)| *i <= self.cursor_byte)
             .next()
             .map_or(self.buf.len(), |(i, _)| i)
+    }
+
+    pub fn move_right_selection(&mut self) {
+        self.start_selection_if_none();
+        self.cursor_byte = self.right_move_pos();
+        log::debug!(
+            "Moving right with selection, moving to byte index {}",
+            self.cursor_byte
+        );
     }
 
     pub fn move_one_word_left(&mut self, delim: WordDelim) {

@@ -1183,7 +1183,6 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Move cursor left",
         Scope::Default,
         |app, _key| {
-            app.buffer.clear_selection();
             if app.buffer.cursor_byte_pos() == 0
                 && app.prompt_manager.cwd_display_segment_count() > 0
             {
@@ -1224,10 +1223,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "move_right",
         "Move cursor right",
         Scope::Default,
-        |app, _key| {
-            app.buffer.clear_selection();
-            app.buffer.move_right()
-        },
+        |app, _key| { app.buffer.move_right() },
     ),
     Action::new(
         "move_line_up_or_history_up",
@@ -1308,8 +1304,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Move cursor left, extending the text selection",
         Scope::Default,
         |app, _key| {
-            app.buffer.start_selection_if_none();
-            app.buffer.move_left();
+            app.buffer.move_left_selection();
         },
     ),
     Action::new(
@@ -1317,8 +1312,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Move cursor right, extending the text selection",
         Scope::Default,
         |app, _key| {
-            app.buffer.start_selection_if_none();
-            app.buffer.move_right();
+            app.buffer.move_right_selection();
         },
     ),
     Action::new(
