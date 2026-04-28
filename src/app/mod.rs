@@ -1770,17 +1770,14 @@ impl<'a> App<'a> {
         let selection_range = self.buffer.selection_range();
 
         for part in self.formatted_buffer_cache.parts.iter() {
-            let display_span = if part.token.token.kind == TokenKind::Newline {
-                // For newlines, draw a space instead so that we can have a place to put the cursor
-                Span::from(" ")
-            } else if self.mode.is_running() && self.settings.show_animations {
-                part.get_possible_animated_span(now)
+            let animation_time = if self.mode.is_running() && self.settings.show_animations {
+                Some(now)
             } else {
-                part.normal_span().clone()
+                None
             };
 
             for (mut sub_span, tags, is_cursor, _is_sel_byte, is_in_selection) in
-                part.get_spans(display_span, selection_range.clone())
+                part.get_spans(animation_time, selection_range.clone())
             {
                 if is_in_selection {
                     sub_span.style = Palette::convert_to_selected(sub_span.style);

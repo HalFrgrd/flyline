@@ -279,9 +279,18 @@ impl FormattedBufferPart {
     /// content must have the same grapheme boundaries as `self.normal_span()`.
     pub fn get_spans(
         &self,
-        display_span: Span<'static>,
+        animation_time: Option<std::time::Instant>,
         selection_range: Option<std::ops::Range<usize>>,
     ) -> Vec<(Span<'static>, Vec<Tag>, bool, bool, bool)> {
+        let display_span = if self.token.token.kind == TokenKind::Newline {
+            // For newlines, draw a space instead so that we can have a place to put the cursor
+            Span::from(" ")
+        } else if let Some(now) = animation_time {
+            self.get_possible_animated_span(now)
+        } else {
+            self.normal_span().clone()
+        };
+
         let token_byte_start = self.token.token.byte_range().start;
 
         let has_cursor = self.cursor_grapheme_idx.is_some();
@@ -514,7 +523,7 @@ mod tests {
         part: &FormattedBufferPart,
         selection_range: Option<std::ops::Range<usize>>,
     ) -> Vec<(String, bool, bool, bool)> {
-        part.get_spans(part.normal_span().clone(), selection_range)
+        part.get_spans(None, selection_range)
             .into_iter()
             .map(|(s, _tags, c, sb, sel)| (s.content.into_owned(), c, sb, sel))
             .collect()
@@ -590,25 +599,6 @@ mod tests {
     }
 
     #[test]
-    fn get_spans_per_grapheme_uses_display_span() {
-        // Verify the supplied display_span content is used (one grapheme
-        // each) when the part is split into per-grapheme tuples.
-        let fb = FormattedBuffer::from("abc", 1, None);
-        let part = fb
-            .parts
-            .into_iter()
-            .find(|p| p.token.token.value == "abc")
-            .unwrap();
-        let display = Span::styled("XYZ".to_string(), part.normal_span().style);
-        let spans: Vec<String> = part
-            .get_spans(display, None)
-            .into_iter()
-            .map(|(s, _, _, _, _)| s.content.into_owned())
-            .collect();
-        assert_eq!(spans, vec!["X", "Y", "Z"]);
-    }
-
-    #[test]
     fn get_spans_tags_track_byte_offset_in_buffer() {
         // The "world" token starts at byte 6 in "hello world". When we ask
         // for per-grapheme tuples (cursor inside the token), each tag must
@@ -619,7 +609,7 @@ mod tests {
             .into_iter()
             .find(|p| p.token.token.value == "world")
             .unwrap();
-        let tuples = part.get_spans(part.normal_span().clone(), None);
+        let tuples = part.get_spans(None, None);
         let tags: Vec<Tag> = tuples.into_iter().flat_map(|(_, t, _, _, _)| t).collect();
         assert_eq!(
             tags,
@@ -643,7 +633,7 @@ mod tests {
             .into_iter()
             .find(|p| p.token.token.value == "hello")
             .unwrap();
-        let tuples = part.get_spans(part.normal_span().clone(), None);
+        let tuples = part.get_spans(None, None);
         assert_eq!(tuples.len(), 1);
         assert_eq!(
             tuples[0].1,
