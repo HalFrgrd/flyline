@@ -38,8 +38,8 @@ RUN touch /home/john/.bashrc && \
     'RPS1=""' \
     'enable -f /app/libflyline.so flyline' \
     'flyline log set-level trace' \
-    'flyline --auto-close-chars false' \
-    'flyline --show-inline-history false' \
+    'flyline editor --auto-close-chars false' \
+    'flyline editor --show-inline-history false' \
     'export PATH="/home/john/bin/:$PATH"' \
     "flyline set-agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a bash command.\" --command 'claude --prompt --effort low' " \
     >> /home/john/.bashrc
