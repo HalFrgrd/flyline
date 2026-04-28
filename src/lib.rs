@@ -264,8 +264,8 @@ enum Commands {
     /// Examples:
     ///   flyline create-prompt-widget animation --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
     ///   flyline create-prompt-widget animation --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
-    ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
-    ///   flyline create-prompt-widget copy-buffer --name COPY_BUFFER '[copy]'
+    ///   flyline create-prompt-widget mouse-mode 'mouse is enabled' 'mouse is disabled'
+    ///   flyline create-prompt-widget copy-buffer '[copy]'
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder 10
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
     #[command(name = "create-prompt-widget", verbatim_doc_comment)]

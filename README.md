@@ -38,7 +38,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 > [!TIP]
 > Quick install:
-> run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
+> run the following command to automatically download Flyline and update your `.bashrc` to run the latest version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
@@ -176,7 +176,7 @@ Flyline will replace strings in the prompt matching the widget name with the wid
 
 ### Animations
 
-Create your own animations with `flyline create-prompt-widget animation --name [your animation name here] [FRAMES]`.
+Create your own animations with `flyline create-prompt-widget animation --name NAME [FRAMES]...`.
 Flyline will replace strings in the prompt matching the animation name with the animation:
 
 ![Custom animation demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_custom_animation.gif)
@@ -234,13 +234,13 @@ Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
 with ENABLED_TEXT when mouse capture is on, and DISABLED_TEXT when off.
 
 Examples:
-  flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE '🖱️' '🔴'
+  flyline create-prompt-widget mouse-mode '🖱️' '🔴'
   # Now use FLYLINE_MOUSE_MODE in your prompt:
   PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
 
   flyline create-prompt-widget mouse-mode --name MOUSE_MODE "on " "off"
 
-Usage: flyline create-prompt-widget mouse-mode --name <NAME> <ENABLED_TEXT> <DISABLED_TEXT>
+Usage: flyline create-prompt-widget mouse-mode [OPTIONS] <ENABLED_TEXT> <DISABLED_TEXT>
 
 Arguments:
   <ENABLED_TEXT>
@@ -252,6 +252,8 @@ Arguments:
 Options:
       --name <NAME>
           Name to embed in prompt strings as the widget placeholder
+
+          [default: FLYLINE_MOUSE_MODE]
 
   -h, --help
           Print help (see a summary with '-h')
@@ -314,7 +316,7 @@ This allows you to write a command in plain English and your agent will convert 
 
 After setting up your agent with flyline, you can pass the buffer to your agent with Alt+Enter or simply Enter when your command starts with your trigger prefix (e.g. `ai: list files older than three days`).
 
-[See the examples on how to set this up.](examples/agent_mode.sh) or simply press Alt+Enter and flyline will try to configure agent mode for you.
+[See the examples for how to set this up.](examples/agent_mode.sh) Alternatively, press Alt+Enter and flyline will try to configure agent mode for you.
 
 Flyline will syntax highlight the suggested commands and render markdown output.
 

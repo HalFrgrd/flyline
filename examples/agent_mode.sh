@@ -1,4 +1,4 @@
-# This file is compiled into flyline to help with auto setup.
+# This file is compiled into flyline to help with automatic setup.
 
 # I recommend using trigger prefixes.
 # When you type `: how do I find files older than 3 days?`,
