@@ -13,6 +13,7 @@ pub struct MouseState {
     /// Smart mode will not automatically re-enable while this flag is set.
     explicitly_disabled_by_user: bool,
     last_left_click_times: Vec<std::time::Instant>,
+    last_left_click_pos: Option<(u16, u16)>,
 }
 
 impl MouseState {
@@ -38,6 +39,7 @@ impl MouseState {
             enabled,
             explicitly_disabled_by_user: false,
             last_left_click_times: Vec::new(),
+            last_left_click_pos: None,
         }
     }
 
@@ -98,8 +100,16 @@ impl MouseState {
         self.explicitly_disabled_by_user
     }
 
-    pub fn record_left_click(&mut self) -> ClickCount {
+    pub fn record_left_click(&mut self, pos: (u16, u16)) -> ClickCount {
         let now = std::time::Instant::now();
+        if let Some(last_pos) = self.last_left_click_pos
+            && last_pos != pos
+        {
+            // If the click position has changed, reset the click count.
+            self.last_left_click_times.clear();
+        }
+        self.last_left_click_pos = Some(pos);
+
         self.last_left_click_times.push(now);
         const CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
         self.last_left_click_times

@@ -137,6 +137,11 @@ impl TextBuffer {
         self.cursor_byte = self.buf.len();
         self.selection_byte = Some(0);
     }
+
+    pub fn select_word(&mut self) {
+        self.selection_byte = Some(self.move_one_word_left_pos(WordDelim::WhiteSpace));
+        self.cursor_byte = self.move_one_word_right_pos(WordDelim::WhiteSpace);
+    }
 }
 
 #[cfg(test)]
@@ -288,18 +293,14 @@ impl TextBuffer {
 
     pub fn move_right(&mut self) {
         if let Some(selection_range) = self.selection_range() {
-            // When moving right with an active selection, move to the end of the selection and clear it.
             self.cursor_byte = selection_range.end;
             self.clear_selection();
-            log::debug!(
-                "Moving right with active selection, moving to end of selection at byte index {}",
-                self.cursor_byte
-            );
             return;
         }
         self.clear_selection();
         self.cursor_byte = self.right_move_pos();
     }
+
     fn right_move_pos(&self) -> usize {
         // the next grapheme boundary after the cursor
         self.buf
@@ -312,15 +313,10 @@ impl TextBuffer {
     pub fn move_right_selection(&mut self) {
         self.start_selection_if_none();
         self.cursor_byte = self.right_move_pos();
-        log::debug!(
-            "Moving right with selection, moving to byte index {}",
-            self.cursor_byte
-        );
     }
 
-    pub fn move_one_word_left(&mut self, delim: WordDelim) {
-        self.cursor_byte = self
-            .buf
+    fn move_one_word_left_pos(&mut self, delim: WordDelim) -> usize {
+        self.buf
             .char_indices()
             .rev()
             .skip_while(|(i, _)| *i >= self.cursor_byte)
@@ -333,18 +329,25 @@ impl TextBuffer {
                     None
                 }
             })
-            .unwrap_or(0);
+            .unwrap_or(0)
     }
 
-    pub fn move_one_word_right(&mut self, delim: WordDelim) {
-        self.cursor_byte = self
-            .buf
+    pub fn move_one_word_left(&mut self, delim: WordDelim) {
+        self.cursor_byte = self.move_one_word_left_pos(delim);
+    }
+
+    fn move_one_word_right_pos(&mut self, delim: WordDelim) -> usize {
+        self.buf
             .char_indices()
             .skip_while(|(i, _)| *i < self.cursor_byte)
             .skip_while(|(_, c)| delim.is_word_boundary(*c))
             .skip_while(|(_, c)| !delim.is_word_boundary(*c))
             .next()
             .map_or(self.buf.len(), |(i, _)| i)
+    }
+
+    pub fn move_one_word_right(&mut self, delim: WordDelim) {
+        self.cursor_byte = self.move_one_word_right_pos(delim);
     }
 
     pub fn move_one_word_left_fine_grained(&mut self) {

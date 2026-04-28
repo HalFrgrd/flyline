@@ -726,8 +726,11 @@ impl<'a> App<'a> {
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
 
-        let left_click_count = if mouse.kind == MouseEventKind::Up(event::MouseButton::Left) {
-            Some(self.mouse_state.record_left_click())
+        let left_click_count = if mouse.kind == MouseEventKind::Down(event::MouseButton::Left) {
+            Some(
+                self.mouse_state
+                    .record_left_click((mouse.column, mouse.row)),
+            )
         } else {
             None
         };
@@ -878,19 +881,11 @@ impl<'a> App<'a> {
             Some(Tag::Command(byte_pos)) => {
                 if matches!(
                     mouse.kind,
-                    MouseEventKind::Up(_) | MouseEventKind::Down(_) | MouseEventKind::Drag(_)
+                    MouseEventKind::Down(_) | MouseEventKind::Drag(_)
                 ) {
                     match left_click_count {
                         Some(ClickCount::Double) => {
-                            // On double, select the whole token.
-                            // if let Some((part, range)) = self
-                            //     .formatted_buffer_cache
-                            //     .get_part_and_range_from_byte_pos(byte_pos)
-                            // {
-                            //     self.buffer.set_selection(Some(range));
-                            //     self.buffer.try_move_cursor_to_byte_pos(byte_pos, false);
-                            //     handled_mouse_action = true;
-                            // }
+                            self.buffer.select_word();
                         }
                         Some(ClickCount::Triple) => {
                             // On triple click, select the whole buffer.
