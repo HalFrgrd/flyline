@@ -100,7 +100,6 @@ impl AutoInsertedTracker {
             .count();
 
         let old_changed_end = old_bytes.len() - suffix;
-        let new_changed_end = new_bytes.len() - suffix;
         let len_diff: isize = new_bytes.len() as isize - old_bytes.len() as isize;
 
         let new_positions: BTreeSet<usize> = self
@@ -123,20 +122,16 @@ impl AutoInsertedTracker {
             })
             .filter(|&p| {
                 // Safety net: the tracked position must still hold a
-                // recognised closing character.
+                // recognised closing character.  `new_bytes.get(p)` also
+                // guarantees that `p < new_bytes.len()`.
                 new_bytes
                     .get(p)
-                    .and_then(|&b| char::from_u32(b as u32))
-                    .is_some_and(|c| matches!(c, ')' | ']' | '}' | '"' | '\'' | '`'))
-                    && p < new_bytes.len()
+                    .is_some_and(|&b| matches!(b as char, ')' | ']' | '}' | '"' | '\'' | '`'))
             })
             .collect();
 
-        // Sanity check: positions cannot extend past the new buffer.
-        debug_assert!(
-            new_positions.iter().all(|&p| p < new_bytes.len())
-                || new_changed_end <= new_bytes.len()
-        );
+        // Sanity check: every retained position must lie inside the new buffer.
+        debug_assert!(new_positions.iter().all(|&p| p < new_bytes.len()));
 
         self.positions = new_positions;
     }
