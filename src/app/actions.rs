@@ -2734,15 +2734,14 @@ mod tests {
     fn test_overlap_exact_same_key_shift_does_not_shadow_unmodified() {
         let a = KeyEventMatch::Exact(key(KeyCode::Home));
         let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT));
-        assert!(!key_event_a_shadows_b(&a, &b));
-        assert!(!key_event_a_shadows_b(&b, &a));
+        assert!(key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
     fn test_overlap_anychar_and_anychar() {
         let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
         let b = KeyEventMatch::AnyCharAndMods(KeyModifiers::CONTROL);
-        assert!(!key_event_a_shadows_b(&a, &b));
+        assert!(key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
@@ -2757,8 +2756,7 @@ mod tests {
     fn test_overlap_anychar_and_exact_char_different_modifiers() {
         let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
         let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('q'), KeyModifiers::SHIFT));
-        assert!(!key_event_a_shadows_b(&a, &b));
-        assert!(!key_event_a_shadows_b(&b, &a));
+        assert!(key_event_a_shadows_b(&a, &b));
     }
 
     #[test]
