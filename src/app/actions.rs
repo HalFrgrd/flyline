@@ -6,6 +6,7 @@ use anyhow::Result;
 use clap_complete::CompletionCandidate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::IsTerminal;
+use std::ops::{BitAnd, Not};
 use std::sync::LazyLock;
 use strum::{AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr};
 
@@ -165,6 +166,56 @@ pub struct ContextLiteral {
     pub negated: bool,
 }
 
+impl ContextLiteral {
+    pub fn new(var: ContextVar, negated: bool) -> Self {
+        Self { var, negated }
+    }
+
+    pub fn negate(&self) -> Self {
+        Self {
+            var: self.var,
+            negated: !self.negated,
+        }
+    }
+}
+
+impl Into<ContextLiteral> for ContextVar {
+    fn into(self) -> ContextLiteral {
+        ContextLiteral {
+            var: self,
+            negated: false,
+        }
+    }
+}
+
+impl From<ContextVar> for ContextExpr {
+    fn from(value: ContextVar) -> Self {
+        Self::new(vec![value.into()])
+    }
+}
+
+impl From<ContextLiteral> for ContextExpr {
+    fn from(value: ContextLiteral) -> Self {
+        Self::new(vec![value])
+    }
+}
+
+impl Not for ContextVar {
+    type Output = ContextLiteral;
+
+    fn not(self) -> Self::Output {
+        ContextLiteral::new(self, true)
+    }
+}
+
+impl Not for ContextLiteral {
+    type Output = ContextLiteral;
+
+    fn not(self) -> Self::Output {
+        self.negate()
+    }
+}
+
 /// A context expression: a conjunction (AND-chain) of literals.
 ///
 /// The grammar is intentionally small: a `&&`-separated list of context
@@ -176,6 +227,10 @@ pub struct ContextExpr {
 }
 
 impl ContextExpr {
+    pub fn new(literals: Vec<ContextLiteral>) -> Self {
+        Self { literals }
+    }
+
     /// Evaluate the expression against the precomputed context values.
     pub fn evaluate(&self, ctx: &ContextValues) -> bool {
         self.literals.iter().all(|lit| {
@@ -200,6 +255,40 @@ impl ContextExpr {
             })
             .collect::<Vec<_>>()
             .join("&&")
+    }
+}
+
+impl<Rhs> BitAnd<Rhs> for ContextVar
+where
+    Rhs: Into<ContextExpr>,
+{
+    type Output = ContextExpr;
+
+    fn bitand(self, rhs: Rhs) -> Self::Output {
+        ContextExpr::from(self) & rhs
+    }
+}
+
+impl<Rhs> BitAnd<Rhs> for ContextLiteral
+where
+    Rhs: Into<ContextExpr>,
+{
+    type Output = ContextExpr;
+
+    fn bitand(self, rhs: Rhs) -> Self::Output {
+        ContextExpr::from(self) & rhs
+    }
+}
+
+impl<Rhs> BitAnd<Rhs> for ContextExpr
+where
+    Rhs: Into<ContextExpr>,
+{
+    type Output = ContextExpr;
+
+    fn bitand(mut self, rhs: Rhs) -> Self::Output {
+        self.literals.extend(rhs.into().literals);
+        self
     }
 }
 
@@ -1132,12 +1221,11 @@ impl Binding {
     /// Create a binding from a list of key-event strings, a context
     /// expression (e.g. `"always"`, `"inlineSuggestionAvailable&&cursorAtEnd"`),
     /// and an action.
-    pub fn try_new(key_events: &[&str], context: &str, action: Action) -> Result<Self> {
+    pub fn try_new(key_events: &[&str], context: ContextExpr, action: Action) -> Result<Self> {
         let mut events = Vec::new();
         for &key_event in key_events {
             events.push(KeyEventMatch::try_from(key_event)?);
         }
-        let context = ContextExpr::try_from(context)?;
 
         Ok(Self {
             key_events: events,
@@ -1158,7 +1246,11 @@ impl Binding {
         let action_str = action_str.trim();
         let action = Action::try_from(action_str)
             .map_err(|_| anyhow::anyhow!("Unknown action: '{}'", action_str))?;
-        Self::try_new(&[key_event], context_str.trim(), action)
+        Self::try_new(
+            &[key_event],
+            ContextExpr::try_from(context_str.trim())?,
+            action,
+        )
     }
 
     pub fn matches(&self, key: KeyEvent) -> bool {
@@ -1508,354 +1600,454 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
     [
         Binding::try_new(
             &["Down"],
-            "agentOutputSelection",
+            ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputSelectNext,
         )
         .unwrap(),
         Binding::try_new(
             &["Up"],
-            "agentOutputSelection",
+            ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputSelectPrev,
         )
         .unwrap(),
         Binding::try_new(
             &["Up"],
-            "tabCompletionAvailable",
+            ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionMoveUp,
         )
         .unwrap(),
         Binding::try_new(
             &["Down"],
-            "tabCompletionAvailable",
+            ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionMoveDown,
         )
         .unwrap(),
         Binding::try_new(
             &["Left"],
-            "tabCompletionMultiColAvailable",
+            ContextVar::TabCompletionMultiColAvailable.into(),
             Action::TabCompletionMoveLeft,
         )
         .unwrap(),
         Binding::try_new(
             &["Right"],
-            "tabCompletionMultiColAvailable",
+            ContextVar::TabCompletionMultiColAvailable.into(),
             Action::TabCompletionMoveRight,
         )
         .unwrap(),
         Binding::try_new(
             &["Up"],
-            "fuzzyHistorySearch",
+            ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistorySelectPrev,
         )
         .unwrap(),
         Binding::try_new(
             &["Down", "Ctrl+s"],
-            "fuzzyHistorySearch",
+            ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistorySelectNext,
         )
         .unwrap(),
         Binding::try_new(
             &["PageUp"],
-            "fuzzyHistorySearch",
+            ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryScrollPageUp,
         )
         .unwrap(),
         Binding::try_new(
             &["PageDown"],
-            "fuzzyHistorySearch",
+            ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryScrollPageDown,
         )
         .unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            "fuzzyHistorySearch",
+            ContextVar::FuzzyHistorySearch.into(),
             Action::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Enter"],
-            "always",
+            ContextVar::Always.into(),
             Action::RunAgentMode,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            "fuzzyHistorySearch",
+            ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryAcceptEntry,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            "tabCompletionAvailable",
+            ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionAcceptEntry,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            "agentError",
+            ContextVar::AgentError.into(),
             Action::RunHelpCommand,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            "agentOutputSelection",
+            ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputAcceptEntry,
         )
         .unwrap(),
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
         Binding::try_new(
             &expand_variations!["Enter"],
-            "promptDirSelect",
+            ContextVar::PromptDirSelect.into(),
             Action::PromptDirAcceptEntry,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            "always",
+            ContextVar::Always.into(),
             Action::SubmitOrNewline,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["BackTab"],
-            "tabCompletionAvailable",
+            ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionPrevSuggestion,
         )
         .unwrap(),
         // Scoped Esc bindings must appear before the Normal Esc binding.
         Binding::try_new(
             &["Tab"],
-            "fuzzyHistorySearch",
+            ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryAcceptAndEdit,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["BackTab"],
-            "agentOutputSelection",
+            ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputSelectPrev,
         )
         .unwrap(),
         Binding::try_new(
             &["Tab"],
-            "agentOutputSelection",
+            ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputNextSuggestion,
         )
         .unwrap(),
         Binding::try_new(
             &["Tab"],
-            "tabCompletionAvailable",
+            ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionNextSuggestion,
         )
         .unwrap(),
-        Binding::try_new(&["Tab"], "always", Action::RunTabCompletion).unwrap(),
-        Binding::try_new(&["Esc"], "agentError", Action::EscapeToNormalMode).unwrap(),
-        Binding::try_new(&["Esc"], "agentModeWaiting", Action::EscapeToNormalMode).unwrap(),
-        Binding::try_new(&["Esc"], "agentOutputSelection", Action::EscapeToNormalMode).unwrap(),
-        Binding::try_new(&["Esc"], "fuzzyHistorySearch", Action::EscapeToNormalMode).unwrap(),
-        Binding::try_new(&["Esc"], "promptDirSelect", Action::EscapeToNormalMode).unwrap(),
+        Binding::try_new(
+            &["Tab"],
+            ContextVar::Always.into(),
+            Action::RunTabCompletion,
+        )
+        .unwrap(),
         Binding::try_new(
             &["Esc"],
-            "tabCompletionAvailable",
+            ContextVar::AgentError.into(),
             Action::EscapeToNormalMode,
         )
         .unwrap(),
-        Binding::try_new(&["Esc"], "tabCompletion", Action::EscapeToNormalMode).unwrap(),
-        Binding::try_new(&["Esc"], "tabCompletionWaiting", Action::EscapeToNormalMode).unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            ContextVar::AgentModeWaiting.into(),
+            Action::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            ContextVar::AgentOutputSelection.into(),
+            Action::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            ContextVar::FuzzyHistorySearch.into(),
+            Action::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            ContextVar::PromptDirSelect.into(),
+            Action::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            ContextVar::TabCompletionAvailable.into(),
+            Action::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            ContextVar::TabCompletion.into(),
+            Action::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            ContextVar::TabCompletionWaiting.into(),
+            Action::EscapeToNormalMode,
+        )
+        .unwrap(),
         // TextSelected Esc must appear before the Default Esc binding so that
         // pressing Esc with a selection active clears the selection rather
         // than toggling the mouse.
-        Binding::try_new(&["Esc"], "textSelected", Action::EscapeToNormalMode).unwrap(),
-        Binding::try_new(&["Esc"], "always", Action::ToggleMouse).unwrap(),
-        Binding::try_new(&["Ctrl+d"], "always", Action::Exit).unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            ContextVar::TextSelected.into(),
+            Action::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(&["Esc"], ContextVar::Always.into(), Action::ToggleMouse).unwrap(),
+        Binding::try_new(&["Ctrl+d"], ContextVar::Always.into(), Action::Exit).unwrap(),
         // TextSelected Ctrl+c must appear before the Default Ctrl+c binding
         // so that copying the selection takes precedence over cancelling.
         Binding::try_new(
             &["Ctrl+c", "Meta+c"],
-            "textSelected",
+            ContextVar::TextSelected.into(),
             Action::CopySelectionOsc52,
         )
         .unwrap(),
-        Binding::try_new(&["Ctrl+c", "Meta+c"], "always", Action::Cancel).unwrap(),
+        Binding::try_new(
+            &["Ctrl+c", "Meta+c"],
+            ContextVar::Always.into(),
+            Action::Cancel,
+        )
+        .unwrap(),
         Binding::try_new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             &["Ctrl+/", "Meta+/", "Super+/", "Ctrl+7"],
-            "always",
+            ContextVar::Always.into(),
             Action::CommentLineSubmit,
         )
         .unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            "always",
+            ContextVar::Always.into(),
             Action::RunFuzzyHistorySearch,
         )
         .unwrap(),
-        Binding::try_new(&["Ctrl+l"], "always", Action::ClearScreen).unwrap(),
+        Binding::try_new(&["Ctrl+l"], ContextVar::Always.into(), Action::ClearScreen).unwrap(),
         Binding::try_new(
             &["Super+Backspace", "Ctrl+u", "Ctrl+Shift+Backspace"],
-            "always",
+            ContextVar::Always.into(),
             Action::DeleteLeftUntilStartOfLine,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Backspace"],
-            "always",
+            ContextVar::Always.into(),
             Action::DeleteLeftOneWordFineGrained,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Backspace", "Ctrl+H", "Alt+W", "Ctrl+w"],
-            "always",
+            ContextVar::Always.into(),
             Action::DeleteLeftOneWordWhitespace,
         )
         .unwrap(),
-        Binding::try_new(&["Backspace"], "always", Action::DeleteLeft).unwrap(),
+        Binding::try_new(
+            &["Backspace"],
+            ContextVar::Always.into(),
+            Action::DeleteLeft,
+        )
+        .unwrap(),
         Binding::try_new(
             &["Super+Delete", "Ctrl+Shift+Delete", "Ctrl+k"],
-            "always",
+            ContextVar::Always.into(),
             Action::DeleteRightUntilEndOfLine,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Delete"],
-            "always",
+            ContextVar::Always.into(),
             Action::DeleteRightOneWordFineGrained,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Delete"],
-            "always",
+            ContextVar::Always.into(),
             Action::DeleteRightOneWordWhitespace,
         )
         .unwrap(),
-        Binding::try_new(&["Delete"], "always", Action::DeleteRight).unwrap(),
+        Binding::try_new(&["Delete"], ContextVar::Always.into(), Action::DeleteRight).unwrap(),
         // PromptCwdEdit Home/End/Alt+Left/Ctrl+Left/Alt+Right/Ctrl+Right must appear before
         // the corresponding Default/InlineHistoryAcceptable bindings.
         Binding::try_new(
             &expand_variations!["Home"],
-            "promptDirSelect",
+            ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveToStart,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["End"],
-            "promptDirSelect",
+            ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveToEnd,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Left", "Alt+Left"],
-            "promptDirSelect",
+            ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveLeft,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Right", "Alt+Right"],
-            "promptDirSelect",
+            ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveRight,
         )
         .unwrap(),
         Binding::try_new(
             &["Shift+Home", "Super+Shift+Left"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveLeftStartOfLineExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Home", "Super+Left", "Ctrl+A", "Super+A"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveLeftStartOfLine,
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Shift+Left"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveLeftOneWordWhitespaceExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Left"], // Emacs-style whitespace word-left
-            "always",
+            ContextVar::Always.into(),
             Action::MoveLeftOneWordWhitespace,
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Shift+Left", "Meta+Shift+Left"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveLeftOneWordFineGrainedExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Left"], // Fine-grained word-left (stops at punctuation / path boundaries)
-            "always",
+            ContextVar::Always.into(),
             Action::MoveLeftOneWordFineGrained,
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
-        Binding::try_new(&["Left"], "promptDirSelect", Action::PromptDirMoveLeft).unwrap(),
-        Binding::try_new(&["Shift+Left"], "always", Action::MoveLeftExtendSelection).unwrap(),
-        Binding::try_new(&["Left"], "always", Action::MoveLeft).unwrap(),
+        Binding::try_new(
+            &["Left"],
+            ContextVar::PromptDirSelect.into(),
+            Action::PromptDirMoveLeft,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Shift+Left"],
+            ContextVar::Always.into(),
+            Action::MoveLeftExtendSelection,
+        )
+        .unwrap(),
+        Binding::try_new(&["Left"], ContextVar::Always.into(), Action::MoveLeft).unwrap(),
         Binding::try_new(
             &expand_variations!["Right", "End"],
-            "inlineSuggestionAvailable&&cursorAtEnd",
+            (ContextVar::InlineSuggestionAvailable & ContextVar::CursorAtEnd).into(),
             Action::AcceptInlineSuggestion,
         )
         .unwrap(),
         Binding::try_new(
             &["Shift+End", "Super+Shift+Right"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveRightEndOfLineExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["End", "Super+Right", "Ctrl+E", "Super+E"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveRightEndOfLine,
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Shift+Right"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveRightOneWordWhitespaceExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Right"], // Emacs-style whitespace word-right
-            "always",
+            ContextVar::Always.into(),
             Action::MoveRightOneWordWhitespace,
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Shift+Right", "Meta+Shift+Right"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveRightOneWordFineGrainedExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Right"], // Fine-grained word-right (stops at punctuation / path boundaries)
-            "always",
+            ContextVar::Always.into(),
             Action::MoveRightOneWordFineGrained,
         )
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
-        Binding::try_new(&["Right"], "promptDirSelect", Action::PromptDirMoveRight).unwrap(),
-        Binding::try_new(&["Shift+Right"], "always", Action::MoveRightExtendSelection).unwrap(),
-        Binding::try_new(&["Right"], "always", Action::MoveRight).unwrap(),
-        Binding::try_new(&["Shift+Up"], "always", Action::MoveLineUpExtendSelection).unwrap(),
-        Binding::try_new(&["Up"], "always", Action::MoveLineUpOrHistoryUp).unwrap(),
+        Binding::try_new(
+            &["Right"],
+            ContextVar::PromptDirSelect.into(),
+            Action::PromptDirMoveRight,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Shift+Right"],
+            ContextVar::Always.into(),
+            Action::MoveRightExtendSelection,
+        )
+        .unwrap(),
+        Binding::try_new(&["Right"], ContextVar::Always.into(), Action::MoveRight).unwrap(),
+        Binding::try_new(
+            &["Shift+Up"],
+            ContextVar::Always.into(),
+            Action::MoveLineUpExtendSelection,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Up"],
+            ContextVar::Always.into(),
+            Action::MoveLineUpOrHistoryUp,
+        )
+        .unwrap(),
         Binding::try_new(
             &["Shift+Down"],
-            "always",
+            ContextVar::Always.into(),
             Action::MoveLineDownExtendSelection,
         )
         .unwrap(),
-        Binding::try_new(&["Down"], "always", Action::MoveLineDownOrHistoryDown).unwrap(),
+        Binding::try_new(
+            &["Down"],
+            ContextVar::Always.into(),
+            Action::MoveLineDownOrHistoryDown,
+        )
+        .unwrap(),
         Binding::try_new(
             &["Ctrl+y", "Super+Y", "Ctrl+Shift+Z", "Super+Shift+Z"],
-            "always",
+            ContextVar::Always.into(),
             Action::Redo,
         )
         .unwrap(),
-        Binding::try_new(&["Ctrl+z", "Super+Z"], "always", Action::Undo).unwrap(),
-        Binding::try_new(&["AnyChar", "Shift+AnyChar"], "always", Action::InsertChar).unwrap(),
+        Binding::try_new(
+            &["Ctrl+z", "Super+Z"],
+            ContextVar::Always.into(),
+            Action::Undo,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["AnyChar", "Shift+AnyChar"],
+            ContextVar::Always.into(),
+            Action::InsertChar,
+        )
+        .unwrap(),
     ]
 });
 
@@ -2749,6 +2941,29 @@ mod tests {
         let s = "inlineSuggestionAvailable&&!textSelected&&cursorAtEnd";
         let e = ContextExpr::try_from(s).unwrap();
         assert!(e.display() == s);
+    }
+
+    #[test]
+    fn test_context_expr_operator_and_from_vars() {
+        let e = ContextVar::FuzzyHistorySearch & ContextVar::CursorAtEnd;
+        assert!(e.literals.len() == 2);
+        assert!(e.literals[0] == ContextLiteral::new(ContextVar::FuzzyHistorySearch, false));
+        assert!(e.literals[1] == ContextLiteral::new(ContextVar::CursorAtEnd, false));
+    }
+
+    #[test]
+    fn test_context_expr_operator_not_and_chain() {
+        let e = !ContextVar::TextSelected & ContextVar::CursorAtEnd;
+        assert!(e.literals.len() == 2);
+        assert!(e.literals[0] == ContextLiteral::new(ContextVar::TextSelected, true));
+        assert!(e.literals[1] == ContextLiteral::new(ContextVar::CursorAtEnd, false));
+    }
+
+    #[test]
+    fn test_context_expr_operator_chain_exprs() {
+        let e = (ContextVar::InlineSuggestionAvailable & !ContextVar::TextSelected)
+            & ContextVar::CursorAtEnd;
+        assert!(e.display() == "inlineSuggestionAvailable&&!textSelected&&cursorAtEnd");
     }
 
     #[test]
