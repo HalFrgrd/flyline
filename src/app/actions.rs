@@ -426,10 +426,10 @@ impl Binding {
     pub fn matches(&self, key: KeyEvent) -> bool {
         self.key_events.iter().any(|k| match k {
             KeyEventMatch::Exact(action_binding) => {
-                action_binding.code == key.code && action_binding.modifiers == key.modifiers
+                action_binding.code == key.code && key.modifiers.contains(action_binding.modifiers)
             }
             KeyEventMatch::AnyCharAndMods(mods) => {
-                matches!(key.code, KeyCode::Char(_)) && key.modifiers == *mods
+                matches!(key.code, KeyCode::Char(_)) && key.modifiers.contains(*mods)
             }
         })
     }
@@ -1833,21 +1833,15 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &expand_variations!["Home", "Super+Left", "Ctrl+A", "Super+A"],
-            Scope::Default,
-            "move_left_start_of_line",
-        )
-        .unwrap(),
-        Binding::try_new(
             &["Shift+Home", "Super+Shift+Left"],
             Scope::Default,
             "move_left_start_of_line_extend_selection",
         )
         .unwrap(),
         Binding::try_new(
-            &["Ctrl+Left"], // Emacs-style whitespace word-left
+            &expand_variations!["Home", "Super+Left", "Ctrl+A", "Super+A"],
             Scope::Default,
-            "move_left_one_word_whitespace",
+            "move_left_start_of_line",
         )
         .unwrap(),
         Binding::try_new(
@@ -1857,15 +1851,21 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &expand_variations!["Alt+Left"], // Fine-grained word-left (stops at punctuation / path boundaries)
+            &["Ctrl+Left"], // Emacs-style whitespace word-left
             Scope::Default,
-            "move_left_one_word_fine_grained",
+            "move_left_one_word_whitespace",
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Shift+Left", "Meta+Shift+Left"],
             Scope::Default,
             "move_left_one_word_fine_grained_extend_selection",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Alt+Left"], // Fine-grained word-left (stops at punctuation / path boundaries)
+            Scope::Default,
+            "move_left_one_word_fine_grained",
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
@@ -1884,21 +1884,15 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &expand_variations!["End", "Super+Right", "Ctrl+E", "Super+E"],
-            Scope::Default,
-            "move_right_end_of_line",
-        )
-        .unwrap(),
-        Binding::try_new(
             &["Shift+End", "Super+Shift+Right"],
             Scope::Default,
             "move_right_end_of_line_extend_selection",
         )
         .unwrap(),
         Binding::try_new(
-            &["Ctrl+Right"], // Emacs-style whitespace word-right
+            &expand_variations!["End", "Super+Right", "Ctrl+E", "Super+E"],
             Scope::Default,
-            "move_right_one_word_whitespace",
+            "move_right_end_of_line",
         )
         .unwrap(),
         Binding::try_new(
@@ -1908,15 +1902,21 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
-            &expand_variations!["Alt+Right"], // Fine-grained word-right (stops at punctuation / path boundaries)
+            &["Ctrl+Right"], // Emacs-style whitespace word-right
             Scope::Default,
-            "move_right_one_word_fine_grained",
+            "move_right_one_word_whitespace",
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Shift+Right", "Meta+Shift+Right"],
             Scope::Default,
             "move_right_one_word_fine_grained_extend_selection",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &expand_variations!["Alt+Right"], // Fine-grained word-right (stops at punctuation / path boundaries)
+            Scope::Default,
+            "move_right_one_word_fine_grained",
         )
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
@@ -2145,19 +2145,20 @@ const ANSI_RESET: &str = "\x1b[0m";
 
 fn key_event_a_shadows_b(a: &KeyEventMatch, b: &KeyEventMatch) -> bool {
     match (a, b) {
+        // If b contains more modifiers than a, a will shadow b.
         (KeyEventMatch::Exact(ea), KeyEventMatch::Exact(eb)) => {
-            ea.code == eb.code && ea.modifiers == eb.modifiers
+            ea.code == eb.code && eb.modifiers.contains(ea.modifiers)
         }
         (KeyEventMatch::AnyCharAndMods(mods_a), KeyEventMatch::AnyCharAndMods(mods_b)) => {
-            mods_a == mods_b
+            mods_b.contains(*mods_a)
         }
         // AnyCharAndMods overlaps with an Exact char pattern, but not with a
         // non-char key (e.g. Enter, Tab) since AnyCharAndMods only fires on chars.
         (KeyEventMatch::AnyCharAndMods(mods), KeyEventMatch::Exact(e)) => {
-            e.modifiers == *mods && matches!(e.code, KeyCode::Char(_))
+            e.modifiers.contains(*mods) && matches!(e.code, KeyCode::Char(_))
         }
         (KeyEventMatch::Exact(e), KeyEventMatch::AnyCharAndMods(mods)) => {
-            matches!(e.code, KeyCode::Char(_)) && e.modifiers == *mods
+            matches!(e.code, KeyCode::Char(_)) && mods.contains(e.modifiers)
         }
     }
 }
