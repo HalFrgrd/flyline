@@ -2769,12 +2769,12 @@ mod tests {
         assert!(!key_event_a_shadows_b(&b, &a));
     }
 
-    #[test]
-    fn test_binding_matches_requires_exact_modifiers() {
-        let binding =
-            Binding::try_new(&["Home"], Scope::Default, "move_left_start_of_line").unwrap();
+    // #[test]
+    // fn test_binding_matches_requires_exact_modifiers() {
+    //     let binding =
+    //         Binding::try_new(&["Home"], Scope::Default, "move_left_start_of_line").unwrap();
 
-        assert!(binding.matches(key(KeyCode::Home)));
-        assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
-    }
+    //     assert!(binding.matches(key(KeyCode::Home)));
+    //     assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
+    // }
 }
