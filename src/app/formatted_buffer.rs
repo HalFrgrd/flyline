@@ -32,28 +32,7 @@ impl FormattedBuffer {
 
     /// Create a `FormattedBuffer` from a raw string and cursor position. Only intended for use in tests.
     #[cfg(test)]
-    pub fn from(input: &str, cursor_pos: usize) -> Self {
-        let mut parser = crate::dparser::DParser::from(input);
-        parser.walk_to_end();
-        let tokens = parser.tokens().to_vec();
-        format_buffer(
-            &tokens,
-            cursor_pos,
-            None,
-            input.len(),
-            false,
-            &Palette::dark(),
-        )
-    }
-
-    /// Create a `FormattedBuffer` from a raw string with a cursor position
-    /// and an active text selection anchor. Only intended for use in tests.
-    #[cfg(test)]
-    pub fn from_with_selection(
-        input: &str,
-        cursor_pos: usize,
-        selection_byte: Option<usize>,
-    ) -> Self {
+    pub fn from(input: &str, cursor_pos: usize, selection_byte: Option<usize>) -> Self {
         let mut parser = crate::dparser::DParser::from(input);
         parser.walk_to_end();
         let tokens = parser.tokens().to_vec();
@@ -468,7 +447,7 @@ mod tests {
 
     #[test]
     fn from_empty_string() {
-        let fb = FormattedBuffer::from("", 0);
+        let fb = FormattedBuffer::from("", 0, None);
         assert!(fb.parts.is_empty());
         assert!(fb.draw_cursor_at_end);
     }
@@ -478,7 +457,7 @@ mod tests {
         // `echo "` – the double quote is an unmatched opener.
         let input = r#"echo ""#;
         let cursor = input.len();
-        let fb = FormattedBuffer::from(input, cursor);
+        let fb = FormattedBuffer::from(input, cursor, None);
         let quotes = parts_with_value(&fb, "\"");
         assert_eq!(quotes.len(), 1);
         assert!(
@@ -493,7 +472,7 @@ mod tests {
         // `echo "hello"` – the second double quote is a closer.
         let input = r#"echo "hello""#;
         let cursor = input.len();
-        let fb = FormattedBuffer::from(input, cursor);
+        let fb = FormattedBuffer::from(input, cursor, None);
         let quotes = parts_with_value(&fb, "\"");
         assert_eq!(quotes.len(), 2);
         assert!(quotes[0].token.annotations.opening.is_some());
@@ -503,7 +482,7 @@ mod tests {
     #[test]
     fn from_annotates_opening_single_quote() {
         let input = "echo '";
-        let fb = FormattedBuffer::from(input, input.len());
+        let fb = FormattedBuffer::from(input, input.len(), None);
         let sq = parts_with_value(&fb, "'");
         assert_eq!(sq.len(), 1);
         assert!(sq[0].token.annotations.opening.is_some());
@@ -512,7 +491,7 @@ mod tests {
     #[test]
     fn from_annotates_opening_brace() {
         let input = "echo {";
-        let fb = FormattedBuffer::from(input, input.len());
+        let fb = FormattedBuffer::from(input, input.len(), None);
         let braces = parts_with_value(&fb, "{");
         assert_eq!(braces.len(), 1);
         assert!(braces[0].token.annotations.opening.is_some());
@@ -521,7 +500,7 @@ mod tests {
     // ── FormattedBufferPart::split_at ────────────────────────────────────
 
     fn first_word_part(input: &str, value: &str) -> FormattedBufferPart {
-        let fb = FormattedBuffer::from(input, input.len());
+        let fb = FormattedBuffer::from(input, input.len(), None);
         fb.parts
             .into_iter()
             .find(|p| p.token.token.value == value)
@@ -567,7 +546,7 @@ mod tests {
     #[test]
     fn get_spans_with_cursor_yields_per_grapheme() {
         // Cursor at byte 2 inside "hello".
-        let fb = FormattedBuffer::from("hello", 2);
+        let fb = FormattedBuffer::from("hello", 2, None);
         let part = fb
             .parts
             .into_iter()
@@ -590,7 +569,7 @@ mod tests {
     fn get_spans_with_selection_byte_yields_per_grapheme() {
         // Selection from byte 1 to byte 4 inside "hello", cursor at 4.
         // Tokens: "hello" (0..5).
-        let fb = FormattedBuffer::from_with_selection("hello", 4, Some(1));
+        let fb = FormattedBuffer::from("hello", 4, Some(1));
         let part = fb
             .parts
             .into_iter()
@@ -614,7 +593,7 @@ mod tests {
     fn get_spans_per_grapheme_uses_display_span() {
         // Verify the supplied display_span content is used (one grapheme
         // each) when the part is split into per-grapheme tuples.
-        let fb = FormattedBuffer::from("abc", 1);
+        let fb = FormattedBuffer::from("abc", 1, None);
         let part = fb
             .parts
             .into_iter()
@@ -634,7 +613,7 @@ mod tests {
         // The "world" token starts at byte 6 in "hello world". When we ask
         // for per-grapheme tuples (cursor inside the token), each tag must
         // reflect the absolute byte offset.
-        let fb = FormattedBuffer::from("hello world", 7);
+        let fb = FormattedBuffer::from("hello world", 7, None);
         let part = fb
             .parts
             .into_iter()
@@ -658,7 +637,7 @@ mod tests {
     fn get_spans_single_tuple_tags_track_byte_offset() {
         // No cursor, no selection_byte: a single tuple, but tags should
         // still hold the absolute per-grapheme byte offsets.
-        let fb = FormattedBuffer::from("hello world", 11);
+        let fb = FormattedBuffer::from("hello world", 11, None);
         let part = fb
             .parts
             .into_iter()
@@ -684,7 +663,7 @@ mod tests {
     fn format_buffer_records_selection_byte_grapheme_idx() {
         // selection_byte at byte 8 lies inside "world" (6..11), so its
         // grapheme idx within that token is 8 - 6 = 2.
-        let fb = FormattedBuffer::from_with_selection("hello world", 0, Some(8));
+        let fb = FormattedBuffer::from("hello world", 0, Some(8));
         let world = fb
             .parts
             .iter()
@@ -695,7 +674,7 @@ mod tests {
 
     #[test]
     fn format_buffer_no_selection_means_no_selection_grapheme_idx() {
-        let fb = FormattedBuffer::from_with_selection("hello world", 0, None);
+        let fb = FormattedBuffer::from("hello world", 0, None);
         assert!(
             fb.parts
                 .iter()
