@@ -58,7 +58,7 @@ impl<'a> TaggedSpan<'a> {
     /// Consume `self` and return a new `TaggedSpan` whose style is the
     /// highlighted (reversed) variant of the original style.
     pub fn convert_to_highlighted(self) -> Self {
-        let highlighted_style = Palette::convert_to_selected(self.span.style);
+        let highlighted_style = Palette::convert_to_highlighted(self.span.style);
         TaggedSpan {
             span: self.span.style(highlighted_style),
             tag: self.tag,
@@ -685,7 +685,7 @@ impl Contents {
                     let char = Self::get_char(x, y, area, is_selected);
 
                     let style = if is_selected {
-                        Palette::convert_to_selected(ratatui::style::Style::default())
+                        Palette::convert_to_highlighted(ratatui::style::Style::default())
                     } else {
                         ratatui::style::Style::default()
                     };

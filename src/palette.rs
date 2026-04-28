@@ -387,8 +387,14 @@ impl Palette {
 
     // ── Derived / constant styles ───────────────────────────────────
 
-    pub fn convert_to_selected(style: Style) -> Style {
+    pub fn convert_to_highlighted(style: Style) -> Style {
         style.add_modifier(Modifier::REVERSED)
+    }
+
+    pub fn convert_to_selected(style: Style) -> Style {
+        /// Background colour used to highlight the active text selection.
+        const SELECTION_BG: Color = Color::LightRed;
+        style.bg(SELECTION_BG)
     }
 
     pub fn cursor_style(intensity: u8) -> Style {

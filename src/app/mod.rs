@@ -43,37 +43,6 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Frame rate (fps) used when the user has been idle for longer than [`IDLE_TIMEOUT`].
 const IDLE_FRAME_RATE: f64 = 0.2;
 
-/// Background colour used to highlight the active text selection.
-const SELECTION_BG: Color = Color::LightRed;
-
-/// Encode `data` as standard base64 (RFC 4648, no line breaks).
-/// Used to build OSC 52 clipboard sequences.
-pub(crate) fn osc52_base64(data: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = Vec::with_capacity((data.len() + 2) / 3 * 4);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(TABLE[((n >> 18) & 0x3F) as usize]);
-        out.push(TABLE[((n >> 12) & 0x3F) as usize]);
-        out.push(if chunk.len() > 1 {
-            TABLE[((n >> 6) & 0x3F) as usize]
-        } else {
-            b'='
-        });
-        out.push(if chunk.len() > 2 {
-            TABLE[(n & 0x3F) as usize]
-        } else {
-            b'='
-        });
-    }
-    // SAFETY: `out` contains only bytes from `TABLE`, which is an ASCII
-    // slice, so it is always valid UTF-8.
-    String::from_utf8(out).unwrap()
-}
-
 fn restore_terminal(extended_key_codes: bool) {
     crossterm::terminal::disable_raw_mode().unwrap_or_else(|e| {
         // Likely from the master pty fd being closed.
@@ -1517,7 +1486,7 @@ impl<'a> App<'a> {
                 .into_iter()
                 .map(|span| {
                     if is_selected {
-                        Span::styled(span.content, Palette::convert_to_selected(span.style))
+                        Span::styled(span.content, Palette::convert_to_highlighted(span.style))
                     } else {
                         span
                     }
@@ -1529,7 +1498,7 @@ impl<'a> App<'a> {
             // make space; otherwise just append.
             if display_idx + 1 == rows_to_show && has_more {
                 let ellipsis_style = if is_selected {
-                    Palette::convert_to_selected(palette.secondary_text())
+                    Palette::convert_to_highlighted(palette.secondary_text())
                 } else {
                     palette.secondary_text()
                 };
@@ -1737,7 +1706,7 @@ impl<'a> App<'a> {
             for line in &mut lprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                        span.span.style = Palette::convert_to_selected(span.span.style);
+                        span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
             }
@@ -1748,7 +1717,7 @@ impl<'a> App<'a> {
             for line in &mut rprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                        span.span.style = Palette::convert_to_selected(span.span.style);
+                        span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
             }
@@ -1758,7 +1727,7 @@ impl<'a> App<'a> {
         if copy_buffer_hovered {
             for span in &mut fill_span.spans {
                 if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                    span.span.style = Palette::convert_to_selected(span.span.style);
+                    span.span.style = Palette::convert_to_highlighted(span.span.style);
                 }
             }
         }
@@ -1768,7 +1737,7 @@ impl<'a> App<'a> {
             for line in &mut lprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
-                        span.span.style = Palette::convert_to_selected(span.span.style);
+                        span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
             }
@@ -1814,7 +1783,7 @@ impl<'a> App<'a> {
                 part.get_spans(display_span, selection_range.clone())
             {
                 if is_in_selection {
-                    sub_span.style = sub_span.style.patch(Style::new().bg(SELECTION_BG));
+                    sub_span.style = Palette::convert_to_selected(sub_span.style);
                 }
 
                 if is_cursor && cursor_pos_maybe.is_none() {
@@ -2164,7 +2133,9 @@ impl<'a> App<'a> {
                     ));
                     // Description line
                     let desc_style = if is_selected {
-                        Palette::convert_to_selected(self.settings.colour_palette.secondary_text())
+                        Palette::convert_to_highlighted(
+                            self.settings.colour_palette.secondary_text(),
+                        )
                     } else {
                         self.settings.colour_palette.secondary_text()
                     };
@@ -2201,7 +2172,7 @@ impl<'a> App<'a> {
                         let styled_span = if is_selected {
                             Span::styled(
                                 span.content.clone(),
-                                Palette::convert_to_selected(span.style),
+                                Palette::convert_to_highlighted(span.style),
                             )
                         } else {
                             span.clone()
