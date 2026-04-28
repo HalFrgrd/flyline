@@ -28,6 +28,7 @@ enum ContextVar {
     AgentError,
     InlineSuggestionAvailable,
     CursorAtEnd,
+    CursorAtStart,
     PromptDirSelect,
     TextSelected,
 }
@@ -47,6 +48,7 @@ impl ContextVar {
         ContextVar::AgentError,
         ContextVar::InlineSuggestionAvailable,
         ContextVar::CursorAtEnd,
+        ContextVar::CursorAtStart,
         ContextVar::PromptDirSelect,
         ContextVar::TextSelected,
     ];
@@ -88,6 +90,7 @@ impl ContextVar {
             }
             ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
             ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
+            ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),
             ContextVar::PromptDirSelect => {
                 matches!(app.content_mode, ContentMode::PromptDirSelect(_))
             }
@@ -455,6 +458,10 @@ pub enum Action {
     MoveRightOneWordFineGrainedExtendSelection,
     #[strum(message = "Copy the current text selection to the system clipboard via OSC 52")]
     CopySelectionOsc52,
+    #[strum(
+        message = "Start prompt directory selection mode, allowing navigation via the prompt's directory segments"
+    )]
+    StartPromptDirSelect,
     #[strum(message = "Navigate to the parent directory segment in the prompt")]
     PromptDirMoveLeft,
     #[strum(message = "Navigate to the child directory segment or exit prompt CWD edit mode")]
@@ -752,13 +759,7 @@ impl Action {
                 app.buffer.move_one_word_left_fine_grained();
             }
             Action::MoveLeft => {
-                if app.buffer.cursor_byte_pos() == 0
-                    && app.prompt_manager.cwd_display_segment_count() > 0
-                {
-                    app.content_mode = ContentMode::PromptDirSelect(0);
-                } else {
-                    app.buffer.move_left();
-                }
+                app.buffer.move_left();
             }
             Action::MoveRightEndOfLine => {
                 app.buffer.clear_selection();
@@ -885,6 +886,11 @@ impl Action {
                         }
                     }
                     app.buffer.clear_selection();
+                }
+            }
+            Action::StartPromptDirSelect => {
+                if app.prompt_manager.cwd_display_segment_count() > 0 {
+                    app.content_mode = ContentMode::PromptDirSelect(0);
                 }
             }
             Action::PromptDirMoveLeft => {
@@ -1563,7 +1569,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 79]> = LazyLock::new(|| {
     [
         Binding::try_new(
             &["Down"],
@@ -1901,6 +1907,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
             &expand_variations!["Alt+Left"], // Fine-grained word-left (stops at punctuation / path boundaries)
             ContextVar::Always.into(),
             Action::MoveLeftOneWordFineGrained,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Left"],
+            (ContextVar::CursorAtStart & !ContextVar::PromptDirSelect).into(),
+            Action::StartPromptDirSelect,
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
