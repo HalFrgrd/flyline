@@ -156,8 +156,8 @@ impl TextBuffer {
         // Insert the closing char first so that `range.start` stays valid.
         self.buf.insert(range.end, close);
         self.buf.insert(range.start, open);
-        self.cursor_byte = range.end + open.len_utf8() + close.len_utf8();
-        self.selection_byte = None;
+        self.cursor_byte = range.end + open.len_utf8();
+        self.selection_byte = Some(range.start + open.len_utf8());
         true
     }
 
@@ -291,8 +291,8 @@ mod test_selection {
         assert_eq!(tb.selected_text().as_deref(), Some("hello"));
         assert!(tb.surround_selection('(', ')'));
         assert_eq!(tb.buffer(), "(hello) world");
-        assert_eq!(tb.cursor_byte, 7); // after ')'
-        assert!(tb.selection_byte().is_none());
+        assert_eq!(tb.cursor_byte, 6); // after ')'
+        assert_eq!(tb.selection_byte(), Some(1));
     }
 
     #[test]
@@ -304,8 +304,8 @@ mod test_selection {
         assert_eq!(tb.selection_range(), Some(3..5));
         assert!(tb.surround_selection('"', '"'));
         assert_eq!(tb.buffer(), "hel\"lo\"");
-        assert_eq!(tb.cursor_byte, 7);
-        assert!(tb.selection_byte().is_none());
+        assert_eq!(tb.cursor_byte, 6);
+        assert_eq!(tb.selection_byte(), Some(4));
     }
 
     #[test]
