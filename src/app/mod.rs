@@ -876,15 +876,6 @@ impl<'a> App<'a> {
                     let left_click_count = self.mouse_state.record_left_click_down(byte_pos);
 
                     match left_click_count {
-                        ClickCount::Double => {
-                            self.buffer
-                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
-                            self.buffer.select_word();
-                        }
-                        ClickCount::Triple => {
-                            // On triple click, select the whole buffer.
-                            self.buffer.select_entire_buffer();
-                        }
                         ClickCount::Single => {
                             let extend_selection = mouse.modifiers.contains(KeyModifiers::SHIFT);
                             if extend_selection {
@@ -903,6 +894,15 @@ impl<'a> App<'a> {
                                 self.buffer.start_selection_if_none();
                             }
                         }
+                        ClickCount::Double => {
+                            self.buffer
+                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                            self.buffer.select_word();
+                        }
+                        ClickCount::Triple => {
+                            // On triple click, select the whole buffer.
+                            self.buffer.select_entire_buffer();
+                        }
                         _ => {}
                     }
                     update_buffer = true;
@@ -917,22 +917,18 @@ impl<'a> App<'a> {
                         // select the word at pos
                         self.buffer
                             .try_move_cursor_to_byte_pos(drag_start_pos, !cursor_directly_on_cell);
-                        self.buffer.select_word();
-                        let anchor_word_sel_range = self.buffer.selection_range();
+                        let anchor_word_sel_range = self.buffer.select_word();
                         // select all the words between pos and here inclusively
                         self.buffer
                             .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
-                        self.buffer.select_word();
-                        let new_word_sel_range = self.buffer.selection_range();
-                        if let (Some(anchor_range), Some(new_range)) =
-                            (anchor_word_sel_range, new_word_sel_range)
-                        {
-                            let new_sel_range = anchor_range.start.min(new_range.start)
-                                ..anchor_range.end.max(new_range.end);
-                            let cursor_is_left = drag_start_pos > byte_pos;
-                            self.buffer
-                                .set_selection_range(new_sel_range, cursor_is_left);
-                        }
+                        let new_word_sel_range = self.buffer.select_word();
+
+                        let new_sel_range =
+                            anchor_word_sel_range.start.min(new_word_sel_range.start)
+                                ..anchor_word_sel_range.end.max(new_word_sel_range.end);
+                        let cursor_is_left = drag_start_pos > byte_pos;
+                        self.buffer
+                            .set_selection_range(new_sel_range, cursor_is_left);
                     }
                     (ClickCount::Triple, _) => {
                         self.buffer.select_entire_buffer(); // Probably a noop sicne triple click should have already selected the entire buffer, but just in case.

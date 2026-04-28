@@ -2,6 +2,7 @@ use crate::settings::MouseMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickCount {
+    None,
     Single,
     Double,
     Triple,
@@ -119,6 +120,7 @@ impl MouseState {
 
     pub fn get_click_count(&self) -> ClickCount {
         match self.last_left_click_times.len() {
+            0 => ClickCount::None,
             1 => ClickCount::Single,
             2 => ClickCount::Double,
             _ => ClickCount::Triple,
@@ -127,9 +129,5 @@ impl MouseState {
 
     pub fn get_last_click_position(&self) -> Option<usize> {
         self.last_left_click_pos
-    }
-
-    pub fn record_left_click_release(&mut self) {
-        // We only track click down times for counting clicks, so do nothing on release.
     }
 }
