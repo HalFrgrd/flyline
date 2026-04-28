@@ -336,6 +336,9 @@ enum Commands {
         /// Style for key sequences shown in the tutorial (e.g. "dim").
         #[arg(long = "key-sequence-style", value_name = "STYLE")]
         key_sequence_style: Option<String>,
+        /// Style for the active text selection in the command buffer (e.g. "on lightred", "white on blue").
+        #[arg(long = "selected-text", value_name = "STYLE")]
+        selected_text: Option<String>,
     },
     /// Configure the cursor appearance and animation.
     ///
@@ -1065,6 +1068,7 @@ impl Flyline {
                         markdown_heading3,
                         markdown_code,
                         key_sequence_style,
+                        selected_text,
                     }) => {
                         if let Some(preset) = default_theme {
                             self.settings.colour_palette.apply_theme(preset);
@@ -1122,6 +1126,9 @@ impl Flyline {
                             }),
                             (&key_sequence_style, "key-sequence-style", |p, s| {
                                 p.key_sequence_style_override = Some(s)
+                            }),
+                            (&selected_text, "selected-text", |p, s| {
+                                p.selected_text_override = Some(s)
                             }),
                         ];
 

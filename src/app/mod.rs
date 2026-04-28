@@ -1833,7 +1833,10 @@ impl<'a> App<'a> {
                 part.get_spans(animation_time, selection_range.clone())
             {
                 if is_in_selection {
-                    sub_span.style = Palette::convert_to_selected(sub_span.style);
+                    sub_span.style = self
+                        .settings
+                        .colour_palette
+                        .convert_to_selected(sub_span.style);
                 }
 
                 if is_cursor && cursor_pos_maybe.is_none() {

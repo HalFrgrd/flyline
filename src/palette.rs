@@ -167,6 +167,9 @@ pub struct Palette {
 
     key_sequence_style: Style,
     pub key_sequence_style_override: Option<Style>,
+
+    selected_text: Style,
+    pub selected_text_override: Option<Style>,
 }
 
 impl Palette {
@@ -250,6 +253,10 @@ impl Palette {
             .unwrap_or(self.key_sequence_style)
     }
 
+    pub fn selected_text(&self) -> Style {
+        self.selected_text_override.unwrap_or(self.selected_text)
+    }
+
     // ── Presets ──────────────────────────────────────────────────────
 
     /// Dark-terminal defaults (the original flyline palette).
@@ -303,6 +310,8 @@ impl Palette {
             markdown_code_override: None,
             key_sequence_style: Style::default().add_modifier(Modifier::DIM),
             key_sequence_style_override: None,
+            selected_text: Style::default().bg(Color::LightRed),
+            selected_text_override: None,
         }
     }
 
@@ -356,6 +365,8 @@ impl Palette {
             markdown_code_override: None,
             key_sequence_style: Style::default().fg(Color::DarkGray),
             key_sequence_style_override: None,
+            selected_text: Style::default().bg(Color::LightRed),
+            selected_text_override: None,
         }
     }
 
@@ -383,6 +394,7 @@ impl Palette {
         self.markdown_heading3 = template.markdown_heading3;
         self.markdown_code = template.markdown_code;
         self.key_sequence_style = template.key_sequence_style;
+        self.selected_text = template.selected_text;
     }
 
     // ── Derived / constant styles ───────────────────────────────────
@@ -391,10 +403,8 @@ impl Palette {
         style.add_modifier(Modifier::REVERSED)
     }
 
-    pub fn convert_to_selected(style: Style) -> Style {
-        /// Background colour used to highlight the active text selection.
-        const SELECTION_BG: Color = Color::LightRed;
-        style.bg(SELECTION_BG)
+    pub fn convert_to_selected(&self, style: Style) -> Style {
+        style.patch(self.selected_text())
     }
 
     pub fn cursor_style(intensity: u8) -> Style {
