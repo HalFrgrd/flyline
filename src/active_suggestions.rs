@@ -630,34 +630,41 @@ pub fn post_process_completion(
         sug.to_string()
     };
 
-    let prefix = if comp_result_flags.filename_completion_desired {
-        if !word_under_cursor.contains("/") {
-            "".to_string()
-        } else if word_under_cursor.ends_with("/") {
-            word_under_cursor.to_string()
-        } else {
-            let parent = Path::new(word_under_cursor)
-                .parent()
-                .and_then(|p| p.to_str())
-                .map(|s| {
-                    if !s.ends_with("/") {
-                        format!("{}/", s)
-                    } else {
-                        s.to_string()
-                    }
-                });
-
-            if let Some(p) = parent {
-                p
-            } else {
+    let (quoted_no_prefix, prefix) = {
+        // wuc_prefix does not depend on sug. only wuc
+        let wuc_prefix = if comp_result_flags.filename_completion_desired {
+            if !word_under_cursor.contains("/") {
                 "".to_string()
-            }
-        }
-    } else {
-        "".to_string()
-    };
+            } else if word_under_cursor.ends_with("/") {
+                word_under_cursor.to_string()
+            } else {
+                let parent = Path::new(word_under_cursor)
+                    .parent()
+                    .and_then(|p| p.to_str())
+                    .map(|s| {
+                        if !s.ends_with("/") {
+                            format!("{}/", s)
+                        } else {
+                            s.to_string()
+                        }
+                    });
 
-    let quoted_no_prefix = quoted.strip_prefix(&prefix).unwrap_or(&quoted).to_string();
+                if let Some(p) = parent {
+                    p
+                } else {
+                    "".to_string()
+                }
+            }
+        } else {
+            "".to_string()
+        };
+
+        if let Some(quoted_no_prefix) = quoted.strip_prefix(&wuc_prefix) {
+            (quoted_no_prefix.to_string(), wuc_prefix)
+        } else {
+            (quoted.to_string(), "".to_string())
+        }
+    };
 
     let style = path_to_use
         .as_ref()

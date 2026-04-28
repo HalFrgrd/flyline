@@ -1301,6 +1301,10 @@ impl TextBuffer {
         &self.buf
     }
 
+    pub fn is_cursor_at_start(&self) -> bool {
+        self.cursor_byte == 0
+    }
+
     pub fn is_cursor_at_end(&self) -> bool {
         self.cursor_byte == self.buf.len()
     }
