@@ -273,10 +273,6 @@ impl FormattedBufferPart {
     /// - When this part contains the cursor or the selection anchor (or
     ///   both), it is split into one tuple per grapheme so that each
     ///   single-cell flag can be independently set.
-    ///
-    /// The caller passes the `display_span` to use (typically the animated
-    /// span when animations are running, otherwise the normal span). Its
-    /// content must have the same grapheme boundaries as `self.normal_span()`.
     pub fn get_spans(
         &self,
         animation_time: Option<std::time::Instant>,
