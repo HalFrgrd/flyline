@@ -111,6 +111,16 @@ impl TextBuffer {
         Some(start..end)
     }
 
+    pub fn set_selection_range(&mut self, range: std::ops::Range<usize>, cursor_is_left: bool) {
+        if cursor_is_left {
+            self.selection_byte = Some(range.end);
+            self.cursor_byte = range.start;
+        } else {
+            self.selection_byte = Some(range.start);
+            self.cursor_byte = range.end;
+        }
+    }
+
     /// Returns the currently selected text, or `None` if no selection is
     /// active or it is empty.
     pub fn selected_text(&self) -> Option<String> {

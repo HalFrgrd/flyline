@@ -13,7 +13,7 @@ pub struct MouseState {
     /// Smart mode will not automatically re-enable while this flag is set.
     explicitly_disabled_by_user: bool,
     last_left_click_times: Vec<std::time::Instant>,
-    last_left_click_pos: Option<(u16, u16)>,
+    last_left_click_pos: Option<usize>,
 }
 
 impl MouseState {
@@ -100,24 +100,36 @@ impl MouseState {
         self.explicitly_disabled_by_user
     }
 
-    pub fn record_left_click(&mut self, pos: (u16, u16)) -> ClickCount {
+    pub fn record_left_click_down(&mut self, byte_pos: usize) -> ClickCount {
         let now = std::time::Instant::now();
         if let Some(last_pos) = self.last_left_click_pos
-            && last_pos != pos
+            && last_pos != byte_pos
         {
             // If the click position has changed, reset the click count.
             self.last_left_click_times.clear();
         }
-        self.last_left_click_pos = Some(pos);
+        self.last_left_click_pos = Some(byte_pos);
 
         self.last_left_click_times.push(now);
         const CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
         self.last_left_click_times
             .retain(|&t| now.duration_since(t) <= CLICK_WINDOW);
+        self.get_click_count()
+    }
+
+    pub fn get_click_count(&self) -> ClickCount {
         match self.last_left_click_times.len() {
             1 => ClickCount::Single,
             2 => ClickCount::Double,
             _ => ClickCount::Triple,
         }
+    }
+
+    pub fn get_last_click_position(&self) -> Option<usize> {
+        self.last_left_click_pos
+    }
+
+    pub fn record_left_click_release(&mut self) {
+        // We only track click down times for counting clicks, so do nothing on release.
     }
 }

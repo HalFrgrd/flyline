@@ -726,15 +726,6 @@ impl<'a> App<'a> {
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
 
-        let left_click_count = if mouse.kind == MouseEventKind::Down(event::MouseButton::Left) {
-            Some(
-                self.mouse_state
-                    .record_left_click((mouse.column, mouse.row)),
-            )
-        } else {
-            None
-        };
-
         // Smart mode: check if a scroll event occurred or the mouse is above the viewport.
         if self.settings.mouse_mode == MouseMode::Smart {
             match mouse.kind {
@@ -878,41 +869,83 @@ impl<'a> App<'a> {
                     self.content_mode = ContentMode::Normal;
                 }
             }
-            Some(Tag::Command(byte_pos)) => {
-                if matches!(
-                    mouse.kind,
-                    MouseEventKind::Down(_) | MouseEventKind::Drag(_)
-                ) {
+            Some(Tag::Command(byte_pos))
+                if matches!(mouse.kind, MouseEventKind::Down(event::MouseButton::Left)) =>
+            {
+                {
+                    let left_click_count = self.mouse_state.record_left_click_down(byte_pos);
+
                     match left_click_count {
-                        Some(ClickCount::Double) => {
+                        ClickCount::Double => {
+                            self.buffer
+                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
                             self.buffer.select_word();
                         }
-                        Some(ClickCount::Triple) => {
+                        ClickCount::Triple => {
                             // On triple click, select the whole buffer.
                             self.buffer.select_entire_buffer();
                         }
-                        _ => {
-                            let extend_selection = matches!(mouse.kind, MouseEventKind::Drag(_))
-                                || mouse.modifiers.contains(KeyModifiers::SHIFT);
+                        ClickCount::Single => {
+                            let extend_selection = mouse.modifiers.contains(KeyModifiers::SHIFT);
                             if extend_selection {
                                 // Anchor a selection at the current cursor position before
                                 // moving so the user can extend it by dragging or shift-clicking.
                                 self.buffer.start_selection_if_none();
-                            } else if matches!(mouse.kind, MouseEventKind::Down(_)) {
+                            } else {
                                 // A plain mouse press without Shift starts a fresh selection.
                                 self.buffer.clear_selection();
                             }
                             self.buffer
                                 .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
-                            if matches!(mouse.kind, MouseEventKind::Down(_)) && !extend_selection {
+                            if !extend_selection {
                                 // After moving on a plain press, anchor a new (empty) selection
                                 // at the click point so a following drag forms a selection.
                                 self.buffer.start_selection_if_none();
                             }
                         }
+                        _ => {}
                     }
                     update_buffer = true;
                 }
+            }
+            Some(Tag::Command(byte_pos)) if matches!(mouse.kind, MouseEventKind::Drag(_)) => {
+                match (
+                    self.mouse_state.get_click_count(),
+                    self.mouse_state.get_last_click_position(),
+                ) {
+                    (ClickCount::Double, Some(drag_start_pos)) => {
+                        // select the word at pos
+                        self.buffer
+                            .try_move_cursor_to_byte_pos(drag_start_pos, !cursor_directly_on_cell);
+                        self.buffer.select_word();
+                        let anchor_word_sel_range = self.buffer.selection_range();
+                        // select all the words between pos and here inclusively
+                        self.buffer
+                            .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                        self.buffer.select_word();
+                        let new_word_sel_range = self.buffer.selection_range();
+                        if let (Some(anchor_range), Some(new_range)) =
+                            (anchor_word_sel_range, new_word_sel_range)
+                        {
+                            let new_sel_range = anchor_range.start.min(new_range.start)
+                                ..anchor_range.end.max(new_range.end);
+                            let cursor_is_left = drag_start_pos > byte_pos;
+                            self.buffer
+                                .set_selection_range(new_sel_range, cursor_is_left);
+                        }
+                    }
+                    (ClickCount::Triple, _) => {
+                        self.buffer.select_entire_buffer(); // Probably a noop sicne triple click should have already selected the entire buffer, but just in case.
+                    }
+                    _ => {
+                        self.buffer.start_selection_if_none();
+
+                        self.buffer
+                            .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                    }
+                }
+
+                update_buffer = true;
             }
             Some(Tag::TutorialPrev) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
