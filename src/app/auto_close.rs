@@ -3,6 +3,20 @@ use crate::{
     dparser,
 };
 
+/// Returns the corresponding closing character for surrounding a selection,
+/// or `None` if `c` is not a recognised pairing character.
+pub(crate) fn surround_closing_char(c: char) -> Option<char> {
+    match c {
+        '(' => Some(')'),
+        '[' => Some(']'),
+        '{' => Some('}'),
+        '"' => Some('"'),
+        '\'' => Some('\''),
+        '`' => Some('`'),
+        _ => None,
+    }
+}
+
 impl<'a> App<'a> {
     pub(crate) fn handle_char_insertion(&mut self, c: char) -> Option<LastKeyPressAction> {
         if let Some(closing_annotation) = self.would_overwrite_auto_inserted_closing(c) {

@@ -1,3 +1,4 @@
+use crate::app::auto_close::surround_closing_char;
 use crate::app::{App, ContentMode, FuzzyHistorySource};
 use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
