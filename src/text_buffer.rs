@@ -143,6 +143,24 @@ impl TextBuffer {
         true
     }
 
+    /// Surround the current selection with `open` inserted before it and
+    /// `close` inserted after it.  The cursor is placed immediately after
+    /// `close` and the selection is cleared.  Returns `true` when the surround
+    /// was performed (a non-empty selection was active), `false` otherwise.
+    /// A snapshot is pushed so the operation can be undone.
+    pub fn surround_selection(&mut self, open: char, close: char) -> bool {
+        let Some(range) = self.selection_range() else {
+            return false;
+        };
+        self.push_snapshot(false);
+        // Insert the closing char first so that `range.start` stays valid.
+        self.buf.insert(range.end, close);
+        self.buf.insert(range.start, open);
+        self.cursor_byte = range.end + open.len_utf8();
+        self.selection_byte = Some(range.start + open.len_utf8());
+        true
+    }
+
     pub fn select_entire_buffer(&mut self) {
         self.cursor_byte = self.buf.len();
         self.selection_byte = Some(0);
@@ -257,6 +275,54 @@ mod test_selection {
         tb.move_right_selection();
         assert!(tb.delete_selection());
         assert_eq!(tb.buffer(), "llo");
+        tb.undo();
+        assert_eq!(tb.buffer(), "hello");
+    }
+
+    #[test]
+    fn surround_selection_wraps_text() {
+        let mut tb = TextBuffer::new("hello world");
+        tb.move_to_start();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        assert_eq!(tb.selected_text().as_deref(), Some("hello"));
+        assert!(tb.surround_selection('(', ')'));
+        assert_eq!(tb.buffer(), "(hello) world");
+        assert_eq!(tb.cursor_byte, 6); // after ')'
+        assert_eq!(tb.selection_byte(), Some(1));
+    }
+
+    #[test]
+    fn surround_selection_with_cursor_left_of_anchor() {
+        let mut tb = TextBuffer::new("hello");
+        // Cursor at end, select backwards.
+        tb.move_left_selection();
+        tb.move_left_selection();
+        assert_eq!(tb.selection_range(), Some(3..5));
+        assert!(tb.surround_selection('"', '"'));
+        assert_eq!(tb.buffer(), "hel\"lo\"");
+        assert_eq!(tb.cursor_byte, 6);
+        assert_eq!(tb.selection_byte(), Some(4));
+    }
+
+    #[test]
+    fn surround_selection_with_no_selection_is_noop() {
+        let mut tb = TextBuffer::new("hello");
+        assert!(!tb.surround_selection('(', ')'));
+        assert_eq!(tb.buffer(), "hello");
+    }
+
+    #[test]
+    fn surround_selection_can_be_undone() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        assert!(tb.surround_selection('[', ']'));
+        assert_eq!(tb.buffer(), "[he]llo");
         tb.undo();
         assert_eq!(tb.buffer(), "hello");
     }

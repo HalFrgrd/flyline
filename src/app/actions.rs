@@ -1,3 +1,4 @@
+use crate::app::auto_close::surround_closing_char;
 use crate::app::{App, ContentMode, FuzzyHistorySource};
 use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
@@ -824,6 +825,16 @@ impl Action {
                 app.buffer.redo();
             }
             Action::InsertChar => {
+                if let KeyCode::Char(c) = key.code {
+                    // If a non-empty selection is active and the character is a
+                    // recognised pairing character, surround the selection with
+                    // the opening and closing chars instead of replacing it.
+                    if let Some(close) = surround_closing_char(c) {
+                        if app.buffer.surround_selection(c, close) {
+                            return;
+                        }
+                    }
+                }
                 app.buffer.delete_selection();
                 if let KeyCode::Char(c) = key.code {
                     if app.settings.auto_close_chars {
