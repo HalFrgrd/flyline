@@ -911,7 +911,7 @@ impl<'a> App<'a> {
             Some(Tag::Command(byte_pos)) if matches!(mouse.kind, MouseEventKind::Drag(_)) => {
                 match (
                     self.mouse_state.get_click_count(),
-                    self.mouse_state.get_last_click_position(),
+                    self.mouse_state.get_last_click_buffer_pos(),
                 ) {
                     (ClickCount::Double, Some(drag_start_pos)) => {
                         // select the word at pos
