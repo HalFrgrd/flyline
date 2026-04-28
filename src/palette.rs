@@ -406,6 +406,13 @@ impl Palette {
     pub fn convert_to_selected(&self, style: Style) -> Style {
         style.patch(self.selected_text())
     }
+    /// Variant of a style indicating an interactive element is currently being
+    /// pressed (mouse button held down while hovering). Adds a bold modifier
+    /// on top of any existing styling so it can be combined with
+    /// [`Self::convert_to_highlighted`].
+    pub fn convert_to_depressed(style: Style) -> Style {
+        style.add_modifier(Modifier::BOLD)
+    }
 
     pub fn cursor_style(intensity: u8) -> Style {
         Style::new().bg(Color::Rgb(intensity, intensity, intensity))

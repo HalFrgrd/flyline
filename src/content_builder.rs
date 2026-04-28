@@ -64,6 +64,16 @@ impl<'a> TaggedSpan<'a> {
             tag: self.tag,
         }
     }
+
+    /// Consume `self` and return a new `TaggedSpan` whose style is the
+    /// depressed (bold) variant of the original style.
+    pub fn convert_to_depressed(self) -> Self {
+        let depressed_style = Palette::convert_to_depressed(self.span.style);
+        TaggedSpan {
+            span: self.span.style(depressed_style),
+            tag: self.tag,
+        }
+    }
 }
 
 impl<'a> From<Span<'a>> for TaggedSpan<'a> {
@@ -672,7 +682,14 @@ impl Contents {
         // }
     }
 
-    pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, is_selected: bool) {
+    pub fn render_block(
+        &mut self,
+        area: Rect,
+        label: &str,
+        tag: Tag,
+        is_selected: bool,
+        is_depressed: bool,
+    ) {
         for _ in self.buf.len()..area.bottom() as usize {
             self.increase_buf_single_row();
         }
@@ -684,11 +701,14 @@ impl Contents {
                 {
                     let char = Self::get_char(x, y, area, is_selected);
 
-                    let style = if is_selected {
+                    let mut style = if is_selected {
                         Palette::convert_to_highlighted(ratatui::style::Style::default())
                     } else {
                         ratatui::style::Style::default()
                     };
+                    if is_depressed {
+                        style = Palette::convert_to_depressed(style);
+                    }
 
                     tagged_cell
                         .cell
@@ -699,7 +719,11 @@ impl Contents {
             }
 
             // write label in center of block:
-            let label_span = Span::styled(label.to_string(), ratatui::style::Style::default());
+            let mut label_style = ratatui::style::Style::default();
+            if is_depressed {
+                label_style = Palette::convert_to_depressed(label_style);
+            }
+            let label_span = Span::styled(label.to_string(), label_style);
             let label_width = label_span.width() as u16;
             if label_width < area.width {
                 let label_x = area.left() + (area.width - label_width) / 2;

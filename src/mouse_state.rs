@@ -15,6 +15,9 @@ pub struct MouseState {
     explicitly_disabled_by_user: bool,
     last_left_click_times: Vec<std::time::Instant>,
     last_left_click_buffer_pos: Option<usize>,
+    /// True while the left mouse button is currently being held down.
+    /// Set on `MouseEventKind::Down(Left)` and cleared on `MouseEventKind::Up(Left)`.
+    left_button_down: bool,
 }
 
 impl MouseState {
@@ -41,6 +44,7 @@ impl MouseState {
             explicitly_disabled_by_user: false,
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
+            left_button_down: false,
         }
     }
 
@@ -129,5 +133,20 @@ impl MouseState {
 
     pub fn get_last_click_buffer_pos(&self) -> Option<usize> {
         self.last_left_click_buffer_pos
+    }
+
+    /// Mark the left mouse button as currently held down.
+    pub fn set_left_button_down(&mut self) {
+        self.left_button_down = true;
+    }
+
+    /// Mark the left mouse button as released.
+    pub fn set_left_button_up(&mut self) {
+        self.left_button_down = false;
+    }
+
+    /// Whether the left mouse button is currently being held down.
+    pub fn is_left_button_down(&self) -> bool {
+        self.left_button_down
     }
 }
