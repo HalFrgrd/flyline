@@ -15,7 +15,7 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
-use crate::mouse_state::MouseState;
+use crate::mouse_state::{ClickCount, MouseState};
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
@@ -23,7 +23,7 @@ use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser, tutorial};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
-use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
+use crossterm::event::{self, Event as CrosstermEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
@@ -869,15 +869,79 @@ impl<'a> App<'a> {
                     self.content_mode = ContentMode::Normal;
                 }
             }
-            Some(Tag::Command(byte_pos)) => {
-                if matches!(
-                    mouse.kind,
-                    MouseEventKind::Up(_) | MouseEventKind::Down(_) | MouseEventKind::Drag(_)
-                ) {
-                    self.buffer
-                        .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+            Some(Tag::Command(byte_pos))
+                if matches!(mouse.kind, MouseEventKind::Down(event::MouseButton::Left)) =>
+            {
+                {
+                    let left_click_count = self.mouse_state.record_left_click_down(byte_pos);
+
+                    match left_click_count {
+                        ClickCount::Single => {
+                            let extend_selection = mouse.modifiers.contains(KeyModifiers::SHIFT);
+                            if extend_selection {
+                                // Anchor a selection at the current cursor position before
+                                // moving so the user can extend it by dragging or shift-clicking.
+                                self.buffer.start_selection_if_none();
+                            } else {
+                                // A plain mouse press without Shift starts a fresh selection.
+                                self.buffer.clear_selection();
+                            }
+                            self.buffer
+                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                            if !extend_selection {
+                                // After moving on a plain press, anchor a new (empty) selection
+                                // at the click point so a following drag forms a selection.
+                                self.buffer.start_selection_if_none();
+                            }
+                        }
+                        ClickCount::Double => {
+                            self.buffer
+                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                            self.buffer.select_word();
+                        }
+                        ClickCount::Triple => {
+                            // On triple click, select the whole buffer.
+                            self.buffer.select_entire_buffer();
+                        }
+                        _ => {}
+                    }
                     update_buffer = true;
                 }
+            }
+            Some(Tag::Command(byte_pos)) if matches!(mouse.kind, MouseEventKind::Drag(_)) => {
+                match (
+                    self.mouse_state.get_click_count(),
+                    self.mouse_state.get_last_click_buffer_pos(),
+                ) {
+                    (ClickCount::Double, Some(drag_start_pos)) => {
+                        // select the word at pos
+                        self.buffer
+                            .try_move_cursor_to_byte_pos(drag_start_pos, !cursor_directly_on_cell);
+                        let anchor_word_sel_range = self.buffer.select_word();
+                        // select all the words between pos and here inclusively
+                        self.buffer
+                            .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                        let new_word_sel_range = self.buffer.select_word();
+
+                        let new_sel_range =
+                            anchor_word_sel_range.start.min(new_word_sel_range.start)
+                                ..anchor_word_sel_range.end.max(new_word_sel_range.end);
+                        let cursor_is_left = drag_start_pos > byte_pos;
+                        self.buffer
+                            .set_selection_range(new_sel_range, cursor_is_left);
+                    }
+                    (ClickCount::Triple, _) => {
+                        self.buffer.select_entire_buffer(); // Probably a noop sicne triple click should have already selected the entire buffer, but just in case.
+                    }
+                    _ => {
+                        self.buffer.start_selection_if_none();
+
+                        self.buffer
+                            .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                    }
+                }
+
+                update_buffer = true;
             }
             Some(Tag::TutorialPrev) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
@@ -1340,6 +1404,7 @@ impl<'a> App<'a> {
         self.formatted_buffer_cache = format_buffer(
             &self.dparser_tokens_cache,
             self.buffer.cursor_byte_pos(),
+            self.buffer.selection_byte(),
             self.buffer.buffer().len(),
             self.mode.is_running(),
             &self.settings.colour_palette,
@@ -1470,7 +1535,7 @@ impl<'a> App<'a> {
                 .into_iter()
                 .map(|span| {
                     if is_selected {
-                        Span::styled(span.content, Palette::convert_to_selected(span.style))
+                        Span::styled(span.content, Palette::convert_to_highlighted(span.style))
                     } else {
                         span
                     }
@@ -1482,7 +1547,7 @@ impl<'a> App<'a> {
             // make space; otherwise just append.
             if display_idx + 1 == rows_to_show && has_more {
                 let ellipsis_style = if is_selected {
-                    Palette::convert_to_selected(palette.secondary_text())
+                    Palette::convert_to_highlighted(palette.secondary_text())
                 } else {
                     palette.secondary_text()
                 };
@@ -1641,10 +1706,9 @@ impl<'a> App<'a> {
                         if is_hovered {
                             content.write_tagged_span_dont_overwrite(
                                 &tagged_span.clone().convert_to_highlighted(),
-                                None,
                             );
                         } else {
-                            content.write_tagged_span_dont_overwrite(tagged_span, None);
+                            content.write_tagged_span_dont_overwrite(tagged_span);
                         }
                     }
                     text_end_row = content.cursor_position().row;
@@ -1658,7 +1722,7 @@ impl<'a> App<'a> {
                         Tag::Tutorial,
                     )]);
                     for tagged_span in &escape_hint.spans {
-                        content.write_tagged_span_dont_overwrite(tagged_span, None);
+                        content.write_tagged_span_dont_overwrite(tagged_span);
                     }
                     text_end_row = content.cursor_position().row;
                     content.newline();
@@ -1691,7 +1755,7 @@ impl<'a> App<'a> {
             for line in &mut lprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                        span.span.style = Palette::convert_to_selected(span.span.style);
+                        span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
             }
@@ -1702,7 +1766,7 @@ impl<'a> App<'a> {
             for line in &mut rprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                        span.span.style = Palette::convert_to_selected(span.span.style);
+                        span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
             }
@@ -1712,7 +1776,7 @@ impl<'a> App<'a> {
         if copy_buffer_hovered {
             for span in &mut fill_span.spans {
                 if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                    span.span.style = Palette::convert_to_selected(span.span.style);
+                    span.span.style = Palette::convert_to_highlighted(span.span.style);
                 }
             }
         }
@@ -1722,7 +1786,7 @@ impl<'a> App<'a> {
             for line in &mut lprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
-                        span.span.style = Palette::convert_to_selected(span.span.style);
+                        span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
             }
@@ -1752,34 +1816,33 @@ impl<'a> App<'a> {
 
         let mut line_idx = 0;
         let mut cursor_pos_maybe = None;
+        let selection_range = self.buffer.selection_range();
 
         for part in self.formatted_buffer_cache.parts.iter() {
-            let span_to_draw = if part.token.token.kind == TokenKind::Newline {
-                // For newlines, draw a space instead so that we can have a place to put the cursor
-                Span::from(" ")
-            } else if self.mode.is_running() && self.settings.show_animations {
-                part.get_possible_animated_span(now)
+            let animation_time = if self.mode.is_running() && self.settings.show_animations {
+                Some(now)
             } else {
-                part.normal_span().clone()
+                None
             };
 
-            let graph_idx_to_tag: Vec<Tag> = part
-                .normal_span()
-                .content
-                .graphemes(true)
-                .scan(part.token.token.byte_range().start, |acc, graph| {
-                    let tag = Tag::Command(*acc);
-                    *acc += graph.len();
-                    Some(tag)
-                })
-                .collect();
+            for (mut sub_span, tags, is_cursor, _is_sel_byte, is_in_selection) in
+                part.get_spans(animation_time, selection_range.clone())
+            {
+                if is_in_selection {
+                    sub_span.style = Palette::convert_to_selected(sub_span.style);
+                }
 
-            let poss_cursor_anim_pos = content.write_tagged_span_dont_overwrite(
-                &TaggedSpan::per_grapheme(span_to_draw, graph_idx_to_tag),
-                part.cursor_grapheme_idx,
-            );
-            if cursor_pos_maybe.is_none() {
-                cursor_pos_maybe = poss_cursor_anim_pos;
+                if is_cursor && cursor_pos_maybe.is_none() {
+                    // Skip past any already-filled cells so cursor_position()
+                    // reflects the actual cell the cursor grapheme will land
+                    // on. This mirrors the skip done inside write_span_internal.
+                    if let Some(g) = sub_span.styled_graphemes(sub_span.style).next() {
+                        content.move_to_next_insertion_point(&g, false);
+                    }
+                    cursor_pos_maybe = Some(content.cursor_position());
+                }
+
+                content.write_tagged_span_dont_overwrite(&TaggedSpan::per_grapheme(sub_span, tags));
             }
 
             if part.token.token.kind == TokenKind::Newline {
@@ -1848,14 +1911,11 @@ impl<'a> App<'a> {
                         content.newline();
                     }
 
-                    content.write_tagged_span_dont_overwrite(
-                        &TaggedSpan::new(
-                            Span::from(line.to_owned())
-                                .style(self.settings.colour_palette.secondary_text()),
-                            Tag::HistorySuggestion,
-                        ),
-                        None,
-                    );
+                    content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
+                        Span::from(line.to_owned())
+                            .style(self.settings.colour_palette.secondary_text()),
+                        Tag::HistorySuggestion,
+                    ));
 
                     if is_last {
                         let mut extra_info_text = format!(" #idx={}", sug.index);
@@ -1864,26 +1924,20 @@ impl<'a> App<'a> {
                             extra_info_text.push_str(&format!(" {}", time_ago_str.trim_start()));
                         }
 
-                        content.write_tagged_span_dont_overwrite(
-                            &TaggedSpan::new(
-                                Span::from(extra_info_text)
-                                    .style(self.settings.colour_palette.inline_suggestion()),
-                                Tag::HistorySuggestion,
-                            ),
-                            None,
-                        );
+                        content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
+                            Span::from(extra_info_text)
+                                .style(self.settings.colour_palette.inline_suggestion()),
+                            Tag::HistorySuggestion,
+                        ));
 
                         if self.settings.run_tutorial {
-                            content.write_tagged_span_dont_overwrite(
-                                &TaggedSpan::new(
-                                    Span::styled(
-                                        " 💡 Press → or End to accept",
-                                        self.settings.colour_palette.tutorial_hint(),
-                                    ),
-                                    Tag::Tutorial,
+                            content.write_tagged_span_dont_overwrite(&TaggedSpan::new(
+                                Span::styled(
+                                    " 💡 Press → or End to accept",
+                                    self.settings.colour_palette.tutorial_hint(),
                                 ),
-                                None,
-                            );
+                                Tag::Tutorial,
+                            ));
                         }
                     }
                 });
@@ -2125,7 +2179,9 @@ impl<'a> App<'a> {
                     ));
                     // Description line
                     let desc_style = if is_selected {
-                        Palette::convert_to_selected(self.settings.colour_palette.secondary_text())
+                        Palette::convert_to_highlighted(
+                            self.settings.colour_palette.secondary_text(),
+                        )
                     } else {
                         self.settings.colour_palette.secondary_text()
                     };
@@ -2149,6 +2205,7 @@ impl<'a> App<'a> {
                     let formatted_cmd = format_buffer(
                         &tokens,
                         cmd.len(),
+                        None,
                         cmd.len(),
                         false,
                         &self.settings.colour_palette,
@@ -2161,7 +2218,7 @@ impl<'a> App<'a> {
                         let styled_span = if is_selected {
                             Span::styled(
                                 span.content.clone(),
-                                Palette::convert_to_selected(span.style),
+                                Palette::convert_to_highlighted(span.style),
                             )
                         } else {
                             span.clone()

@@ -57,6 +57,10 @@ pub struct TextBuffer {
     // Need to ensure it lines up with grapheme boundaries.
     // The cursor is on the left of the grapheme at this index.
     cursor_byte: usize,
+    /// The anchor byte position for an active text selection. The selection
+    /// spans from `selection_byte` to `cursor_byte` (in either order). When
+    /// `None`, no selection is active.
+    selection_byte: Option<usize>,
     undo_redo: SnapshotManager,
 }
 
@@ -66,8 +70,195 @@ impl TextBuffer {
         TextBuffer {
             buf: starting_str.to_string(),
             cursor_byte: starting_str.len(),
+            selection_byte: None,
             undo_redo: SnapshotManager::new(),
         }
+    }
+}
+
+///////////////////////////////////////////////////////// text selection
+impl TextBuffer {
+    /// Anchor a new selection at the current cursor position if one is not
+    /// already active. Call this before performing a movement that should
+    /// extend the selection.
+    pub fn start_selection_if_none(&mut self) {
+        if self.selection_byte.is_none() {
+            self.selection_byte = Some(self.cursor_byte);
+        }
+    }
+
+    /// Clear any active selection.
+    pub fn clear_selection(&mut self) {
+        self.selection_byte = None;
+    }
+
+    /// Returns the current selection anchor byte position, or `None` if no
+    /// selection is active.
+    pub fn selection_byte(&self) -> Option<usize> {
+        self.selection_byte
+    }
+
+    /// Returns the byte range of the current selection, sorted so that
+    /// `start <= end`. Returns `None` when no selection is active or when the
+    /// selection is empty (anchor equal to cursor).
+    pub fn selection_range(&self) -> Option<std::ops::Range<usize>> {
+        let anchor = self.selection_byte?;
+        if anchor == self.cursor_byte {
+            return None;
+        }
+        let start = anchor.min(self.cursor_byte);
+        let end = anchor.max(self.cursor_byte);
+        Some(start..end)
+    }
+
+    pub fn set_selection_range(&mut self, range: std::ops::Range<usize>, cursor_is_left: bool) {
+        if cursor_is_left {
+            self.selection_byte = Some(range.end);
+            self.cursor_byte = range.start;
+        } else {
+            self.selection_byte = Some(range.start);
+            self.cursor_byte = range.end;
+        }
+    }
+
+    /// Returns the currently selected text, or `None` if no selection is
+    /// active or it is empty.
+    pub fn selected_text(&self) -> Option<String> {
+        self.selection_range().map(|r| self.buf[r].to_string())
+    }
+
+    /// If a non-empty selection is active, delete the selected text, move the
+    /// cursor to the start of the selection, and clear the selection. Returns
+    /// `true` if a deletion was performed. A snapshot is pushed so the
+    /// deletion can be undone.
+    pub fn delete_selection(&mut self) -> bool {
+        let Some(range) = self.selection_range() else {
+            self.selection_byte = None;
+            return false;
+        };
+        self.push_snapshot(false);
+        self.buf.drain(range.clone());
+        self.cursor_byte = range.start;
+        self.selection_byte = None;
+        true
+    }
+
+    pub fn select_entire_buffer(&mut self) {
+        self.cursor_byte = self.buf.len();
+        self.selection_byte = Some(0);
+    }
+
+    pub fn select_word(&mut self) -> std::ops::Range<usize> {
+        self.selection_byte = Some(self.move_one_word_left_pos(WordDelim::WhiteSpace));
+        self.cursor_byte = self.move_one_word_right_pos(WordDelim::WhiteSpace);
+        self.selection_range().unwrap() // should always be Some since we just set the anchor and moved the cursor
+    }
+}
+
+#[cfg(test)]
+mod test_selection {
+    use super::*;
+
+    #[test]
+    fn no_selection_by_default() {
+        let tb = TextBuffer::new("hello");
+        assert!(tb.selection_byte().is_none());
+        assert!(tb.selection_range().is_none());
+        assert!(tb.selected_text().is_none());
+    }
+
+    #[test]
+    fn start_selection_anchors_at_cursor() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.start_selection_if_none();
+        assert_eq!(tb.selection_byte(), Some(0));
+        // Empty selection — anchor equals cursor — yields no range.
+        assert!(tb.selection_range().is_none());
+        tb.move_right_selection();
+        tb.move_right_selection();
+        assert_eq!(tb.selection_range(), Some(0..2));
+        assert_eq!(tb.selected_text().as_deref(), Some("he"));
+    }
+
+    #[test]
+    fn start_selection_is_idempotent() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.start_selection_if_none();
+        tb.move_right_selection();
+        tb.start_selection_if_none(); // should not move the anchor
+        assert_eq!(tb.selection_byte(), Some(0));
+        assert_eq!(tb.selection_range(), Some(0..1));
+    }
+
+    #[test]
+    fn selection_range_is_normalised_when_cursor_left_of_anchor() {
+        let mut tb = TextBuffer::new("hello");
+        // Cursor is at end (5).
+        tb.move_left_selection();
+        tb.move_left_selection();
+        assert_eq!(tb.selection_byte(), Some(5));
+        assert_eq!(tb.selection_range(), Some(3..5));
+        assert_eq!(tb.selected_text().as_deref(), Some("lo"));
+    }
+
+    #[test]
+    fn clear_selection_removes_anchor() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.move_right_selection();
+        assert!(tb.selection_range().is_some());
+        tb.clear_selection();
+        assert!(tb.selection_byte().is_none());
+        assert!(tb.selection_range().is_none());
+    }
+
+    #[test]
+    fn delete_selection_removes_selected_text() {
+        let mut tb = TextBuffer::new("hello world");
+        tb.move_to_start();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        assert_eq!(tb.selected_text().as_deref(), Some("hello"));
+        assert!(tb.delete_selection());
+        assert_eq!(tb.buffer(), " world");
+        assert_eq!(tb.cursor_byte, 0);
+        assert!(tb.selection_byte().is_none());
+    }
+
+    #[test]
+    fn delete_selection_with_cursor_left_of_anchor() {
+        let mut tb = TextBuffer::new("hello");
+        // Cursor at end (5), select backwards.
+        tb.move_left_selection();
+        tb.move_left_selection();
+        assert_eq!(tb.selection_range(), Some(3..5));
+        assert!(tb.delete_selection());
+        assert_eq!(tb.buffer(), "hel");
+        assert_eq!(tb.cursor_byte, 3);
+    }
+
+    #[test]
+    fn delete_selection_with_no_selection_is_noop() {
+        let mut tb = TextBuffer::new("hello");
+        assert!(!tb.delete_selection());
+        assert_eq!(tb.buffer(), "hello");
+    }
+
+    #[test]
+    fn delete_selection_can_be_undone() {
+        let mut tb = TextBuffer::new("hello");
+        tb.move_to_start();
+        tb.move_right_selection();
+        tb.move_right_selection();
+        assert!(tb.delete_selection());
+        assert_eq!(tb.buffer(), "llo");
+        tb.undo();
+        assert_eq!(tb.buffer(), "hello");
     }
 }
 
@@ -86,15 +277,38 @@ mod test_misc {
 ///////////////////////////////////////////////////////// movement
 impl TextBuffer {
     pub fn move_left(&mut self) {
-        self.cursor_byte = self
-            .buf
+        if let Some(selection_range) = self.selection_range() {
+            // When moving left with an active selection, move to the start of the selection and clear it.
+            self.cursor_byte = selection_range.start;
+            self.clear_selection();
+            return;
+        }
+        self.clear_selection();
+
+        self.cursor_byte = self.left_move_pos();
+    }
+
+    fn left_move_pos(&self) -> usize {
+        // the previous grapheme boundary before the cursor
+        self.buf
             .grapheme_indices(true)
             .take_while(|(i, _)| *i < self.cursor_byte)
             .last()
-            .map_or(0, |(i, _)| i);
+            .map_or(0, |(i, _)| i)
+    }
+
+    pub fn move_left_selection(&mut self) {
+        self.start_selection_if_none();
+        self.cursor_byte = self.left_move_pos();
     }
 
     pub fn move_right(&mut self) {
+        if let Some(selection_range) = self.selection_range() {
+            self.cursor_byte = selection_range.end;
+            self.clear_selection();
+            return;
+        }
+        self.clear_selection();
         self.cursor_byte = self.right_move_pos();
     }
 
@@ -107,9 +321,13 @@ impl TextBuffer {
             .map_or(self.buf.len(), |(i, _)| i)
     }
 
-    pub fn move_one_word_left(&mut self, delim: WordDelim) {
-        self.cursor_byte = self
-            .buf
+    pub fn move_right_selection(&mut self) {
+        self.start_selection_if_none();
+        self.cursor_byte = self.right_move_pos();
+    }
+
+    fn move_one_word_left_pos(&mut self, delim: WordDelim) -> usize {
+        self.buf
             .char_indices()
             .rev()
             .skip_while(|(i, _)| *i >= self.cursor_byte)
@@ -122,18 +340,25 @@ impl TextBuffer {
                     None
                 }
             })
-            .unwrap_or(0);
+            .unwrap_or(0)
     }
 
-    pub fn move_one_word_right(&mut self, delim: WordDelim) {
-        self.cursor_byte = self
-            .buf
+    pub fn move_one_word_left(&mut self, delim: WordDelim) {
+        self.cursor_byte = self.move_one_word_left_pos(delim);
+    }
+
+    fn move_one_word_right_pos(&mut self, delim: WordDelim) -> usize {
+        self.buf
             .char_indices()
             .skip_while(|(i, _)| *i < self.cursor_byte)
             .skip_while(|(_, c)| delim.is_word_boundary(*c))
             .skip_while(|(_, c)| !delim.is_word_boundary(*c))
             .next()
             .map_or(self.buf.len(), |(i, _)| i)
+    }
+
+    pub fn move_one_word_right(&mut self, delim: WordDelim) {
+        self.cursor_byte = self.move_one_word_right_pos(delim);
     }
 
     pub fn move_one_word_left_fine_grained(&mut self) {

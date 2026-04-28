@@ -21,6 +21,8 @@ pub enum Scope {
     AgentError,
     InlineHistoryAcceptable,
     PromptDirSelect,
+    /// Active when the text buffer has a non-empty selection.
+    TextSelected,
 }
 
 impl Scope {
@@ -69,6 +71,7 @@ impl Scope {
                     crate::app::ContentMode::PromptDirSelect(_)
                 )
             }
+            Scope::TextSelected => app.buffer.selection_range().is_some(),
         }
     }
 }
@@ -87,6 +90,7 @@ impl AsRef<str> for Scope {
             Scope::AgentError => "agent_error",
             Scope::InlineHistoryAcceptable => "inline_history_acceptable",
             Scope::PromptDirSelect => "prompt_dir_select",
+            Scope::TextSelected => "text_selected",
         }
     }
 }
@@ -107,6 +111,7 @@ impl TryFrom<&str> for Scope {
             "agent_error" => Ok(Scope::AgentError),
             "inline_history_acceptable" => Ok(Scope::InlineHistoryAcceptable),
             "prompt_dir_select" => Ok(Scope::PromptDirSelect),
+            "text_selected" => Ok(Scope::TextSelected),
             other => Err(anyhow::anyhow!("Unknown scope: '{}'", other)),
         }
     }
@@ -1057,25 +1062,43 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "delete_left_until_start_of_line",
         "Delete until start of line",
         Scope::Default,
-        |app, _key| app.buffer.delete_until_start_of_line(),
+        |app, _key| {
+            if app.buffer.delete_selection() {
+                return;
+            }
+            app.buffer.delete_until_start_of_line()
+        },
     ),
     Action::new(
         "delete_left_one_word_fine_grained",
         "Delete one word to the left stopping at punctuation or path segment boundaries",
         Scope::Default,
-        |app, _key| app.buffer.delete_one_word_left(WordDelim::FineGrained),
+        |app, _key| {
+            if app.buffer.delete_selection() {
+                return;
+            }
+            app.buffer.delete_one_word_left(WordDelim::FineGrained)
+        },
     ),
     Action::new(
         "delete_left_one_word_whitespace",
         "Delete one word to the left, using whitespace as delimiter",
         Scope::Default,
-        |app, _key| app.buffer.delete_one_word_left(WordDelim::WhiteSpace),
+        |app, _key| {
+            if app.buffer.delete_selection() {
+                return;
+            }
+            app.buffer.delete_one_word_left(WordDelim::WhiteSpace)
+        },
     ),
     Action::new(
         "delete_left",
         "Delete character before cursor",
         Scope::Default,
         |app, _key| {
+            if app.buffer.delete_selection() {
+                return;
+            }
             if app.settings.auto_close_chars {
                 // Backspace: if the char to the right of the cursor is an auto-inserted closing token
                 // paired with the char about to be deleted, remove it as well.
@@ -1088,43 +1111,72 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "delete_right_until_end_of_line",
         "Delete until end of line",
         Scope::Default,
-        |app, _key| app.buffer.delete_until_end_of_line(),
+        |app, _key| {
+            if app.buffer.delete_selection() {
+                return;
+            }
+            app.buffer.delete_until_end_of_line()
+        },
     ),
     Action::new(
         "delete_right_one_word_fine_grained",
         "Delete one word to the right stopping at punctuation or path segment boundaries",
         Scope::Default,
-        |app, _key| app.buffer.delete_right_one_word(WordDelim::FineGrained),
+        |app, _key| {
+            if app.buffer.delete_selection() {
+                return;
+            }
+            app.buffer.delete_right_one_word(WordDelim::FineGrained)
+        },
     ),
     Action::new(
         "delete_right_one_word_whitespace",
         "Delete one word to the right, using whitespace as delimiter",
         Scope::Default,
-        |app, _key| app.buffer.delete_right_one_word(WordDelim::WhiteSpace),
+        |app, _key| {
+            if app.buffer.delete_selection() {
+                return;
+            }
+            app.buffer.delete_right_one_word(WordDelim::WhiteSpace)
+        },
     ),
     Action::new(
         "delete_right",
         "Delete character after cursor",
         Scope::Default,
-        |app, _key| app.buffer.delete_right(),
+        |app, _key| {
+            if app.buffer.delete_selection() {
+                return;
+            }
+            app.buffer.delete_right()
+        },
     ),
     Action::new(
         "move_left_start_of_line",
         "Move cursor to start of line",
         Scope::Default,
-        |app, _key| app.buffer.move_start_of_line(),
+        |app, _key| {
+            app.buffer.clear_selection();
+            app.buffer.move_start_of_line()
+        },
     ),
     Action::new(
         "move_left_one_word_whitespace",
         "Move one word left, using whitespace as delimiter",
         Scope::Default,
-        |app, _key| app.buffer.move_one_word_left(WordDelim::WhiteSpace),
+        |app, _key| {
+            app.buffer.clear_selection();
+            app.buffer.move_one_word_left(WordDelim::WhiteSpace)
+        },
     ),
     Action::new(
         "move_left_one_word_fine_grained",
         "Move one word left, stopping at punctuation or path segment boundaries",
         Scope::Default,
-        |app, _key| app.buffer.move_one_word_left_fine_grained(),
+        |app, _key| {
+            app.buffer.clear_selection();
+            app.buffer.move_one_word_left_fine_grained()
+        },
     ),
     Action::new(
         "move_left",
@@ -1144,31 +1196,41 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "move_right_end_of_line",
         "Move cursor to end of line",
         Scope::Default,
-        |app, _key| app.buffer.move_end_of_line(),
+        |app, _key| {
+            app.buffer.clear_selection();
+            app.buffer.move_end_of_line()
+        },
     ),
     Action::new(
         "move_right_one_word_whitespace",
         "Move one word right, using whitespace as delimiter",
         Scope::Default,
-        |app, _key| app.buffer.move_one_word_right(WordDelim::WhiteSpace),
+        |app, _key| {
+            app.buffer.clear_selection();
+            app.buffer.move_one_word_right(WordDelim::WhiteSpace)
+        },
     ),
     Action::new(
         "move_right_one_word_fine_grained",
         "Move one word right, stopping at punctuation or path segment boundaries",
         Scope::Default,
-        |app, _key| app.buffer.move_one_word_right_fine_grained(),
+        |app, _key| {
+            app.buffer.clear_selection();
+            app.buffer.move_one_word_right_fine_grained()
+        },
     ),
     Action::new(
         "move_right",
         "Move cursor right",
         Scope::Default,
-        |app, _key| app.buffer.move_right(),
+        |app, _key| { app.buffer.move_right() },
     ),
     Action::new(
         "move_line_up_or_history_up",
         "Move cursor up one line or navigate history if on the first buffer line",
         Scope::Default,
         |app, _key| {
+            app.buffer.clear_selection();
             if app.buffer.cursor_row() == 0 {
                 app.buffer_before_history_navigation
                     .get_or_insert_with(|| app.buffer.buffer().to_string());
@@ -1189,6 +1251,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Move cursor down one line or navigate history if on the final buffer line",
         Scope::Default,
         |app, _key| {
+            app.buffer.clear_selection();
             if app.buffer.is_cursor_on_final_line() {
                 let history_buffer = app.buffer_for_history().to_owned();
                 match app
@@ -1210,9 +1273,11 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new("undo", "Undo last action", Scope::Default, |app, _key| {
+        app.buffer.clear_selection();
         app.buffer.undo()
     }),
     Action::new("redo", "Redo last action", Scope::Default, |app, _key| {
+        app.buffer.clear_selection();
         app.buffer.redo()
     }),
     Action::new(
@@ -1220,6 +1285,7 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         "Insert character",
         Scope::Default,
         |app, key| {
+            app.buffer.delete_selection();
             if let KeyCode::Char(c) = key.code {
                 if app.settings.auto_close_chars {
                     app.last_keypress_action = app.handle_char_insertion(c);
@@ -1228,6 +1294,118 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
                 }
             }
         }
+    ),
+    // ── Selection-extending movement actions ──────────────────────────
+    // These actions extend the current text selection while moving the cursor.
+    // If no selection is currently active, they anchor it at the current
+    // cursor position before moving.
+    Action::new(
+        "move_left_extend_selection",
+        "Move cursor left, extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.move_left_selection();
+        },
+    ),
+    Action::new(
+        "move_right_extend_selection",
+        "Move cursor right, extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.move_right_selection();
+        },
+    ),
+    Action::new(
+        "move_line_up_extend_selection",
+        "Move cursor up one line, extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.start_selection_if_none();
+            app.buffer.move_line_up();
+        },
+    ),
+    Action::new(
+        "move_line_down_extend_selection",
+        "Move cursor down one line, extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.start_selection_if_none();
+            app.buffer.move_line_down();
+        },
+    ),
+    Action::new(
+        "move_left_start_of_line_extend_selection",
+        "Move cursor to start of line, extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.start_selection_if_none();
+            app.buffer.move_start_of_line();
+        },
+    ),
+    Action::new(
+        "move_right_end_of_line_extend_selection",
+        "Move cursor to end of line, extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.start_selection_if_none();
+            app.buffer.move_end_of_line();
+        },
+    ),
+    Action::new(
+        "move_left_one_word_whitespace_extend_selection",
+        "Move one word left (whitespace delimiter), extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.start_selection_if_none();
+            app.buffer.move_one_word_left(WordDelim::WhiteSpace);
+        },
+    ),
+    Action::new(
+        "move_right_one_word_whitespace_extend_selection",
+        "Move one word right (whitespace delimiter), extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.start_selection_if_none();
+            app.buffer.move_one_word_right(WordDelim::WhiteSpace);
+        },
+    ),
+    Action::new(
+        "move_left_one_word_fine_grained_extend_selection",
+        "Move one word left (fine-grained), extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.start_selection_if_none();
+            app.buffer.move_one_word_left_fine_grained();
+        },
+    ),
+    Action::new(
+        "move_right_one_word_fine_grained_extend_selection",
+        "Move one word right (fine-grained), extending the text selection",
+        Scope::Default,
+        |app, _key| {
+            app.buffer.start_selection_if_none();
+            app.buffer.move_one_word_right_fine_grained();
+        },
+    ),
+    // ── TextSelected scope actions ────────────────────────────────────
+    Action::new(
+        "copy_selection_osc52",
+        "Copy the current text selection to the system clipboard via OSC 52",
+        Scope::TextSelected,
+        |app, _key| if let Some(text) = app.buffer.selected_text() {
+            match crossterm::execute!(
+                std::io::stdout(),
+                crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
+            ) {
+                Ok(()) => {
+                    log::info!("Copied selection to clipboard via OSC 52");
+                }
+                Err(e) => {
+                    log::error!("Failed to copy to clipboard via OSC 52: {}", e);
+                }
+            }
+            app.buffer.clear_selection();
+        },
     ),
     // ── PromptCwdEdit actions ─────────────────────────────────────────
     Action::new(
@@ -1314,10 +1492,12 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
             Scope::AgentError,
             Scope::InlineHistoryAcceptable,
             Scope::PromptDirSelect,
+            Scope::TextSelected,
         ],
         "escape_to_normal_mode",
         "Return to the normal command editing mode",
         |app, _key| {
+            app.buffer.clear_selection();
             app.content_mode = ContentMode::Normal;
         },
     ),
@@ -1437,7 +1617,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 66]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
     [
         Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
         Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
@@ -1553,8 +1733,20 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 66]> = LazyLock::new(|| {
             "escape_to_normal_mode",
         )
         .unwrap(),
+        // TextSelected Esc must appear before the Default Esc binding so that
+        // pressing Esc with a selection active clears the selection rather
+        // than toggling the mouse.
+        Binding::try_new(&["Esc"], Scope::TextSelected, "escape_to_normal_mode").unwrap(),
         Binding::try_new(&["Esc"], Scope::Default, "toggle_mouse").unwrap(),
         Binding::try_new(&["Ctrl+d"], Scope::Default, "exit").unwrap(),
+        // TextSelected Ctrl+c must appear before the Default Ctrl+c binding
+        // so that copying the selection takes precedence over cancelling.
+        Binding::try_new(
+            &["Ctrl+c", "Meta+c"],
+            Scope::TextSelected,
+            "copy_selection_osc52",
+        )
+        .unwrap(),
         Binding::try_new(&["Ctrl+c", "Meta+c"], Scope::Default, "cancel").unwrap(),
         Binding::try_new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
@@ -1635,15 +1827,33 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 66]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
+            &["Shift+Home", "Super+Shift+Left"],
+            Scope::Default,
+            "move_left_start_of_line_extend_selection",
+        )
+        .unwrap(),
+        Binding::try_new(
             &expand_variations!["Home", "Super+Left", "Ctrl+A", "Super+A"],
             Scope::Default,
             "move_left_start_of_line",
         )
         .unwrap(),
         Binding::try_new(
+            &["Ctrl+Shift+Left"],
+            Scope::Default,
+            "move_left_one_word_whitespace_extend_selection",
+        )
+        .unwrap(),
+        Binding::try_new(
             &["Ctrl+Left"], // Emacs-style whitespace word-left
             Scope::Default,
             "move_left_one_word_whitespace",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Alt+Shift+Left", "Meta+Shift+Left"],
+            Scope::Default,
+            "move_left_one_word_fine_grained_extend_selection",
         )
         .unwrap(),
         Binding::try_new(
@@ -1654,11 +1864,23 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 66]> = LazyLock::new(|| {
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
         Binding::try_new(&["Left"], Scope::PromptDirSelect, "move_left").unwrap(),
+        Binding::try_new(
+            &["Shift+Left"],
+            Scope::Default,
+            "move_left_extend_selection",
+        )
+        .unwrap(),
         Binding::try_new(&["Left"], Scope::Default, "move_left").unwrap(),
         Binding::try_new(
             &expand_variations!["Right", "End"],
             Scope::InlineHistoryAcceptable,
             "accept_suggestion",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Shift+End", "Super+Shift+Right"],
+            Scope::Default,
+            "move_right_end_of_line_extend_selection",
         )
         .unwrap(),
         Binding::try_new(
@@ -1668,9 +1890,21 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 66]> = LazyLock::new(|| {
         )
         .unwrap(),
         Binding::try_new(
+            &["Ctrl+Shift+Right"],
+            Scope::Default,
+            "move_right_one_word_whitespace_extend_selection",
+        )
+        .unwrap(),
+        Binding::try_new(
             &["Ctrl+Right"], // Emacs-style whitespace word-right
             Scope::Default,
             "move_right_one_word_whitespace",
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Alt+Shift+Right", "Meta+Shift+Right"],
+            Scope::Default,
+            "move_right_one_word_fine_grained_extend_selection",
         )
         .unwrap(),
         Binding::try_new(
@@ -1681,8 +1915,26 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 66]> = LazyLock::new(|| {
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
         Binding::try_new(&["Right"], Scope::PromptDirSelect, "move_right").unwrap(),
+        Binding::try_new(
+            &["Shift+Right"],
+            Scope::Default,
+            "move_right_extend_selection",
+        )
+        .unwrap(),
         Binding::try_new(&["Right"], Scope::Default, "move_right").unwrap(),
+        Binding::try_new(
+            &["Shift+Up"],
+            Scope::Default,
+            "move_line_up_extend_selection",
+        )
+        .unwrap(),
         Binding::try_new(&["Up"], Scope::Default, "move_line_up_or_history_up").unwrap(),
+        Binding::try_new(
+            &["Shift+Down"],
+            Scope::Default,
+            "move_line_down_extend_selection",
+        )
+        .unwrap(),
         Binding::try_new(&["Down"], Scope::Default, "move_line_down_or_history_down").unwrap(),
         Binding::try_new(
             &["Ctrl+y", "Super+Y", "Ctrl+Shift+Z", "Super+Shift+Z"],
@@ -2473,6 +2725,13 @@ mod tests {
     }
 
     #[test]
+    fn test_overlap_exact_same_key_shift_does_not_shadow_unmodified() {
+        let a = KeyEventMatch::Exact(key(KeyCode::Home));
+        let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT));
+        assert!(key_event_a_shadows_b(&a, &b));
+    }
+
+    #[test]
     fn test_overlap_anychar_and_anychar() {
         let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
         let b = KeyEventMatch::AnyCharAndMods(KeyModifiers::CONTROL);
@@ -2488,10 +2747,26 @@ mod tests {
     }
 
     #[test]
+    fn test_overlap_anychar_and_exact_char_different_modifiers() {
+        let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
+        let b = KeyEventMatch::Exact(key_with_mods(KeyCode::Char('q'), KeyModifiers::SHIFT));
+        assert!(key_event_a_shadows_b(&a, &b));
+    }
+
+    #[test]
     fn test_overlap_anychar_and_exact_nonchar() {
         let a = KeyEventMatch::AnyCharAndMods(KeyModifiers::empty());
         let b = KeyEventMatch::Exact(key(KeyCode::Tab));
         assert!(!key_event_a_shadows_b(&a, &b));
         assert!(!key_event_a_shadows_b(&b, &a));
     }
+
+    // #[test]
+    // fn test_binding_matches_requires_exact_modifiers() {
+    //     let binding =
+    //         Binding::try_new(&["Home"], Scope::Default, "move_left_start_of_line").unwrap();
+
+    //     assert!(binding.matches(key(KeyCode::Home)));
+    //     assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
+    // }
 }

@@ -58,7 +58,7 @@ impl<'a> TaggedSpan<'a> {
     /// Consume `self` and return a new `TaggedSpan` whose style is the
     /// highlighted (reversed) variant of the original style.
     pub fn convert_to_highlighted(self) -> Self {
-        let highlighted_style = Palette::convert_to_selected(self.span.style);
+        let highlighted_style = Palette::convert_to_highlighted(self.span.style);
         TaggedSpan {
             span: self.span.style(highlighted_style),
             tag: self.tag,
@@ -306,18 +306,12 @@ impl Contents {
 
     /// Write a single tagged span at the current cursor position.
     /// Will automatically wrap to the next line if necessary.
-    fn write_span_internal(
-        &mut self,
-        tagged_span: &TaggedSpan,
-        overwrite: bool,
-        mark_nth_grapheme: Option<usize>,
-    ) -> Option<Coord> {
+    fn write_span_internal(&mut self, tagged_span: &TaggedSpan, overwrite: bool) {
         if let SpanTag::Constant(Tag::Clipboard(cb_type)) = &tagged_span.tag {
             self.setup_clipboard(*cb_type, tagged_span.span.content.to_string());
         }
 
         let graphemes = tagged_span.span.styled_graphemes(tagged_span.span.style);
-        let mut marked_graph_coord = None;
 
         for (i, graph) in graphemes.enumerate() {
             let graph_w = graph.symbol.width() as u16;
@@ -334,9 +328,6 @@ impl Contents {
                 // We probably start at cursor_pos_x=0 here, so very unlikely to happen
                 continue;
             }
-            if Some(i) == mark_nth_grapheme {
-                marked_graph_coord = Some(self.cursor_pos);
-            }
 
             let tag = tagged_span.tag.get(i);
             self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
@@ -351,22 +342,16 @@ impl Contents {
                 self.cursor_pos.col += 1;
             }
         }
-        marked_graph_coord
     }
 
     /// Write a tagged span at the current cursor position, skipping cells that are already filled.
-    /// Returns the coordinate of the `mark_nth_grapheme`-th grapheme, if present.
-    pub fn write_tagged_span_dont_overwrite(
-        &mut self,
-        tagged_span: &TaggedSpan,
-        mark_nth_grapheme: Option<usize>,
-    ) -> Option<Coord> {
-        self.write_span_internal(tagged_span, false, mark_nth_grapheme)
+    pub fn write_tagged_span_dont_overwrite(&mut self, tagged_span: &TaggedSpan) {
+        self.write_span_internal(tagged_span, false);
     }
 
     /// Write a tagged span at the current cursor position, overwriting any existing content.
     pub fn write_tagged_span(&mut self, tagged_span: &TaggedSpan) {
-        self.write_span_internal(tagged_span, true, None);
+        self.write_span_internal(tagged_span, true);
     }
 
     /// Write a tagged line at the current cursor position.
@@ -700,7 +685,7 @@ impl Contents {
                     let char = Self::get_char(x, y, area, is_selected);
 
                     let style = if is_selected {
-                        Palette::convert_to_selected(ratatui::style::Style::default())
+                        Palette::convert_to_highlighted(ratatui::style::Style::default())
                     } else {
                         ratatui::style::Style::default()
                     };

@@ -208,7 +208,7 @@ impl SuggestionFormatted {
         if is_selected {
             spans = spans
                 .into_iter()
-                .map(|span| Span::styled(span.content, Palette::convert_to_selected(span.style)))
+                .map(|span| Span::styled(span.content, Palette::convert_to_highlighted(span.style)))
                 .collect();
         }
 
