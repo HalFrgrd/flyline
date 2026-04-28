@@ -8,9 +8,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::IsTerminal;
 use std::sync::LazyLock;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Scope {
-    Default,
+/// A single context variable that can be referenced inside a binding's
+/// context expression.  Each variant evaluates to a boolean value derived
+/// from the current application state.  `Always` is unconditionally `true`
+/// and replaces the old `Scope::Default`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ContextVar {
+    Always,
     FuzzyHistorySearch,
     TabCompletionWaiting,
     TabCompletion,
@@ -19,129 +23,421 @@ pub enum Scope {
     AgentModeWaiting,
     AgentOutputSelection,
     AgentError,
-    InlineHistoryAcceptable,
+    InlineSuggestionAvailable,
+    CursorAtEnd,
     PromptDirSelect,
-    /// Active when the text buffer has a non-empty selection.
     TextSelected,
 }
 
-impl Scope {
-    pub fn is_active(&self, app: &App) -> bool {
+impl ContextVar {
+    /// All known context variables in a fixed order.  Used for table
+    /// rendering and to bound the size of the cached evaluation array.
+    pub const ALL: &'static [ContextVar] = &[
+        ContextVar::Always,
+        ContextVar::FuzzyHistorySearch,
+        ContextVar::TabCompletionWaiting,
+        ContextVar::TabCompletion,
+        ContextVar::TabCompletionAvailable,
+        ContextVar::TabCompletionMultiColAvailable,
+        ContextVar::AgentModeWaiting,
+        ContextVar::AgentOutputSelection,
+        ContextVar::AgentError,
+        ContextVar::InlineSuggestionAvailable,
+        ContextVar::CursorAtEnd,
+        ContextVar::PromptDirSelect,
+        ContextVar::TextSelected,
+    ];
+
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            Scope::Default => true,
-            Scope::FuzzyHistorySearch => matches!(
-                app.content_mode,
-                crate::app::ContentMode::FuzzyHistorySearch(_)
-            ),
-            Scope::TabCompletionWaiting => matches!(
-                app.content_mode,
-                crate::app::ContentMode::TabCompletionWaiting { .. }
-            ),
-            Scope::TabCompletion => matches!(
-                app.content_mode,
-                crate::app::ContentMode::TabCompletion { .. }
-            ),
-            Scope::TabCompletionAvailable => matches!(
+            ContextVar::Always => "always",
+            ContextVar::FuzzyHistorySearch => "fuzzyHistorySearch",
+            ContextVar::TabCompletionWaiting => "tabCompletionWaiting",
+            ContextVar::TabCompletion => "tabCompletion",
+            ContextVar::TabCompletionAvailable => "tabCompletionAvailable",
+            ContextVar::TabCompletionMultiColAvailable => "tabCompletionMultiColAvailable",
+            ContextVar::AgentModeWaiting => "agentModeWaiting",
+            ContextVar::AgentOutputSelection => "agentOutputSelection",
+            ContextVar::AgentError => "agentError",
+            ContextVar::InlineSuggestionAvailable => "inlineSuggestionAvailable",
+            ContextVar::CursorAtEnd => "cursorAtEnd",
+            ContextVar::PromptDirSelect => "promptDirSelect",
+            ContextVar::TextSelected => "textSelected",
+        }
+    }
+
+    fn evaluate(&self, app: &App) -> bool {
+        match self {
+            ContextVar::Always => true,
+            ContextVar::FuzzyHistorySearch => {
+                matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
+            }
+            ContextVar::TabCompletionWaiting => {
+                matches!(app.content_mode, ContentMode::TabCompletionWaiting { .. })
+            }
+            ContextVar::TabCompletion => {
+                matches!(app.content_mode, ContentMode::TabCompletion { .. })
+            }
+            ContextVar::TabCompletionAvailable => matches!(
                 &app.content_mode,
-                crate::app::ContentMode::TabCompletion(active_suggestions)
+                ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.filtered_suggestions_len() > 0
             ),
-            Scope::TabCompletionMultiColAvailable => matches!(
+            ContextVar::TabCompletionMultiColAvailable => matches!(
                 &app.content_mode,
-                crate::app::ContentMode::TabCompletion(active_suggestions)
+                ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.last_num_visible_cols > 1
             ),
-            Scope::AgentModeWaiting => matches!(
-                app.content_mode,
-                crate::app::ContentMode::AgentModeWaiting { .. }
-            ),
-            Scope::AgentOutputSelection => matches!(
-                app.content_mode,
-                crate::app::ContentMode::AgentOutputSelection { .. }
-            ),
-            Scope::AgentError => {
-                matches!(app.content_mode, crate::app::ContentMode::AgentError { .. })
+            ContextVar::AgentModeWaiting => {
+                matches!(app.content_mode, ContentMode::AgentModeWaiting { .. })
             }
-            Scope::InlineHistoryAcceptable => {
-                app.buffer.is_cursor_at_end() && app.inline_history_suggestion.is_some()
+            ContextVar::AgentOutputSelection => {
+                matches!(app.content_mode, ContentMode::AgentOutputSelection { .. })
             }
-            Scope::PromptDirSelect => {
-                matches!(
-                    app.content_mode,
-                    crate::app::ContentMode::PromptDirSelect(_)
-                )
+            ContextVar::AgentError => {
+                matches!(app.content_mode, ContentMode::AgentError { .. })
             }
-            Scope::TextSelected => app.buffer.selection_range().is_some(),
+            ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
+            ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
+            ContextVar::PromptDirSelect => {
+                matches!(app.content_mode, ContentMode::PromptDirSelect(_))
+            }
+            ContextVar::TextSelected => app.buffer.selection_range().is_some(),
         }
     }
 }
 
-impl AsRef<str> for Scope {
-    fn as_ref(&self) -> &str {
-        match self {
-            Scope::Default => "default",
-            Scope::FuzzyHistorySearch => "fuzzy_history_search",
-            Scope::TabCompletionWaiting => "tab_completion_waiting",
-            Scope::TabCompletion => "tab_completion",
-            Scope::TabCompletionAvailable => "tab_completion_available",
-            Scope::TabCompletionMultiColAvailable => "tab_completion_multi_col_available",
-            Scope::AgentModeWaiting => "agent_mode_waiting",
-            Scope::AgentOutputSelection => "agent_output_selection",
-            Scope::AgentError => "agent_error",
-            Scope::InlineHistoryAcceptable => "inline_history_acceptable",
-            Scope::PromptDirSelect => "prompt_dir_select",
-            Scope::TextSelected => "text_selected",
-        }
-    }
-}
-
-impl TryFrom<&str> for Scope {
+impl TryFrom<&str> for ContextVar {
     type Error = anyhow::Error;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        match s.to_lowercase().as_str() {
-            "default" => Ok(Scope::Default),
-            "fuzzy_history_search" => Ok(Scope::FuzzyHistorySearch),
-            "tab_completion_waiting" => Ok(Scope::TabCompletionWaiting),
-            "tab_completion" => Ok(Scope::TabCompletion),
-            "tab_completion_available" => Ok(Scope::TabCompletionAvailable),
-            "tab_completion_multi_col_available" => Ok(Scope::TabCompletionMultiColAvailable),
-            "agent_mode_waiting" => Ok(Scope::AgentModeWaiting),
-            "agent_output_selection" => Ok(Scope::AgentOutputSelection),
-            "agent_error" => Ok(Scope::AgentError),
-            "inline_history_acceptable" => Ok(Scope::InlineHistoryAcceptable),
-            "prompt_dir_select" => Ok(Scope::PromptDirSelect),
-            "text_selected" => Ok(Scope::TextSelected),
-            other => Err(anyhow::anyhow!("Unknown scope: '{}'", other)),
+        for v in ContextVar::ALL {
+            if v.as_str() == s {
+                return Ok(*v);
+            }
         }
+        // Accept case-insensitive aliases for friendlier CLI usage.
+        let s_lower = s.to_lowercase();
+        for v in ContextVar::ALL {
+            if v.as_str().to_lowercase() == s_lower {
+                return Ok(*v);
+            }
+        }
+        Err(anyhow::anyhow!("Unknown context variable: '{}'", s))
+    }
+}
+
+/// Cached snapshot of all context variables for a single key event.
+///
+/// Computed once per key event in `handle_key_event` and reused by every
+/// binding's context expression evaluation, so each variable is evaluated
+/// at most once per key press.
+pub struct ContextValues {
+    values: [bool; ContextVar::ALL.len()],
+}
+
+impl ContextValues {
+    pub fn evaluate(app: &App) -> Self {
+        let mut values = [false; ContextVar::ALL.len()];
+        for (i, v) in ContextVar::ALL.iter().enumerate() {
+            values[i] = v.evaluate(app);
+        }
+        Self { values }
+    }
+
+    fn index_of(var: ContextVar) -> usize {
+        ContextVar::ALL
+            .iter()
+            .position(|v| *v == var)
+            .expect("ContextVar must be in ContextVar::ALL")
+    }
+
+    pub fn get(&self, var: ContextVar) -> bool {
+        self.values[Self::index_of(var)]
+    }
+}
+
+/// A single literal in a context expression: a variable, optionally negated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContextLiteral {
+    pub var: ContextVar,
+    pub negated: bool,
+}
+
+/// A context expression: a conjunction (AND-chain) of literals.
+///
+/// The grammar is intentionally small: a `&&`-separated list of context
+/// variable names, each optionally prefixed with `!` for negation.
+/// Parentheses and `||` are not supported.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContextExpr {
+    pub literals: Vec<ContextLiteral>,
+}
+
+impl ContextExpr {
+    /// Evaluate the expression against the precomputed context values.
+    pub fn evaluate(&self, ctx: &ContextValues) -> bool {
+        self.literals.iter().all(|lit| {
+            let v = ctx.get(lit.var);
+            if lit.negated { !v } else { v }
+        })
+    }
+
+    /// Render the expression in canonical form (e.g. `a&&!b&&c`).
+    pub fn display(&self) -> String {
+        if self.literals.is_empty() {
+            return ContextVar::Always.as_str().to_string();
+        }
+        self.literals
+            .iter()
+            .map(|lit| {
+                if lit.negated {
+                    format!("!{}", lit.var.as_str())
+                } else {
+                    lit.var.as_str().to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("&&")
+    }
+}
+
+impl TryFrom<&str> for ContextExpr {
+    type Error = anyhow::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let s = s.trim();
+        if s.is_empty() {
+            return Err(anyhow::anyhow!("Empty context expression"));
+        }
+        if s.contains("||") {
+            return Err(anyhow::anyhow!(
+                "Context expressions only support '&&' (no '||'): '{}'",
+                s
+            ));
+        }
+        if s.contains('(') || s.contains(')') {
+            return Err(anyhow::anyhow!(
+                "Context expressions do not support parentheses: '{}'",
+                s
+            ));
+        }
+        let mut literals = Vec::new();
+        for raw in s.split("&&") {
+            let raw = raw.trim();
+            if raw.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Empty literal in context expression: '{}'",
+                    s
+                ));
+            }
+            let (negated, name) = if let Some(rest) = raw.strip_prefix('!') {
+                (true, rest.trim())
+            } else {
+                (false, raw)
+            };
+            if name.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Missing variable name after '!' in context expression: '{}'",
+                    s
+                ));
+            }
+            let var = ContextVar::try_from(name)?;
+            literals.push(ContextLiteral { var, negated });
+        }
+        Ok(Self { literals })
+    }
+}
+
+/// Identifier for a single action.  Each variant maps one-to-one to a
+/// camelCase action name as exposed in the CLI.  Actions are not scoped:
+/// the binding's `ContextExpr` controls when the action runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionId {
+    AcceptInlineSuggestion,
+    DismissInlineSuggestion,
+    AgentOutputSelectNext,
+    AgentOutputSelectPrev,
+    AgentOutputAcceptEntry,
+    AgentOutputNextSuggestion,
+    TabCompletionMoveUp,
+    TabCompletionMoveDown,
+    TabCompletionMoveLeft,
+    TabCompletionMoveRight,
+    TabCompletionAcceptEntry,
+    TabCompletionPrevSuggestion,
+    TabCompletionNextSuggestion,
+    FuzzyHistorySelectPrev,
+    FuzzyHistorySelectNext,
+    FuzzyHistoryScrollPageUp,
+    FuzzyHistoryScrollPageDown,
+    FuzzyHistoryAcceptEntry,
+    FuzzyHistoryAcceptAndEdit,
+    FuzzyHistoryAcceptAndRun,
+    RunAgentMode,
+    RunHelpCommand,
+    SubmitOrNewline,
+    RunTabCompletion,
+    ToggleMouse,
+    Exit,
+    Cancel,
+    CommentLineSubmit,
+    RunFuzzyHistorySearch,
+    ClearScreen,
+    DeleteLeftUntilStartOfLine,
+    DeleteLeftOneWordFineGrained,
+    DeleteLeftOneWordWhitespace,
+    DeleteLeft,
+    DeleteRightUntilEndOfLine,
+    DeleteRightOneWordFineGrained,
+    DeleteRightOneWordWhitespace,
+    DeleteRight,
+    MoveLeftStartOfLine,
+    MoveLeftOneWordWhitespace,
+    MoveLeftOneWordFineGrained,
+    MoveLeft,
+    MoveRightEndOfLine,
+    MoveRightOneWordWhitespace,
+    MoveRightOneWordFineGrained,
+    MoveRight,
+    MoveLineUpOrHistoryUp,
+    MoveLineDownOrHistoryDown,
+    Undo,
+    Redo,
+    InsertChar,
+    MoveLeftExtendSelection,
+    MoveRightExtendSelection,
+    MoveLineUpExtendSelection,
+    MoveLineDownExtendSelection,
+    MoveLeftStartOfLineExtendSelection,
+    MoveRightEndOfLineExtendSelection,
+    MoveLeftOneWordWhitespaceExtendSelection,
+    MoveRightOneWordWhitespaceExtendSelection,
+    MoveLeftOneWordFineGrainedExtendSelection,
+    MoveRightOneWordFineGrainedExtendSelection,
+    CopySelectionOsc52,
+    PromptDirMoveLeft,
+    PromptDirMoveRight,
+    PromptDirAcceptEntry,
+    PromptDirMoveToStart,
+    PromptDirMoveToEnd,
+    EscapeToNormalMode,
+}
+
+impl ActionId {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            ActionId::AcceptInlineSuggestion => "acceptInlineSuggestion",
+            ActionId::DismissInlineSuggestion => "dismissInlineSuggestion",
+            ActionId::AgentOutputSelectNext => "agentOutputSelectNext",
+            ActionId::AgentOutputSelectPrev => "agentOutputSelectPrev",
+            ActionId::AgentOutputAcceptEntry => "agentOutputAcceptEntry",
+            ActionId::AgentOutputNextSuggestion => "agentOutputNextSuggestion",
+            ActionId::TabCompletionMoveUp => "tabCompletionMoveUp",
+            ActionId::TabCompletionMoveDown => "tabCompletionMoveDown",
+            ActionId::TabCompletionMoveLeft => "tabCompletionMoveLeft",
+            ActionId::TabCompletionMoveRight => "tabCompletionMoveRight",
+            ActionId::TabCompletionAcceptEntry => "tabCompletionAcceptEntry",
+            ActionId::TabCompletionPrevSuggestion => "tabCompletionPrevSuggestion",
+            ActionId::TabCompletionNextSuggestion => "tabCompletionNextSuggestion",
+            ActionId::FuzzyHistorySelectPrev => "fuzzyHistorySelectPrev",
+            ActionId::FuzzyHistorySelectNext => "fuzzyHistorySelectNext",
+            ActionId::FuzzyHistoryScrollPageUp => "fuzzyHistoryScrollPageUp",
+            ActionId::FuzzyHistoryScrollPageDown => "fuzzyHistoryScrollPageDown",
+            ActionId::FuzzyHistoryAcceptEntry => "fuzzyHistoryAcceptEntry",
+            ActionId::FuzzyHistoryAcceptAndEdit => "fuzzyHistoryAcceptAndEdit",
+            ActionId::FuzzyHistoryAcceptAndRun => "fuzzyHistoryAcceptAndRun",
+            ActionId::RunAgentMode => "runAgentMode",
+            ActionId::RunHelpCommand => "runHelpCommand",
+            ActionId::SubmitOrNewline => "submitOrNewline",
+            ActionId::RunTabCompletion => "runTabCompletion",
+            ActionId::ToggleMouse => "toggleMouse",
+            ActionId::Exit => "exit",
+            ActionId::Cancel => "cancel",
+            ActionId::CommentLineSubmit => "commentLineSubmit",
+            ActionId::RunFuzzyHistorySearch => "runFuzzyHistorySearch",
+            ActionId::ClearScreen => "clearScreen",
+            ActionId::DeleteLeftUntilStartOfLine => "deleteLeftUntilStartOfLine",
+            ActionId::DeleteLeftOneWordFineGrained => "deleteLeftOneWordFineGrained",
+            ActionId::DeleteLeftOneWordWhitespace => "deleteLeftOneWordWhitespace",
+            ActionId::DeleteLeft => "deleteLeft",
+            ActionId::DeleteRightUntilEndOfLine => "deleteRightUntilEndOfLine",
+            ActionId::DeleteRightOneWordFineGrained => "deleteRightOneWordFineGrained",
+            ActionId::DeleteRightOneWordWhitespace => "deleteRightOneWordWhitespace",
+            ActionId::DeleteRight => "deleteRight",
+            ActionId::MoveLeftStartOfLine => "moveLeftStartOfLine",
+            ActionId::MoveLeftOneWordWhitespace => "moveLeftOneWordWhitespace",
+            ActionId::MoveLeftOneWordFineGrained => "moveLeftOneWordFineGrained",
+            ActionId::MoveLeft => "moveLeft",
+            ActionId::MoveRightEndOfLine => "moveRightEndOfLine",
+            ActionId::MoveRightOneWordWhitespace => "moveRightOneWordWhitespace",
+            ActionId::MoveRightOneWordFineGrained => "moveRightOneWordFineGrained",
+            ActionId::MoveRight => "moveRight",
+            ActionId::MoveLineUpOrHistoryUp => "moveLineUpOrHistoryUp",
+            ActionId::MoveLineDownOrHistoryDown => "moveLineDownOrHistoryDown",
+            ActionId::Undo => "undo",
+            ActionId::Redo => "redo",
+            ActionId::InsertChar => "insertChar",
+            ActionId::MoveLeftExtendSelection => "moveLeftExtendSelection",
+            ActionId::MoveRightExtendSelection => "moveRightExtendSelection",
+            ActionId::MoveLineUpExtendSelection => "moveLineUpExtendSelection",
+            ActionId::MoveLineDownExtendSelection => "moveLineDownExtendSelection",
+            ActionId::MoveLeftStartOfLineExtendSelection => "moveLeftStartOfLineExtendSelection",
+            ActionId::MoveRightEndOfLineExtendSelection => "moveRightEndOfLineExtendSelection",
+            ActionId::MoveLeftOneWordWhitespaceExtendSelection => {
+                "moveLeftOneWordWhitespaceExtendSelection"
+            }
+            ActionId::MoveRightOneWordWhitespaceExtendSelection => {
+                "moveRightOneWordWhitespaceExtendSelection"
+            }
+            ActionId::MoveLeftOneWordFineGrainedExtendSelection => {
+                "moveLeftOneWordFineGrainedExtendSelection"
+            }
+            ActionId::MoveRightOneWordFineGrainedExtendSelection => {
+                "moveRightOneWordFineGrainedExtendSelection"
+            }
+            ActionId::CopySelectionOsc52 => "copySelectionOsc52",
+            ActionId::PromptDirMoveLeft => "promptDirMoveLeft",
+            ActionId::PromptDirMoveRight => "promptDirMoveRight",
+            ActionId::PromptDirAcceptEntry => "promptDirAcceptEntry",
+            ActionId::PromptDirMoveToStart => "promptDirMoveToStart",
+            ActionId::PromptDirMoveToEnd => "promptDirMoveToEnd",
+            ActionId::EscapeToNormalMode => "escapeToNormalMode",
+        }
+    }
+}
+
+impl TryFrom<&str> for ActionId {
+    type Error = anyhow::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        for a in POSSIBLE_ACTIONS {
+            if a.id.as_str() == s {
+                return Ok(a.id);
+            }
+        }
+        Err(anyhow::anyhow!("Unknown action: '{}'", s))
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Action {
-    pub name: &'static str,
+    pub id: ActionId,
     pub description: &'static str,
-    pub scope: Scope,
     pub action: fn(app: &mut App, key: KeyEvent),
 }
 
 impl Action {
     pub const fn new(
-        name: &'static str,
+        id: ActionId,
         description: &'static str,
-        scope: Scope,
         action: fn(app: &mut App, key: KeyEvent),
     ) -> Self {
         Self {
-            name,
+            id,
             description,
-            scope,
             action,
         }
-    }
-
-    pub fn scoped_action_name(&self) -> String {
-        format!("{}::{}", self.scope.as_ref(), self.name)
     }
 }
 
@@ -379,48 +675,44 @@ pub fn apply_remappings(key: KeyEvent, remappings: &[KeyRemap]) -> KeyEvent {
 #[derive(Debug, Clone)]
 pub struct Binding {
     key_events: Vec<KeyEventMatch>,
+    context: ContextExpr,
     action: Action,
 }
 
 impl Binding {
-    pub fn try_new(key_events: &[&str], scope: Scope, action_name: &str) -> Result<Self> {
+    /// Create a binding from a list of key-event strings, a context
+    /// expression (e.g. `"always"`, `"inlineSuggestionAvailable&&cursorAtEnd"`),
+    /// and an action identifier.
+    pub fn try_new(key_events: &[&str], context: &str, action_id: ActionId) -> Result<Self> {
         let mut events = Vec::new();
         for &key_event in key_events {
             events.push(KeyEventMatch::try_from(key_event)?);
         }
+        let context = ContextExpr::try_from(context)?;
         let action = POSSIBLE_ACTIONS
             .iter()
-            .find(|a| a.scope == scope && a.name == action_name)
+            .find(|a| a.id == action_id)
             .cloned()
-            .ok_or_else(|| {
-                println!(
-                    "Unknown action name '{}' for scope '{}'",
-                    action_name,
-                    scope.as_ref()
-                );
-                anyhow::anyhow!("Unknown action: '{}'", action_name)
-            })?;
+            .ok_or_else(|| anyhow::anyhow!("Unknown action: '{:?}'", action_id))?;
 
         Ok(Self {
             key_events: events,
+            context,
             action,
         })
     }
 
-    pub fn try_new_from_strs(key_event: &str, scope_and_action: &str) -> Result<Self> {
-        let parts = scope_and_action.split("::").collect::<Vec<_>>();
-        if parts.len() != 2 {
-            return Err(anyhow::anyhow!(
-                "Invalid scope and action format: '{}'. Expected 'scope::action'",
-                scope_and_action
-            ));
-        }
-        let scope_str = parts[0];
-        let scope = Scope::try_from(scope_str)?;
-
-        let action_str = parts[1];
-
-        Ok(Self::try_new(&[key_event], scope, action_str)?)
+    /// Parse a user-provided binding from the CLI form
+    /// `<KEY> <CONTEXT_EXPR>=<ACTION>`.
+    pub fn try_new_from_strs(key_event: &str, context_and_action: &str) -> Result<Self> {
+        let (context_str, action_str) = context_and_action.rsplit_once('=').ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid context and action format: '{}'. Expected 'context=action'",
+                context_and_action
+            )
+        })?;
+        let action_id = ActionId::try_from(action_str.trim())?;
+        Self::try_new(&[key_event], context_str.trim(), action_id)
     }
 
     pub fn matches(&self, key: KeyEvent) -> bool {
@@ -617,101 +909,10 @@ mod expand_variations_tests {
     }
 }
 
-/// Build the [`POSSIBLE_ACTIONS`] slice from a list of [`Action::new`] calls,
-/// where any entry written as `Action::expand_new([scope1, scope2, …], …)`
-/// is automatically expanded into one [`Action::new`] per listed scope.
-///
-/// The output is an array literal that can be coerced to `&[Action]` in a
-/// `const` context.
-///
-/// # Syntax
-///
-/// ```ignore
-/// expand_actions![
-///     // ordinary action — one scope already baked in
-///     Action::new("name", "desc", Scope::Default, |app, _key| { /* … */ }),
-///
-///     // multi-scope action — expands to N Action::new entries
-///     Action::expand_new(
-///         [Scope::Default, Scope::FuzzyHistorySearch],
-///         "name", "desc",
-///         |app, _key| { /* … */ },
-///     ),
-/// ]
-/// ```
-macro_rules! expand_actions {
-    // ── Base case: accumulator exhausted → produce the slice ──────────────
-    (@acc [ $($acc:tt)* ]) => {
-        &[ $($acc)* ]
-    };
-
-    // ── Action::expand_new with a following comma (not the last item) ─────
-    (
-        @acc [ $($acc:tt)* ]
-        Action::expand_new(
-            [$($scopes:expr),+ $(,)?],
-            $name:literal,
-            $desc:literal,
-            $action:expr $(,)?
-        ),
-        $($rest:tt)*
-    ) => {
-        expand_actions!(@acc [
-            $($acc)*
-            $(Action::new($name, $desc, $scopes, $action),)+
-        ] $($rest)*)
-    };
-
-    // ── Action::expand_new as the last item (optional trailing comma) ─────
-    (
-        @acc [ $($acc:tt)* ]
-        Action::expand_new(
-            [$($scopes:expr),+ $(,)?],
-            $name:literal,
-            $desc:literal,
-            $action:expr $(,)?
-        ) $(,)?
-    ) => {
-        expand_actions!(@acc [
-            $($acc)*
-            $(Action::new($name, $desc, $scopes, $action),)+
-        ])
-    };
-
-    // ── Action::new with a following comma (not the last item) ───────────
-    (
-        @acc [ $($acc:tt)* ]
-        Action::new( $($args:tt)* ),
-        $($rest:tt)*
-    ) => {
-        expand_actions!(@acc [
-            $($acc)*
-            Action::new($($args)*),
-        ] $($rest)*)
-    };
-
-    // ── Action::new as the last item (optional trailing comma) ───────────
-    (
-        @acc [ $($acc:tt)* ]
-        Action::new( $($args:tt)* ) $(,)?
-    ) => {
-        expand_actions!(@acc [
-            $($acc)*
-            Action::new($($args)*),
-        ])
-    };
-
-    // ── Public entry point ────────────────────────────────────────────────
-    [ $($input:tt)* ] => {
-        expand_actions!(@acc [] $($input)*)
-    };
-}
-
-const POSSIBLE_ACTIONS: &[Action] = expand_actions![
+const POSSIBLE_ACTIONS: &[Action] = &[
     Action::new(
-        "accept_suggestion",
+        ActionId::AcceptInlineSuggestion,
         "Accept inline history suggestion",
-        Scope::InlineHistoryAcceptable,
         |app, _key| {
             if let Some((_, suf)) = &app.inline_history_suggestion {
                 app.buffer.insert_str(suf);
@@ -720,18 +921,16 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "dismiss_suggestion",
+        ActionId::DismissInlineSuggestion,
         "Temporarily dismiss the inline history suggestion",
-        Scope::InlineHistoryAcceptable,
         |app, _key| {
             app.dismissed_inline_suggestion_buffer = Some(app.buffer_for_history().to_owned());
             app.inline_history_suggestion = None;
         },
     ),
     Action::new(
-        "select_next",
+        ActionId::AgentOutputSelectNext,
         "Move down in agent output selection",
-        Scope::AgentOutputSelection,
         |app, _key| {
             if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                 selection.move_down();
@@ -739,9 +938,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "select_prev",
+        ActionId::AgentOutputSelectPrev,
         "Move up in agent output selection",
-        Scope::AgentOutputSelection,
         |app, _key| {
             if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                 selection.move_up();
@@ -749,9 +947,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_up",
+        ActionId::TabCompletionMoveUp,
         "Move up in tab completion suggestions",
-        Scope::TabCompletionAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_up_arrow();
@@ -759,9 +956,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_down",
+        ActionId::TabCompletionMoveDown,
         "Move down in tab completion suggestions",
-        Scope::TabCompletionAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_down_arrow();
@@ -769,9 +965,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_left",
+        ActionId::TabCompletionMoveLeft,
         "Move left in tab completion suggestions",
-        Scope::TabCompletionMultiColAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_left_arrow();
@@ -779,9 +974,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_right",
+        ActionId::TabCompletionMoveRight,
         "Move right in tab completion suggestions",
-        Scope::TabCompletionMultiColAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_right_arrow();
@@ -789,9 +983,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "select_prev",
+        ActionId::FuzzyHistorySelectPrev,
         "Scroll up through fuzzy history search results",
-        Scope::FuzzyHistorySearch,
         |app, _key| {
             let source = match &app.content_mode {
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
@@ -802,9 +995,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "select_next",
+        ActionId::FuzzyHistorySelectNext,
         "Scroll down through fuzzy history search results",
-        Scope::FuzzyHistorySearch,
         |app, _key| {
             let source = match &app.content_mode {
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
@@ -815,9 +1007,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "scroll_page_up",
+        ActionId::FuzzyHistoryScrollPageUp,
         "Scroll up one page",
-        Scope::FuzzyHistorySearch,
         |app, _key| {
             let source = match &app.content_mode {
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
@@ -828,9 +1019,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "scroll_page_down",
+        ActionId::FuzzyHistoryScrollPageDown,
         "Scroll down one page",
-        Scope::FuzzyHistorySearch,
         |app, _key| {
             let source = match &app.content_mode {
                 ContentMode::FuzzyHistorySearch(s) => s.clone(),
@@ -841,9 +1031,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "run_agent_mode",
+        ActionId::RunAgentMode,
         "Run the agent mode command",
-        Scope::Default,
         |app, _key| {
             if let Some((agent_cmd, buffer)) = app.resolve_agent_command(false) {
                 app.start_agent_mode(agent_cmd, &buffer);
@@ -853,17 +1042,15 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "accept_entry",
+        ActionId::FuzzyHistoryAcceptEntry,
         "Accept the currently selected entry",
-        Scope::FuzzyHistorySearch,
         |app, _key| {
             app.accept_fuzzy_history_search();
         },
     ),
     Action::new(
-        "accept_entry",
+        ActionId::TabCompletionAcceptEntry,
         "Accept the currently selected suggestion",
-        Scope::TabCompletionAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.accept_selected_filtered_item(&mut app.buffer);
@@ -872,9 +1059,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "run_help_command",
+        ActionId::RunHelpCommand,
         "Run the agent mode help command",
-        Scope::AgentError,
         |app, _key| match &app.content_mode {
             ContentMode::AgentError {
                 suggested_setup_command: Some(setup_cmd),
@@ -896,9 +1082,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "accept_entry",
+        ActionId::AgentOutputAcceptEntry,
         "Accept the currently selected agent output",
-        Scope::AgentOutputSelection,
         |app, _key| {
             if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                 if let Some(cmd) = selection.selected_command() {
@@ -910,9 +1095,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "submit_or_newline", // TODO name
+        ActionId::SubmitOrNewline,
         "Submit the current command. Insert a newline if the buffer has unclosed \",',[,(.",
-        Scope::Default,
         |app, _key| {
             if let Some((agent_cmd, buffer)) = app.resolve_agent_command(true) {
                 app.start_agent_mode(agent_cmd, &buffer);
@@ -922,9 +1106,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "prev_suggestion",
+        ActionId::TabCompletionPrevSuggestion,
         "Move to the previous tab completion suggestion",
-        Scope::TabCompletionAvailable,
         |app, _key| {
             if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                 active_suggestions.on_tab(true);
@@ -932,26 +1115,23 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "accept_and_edit",
+        ActionId::FuzzyHistoryAcceptAndEdit,
         "Accept the current fuzzy history search suggestion for editing",
-        Scope::FuzzyHistorySearch,
         |app, _key| {
             app.accept_fuzzy_history_search();
         },
     ),
     Action::new(
-        "accept_and_run",
+        ActionId::FuzzyHistoryAcceptAndRun,
         "Accept the current fuzzy history search suggestion and immediately run it",
-        Scope::FuzzyHistorySearch,
         |app, _key| {
             app.accept_fuzzy_history_search();
             app.try_submit_current_buffer();
         },
     ),
     Action::new(
-        "next_suggestion",
+        ActionId::AgentOutputNextSuggestion,
         "Move to the next tab completion suggestion",
-        Scope::AgentOutputSelection,
         |app, _key| {
             if let ContentMode::AgentOutputSelection(selection) = &mut app.content_mode {
                 selection.move_down(); // TODO: cycle through
@@ -959,9 +1139,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "next_suggestion",
+        ActionId::TabCompletionNextSuggestion,
         "Move to the next tab completion suggestion",
-        Scope::TabCompletionAvailable,
         |app, _key| {
             let no_suggestions = matches!(
                 &app.content_mode,
@@ -976,15 +1155,13 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "run_tab_completion",
+        ActionId::RunTabCompletion,
         "Start tab completion",
-        Scope::Default,
         |app, _key| app.start_tab_complete(),
     ),
     Action::new(
-        "toggle_mouse",
+        ActionId::ToggleMouse,
         "Toggle mouse state (Simple and Smart modes)",
-        Scope::Default,
         |app, _key| {
             if matches!(
                 app.settings.mouse_mode,
@@ -996,19 +1173,17 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "exit",
+        ActionId::Exit,
         "Send EOF to Bash if ignoreeof is non-zero",
-        Scope::Default,
         |app, _key| {
             // We shouldn't check bash_symbols::ignoreeof here.
             // Bash handles this itself.
             app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
-        }
+        },
     ),
     Action::new(
-        "cancel",
+        ActionId::Cancel,
         "Cancel the current command or exit if no command is running",
-        Scope::Default,
         |app, _key| {
             let buf = app.buffer.buffer().to_string();
             if false && buf.is_empty() {
@@ -1031,9 +1206,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "comment_line_submit",
+        ActionId::CommentLineSubmit,
         "Comment out the current line and submit",
-        Scope::Default,
         |app, _key| {
             app.buffer.move_to_start();
             app.buffer.insert_str("#");
@@ -1041,27 +1215,20 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "run_fuzzy_history_search",
+        ActionId::RunFuzzyHistorySearch,
         "Start fuzzy search through command history",
-        Scope::Default,
         |app, _key| {
             let history_buffer = app.buffer_for_history().to_owned();
             app.history_manager.warm_fuzzy_search_cache(&history_buffer);
             app.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::PastCommands);
         },
     ),
+    Action::new(ActionId::ClearScreen, "Clear the screen", |app, _key| {
+        app.needs_screen_cleared = true;
+    }),
     Action::new(
-        "clear_screen",
-        "Clear the screen",
-        Scope::Default,
-        |app, _key| {
-            app.needs_screen_cleared = true;
-        },
-    ),
-    Action::new(
-        "delete_left_until_start_of_line",
+        ActionId::DeleteLeftUntilStartOfLine,
         "Delete until start of line",
-        Scope::Default,
         |app, _key| {
             if app.buffer.delete_selection() {
                 return;
@@ -1070,9 +1237,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "delete_left_one_word_fine_grained",
+        ActionId::DeleteLeftOneWordFineGrained,
         "Delete one word to the left stopping at punctuation or path segment boundaries",
-        Scope::Default,
         |app, _key| {
             if app.buffer.delete_selection() {
                 return;
@@ -1081,9 +1247,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "delete_left_one_word_whitespace",
+        ActionId::DeleteLeftOneWordWhitespace,
         "Delete one word to the left, using whitespace as delimiter",
-        Scope::Default,
         |app, _key| {
             if app.buffer.delete_selection() {
                 return;
@@ -1092,9 +1257,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "delete_left",
+        ActionId::DeleteLeft,
         "Delete character before cursor",
-        Scope::Default,
         |app, _key| {
             if app.buffer.delete_selection() {
                 return;
@@ -1108,9 +1272,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "delete_right_until_end_of_line",
+        ActionId::DeleteRightUntilEndOfLine,
         "Delete until end of line",
-        Scope::Default,
         |app, _key| {
             if app.buffer.delete_selection() {
                 return;
@@ -1119,9 +1282,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "delete_right_one_word_fine_grained",
+        ActionId::DeleteRightOneWordFineGrained,
         "Delete one word to the right stopping at punctuation or path segment boundaries",
-        Scope::Default,
         |app, _key| {
             if app.buffer.delete_selection() {
                 return;
@@ -1130,9 +1292,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "delete_right_one_word_whitespace",
+        ActionId::DeleteRightOneWordWhitespace,
         "Delete one word to the right, using whitespace as delimiter",
-        Scope::Default,
         |app, _key| {
             if app.buffer.delete_selection() {
                 return;
@@ -1141,9 +1302,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "delete_right",
+        ActionId::DeleteRight,
         "Delete character after cursor",
-        Scope::Default,
         |app, _key| {
             if app.buffer.delete_selection() {
                 return;
@@ -1152,83 +1312,66 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_left_start_of_line",
+        ActionId::MoveLeftStartOfLine,
         "Move cursor to start of line",
-        Scope::Default,
         |app, _key| {
             app.buffer.clear_selection();
             app.buffer.move_start_of_line()
         },
     ),
     Action::new(
-        "move_left_one_word_whitespace",
+        ActionId::MoveLeftOneWordWhitespace,
         "Move one word left, using whitespace as delimiter",
-        Scope::Default,
         |app, _key| {
             app.buffer.clear_selection();
             app.buffer.move_one_word_left(WordDelim::WhiteSpace)
         },
     ),
     Action::new(
-        "move_left_one_word_fine_grained",
+        ActionId::MoveLeftOneWordFineGrained,
         "Move one word left, stopping at punctuation or path segment boundaries",
-        Scope::Default,
         |app, _key| {
             app.buffer.clear_selection();
             app.buffer.move_one_word_left_fine_grained()
         },
     ),
-    Action::new(
-        "move_left",
-        "Move cursor left",
-        Scope::Default,
-        |app, _key| {
-            if app.buffer.cursor_byte_pos() == 0
-                && app.prompt_manager.cwd_display_segment_count() > 0
-            {
-                app.content_mode = ContentMode::PromptDirSelect(0);
-            } else {
-                app.buffer.move_left();
-            }
+    Action::new(ActionId::MoveLeft, "Move cursor left", |app, _key| {
+        if app.buffer.cursor_byte_pos() == 0 && app.prompt_manager.cwd_display_segment_count() > 0 {
+            app.content_mode = ContentMode::PromptDirSelect(0);
+        } else {
+            app.buffer.move_left();
         }
-    ),
+    }),
     Action::new(
-        "move_right_end_of_line",
+        ActionId::MoveRightEndOfLine,
         "Move cursor to end of line",
-        Scope::Default,
         |app, _key| {
             app.buffer.clear_selection();
             app.buffer.move_end_of_line()
         },
     ),
     Action::new(
-        "move_right_one_word_whitespace",
+        ActionId::MoveRightOneWordWhitespace,
         "Move one word right, using whitespace as delimiter",
-        Scope::Default,
         |app, _key| {
             app.buffer.clear_selection();
             app.buffer.move_one_word_right(WordDelim::WhiteSpace)
         },
     ),
     Action::new(
-        "move_right_one_word_fine_grained",
+        ActionId::MoveRightOneWordFineGrained,
         "Move one word right, stopping at punctuation or path segment boundaries",
-        Scope::Default,
         |app, _key| {
             app.buffer.clear_selection();
             app.buffer.move_one_word_right_fine_grained()
         },
     ),
+    Action::new(ActionId::MoveRight, "Move cursor right", |app, _key| {
+        app.buffer.move_right()
+    }),
     Action::new(
-        "move_right",
-        "Move cursor right",
-        Scope::Default,
-        |app, _key| { app.buffer.move_right() },
-    ),
-    Action::new(
-        "move_line_up_or_history_up",
+        ActionId::MoveLineUpOrHistoryUp,
         "Move cursor up one line or navigate history if on the first buffer line",
-        Scope::Default,
         |app, _key| {
             app.buffer.clear_selection();
             if app.buffer.cursor_row() == 0 {
@@ -1247,9 +1390,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_line_down_or_history_down",
+        ActionId::MoveLineDownOrHistoryDown,
         "Move cursor down one line or navigate history if on the final buffer line",
-        Scope::Default,
         |app, _key| {
             app.buffer.clear_selection();
             if app.buffer.is_cursor_on_final_line() {
@@ -1272,116 +1414,101 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
             }
         },
     ),
-    Action::new("undo", "Undo last action", Scope::Default, |app, _key| {
+    Action::new(ActionId::Undo, "Undo last action", |app, _key| {
         app.buffer.clear_selection();
         app.buffer.undo()
     }),
-    Action::new("redo", "Redo last action", Scope::Default, |app, _key| {
+    Action::new(ActionId::Redo, "Redo last action", |app, _key| {
         app.buffer.clear_selection();
         app.buffer.redo()
     }),
-    Action::new(
-        "insert_char",
-        "Insert character",
-        Scope::Default,
-        |app, key| {
-            app.buffer.delete_selection();
-            if let KeyCode::Char(c) = key.code {
-                if app.settings.auto_close_chars {
-                    app.last_keypress_action = app.handle_char_insertion(c);
-                } else {
-                    app.buffer.insert_char(c);
-                }
+    Action::new(ActionId::InsertChar, "Insert character", |app, key| {
+        app.buffer.delete_selection();
+        if let KeyCode::Char(c) = key.code {
+            if app.settings.auto_close_chars {
+                app.last_keypress_action = app.handle_char_insertion(c);
+            } else {
+                app.buffer.insert_char(c);
             }
         }
-    ),
+    }),
     // ── Selection-extending movement actions ──────────────────────────
     // These actions extend the current text selection while moving the cursor.
     // If no selection is currently active, they anchor it at the current
     // cursor position before moving.
     Action::new(
-        "move_left_extend_selection",
+        ActionId::MoveLeftExtendSelection,
         "Move cursor left, extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.move_left_selection();
         },
     ),
     Action::new(
-        "move_right_extend_selection",
+        ActionId::MoveRightExtendSelection,
         "Move cursor right, extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.move_right_selection();
         },
     ),
     Action::new(
-        "move_line_up_extend_selection",
+        ActionId::MoveLineUpExtendSelection,
         "Move cursor up one line, extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.start_selection_if_none();
             app.buffer.move_line_up();
         },
     ),
     Action::new(
-        "move_line_down_extend_selection",
+        ActionId::MoveLineDownExtendSelection,
         "Move cursor down one line, extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.start_selection_if_none();
             app.buffer.move_line_down();
         },
     ),
     Action::new(
-        "move_left_start_of_line_extend_selection",
+        ActionId::MoveLeftStartOfLineExtendSelection,
         "Move cursor to start of line, extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.start_selection_if_none();
             app.buffer.move_start_of_line();
         },
     ),
     Action::new(
-        "move_right_end_of_line_extend_selection",
+        ActionId::MoveRightEndOfLineExtendSelection,
         "Move cursor to end of line, extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.start_selection_if_none();
             app.buffer.move_end_of_line();
         },
     ),
     Action::new(
-        "move_left_one_word_whitespace_extend_selection",
+        ActionId::MoveLeftOneWordWhitespaceExtendSelection,
         "Move one word left (whitespace delimiter), extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.start_selection_if_none();
             app.buffer.move_one_word_left(WordDelim::WhiteSpace);
         },
     ),
     Action::new(
-        "move_right_one_word_whitespace_extend_selection",
+        ActionId::MoveRightOneWordWhitespaceExtendSelection,
         "Move one word right (whitespace delimiter), extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.start_selection_if_none();
             app.buffer.move_one_word_right(WordDelim::WhiteSpace);
         },
     ),
     Action::new(
-        "move_left_one_word_fine_grained_extend_selection",
+        ActionId::MoveLeftOneWordFineGrainedExtendSelection,
         "Move one word left (fine-grained), extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.start_selection_if_none();
             app.buffer.move_one_word_left_fine_grained();
         },
     ),
     Action::new(
-        "move_right_one_word_fine_grained_extend_selection",
+        ActionId::MoveRightOneWordFineGrainedExtendSelection,
         "Move one word right (fine-grained), extending the text selection",
-        Scope::Default,
         |app, _key| {
             app.buffer.start_selection_if_none();
             app.buffer.move_one_word_right_fine_grained();
@@ -1389,29 +1516,29 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     ),
     // ── TextSelected scope actions ────────────────────────────────────
     Action::new(
-        "copy_selection_osc52",
+        ActionId::CopySelectionOsc52,
         "Copy the current text selection to the system clipboard via OSC 52",
-        Scope::TextSelected,
-        |app, _key| if let Some(text) = app.buffer.selected_text() {
-            match crossterm::execute!(
-                std::io::stdout(),
-                crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
-            ) {
-                Ok(()) => {
-                    log::info!("Copied selection to clipboard via OSC 52");
+        |app, _key| {
+            if let Some(text) = app.buffer.selected_text() {
+                match crossterm::execute!(
+                    std::io::stdout(),
+                    crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
+                ) {
+                    Ok(()) => {
+                        log::info!("Copied selection to clipboard via OSC 52");
+                    }
+                    Err(e) => {
+                        log::error!("Failed to copy to clipboard via OSC 52: {}", e);
+                    }
                 }
-                Err(e) => {
-                    log::error!("Failed to copy to clipboard via OSC 52: {}", e);
-                }
+                app.buffer.clear_selection();
             }
-            app.buffer.clear_selection();
         },
     ),
     // ── PromptCwdEdit actions ─────────────────────────────────────────
     Action::new(
-        "move_left",
+        ActionId::PromptDirMoveLeft,
         "Navigate to the parent directory segment in the prompt",
-        Scope::PromptDirSelect,
         |app, _key| {
             if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
                 let max_index = app
@@ -1425,9 +1552,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_right",
+        ActionId::PromptDirMoveRight,
         "Navigate to the child directory segment or exit prompt CWD edit mode",
-        Scope::PromptDirSelect,
         |app, _key| match app.content_mode {
             ContentMode::PromptDirSelect(0) => {
                 app.content_mode = ContentMode::Normal;
@@ -1439,9 +1565,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "accept_entry",
+        ActionId::PromptDirAcceptEntry,
         "Replace the buffer with `cd <selected path>` and exit prompt CWD edit mode",
-        Scope::PromptDirSelect,
         |app, _key| {
             if let ContentMode::PromptDirSelect(index) = app.content_mode {
                 if let Some(path) = app.prompt_manager.cwd_path_for_index(index) {
@@ -1458,9 +1583,8 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_to_start",
+        ActionId::PromptDirMoveToStart,
         "Move selection to the leftmost directory segment in the prompt",
-        Scope::PromptDirSelect,
         |app, _key| {
             if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
                 *index = app
@@ -1471,30 +1595,16 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
         },
     ),
     Action::new(
-        "move_to_end",
+        ActionId::PromptDirMoveToEnd,
         "Move selection to the rightmost (current) directory segment in the prompt",
-        Scope::PromptDirSelect,
         |app, _key| {
             if let ContentMode::PromptDirSelect(ref mut index) = app.content_mode {
                 *index = 0;
             }
         },
     ),
-    Action::expand_new(
-        [
-            Scope::Default,
-            Scope::FuzzyHistorySearch,
-            Scope::TabCompletionWaiting,
-            Scope::TabCompletion,
-            Scope::TabCompletionAvailable,
-            Scope::AgentModeWaiting,
-            Scope::AgentOutputSelection,
-            Scope::AgentError,
-            Scope::InlineHistoryAcceptable,
-            Scope::PromptDirSelect,
-            Scope::TextSelected,
-        ],
-        "escape_to_normal_mode",
+    Action::new(
+        ActionId::EscapeToNormalMode,
         "Return to the normal command editing mode",
         |app, _key| {
             app.buffer.clear_selection();
@@ -1503,14 +1613,50 @@ const POSSIBLE_ACTIONS: &[Action] = expand_actions![
     ),
 ];
 
-pub fn possible_action_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
-    let current = current.to_string_lossy();
-    POSSIBLE_ACTIONS
+/// Tab-completion for the `<context_expr>=<action>` argument of
+/// `flyline key bind`.
+///
+/// If the input contains `=`, completes the action name to the right of the
+/// last `=`; otherwise, completes the (possibly partial) `&&`-separated
+/// context variable to the right of the last `&&`.
+pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    let current = current.to_string_lossy().to_string();
+    if let Some(eq_idx) = current.rfind('=') {
+        let prefix = &current[..=eq_idx];
+        let action_part = &current[eq_idx + 1..];
+        let action_lower = action_part.to_lowercase();
+        return POSSIBLE_ACTIONS
+            .iter()
+            .filter_map(|a| {
+                let s = a.id.as_str();
+                if s.to_lowercase().contains(&action_lower) {
+                    Some(CompletionCandidate::new(format!("{}{}", prefix, s)))
+                } else {
+                    None
+                }
+            })
+            .collect();
+    }
+    // Completing context variables.  Determine the prefix already typed
+    // (everything up to and including the last `&&`) and the partial
+    // variable name being typed.
+    let (prefix, partial) = if let Some(idx) = current.rfind("&&") {
+        (&current[..idx + 2], &current[idx + 2..])
+    } else {
+        ("", current.as_str())
+    };
+    let partial_clean = partial.trim_start_matches('!');
+    let partial_lower = partial_clean.to_lowercase();
+    let neg_prefix = if partial.starts_with('!') { "!" } else { "" };
+    ContextVar::ALL
         .iter()
-        .filter_map(|a| {
-            let s = a.scoped_action_name();
-            if s.to_lowercase().contains(&current.to_lowercase()) {
-                Some(CompletionCandidate::new(s))
+        .filter_map(|v| {
+            let name = v.as_str();
+            if name.to_lowercase().contains(&partial_lower) {
+                Some(CompletionCandidate::new(format!(
+                    "{}{}{}",
+                    prefix, neg_prefix, name
+                )))
             } else {
                 None
             }
@@ -1619,331 +1765,376 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
 /// From highest priority to lowest
 static DEFAULT_BINDINGS: LazyLock<[Binding; 78]> = LazyLock::new(|| {
     [
-        Binding::try_new(&["Down"], Scope::AgentOutputSelection, "select_next").unwrap(),
-        Binding::try_new(&["Up"], Scope::AgentOutputSelection, "select_prev").unwrap(),
-        Binding::try_new(&["Up"], Scope::TabCompletionAvailable, "move_up").unwrap(),
-        Binding::try_new(&["Down"], Scope::TabCompletionAvailable, "move_down").unwrap(),
+        Binding::try_new(
+            &["Down"],
+            "agentOutputSelection",
+            ActionId::AgentOutputSelectNext,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Up"],
+            "agentOutputSelection",
+            ActionId::AgentOutputSelectPrev,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Up"],
+            "tabCompletionAvailable",
+            ActionId::TabCompletionMoveUp,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Down"],
+            "tabCompletionAvailable",
+            ActionId::TabCompletionMoveDown,
+        )
+        .unwrap(),
         Binding::try_new(
             &["Left"],
-            Scope::TabCompletionMultiColAvailable,
-            "move_left",
+            "tabCompletionMultiColAvailable",
+            ActionId::TabCompletionMoveLeft,
         )
         .unwrap(),
         Binding::try_new(
             &["Right"],
-            Scope::TabCompletionMultiColAvailable,
-            "move_right",
+            "tabCompletionMultiColAvailable",
+            ActionId::TabCompletionMoveRight,
         )
         .unwrap(),
-        Binding::try_new(&["Up"], Scope::FuzzyHistorySearch, "select_prev").unwrap(),
+        Binding::try_new(
+            &["Up"],
+            "fuzzyHistorySearch",
+            ActionId::FuzzyHistorySelectPrev,
+        )
+        .unwrap(),
         Binding::try_new(
             &["Down", "Ctrl+s"],
-            Scope::FuzzyHistorySearch,
-            "select_next",
+            "fuzzyHistorySearch",
+            ActionId::FuzzyHistorySelectNext,
         )
         .unwrap(),
-        Binding::try_new(&["PageUp"], Scope::FuzzyHistorySearch, "scroll_page_up").unwrap(),
-        Binding::try_new(&["PageDown"], Scope::FuzzyHistorySearch, "scroll_page_down").unwrap(),
+        Binding::try_new(
+            &["PageUp"],
+            "fuzzyHistorySearch",
+            ActionId::FuzzyHistoryScrollPageUp,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["PageDown"],
+            "fuzzyHistorySearch",
+            ActionId::FuzzyHistoryScrollPageDown,
+        )
+        .unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            Scope::FuzzyHistorySearch,
-            "escape_to_normal_mode", // Stop fuzzy history search if active, otherwise escape to normal mode
+            "fuzzyHistorySearch",
+            ActionId::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Enter"],
-            Scope::Default,
-            "run_agent_mode",
+            "always",
+            ActionId::RunAgentMode,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            Scope::FuzzyHistorySearch,
-            "accept_entry",
+            "fuzzyHistorySearch",
+            ActionId::FuzzyHistoryAcceptEntry,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            Scope::TabCompletionAvailable,
-            "accept_entry",
+            "tabCompletionAvailable",
+            ActionId::TabCompletionAcceptEntry,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            Scope::AgentError,
-            "run_help_command",
+            "agentError",
+            ActionId::RunHelpCommand,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            Scope::AgentOutputSelection,
-            "accept_entry",
+            "agentOutputSelection",
+            ActionId::AgentOutputAcceptEntry,
         )
         .unwrap(),
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
         Binding::try_new(
             &expand_variations!["Enter"],
-            Scope::PromptDirSelect,
-            "accept_entry",
+            "promptDirSelect",
+            ActionId::PromptDirAcceptEntry,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Enter"],
-            Scope::Default,
-            "submit_or_newline",
+            "always",
+            ActionId::SubmitOrNewline,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["BackTab"],
-            Scope::TabCompletionAvailable,
-            "prev_suggestion",
+            "tabCompletionAvailable",
+            ActionId::TabCompletionPrevSuggestion,
         )
         .unwrap(),
         // Scoped Esc bindings must appear before the Normal Esc binding.
-        Binding::try_new(&["Tab"], Scope::FuzzyHistorySearch, "accept_and_edit").unwrap(),
+        Binding::try_new(
+            &["Tab"],
+            "fuzzyHistorySearch",
+            ActionId::FuzzyHistoryAcceptAndEdit,
+        )
+        .unwrap(),
         Binding::try_new(
             &expand_variations!["BackTab"],
-            Scope::AgentOutputSelection,
-            "select_prev",
+            "agentOutputSelection",
+            ActionId::AgentOutputSelectPrev,
         )
         .unwrap(),
-        Binding::try_new(&["Tab"], Scope::AgentOutputSelection, "next_suggestion").unwrap(),
-        Binding::try_new(&["Tab"], Scope::TabCompletionAvailable, "next_suggestion").unwrap(),
-        Binding::try_new(&["Tab"], Scope::Default, "run_tab_completion").unwrap(),
-        Binding::try_new(&["Esc"], Scope::AgentError, "escape_to_normal_mode").unwrap(),
-        Binding::try_new(&["Esc"], Scope::AgentModeWaiting, "escape_to_normal_mode").unwrap(),
         Binding::try_new(
-            &["Esc"],
-            Scope::AgentOutputSelection,
-            "escape_to_normal_mode",
+            &["Tab"],
+            "agentOutputSelection",
+            ActionId::AgentOutputNextSuggestion,
         )
         .unwrap(),
-        Binding::try_new(&["Esc"], Scope::FuzzyHistorySearch, "escape_to_normal_mode").unwrap(),
-        Binding::try_new(&["Esc"], Scope::PromptDirSelect, "escape_to_normal_mode").unwrap(),
         Binding::try_new(
-            &["Esc"],
-            Scope::TabCompletionAvailable,
-            "escape_to_normal_mode",
+            &["Tab"],
+            "tabCompletionAvailable",
+            ActionId::TabCompletionNextSuggestion,
         )
         .unwrap(),
-        Binding::try_new(&["Esc"], Scope::TabCompletion, "escape_to_normal_mode").unwrap(),
+        Binding::try_new(&["Tab"], "always", ActionId::RunTabCompletion).unwrap(),
+        Binding::try_new(&["Esc"], "agentError", ActionId::EscapeToNormalMode).unwrap(),
+        Binding::try_new(&["Esc"], "agentModeWaiting", ActionId::EscapeToNormalMode).unwrap(),
         Binding::try_new(
             &["Esc"],
-            Scope::TabCompletionWaiting,
-            "escape_to_normal_mode",
+            "agentOutputSelection",
+            ActionId::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(&["Esc"], "fuzzyHistorySearch", ActionId::EscapeToNormalMode).unwrap(),
+        Binding::try_new(&["Esc"], "promptDirSelect", ActionId::EscapeToNormalMode).unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            "tabCompletionAvailable",
+            ActionId::EscapeToNormalMode,
+        )
+        .unwrap(),
+        Binding::try_new(&["Esc"], "tabCompletion", ActionId::EscapeToNormalMode).unwrap(),
+        Binding::try_new(
+            &["Esc"],
+            "tabCompletionWaiting",
+            ActionId::EscapeToNormalMode,
         )
         .unwrap(),
         // TextSelected Esc must appear before the Default Esc binding so that
         // pressing Esc with a selection active clears the selection rather
         // than toggling the mouse.
-        Binding::try_new(&["Esc"], Scope::TextSelected, "escape_to_normal_mode").unwrap(),
-        Binding::try_new(&["Esc"], Scope::Default, "toggle_mouse").unwrap(),
-        Binding::try_new(&["Ctrl+d"], Scope::Default, "exit").unwrap(),
+        Binding::try_new(&["Esc"], "textSelected", ActionId::EscapeToNormalMode).unwrap(),
+        Binding::try_new(&["Esc"], "always", ActionId::ToggleMouse).unwrap(),
+        Binding::try_new(&["Ctrl+d"], "always", ActionId::Exit).unwrap(),
         // TextSelected Ctrl+c must appear before the Default Ctrl+c binding
         // so that copying the selection takes precedence over cancelling.
         Binding::try_new(
             &["Ctrl+c", "Meta+c"],
-            Scope::TextSelected,
-            "copy_selection_osc52",
+            "textSelected",
+            ActionId::CopySelectionOsc52,
         )
         .unwrap(),
-        Binding::try_new(&["Ctrl+c", "Meta+c"], Scope::Default, "cancel").unwrap(),
+        Binding::try_new(&["Ctrl+c", "Meta+c"], "always", ActionId::Cancel).unwrap(),
         Binding::try_new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
             &["Ctrl+/", "Meta+/", "Super+/", "Ctrl+7"],
-            Scope::Default,
-            "comment_line_submit",
+            "always",
+            ActionId::CommentLineSubmit,
         )
         .unwrap(),
         Binding::try_new(
             &["ctrl+r", "meta+r"],
-            Scope::Default,
-            "run_fuzzy_history_search",
+            "always",
+            ActionId::RunFuzzyHistorySearch,
         )
         .unwrap(),
-        Binding::try_new(&["Ctrl+l"], Scope::Default, "clear_screen").unwrap(),
+        Binding::try_new(&["Ctrl+l"], "always", ActionId::ClearScreen).unwrap(),
         Binding::try_new(
             &["Super+Backspace", "Ctrl+u", "Ctrl+Shift+Backspace"],
-            Scope::Default,
-            "delete_left_until_start_of_line",
+            "always",
+            ActionId::DeleteLeftUntilStartOfLine,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Backspace"],
-            Scope::Default,
-            "delete_left_one_word_fine_grained",
+            "always",
+            ActionId::DeleteLeftOneWordFineGrained,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Backspace", "Ctrl+H", "Alt+W", "Ctrl+w"],
-            Scope::Default,
-            "delete_left_one_word_whitespace",
+            "always",
+            ActionId::DeleteLeftOneWordWhitespace,
         )
         .unwrap(),
-        Binding::try_new(&["Backspace"], Scope::Default, "delete_left").unwrap(),
+        Binding::try_new(&["Backspace"], "always", ActionId::DeleteLeft).unwrap(),
         Binding::try_new(
             &["Super+Delete", "Ctrl+Shift+Delete", "Ctrl+k"],
-            Scope::Default,
-            "delete_right_until_end_of_line",
+            "always",
+            ActionId::DeleteRightUntilEndOfLine,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Delete"],
-            Scope::Default,
-            "delete_right_one_word_fine_grained",
+            "always",
+            ActionId::DeleteRightOneWordFineGrained,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Delete"],
-            Scope::Default,
-            "delete_right_one_word_whitespace",
+            "always",
+            ActionId::DeleteRightOneWordWhitespace,
         )
         .unwrap(),
-        Binding::try_new(&["Delete"], Scope::Default, "delete_right").unwrap(),
+        Binding::try_new(&["Delete"], "always", ActionId::DeleteRight).unwrap(),
         // PromptCwdEdit Home/End/Alt+Left/Ctrl+Left/Alt+Right/Ctrl+Right must appear before
         // the corresponding Default/InlineHistoryAcceptable bindings.
         Binding::try_new(
             &expand_variations!["Home"],
-            Scope::PromptDirSelect,
-            "move_to_start",
+            "promptDirSelect",
+            ActionId::PromptDirMoveToStart,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["End"],
-            Scope::PromptDirSelect,
-            "move_to_end",
+            "promptDirSelect",
+            ActionId::PromptDirMoveToEnd,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Left", "Alt+Left"],
-            Scope::PromptDirSelect,
-            "move_left",
+            "promptDirSelect",
+            ActionId::PromptDirMoveLeft,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Ctrl+Right", "Alt+Right"],
-            Scope::PromptDirSelect,
-            "move_right",
+            "promptDirSelect",
+            ActionId::PromptDirMoveRight,
         )
         .unwrap(),
         Binding::try_new(
             &["Shift+Home", "Super+Shift+Left"],
-            Scope::Default,
-            "move_left_start_of_line_extend_selection",
+            "always",
+            ActionId::MoveLeftStartOfLineExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Home", "Super+Left", "Ctrl+A", "Super+A"],
-            Scope::Default,
-            "move_left_start_of_line",
+            "always",
+            ActionId::MoveLeftStartOfLine,
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Shift+Left"],
-            Scope::Default,
-            "move_left_one_word_whitespace_extend_selection",
+            "always",
+            ActionId::MoveLeftOneWordWhitespaceExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Left"], // Emacs-style whitespace word-left
-            Scope::Default,
-            "move_left_one_word_whitespace",
+            "always",
+            ActionId::MoveLeftOneWordWhitespace,
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Shift+Left", "Meta+Shift+Left"],
-            Scope::Default,
-            "move_left_one_word_fine_grained_extend_selection",
+            "always",
+            ActionId::MoveLeftOneWordFineGrainedExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Left"], // Fine-grained word-left (stops at punctuation / path boundaries)
-            Scope::Default,
-            "move_left_one_word_fine_grained",
+            "always",
+            ActionId::MoveLeftOneWordFineGrained,
         )
         .unwrap(),
         // PromptCwdEdit Left must appear before the Normal Left binding.
-        Binding::try_new(&["Left"], Scope::PromptDirSelect, "move_left").unwrap(),
-        Binding::try_new(
-            &["Shift+Left"],
-            Scope::Default,
-            "move_left_extend_selection",
-        )
-        .unwrap(),
-        Binding::try_new(&["Left"], Scope::Default, "move_left").unwrap(),
+        Binding::try_new(&["Left"], "promptDirSelect", ActionId::PromptDirMoveLeft).unwrap(),
+        Binding::try_new(&["Shift+Left"], "always", ActionId::MoveLeftExtendSelection).unwrap(),
+        Binding::try_new(&["Left"], "always", ActionId::MoveLeft).unwrap(),
         Binding::try_new(
             &expand_variations!["Right", "End"],
-            Scope::InlineHistoryAcceptable,
-            "accept_suggestion",
+            "inlineSuggestionAvailable&&cursorAtEnd",
+            ActionId::AcceptInlineSuggestion,
         )
         .unwrap(),
         Binding::try_new(
             &["Shift+End", "Super+Shift+Right"],
-            Scope::Default,
-            "move_right_end_of_line_extend_selection",
+            "always",
+            ActionId::MoveRightEndOfLineExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["End", "Super+Right", "Ctrl+E", "Super+E"],
-            Scope::Default,
-            "move_right_end_of_line",
+            "always",
+            ActionId::MoveRightEndOfLine,
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Shift+Right"],
-            Scope::Default,
-            "move_right_one_word_whitespace_extend_selection",
+            "always",
+            ActionId::MoveRightOneWordWhitespaceExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &["Ctrl+Right"], // Emacs-style whitespace word-right
-            Scope::Default,
-            "move_right_one_word_whitespace",
+            "always",
+            ActionId::MoveRightOneWordWhitespace,
         )
         .unwrap(),
         Binding::try_new(
             &["Alt+Shift+Right", "Meta+Shift+Right"],
-            Scope::Default,
-            "move_right_one_word_fine_grained_extend_selection",
+            "always",
+            ActionId::MoveRightOneWordFineGrainedExtendSelection,
         )
         .unwrap(),
         Binding::try_new(
             &expand_variations!["Alt+Right"], // Fine-grained word-right (stops at punctuation / path boundaries)
-            Scope::Default,
-            "move_right_one_word_fine_grained",
+            "always",
+            ActionId::MoveRightOneWordFineGrained,
         )
         .unwrap(),
         // PromptCwdEdit Right must appear before the Normal Right binding.
-        Binding::try_new(&["Right"], Scope::PromptDirSelect, "move_right").unwrap(),
+        Binding::try_new(&["Right"], "promptDirSelect", ActionId::PromptDirMoveRight).unwrap(),
         Binding::try_new(
             &["Shift+Right"],
-            Scope::Default,
-            "move_right_extend_selection",
+            "always",
+            ActionId::MoveRightExtendSelection,
         )
         .unwrap(),
-        Binding::try_new(&["Right"], Scope::Default, "move_right").unwrap(),
-        Binding::try_new(
-            &["Shift+Up"],
-            Scope::Default,
-            "move_line_up_extend_selection",
-        )
-        .unwrap(),
-        Binding::try_new(&["Up"], Scope::Default, "move_line_up_or_history_up").unwrap(),
+        Binding::try_new(&["Right"], "always", ActionId::MoveRight).unwrap(),
+        Binding::try_new(&["Shift+Up"], "always", ActionId::MoveLineUpExtendSelection).unwrap(),
+        Binding::try_new(&["Up"], "always", ActionId::MoveLineUpOrHistoryUp).unwrap(),
         Binding::try_new(
             &["Shift+Down"],
-            Scope::Default,
-            "move_line_down_extend_selection",
+            "always",
+            ActionId::MoveLineDownExtendSelection,
         )
         .unwrap(),
-        Binding::try_new(&["Down"], Scope::Default, "move_line_down_or_history_down").unwrap(),
+        Binding::try_new(&["Down"], "always", ActionId::MoveLineDownOrHistoryDown).unwrap(),
         Binding::try_new(
             &["Ctrl+y", "Super+Y", "Ctrl+Shift+Z", "Super+Shift+Z"],
-            Scope::Default,
-            "redo",
+            "always",
+            ActionId::Redo,
         )
         .unwrap(),
-        Binding::try_new(&["Ctrl+z", "Super+Z"], Scope::Default, "undo").unwrap(),
-        Binding::try_new(&["AnyChar", "Shift+AnyChar"], Scope::Default, "insert_char").unwrap(),
+        Binding::try_new(&["Ctrl+z", "Super+Z"], "always", ActionId::Undo).unwrap(),
+        Binding::try_new(
+            &["AnyChar", "Shift+AnyChar"],
+            "always",
+            ActionId::InsertChar,
+        )
+        .unwrap(),
     ]
 });
 
@@ -2162,33 +2353,29 @@ fn key_event_a_shadows_b(a: &KeyEventMatch, b: &KeyEventMatch) -> bool {
 struct Conflict {
     /// Human-readable display of the key event that is inaccessible.
     key_display: String,
-    /// `scoped_action_name()` of the inaccessible (shadowed) binding.
+    /// `<context>=<action>` of the inaccessible (shadowed) binding.
     inaccessible_action: String,
-    /// `scoped_action_name()` of the higher-priority binding that shadows it.
+    /// `<context>=<action>` of the higher-priority binding that shadows it.
     shadowing_action: String,
 }
 
 /// Returns `true` if a higher-priority binding `higher` can shadow a
-/// lower-priority binding `lower` for the same key, making `lower` inaccessible.
+/// lower-priority binding `lower` for the same key, making `lower` unreachable.
 ///
-/// Two patterns cause shadowing:
-/// 1. `higher` is in `Scope::Default` (always active) and `lower` is in a narrower
-///    scope — the `Default` binding fires before the scoped one can.
-/// 2. Both bindings are in the same scope — only the higher-priority one fires.
-fn scope_shadows(higher: &Binding, lower: &Binding) -> bool {
-    (higher.action.scope == Scope::Default && lower.action.scope != Scope::Default)
-        || (higher.action.scope == lower.action.scope)
+/// With AND-only context expressions, `higher` shadows `lower` iff every
+/// literal in `higher.context` also appears in `lower.context`.  Equivalently,
+/// `higher`'s context is implied by `lower`'s context: any state in which
+/// `lower` would fire also satisfies `higher`, so `higher` always wins.
+fn context_shadows(higher: &Binding, lower: &Binding) -> bool {
+    higher
+        .context
+        .literals
+        .iter()
+        .all(|h_lit| lower.context.literals.iter().any(|l_lit| l_lit == h_lit))
 }
 
 /// Scan the combined set of bindings (user overrides + defaults) and return
 /// every case where a lower-priority binding is permanently shadowed.
-///
-/// Two conflict patterns are detected:
-/// 1. A `Scope::Default` binding has higher priority than a scoped binding for the
-///    same key.  Because `Default` is always active, the scoped binding can never
-///    be reached.
-/// 2. Two bindings in the *same* scope share the same key code.  Only the
-///    higher-priority one will ever fire.
 fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) -> Vec<Conflict> {
     // Collect all bindings highest-priority-first, mirroring `handle_key_event`.
     let all_bindings: Vec<&Binding> = user_bindings
@@ -2203,15 +2390,23 @@ fn detect_binding_conflicts(user_bindings: &[Binding], remappings: &[KeyRemap]) 
         for kem_b in &binding_b.key_events {
             // Check whether any higher-priority binding shadows this key event.
             'find_shadow: for binding_a in &all_bindings[..idx_b] {
-                if !scope_shadows(binding_a, binding_b) {
+                if !context_shadows(binding_a, binding_b) {
                     continue;
                 }
                 for kem_a in &binding_a.key_events {
                     if key_event_a_shadows_b(kem_a, kem_b) {
                         conflicts.push(Conflict {
                             key_display: kem_b.display_with_remapping(remappings),
-                            inaccessible_action: binding_b.action.scoped_action_name(),
-                            shadowing_action: binding_a.action.scoped_action_name(),
+                            inaccessible_action: format!(
+                                "{}={}",
+                                binding_b.context.display(),
+                                binding_b.action.id.as_str()
+                            ),
+                            shadowing_action: format!(
+                                "{}={}",
+                                binding_a.context.display(),
+                                binding_a.action.id.as_str()
+                            ),
                         });
                         break 'find_shadow;
                     }
@@ -2245,7 +2440,8 @@ pub fn print_bindings_table(
 
     struct Row {
         keys: String,
-        scoped_action: String,
+        context: String,
+        action_name: String,
         description: String,
     }
 
@@ -2260,8 +2456,9 @@ pub fn print_bindings_table(
             keys = format!("User keybinding: {}", keys);
         }
         Row {
-            keys: keys.clone(),
-            scoped_action: binding.action.scoped_action_name(),
+            keys,
+            context: binding.context.display(),
+            action_name: binding.action.id.as_str().to_string(),
             description: binding.action.description.to_string(),
         }
     };
@@ -2287,21 +2484,24 @@ pub fn print_bindings_table(
 
     let constraints = [
         Constraint::Fill(1), // Key(s)
+        Constraint::Fill(2), // Context
         Constraint::Fill(2), // Action
-        Constraint::Fill(2), // Description
+        Constraint::Fill(3), // Description
     ];
 
     // Build the TableAccum for the bindings.
     let mut accum = TableAccum::default();
     accum.header_cells = vec![
         "Key(s)".to_string(),
+        "Context".to_string(),
         "Action".to_string(),
         "Description".to_string(),
     ];
     for row in &rows {
         accum.body_rows.push(vec![
             row.keys.clone(),
-            row.scoped_action.clone(),
+            row.context.clone(),
+            row.action_name.clone(),
             row.description.clone(),
         ]);
     }
@@ -2362,6 +2562,11 @@ impl<'a> App<'a> {
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
 
+        // Evaluate every context variable once up front, so each variable's
+        // condition runs at most once per key press regardless of how many
+        // bindings reference it.
+        let context_values = ContextValues::evaluate(self);
+
         for binding in self
             .settings
             .keybindings
@@ -2369,8 +2574,8 @@ impl<'a> App<'a> {
             .rev()
             .chain(DEFAULT_BINDINGS.iter())
         {
-            if binding.action.scope.is_active(self) && binding.matches(key) {
-                log::trace!("Matched binding: {}", binding.action.name);
+            if binding.context.evaluate(&context_values) && binding.matches(key) {
+                log::trace!("Matched binding: {}", binding.action.id.as_str());
                 (binding.action.action)(self, key);
                 break;
             }
@@ -2764,9 +2969,105 @@ mod tests {
     // #[test]
     // fn test_binding_matches_requires_exact_modifiers() {
     //     let binding =
-    //         Binding::try_new(&["Home"], Scope::Default, "move_left_start_of_line").unwrap();
+    //         Binding::try_new(&["Home"], "always", ActionId::MoveLeftStartOfLine).unwrap();
 
     //     assert!(binding.matches(key(KeyCode::Home)));
     //     assert!(!binding.matches(key_with_mods(KeyCode::Home, KeyModifiers::SHIFT)));
     // }
+
+    #[test]
+    fn test_context_expr_parse_single() {
+        let e = ContextExpr::try_from("always").unwrap();
+        assert!(e.literals.len() == 1);
+        assert!(e.literals[0].var == ContextVar::Always);
+        assert!(!e.literals[0].negated);
+    }
+
+    #[test]
+    fn test_context_expr_parse_and_chain() {
+        let e = ContextExpr::try_from("inlineSuggestionAvailable&&cursorAtEnd").unwrap();
+        assert!(e.literals.len() == 2);
+        assert!(e.literals[0].var == ContextVar::InlineSuggestionAvailable);
+        assert!(e.literals[1].var == ContextVar::CursorAtEnd);
+    }
+
+    #[test]
+    fn test_context_expr_parse_negation() {
+        let e = ContextExpr::try_from("!textSelected&&cursorAtEnd").unwrap();
+        assert!(e.literals[0].negated);
+        assert!(e.literals[0].var == ContextVar::TextSelected);
+        assert!(!e.literals[1].negated);
+        assert!(e.literals[1].var == ContextVar::CursorAtEnd);
+    }
+
+    #[test]
+    fn test_context_expr_rejects_or() {
+        assert!(ContextExpr::try_from("a||b").is_err());
+    }
+
+    #[test]
+    fn test_context_expr_rejects_parens() {
+        assert!(ContextExpr::try_from("(a&&b)").is_err());
+    }
+
+    #[test]
+    fn test_context_expr_rejects_unknown_var() {
+        assert!(ContextExpr::try_from("notAVariable").is_err());
+    }
+
+    #[test]
+    fn test_context_expr_display_roundtrip() {
+        let s = "inlineSuggestionAvailable&&!textSelected&&cursorAtEnd";
+        let e = ContextExpr::try_from(s).unwrap();
+        assert!(e.display() == s);
+    }
+
+    #[test]
+    fn test_action_id_from_str_known() {
+        assert!(ActionId::try_from("submitOrNewline").unwrap() == ActionId::SubmitOrNewline);
+        assert!(
+            ActionId::try_from("acceptInlineSuggestion").unwrap()
+                == ActionId::AcceptInlineSuggestion
+        );
+    }
+
+    #[test]
+    fn test_action_id_from_str_unknown() {
+        assert!(ActionId::try_from("not_a_real_action").is_err());
+    }
+
+    #[test]
+    fn test_binding_try_new_from_strs_basic() {
+        let b = Binding::try_new_from_strs("Ctrl+Enter", "always=submitOrNewline").unwrap();
+        assert!(b.action.id == ActionId::SubmitOrNewline);
+        assert!(b.context.literals.len() == 1);
+        assert!(b.context.literals[0].var == ContextVar::Always);
+    }
+
+    #[test]
+    fn test_binding_try_new_from_strs_compound_context() {
+        let b = Binding::try_new_from_strs(
+            "Tab",
+            "inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion",
+        )
+        .unwrap();
+        assert!(b.action.id == ActionId::AcceptInlineSuggestion);
+        assert!(b.context.literals.len() == 2);
+    }
+
+    #[test]
+    fn test_binding_try_new_from_strs_missing_equals() {
+        assert!(Binding::try_new_from_strs("Tab", "alwayssubmitOrNewline").is_err());
+    }
+
+    #[test]
+    fn test_all_action_ids_have_unique_strings() {
+        // Ensure as_str() round-trips for every variant in the POSSIBLE_ACTIONS table.
+        let mut seen = std::collections::HashSet::new();
+        for a in POSSIBLE_ACTIONS {
+            let s = a.id.as_str();
+            assert!(seen.insert(s));
+            assert!(ActionId::try_from(s).unwrap() == a.id);
+        }
+    }
 }

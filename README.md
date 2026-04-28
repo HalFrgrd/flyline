@@ -529,18 +529,25 @@ flyline set-colour --secondary-text "dim" --tutorial-hint "bold italic"
 ## Keybindings
 
 List all keybindings with `flyline key list`.
-Flyline allows configurable keybindings with the `flyline key set [KEY SEQUENCE] [SCOPED ACTION]` subcommand.
-Certain actions are only possible in certain scopes.
-This allows a key sequence to trigger different actions under different circumstances.
+Flyline allows configurable keybindings with the `flyline key bind [KEY SEQUENCE] [CONTEXT_EXPR]=[ACTION]` subcommand.
+The context expression is an `&&`-separated chain of camelCase context variables (each optionally prefixed with `!` to negate).
+A binding only fires when its context expression evaluates to true.
+This allows the same key sequence to trigger different actions under different circumstances.
 
 For instance:
 ```bash
-flyline key set Enter default::submit_or_newline
-flyline key set Enter tab_completion::accept_entry        # defined last -> higher priority
+flyline key bind Enter always=submitOrNewline
+flyline key bind Enter tabCompletionAvailable=tabCompletionAcceptEntry  # defined last -> higher priority
 ```
-When you press `Enter`, flyline will accept the tab completion entry if the `tab_completion` scope is active (i.e. if you are currently browsing tab completion suggestions).
-If the `tab_completion` scope is not active, then it will try the next keybinding for `Enter` and run that action if the scope is active.
-The `default` is always active.
+When you press `Enter`, flyline will accept the tab completion entry if `tabCompletionAvailable` is true (i.e. you are currently browsing tab completion suggestions).
+If `tabCompletionAvailable` is false, then it will try the next keybinding for `Enter` and run that action if its context expression evaluates to true.
+The `always` context variable is always true.
+
+A context expression may combine multiple variables with `&&`:
+```bash
+flyline key bind Tab inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion
+```
+`||` and parentheses are not supported.  Use `!` in front of a variable to negate it (e.g. `!textSelected`).
 
 It is possible to remap keys entirely with:
 ```bash
@@ -548,4 +555,4 @@ flyline key remap Alt Ctrl       # Pressing Alt now acts like pressing Ctrl
 flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effectively swapped.
 ```
 
-Tab completions exist for both key sequences and actions to make it easier to write keybindings.
+Tab completions exist for both key sequences and context/action arguments to make it easier to write keybindings.
