@@ -623,6 +623,7 @@ dependencies = [
  "serde_json",
  "shlex",
  "skim",
+ "strum 0.28.0",
  "timeago",
  "unicode-segmentation",
  "unicode-width",

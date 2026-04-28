@@ -388,7 +388,7 @@ enum Commands {
     },
     /// Manage keybindings.
     ///
-    /// Use 'flyline key set <KEY> <SCOPE::ACTION>' to bind a key sequence to an action.
+    /// Use 'flyline key bind <KEY> <CONTEXT_EXPR>=<ACTION>' to bind a key sequence to an action.
     /// Use 'flyline key list' to view all current bindings.
     /// Use 'flyline key remap <FROM> <TO>' to translate one key or modifier to another before
     /// bindings are matched.
@@ -407,11 +407,11 @@ enum Commands {
     ///   Modifier:<name> (e.g. Modifier:LeftShift, Modifier:RightCtrl,
     ///   Modifier:LeftAlt, Modifier:LeftSuper).
     ///
-    /// Tab completion is available: type 'flyline key set <KEY> <Tab>' to browse
-    /// all available actions interactively.
+    /// Tab completion is available: type 'flyline key bind <KEY> <Tab>' to browse
+    /// all available context variables and actions interactively.
     ///
     /// Examples:
-    ///   flyline key set Ctrl+Enter default::submit_or_newline
+    ///   flyline key bind Ctrl+Enter always=submitOrNewline
     ///   flyline key list
     #[command(name = "key", verbatim_doc_comment)]
     Key {
@@ -488,26 +488,32 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum KeySubcommands {
-    /// Bind a key sequence to an action.
+    /// Bind a key sequence to an action, optionally guarded by a context expression.
     ///
     /// KEY_SEQUENCE is a key combination such as "Ctrl+Enter" or "Alt+Left".
-    /// ACTION has the form scope::action_name, e.g. "default::submit_or_newline".
+    /// CONTEXT_AND_ACTION has the form `<contextExpr>=<actionName>`, where
+    /// `<contextExpr>` is an `&&`-separated chain of camelCase context variables
+    /// (each optionally prefixed with `!` to negate).  Use `always` for
+    /// unconditional bindings.  Parentheses and `||` are not supported.
     ///
-    /// Available scopes: default, fuzzy_history_search, tab_completion_waiting,
-    ///   tab_completion, agent_mode_waiting, agent_output_selection,
-    ///   agent_error, inline_history_acceptable, prompt_dir_select
+    /// Available context variables: always, fuzzyHistorySearch, tabCompletionWaiting,
+    ///   tabCompletion, tabCompletionAvailable, tabCompletionMultiColAvailable,
+    ///   agentModeWaiting, agentOutputSelection, agentError, inlineSuggestionAvailable,
+    ///   cursorAtEnd, promptDirSelect, textSelected.
     ///
     /// Examples:
-    ///   flyline key set Ctrl+Enter default::submit_or_newline
-    ///   flyline key set Alt+Left default::move_left_one_word_fine_grained
-    #[command(name = "set", verbatim_doc_comment, disable_help_flag = true)]
-    Set {
+    ///   flyline key bind Ctrl+Enter always=submitOrNewline
+    ///   flyline key bind Tab inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion
+    ///   flyline key bind Alt+Left always=moveLeftOneWordFineGrained
+    #[command(name = "bind", verbatim_doc_comment, disable_help_flag = true)]
+    Bind {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
         #[arg(num_args = 1, hide = true, add = ArgValueCompleter::new(actions::key_sequence_completer))]
         key_sequence: String,
-        /// Action in the form scope::action_name (e.g. "default::submit_or_newline").
-        #[arg(add = ArgValueCompleter::new(actions::possible_action_names), num_args = 1)]
-        action: String,
+        /// Context expression and action in the form `<contextExpr>=<actionName>`
+        /// (e.g. "always=submitOrNewline").
+        #[arg(add = ArgValueCompleter::new(actions::possible_context_action_completions), num_args = 1)]
+        context_and_action: String,
     },
     /// List all keybindings from lowest to highest priority.
     ///
@@ -1138,25 +1144,27 @@ impl Flyline {
                         }
                     }
                     Some(Commands::Key { subcommand }) => match subcommand {
-                        KeySubcommands::Set {
+                        KeySubcommands::Bind {
                             key_sequence,
-                            action,
+                            context_and_action,
                         } => {
-                            let binding =
-                                actions::Binding::try_new_from_strs(&key_sequence, &action);
+                            let binding = actions::Binding::try_new_from_strs(
+                                &key_sequence,
+                                &context_and_action,
+                            );
                             match binding {
                                 Ok(binding) => {
                                     log::info!(
                                         "Registering key binding: {} -> {}",
                                         key_sequence,
-                                        action
+                                        context_and_action
                                     );
                                     self.settings.keybindings.push(binding);
                                 }
                                 Err(e) => {
                                     eprintln!(
-                                        "flyline key set: failed to parse key sequence '{}' or action '{}': {}",
-                                        key_sequence, action, e
+                                        "flyline key bind: failed to parse key sequence '{}' or context/action '{}': {}",
+                                        key_sequence, context_and_action, e
                                     );
                                     return bash_symbols::BuiltinExitCode::Usage as c_int;
                                 }

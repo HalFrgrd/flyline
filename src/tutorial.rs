@@ -463,7 +463,8 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline key set Enter fuzzy_history_search::accept_and_run".to_string(),
+                    "flyline key bind Enter fuzzyHistorySearch=fuzzyHistoryAcceptAndRun"
+                        .to_string(),
                     ClipboardTypes::TutorialKeybindingsBind1,
                 ),
             ]));
@@ -475,7 +476,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline key set Escape inline_history_acceptable::dismiss_suggestion"
+                    "flyline key bind Escape inlineSuggestionAvailable&&cursorAtEnd=dismissInlineSuggestion"
                         .to_string(),
                     ClipboardTypes::TutorialKeybindingsBind2,
                 ),
@@ -488,7 +489,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline key set Tab inline_history_acceptable::accept_suggestion".to_string(),
+                    "flyline key bind Tab inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion".to_string(),
                     ClipboardTypes::TutorialKeybindingsBind3,
                 ),
             ]));
