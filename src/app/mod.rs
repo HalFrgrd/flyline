@@ -127,7 +127,6 @@ impl AppRunningState {
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum LastKeyPressAction {
-    InsertedAutoClosing { char: char, byte_pos: usize },
     AffectedMouseState,
 }
 
@@ -335,8 +334,17 @@ pub(crate) struct App<'a> {
     mode: AppRunningState,
     buffer: TextBuffer,
     formatted_buffer_cache: FormattedBuffer,
-    /// Cached annotated tokens from the last dparser run, including `is_auto_inserted` flags.
+    /// Cached annotated tokens from the last dparser run.
     dparser_tokens_cache: Vec<AnnotatedToken>,
+    /// Tracks byte positions in `buffer` whose character was inserted
+    /// automatically by the auto-closing feature and may therefore be
+    /// silently overwritten by a matching manually-typed character.
+    auto_inserted_tracker: crate::auto_close::AutoInsertedTracker,
+    /// Snapshot of `buffer.buffer()` taken the last time
+    /// [`auto_inserted_tracker`] was reconciled.  Comparing the current
+    /// buffer to this snapshot tells the tracker how to shift its tracked
+    /// positions.
+    last_buffer_for_tracker: String,
     cursor: Cursor,
     /// Whether the terminal currently has focus. Used to control cursor animation intensity.
     term_has_focus: bool,
@@ -397,6 +405,8 @@ impl<'a> App<'a> {
             buffer,
             formatted_buffer_cache,
             dparser_tokens_cache: Vec::new(),
+            auto_inserted_tracker: crate::auto_close::AutoInsertedTracker::new(),
+            last_buffer_for_tracker: String::new(),
             cursor: Cursor::new(),
             term_has_focus: true,
             unfinished_from_prev_command,
@@ -1367,22 +1377,17 @@ impl<'a> App<'a> {
             }
         }
 
+        // Re-parse the buffer for the dparser cache.  The auto-close tracker
+        // is now the source of truth for "this closer was auto-inserted",
+        // so we no longer transfer that information through dparser
+        // annotations.
         let mut parser = dparser::DParser::from(self.buffer.buffer());
         parser.walk_to_end();
-        let mut new_tokens = parser.into_tokens();
-        if let Some(LastKeyPressAction::InsertedAutoClosing { char, byte_pos }) =
-            self.last_keypress_action
-        {
-            // If the last keypress inserted an auto-closing char, mark the corresponding token in the new cache as auto-inserted.
-            Self::mark_auto_inserted_closing(&mut new_tokens, char, byte_pos);
-        }
+        self.dparser_tokens_cache = parser.into_tokens();
 
-        dparser::DParser::transfer_auto_inserted_flags(&self.dparser_tokens_cache, &mut new_tokens);
-        // for token in &new_tokens {
-        //     log::trace!("Parsed token '{:#?}", token);
-        // }
-
-        self.dparser_tokens_cache = new_tokens;
+        // Reconcile the auto-inserted tracker against any buffer change
+        // performed by the action that just ran.
+        self.reconcile_auto_inserted_tracker();
 
         let history_buffer = self.buffer_for_history().to_owned();
 

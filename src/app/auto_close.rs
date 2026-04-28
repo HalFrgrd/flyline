@@ -1,85 +1,50 @@
+//! `App`-level glue around the standalone helpers in [`crate::auto_close`].
+//!
+//! All decision logic for "should this character be auto-closed / overwrite
+//! an auto-inserted closer / pull along an auto-inserted closer on
+//! Backspace" lives in `crate::auto_close` and is unit-tested there.  The
+//! methods on [`App`] in this file simply mediate between the [`TextBuffer`]
+//! and the [`AutoInsertedTracker`].
+
 use crate::{
-    app::{App, LastKeyPressAction},
+    app::App,
+    auto_close::{should_delete_auto_inserted_closing_pair, would_overwrite_auto_inserted_closing},
     dparser,
 };
 
-/// Returns the corresponding closing character for surrounding a selection,
-/// or `None` if `c` is not a recognised pairing character.
-pub(crate) fn surround_closing_char(c: char) -> Option<char> {
-    match c {
-        '(' => Some(')'),
-        '[' => Some(']'),
-        '{' => Some('}'),
-        '"' => Some('"'),
-        '\'' => Some('\''),
-        '`' => Some('`'),
-        _ => None,
-    }
-}
-
 impl<'a> App<'a> {
-    pub(crate) fn handle_char_insertion(&mut self, c: char) -> Option<LastKeyPressAction> {
-        if let Some(closing_annotation) = self.would_overwrite_auto_inserted_closing(c) {
+    pub(crate) fn handle_char_insertion(&mut self, c: char) {
+        // Make sure the tracker reflects the current buffer before we make
+        // any decisions on it.  Other actions running before us may have
+        // mutated the buffer without going through the tracker.
+        self.reconcile_auto_inserted_tracker();
+
+        let cursor_pos = self.buffer.cursor_byte_pos();
+
+        if would_overwrite_auto_inserted_closing(
+            self.buffer.buffer(),
+            cursor_pos,
+            &self.auto_inserted_tracker,
+            c,
+        ) {
             log::info!(
                 "Not inserting char '{}' to avoid overwriting auto-inserted closing token",
                 c
             );
-            closing_annotation.is_auto_inserted = false;
+            self.auto_inserted_tracker.unmark(cursor_pos);
             self.buffer.move_right();
-        } else {
-            let initial_cursor_pos = self.buffer.cursor_byte_pos();
-            self.buffer.insert_char(c);
-            if let Some((auto_char, auto_pos)) = self.insert_closing_char(c, initial_cursor_pos) {
-                return Some(LastKeyPressAction::InsertedAutoClosing {
-                    char: auto_char,
-                    byte_pos: auto_pos,
-                });
-            }
+            // Buffer length is unchanged but record the snapshot anyway so
+            // future reconciles see a clean baseline.
+            self.last_buffer_for_tracker = self.buffer.buffer().to_string();
+            return;
         }
-        None
-    }
 
-    pub(crate) fn would_overwrite_auto_inserted_closing(
-        &mut self,
-        c: char,
-    ) -> Option<&mut dparser::ClosingAnnotation> {
-        let cursor_pos = self.buffer.cursor_byte_pos();
-        if cursor_pos == 0 {
-            return None;
-        }
-        if let Some(dparser_token) = self
-            .dparser_tokens_cache
-            .iter_mut()
-            .find(|t| t.token.byte_range().contains(&cursor_pos))
-        {
-            if let Some(dparser::ClosingAnnotation {
-                is_auto_inserted: true,
-                ..
-            }) = &mut dparser_token.annotations.closing
-            {
-                if dparser_token.token.value.starts_with(c) {
-                    return Some(dparser_token.annotations.closing.as_mut().unwrap());
-                }
-            }
-        }
-        None
-    }
+        let initial_cursor_pos = cursor_pos;
+        self.buffer.insert_char(c);
+        // Reconcile shifts existing tracker entries past `initial_cursor_pos`
+        // by the length of `c`.
+        self.reconcile_auto_inserted_tracker();
 
-    /// After a character `c` has been inserted into the buffer, insert the corresponding
-    /// closing character when `c` is an unmatched opening delimiter.
-    ///
-    /// The decision is made using `dparser_tokens_cache`, which represents the buffer state
-    /// *before* `c` was typed (one character out of date).  The cache is passed to
-    /// [`buffer_format::FormattedBuffer::closing_char_to_insert`] which uses the stale token
-    /// annotations to determine whether `c` opens a new pair or closes an existing one.
-    ///
-    /// Returns the byte position of the auto-inserted closing character, or `None` if no
-    /// closing character was inserted.
-    pub(crate) fn insert_closing_char(
-        &mut self,
-        c: char,
-        initial_cursor_pos: usize,
-    ) -> Option<(char, usize)> {
         if let Some(closing) = dparser::DParser::closing_char_to_insert(
             &self.dparser_tokens_cache,
             c,
@@ -87,75 +52,44 @@ impl<'a> App<'a> {
         ) {
             self.buffer.insert_char(closing);
             self.buffer.move_left();
-            // After move_left, cursor is at the start of the auto-inserted closing char.
+            // Reconcile so the closer's insertion is accounted for before
+            // we mark its position.
+            self.reconcile_auto_inserted_tracker();
+            let pos = self.buffer.cursor_byte_pos();
+            self.auto_inserted_tracker.mark(pos);
             log::info!(
                 "Inserted auto-closing char '{}' at byte position {}",
                 closing,
-                self.buffer.cursor_byte_pos()
+                pos
             );
-            Some((closing, self.buffer.cursor_byte_pos()))
-        } else {
-            None
         }
     }
 
-    /// Mark the dparser token at `byte_pos` as auto-inserted in the cache.
-    pub(crate) fn mark_auto_inserted_closing(
-        dparser_tokens: &mut [dparser::AnnotatedToken],
-        c: char,
-        byte_pos: usize,
-    ) {
-        for token in dparser_tokens {
-            if token.token.byte_range().start == byte_pos
-                && token.token.value.starts_with(c)
-                && let Some(dparser::ClosingAnnotation {
-                    is_auto_inserted, ..
-                }) = &mut token.annotations.closing
-            {
-                *is_auto_inserted = true;
-                log::info!(
-                    "Marked token '{}' at byte {} as auto-inserted",
-                    token.token.value,
-                    byte_pos
-                );
-                return;
-            }
-        }
-        log::warn!(
-            "Failed to mark auto-inserted closing char '{}' at byte position {}: no matching token found in cache",
-            c,
-            byte_pos
-        );
-    }
-
-    /// If the token immediately to the right of the cursor is an auto-inserted closing token
-    /// that is paired with the token the cursor is right after, delete it.
-    /// This is called before a simple Backspace so that deleting an auto-paired opener also
-    /// removes the auto-inserted closer.
+    /// If the character immediately to the right of the cursor is an
+    /// auto-inserted closing character that pairs with the character about
+    /// to be deleted by Backspace, delete it as well.
     pub(crate) fn delete_auto_inserted_closing_if_present(&mut self) {
+        self.reconcile_auto_inserted_tracker();
         let cursor_pos = self.buffer.cursor_byte_pos();
-        if cursor_pos == 0 {
-            return;
+        if should_delete_auto_inserted_closing_pair(
+            self.buffer.buffer(),
+            cursor_pos,
+            &self.auto_inserted_tracker,
+        ) {
+            self.buffer.delete_right();
+            // The deleted closer position is removed by the next reconcile.
+            self.reconcile_auto_inserted_tracker();
         }
+    }
 
-        // Find the token that ends at cursor_pos (the one about to be deleted by Backspace).
-        let opening_annotation = self
-            .dparser_tokens_cache
-            .iter()
-            .find(|t| t.token.byte_range().contains(&(cursor_pos - 1)))
-            .map(|t| t.annotations.opening.clone());
-
-        if let Some(Some(dparser::OpeningState::Matched(closing_idx))) = opening_annotation {
-            // Check if the closing token starts immediately at cursor_pos and is auto-inserted.
-            if let Some(closing_token) = self.dparser_tokens_cache.get(closing_idx)
-                && closing_token.token.byte_range().start == cursor_pos
-                && let Some(dparser::ClosingAnnotation {
-                    is_auto_inserted: true,
-                    ..
-                }) = closing_token.annotations.closing
-            {
-                self.buffer.delete_right();
-            }
+    /// Reconcile [`Self::auto_inserted_tracker`] against the current buffer
+    /// using the previously snapshotted buffer.
+    pub(crate) fn reconcile_auto_inserted_tracker(&mut self) {
+        let current = self.buffer.buffer();
+        if current != self.last_buffer_for_tracker {
+            self.auto_inserted_tracker
+                .reconcile_after_buffer_change(&self.last_buffer_for_tracker, current);
+            self.last_buffer_for_tracker = current.to_string();
         }
     }
 }

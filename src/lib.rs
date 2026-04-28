@@ -17,6 +17,7 @@ mod macros;
 mod active_suggestions;
 mod agent_mode;
 mod app;
+mod auto_close;
 mod bash_funcs;
 mod bash_symbols;
 mod command_acceptance;

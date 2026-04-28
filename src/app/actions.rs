@@ -1,5 +1,5 @@
-use crate::app::auto_close::surround_closing_char;
 use crate::app::{App, ContentMode, FuzzyHistorySource};
+use crate::auto_close::surround_closing_char;
 use crate::history::HistorySearchDirection;
 use crate::settings::MouseMode;
 use crate::text_buffer::WordDelim;
@@ -838,7 +838,7 @@ impl Action {
                 app.buffer.delete_selection();
                 if let KeyCode::Char(c) = key.code {
                     if app.settings.auto_close_chars {
-                        app.last_keypress_action = app.handle_char_insertion(c);
+                        app.handle_char_insertion(c);
                     } else {
                         app.buffer.insert_char(c);
                     }

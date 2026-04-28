@@ -190,8 +190,7 @@ impl ToInclusiveRange for Range<usize> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClosingAnnotation {
-    pub opening_idx: usize,     // index of the opening token in the tokens vector
-    pub is_auto_inserted: bool, // true if this closing token was automatically inserted by the editor
+    pub opening_idx: usize, // index of the opening token in the tokens vector
 }
 
 /// Represents the matched/unmatched state of an opening delimiter token.
@@ -451,10 +450,7 @@ impl DParser {
                     if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
-                    self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
-                        opening_idx,
-                        is_auto_inserted: false,
-                    });
+                    self.tokens[idx].annotations.closing = Some(ClosingAnnotation { opening_idx });
 
                     let current_command_range_contains_cursor =
                         cursor_byte_pos.is_some_and(|pos| {
@@ -529,10 +525,7 @@ impl DParser {
                     if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
                 {
                     let (opening_idx, _) = heredocs.pop_front().unwrap();
-                    self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
-                        opening_idx,
-                        is_auto_inserted: false,
-                    });
+                    self.tokens[idx].annotations.closing = Some(ClosingAnnotation { opening_idx });
                 }
 
                 // These keywords and operators introduce a new command; reset the command
@@ -802,59 +795,14 @@ impl DParser {
 
     /// Returns `buffer` with any trailing auto-inserted closing tokens stripped.
     /// TODO: think of good ux for when the user wants to search history with auto inserted chars.
+    /// Auto-insertion bookkeeping now lives in `crate::auto_close::AutoInsertedTracker`,
+    /// outside the dparser; this helper is kept as a stub for future use.
     #[allow(dead_code)]
     pub fn buffer_without_auto_inserted_suffix<'buf>(
-        tokens: &[AnnotatedToken],
+        _tokens: &[AnnotatedToken],
         buffer: &'buf str,
     ) -> &'buf str {
-        let trailing_len: usize = tokens
-            .iter()
-            .rev()
-            .take_while(|t| {
-                t.annotations
-                    .closing
-                    .as_ref()
-                    .is_some_and(|c| c.is_auto_inserted)
-            })
-            .map(|t| t.token.value.len())
-            .sum();
-        &buffer[..buffer.len().saturating_sub(trailing_len)]
-    }
-
-    pub fn transfer_auto_inserted_flags(
-        old_tokens: &[AnnotatedToken],
-        new_tokens: &mut [AnnotatedToken],
-    ) {
-        // Go from the left while we see identical tokens and mark any closing tokens in new_tokens as auto-inserted if the corresponding token in old_tokens was auto-inserted.
-        for (old, new) in old_tokens.iter().zip(new_tokens.iter_mut()) {
-            if old.token.kind != new.token.kind || old.token.value != new.token.value {
-                break;
-            }
-            if let Some(ClosingAnnotation {
-                opening_idx: old_opening_idx,
-                is_auto_inserted: true,
-            }) = &old.annotations.closing
-                && let Some(new_closing) = &mut new.annotations.closing
-                && *old_opening_idx == new_closing.opening_idx
-            {
-                new_closing.is_auto_inserted = true;
-            }
-        }
-
-        // Go from the right while we see identical tokens and do the same.
-        for (old, new) in old_tokens.iter().rev().zip(new_tokens.iter_mut().rev()) {
-            if old.token.kind != new.token.kind || old.token.value != new.token.value {
-                break;
-            }
-            if let Some(ClosingAnnotation {
-                is_auto_inserted: true,
-                ..
-            }) = &old.annotations.closing
-                && let Some(new_closing) = &mut new.annotations.closing
-            {
-                new_closing.is_auto_inserted = true;
-            }
-        }
+        buffer
     }
 }
 
@@ -952,10 +900,7 @@ mod tests {
         assert_eq!(tokens[10].token.value, "'");
         assert_eq!(
             tokens[10].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 8,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 8 })
         );
     }
 
@@ -984,10 +929,7 @@ mod tests {
         assert_eq!(tokens[4].token.value, "\"");
         assert_eq!(
             tokens[4].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
     }
 
@@ -1025,10 +967,7 @@ mod tests {
         assert_eq!(tokens[8].token.value, "A");
         assert_eq!(
             tokens[8].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
         assert_eq!(tokens[9].token.value, "\n");
         assert_eq!(tokens[9].annotations, Annotations::default());
@@ -1039,10 +978,7 @@ mod tests {
         assert_eq!(tokens[12].token.value, "B");
         assert_eq!(
             tokens[12].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 4,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 4 })
         );
     }
 
@@ -1106,10 +1042,7 @@ mod tests {
         assert_eq!(tokens[6].token.value, "'");
         assert_eq!(
             tokens[6].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
     }
 
@@ -1143,10 +1076,7 @@ mod tests {
         assert_eq!(tokens[6].token.value, "))");
         assert_eq!(
             tokens[6].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
     }
 
@@ -1201,10 +1131,7 @@ mod tests {
         assert_eq!(tokens[6].token.value, "\"");
         assert_eq!(
             tokens[6].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
     }
 
@@ -1587,10 +1514,7 @@ mod tests {
         let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
         assert_eq!(
             tokens[closing_idx].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false,
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
     }
 
@@ -1612,10 +1536,7 @@ mod tests {
         let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
         assert_eq!(
             tokens[closing_idx].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false,
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
     }
 
@@ -1637,10 +1558,7 @@ mod tests {
         let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
         assert_eq!(
             tokens[closing_idx].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false,
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
     }
 
@@ -1662,10 +1580,7 @@ mod tests {
         let closing_idx = tokens.iter().position(|t| t.token.value == "EOF").unwrap();
         assert_eq!(
             tokens[closing_idx].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 2,
-                is_auto_inserted: false,
-            })
+            Some(ClosingAnnotation { opening_idx: 2 })
         );
     }
 
@@ -1883,94 +1798,21 @@ mod tests {
         assert_eq!(tokens[17].token.value, "\"");
         assert_eq!(
             tokens[17].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 13,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 13 })
         );
 
         // `done` – closing keyword matched back to `for`
         assert_eq!(tokens[19].token.value, "done");
         assert_eq!(
             tokens[19].annotations.closing,
-            Some(ClosingAnnotation {
-                opening_idx: 0,
-                is_auto_inserted: false
-            })
+            Some(ClosingAnnotation { opening_idx: 0 })
         );
     }
 
     // ---- buffer_without_auto_inserted_suffix tests ----
-
-    /// Helper: build a token list for `input` and mark the last token as auto-inserted closing.
-    fn make_tokens_with_auto_inserted_suffix(input: &str) -> Vec<AnnotatedToken> {
-        let mut parser = DParser::from(input);
-        parser.walk_to_end();
-        let mut tokens = parser.into_tokens();
-        // Mark the final token as auto-inserted closing (simulate what the editor does).
-        if let Some(last) = tokens.last_mut() {
-            last.annotations.closing = Some(ClosingAnnotation {
-                opening_idx: 0,
-                is_auto_inserted: true,
-            });
-        }
-        tokens
-    }
-
-    #[test]
-    fn buffer_without_auto_inserted_suffix_no_auto_inserted() {
-        // No auto-inserted tokens: buffer returned unchanged.
-        let input = "echo hello";
-        let mut parser = DParser::from(input);
-        parser.walk_to_end();
-        let tokens = parser.into_tokens();
-        assert_eq!(
-            DParser::buffer_without_auto_inserted_suffix(&tokens, input),
-            input,
-        );
-    }
-
-    #[test]
-    fn buffer_without_auto_inserted_suffix_single_char_stripped() {
-        // Buffer `echo "hello"` where the last `"` is auto-inserted.
-        let input = r#"echo "hello""#;
-        let tokens = make_tokens_with_auto_inserted_suffix(input);
-        // The last token is `"` (one byte).
-        assert_eq!(
-            DParser::buffer_without_auto_inserted_suffix(&tokens, input),
-            r#"echo "hello"#,
-        );
-    }
-
-    #[test]
-    fn buffer_without_auto_inserted_suffix_multiple_chars_stripped() {
-        // Buffer `echo ({})` where both `}` and `)` are auto-inserted closing tokens.
-        let input = "echo ({})";
-        let mut parser = DParser::from(input);
-        parser.walk_to_end();
-        let mut tokens = parser.into_tokens();
-        // Verify there are at least 2 tokens and mark the last two as auto-inserted closing.
-        let len = tokens.len();
-        assert!(len >= 2);
-        for tok in tokens[len - 2..].iter_mut() {
-            tok.annotations.closing = Some(ClosingAnnotation {
-                opening_idx: 0,
-                is_auto_inserted: true,
-            });
-        }
-        // Both `}` and `)` (1 char each) are stripped from "echo ({})".
-        assert_eq!(
-            DParser::buffer_without_auto_inserted_suffix(&tokens, input),
-            "echo ({",
-        );
-    }
-
-    #[test]
-    fn buffer_without_auto_inserted_suffix_empty_tokens() {
-        // Empty token slice: buffer returned unchanged.
-        assert_eq!(
-            DParser::buffer_without_auto_inserted_suffix(&[], "echo hello"),
-            "echo hello",
-        );
-    }
+    //
+    // The auto-inserted bookkeeping has moved out of dparser and into
+    // `crate::auto_close::AutoInsertedTracker`, so the helper is now a
+    // pass-through stub.  See `crate::auto_close` tests for the new
+    // behaviour.
 }
