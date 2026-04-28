@@ -15,7 +15,7 @@ use crate::dparser::{AnnotatedToken, ToInclusiveRange};
 use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
-use crate::mouse_state::MouseState;
+use crate::mouse_state::{ClickCount, MouseState};
 use crate::palette::Palette;
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
@@ -726,6 +726,12 @@ impl<'a> App<'a> {
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
 
+        let left_click_count = if mouse.kind == MouseEventKind::Up(event::MouseButton::Left) {
+            Some(self.mouse_state.record_left_click())
+        } else {
+            None
+        };
+
         // Smart mode: check if a scroll event occurred or the mouse is above the viewport.
         if self.settings.mouse_mode == MouseMode::Smart {
             match mouse.kind {
@@ -874,22 +880,41 @@ impl<'a> App<'a> {
                     mouse.kind,
                     MouseEventKind::Up(_) | MouseEventKind::Down(_) | MouseEventKind::Drag(_)
                 ) {
-                    let extend_selection = matches!(mouse.kind, MouseEventKind::Drag(_))
-                        || mouse.modifiers.contains(KeyModifiers::SHIFT);
-                    if extend_selection {
-                        // Anchor a selection at the current cursor position before
-                        // moving so the user can extend it by dragging or shift-clicking.
-                        self.buffer.start_selection_if_none();
-                    } else if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                        // A plain mouse press without Shift starts a fresh selection.
-                        self.buffer.clear_selection();
-                    }
-                    self.buffer
-                        .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
-                    if matches!(mouse.kind, MouseEventKind::Down(_)) && !extend_selection {
-                        // After moving on a plain press, anchor a new (empty) selection
-                        // at the click point so a following drag forms a selection.
-                        self.buffer.start_selection_if_none();
+                    match left_click_count {
+                        Some(ClickCount::Double) => {
+                            // On double, select the whole token.
+                            // if let Some((part, range)) = self
+                            //     .formatted_buffer_cache
+                            //     .get_part_and_range_from_byte_pos(byte_pos)
+                            // {
+                            //     self.buffer.set_selection(Some(range));
+                            //     self.buffer.try_move_cursor_to_byte_pos(byte_pos, false);
+                            //     handled_mouse_action = true;
+                            // }
+                        }
+                        Some(ClickCount::Triple) => {
+                            // On triple click, select the whole buffer.
+                            self.buffer.select_entire_buffer();
+                        }
+                        _ => {
+                            let extend_selection = matches!(mouse.kind, MouseEventKind::Drag(_))
+                                || mouse.modifiers.contains(KeyModifiers::SHIFT);
+                            if extend_selection {
+                                // Anchor a selection at the current cursor position before
+                                // moving so the user can extend it by dragging or shift-clicking.
+                                self.buffer.start_selection_if_none();
+                            } else if matches!(mouse.kind, MouseEventKind::Down(_)) {
+                                // A plain mouse press without Shift starts a fresh selection.
+                                self.buffer.clear_selection();
+                            }
+                            self.buffer
+                                .try_move_cursor_to_byte_pos(byte_pos, !cursor_directly_on_cell);
+                            if matches!(mouse.kind, MouseEventKind::Down(_)) && !extend_selection {
+                                // After moving on a plain press, anchor a new (empty) selection
+                                // at the click point so a following drag forms a selection.
+                                self.buffer.start_selection_if_none();
+                            }
+                        }
                     }
                     update_buffer = true;
                 }

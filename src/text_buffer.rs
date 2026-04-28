@@ -132,6 +132,11 @@ impl TextBuffer {
         self.selection_byte = None;
         true
     }
+
+    pub fn select_entire_buffer(&mut self) {
+        self.cursor_byte = self.buf.len();
+        self.selection_byte = Some(0);
+    }
 }
 
 #[cfg(test)]
