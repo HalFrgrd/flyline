@@ -14,8 +14,9 @@ use strum::{AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoS
 /// context expression.  Each variant evaluates to a boolean value derived
 /// from the current application state.  `Always` is unconditionally `true`
 /// and replaces the old `Scope::Default`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ContextVar {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumString, IntoStaticStr)]
+#[strum(serialize_all = "camelCase", ascii_case_insensitive)]
+enum ContextVar {
     Always,
     FuzzyHistorySearch,
     TabCompletionWaiting,
@@ -34,7 +35,7 @@ pub enum ContextVar {
 impl ContextVar {
     /// All known context variables in a fixed order.  Used for table
     /// rendering and to bound the size of the cached evaluation array.
-    pub const ALL: &'static [ContextVar] = &[
+    const ALL: &'static [ContextVar] = &[
         ContextVar::Always,
         ContextVar::FuzzyHistorySearch,
         ContextVar::TabCompletionWaiting,
@@ -50,22 +51,8 @@ impl ContextVar {
         ContextVar::TextSelected,
     ];
 
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            ContextVar::Always => "always",
-            ContextVar::FuzzyHistorySearch => "fuzzyHistorySearch",
-            ContextVar::TabCompletionWaiting => "tabCompletionWaiting",
-            ContextVar::TabCompletion => "tabCompletion",
-            ContextVar::TabCompletionAvailable => "tabCompletionAvailable",
-            ContextVar::TabCompletionMultiColAvailable => "tabCompletionMultiColAvailable",
-            ContextVar::AgentModeWaiting => "agentModeWaiting",
-            ContextVar::AgentOutputSelection => "agentOutputSelection",
-            ContextVar::AgentError => "agentError",
-            ContextVar::InlineSuggestionAvailable => "inlineSuggestionAvailable",
-            ContextVar::CursorAtEnd => "cursorAtEnd",
-            ContextVar::PromptDirSelect => "promptDirSelect",
-            ContextVar::TextSelected => "textSelected",
-        }
+    fn as_str(&self) -> &'static str {
+        <&'static str>::from(*self)
     }
 
     fn evaluate(&self, app: &App) -> bool {
@@ -109,32 +96,12 @@ impl ContextVar {
     }
 }
 
-impl TryFrom<&str> for ContextVar {
-    type Error = anyhow::Error;
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        for v in ContextVar::ALL {
-            if v.as_str() == s {
-                return Ok(*v);
-            }
-        }
-        // Accept case-insensitive aliases for friendlier CLI usage.
-        let s_lower = s.to_lowercase();
-        for v in ContextVar::ALL {
-            if v.as_str().to_lowercase() == s_lower {
-                return Ok(*v);
-            }
-        }
-        Err(anyhow::anyhow!("Unknown context variable: '{}'", s))
-    }
-}
-
 /// Cached snapshot of all context variables for a single key event.
 ///
 /// Computed once per key event in `handle_key_event` and reused by every
 /// binding's context expression evaluation, so each variable is evaluated
 /// at most once per key press.
-pub struct ContextValues {
+struct ContextValues {
     values: [bool; ContextVar::ALL.len()],
 }
 
@@ -161,17 +128,17 @@ impl ContextValues {
 
 /// A single literal in a context expression: a variable, optionally negated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ContextLiteral {
-    pub var: ContextVar,
-    pub negated: bool,
+struct ContextLiteral {
+    var: ContextVar,
+    negated: bool,
 }
 
 impl ContextLiteral {
-    pub fn new(var: ContextVar, negated: bool) -> Self {
+    fn new(var: ContextVar, negated: bool) -> Self {
         Self { var, negated }
     }
 
-    pub fn negate(&self) -> Self {
+    fn negate(&self) -> Self {
         Self {
             var: self.var,
             negated: !self.negated,
@@ -222,8 +189,8 @@ impl Not for ContextLiteral {
 /// variable names, each optionally prefixed with `!` for negation.
 /// Parentheses and `||` are not supported.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ContextExpr {
-    pub literals: Vec<ContextLiteral>,
+struct ContextExpr {
+    literals: Vec<ContextLiteral>,
 }
 
 impl ContextExpr {
@@ -1221,7 +1188,7 @@ impl Binding {
     /// Create a binding from a list of key-event strings, a context
     /// expression (e.g. `"always"`, `"inlineSuggestionAvailable&&cursorAtEnd"`),
     /// and an action.
-    pub fn try_new(key_events: &[&str], context: ContextExpr, action: Action) -> Result<Self> {
+    fn try_new(key_events: &[&str], context: ContextExpr, action: Action) -> Result<Self> {
         let mut events = Vec::new();
         for &key_event in key_events {
             events.push(KeyEventMatch::try_from(key_event)?);
