@@ -12,13 +12,19 @@ struct Snapshot {
     // It should always be on a grapheme boundary, but I don't enforce that here. I just need to make sure to update it correctly whenever I change the buffer.
     // It might be greater than the length of the buffer if the cursor is at the end, but it should never be greater than that.
     cursor_byte: usize,
+    // Anchor byte for an active selection at the time the snapshot was taken,
+    // or `None` if no selection was active. Saved alongside the buffer so that
+    // an operation that consumed a selection (e.g. delete-selection) can have
+    // its selection restored on undo.
+    selection_byte: Option<usize>,
 }
 
 impl Snapshot {
-    pub fn new(buf: &str, cursor_byte: usize) -> Self {
+    pub fn new(buf: &str, cursor_byte: usize, selection_byte: Option<usize>) -> Self {
         Snapshot {
             buf: buf.to_string(),
             cursor_byte,
+            selection_byte,
         }
     }
 }
@@ -1487,7 +1493,7 @@ mod test_accessors {
 ///////////////////////////////////////////////////////// undo and redo
 impl TextBuffer {
     fn create_snapshot(&self) -> Snapshot {
-        Snapshot::new(&self.buf, self.cursor_byte)
+        Snapshot::new(&self.buf, self.cursor_byte, self.selection_byte)
     }
 
     fn push_snapshot(&mut self, merge_with_recent: bool) {
@@ -1502,6 +1508,7 @@ impl TextBuffer {
         if let Some(snapshot) = self.undo_redo.prev_snapshot(current_state) {
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
+            self.selection_byte = snapshot.selection_byte;
         }
     }
 
@@ -1511,6 +1518,7 @@ impl TextBuffer {
         if let Some(snapshot) = self.undo_redo.next_snapshot(current_state) {
             self.buf = snapshot.buf;
             self.cursor_byte = snapshot.cursor_byte;
+            self.selection_byte = snapshot.selection_byte;
         }
     }
 
@@ -1619,7 +1627,7 @@ mod test_undo_redo {
     fn undo_stack() {
         setup_logging();
 
-        let snap = |s: &str| Snapshot::new(s, 0);
+        let snap = |s: &str| Snapshot::new(s, 0, None);
 
         let mut s = SnapshotManager::new();
         assert_eq!(s.undos, vec![]);
@@ -1728,6 +1736,51 @@ mod test_undo_redo {
 
         tb.redo();
         assert_eq!(tb.buffer(), "The slow brown fox");
+    }
+
+    #[test]
+    fn undo_restores_selection_after_delete() {
+        setup_logging();
+        let mut tb = TextBuffer::new("Hello World");
+        // Select "World"
+        let start = tb.buffer().find("World").unwrap();
+        let end = start + "World".len();
+        tb.set_selection_range(start..end, false);
+        assert_eq!(tb.selected_text().as_deref(), Some("World"));
+
+        // Delete the selection.
+        assert!(tb.delete_selection());
+        assert_eq!(tb.buffer(), "Hello ");
+        assert!(tb.selection_byte().is_none());
+
+        // Undo should restore both the buffer and the selection.
+        tb.undo();
+        assert_eq!(tb.buffer(), "Hello World");
+        assert_eq!(tb.selected_text().as_deref(), Some("World"));
+
+        // Redo should re-apply the deletion and clear the selection again.
+        tb.redo();
+        assert_eq!(tb.buffer(), "Hello ");
+        assert!(tb.selection_byte().is_none());
+    }
+
+    #[test]
+    fn selection_change_does_not_create_snapshot() {
+        setup_logging();
+        let mut tb = TextBuffer::new("Hello World");
+        tb.insert_str("!");
+        assert_eq!(tb.buffer(), "Hello World!");
+
+        // Move cursor and toggle selection a few times — these should not
+        // produce any new undo entries.
+        tb.set_selection_range(0..5, false);
+        tb.clear_selection();
+        tb.select_entire_buffer();
+        tb.clear_selection();
+
+        // A single undo should revert the only real edit (the "!" insertion).
+        tb.undo();
+        assert_eq!(tb.buffer(), "Hello World");
     }
 }
 
