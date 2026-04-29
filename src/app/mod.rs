@@ -5,6 +5,7 @@ mod tab_completion;
 
 use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, MaybeProcessedSuggestion};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
+use crate::app::actions::Action;
 use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
 use crate::content_builder::{Contents, SpanTag, Tag, TaggedLine, TaggedSpan};
 use crate::content_utils::{
@@ -23,7 +24,9 @@ use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, dparser, tutorial};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
-use crossterm::event::{self, Event as CrosstermEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    self, Event as CrosstermEvent, KeyCode, KeyModifiers, MouseEvent, MouseEventKind,
+};
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::prelude::*;
@@ -315,6 +318,7 @@ impl DrawnContent {
                     | Tag::TutorialNext
                     | Tag::Ps1PromptCopyBuffer
                     | Tag::Clipboard(_)
+                    | Tag::Ps1PromptCwd(_)
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
@@ -1024,6 +1028,11 @@ impl<'a> App<'a> {
             Some(Tag::Ps1PromptCwd(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Down(_)) {
                     self.content_mode = ContentMode::PromptDirSelect(idx);
+                    Action::PromptDirAcceptEntry.run(
+                        self,
+                        crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                    );
+                    handled_mouse_action = true;
                 }
             }
             Some(Tag::Clipboard(clipboard_type)) => {
@@ -1829,11 +1838,30 @@ impl<'a> App<'a> {
         }
 
         // When in PromptCwdEdit mode, highlight the selected CWD path segment.
-        if let ContentMode::PromptDirSelect(cwd_index) = self.content_mode {
+        if self.mode.is_running()
+            && let ContentMode::PromptDirSelect(cwd_index) = self.content_mode
+        {
             for line in &mut lprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
                         span.span.style = Palette::convert_to_highlighted(span.span.style);
+                    }
+                }
+            }
+        }
+
+        // Apply hover/depress styling to whichever CWD segment the mouse is over.
+        if self.mode.is_running()
+            && let Some(Tag::Ps1PromptCwd(hovered_idx)) = self.last_mouse_over_cell
+        {
+            let cwd_state = self.button_state_for(Tag::Ps1PromptCwd(hovered_idx));
+            if !matches!(cwd_state, ButtonState::Normal) {
+                for line in &mut lprompt {
+                    for span in &mut line.spans {
+                        if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(hovered_idx)) {
+                            span.span.style =
+                                Palette::apply_button_style(span.span.style, cwd_state);
+                        }
                     }
                 }
             }
