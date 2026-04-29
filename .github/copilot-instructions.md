@@ -92,3 +92,7 @@ CI runs both test suites via `.github/workflows/ci.yml`.
 - Do not introduce new dependencies without a clear justification; check the advisory database for known vulnerabilities before adding any.
 - Always run `cargo fmt` before committing code.
 - In Rust tests, do not add custom failure messages to `assert!` calls (e.g. avoid `assert!(x, "expected …")`). Use plain `assert!(x)` to match the existing test style in this codebase.
+
+## Docs and examples
+After you have made your changes, be sure to update all docs, readme's, examples, demo vhs tapes, dockerfiles.
+The code in the vhs tapes might be spread across multiple lines so take care here.
