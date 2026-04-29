@@ -1649,11 +1649,12 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
         .iter()
         .filter_map(|v| {
             let name = v.as_str();
+            let description: Option<&str> = v.get_message();
             if name.to_lowercase().contains(&partial_lower) {
-                Some(CompletionCandidate::new(format!(
-                    "{}{}{}",
-                    prefix, neg_prefix, name
-                )))
+                Some(
+                    CompletionCandidate::new(format!("{}{}{}", prefix, neg_prefix, name))
+                        .help(description.map(|d| clap::builder::StyledStr::from(d))),
+                )
             } else {
                 None
             }
@@ -1967,6 +1968,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 84]> = LazyLock::new(|| {
             &[
                 M::CONTROL + KC::Char('x').into(),
                 M::META + KC::Char('x').into(),
+                M::SUPER + KC::Char('x').into(),
             ],
             ContextVar::TextSelected.into(),
             Action::CutSelection,
