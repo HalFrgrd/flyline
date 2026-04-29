@@ -1028,7 +1028,10 @@ impl Flyline {
                             let kind = match name.parse::<palette::PaletteStyleKind>() {
                                 Ok(k) => k,
                                 Err(_) => {
-                                    eprintln!("flyline set-colour: unknown style name {:?}", name);
+                                    eprintln!(
+                                        "flyline set-colour: unknown style name {:?}. Run 'flyline set-colour --help' for valid names.",
+                                        name
+                                    );
                                     return bash_symbols::BuiltinExitCode::Usage as c_int;
                                 }
                             };
