@@ -7,53 +7,52 @@ use anyhow::Result;
 use clap_complete::CompletionCandidate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::IsTerminal;
-use std::ops::{BitAnd, Not};
+use std::ops::{Add, BitAnd, Not};
 use std::sync::LazyLock;
-use strum::{AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr};
+use strum::{
+    AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr, VariantArray,
+};
 
 /// A single context variable that can be referenced inside a binding's
 /// context expression.  Each variant evaluates to a boolean value derived
 /// from the current application state.  `Always` is unconditionally `true`
 /// and replaces the old `Scope::Default`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumString, IntoStaticStr)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, EnumString, IntoStaticStr, EnumMessage, VariantArray,
+)]
 #[strum(serialize_all = "camelCase", ascii_case_insensitive)]
 enum ContextVar {
+    #[strum(message = "Always true; the catch-all context for unconditional bindings")]
     Always,
+    #[strum(message = "Fuzzy history search overlay is active")]
     FuzzyHistorySearch,
+    #[strum(message = "Waiting for tab completion candidates to be produced")]
     TabCompletionWaiting,
+    #[strum(message = "Tab completion overlay is active (any state)")]
     TabCompletion,
+    #[strum(message = "Tab completion overlay is active and has at least one candidate")]
     TabCompletionAvailable,
+    #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
     TabCompletionMultiColAvailable,
+    #[strum(message = "Waiting for the agent mode subprocess to finish")]
     AgentModeWaiting,
+    #[strum(message = "Agent mode finished and is showing a list of selectable suggestions")]
     AgentOutputSelection,
+    #[strum(message = "Agent mode failed and is showing an error message")]
     AgentError,
+    #[strum(message = "An inline history suggestion is available to be accepted")]
     InlineSuggestionAvailable,
+    #[strum(message = "Cursor is at the end of the buffer")]
     CursorAtEnd,
+    #[strum(message = "Cursor is at the start of the buffer")]
     CursorAtStart,
+    #[strum(message = "Prompt directory selection mode is active")]
     PromptDirSelect,
+    #[strum(message = "There is an active text selection in the buffer")]
     TextSelected,
 }
 
 impl ContextVar {
-    /// All known context variables in a fixed order.  Used for table
-    /// rendering and to bound the size of the cached evaluation array.
-    const ALL: &'static [ContextVar] = &[
-        ContextVar::Always,
-        ContextVar::FuzzyHistorySearch,
-        ContextVar::TabCompletionWaiting,
-        ContextVar::TabCompletion,
-        ContextVar::TabCompletionAvailable,
-        ContextVar::TabCompletionMultiColAvailable,
-        ContextVar::AgentModeWaiting,
-        ContextVar::AgentOutputSelection,
-        ContextVar::AgentError,
-        ContextVar::InlineSuggestionAvailable,
-        ContextVar::CursorAtEnd,
-        ContextVar::CursorAtStart,
-        ContextVar::PromptDirSelect,
-        ContextVar::TextSelected,
-    ];
-
     fn as_str(&self) -> &'static str {
         <&'static str>::from(*self)
     }
@@ -106,23 +105,23 @@ impl ContextVar {
 /// binding's context expression evaluation, so each variable is evaluated
 /// at most once per key press.
 struct ContextValues {
-    values: [bool; ContextVar::ALL.len()],
+    values: [bool; <ContextVar as VariantArray>::VARIANTS.len()],
 }
 
 impl ContextValues {
     pub fn evaluate(app: &App) -> Self {
-        let mut values = [false; ContextVar::ALL.len()];
-        for (i, v) in ContextVar::ALL.iter().enumerate() {
+        let mut values = [false; <ContextVar as VariantArray>::VARIANTS.len()];
+        for (i, v) in <ContextVar as VariantArray>::VARIANTS.iter().enumerate() {
             values[i] = v.evaluate(app);
         }
         Self { values }
     }
 
     fn index_of(var: ContextVar) -> usize {
-        ContextVar::ALL
+        <ContextVar as VariantArray>::VARIANTS
             .iter()
             .position(|v| *v == var)
-            .expect("ContextVar must be in ContextVar::ALL")
+            .expect("ContextVar must be in ContextVar::VARIANTS")
     }
 
     pub fn get(&self, var: ContextVar) -> bool {
@@ -996,6 +995,94 @@ pub enum KeyEventMatch {
     AnyCharAndMods(KeyModifiers),
 }
 
+impl From<KeyCode> for KeyEventMatch {
+    fn from(code: KeyCode) -> Self {
+        KeyEventMatch::Exact(KeyEvent::new(code, KeyModifiers::empty()))
+    }
+}
+
+impl From<KeyEvent> for KeyEventMatch {
+    fn from(event: KeyEvent) -> Self {
+        KeyEventMatch::Exact(event)
+    }
+}
+
+/// Add a set of [`KeyModifiers`] to a [`KeyEventMatch`], OR-ing them into the
+/// match's existing modifier set.  Combined with [`From<KeyCode>`] for
+/// [`KeyEventMatch`], this lets binding definitions read like keyboard
+/// chords:
+///
+/// ```ignore
+/// let kem: KeyEventMatch = KeyModifiers::CONTROL + KeyCode::Char('s').into();
+/// let kem: KeyEventMatch = KeyCode::Enter.into() + KeyModifiers::ALT;
+/// ```
+///
+/// Direct `KeyModifiers + KeyCode` is not supported because both types are
+/// foreign to this crate (orphan rule); convert one side to
+/// [`KeyEventMatch`] first.  For "any char" matches with modifiers, write
+/// `KeyEventMatch::AnyCharAndMods(KeyModifiers::SHIFT)` directly.
+impl Add<KeyEventMatch> for KeyModifiers {
+    type Output = KeyEventMatch;
+
+    fn add(self, rhs: KeyEventMatch) -> KeyEventMatch {
+        rhs + self
+    }
+}
+
+impl Add<KeyModifiers> for KeyEventMatch {
+    type Output = KeyEventMatch;
+
+    fn add(self, rhs: KeyModifiers) -> KeyEventMatch {
+        match self {
+            KeyEventMatch::Exact(ev) => {
+                KeyEventMatch::Exact(KeyEvent::new(ev.code, ev.modifiers | rhs))
+            }
+            KeyEventMatch::AnyCharAndMods(mods) => KeyEventMatch::AnyCharAndMods(mods | rhs),
+        }
+    }
+}
+
+impl Add<KeyEventMatch> for KeyCode {
+    type Output = KeyEventMatch;
+
+    fn add(self, rhs: KeyEventMatch) -> KeyEventMatch {
+        KeyEventMatch::from(self) + rhs
+    }
+}
+
+impl Add<KeyCode> for KeyEventMatch {
+    type Output = KeyEventMatch;
+
+    fn add(self, rhs: KeyCode) -> KeyEventMatch {
+        self + KeyEventMatch::from(rhs)
+    }
+}
+
+impl Add<KeyEventMatch> for KeyEventMatch {
+    type Output = KeyEventMatch;
+
+    fn add(self, rhs: KeyEventMatch) -> KeyEventMatch {
+        match (self, rhs) {
+            (KeyEventMatch::Exact(a), KeyEventMatch::Exact(b)) => {
+                // Pick the non-Null code; otherwise prefer the right-hand code.
+                let code = match (a.code, b.code) {
+                    (KeyCode::Null, c) => c,
+                    (c, KeyCode::Null) => c,
+                    (_, c) => c,
+                };
+                KeyEventMatch::Exact(KeyEvent::new(code, a.modifiers | b.modifiers))
+            }
+            (KeyEventMatch::AnyCharAndMods(a), KeyEventMatch::AnyCharAndMods(b)) => {
+                KeyEventMatch::AnyCharAndMods(a | b)
+            }
+            (KeyEventMatch::AnyCharAndMods(a), KeyEventMatch::Exact(b))
+            | (KeyEventMatch::Exact(b), KeyEventMatch::AnyCharAndMods(a)) => {
+                KeyEventMatch::Exact(KeyEvent::new(b.code, a | b.modifiers))
+            }
+        }
+    }
+}
+
 impl TryFrom<&str> for KeyEventMatch {
     type Error = anyhow::Error;
 
@@ -1229,20 +1316,15 @@ pub struct Binding {
 }
 
 impl Binding {
-    /// Create a binding from a list of key-event strings, a context
-    /// expression (e.g. `"always"`, `"inlineSuggestionAvailable&&cursorAtEnd"`),
-    /// and an action.
-    fn try_new(key_events: &[&str], context: ContextExpr, action: Action) -> Result<Self> {
-        let mut events = Vec::new();
-        for &key_event in key_events {
-            events.push(KeyEventMatch::try_from(key_event)?);
-        }
-
-        Ok(Self {
-            key_events: events,
+    /// Create a binding from a list of [`KeyEventMatch`] values, a context
+    /// expression, and an action.  This is infallible: parsing happens at
+    /// compile time via the typed `KeyCode` / `KeyModifiers` constructors.
+    fn new(key_events: &[KeyEventMatch], context: ContextExpr, action: Action) -> Self {
+        Self {
+            key_events: key_events.to_vec(),
             context,
             action,
-        })
+        }
     }
 
     /// Parse a user-provided binding from the CLI form
@@ -1257,11 +1339,11 @@ impl Binding {
         let action_str = action_str.trim();
         let action = Action::try_from(action_str)
             .map_err(|_| anyhow::anyhow!("Unknown action: '{}'", action_str))?;
-        Self::try_new(
-            &[key_event],
+        Ok(Self::new(
+            &[KeyEventMatch::try_from(key_event)?],
             ContextExpr::try_from(context_str.trim())?,
             action,
-        )
+        ))
     }
 
     pub fn matches(&self, key: KeyEvent) -> bool {
@@ -1276,185 +1358,217 @@ impl Binding {
     }
 }
 
-/// Internal helper for [`expand_variations!`].
+/// Return the list of terminal-equivalent [`KeyEventMatch`] values that
+/// should all map to the same logical binding as `kem`.
 ///
-/// Pushes all terminal-equivalent spellings for a single key literal into
-/// `$v: Vec<&'static str>`.  Both the canonical casing used in the default
-/// bindings and a fully-lowercase alias are listed for each rule so that
-/// callers are case-insensitive.
-macro_rules! expand_variation_push {
-    // ── Enter ─────────────────────────────────────────────────────────────
-    // Ctrl+j is the ASCII LF (line-feed) code, identical to Enter in most
-    // terminals.
-    ($v:ident, "Enter") => {
-        $v.extend_from_slice(&["Enter", "Ctrl+j"]);
-    };
-    ($v:ident, "enter") => {
-        $v.extend_from_slice(&["Enter", "Ctrl+j"]);
-    };
-    // ── Word-left group: Alt+Left / Alt+b / Meta+Left / Meta+b ────────────
-    // Alt+b is the Emacs backward-word shortcut; ghostty and other modern
-    // terminal emulators send Meta+Left for the same key chord.
-    ($v:ident, "Alt+Left") => {
-        $v.extend_from_slice(&["Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]);
-    };
-    ($v:ident, "alt+left") => {
-        $v.extend_from_slice(&["Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]);
-    };
-    ($v:ident, "Meta+Left") => {
-        $v.extend_from_slice(&["Meta+Left", "Meta+b", "Alt+Left", "Alt+b"]);
-    };
-    ($v:ident, "meta+left") => {
-        $v.extend_from_slice(&["Meta+Left", "Meta+b", "Alt+Left", "Alt+b"]);
-    };
-    ($v:ident, "Alt+b") => {
-        $v.extend_from_slice(&["Alt+b", "Alt+Left", "Meta+b", "Meta+Left"]);
-    };
-    ($v:ident, "alt+b") => {
-        $v.extend_from_slice(&["Alt+b", "Alt+Left", "Meta+b", "Meta+Left"]);
-    };
-    ($v:ident, "Meta+b") => {
-        $v.extend_from_slice(&["Meta+b", "Meta+Left", "Alt+b", "Alt+Left"]);
-    };
-    ($v:ident, "meta+b") => {
-        $v.extend_from_slice(&["Meta+b", "Meta+Left", "Alt+b", "Alt+Left"]);
-    };
-    // ── Word-right group: Alt+Right / Alt+f / Meta+Right / Meta+f ─────────
-    // Alt+f is the Emacs forward-word shortcut.
-    ($v:ident, "Alt+Right") => {
-        $v.extend_from_slice(&["Alt+Right", "Alt+f", "Meta+Right", "Meta+f"]);
-    };
-    ($v:ident, "alt+right") => {
-        $v.extend_from_slice(&["Alt+Right", "Alt+f", "Meta+Right", "Meta+f"]);
-    };
-    ($v:ident, "Meta+Right") => {
-        $v.extend_from_slice(&["Meta+Right", "Meta+f", "Alt+Right", "Alt+f"]);
-    };
-    ($v:ident, "meta+right") => {
-        $v.extend_from_slice(&["Meta+Right", "Meta+f", "Alt+Right", "Alt+f"]);
-    };
-    ($v:ident, "Alt+f") => {
-        $v.extend_from_slice(&["Alt+f", "Alt+Right", "Meta+f", "Meta+Right"]);
-    };
-    ($v:ident, "alt+f") => {
-        $v.extend_from_slice(&["Alt+f", "Alt+Right", "Meta+f", "Meta+Right"]);
-    };
-    ($v:ident, "Meta+f") => {
-        $v.extend_from_slice(&["Meta+f", "Meta+Right", "Alt+f", "Alt+Right"]);
-    };
-    ($v:ident, "meta+f") => {
-        $v.extend_from_slice(&["Meta+f", "Meta+Right", "Alt+f", "Alt+Right"]);
-    };
-    // ── Alt+X  →  also Meta+X (Alt/Meta terminal equivalence) ────────────
-    ($v:ident, "Alt+Enter") => {
-        $v.extend_from_slice(&["Alt+Enter", "Meta+Enter"]);
-    };
-    ($v:ident, "alt+enter") => {
-        $v.extend_from_slice(&["Alt+Enter", "Meta+Enter"]);
-    };
-    ($v:ident, "Alt+Backspace") => {
-        $v.extend_from_slice(&["Alt+Backspace", "Meta+Backspace"]);
-    };
-    ($v:ident, "alt+backspace") => {
-        $v.extend_from_slice(&["Alt+Backspace", "Meta+Backspace"]);
-    };
-    ($v:ident, "Alt+Delete") => {
-        $v.extend_from_slice(&["Alt+Delete", "Meta+Delete", "Alt+d", "Meta+d"]);
-    };
-    ($v:ident, "alt+delete") => {
-        $v.extend_from_slice(&["Alt+Delete", "Meta+Delete", "Alt+d", "Meta+d"]);
-    };
-    ($v:ident, "Alt+D") => {
-        $v.extend_from_slice(&["Alt+D", "Meta+D"]);
-    };
-    ($v:ident, "alt+d") => {
-        $v.extend_from_slice(&["Alt+D", "Meta+D"]);
-    };
-    ($v:ident, "Alt+W") => {
-        $v.extend_from_slice(&["Alt+W", "Meta+W"]);
-    };
-    ($v:ident, "alt+w") => {
-        $v.extend_from_slice(&["Alt+W", "Meta+W"]);
-    };
-    // ── Home / End ────────────────────────────────────────────────────────
-    // Ctrl+a (Emacs move-beginning-of-line) is treated as an alias for Home.
-    // Ctrl+e (Emacs move-end-of-line) is treated as an alias for End.
-    ($v:ident, "Home") => {
-        $v.extend_from_slice(&["Home", "Ctrl+a"]);
-    };
-    ($v:ident, "home") => {
-        $v.extend_from_slice(&["Home", "Ctrl+a"]);
-    };
-    ($v:ident, "End") => {
-        $v.extend_from_slice(&["End", "Ctrl+e"]);
-    };
-    ($v:ident, "end") => {
-        $v.extend_from_slice(&["End", "Ctrl+e"]);
-    };
-    // ── Shift+Tab / BackTab ───────────────────────────────────────────────
-    ($v:ident, "Shift+Tab") => {
-        $v.extend_from_slice(&["BackTab", "Shift+Tab", "Shift+BackTab"]);
-    };
-    ($v:ident, "shift+tab") => {
-        $v.extend_from_slice(&["BackTab", "Shift+Tab", "Shift+BackTab"]);
-    };
-    ($v:ident, "BackTab") => {
-        $v.extend_from_slice(&["BackTab", "Shift+Tab", "Shift+BackTab"]);
-    };
-    ($v:ident, "backtab") => {
-        $v.extend_from_slice(&["BackTab", "Shift+Tab", "Shift+BackTab"]);
-    };
-    // ── Fallthrough: pass through unchanged ───────────────────────────────
-    ($v:ident, $key:literal) => {
-        $v.push($key);
-    };
-}
-
-/// Expand a list of keybinding key strings to include their common terminal
-/// equivalents.
-///
-/// Returns a [`Vec<&'static str>`] that coerces to `&[&str]` via deref, so it
-/// can be passed directly as `&expand_variations![...]` to
-/// [`Binding::try_new`].
+/// The first entry is always `kem` itself; additional entries are sibling
+/// chords commonly produced by different terminal emulators or input modes
+/// for the same physical key.
 ///
 /// # Expansion rules
 ///
 /// | Input            | Expands to                                          |
 /// |------------------|-----------------------------------------------------|
-/// | `"Enter"`        | `"Enter"`, `"Ctrl+j"`                               |
-/// | `"Shift+Tab"`    | `"Shift+Tab"`, `"BackTab"`                          |
-/// | `"BackTab"`      | `"BackTab"`, `"Shift+Tab"`                          |
-/// | `"Alt+Left"`     | `"Alt+Left"`, `"Alt+b"`, `"Meta+Left"`, `"Meta+b"` |
-/// | `"Alt+Right"`    | `"Alt+Right"`, `"Alt+f"`, `"Meta+Right"`, `"Meta+f"`|
-/// | `"Meta+Left"`    | same four-way word-left group                       |
-/// | `"Alt+b"` / `"Meta+b"` | same four-way word-left group               |
-/// | `"Meta+Right"`   | same four-way word-right group                      |
-/// | `"Alt+f"` / `"Meta+f"` | same four-way word-right group              |
-/// | `"Alt+X"` (other)| `"Alt+X"`, `"Meta+X"`                               |
+/// | `Enter`          | `Enter`, `Ctrl+j`                                   |
+/// | `Shift+Tab`      | `Shift+Tab`, `BackTab`, `Shift+BackTab`             |
+/// | `BackTab`        | `BackTab`, `Shift+Tab`, `Shift+BackTab`             |
+/// | `Alt+Left`       | `Alt+Left`, `Alt+b`, `Meta+Left`, `Meta+b`          |
+/// | `Alt+Right`      | `Alt+Right`, `Alt+f`, `Meta+Right`, `Meta+f`        |
+/// | `Meta+Left`      | same four-way word-left group                       |
+/// | `Alt+b` / `Meta+b` | same four-way word-left group                     |
+/// | `Meta+Right`     | same four-way word-right group                      |
+/// | `Alt+f` / `Meta+f` | same four-way word-right group                    |
+/// | `Alt+Delete`     | `Alt+Delete`, `Meta+Delete`, `Alt+d`, `Meta+d`      |
+/// | `Alt+X` (other)  | `Alt+X`, `Meta+X`                                   |
+/// | `Home`           | `Home`, `Ctrl+a`                                    |
+/// | `End`            | `End`, `Ctrl+e`                                     |
 /// | anything else    | unchanged                                           |
+pub fn expand_variations_one(kem: KeyEventMatch) -> Vec<KeyEventMatch> {
+    use KeyCode::*;
+    use KeyModifiers as M;
+
+    // Helpers to build chord values concisely.
+    let exact = |code: KeyCode, mods: KeyModifiers| -> KeyEventMatch {
+        KeyEventMatch::Exact(KeyEvent::new(code, mods))
+    };
+
+    if let KeyEventMatch::Exact(ev) = kem {
+        let mods = ev.modifiers;
+        match (ev.code, mods) {
+            // Enter ↔ Ctrl+J (ASCII LF)
+            (Enter, m) if m.is_empty() => {
+                return vec![exact(Enter, M::empty()), exact(Char('j'), M::CONTROL)];
+            }
+            // Word-left group: Alt+Left / Alt+b / Meta+Left / Meta+b
+            (Left, m) if m == M::ALT => {
+                return vec![
+                    exact(Left, M::ALT),
+                    exact(Char('b'), M::ALT),
+                    exact(Left, M::META),
+                    exact(Char('b'), M::META),
+                ];
+            }
+            (Left, m) if m == M::META => {
+                return vec![
+                    exact(Left, M::META),
+                    exact(Char('b'), M::META),
+                    exact(Left, M::ALT),
+                    exact(Char('b'), M::ALT),
+                ];
+            }
+            (Char('b'), m) if m == M::ALT => {
+                return vec![
+                    exact(Char('b'), M::ALT),
+                    exact(Left, M::ALT),
+                    exact(Char('b'), M::META),
+                    exact(Left, M::META),
+                ];
+            }
+            (Char('b'), m) if m == M::META => {
+                return vec![
+                    exact(Char('b'), M::META),
+                    exact(Left, M::META),
+                    exact(Char('b'), M::ALT),
+                    exact(Left, M::ALT),
+                ];
+            }
+            // Word-right group: Alt+Right / Alt+f / Meta+Right / Meta+f
+            (Right, m) if m == M::ALT => {
+                return vec![
+                    exact(Right, M::ALT),
+                    exact(Char('f'), M::ALT),
+                    exact(Right, M::META),
+                    exact(Char('f'), M::META),
+                ];
+            }
+            (Right, m) if m == M::META => {
+                return vec![
+                    exact(Right, M::META),
+                    exact(Char('f'), M::META),
+                    exact(Right, M::ALT),
+                    exact(Char('f'), M::ALT),
+                ];
+            }
+            (Char('f'), m) if m == M::ALT => {
+                return vec![
+                    exact(Char('f'), M::ALT),
+                    exact(Right, M::ALT),
+                    exact(Char('f'), M::META),
+                    exact(Right, M::META),
+                ];
+            }
+            (Char('f'), m) if m == M::META => {
+                return vec![
+                    exact(Char('f'), M::META),
+                    exact(Right, M::META),
+                    exact(Char('f'), M::ALT),
+                    exact(Right, M::ALT),
+                ];
+            }
+            // Alt+Delete / Meta+Delete / Alt+d / Meta+d are all word-delete-right.
+            (Delete, m) if m == M::ALT => {
+                return vec![
+                    exact(Delete, M::ALT),
+                    exact(Delete, M::META),
+                    exact(Char('d'), M::ALT),
+                    exact(Char('d'), M::META),
+                ];
+            }
+            // Alt+Enter / Meta+Enter (Alt/Meta terminal equivalence).
+            (Enter, m) if m == M::ALT => {
+                return vec![exact(Enter, M::ALT), exact(Enter, M::META)];
+            }
+            // Alt+Backspace / Meta+Backspace.
+            (Backspace, m) if m == M::ALT => {
+                return vec![exact(Backspace, M::ALT), exact(Backspace, M::META)];
+            }
+            // Alt+d / Meta+d (word-delete-right shortcut).
+            (Char('d'), m) if m == M::ALT => {
+                return vec![exact(Char('d'), M::ALT), exact(Char('d'), M::META)];
+            }
+            // Alt+w / Meta+w (used as a Ctrl+w alias for word-delete-left).
+            (Char('w'), m) if m == M::ALT => {
+                return vec![exact(Char('w'), M::ALT), exact(Char('w'), M::META)];
+            }
+            // Home → also Ctrl+a (Emacs move-beginning-of-line).
+            (Home, m) if m.is_empty() => {
+                return vec![exact(Home, M::empty()), exact(Char('a'), M::CONTROL)];
+            }
+            // End → also Ctrl+e (Emacs move-end-of-line).
+            (End, m) if m.is_empty() => {
+                return vec![exact(End, M::empty()), exact(Char('e'), M::CONTROL)];
+            }
+            // BackTab ↔ Shift+Tab ↔ Shift+BackTab.
+            (BackTab, m) if m.is_empty() => {
+                return vec![
+                    exact(BackTab, M::empty()),
+                    exact(Tab, M::SHIFT),
+                    exact(BackTab, M::SHIFT),
+                ];
+            }
+            (Tab, m) if m == M::SHIFT => {
+                return vec![
+                    exact(BackTab, M::empty()),
+                    exact(Tab, M::SHIFT),
+                    exact(BackTab, M::SHIFT),
+                ];
+            }
+            // Ctrl+Backspace, Ctrl+H, Ctrl+W are equivalent in many terminals.
+            // (No-op fallthrough; explicit chords are passed through unchanged.)
+            _ => {}
+        }
+    }
+
+    vec![kem]
+}
+
+/// Expand a list of [`KeyEventMatch`] values to include their common terminal
+/// equivalents.
+///
+/// Returns a [`Vec<KeyEventMatch>`] that derefs to `&[KeyEventMatch]`, so it
+/// can be passed directly as `&expand_variations![...]` to [`Binding::new`].
 ///
 /// # Example
 ///
 /// ```ignore
-/// // expand_variations!["Enter"]               →  ["Enter", "Ctrl+j"]
-/// // expand_variations!["Shift+Tab"]           →  ["Shift+Tab", "BackTab"]
-/// // expand_variations!["Alt+Left"]            →  ["Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]
-/// // expand_variations!["Ctrl+Left", "Alt+Left"] →  ["Ctrl+Left", "Alt+Left", "Alt+b", "Meta+Left", "Meta+b"]
+/// // expand_variations![KeyCode::Enter.into()]   →  [Enter, Ctrl+j]
+/// // expand_variations![KeyModifiers::ALT + KeyCode::Enter.into()]
+/// //                                              →  [Alt+Enter, Meta+Enter]
 /// ```
 macro_rules! expand_variations {
-    [$($key:tt),+ $(,)?] => {{
-        let mut v: Vec<&'static str> = Vec::new();
-        $(expand_variation_push!(v, $key);)+
+    [$($kem:expr),+ $(,)?] => {{
+        let mut v: Vec<$crate::app::actions::KeyEventMatch> = Vec::new();
+        $(v.extend($crate::app::actions::expand_variations_one($kem));)+
         v
     }};
 }
 
 #[cfg(test)]
 mod expand_variations_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
-    fn test_expand_variations() {
-        assert_eq!(expand_variations!["Enter"], vec!["Enter", "Ctrl+j"]);
+    fn test_expand_variations_enter() {
+        assert_eq!(
+            expand_variations![KeyCode::Enter.into()],
+            vec![
+                KeyEventMatch::Exact(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty())),
+                KeyEventMatch::Exact(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL)),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_expand_variations_alt_to_meta() {
+        let v = expand_variations![KeyModifiers::ALT + KeyCode::Backspace.into()];
+        assert_eq!(
+            v,
+            vec![
+                KeyEventMatch::Exact(KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT)),
+                KeyEventMatch::Exact(KeyEvent::new(KeyCode::Backspace, KeyModifiers::META)),
+            ]
+        );
     }
 }
 
@@ -1492,7 +1606,7 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
     let partial_clean = partial.trim_start_matches('!');
     let partial_lower = partial_clean.to_lowercase();
     let neg_prefix = if partial.starts_with('!') { "!" } else { "" };
-    ContextVar::ALL
+    ContextVar::VARIANTS
         .iter()
         .filter_map(|v| {
             let name = v.as_str();
@@ -1608,476 +1722,498 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
 static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
+    use KeyCode as KC;
+    use KeyModifiers as M;
     [
-        Binding::try_new(
-            &["Down"],
+        Binding::new(
+            &[KC::Down.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputSelectNext,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Up"],
+        ),
+        Binding::new(
+            &[KC::Up.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputSelectPrev,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Up"],
+        ),
+        Binding::new(
+            &[KC::Up.into()],
             ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionMoveUp,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Down"],
+        ),
+        Binding::new(
+            &[KC::Down.into()],
             ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionMoveDown,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Left"],
+        ),
+        Binding::new(
+            &[KC::Left.into()],
             ContextVar::TabCompletionMultiColAvailable.into(),
             Action::TabCompletionMoveLeft,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Right"],
+        ),
+        Binding::new(
+            &[KC::Right.into()],
             ContextVar::TabCompletionMultiColAvailable.into(),
             Action::TabCompletionMoveRight,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Up"],
+        ),
+        Binding::new(
+            &[KC::Up.into()],
             ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistorySelectPrev,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Down", "Ctrl+s"],
+        ),
+        Binding::new(
+            &[KC::Down.into(), M::CONTROL + KC::Char('s').into()],
             ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistorySelectNext,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["PageUp"],
+        ),
+        Binding::new(
+            &[KC::PageUp.into()],
             ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryScrollPageUp,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["PageDown"],
+        ),
+        Binding::new(
+            &[KC::PageDown.into()],
             ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryScrollPageDown,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["ctrl+r", "meta+r"],
+        ),
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('r').into(),
+                M::META + KC::Char('r').into(),
+            ],
             ContextVar::FuzzyHistorySearch.into(),
             Action::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Alt+Enter"],
+        ),
+        Binding::new(
+            &expand_variations![M::ALT + KC::Enter.into()],
             ContextVar::Always.into(),
             Action::RunAgentMode,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Enter"],
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryAcceptEntry,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Enter"],
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionAcceptEntry,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Enter"],
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::AgentError.into(),
             Action::RunHelpCommand,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Enter"],
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputAcceptEntry,
-        )
-        .unwrap(),
+        ),
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
-        Binding::try_new(
-            &expand_variations!["Enter"],
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirAcceptEntry,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Enter"],
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
             ContextVar::Always.into(),
             Action::SubmitOrNewline,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["BackTab"],
+        ),
+        Binding::new(
+            &expand_variations![KC::BackTab.into()],
             ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionPrevSuggestion,
-        )
-        .unwrap(),
+        ),
         // Scoped Esc bindings must appear before the Normal Esc binding.
-        Binding::try_new(
-            &["Tab"],
+        Binding::new(
+            &[KC::Tab.into()],
             ContextVar::FuzzyHistorySearch.into(),
             Action::FuzzyHistoryAcceptAndEdit,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["BackTab"],
+        ),
+        Binding::new(
+            &expand_variations![KC::BackTab.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputSelectPrev,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Tab"],
+        ),
+        Binding::new(
+            &[KC::Tab.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputNextSuggestion,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Tab"],
+        ),
+        Binding::new(
+            &[KC::Tab.into()],
             ContextVar::TabCompletionAvailable.into(),
             Action::TabCompletionNextSuggestion,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Tab"],
+        ),
+        Binding::new(
+            &[KC::Tab.into()],
             ContextVar::Always.into(),
             Action::RunTabCompletion,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Esc"],
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::AgentError.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Esc"],
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::AgentModeWaiting.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Esc"],
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Esc"],
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::FuzzyHistorySearch.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Esc"],
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::PromptDirSelect.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Esc"],
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::TabCompletionAvailable.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Esc"],
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::TabCompletion.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Esc"],
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::TabCompletionWaiting.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
+        ),
         // TextSelected Esc must appear before the Default Esc binding so that
         // pressing Esc with a selection active clears the selection rather
         // than toggling the mouse.
-        Binding::try_new(
-            &["Esc"],
+        Binding::new(
+            &[KC::Esc.into()],
             ContextVar::TextSelected.into(),
             Action::EscapeToNormalMode,
-        )
-        .unwrap(),
-        Binding::try_new(&["Esc"], ContextVar::Always.into(), Action::ToggleMouse).unwrap(),
-        Binding::try_new(&["Ctrl+d"], ContextVar::Always.into(), Action::Exit).unwrap(),
+        ),
+        Binding::new(
+            &[KC::Esc.into()],
+            ContextVar::Always.into(),
+            Action::ToggleMouse,
+        ),
+        Binding::new(
+            &[M::CONTROL + KC::Char('d').into()],
+            ContextVar::Always.into(),
+            Action::Exit,
+        ),
         // TextSelected Ctrl+x cuts the selection to the clipboard.
-        Binding::try_new(
-            &["Ctrl+x", "Meta+x"],
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('x').into(),
+                M::META + KC::Char('x').into(),
+            ],
             ContextVar::TextSelected.into(),
             Action::CutSelection,
-        )
-        .unwrap(),
+        ),
         // TextSelected Ctrl+c must appear before the Default Ctrl+c binding
         // so that copying the selection takes precedence over cancelling.
-        Binding::try_new(
-            &["Ctrl+c", "Meta+c"],
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('c').into(),
+                M::META + KC::Char('c').into(),
+            ],
             ContextVar::TextSelected.into(),
             Action::CopySelectionOsc52,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Ctrl+c", "Meta+c"],
+        ),
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('c').into(),
+                M::META + KC::Char('c').into(),
+            ],
             ContextVar::Always.into(),
             Action::Cancel,
-        )
-        .unwrap(),
-        Binding::try_new(
+        ),
+        Binding::new(
             // Ctrl+/ (shows as Ctrl+7) - comment out and execute
-            &["Ctrl+/", "Meta+/", "Super+/", "Ctrl+7"],
+            &[
+                M::CONTROL + KC::Char('/').into(),
+                M::META + KC::Char('/').into(),
+                M::SUPER + KC::Char('/').into(),
+                M::CONTROL + KC::Char('7').into(),
+            ],
             ContextVar::Always.into(),
             Action::CommentLineSubmit,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["ctrl+r", "meta+r"],
+        ),
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('r').into(),
+                M::META + KC::Char('r').into(),
+            ],
             ContextVar::Always.into(),
             Action::RunFuzzyHistorySearch,
-        )
-        .unwrap(),
-        Binding::try_new(&["Ctrl+l"], ContextVar::Always.into(), Action::ClearScreen).unwrap(),
-        Binding::try_new(
-            &["Super+Backspace", "Ctrl+u", "Ctrl+Shift+Backspace"],
+        ),
+        Binding::new(
+            &[M::CONTROL + KC::Char('l').into()],
+            ContextVar::Always.into(),
+            Action::ClearScreen,
+        ),
+        Binding::new(
+            &[
+                M::SUPER + KC::Backspace.into(),
+                M::CONTROL + KC::Char('u').into(),
+                (M::CONTROL | M::SHIFT) + KC::Backspace.into(),
+            ],
             ContextVar::Always.into(),
             Action::DeleteLeftUntilStartOfLine,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Alt+Backspace"],
+        ),
+        Binding::new(
+            &expand_variations![M::ALT + KC::Backspace.into()],
             ContextVar::Always.into(),
             Action::DeleteLeftOneWordFineGrained,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Ctrl+Backspace", "Ctrl+H", "Alt+W", "Ctrl+w"],
+        ),
+        Binding::new(
+            &expand_variations![
+                M::CONTROL + KC::Backspace.into(),
+                M::CONTROL + KC::Char('h').into(),
+                M::ALT + KC::Char('w').into(),
+                M::CONTROL + KC::Char('w').into(),
+            ],
             ContextVar::Always.into(),
             Action::DeleteLeftOneWordWhitespace,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Backspace"],
+        ),
+        Binding::new(
+            &[KC::Backspace.into()],
             ContextVar::Always.into(),
             Action::DeleteLeft,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Super+Delete", "Ctrl+Shift+Delete", "Ctrl+k"],
+        ),
+        Binding::new(
+            &[
+                M::SUPER + KC::Delete.into(),
+                (M::CONTROL | M::SHIFT) + KC::Delete.into(),
+                M::CONTROL + KC::Char('k').into(),
+            ],
             ContextVar::Always.into(),
             Action::DeleteRightUntilEndOfLine,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Alt+Delete"],
+        ),
+        Binding::new(
+            &expand_variations![M::ALT + KC::Delete.into()],
             ContextVar::Always.into(),
             Action::DeleteRightOneWordFineGrained,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Ctrl+Delete"],
+        ),
+        Binding::new(
+            &expand_variations![M::CONTROL + KC::Delete.into()],
             ContextVar::Always.into(),
             Action::DeleteRightOneWordWhitespace,
-        )
-        .unwrap(),
-        Binding::try_new(&["Delete"], ContextVar::Always.into(), Action::DeleteRight).unwrap(),
+        ),
+        Binding::new(
+            &[KC::Delete.into()],
+            ContextVar::Always.into(),
+            Action::DeleteRight,
+        ),
         // PromptCwdEdit Home/End/Alt+Left/Ctrl+Left/Alt+Right/Ctrl+Right must appear before
         // the corresponding Default/InlineHistoryAcceptable bindings.
-        Binding::try_new(
-            &expand_variations!["Home"],
+        Binding::new(
+            &expand_variations![KC::Home.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveToStart,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["End"],
+        ),
+        Binding::new(
+            &expand_variations![KC::End.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveToEnd,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Ctrl+Left", "Alt+Left"],
+        ),
+        Binding::new(
+            &expand_variations![M::CONTROL + KC::Left.into(), M::ALT + KC::Left.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveLeft,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Ctrl+Right", "Alt+Right"],
+        ),
+        Binding::new(
+            &expand_variations![M::CONTROL + KC::Right.into(), M::ALT + KC::Right.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveRight,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Ctrl+Shift+A", "Super+Shift+A"],
+        ),
+        Binding::new(
+            &[
+                (M::CONTROL | M::SHIFT) + KC::Char('a').into(),
+                (M::SUPER | M::SHIFT) + KC::Char('a').into(),
+            ],
             ContextVar::Always.into(),
             Action::SelectAll,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Shift+Home", "Super+Shift+Left"],
+        ),
+        Binding::new(
+            &[
+                M::SHIFT + KC::Home.into(),
+                (M::SUPER | M::SHIFT) + KC::Left.into(),
+            ],
             ContextVar::Always.into(),
             Action::MoveLeftStartOfLineExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Home", "Super+Left", "Ctrl+A", "Super+A"],
+        ),
+        Binding::new(
+            &expand_variations![
+                KC::Home.into(),
+                M::SUPER + KC::Left.into(),
+                M::CONTROL + KC::Char('a').into(),
+                M::SUPER + KC::Char('a').into(),
+            ],
             ContextVar::Always.into(),
             Action::MoveLeftStartOfLine,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Ctrl+Shift+Left"],
+        ),
+        Binding::new(
+            &[(M::CONTROL | M::SHIFT) + KC::Left.into()],
             ContextVar::Always.into(),
             Action::MoveLeftOneWordWhitespaceExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Ctrl+Left"], // Emacs-style whitespace word-left
+        ),
+        Binding::new(
+            &[M::CONTROL + KC::Left.into()], // Emacs-style whitespace word-left
             ContextVar::Always.into(),
             Action::MoveLeftOneWordWhitespace,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Alt+Shift+Left", "Meta+Shift+Left"],
+        ),
+        Binding::new(
+            &[
+                (M::ALT | M::SHIFT) + KC::Left.into(),
+                (M::META | M::SHIFT) + KC::Left.into(),
+            ],
             ContextVar::Always.into(),
             Action::MoveLeftOneWordFineGrainedExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Alt+Left"], // Fine-grained word-left (stops at punctuation / path boundaries)
+        ),
+        Binding::new(
+            // Fine-grained word-left (stops at punctuation / path boundaries)
+            &expand_variations![M::ALT + KC::Left.into()],
             ContextVar::Always.into(),
             Action::MoveLeftOneWordFineGrained,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Left"],
+        ),
+        Binding::new(
+            &[KC::Left.into()],
             (ContextVar::CursorAtStart & !ContextVar::PromptDirSelect).into(),
             Action::StartPromptDirSelect,
-        )
-        .unwrap(),
+        ),
         // PromptCwdEdit Left must appear before the Normal Left binding.
-        Binding::try_new(
-            &["Left"],
+        Binding::new(
+            &[KC::Left.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveLeft,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Shift+Left"],
+        ),
+        Binding::new(
+            &[M::SHIFT + KC::Left.into()],
             ContextVar::Always.into(),
             Action::MoveLeftExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(&["Left"], ContextVar::Always.into(), Action::MoveLeft).unwrap(),
-        Binding::try_new(
-            &expand_variations!["Right", "End"],
+        ),
+        Binding::new(
+            &[KC::Left.into()],
+            ContextVar::Always.into(),
+            Action::MoveLeft,
+        ),
+        Binding::new(
+            &expand_variations![KC::Right.into(), KC::End.into()],
             (ContextVar::InlineSuggestionAvailable & ContextVar::CursorAtEnd).into(),
             Action::AcceptInlineSuggestion,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Shift+End", "Super+Shift+Right"],
+        ),
+        Binding::new(
+            &[
+                M::SHIFT + KC::End.into(),
+                (M::SUPER | M::SHIFT) + KC::Right.into(),
+            ],
             ContextVar::Always.into(),
             Action::MoveRightEndOfLineExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["End", "Super+Right", "Ctrl+E", "Super+E"],
+        ),
+        Binding::new(
+            &expand_variations![
+                KC::End.into(),
+                M::SUPER + KC::Right.into(),
+                M::CONTROL + KC::Char('e').into(),
+                M::SUPER + KC::Char('e').into(),
+            ],
             ContextVar::Always.into(),
             Action::MoveRightEndOfLine,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Ctrl+Shift+Right"],
+        ),
+        Binding::new(
+            &[(M::CONTROL | M::SHIFT) + KC::Right.into()],
             ContextVar::Always.into(),
             Action::MoveRightOneWordWhitespaceExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Ctrl+Right"], // Emacs-style whitespace word-right
+        ),
+        Binding::new(
+            &[M::CONTROL + KC::Right.into()], // Emacs-style whitespace word-right
             ContextVar::Always.into(),
             Action::MoveRightOneWordWhitespace,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Alt+Shift+Right", "Meta+Shift+Right"],
+        ),
+        Binding::new(
+            &[
+                (M::ALT | M::SHIFT) + KC::Right.into(),
+                (M::META | M::SHIFT) + KC::Right.into(),
+            ],
             ContextVar::Always.into(),
             Action::MoveRightOneWordFineGrainedExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &expand_variations!["Alt+Right"], // Fine-grained word-right (stops at punctuation / path boundaries)
+        ),
+        Binding::new(
+            // Fine-grained word-right (stops at punctuation / path boundaries)
+            &expand_variations![M::ALT + KC::Right.into()],
             ContextVar::Always.into(),
             Action::MoveRightOneWordFineGrained,
-        )
-        .unwrap(),
+        ),
         // PromptCwdEdit Right must appear before the Normal Right binding.
-        Binding::try_new(
-            &["Right"],
+        Binding::new(
+            &[KC::Right.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveRight,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Shift+Right"],
+        ),
+        Binding::new(
+            &[M::SHIFT + KC::Right.into()],
             ContextVar::Always.into(),
             Action::MoveRightExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(&["Right"], ContextVar::Always.into(), Action::MoveRight).unwrap(),
-        Binding::try_new(
-            &["Shift+Up"],
+        ),
+        Binding::new(
+            &[KC::Right.into()],
+            ContextVar::Always.into(),
+            Action::MoveRight,
+        ),
+        Binding::new(
+            &[M::SHIFT + KC::Up.into()],
             ContextVar::Always.into(),
             Action::MoveLineUpExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Up"],
+        ),
+        Binding::new(
+            &[KC::Up.into()],
             ContextVar::Always.into(),
             Action::MoveLineUpOrHistoryUp,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Shift+Down"],
+        ),
+        Binding::new(
+            &[M::SHIFT + KC::Down.into()],
             ContextVar::Always.into(),
             Action::MoveLineDownExtendSelection,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Down"],
+        ),
+        Binding::new(
+            &[KC::Down.into()],
             ContextVar::Always.into(),
             Action::MoveLineDownOrHistoryDown,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Ctrl+y", "Super+Y", "Ctrl+Shift+Z", "Super+Shift+Z"],
+        ),
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('y').into(),
+                M::SUPER + KC::Char('y').into(),
+                (M::CONTROL | M::SHIFT) + KC::Char('z').into(),
+                (M::SUPER | M::SHIFT) + KC::Char('z').into(),
+            ],
             ContextVar::Always.into(),
             Action::Redo,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["Ctrl+z", "Super+Z"],
+        ),
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('z').into(),
+                M::SUPER + KC::Char('z').into(),
+            ],
             ContextVar::Always.into(),
             Action::Undo,
-        )
-        .unwrap(),
-        Binding::try_new(
-            &["AnyChar", "Shift+AnyChar"],
+        ),
+        Binding::new(
+            &[
+                KeyEventMatch::AnyCharAndMods(M::empty()),
+                KeyEventMatch::AnyCharAndMods(M::SHIFT),
+            ],
             ContextVar::Always.into(),
             Action::InsertChar,
-        )
-        .unwrap(),
+        ),
     ]
 });
 
