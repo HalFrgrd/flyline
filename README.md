@@ -522,10 +522,10 @@ Colours can be specified by name (`red`, `green`, `blue`, `magenta`, `cyan`, `ye
 hex code (`#ff5500`) or `rgb(r,g,b)` form.
 
 ```bash
-flyline set-colour --inline-suggestion "dim italic"
-flyline set-colour --default-theme light --matching-char "bold blue"
-flyline set-colour --recognised-command "green" --unrecognised-command "bold red"
-flyline set-colour --secondary-text "dim" --tutorial-hint "bold italic"
+flyline set-colour --style inline-suggestion="dim italic"
+flyline set-colour --default-theme light --style matching-char="bold blue"
+flyline set-colour --style recognised-command="green" --style unrecognised-command="bold red"
+flyline set-colour --style secondary-text="dim" --style tutorial-hint="bold italic"
 ```
 
 ## Keybindings
