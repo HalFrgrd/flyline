@@ -360,6 +360,20 @@ impl DParser {
                 self.tokens[idx].token.kind = TokenKind::DoubleRParen;
             }
 
+            // Something like `echo foo=bar` is not an assignment.
+            if self.current_command_range.is_some()
+                && self.tokens[idx].token.kind.is_word()
+                && idx + 1 < self.tokens.len()
+                && self.tokens[idx + 1].token.kind == TokenKind::Assignment
+            {
+                let second = self.tokens.remove(idx + 1);
+                self.tokens[idx].token.value.push_str(&second.token.value);
+                if idx + 1 < self.tokens.len() && self.tokens[idx + 1].token.kind.is_word() {
+                    let third = self.tokens.remove(idx + 1);
+                    self.tokens[idx].token.value.push_str(&third.token.value);
+                }
+            }
+
             // Clone the token so we can match on it while still mutating self.tokens[idx].annotation.
             let token = self.tokens[idx].token.clone();
 
@@ -1799,8 +1813,35 @@ mod tests {
         );
 
         // go – first argument fragment, NOT an env var
-        assert_eq!(tokens[2].token.value, "go");
+        assert_eq!(tokens[2].token.value, "go=,go-st");
         assert!(!tokens[2].annotations.is_env_var);
+    }
+
+    #[test]
+    fn test_equal_sign_is_not_assignment() {
+        // `chmod go=,go-st /some/path`: the `go` to the left of `=` is an
+        // argument to `chmod`, not an env-var assignment. It must therefore
+        // not be tagged with is_env_var.
+        let input = r#"bar=baz chmod go=foo"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        assert_eq!(tokens[0].token.value, "bar");
+        assert_eq!(tokens[1].token.kind, TokenKind::Assignment);
+        assert_eq!(tokens[2].token.value, "baz");
+
+        // chmod – the command word
+        assert_eq!(tokens[4].token.value, "chmod");
+        assert_eq!(
+            tokens[4].annotations.command_word,
+            Some("chmod".to_string())
+        );
+
+        assert_eq!(tokens[6].token.value, "go=foo");
     }
 
     #[test]
