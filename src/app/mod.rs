@@ -1799,17 +1799,10 @@ impl<'a> App<'a> {
             }
         }
 
-        log::info!(
-            "self.settings.key_debug && let Some((key, action)) = &self.last_key_debug: {}, {:?}",
-            self.settings.key_debug,
-            self.last_key_debug
-        );
-
         if self.mode.is_running()
             && self.settings.key_debug
             && let Some((key, action)) = &self.last_key_debug
         {
-            log::info!("Key debug: key: {}, action: {:?}", key, action);
             content.write_tagged_line(
                 &TaggedLine::from_line(
                     Line::from(format!("key: {key}  action: {action}")).style(
