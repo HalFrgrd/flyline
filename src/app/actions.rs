@@ -24,6 +24,8 @@ use strum::{
 enum ContextVar {
     #[strum(message = "Always true; the catch-all context for unconditional bindings")]
     Always,
+    #[strum(message = "The command buffer is empty")]
+    BufferIsEmpty,
     #[strum(message = "Fuzzy history search overlay is active")]
     FuzzyHistorySearch,
     #[strum(message = "Waiting for tab completion candidates to be produced")]
@@ -34,6 +36,10 @@ enum ContextVar {
     TabCompletionAvailable,
     #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
     TabCompletionMultiColAvailable,
+    #[strum(message = "Tab completion overlay is active but fuzzy filtering has no matches")]
+    TabCompletionsNoFilteredResults,
+    #[strum(message = "Tab completion overlay is active and has no candidates at all")]
+    TabCompletionsNoResults,
     #[strum(message = "Waiting for the agent mode subprocess to finish")]
     AgentModeWaiting,
     #[strum(message = "Agent mode finished and is showing a list of selectable suggestions")]
@@ -50,6 +56,8 @@ enum ContextVar {
     PromptDirSelect,
     #[strum(message = "There is an active text selection in the buffer")]
     TextSelected,
+    #[strum(message = "The command buffer contains at least one newline")]
+    MultilineBuffer,
 }
 
 impl ContextVar {
@@ -60,6 +68,7 @@ impl ContextVar {
     fn evaluate(&self, app: &App) -> bool {
         match self {
             ContextVar::Always => true,
+            ContextVar::BufferIsEmpty => app.buffer.buffer().is_empty(),
             ContextVar::FuzzyHistorySearch => {
                 matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
             }
@@ -79,6 +88,16 @@ impl ContextVar {
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.last_num_visible_cols > 1
             ),
+            ContextVar::TabCompletionsNoFilteredResults => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.filtered_suggestions_len() == 0
+            ),
+            ContextVar::TabCompletionsNoResults => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.all_suggestions_len() == 0
+            ),
             ContextVar::AgentModeWaiting => {
                 matches!(app.content_mode, ContentMode::AgentModeWaiting { .. })
             }
@@ -95,6 +114,7 @@ impl ContextVar {
                 matches!(app.content_mode, ContentMode::PromptDirSelect(_))
             }
             ContextVar::TextSelected => app.buffer.selection_range().is_some(),
+            ContextVar::MultilineBuffer => app.buffer.buffer().contains('\n'),
         }
     }
 }
@@ -501,8 +521,8 @@ impl Action {
         match self {
             Action::AcceptInlineSuggestion => {
                 if let Some((_, suf)) = &app.inline_history_suggestion {
-                    app.buffer.insert_str(suf);
-                    app.buffer.move_to_end();
+                    let new_buffer = format!("{}{}", app.buffer.buffer(), suf);
+                    app.buffer.replace_buffer(&new_buffer);
                 }
             }
             Action::DismissInlineSuggestion => {
@@ -1349,12 +1369,20 @@ impl Binding {
     pub fn matches(&self, key: KeyEvent) -> bool {
         self.key_events.iter().any(|k| match k {
             KeyEventMatch::Exact(action_binding) => {
-                action_binding.code == key.code && key.modifiers.contains(action_binding.modifiers)
+                keycodes_match(action_binding.code, key.code)
+                    && key.modifiers.contains(action_binding.modifiers)
             }
             KeyEventMatch::AnyCharAndMods(mods) => {
                 matches!(key.code, KeyCode::Char(_)) && key.modifiers.contains(*mods)
             }
         })
+    }
+}
+
+fn keycodes_match(a: KeyCode, b: KeyCode) -> bool {
+    match (a, b) {
+        (KeyCode::Char(a), KeyCode::Char(b)) => a.eq_ignore_ascii_case(&b),
+        _ => a == b,
     }
 }
 
@@ -1905,7 +1933,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
         ),
         Binding::new(
             &[M::CONTROL + KC::Char('d').into()],
-            ContextVar::Always.into(),
+            ContextVar::BufferIsEmpty.into(),
             Action::Exit,
         ),
         // TextSelected Ctrl+x cuts the selection to the clipboard.
@@ -2107,7 +2135,10 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Right.into(), KC::End.into()],
-            (ContextVar::InlineSuggestionAvailable & ContextVar::CursorAtEnd).into(),
+            (ContextVar::InlineSuggestionAvailable
+                & ContextVar::CursorAtEnd
+                & !ContextVar::TabCompletion)
+                .into(),
             Action::AcceptInlineSuggestion,
         ),
         Binding::new(
@@ -2249,6 +2280,10 @@ fn display_keycode(code: KeyCode) -> String {
         KeyCode::Media(mk) => format!("Media:{:?}", mk),
         KeyCode::Modifier(mk) => format!("Modifier:{:?}", mk),
     }
+}
+
+fn display_key_event(key: KeyEvent) -> String {
+    KeyEventMatch::Exact(key).display()
 }
 
 /// Return the display name for a single modifier bit.
@@ -2663,6 +2698,12 @@ impl<'a> App<'a> {
                 break;
             }
         }
+        self.last_key_debug = Some((
+            display_key_event(key),
+            matched
+                .map(|action| action.as_str().to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        ));
         if let Some(action) = matched {
             log::trace!("Matched binding: {}", action.as_str());
             action.run(self, key);
@@ -2980,6 +3021,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_shifted_char_binding_matches_uppercase_event_char() {
+        let binding =
+            Binding::try_new_from_strs("Shift+J", "always=fuzzyHistorySelectNext").unwrap();
+
+        assert!(binding.matches(key_with_mods(KeyCode::Char('J'), KeyModifiers::SHIFT)));
+
+        assert!(binding.matches(key_with_mods(KeyCode::Char('j'), KeyModifiers::SHIFT)));
+    }
+
     // --- parse_single_modifier aliases ---
 
     #[test]
@@ -3068,6 +3119,18 @@ mod tests {
         assert!(e.literals.len() == 1);
         assert!(e.literals[0].var == ContextVar::Always);
         assert!(!e.literals[0].negated);
+    }
+
+    #[test]
+    fn test_context_expr_parse_new_vars() {
+        let e = ContextExpr::try_from(
+            "bufferIsEmpty&&tabCompletionsNoFilteredResults&&tabCompletionsNoResults&&multilineBuffer",
+        )
+        .unwrap();
+        assert!(e.literals[0].var == ContextVar::BufferIsEmpty);
+        assert!(e.literals[1].var == ContextVar::TabCompletionsNoFilteredResults);
+        assert!(e.literals[2].var == ContextVar::TabCompletionsNoResults);
+        assert!(e.literals[3].var == ContextVar::MultilineBuffer);
     }
 
     #[test]

@@ -525,6 +525,7 @@ impl TextBuffer {
         self.cursor_byte = 0;
     }
 
+    #[allow(dead_code)]
     pub fn move_to_end(&mut self) {
         self.cursor_byte = self.buf.len();
     }
