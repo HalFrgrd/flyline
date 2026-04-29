@@ -6,6 +6,7 @@ use crate::text_buffer::WordDelim;
 use anyhow::Result;
 use clap_complete::CompletionCandidate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::ops::{Add, BitAnd, Not};
 use std::sync::LazyLock;
@@ -1247,17 +1248,28 @@ fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     }
 }
 
+static MODS_TO_EQUIV_NAMES: LazyLock<HashMap<KeyModifiers, &'static [&'static str]>> =
+    LazyLock::new(|| {
+        HashMap::from([
+            (KeyModifiers::CONTROL, &["ctrl", "control"] as &[&str]),
+            (KeyModifiers::SHIFT, &["shift"] as &[&str]),
+            (KeyModifiers::ALT, &["alt", "option"] as &[&str]),
+            (KeyModifiers::META, &["meta"] as &[&str]),
+            (
+                KeyModifiers::SUPER,
+                &["super", "cmd", "command", "gui", "win"] as &[&str],
+            ),
+            (KeyModifiers::HYPER, &["hyper"] as &[&str]),
+        ])
+    });
+
 /// Parse a single modifier name into a single-bit [`KeyModifiers`] value.
 fn parse_single_modifier(s: &str) -> Result<KeyModifiers> {
-    match s.to_lowercase().as_str() {
-        "ctrl" | "control" => Ok(KeyModifiers::CONTROL),
-        "shift" => Ok(KeyModifiers::SHIFT),
-        "alt" | "option" => Ok(KeyModifiers::ALT),
-        "meta" => Ok(KeyModifiers::META),
-        "super" | "cmd" | "command" | "gui" | "win" => Ok(KeyModifiers::SUPER),
-        "hyper" => Ok(KeyModifiers::HYPER),
-        _ => Err(anyhow::anyhow!("Unknown modifier: '{}'", s)),
-    }
+    let lower = s.trim().to_lowercase();
+    MODS_TO_EQUIV_NAMES
+        .iter()
+        .find_map(|(modifier, names)| names.contains(&lower.as_str()).then_some(*modifier))
+        .ok_or_else(|| anyhow::anyhow!("Unknown modifier: '{}'", s))
 }
 
 /// Parse and validate a remap pair (from, to).  Modifiers may only be remapped
@@ -1666,13 +1678,7 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
 
 pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     let current = current.to_string_lossy();
-    const MODS: &[&str] = &[
-        display_modifier_bit(KeyModifiers::CONTROL),
-        display_modifier_bit(KeyModifiers::ALT),
-        display_modifier_bit(KeyModifiers::SHIFT),
-        display_modifier_bit(KeyModifiers::SUPER),
-        display_modifier_bit(KeyModifiers::HYPER),
-    ];
+
     let keys: Vec<String> = vec![
         KeyCode::Enter,
         KeyCode::Backspace,
@@ -1718,15 +1724,21 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     let current_lower = current.to_lowercase();
     let mut out = vec![];
 
-    for m in MODS {
-        if !used.contains(m) && m.to_lowercase().starts_with(&current_lower) {
-            let prefix = parts[..parts.len() - 1].join("+");
-            let prefix = if prefix.is_empty() {
-                "".into()
-            } else {
-                prefix + "+"
-            };
-            out.push(CompletionCandidate::new(format!("{}{}+", prefix, m)));
+    for (_m, mod_equivs) in MODS_TO_EQUIV_NAMES.iter() {
+        log::info!("Checking mod_equivs {:?} against used mods {:?}", mod_equivs, used);
+        let used_mod = mod_equivs.iter().any(|equiv| used.contains(equiv));
+        if !used_mod  {
+            for equiv in *mod_equivs {
+                if equiv.to_lowercase().starts_with(&current_lower) {
+                    let prefix = parts[..parts.len() - 1].join("+");
+                    let prefix = if prefix.is_empty() {
+                        "".into()
+                    } else {
+                        prefix + "+"
+                    };
+                    out.push(CompletionCandidate::new(format!("{}{}+", prefix, equiv)));
+                }
+            }
         }
     }
 
