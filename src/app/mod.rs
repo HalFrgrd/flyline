@@ -320,7 +320,7 @@ impl DrawnContent {
             return direct_contact.map(|cell| (cell.tag, true));
         }
 
-        content_buf_row
+        if let Some(hit) = content_buf_row
             .iter()
             .enumerate()
             .rev()
@@ -328,6 +328,30 @@ impl DrawnContent {
                 *col_idx <= term_em_x as usize && matches!(tagged_cell.tag, Tag::Command(_))
             })
             .map(|(_, cell)| (cell.tag, false))
+        {
+            return Some(hit);
+        }
+
+        // Mirror of the leftward search above: when the click is below the
+        // command buffer, walk upward row-by-row and return the closest
+        // `Tag::Command` cell. Within each row we pick the rightmost command
+        // cell so that for a multi-line buffer we land on the end of the
+        // last preceding line.
+        for row_idx in (0..content_row as usize).rev() {
+            let row = match self.contents.buf.get(row_idx) {
+                Some(row) => row,
+                None => continue,
+            };
+            if let Some(cell) = row
+                .iter()
+                .rev()
+                .find(|tagged_cell| matches!(tagged_cell.tag, Tag::Command(_)))
+            {
+                return Some((cell.tag, false));
+            }
+        }
+
+        None
     }
 }
 
@@ -787,7 +811,6 @@ impl<'a> App<'a> {
             Some((tag @ Tag::Command(byte_pos), direct)) => {
                 cursor_directly_on_cell = direct;
                 self.last_mouse_over_cell = Some(tag);
-                log::trace!("Mouse over command at byte position {}", byte_pos);
                 if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
                     && let Some(tooltip) = part.tooltip.as_ref()
                 {
