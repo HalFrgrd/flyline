@@ -113,7 +113,7 @@ impl ContextVar {
             }
             ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
             ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
-            ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_end_trimmed(),
+            ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_trimmed_end(),
             ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),
             ContextVar::PromptDirSelect => {
                 matches!(app.content_mode, ContentMode::PromptDirSelect(_))
@@ -679,6 +679,9 @@ impl Action {
                 } else {
                     app.try_submit_current_buffer();
                 }
+            }
+            Action::InsertNewline => {
+                app.buffer.insert_newline();
             }
             Action::RunTabCompletion => app.start_tab_complete(),
             Action::ToggleMouse => {
