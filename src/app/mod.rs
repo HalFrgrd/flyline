@@ -811,7 +811,6 @@ impl<'a> App<'a> {
             Some((tag @ Tag::Command(byte_pos), direct)) => {
                 cursor_directly_on_cell = direct;
                 self.last_mouse_over_cell = Some(tag);
-                log::trace!("Mouse over command at byte position {}", byte_pos);
                 if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
                     && let Some(tooltip) = part.tooltip.as_ref()
                 {

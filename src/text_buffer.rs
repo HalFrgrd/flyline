@@ -326,7 +326,13 @@ impl TextBuffer {
         self.cursor_byte = self.right_move_pos();
     }
 
-    fn move_one_word_left_pos(&mut self, delim: WordDelim) -> usize {
+    fn move_one_word_left_pos(&self, delim: WordDelim) -> usize {
+        if let Some("\n\n") = self
+            .buf
+            .get(self.cursor_byte.saturating_sub(2)..self.cursor_byte)
+        {
+            return self.cursor_byte - 1;
+        }
         self.buf
             .char_indices()
             .rev()
@@ -347,7 +353,11 @@ impl TextBuffer {
         self.cursor_byte = self.move_one_word_left_pos(delim);
     }
 
-    fn move_one_word_right_pos(&mut self, delim: WordDelim) -> usize {
+    fn move_one_word_right_pos(&self, delim: WordDelim) -> usize {
+        if let Some("\n\n") = self.buf.get(self.cursor_byte..self.cursor_byte + 2) {
+            return self.cursor_byte + 1;
+        }
+
         self.buf
             .char_indices()
             .skip_while(|(i, _)| *i < self.cursor_byte)
