@@ -671,6 +671,7 @@ impl<'a> App<'a> {
                         }
                         CrosstermEvent::Paste(pasted) => {
                             log::trace!("Pasted content: {}", pasted);
+                            self.buffer.delete_selection();
                             self.buffer.insert_str(&pasted);
                             self.on_possible_buffer_change();
                             true
@@ -1862,7 +1863,11 @@ impl<'a> App<'a> {
 
         let mut line_idx = 0;
         let mut cursor_pos_maybe = None;
-        let selection_range = self.buffer.selection_range();
+        let selection_range = if self.mode.is_running() {
+            self.buffer.selection_range()
+        } else {
+            None
+        };
 
         for part in self.formatted_buffer_cache.parts.iter() {
             let animation_time = if self.mode.is_running() && self.settings.show_animations {
