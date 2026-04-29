@@ -1725,9 +1725,15 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     let mut out = vec![];
 
     for (_m, mod_equivs) in MODS_TO_EQUIV_NAMES.iter() {
-        log::info!("Checking mod_equivs {:?} against used mods {:?}", mod_equivs, used);
-        let used_mod = mod_equivs.iter().any(|equiv| used.contains(equiv));
-        if !used_mod  {
+        log::info!(
+            "Checking mod_equivs {:?} against used mods {:?}",
+            mod_equivs,
+            used
+        );
+        let used_mod = mod_equivs
+            .iter()
+            .any(|equiv| used.iter().any(|u| u.eq_ignore_ascii_case(equiv)));
+        if !used_mod {
             for equiv in *mod_equivs {
                 if equiv.to_lowercase().starts_with(&current_lower) {
                     let prefix = parts[..parts.len() - 1].join("+");
@@ -1736,7 +1742,11 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
                     } else {
                         prefix + "+"
                     };
-                    out.push(CompletionCandidate::new(format!("{}{}+", prefix, equiv)));
+                    out.push(CompletionCandidate::new(format!(
+                        "{}{}+",
+                        prefix,
+                        capitalize_first(equiv)
+                    )));
                 }
             }
         }
@@ -1755,6 +1765,14 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     }
 
     out
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
 
 /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
