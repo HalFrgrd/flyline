@@ -332,9 +332,12 @@ pub(crate) fn gen_completions_internal(
                                             }
                                             _ => help_description(),
                                         };
+                                    // I store the prefix in tag.
+                                    let prefix =
+                                        c.get_tag().map(|t| format!("{}", t)).unwrap_or_default();
                                     let suffix = if value.ends_with('+') { "" } else { " " };
                                     MaybeProcessedSuggestion::Ready(
-                                        ProcessedSuggestion::new(&value, "", suffix)
+                                        ProcessedSuggestion::new(&value, prefix, suffix)
                                             .with_description(description),
                                     )
                                 })

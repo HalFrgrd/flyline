@@ -1641,7 +1641,10 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
             .filter_map(|a| {
                 let s = a.as_str();
                 if s.to_lowercase().contains(&action_lower) {
-                    Some(CompletionCandidate::new(format!("{}{}", prefix, s)))
+                    Some(
+                        CompletionCandidate::new(s)
+                            .tag(Some(clap::builder::StyledStr::from(prefix.to_string()))),
+                    )
                 } else {
                     None
                 }
@@ -1666,7 +1669,8 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
             let description: Option<&str> = v.get_message();
             if name.to_lowercase().contains(&partial_lower) {
                 Some(
-                    CompletionCandidate::new(format!("{}{}{}", prefix, neg_prefix, name))
+                    CompletionCandidate::new(format!("{}{}", neg_prefix, name))
+                        .tag(Some(clap::builder::StyledStr::from(prefix.to_string())))
                         .help(description.map(|d| clap::builder::StyledStr::from(d))),
                 )
             } else {
