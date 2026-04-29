@@ -303,6 +303,22 @@ pub(crate) fn gen_completions_internal(
                                 .into_iter()
                                 .map(|c| {
                                     let value = c.get_value().to_string_lossy().to_string();
+                                    let (value, suffix) =
+                                        if let Some(stripped) = value.strip_suffix("NO_SUFFIX") {
+                                            (stripped.to_string(), "")
+                                        } else {
+                                            (value, " ")
+                                        };
+                                    let (prefix, value) =
+                                        if let Some(delim_pos) = value.find("PREFIX_DELIM") {
+                                            let p = value[..delim_pos].to_string();
+                                            let v = value[delim_pos + "PREFIX_DELIM".len()..]
+                                                .to_string();
+                                            (p, v)
+                                        } else {
+                                            (String::new(), value)
+                                        };
+
                                     let help_description = || {
                                         let help = c
                                             .get_help()
@@ -332,9 +348,9 @@ pub(crate) fn gen_completions_internal(
                                             }
                                             _ => help_description(),
                                         };
-                                    let suffix = if value.ends_with('+') { "" } else { " " };
+
                                     MaybeProcessedSuggestion::Ready(
-                                        ProcessedSuggestion::new(&value, "", suffix)
+                                        ProcessedSuggestion::new(&value, prefix, suffix)
                                             .with_description(description),
                                     )
                                 })

@@ -388,6 +388,8 @@ pub(crate) struct App<'a> {
     last_draw_time: std::time::Instant,
     needs_screen_cleared: bool,
     last_keypress_action: Option<LastKeyPressAction>,
+    /// Last key event and action dispatched, rendered when key debug mode is enabled.
+    last_key_debug: Option<(String, String)>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     last_activity_time: std::time::Instant,
 }
@@ -460,6 +462,7 @@ impl<'a> App<'a> {
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
             last_keypress_action: None,
+            last_key_debug: None,
             last_activity_time: std::time::Instant::now(),
         }
     }
@@ -1242,22 +1245,15 @@ impl<'a> App<'a> {
         &self,
         needs_prefix: bool,
     ) -> Option<(settings::AgentModeCommand, String)> {
-        log::info!(
-            "Resolving agent command for buffer: '{}'",
-            self.buffer.buffer()
-        );
-        let buf = self.buffer.buffer();
-        for (prefix_key, agent_cmd) in &self.settings.agent_commands {
-            if let Some(prefix) = prefix_key
-                && let Some(stripped) = buf.strip_prefix(prefix.as_str())
-            {
-                return Some((agent_cmd.clone(), stripped.to_string()));
-            }
+        if let Some((agent_cmd, stripped)) = self.buffer_starts_with_agent_command_prefix() {
+            return Some((agent_cmd.clone(), stripped.to_string()));
         }
+
         if needs_prefix {
             return None;
         }
 
+        let buf = self.buffer.buffer();
         let none_prefix_cmd = self
             .settings
             .agent_commands
@@ -1273,6 +1269,20 @@ impl<'a> App<'a> {
             .values()
             .next()
             .map(|cmd| (cmd.clone(), buf.to_string()))
+    }
+
+    fn buffer_starts_with_agent_command_prefix(
+        &self,
+    ) -> Option<(&settings::AgentModeCommand, &str)> {
+        let buf = self.buffer.buffer();
+        for (prefix_key, agent_cmd) in &self.settings.agent_commands {
+            if let Some(prefix) = prefix_key
+                && let Some(stripped) = buf.strip_prefix(prefix.as_str())
+            {
+                return Some((agent_cmd, stripped));
+            }
+        }
+        None
     }
 
     /// Spawn the configured AI command as a child process and transition to `AgentModeWaiting`.
@@ -1349,10 +1359,8 @@ impl<'a> App<'a> {
     /// If it's a single line complete command, exit.
     /// If it's a multi-line complete command, cursor needs to be at end to exit.
     fn try_submit_current_buffer(&mut self) {
-        let should_submit_normally = ((self.buffer.lines_with_cursor().len() == 1)
-            || self.buffer.is_cursor_at_trimmed_end())
-            && command_acceptance::will_bash_accept_buffer(self.buffer.buffer());
-        if self.unfinished_from_prev_command || should_submit_normally {
+        let complete_command = command_acceptance::will_bash_accept_buffer(self.buffer.buffer());
+        if self.unfinished_from_prev_command || complete_command {
             self.mode =
                 AppRunningState::Exiting(ExitState::WithCommand(self.buffer.buffer().to_string()));
         } else {
@@ -1796,6 +1804,24 @@ impl<'a> App<'a> {
             }
         }
 
+        if self.mode.is_running()
+            && self.settings.key_debug
+            && let Some((key, action)) = &self.last_key_debug
+        {
+            content.write_tagged_line(
+                &TaggedLine::from_line(
+                    Line::from(format!("key: {key}  action: {action}")).style(
+                        self.settings
+                            .colour_palette
+                            .secondary_text()
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Tag::Normal,
+                ),
+                true,
+            );
+        }
+
         content.prompt_start = Some(content.cursor_position());
 
         let (mut lprompt, rprompt, fill_span) = self
@@ -2085,7 +2111,9 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(
-                            "# {} / {} suggestions [{}ms]",
+                            "# Pos: ({}, {}); Filtered {}/{} [{}ms]",
+                            active_suggestions.selected_col,
+                            active_suggestions.selected_row,
                             active_suggestions.filtered_suggestions_len(),
                             active_suggestions.all_suggestions_len(),
                             active_suggestions.load_time.as_millis(),

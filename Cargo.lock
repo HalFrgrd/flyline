@@ -589,12 +589,9 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 [[package]]
 name = "flash"
 version = "0.0.6"
-source = "git+https://github.com/HalFrgrd/flash.git?rev=e515077183c61ff21a7d66f9fe8a8198acc01b64#e515077183c61ff21a7d66f9fe8a8198acc01b64"
+source = "git+https://github.com/HalFrgrd/flash.git?rev=4e262084c3566c95f08af25e4e810a9b14361a9b#4e262084c3566c95f08af25e4e810a9b14361a9b"
 dependencies = [
  "atty",
- "libc",
- "regex",
- "tempfile",
 ]
 
 [[package]]
@@ -1704,19 +1701,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "tempfile"
-version = "3.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0136791f7c95b1f6dd99f9cc786b91bb81c3800b639b3478e561ddb7be95e5f1"
-dependencies = [
- "fastrand",
- "getrandom 0.4.1",
- "once_cell",
- "rustix",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

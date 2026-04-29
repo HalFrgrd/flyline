@@ -189,12 +189,12 @@ pub struct Settings {
     pub enable_extended_key_codes: bool,
     /// Configurable colour palette for UI elements.
     pub colour_palette: Palette,
-    /// Which colour theme the user has selected (dark or light).
-    pub colour_theme: ColourTheme,
     /// User defined keybindings
     pub keybindings: Vec<actions::Binding>,
     /// User defined key remappings (applied before matching bindings).
     pub key_remappings: Vec<actions::KeyRemap>,
+    /// Show the last key event and dispatched action above the prompt.
+    pub key_debug: bool,
     /// Tracks commands that were cancelled via Ctrl+C (non-empty buffer).
     pub cancelled_command_history_manager: HistoryManager,
     /// Tracks prompts that were submitted to agent mode.
@@ -224,9 +224,9 @@ impl Default for Settings {
             send_shell_integration_codes: ShellIntegrationLevel::default(),
             enable_extended_key_codes: true,
             colour_palette: Palette::default(),
-            colour_theme: ColourTheme::default(),
             keybindings: Vec::new(),
             key_remappings: Vec::new(),
+            key_debug: false,
             cancelled_command_history_manager: HistoryManager::new_empty(),
             agent_prompt_history_manager: HistoryManager::new_empty(),
             #[cfg(feature = "integration-tests")]

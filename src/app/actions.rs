@@ -6,8 +6,9 @@ use crate::text_buffer::WordDelim;
 use anyhow::Result;
 use clap_complete::CompletionCandidate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::collections::HashMap;
 use std::io::IsTerminal;
-use std::ops::{Add, BitAnd, Not};
+use std::ops::{Add, Not};
 use std::sync::LazyLock;
 use strum::{
     AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr, VariantArray,
@@ -24,6 +25,8 @@ use strum::{
 enum ContextVar {
     #[strum(message = "Always true; the catch-all context for unconditional bindings")]
     Always,
+    #[strum(message = "The command buffer is empty")]
+    BufferIsEmpty,
     #[strum(message = "Fuzzy history search overlay is active")]
     FuzzyHistorySearch,
     #[strum(message = "Waiting for tab completion candidates to be produced")]
@@ -34,6 +37,10 @@ enum ContextVar {
     TabCompletionAvailable,
     #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
     TabCompletionMultiColAvailable,
+    #[strum(message = "Tab completion overlay is active but fuzzy filtering has no matches")]
+    TabCompletionsNoFilteredResults,
+    #[strum(message = "Tab completion overlay is active and has no candidates at all")]
+    TabCompletionsNoResults,
     #[strum(message = "Waiting for the agent mode subprocess to finish")]
     AgentModeWaiting,
     #[strum(message = "Agent mode finished and is showing a list of selectable suggestions")]
@@ -44,12 +51,18 @@ enum ContextVar {
     InlineSuggestionAvailable,
     #[strum(message = "Cursor is at the end of the buffer")]
     CursorAtEnd,
+    #[strum(message = "Cursor is at the end of the trimmed buffer")]
+    CursorAtEndTrimmed,
     #[strum(message = "Cursor is at the start of the buffer")]
     CursorAtStart,
     #[strum(message = "Prompt directory selection mode is active")]
     PromptDirSelect,
     #[strum(message = "There is an active text selection in the buffer")]
     TextSelected,
+    #[strum(message = "The command buffer contains at least one newline")]
+    MultilineBuffer,
+    #[strum(message = "The command buffer starts with an agent mode prefix")]
+    BufferHasAgentModePrefix,
 }
 
 impl ContextVar {
@@ -60,6 +73,7 @@ impl ContextVar {
     fn evaluate(&self, app: &App) -> bool {
         match self {
             ContextVar::Always => true,
+            ContextVar::BufferIsEmpty => app.buffer.buffer().is_empty(),
             ContextVar::FuzzyHistorySearch => {
                 matches!(app.content_mode, ContentMode::FuzzyHistorySearch(_))
             }
@@ -79,6 +93,16 @@ impl ContextVar {
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.last_num_visible_cols > 1
             ),
+            ContextVar::TabCompletionsNoFilteredResults => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.filtered_suggestions_len() == 0
+            ),
+            ContextVar::TabCompletionsNoResults => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.all_suggestions_len() == 0
+            ),
             ContextVar::AgentModeWaiting => {
                 matches!(app.content_mode, ContentMode::AgentModeWaiting { .. })
             }
@@ -90,11 +114,16 @@ impl ContextVar {
             }
             ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
             ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
+            ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_trimmed_end(),
             ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),
             ContextVar::PromptDirSelect => {
                 matches!(app.content_mode, ContentMode::PromptDirSelect(_))
             }
             ContextVar::TextSelected => app.buffer.selection_range().is_some(),
+            ContextVar::MultilineBuffer => app.buffer.buffer().contains('\n'),
+            ContextVar::BufferHasAgentModePrefix => {
+                app.buffer_starts_with_agent_command_prefix().is_some()
+            }
         }
     }
 }
@@ -188,7 +217,7 @@ impl Not for ContextLiteral {
 
 /// A context expression: a conjunction (AND-chain) of literals.
 ///
-/// The grammar is intentionally small: a `&&`-separated list of context
+/// The grammar is intentionally small: a `+`-separated list of context
 /// variable names, each optionally prefixed with `!` for negation.
 /// Parentheses and `||` are not supported.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -209,7 +238,7 @@ impl ContextExpr {
         })
     }
 
-    /// Render the expression in canonical form (e.g. `a&&!b&&c`).
+    /// Render the expression in canonical form (e.g. `a+!b+c`).
     pub fn display(&self) -> String {
         if self.literals.is_empty() {
             return ContextVar::Always.as_str().to_string();
@@ -224,39 +253,39 @@ impl ContextExpr {
                 }
             })
             .collect::<Vec<_>>()
-            .join("&&")
+            .join("+")
     }
 }
 
-impl<Rhs> BitAnd<Rhs> for ContextVar
+impl<Rhs> Add<Rhs> for ContextVar
 where
     Rhs: Into<ContextExpr>,
 {
     type Output = ContextExpr;
 
-    fn bitand(self, rhs: Rhs) -> Self::Output {
-        ContextExpr::from(self) & rhs
+    fn add(self, rhs: Rhs) -> Self::Output {
+        ContextExpr::from(self) + rhs
     }
 }
 
-impl<Rhs> BitAnd<Rhs> for ContextLiteral
+impl<Rhs> Add<Rhs> for ContextLiteral
 where
     Rhs: Into<ContextExpr>,
 {
     type Output = ContextExpr;
 
-    fn bitand(self, rhs: Rhs) -> Self::Output {
-        ContextExpr::from(self) & rhs
+    fn add(self, rhs: Rhs) -> Self::Output {
+        ContextExpr::from(self) + rhs
     }
 }
 
-impl<Rhs> BitAnd<Rhs> for ContextExpr
+impl<Rhs> Add<Rhs> for ContextExpr
 where
     Rhs: Into<ContextExpr>,
 {
     type Output = ContextExpr;
 
-    fn bitand(mut self, rhs: Rhs) -> Self::Output {
+    fn add(mut self, rhs: Rhs) -> Self::Output {
         self.literals.extend(rhs.into().literals);
         self
     }
@@ -270,9 +299,9 @@ impl TryFrom<&str> for ContextExpr {
         if s.is_empty() {
             return Err(anyhow::anyhow!("Empty context expression"));
         }
-        if s.contains("||") {
+        if s.contains("&&") || s.contains("||") {
             return Err(anyhow::anyhow!(
-                "Context expressions only support '&&' (no '||'): '{}'",
+                "Context expressions only support '+' as a separator (no '&&' or '||'): '{}'",
                 s
             ));
         }
@@ -283,7 +312,7 @@ impl TryFrom<&str> for ContextExpr {
             ));
         }
         let mut literals = Vec::new();
-        for raw in s.split("&&") {
+        for raw in s.split('+') {
             let raw = raw.trim();
             if raw.is_empty() {
                 return Err(anyhow::anyhow!(
@@ -373,9 +402,11 @@ pub enum Action {
     #[strum(message = "Run the agent mode help command")]
     RunHelpCommand,
     #[strum(
-        message = "Submit the current command. Insert a newline if the buffer has unclosed \",',[,(."
+        message = "Submit the current command or insert a newline if the buffer is an incomplete expression"
     )]
     SubmitOrNewline,
+    #[strum(message = "Insert a newline")]
+    InsertNewline,
     #[strum(message = "Start tab completion")]
     RunTabCompletion,
     #[strum(message = "Toggle mouse state (Simple and Smart modes)")]
@@ -501,8 +532,8 @@ impl Action {
         match self {
             Action::AcceptInlineSuggestion => {
                 if let Some((_, suf)) = &app.inline_history_suggestion {
-                    app.buffer.insert_str(suf);
-                    app.buffer.move_to_end();
+                    let new_buffer = format!("{}{}", app.buffer.buffer(), suf);
+                    app.buffer.replace_buffer(&new_buffer);
                 }
             }
             Action::DismissInlineSuggestion => {
@@ -651,6 +682,9 @@ impl Action {
                 } else {
                     app.try_submit_current_buffer();
                 }
+            }
+            Action::InsertNewline => {
+                app.buffer.insert_newline();
             }
             Action::RunTabCompletion => app.start_tab_complete(),
             Action::ToggleMouse => {
@@ -1214,17 +1248,28 @@ fn parse_single_keycode(s: &str) -> Result<KeyCode> {
     }
 }
 
+static MODS_TO_EQUIV_NAMES: LazyLock<HashMap<KeyModifiers, &'static [&'static str]>> =
+    LazyLock::new(|| {
+        HashMap::from([
+            (KeyModifiers::CONTROL, &["ctrl", "control"] as &[&str]),
+            (KeyModifiers::SHIFT, &["shift"] as &[&str]),
+            (KeyModifiers::ALT, &["alt", "option"] as &[&str]),
+            (KeyModifiers::META, &["meta"] as &[&str]),
+            (
+                KeyModifiers::SUPER,
+                &["super", "cmd", "command", "gui", "win"] as &[&str],
+            ),
+            (KeyModifiers::HYPER, &["hyper"] as &[&str]),
+        ])
+    });
+
 /// Parse a single modifier name into a single-bit [`KeyModifiers`] value.
 fn parse_single_modifier(s: &str) -> Result<KeyModifiers> {
-    match s.to_lowercase().as_str() {
-        "ctrl" | "control" => Ok(KeyModifiers::CONTROL),
-        "shift" => Ok(KeyModifiers::SHIFT),
-        "alt" | "option" => Ok(KeyModifiers::ALT),
-        "meta" => Ok(KeyModifiers::META),
-        "super" | "cmd" | "command" | "gui" | "win" => Ok(KeyModifiers::SUPER),
-        "hyper" => Ok(KeyModifiers::HYPER),
-        _ => Err(anyhow::anyhow!("Unknown modifier: '{}'", s)),
-    }
+    let lower = s.trim().to_lowercase();
+    MODS_TO_EQUIV_NAMES
+        .iter()
+        .find_map(|(modifier, names)| names.contains(&lower.as_str()).then_some(*modifier))
+        .ok_or_else(|| anyhow::anyhow!("Unknown modifier: '{}'", s))
 }
 
 /// Parse and validate a remap pair (from, to).  Modifiers may only be remapped
@@ -1349,12 +1394,20 @@ impl Binding {
     pub fn matches(&self, key: KeyEvent) -> bool {
         self.key_events.iter().any(|k| match k {
             KeyEventMatch::Exact(action_binding) => {
-                action_binding.code == key.code && key.modifiers.contains(action_binding.modifiers)
+                keycodes_match(action_binding.code, key.code)
+                    && key.modifiers.contains(action_binding.modifiers)
             }
             KeyEventMatch::AnyCharAndMods(mods) => {
                 matches!(key.code, KeyCode::Char(_)) && key.modifiers.contains(*mods)
             }
         })
+    }
+}
+
+fn keycodes_match(a: KeyCode, b: KeyCode) -> bool {
+    match (a, b) {
+        (KeyCode::Char(a), KeyCode::Char(b)) => a.eq_ignore_ascii_case(&b),
+        _ => a == b,
     }
 }
 
@@ -1576,8 +1629,8 @@ mod expand_variations_tests {
 /// `flyline key bind`.
 ///
 /// If the input contains `=`, completes the action name to the right of the
-/// last `=`; otherwise, completes the (possibly partial) `&&`-separated
-/// context variable to the right of the last `&&`.
+/// last `=`; otherwise, completes the (possibly partial) `+`-separated
+/// context variable to the right of the last `+`.
 pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     let current = current.to_string_lossy().to_string();
     if let Some(eq_idx) = current.rfind('=') {
@@ -1588,7 +1641,10 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
             .filter_map(|a| {
                 let s = a.as_str();
                 if s.to_lowercase().contains(&action_lower) {
-                    Some(CompletionCandidate::new(format!("{}{}", prefix, s)))
+                    Some(
+                        CompletionCandidate::new(format!("{}PREFIX_DELIM{}", prefix, s))
+                            .help(a.get_message().map(|m| clap::builder::StyledStr::from(m))),
+                    )
                 } else {
                     None
                 }
@@ -1596,10 +1652,10 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
             .collect();
     }
     // Completing context variables.  Determine the prefix already typed
-    // (everything up to and including the last `&&`) and the partial
+    // (everything up to and including the last `+`) and the partial
     // variable name being typed.
-    let (prefix, partial) = if let Some(idx) = current.rfind("&&") {
-        (&current[..idx + 2], &current[idx + 2..])
+    let (prefix, partial) = if let Some(idx) = current.rfind('+') {
+        (&current[..idx + 1], &current[idx + 1..])
     } else {
         ("", current.as_str())
     };
@@ -1608,29 +1664,36 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
     let neg_prefix = if partial.starts_with('!') { "!" } else { "" };
     ContextVar::VARIANTS
         .iter()
-        .filter_map(|v| {
+        .flat_map(|v| {
             let name = v.as_str();
-            if name.to_lowercase().contains(&partial_lower) {
-                Some(CompletionCandidate::new(format!(
-                    "{}{}{}",
-                    prefix, neg_prefix, name
-                )))
-            } else {
-                None
+            let description: Option<&str> = v.get_message();
+            if !name.to_lowercase().contains(&partial_lower) {
+                return Vec::new();
             }
+
+            let extras: &[&str] = if name.eq_ignore_ascii_case(partial_clean) {
+                &["+", "="]
+            } else {
+                &[""]
+            };
+
+            extras
+                .iter()
+                .map(|extra| {
+                    CompletionCandidate::new(format!(
+                        "{}PREFIX_DELIM{}{}{}NO_SUFFIX",
+                        prefix, neg_prefix, name, extra
+                    ))
+                    .help(description.map(|d| clap::builder::StyledStr::from(d)))
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }
 
 pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     let current = current.to_string_lossy();
-    const MODS: &[&str] = &[
-        display_modifier_bit(KeyModifiers::CONTROL),
-        display_modifier_bit(KeyModifiers::ALT),
-        display_modifier_bit(KeyModifiers::SHIFT),
-        display_modifier_bit(KeyModifiers::SUPER),
-        display_modifier_bit(KeyModifiers::HYPER),
-    ];
+
     let keys: Vec<String> = vec![
         KeyCode::Enter,
         KeyCode::Backspace,
@@ -1676,15 +1739,31 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     let current_lower = current.to_lowercase();
     let mut out = vec![];
 
-    for m in MODS {
-        if !used.contains(m) && m.to_lowercase().starts_with(&current_lower) {
-            let prefix = parts[..parts.len() - 1].join("+");
-            let prefix = if prefix.is_empty() {
-                "".into()
-            } else {
-                prefix + "+"
-            };
-            out.push(CompletionCandidate::new(format!("{}{}+", prefix, m)));
+    for (_m, mod_equivs) in MODS_TO_EQUIV_NAMES.iter() {
+        log::info!(
+            "Checking mod_equivs {:?} against used mods {:?}",
+            mod_equivs,
+            used
+        );
+        let used_mod = mod_equivs
+            .iter()
+            .any(|equiv| used.iter().any(|u| u.eq_ignore_ascii_case(equiv)));
+        if !used_mod {
+            for equiv in *mod_equivs {
+                if equiv.to_lowercase().starts_with(&current_lower) {
+                    let prefix = parts[..parts.len() - 1].join("+");
+                    let prefix = if prefix.is_empty() {
+                        "".into()
+                    } else {
+                        prefix + "+"
+                    };
+                    out.push(CompletionCandidate::new(format!(
+                        "{}{}+NO_SUFFIX",
+                        prefix,
+                        capitalize_first(equiv)
+                    )));
+                }
+            }
         }
     }
 
@@ -1701,6 +1780,14 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
     }
 
     out
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
 
 /// MacOs: https://stackoverflow.com/questions/12827888/what-is-the-representation-of-the-mac-command-key-in-the-terminal
@@ -1721,7 +1808,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 84]> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     [
@@ -1784,6 +1871,11 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
             Action::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
         ),
         Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::BufferHasAgentModePrefix.into(),
+            Action::RunAgentMode,
+        ),
+        Binding::new(
             &expand_variations![M::ALT + KC::Enter.into()],
             ContextVar::Always.into(),
             Action::RunAgentMode,
@@ -1813,6 +1905,16 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
             &expand_variations![KC::Enter.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirAcceptEntry,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            (ContextVar::MultilineBuffer + ContextVar::CursorAtEndTrimmed).into(),
+            Action::SubmitOrNewline,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::MultilineBuffer.into(),
+            Action::InsertNewline,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
@@ -1905,7 +2007,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
         ),
         Binding::new(
             &[M::CONTROL + KC::Char('d').into()],
-            ContextVar::Always.into(),
+            ContextVar::BufferIsEmpty.into(),
             Action::Exit,
         ),
         // TextSelected Ctrl+x cuts the selection to the clipboard.
@@ -1913,6 +2015,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
             &[
                 M::CONTROL + KC::Char('x').into(),
                 M::META + KC::Char('x').into(),
+                M::SUPER + KC::Char('x').into(),
             ],
             ContextVar::TextSelected.into(),
             Action::CutSelection,
@@ -2086,7 +2189,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Left.into()],
-            (ContextVar::CursorAtStart & !ContextVar::PromptDirSelect).into(),
+            (ContextVar::CursorAtStart + !ContextVar::PromptDirSelect).into(),
             Action::StartPromptDirSelect,
         ),
         // PromptCwdEdit Left must appear before the Normal Left binding.
@@ -2107,7 +2210,10 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Right.into(), KC::End.into()],
-            (ContextVar::InlineSuggestionAvailable & ContextVar::CursorAtEnd).into(),
+            (ContextVar::InlineSuggestionAvailable
+                + ContextVar::CursorAtEnd
+                + !ContextVar::TabCompletion)
+                .into(),
             Action::AcceptInlineSuggestion,
         ),
         Binding::new(
@@ -2249,6 +2355,10 @@ fn display_keycode(code: KeyCode) -> String {
         KeyCode::Media(mk) => format!("Media:{:?}", mk),
         KeyCode::Modifier(mk) => format!("Modifier:{:?}", mk),
     }
+}
+
+fn display_key_event(key: KeyEvent) -> String {
+    KeyEventMatch::Exact(key).display()
 }
 
 /// Return the display name for a single modifier bit.
@@ -2663,6 +2773,12 @@ impl<'a> App<'a> {
                 break;
             }
         }
+        self.last_key_debug = Some((
+            display_key_event(key),
+            matched
+                .map(|action| action.as_str().to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        ));
         if let Some(action) = matched {
             log::trace!("Matched binding: {}", action.as_str());
             action.run(self, key);
@@ -2980,6 +3096,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_shifted_char_binding_matches_uppercase_event_char() {
+        let binding =
+            Binding::try_new_from_strs("Shift+J", "always=fuzzyHistorySelectNext").unwrap();
+
+        assert!(binding.matches(key_with_mods(KeyCode::Char('J'), KeyModifiers::SHIFT)));
+
+        assert!(binding.matches(key_with_mods(KeyCode::Char('j'), KeyModifiers::SHIFT)));
+    }
+
     // --- parse_single_modifier aliases ---
 
     #[test]
@@ -3071,8 +3197,20 @@ mod tests {
     }
 
     #[test]
+    fn test_context_expr_parse_new_vars() {
+        let e = ContextExpr::try_from(
+            "bufferIsEmpty+tabCompletionsNoFilteredResults+tabCompletionsNoResults+multilineBuffer",
+        )
+        .unwrap();
+        assert!(e.literals[0].var == ContextVar::BufferIsEmpty);
+        assert!(e.literals[1].var == ContextVar::TabCompletionsNoFilteredResults);
+        assert!(e.literals[2].var == ContextVar::TabCompletionsNoResults);
+        assert!(e.literals[3].var == ContextVar::MultilineBuffer);
+    }
+
+    #[test]
     fn test_context_expr_parse_and_chain() {
-        let e = ContextExpr::try_from("inlineSuggestionAvailable&&cursorAtEnd").unwrap();
+        let e = ContextExpr::try_from("inlineSuggestionAvailable+cursorAtEnd").unwrap();
         assert!(e.literals.len() == 2);
         assert!(e.literals[0].var == ContextVar::InlineSuggestionAvailable);
         assert!(e.literals[1].var == ContextVar::CursorAtEnd);
@@ -3080,7 +3218,7 @@ mod tests {
 
     #[test]
     fn test_context_expr_parse_negation() {
-        let e = ContextExpr::try_from("!textSelected&&cursorAtEnd").unwrap();
+        let e = ContextExpr::try_from("!textSelected+cursorAtEnd").unwrap();
         assert!(e.literals[0].negated);
         assert!(e.literals[0].var == ContextVar::TextSelected);
         assert!(!e.literals[1].negated);
@@ -3093,8 +3231,13 @@ mod tests {
     }
 
     #[test]
+    fn test_context_expr_rejects_old_and_separator() {
+        assert!(ContextExpr::try_from("a&&b").is_err());
+    }
+
+    #[test]
     fn test_context_expr_rejects_parens() {
-        assert!(ContextExpr::try_from("(a&&b)").is_err());
+        assert!(ContextExpr::try_from("(a+b)").is_err());
     }
 
     #[test]
@@ -3104,14 +3247,14 @@ mod tests {
 
     #[test]
     fn test_context_expr_display_roundtrip() {
-        let s = "inlineSuggestionAvailable&&!textSelected&&cursorAtEnd";
+        let s = "inlineSuggestionAvailable+!textSelected+cursorAtEnd";
         let e = ContextExpr::try_from(s).unwrap();
         assert!(e.display() == s);
     }
 
     #[test]
     fn test_context_expr_operator_and_from_vars() {
-        let e = ContextVar::FuzzyHistorySearch & ContextVar::CursorAtEnd;
+        let e = ContextVar::FuzzyHistorySearch + ContextVar::CursorAtEnd;
         assert!(e.literals.len() == 2);
         assert!(e.literals[0] == ContextLiteral::new(ContextVar::FuzzyHistorySearch, false));
         assert!(e.literals[1] == ContextLiteral::new(ContextVar::CursorAtEnd, false));
@@ -3119,7 +3262,7 @@ mod tests {
 
     #[test]
     fn test_context_expr_operator_not_and_chain() {
-        let e = !ContextVar::TextSelected & ContextVar::CursorAtEnd;
+        let e = !ContextVar::TextSelected + ContextVar::CursorAtEnd;
         assert!(e.literals.len() == 2);
         assert!(e.literals[0] == ContextLiteral::new(ContextVar::TextSelected, true));
         assert!(e.literals[1] == ContextLiteral::new(ContextVar::CursorAtEnd, false));
@@ -3127,9 +3270,9 @@ mod tests {
 
     #[test]
     fn test_context_expr_operator_chain_exprs() {
-        let e = (ContextVar::InlineSuggestionAvailable & !ContextVar::TextSelected)
-            & ContextVar::CursorAtEnd;
-        assert!(e.display() == "inlineSuggestionAvailable&&!textSelected&&cursorAtEnd");
+        let e = (ContextVar::InlineSuggestionAvailable + !ContextVar::TextSelected)
+            + ContextVar::CursorAtEnd;
+        assert!(e.display() == "inlineSuggestionAvailable+!textSelected+cursorAtEnd");
     }
 
     #[test]
@@ -3157,11 +3300,32 @@ mod tests {
     fn test_binding_try_new_from_strs_compound_context() {
         let b = Binding::try_new_from_strs(
             "Tab",
-            "inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion",
+            "inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion",
         )
         .unwrap();
         assert!(b.action == Action::AcceptInlineSuggestion);
         assert!(b.context.literals.len() == 2);
+    }
+
+    #[test]
+    fn test_possible_context_action_completions_exact_context_yields_separators() {
+        let values = possible_context_action_completions(std::ffi::OsStr::new("always"))
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(values.contains(&"PREFIX_DELIMalways+NO_SUFFIX".to_string()));
+        assert!(values.contains(&"PREFIX_DELIMalways=NO_SUFFIX".to_string()));
+    }
+
+    #[test]
+    fn test_possible_context_action_completions_partial_context_yields_bare_match() {
+        let values = possible_context_action_completions(std::ffi::OsStr::new("inline"))
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(values.contains(&"PREFIX_DELIMinlineSuggestionAvailableNO_SUFFIX".to_string()));
     }
 
     #[test]
