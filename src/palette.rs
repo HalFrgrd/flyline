@@ -3,6 +3,19 @@ use ratatui::style::{Color, Modifier, Style};
 use crate::cursor::CursorStyleConfig;
 use crate::settings::ColourTheme;
 
+/// Visual interaction state for an interactive button-like cell
+/// (clipboard slots, the PS1 copy-buffer button, tutorial buttons, …).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonState {
+    /// No mouse interaction with the cell.
+    Normal,
+    /// The mouse cursor is hovering over the cell.
+    Hovered,
+    /// The mouse cursor is hovering over the cell and the left mouse button
+    /// is currently held down.
+    Depressed,
+}
+
 /// Parse a rich-style string (e.g. `"bold red"`) into a `ratatui::style::Style`.
 /// Returns an error message if the string cannot be parsed.
 pub fn parse_str_to_style(s: &str) -> Result<ratatui::style::Style, String> {
@@ -403,15 +416,21 @@ impl Palette {
         style.add_modifier(Modifier::REVERSED)
     }
 
+    /// Apply the styling that corresponds to a non-normal [`ButtonState`] on
+    /// top of `style`. Callers should branch on [`ButtonState::Normal`]
+    /// themselves and only invoke this for `Hovered` or `Depressed`.
+    pub fn apply_button_style(style: Style, state: ButtonState) -> Style {
+        match state {
+            ButtonState::Normal => style,
+            ButtonState::Hovered => style.add_modifier(Modifier::REVERSED),
+            ButtonState::Depressed => style
+                .add_modifier(Modifier::REVERSED)
+                .add_modifier(Modifier::BOLD),
+        }
+    }
+
     pub fn convert_to_selected(&self, style: Style) -> Style {
         style.patch(self.selected_text())
-    }
-    /// Variant of a style indicating an interactive element is currently being
-    /// pressed (mouse button held down while hovering). Adds a bold modifier
-    /// on top of any existing styling so it can be combined with
-    /// [`Self::convert_to_highlighted`].
-    pub fn convert_to_depressed(style: Style) -> Style {
-        style.add_modifier(Modifier::BOLD)
     }
 
     pub fn cursor_style(intensity: u8) -> Style {

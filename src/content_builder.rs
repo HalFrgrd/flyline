@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::palette::Palette;
+use crate::palette::{ButtonState, Palette};
 
 /// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,22 +55,13 @@ impl<'a> TaggedSpan<'a> {
         }
     }
 
-    /// Consume `self` and return a new `TaggedSpan` whose style is the
-    /// highlighted (reversed) variant of the original style.
-    pub fn convert_to_highlighted(self) -> Self {
-        let highlighted_style = Palette::convert_to_highlighted(self.span.style);
+    /// Consume `self` and return a new `TaggedSpan` whose style has the
+    /// styling for the given non-normal [`ButtonState`] applied on top of the
+    /// original style.
+    pub fn with_button_state(self, state: ButtonState) -> Self {
+        let new_style = Palette::apply_button_style(self.span.style, state);
         TaggedSpan {
-            span: self.span.style(highlighted_style),
-            tag: self.tag,
-        }
-    }
-
-    /// Consume `self` and return a new `TaggedSpan` whose style is the
-    /// depressed (bold) variant of the original style.
-    pub fn convert_to_depressed(self) -> Self {
-        let depressed_style = Palette::convert_to_depressed(self.span.style);
-        TaggedSpan {
-            span: self.span.style(depressed_style),
+            span: self.span.style(new_style),
             tag: self.tag,
         }
     }
@@ -682,17 +673,12 @@ impl Contents {
         // }
     }
 
-    pub fn render_block(
-        &mut self,
-        area: Rect,
-        label: &str,
-        tag: Tag,
-        is_selected: bool,
-        is_depressed: bool,
-    ) {
+    pub fn render_block(&mut self, area: Rect, label: &str, tag: Tag, state: ButtonState) {
         for _ in self.buf.len()..area.bottom() as usize {
             self.increase_buf_single_row();
         }
+
+        let is_selected = !matches!(state, ButtonState::Normal);
 
         for y in area.top()..area.bottom() {
             for x in area.left()..area.right() {
@@ -701,14 +687,11 @@ impl Contents {
                 {
                     let char = Self::get_char(x, y, area, is_selected);
 
-                    let mut style = if is_selected {
-                        Palette::convert_to_highlighted(ratatui::style::Style::default())
-                    } else {
+                    let style = if matches!(state, ButtonState::Normal) {
                         ratatui::style::Style::default()
+                    } else {
+                        Palette::apply_button_style(ratatui::style::Style::default(), state)
                     };
-                    if is_depressed {
-                        style = Palette::convert_to_depressed(style);
-                    }
 
                     tagged_cell
                         .cell
@@ -719,10 +702,11 @@ impl Contents {
             }
 
             // write label in center of block:
-            let mut label_style = ratatui::style::Style::default();
-            if is_depressed {
-                label_style = Palette::convert_to_depressed(label_style);
-            }
+            let label_style = if matches!(state, ButtonState::Normal) {
+                ratatui::style::Style::default()
+            } else {
+                Palette::apply_button_style(ratatui::style::Style::default(), state)
+            };
             let label_span = Span::styled(label.to_string(), label_style);
             let label_width = label_span.width() as u16;
             if label_width < area.width {

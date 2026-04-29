@@ -16,7 +16,7 @@ use crate::history::{HistoryEntry, HistoryEntryFormatted, HistoryManager};
 use crate::iter_first_last::FirstLast;
 use crate::kill_on_drop_child::KillOnDropChild;
 use crate::mouse_state::{ClickCount, MouseState};
-use crate::palette::Palette;
+use crate::palette::{ButtonState, Palette};
 use crate::prompt_manager::PromptManager;
 use crate::settings::{self, MatrixAnimation, MouseMode, Settings};
 use crate::text_buffer::{SubString, TextBuffer};
@@ -744,6 +744,19 @@ impl<'a> App<'a> {
         self.mouse_state.toggle(reason);
         if !self.mouse_state.enabled() {
             self.last_mouse_over_cell = None;
+        }
+    }
+
+    /// Compute the [`ButtonState`] of an interactive cell with the given `tag`,
+    /// based on whether the mouse is hovering it and whether the left mouse
+    /// button is currently held down.
+    fn button_state_for(&self, tag: Tag) -> ButtonState {
+        if self.last_mouse_over_cell != Some(tag) {
+            ButtonState::Normal
+        } else if self.mouse_state.is_left_button_down() {
+            ButtonState::Depressed
+        } else {
+            ButtonState::Hovered
         }
     }
 
@@ -1690,17 +1703,10 @@ impl<'a> App<'a> {
                 .layout(&layout);
 
                 // Draw prev and next buttons first.
-                let left_button_down = self.mouse_state.is_left_button_down();
-                let prev_hovered = self.last_mouse_over_cell == Some(Tag::TutorialPrev);
-                let next_hovered = self.last_mouse_over_cell == Some(Tag::TutorialNext);
+                let prev_state = self.button_state_for(Tag::TutorialPrev);
+                let next_state = self.button_state_for(Tag::TutorialNext);
                 let draw_prev_block = |block, content: &mut Contents| {
-                    content.render_block(
-                        block,
-                        "prev",
-                        Tag::TutorialPrev,
-                        prev_hovered,
-                        prev_hovered && left_button_down,
-                    );
+                    content.render_block(block, "prev", Tag::TutorialPrev, prev_state);
                     content.tag_rect(
                         block.outer(Margin {
                             horizontal: 1,
@@ -1713,13 +1719,7 @@ impl<'a> App<'a> {
                 draw_prev_block(prev_block, &mut content);
 
                 let draw_next_block = |block, content: &mut Contents| {
-                    content.render_block(
-                        block,
-                        "next",
-                        Tag::TutorialNext,
-                        next_hovered,
-                        next_hovered && left_button_down,
-                    );
+                    content.render_block(block, "next", Tag::TutorialNext, next_state);
                     content.tag_rect(
                         block.outer(Margin {
                             horizontal: 1,
@@ -1738,24 +1738,19 @@ impl<'a> App<'a> {
                 for tagged_line in &tutorial_tagged_lines {
                     for tagged_span in &tagged_line.spans {
                         // If the mouse is hovering over a clipboard-tagged span,
-                        // apply the highlight (reversed) style to it.
-                        let is_hovered = if let (
-                            SpanTag::Constant(Tag::Clipboard(span_cb)),
-                            Some(Tag::Clipboard(hover_cb)),
-                        ) = (&tagged_span.tag, self.last_mouse_over_cell)
-                        {
-                            span_cb == &hover_cb
+                        // apply the appropriate button styling (highlight while
+                        // hovered, plus bold while the left button is held).
+                        let span_state = if let SpanTag::Constant(tag) = &tagged_span.tag {
+                            self.button_state_for(*tag)
                         } else {
-                            false
+                            ButtonState::Normal
                         };
-                        if is_hovered {
-                            let mut styled = tagged_span.clone().convert_to_highlighted();
-                            if self.mouse_state.is_left_button_down() {
-                                styled = styled.convert_to_depressed();
-                            }
-                            content.write_tagged_span_dont_overwrite(&styled);
-                        } else {
+                        if matches!(span_state, ButtonState::Normal) {
                             content.write_tagged_span_dont_overwrite(tagged_span);
+                        } else {
+                            content.write_tagged_span_dont_overwrite(
+                                &tagged_span.clone().with_button_state(span_state),
+                            );
                         }
                     }
                     text_end_row = content.cursor_position().row;
@@ -1797,41 +1792,37 @@ impl<'a> App<'a> {
             .prompt_manager
             .get_ps1_lines(self.settings.show_animations, self.mouse_state.enabled());
 
-        let copy_buffer_hovered = self.last_mouse_over_cell == Some(Tag::Ps1PromptCopyBuffer);
-        let copy_buffer_depressed = copy_buffer_hovered && self.mouse_state.is_left_button_down();
-        let restyle_copy_buffer = |style: Style| -> Style {
-            let mut s = Palette::convert_to_highlighted(style);
-            if copy_buffer_depressed {
-                s = Palette::convert_to_depressed(s);
-            }
-            s
-        };
-        if copy_buffer_hovered {
+        let copy_buffer_state = self.button_state_for(Tag::Ps1PromptCopyBuffer);
+        let copy_buffer_active = !matches!(copy_buffer_state, ButtonState::Normal);
+        if copy_buffer_active {
             for line in &mut lprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                        span.span.style = restyle_copy_buffer(span.span.style);
+                        span.span.style =
+                            Palette::apply_button_style(span.span.style, copy_buffer_state);
                     }
                 }
             }
         }
 
         let mut rprompt = rprompt;
-        if copy_buffer_hovered {
+        if copy_buffer_active {
             for line in &mut rprompt {
                 for span in &mut line.spans {
                     if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                        span.span.style = restyle_copy_buffer(span.span.style);
+                        span.span.style =
+                            Palette::apply_button_style(span.span.style, copy_buffer_state);
                     }
                 }
             }
         }
 
         let mut fill_span = fill_span;
-        if copy_buffer_hovered {
+        if copy_buffer_active {
             for span in &mut fill_span.spans {
                 if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
-                    span.span.style = restyle_copy_buffer(span.span.style);
+                    span.span.style =
+                        Palette::apply_button_style(span.span.style, copy_buffer_state);
                 }
             }
         }
