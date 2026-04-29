@@ -720,8 +720,8 @@ pub struct ActiveSuggestions {
     /// 2-D position of the currently-selected suggestion within the grid.
     /// `selected_col * last_num_rows_per_col + selected_row` gives the 1-D
     /// index into `filtered_suggestions`.
-    selected_row: usize,
-    selected_col: usize,
+    pub selected_row: usize,
+    pub selected_col: usize,
     pub word_under_cursor: SubString,
     word_under_cursor_dequoted: String,
     /// Number of suggestion rows per column as used in the last rendered

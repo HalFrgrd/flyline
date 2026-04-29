@@ -1629,8 +1629,8 @@ mod expand_variations_tests {
 /// `flyline key bind`.
 ///
 /// If the input contains `=`, completes the action name to the right of the
-/// last `=`; otherwise, completes the (possibly partial) `&&`-separated
-/// context variable to the right of the last `&&`.
+/// last `=`; otherwise, completes the (possibly partial) `+`-separated
+/// context variable to the right of the last `+`.
 pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     let current = current.to_string_lossy().to_string();
     if let Some(eq_idx) = current.rfind('=') {
@@ -1664,28 +1664,29 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
     let neg_prefix = if partial.starts_with('!') { "!" } else { "" };
     ContextVar::VARIANTS
         .iter()
-        .filter_map(|v| {
+        .flat_map(|v| {
             let name = v.as_str();
             let description: Option<&str> = v.get_message();
-            if name.to_lowercase().contains(&partial_lower) {
-                let extras = if name.eq_ignore_ascii_case(partial_clean) {
-                    vec!["+", "="]
-                } else {
-                    vec![""]
-                };
-                for extra in extras {
-
-                    Some(
-                        CompletionCandidate::new(format!(
-                            "{}PREFIX_DELIM{}{}{}NO_SUFFIX",
-                            prefix, neg_prefix, name, extra
-                        ))
-                        .help(description.map(|d| clap::builder::StyledStr::from(d))),
-                    )
-                }
-            } else {
-                None
+            if !name.to_lowercase().contains(&partial_lower) {
+                return Vec::new();
             }
+
+            let extras: &[&str] = if name.eq_ignore_ascii_case(partial_clean) {
+                &["+", "="]
+            } else {
+                &[""]
+            };
+
+            extras
+                .iter()
+                .map(|extra| {
+                    CompletionCandidate::new(format!(
+                        "{}PREFIX_DELIM{}{}{}NO_SUFFIX",
+                        prefix, neg_prefix, name, extra
+                    ))
+                    .help(description.map(|d| clap::builder::StyledStr::from(d)))
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -3304,6 +3305,27 @@ mod tests {
         .unwrap();
         assert!(b.action == Action::AcceptInlineSuggestion);
         assert!(b.context.literals.len() == 2);
+    }
+
+    #[test]
+    fn test_possible_context_action_completions_exact_context_yields_separators() {
+        let values = possible_context_action_completions(std::ffi::OsStr::new("always"))
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(values.contains(&"PREFIX_DELIMalways+NO_SUFFIX".to_string()));
+        assert!(values.contains(&"PREFIX_DELIMalways=NO_SUFFIX".to_string()));
+    }
+
+    #[test]
+    fn test_possible_context_action_completions_partial_context_yields_bare_match() {
+        let values = possible_context_action_completions(std::ffi::OsStr::new("inline"))
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(values.contains(&"PREFIX_DELIMinlineSuggestionAvailableNO_SUFFIX".to_string()));
     }
 
     #[test]

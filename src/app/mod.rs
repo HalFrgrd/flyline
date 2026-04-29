@@ -2111,7 +2111,9 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(
-                            "# {} / {} suggestions [{}ms]",
+                            "# Pos: ({}, {}); Showing {} / {} suggestions [{}ms]",
+                            active_suggestions.selected_col,
+                            active_suggestions.selected_row,
                             active_suggestions.filtered_suggestions_len(),
                             active_suggestions.all_suggestions_len(),
                             active_suggestions.load_time.as_millis(),
