@@ -1837,62 +1837,66 @@ mod tests {
         parser.walk_to_end();
         let tokens = parser.tokens();
         for t in tokens {
-            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+            dbg!("{:?}", &t.token,);
+            // dbg!("{:?}", &t.annotations);
         }
 
         // `for` – opening of the for…done block
+        assert_eq!(tokens[0].token.kind, TokenKind::For);
         assert_eq!(tokens[0].token.value, "for");
         assert_eq!(
             tokens[0].annotations.opening,
-            Some(OpeningState::Matched(19))
+            Some(OpeningState::Matched(21))
         );
 
         // `do` – keyword introducing the loop body; must NOT be the command_word
-        assert_eq!(tokens[9].token.value, "do");
-        assert_eq!(tokens[9].annotations.command_word, None);
+        assert_eq!(tokens[11].token.kind, TokenKind::Do);
+        assert_eq!(tokens[11].token.value, "do");
+        assert_eq!(tokens[11].annotations.command_word, None);
 
         // `echo` – first word of the command inside the loop body
-        assert_eq!(tokens[11].token.value, "echo");
+        assert_eq!(tokens[13].token.value, "echo");
         assert_eq!(
-            tokens[11].annotations.command_word,
+            tokens[13].annotations.command_word,
             Some("echo".to_string())
         );
 
         // `"` – opening double-quote matched with its closing counterpart
-        assert_eq!(tokens[13].token.value, "\"");
+        assert_eq!(tokens[15].token.value, "\"");
+        assert_eq!(tokens[15].token.value, "\"");
         assert_eq!(
-            tokens[13].annotations.opening,
-            Some(OpeningState::Matched(17))
+            tokens[15].annotations.opening,
+            Some(OpeningState::Matched(19))
         );
 
         // `Welcome ` – inside double quotes
-        assert_eq!(tokens[14].token.value, "Welcome ");
-        assert!(tokens[14].annotations.is_inside_double_quotes);
-
-        // `$` – env-var sigil inside double quotes
-        assert_eq!(tokens[15].token.value, "$");
-        assert!(tokens[15].annotations.is_env_var);
-        assert!(tokens[15].annotations.is_inside_double_quotes);
-
-        // `i` – env-var name inside double quotes
-        assert_eq!(tokens[16].token.value, "i");
-        assert!(tokens[16].annotations.is_env_var);
+        assert_eq!(tokens[16].token.value, "Welcome ");
         assert!(tokens[16].annotations.is_inside_double_quotes);
 
+        // `$` – env-var sigil inside double quotes
+        assert_eq!(tokens[17].token.value, "$");
+        assert!(tokens[17].annotations.is_env_var);
+        assert!(tokens[17].annotations.is_inside_double_quotes);
+
+        // `i` – env-var name inside double quotes
+        assert_eq!(tokens[18].token.value, "i");
+        assert!(tokens[18].annotations.is_env_var);
+        assert!(tokens[18].annotations.is_inside_double_quotes);
+
         // closing `"` matched back to its opener
-        assert_eq!(tokens[17].token.value, "\"");
+        assert_eq!(tokens[19].token.value, "\"");
         assert_eq!(
-            tokens[17].annotations.closing,
+            tokens[19].annotations.closing,
             Some(ClosingAnnotation {
-                opening_idx: 13,
+                opening_idx: 15,
                 is_auto_inserted: false
             })
         );
 
         // `done` – closing keyword matched back to `for`
-        assert_eq!(tokens[19].token.value, "done");
+        assert_eq!(tokens[21].token.value, "done");
         assert_eq!(
-            tokens[19].annotations.closing,
+            tokens[21].annotations.closing,
             Some(ClosingAnnotation {
                 opening_idx: 0,
                 is_auto_inserted: false
