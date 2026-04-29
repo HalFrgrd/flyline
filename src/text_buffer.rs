@@ -443,6 +443,76 @@ impl TextBuffer {
         self.cursor_byte = self.move_one_word_right_pos(delim);
     }
 
+    /// Extend the selection one whitespace-delimited word to the right with
+    /// "smart" anchor adjustment: when the selection anchor sits in the middle
+    /// of a word (i.e. the characters immediately on either side of the anchor
+    /// are both non-whitespace) and the cursor is to the right of the anchor,
+    /// move the anchor leftward to the start of that word instead of moving
+    /// the cursor further right. This makes a sequence of Ctrl+Shift+Right
+    /// presses from the middle of a word naturally select first the right
+    /// half of the word, then the entire word, then continue extending word
+    /// by word — without maintaining any extra state.
+    pub fn move_right_one_word_whitespace_extend_selection(&mut self) {
+        if let Some(anchor) = self.selection_byte
+            && self.cursor_byte > anchor
+            && Self::is_inside_word(&self.buf, anchor)
+        {
+            // Extend the anchor leftward to the start of the word it sits in.
+            let mut new_anchor = anchor;
+            for (i, c) in self.buf[..anchor].char_indices().rev() {
+                if c.is_whitespace() {
+                    break;
+                }
+                new_anchor = i;
+            }
+            self.selection_byte = Some(new_anchor);
+        } else {
+            self.start_selection_if_none();
+            self.move_one_word_right(WordDelim::WhiteSpace);
+        }
+    }
+
+    /// Extend the selection one whitespace-delimited word to the left with
+    /// "smart" anchor adjustment: when the selection anchor sits in the middle
+    /// of a word (i.e. the characters immediately on either side of the anchor
+    /// are both non-whitespace) and the cursor is to the left of the anchor,
+    /// move the anchor rightward to the end of that word instead of moving
+    /// the cursor further left. This makes a sequence of Ctrl+Shift+Left
+    /// presses from the middle of a word naturally select first the left
+    /// half of the word, then the entire word, then continue extending word
+    /// by word — without maintaining any extra state.
+    pub fn move_left_one_word_whitespace_extend_selection(&mut self) {
+        if let Some(anchor) = self.selection_byte
+            && self.cursor_byte < anchor
+            && Self::is_inside_word(&self.buf, anchor)
+        {
+            // Extend the anchor rightward to the end of the word it sits in.
+            let new_anchor = self.buf[anchor..]
+                .char_indices()
+                .find(|(_, c)| c.is_whitespace())
+                .map_or(self.buf.len(), |(i, _)| anchor + i);
+            self.selection_byte = Some(new_anchor);
+        } else {
+            self.start_selection_if_none();
+            self.move_one_word_left(WordDelim::WhiteSpace);
+        }
+    }
+
+    /// Returns `true` when `pos` is strictly inside a word — that is, both the
+    /// character immediately before `pos` and the character at `pos` exist and
+    /// are non-whitespace.
+    fn is_inside_word(buf: &str, pos: usize) -> bool {
+        let prev_is_word = buf[..pos]
+            .chars()
+            .next_back()
+            .is_some_and(|c| !c.is_whitespace());
+        let next_is_word = buf[pos..]
+            .chars()
+            .next()
+            .is_some_and(|c| !c.is_whitespace());
+        prev_is_word && next_is_word
+    }
+
     pub fn move_one_word_left_fine_grained(&mut self) {
         self.cursor_byte = self.fine_grained_word_left_pos();
     }
@@ -593,6 +663,120 @@ mod test_movement {
         assert_eq!(tb.cursor_byte, "  abc".len());
         tb.move_one_word_right(WordDelim::WhiteSpace);
         assert_eq!(tb.cursor_byte, "  abc def".len());
+    }
+
+    #[test]
+    fn move_right_one_word_extend_selection_smart_from_middle_of_word() {
+        // Cursor in the middle of "abc": first press selects "bc", second press
+        // grows the selection backward to include the whole word "abc",
+        // subsequent presses continue extending word by word to the right.
+        let mut tb = TextBuffer::new("abc def ghi");
+        tb.cursor_byte = 1; // between 'a' and 'b'
+
+        tb.move_right_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some(1));
+        assert_eq!(tb.cursor_byte, 3);
+        assert_eq!(tb.selected_text().as_deref(), Some("bc"));
+
+        tb.move_right_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some(0));
+        assert_eq!(tb.cursor_byte, 3);
+        assert_eq!(tb.selected_text().as_deref(), Some("abc"));
+
+        tb.move_right_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some(0));
+        assert_eq!(tb.cursor_byte, "abc def".len());
+        assert_eq!(tb.selected_text().as_deref(), Some("abc def"));
+
+        tb.move_right_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some(0));
+        assert_eq!(tb.cursor_byte, "abc def ghi".len());
+        assert_eq!(tb.selected_text().as_deref(), Some("abc def ghi"));
+    }
+
+    #[test]
+    fn move_right_one_word_extend_selection_from_start_of_word() {
+        // Cursor at the start of "abc" (anchor would not be inside a word) —
+        // behaves as a plain word-extending selection.
+        let mut tb = TextBuffer::new("abc def");
+        tb.move_to_start();
+        tb.move_right_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some(0));
+        assert_eq!(tb.cursor_byte, 3);
+        tb.move_right_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some(0));
+        assert_eq!(tb.cursor_byte, "abc def".len());
+    }
+
+    #[test]
+    fn move_right_one_word_extend_selection_anchor_at_end_of_word() {
+        // Anchor immediately after a word ('c' before, ' ' after) is not
+        // "inside a word", so the cursor advances normally.
+        let mut tb = TextBuffer::new("abc def");
+        tb.cursor_byte = 3; // right after 'c'
+        tb.move_right_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some(3));
+        assert_eq!(tb.cursor_byte, "abc def".len());
+        tb.move_right_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some(3));
+        assert_eq!(tb.cursor_byte, "abc def".len());
+    }
+
+    #[test]
+    fn move_left_one_word_extend_selection_smart_from_middle_of_word() {
+        // Cursor in the middle of "ghi": first press selects "gh", second press
+        // grows the selection forward to include the whole word "ghi",
+        // subsequent presses continue extending word by word to the left.
+        let mut tb = TextBuffer::new("abc def ghi");
+        tb.cursor_byte = "abc def gh".len(); // between 'h' and 'i'
+
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def gh".len()));
+        assert_eq!(tb.cursor_byte, "abc def ".len());
+        assert_eq!(tb.selected_text().as_deref(), Some("gh"));
+
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def ghi".len()));
+        assert_eq!(tb.cursor_byte, "abc def ".len());
+        assert_eq!(tb.selected_text().as_deref(), Some("ghi"));
+
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def ghi".len()));
+        assert_eq!(tb.cursor_byte, "abc ".len());
+        assert_eq!(tb.selected_text().as_deref(), Some("def ghi"));
+
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def ghi".len()));
+        assert_eq!(tb.cursor_byte, 0);
+        assert_eq!(tb.selected_text().as_deref(), Some("abc def ghi"));
+    }
+
+    #[test]
+    fn move_left_one_word_extend_selection_from_end_of_word() {
+        // Cursor at the end of "ghi" (anchor would not be inside a word) —
+        // behaves as a plain word-extending selection.
+        let mut tb = TextBuffer::new("abc def");
+        tb.move_end_of_line();
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def".len()));
+        assert_eq!(tb.cursor_byte, "abc ".len());
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def".len()));
+        assert_eq!(tb.cursor_byte, 0);
+    }
+
+    #[test]
+    fn move_left_one_word_extend_selection_anchor_at_start_of_word() {
+        // Anchor immediately before a word (' ' before, 'd' after) is not
+        // "inside a word", so the cursor moves normally.
+        let mut tb = TextBuffer::new("abc def");
+        tb.cursor_byte = "abc ".len(); // right before 'd'
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc ".len()));
+        assert_eq!(tb.cursor_byte, 0);
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc ".len()));
+        assert_eq!(tb.cursor_byte, 0);
     }
 
     #[test]
@@ -981,35 +1165,51 @@ impl TextBuffer {
     pub fn delete_one_word_left(&mut self, delim: WordDelim) {
         self.push_snapshot(true);
         let old_cursor_col = self.cursor_byte;
-        if delim == WordDelim::WhiteSpace {
-            let iter = self
-                .buf
-                .char_indices()
-                .rev()
-                .skip_while(|(i, _)| *i >= self.cursor_byte);
-            self.cursor_byte = iter
-                .skip_while(|(_, c)| delim.is_word_boundary(*c))
-                .tuple_windows()
-                .find_map(|((i, c), (_, next_c))| {
-                    if !delim.is_word_boundary(c) && delim.is_word_boundary(next_c) {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(0);
-        } else {
-            self.cursor_byte = self.fine_grained_word_left_pos();
-        }
 
-        assert!(self.cursor_byte <= old_cursor_col);
-        self.buf.drain(self.cursor_byte..old_cursor_col);
+        // First, find the position reached by skipping back over any contiguous
+        // run of whitespace immediately before the cursor.
+        let after_ws_skip = self.buf[..old_cursor_col]
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !c.is_whitespace())
+            .map_or(0, |(i, c)| i + c.len_utf8());
+        let ws_chars = self.buf[after_ws_skip..old_cursor_col].chars().count();
+
+        // If there are 2+ contiguous whitespace chars before the cursor, just
+        // delete the whitespace and stop. Otherwise (0 or 1 ws chars), also
+        // consume the previous word using the per-delim word-boundary logic.
+        let new_cursor = if ws_chars >= 2 {
+            after_ws_skip
+        } else if delim == WordDelim::WhiteSpace {
+            self.move_one_word_left_pos(WordDelim::WhiteSpace)
+        } else {
+            self.fine_grained_word_left_pos()
+        };
+
+        assert!(new_cursor <= old_cursor_col);
+        self.cursor_byte = new_cursor;
+        self.buf.drain(new_cursor..old_cursor_col);
     }
 
     pub fn delete_right_one_word(&mut self, delim: WordDelim) {
         self.push_snapshot(true);
+        let start_cursor = self.cursor_byte;
         let end = self.buf.len();
-        let end_cursor = if delim == WordDelim::WhiteSpace {
+
+        // First, find the position reached by skipping forward over any
+        // contiguous run of whitespace immediately after the cursor.
+        let after_ws_skip = self.buf[start_cursor..]
+            .char_indices()
+            .find(|(_, c)| !c.is_whitespace())
+            .map_or(end, |(i, _)| start_cursor + i);
+        let ws_chars = self.buf[start_cursor..after_ws_skip].chars().count();
+
+        // If there are 2+ contiguous whitespace chars after the cursor, just
+        // delete the whitespace and stop. Otherwise (0 or 1 ws chars), also
+        // consume the next word using the per-delim word-boundary logic.
+        let end_cursor = if ws_chars >= 2 {
+            after_ws_skip
+        } else if delim == WordDelim::WhiteSpace {
             self.buf
                 .char_indices()
                 .skip_while(|(i, _)| *i <= self.cursor_byte)
@@ -1192,10 +1392,41 @@ mod test_editing_advanced {
         tb.move_end_of_line();
         tb.delete_one_word_left(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), "cargo test abc::def::ghi   ");
+        // Two or more contiguous trailing whitespace chars are deleted alone,
+        // without consuming the previous word.
+        tb.delete_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "cargo test abc::def::ghi");
         tb.delete_one_word_left(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), "cargo test ");
         tb.delete_one_word_left(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), "cargo ");
+    }
+
+    #[test]
+    fn delete_one_word_left_trailing_whitespace_cases() {
+        // Single trailing whitespace: delete the whitespace AND the previous word.
+        let mut tb = TextBuffer::new("foo ");
+        tb.move_end_of_line();
+        tb.delete_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "");
+
+        // Two trailing whitespace chars: delete just the whitespace.
+        let mut tb = TextBuffer::new("foo  ");
+        tb.move_end_of_line();
+        tb.delete_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "foo");
+
+        // Many trailing whitespace chars: delete just the whitespace.
+        let mut tb = TextBuffer::new("foo           ");
+        tb.move_end_of_line();
+        tb.delete_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "foo");
+
+        // No trailing whitespace: delete the word.
+        let mut tb = TextBuffer::new("foo");
+        tb.move_end_of_line();
+        tb.delete_one_word_left(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "");
     }
 
     #[test]
@@ -1232,6 +1463,37 @@ mod test_editing_advanced {
         assert_eq!(tb.buffer(), " abc::def::ghi   /etc/asd");
         tb.delete_right_one_word(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), "   /etc/asd");
+        // Three or more contiguous leading whitespace chars are deleted alone,
+        // without consuming the next word.
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "/etc/asd");
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "");
+    }
+
+    #[test]
+    fn delete_one_word_right_leading_whitespace_cases() {
+        // Single leading whitespace: delete the whitespace AND the next word.
+        let mut tb = TextBuffer::new(" foo");
+        tb.move_start_of_line();
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "");
+
+        // Two leading whitespace chars: delete just the whitespace.
+        let mut tb = TextBuffer::new("  foo");
+        tb.move_start_of_line();
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "foo");
+
+        // Many leading whitespace chars: delete just the whitespace.
+        let mut tb = TextBuffer::new("                foo");
+        tb.move_start_of_line();
+        tb.delete_right_one_word(WordDelim::WhiteSpace);
+        assert_eq!(tb.buffer(), "foo");
+
+        // No leading whitespace: delete the word.
+        let mut tb = TextBuffer::new("foo");
+        tb.move_start_of_line();
         tb.delete_right_one_word(WordDelim::WhiteSpace);
         assert_eq!(tb.buffer(), "");
     }
