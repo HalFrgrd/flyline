@@ -65,13 +65,12 @@ impl Log for MemoryLogger {
             .map(|l| l.to_string())
             .unwrap_or("?".to_string());
         let entry = format!(
-            "{} [{}] (pid={}) {}:{} {}: {}",
+            "{} [{}] (pid={}) {}:{}: {}",
             timestamp,
             record.level(),
             std::process::id(),
             file,
             line,
-            record.target(),
             record.args()
         );
         self.write_stream_entry(&entry);
