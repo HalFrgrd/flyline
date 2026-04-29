@@ -1245,22 +1245,15 @@ impl<'a> App<'a> {
         &self,
         needs_prefix: bool,
     ) -> Option<(settings::AgentModeCommand, String)> {
-        log::info!(
-            "Resolving agent command for buffer: '{}'",
-            self.buffer.buffer()
-        );
-        let buf = self.buffer.buffer();
-        for (prefix_key, agent_cmd) in &self.settings.agent_commands {
-            if let Some(prefix) = prefix_key
-                && let Some(stripped) = buf.strip_prefix(prefix.as_str())
-            {
-                return Some((agent_cmd.clone(), stripped.to_string()));
-            }
+        if let Some((agent_cmd, stripped)) = self.buffer_starts_with_agent_command_prefix() {
+            return Some((agent_cmd.clone(), stripped.to_string()));
         }
+
         if needs_prefix {
             return None;
         }
 
+        let buf = self.buffer.buffer();
         let none_prefix_cmd = self
             .settings
             .agent_commands
@@ -1276,6 +1269,20 @@ impl<'a> App<'a> {
             .values()
             .next()
             .map(|cmd| (cmd.clone(), buf.to_string()))
+    }
+
+    fn buffer_starts_with_agent_command_prefix(
+        &self,
+    ) -> Option<(&settings::AgentModeCommand, &str)> {
+        let buf = self.buffer.buffer();
+        for (prefix_key, agent_cmd) in &self.settings.agent_commands {
+            if let Some(prefix) = prefix_key
+                && let Some(stripped) = buf.strip_prefix(prefix.as_str())
+            {
+                return Some((agent_cmd, stripped));
+            }
+        }
+        None
     }
 
     /// Spawn the configured AI command as a child process and transition to `AgentModeWaiting`.

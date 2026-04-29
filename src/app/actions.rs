@@ -120,7 +120,9 @@ impl ContextVar {
             }
             ContextVar::TextSelected => app.buffer.selection_range().is_some(),
             ContextVar::MultilineBuffer => app.buffer.buffer().contains('\n'),
-            ContextVar::BufferHasAgentModePrefix => app.resolve_agent_command(true).is_some(),
+            ContextVar::BufferHasAgentModePrefix => {
+                app.buffer_starts_with_agent_command_prefix().is_some()
+            }
         }
     }
 }
