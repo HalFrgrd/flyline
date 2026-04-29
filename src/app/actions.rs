@@ -50,6 +50,8 @@ enum ContextVar {
     InlineSuggestionAvailable,
     #[strum(message = "Cursor is at the end of the buffer")]
     CursorAtEnd,
+    #[strum(message = "Cursor is at the end of the trimmed buffer")]
+    CursorAtEndTrimmed,
     #[strum(message = "Cursor is at the start of the buffer")]
     CursorAtStart,
     #[strum(message = "Prompt directory selection mode is active")]
@@ -58,6 +60,8 @@ enum ContextVar {
     TextSelected,
     #[strum(message = "The command buffer contains at least one newline")]
     MultilineBuffer,
+    #[strum(message = "The command buffer starts with an agent mode prefix")]
+    BufferHasAgentModePrefix,
 }
 
 impl ContextVar {
@@ -109,12 +113,14 @@ impl ContextVar {
             }
             ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
             ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
+            ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_end_trimmed(),
             ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),
             ContextVar::PromptDirSelect => {
                 matches!(app.content_mode, ContentMode::PromptDirSelect(_))
             }
             ContextVar::TextSelected => app.buffer.selection_range().is_some(),
             ContextVar::MultilineBuffer => app.buffer.buffer().contains('\n'),
+            ContextVar::BufferHasAgentModePrefix => app.resolve_agent_command(true).is_some(),
         }
     }
 }
@@ -393,9 +399,11 @@ pub enum Action {
     #[strum(message = "Run the agent mode help command")]
     RunHelpCommand,
     #[strum(
-        message = "Submit the current command. Insert a newline if the buffer has unclosed \",',[,(."
+        message = "Submit the current command or insert a newline if the buffer is an incomplete expression"
     )]
     SubmitOrNewline,
+    #[strum(message = "Insert a newline")]
+    InsertNewline,
     #[strum(message = "Start tab completion")]
     RunTabCompletion,
     #[strum(message = "Toggle mouse state (Simple and Smart modes)")]
@@ -1749,7 +1757,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 84]> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     [
@@ -1812,6 +1820,11 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
             Action::EscapeToNormalMode, // Stop fuzzy history search if active, otherwise escape to normal mode
         ),
         Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::BufferHasAgentModePrefix.into(),
+            Action::RunAgentMode,
+        ),
+        Binding::new(
             &expand_variations![M::ALT + KC::Enter.into()],
             ContextVar::Always.into(),
             Action::RunAgentMode,
@@ -1841,6 +1854,16 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
             &expand_variations![KC::Enter.into()],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirAcceptEntry,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            (ContextVar::MultilineBuffer & ContextVar::CursorAtEndTrimmed).into(),
+            Action::SubmitOrNewline,
+        ),
+        Binding::new(
+            &expand_variations![KC::Enter.into()],
+            ContextVar::MultilineBuffer.into(),
+            Action::InsertNewline,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
