@@ -144,7 +144,14 @@ pub fn complete_flyline_args(
 
     let mut command = FlylineArgs::command();
 
-    let tokens = dparser::collect_tokens_include_whitespace(raw_command);
+    let mut parser = dparser::DParser::from(raw_command);
+    parser.walk_to_end();
+    let tokens = parser
+        .into_tokens()
+        .into_iter()
+        .map(|annoted_token| annoted_token.token)
+        .collect::<Vec<_>>();
+
     // if the cursor is not in any of the tokens, append a whitespace token at the end so that we can generate completions for an empty token after the last word
     let tokens =
         if tokens.is_empty() || !tokens.iter().any(|t| t.byte_range().contains(&cursor_byte)) {
