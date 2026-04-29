@@ -600,9 +600,21 @@ fn make_widget_segment(widget: &PromptWidget, base_style: Style) -> PromptSegmen
             enabled_text: stdout_to_tagged_spans(w.enabled_text.clone()),
             disabled_text: stdout_to_tagged_spans(w.disabled_text.clone()),
         },
-        PromptWidget::CopyBuffer(w) => PromptSegment::WidgetCopyBuffer {
-            text: stdout_to_tagged_spans_with_tag(w.text.clone(), Tag::Ps1PromptCopyBuffer),
-        },
+        PromptWidget::CopyBuffer(w) => {
+            // Apply the surrounding prompt span's base style to each span of
+            // the widget output so the widget visually inherits the styling
+            // of the span it appears in (matching Animation/Cwd behaviour).
+            // The widget output's own style takes precedence
+            // (`base_style.patch(span.style)`).
+            let text = stdout_to_tagged_spans_with_tag(w.text.clone(), Tag::Ps1PromptCopyBuffer)
+                .into_iter()
+                .map(|mut ts| {
+                    ts.span.style = base_style.patch(ts.span.style);
+                    ts
+                })
+                .collect();
+            PromptSegment::WidgetCopyBuffer { text }
+        }
         PromptWidget::Custom(w) => {
             let state = match spawn_widget_child(&w.command) {
                 Err(failure) => WidgetCustomState::Failed(failure),
@@ -2091,6 +2103,32 @@ mod tests {
                     text[0].tag,
                     crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCopyBuffer)
                 );
+            }
+            _ => panic!("expected WidgetCopyBuffer"),
+        }
+    }
+
+    #[test]
+    fn test_expand_span_widget_copy_buffer_inherits_span_style() {
+        // The copy-buffer widget output should inherit the surrounding prompt
+        // span's style (matching how Animation and Cwd segments behave), with
+        // the widget's own style winning when both are set.
+        let widget = PromptWidget::CopyBuffer(PromptWidgetCopyBuffer {
+            name: "COPY_WIDGET".to_string(),
+            text: "copy".to_string(),
+        });
+        let widgets = [widget];
+        let builder = PromptStringBuilder::new(vec![], &widgets);
+        let base_style = Style::default().fg(Color::Blue);
+        let segs =
+            builder.expand_span_to_segments(Span::styled("COPY_WIDGET".to_string(), base_style));
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            PromptSegment::WidgetCopyBuffer { text } => {
+                assert!(!text.is_empty());
+                for ts in text {
+                    assert_eq!(ts.span.style.fg, Some(Color::Blue));
+                }
             }
             _ => panic!("expected WidgetCopyBuffer"),
         }
