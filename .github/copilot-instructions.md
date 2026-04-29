@@ -23,25 +23,31 @@ Cargo.toml      Rust manifest (edition 2024, cdylib crate type)
 
 ## How to Build
 
-The library is built with Cargo inside Docker to target glibc 2.23 (Ubuntu 16.04), ensuring broad host compatibility:
-
-```bash
-docker buildx bake -f docker/docker-bake.hcl extract-artifact
-# Produces docker/build/libflyline.so
-```
-
 For a quick local (host-native) build during development:
 
 ```bash
 cargo build --release
 ```
 
-## How to Run Tests
-
-**Unit/library tests** (run inside the Ubuntu 16.04 Docker build):
+When changing code that is used by the integration tests, also verify that the crate still compiles with the integration-test feature enabled:
 
 ```bash
-docker buildx bake -f docker/docker-bake.hcl lib-tests
+cargo build --features integration-tests
+```
+
+CI also builds the library inside Docker to target glibc 2.23 (Ubuntu 16.04), ensuring broad host compatibility:
+
+```bash
+docker buildx bake -f docker/docker-bake.hcl extract-release-artifact
+# Produces docker/build/libflyline.so
+```
+
+## How to Run Tests
+
+**Unit/library tests**:
+
+```bash
+cargo test --lib
 ```
 
 **Bash integration tests** (load `libflyline.so` into real Bash builds):
