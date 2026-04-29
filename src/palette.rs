@@ -373,7 +373,8 @@ impl Palette {
             ButtonState::Normal => style,
             ButtonState::Hovered => style.add_modifier(Modifier::REVERSED),
             ButtonState::Depressed => style
-                .add_modifier(Modifier::REVERSED)
+                .fg(Color::Black)
+                .bg(Color::Rgb(100, 100, 100))
                 .add_modifier(Modifier::BOLD),
         }
     }

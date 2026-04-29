@@ -430,6 +430,18 @@ pub fn format_buffer(
         })
         .collect();
 
+    if log::log_enabled!(log::Level::Trace) {
+        for part in &spans {
+            log::trace!(
+                "Token: '{:?}', byte range: {:?}, cursor_grapheme_idx: {:?}, selection_byte_grapheme_idx: {:?}",
+                part.token.token,
+                part.token.token.byte_range(),
+                part.cursor_grapheme_idx,
+                part.selection_byte_grapheme_idx
+            );
+        }
+    }
+
     FormattedBuffer {
         parts: spans,
         draw_cursor_at_end: cursor_byte_pos >= buffer_byte_length,

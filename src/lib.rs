@@ -374,8 +374,11 @@ enum Commands {
     ///   flyline key list
     #[command(name = "key", verbatim_doc_comment)]
     Key {
+        /// Show the last key event and dispatched action above the prompt.
+        #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
+        debug: Option<bool>,
         #[command(subcommand)]
-        subcommand: KeySubcommands,
+        subcommand: Option<KeySubcommands>,
     },
     /// Logging commands: dump, configure level, or stream logs.
     ///
@@ -455,10 +458,11 @@ enum KeySubcommands {
     /// (each optionally prefixed with `!` to negate).  Use `always` for
     /// unconditional bindings.  Parentheses and `||` are not supported.
     ///
-    /// Available context variables: always, fuzzyHistorySearch, tabCompletionWaiting,
-    ///   tabCompletion, tabCompletionAvailable, tabCompletionMultiColAvailable,
+    /// Available context variables: always, bufferIsEmpty, fuzzyHistorySearch,
+    ///   tabCompletionWaiting, tabCompletion, tabCompletionAvailable,
+    ///   tabCompletionMultiColAvailable, tabCompletionsNoFilteredResults, tabCompletionsNoResults,
     ///   agentModeWaiting, agentOutputSelection, agentError, inlineSuggestionAvailable,
-    ///   cursorAtEnd, promptDirSelect, textSelected.
+    ///   cursorAtEnd, cursorAtStart, promptDirSelect, textSelected, multilineBuffer.
     ///
     /// Examples:
     ///   flyline key bind Ctrl+Enter always=submitOrNewline
@@ -1050,56 +1054,64 @@ impl Flyline {
                             }
                         }
                     }
-                    Some(Commands::Key { subcommand }) => match subcommand {
-                        KeySubcommands::Bind {
-                            key_sequence,
-                            context_and_action,
-                        } => {
-                            let binding = actions::Binding::try_new_from_strs(
-                                &key_sequence,
-                                &context_and_action,
-                            );
-                            match binding {
-                                Ok(binding) => {
-                                    log::info!(
-                                        "Registering key binding: {} -> {}",
-                                        key_sequence,
-                                        context_and_action
-                                    );
-                                    self.settings.keybindings.push(binding);
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "flyline key bind: failed to parse key sequence '{}' or context/action '{}': {}",
-                                        key_sequence, context_and_action, e
-                                    );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                    Some(Commands::Key { debug, subcommand }) => {
+                        if let Some(enabled) = debug {
+                            log::info!("Key debug mode enabled: {}", enabled);
+                            self.settings.key_debug = enabled;
+                        }
+
+                        match subcommand {
+                            Some(KeySubcommands::Bind {
+                                key_sequence,
+                                context_and_action,
+                            }) => {
+                                let binding = actions::Binding::try_new_from_strs(
+                                    &key_sequence,
+                                    &context_and_action,
+                                );
+                                match binding {
+                                    Ok(binding) => {
+                                        log::info!(
+                                            "Registering key binding: {} -> {}",
+                                            key_sequence,
+                                            context_and_action
+                                        );
+                                        self.settings.keybindings.push(binding);
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "flyline key bind: failed to parse key sequence '{}' or context/action '{}': {}",
+                                            key_sequence, context_and_action, e
+                                        );
+                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                    }
                                 }
                             }
-                        }
-                        KeySubcommands::List { key_sequence } => {
-                            actions::print_bindings_table(
-                                &self.settings.keybindings,
-                                key_sequence.as_deref(),
-                                &self.settings.key_remappings,
-                            );
-                        }
-                        KeySubcommands::Remap { from, to } => {
-                            match actions::try_parse_remap(&from, &to) {
-                                Ok(remap) => {
-                                    log::info!("Registering key remap: {} -> {}", from, to);
-                                    self.settings.key_remappings.push(remap);
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "flyline key remap: failed to parse remap '{}' -> '{}': {}",
-                                        from, to, e
-                                    );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            Some(KeySubcommands::List { key_sequence }) => {
+                                actions::print_bindings_table(
+                                    &self.settings.keybindings,
+                                    key_sequence.as_deref(),
+                                    &self.settings.key_remappings,
+                                );
+                            }
+                            Some(KeySubcommands::Remap { from, to }) => {
+                                match actions::try_parse_remap(&from, &to) {
+                                    Ok(remap) => {
+                                        log::info!("Registering key remap: {} -> {}", from, to);
+                                        self.settings.key_remappings.push(remap);
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "flyline key remap: failed to parse remap '{}' -> '{}': {}",
+                                            from, to, e
+                                        );
+                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                    }
                                 }
                             }
+                            None => {}
                         }
-                    },
+                    }
                     None => {}
                     Some(Commands::Log { subcommand }) => match subcommand {
                         LogSubcommands::Dump => {

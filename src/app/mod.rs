@@ -388,6 +388,8 @@ pub(crate) struct App<'a> {
     last_draw_time: std::time::Instant,
     needs_screen_cleared: bool,
     last_keypress_action: Option<LastKeyPressAction>,
+    /// Last key event and action dispatched, rendered when key debug mode is enabled.
+    last_key_debug: Option<(String, String)>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     last_activity_time: std::time::Instant,
 }
@@ -460,6 +462,7 @@ impl<'a> App<'a> {
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
             last_keypress_action: None,
+            last_key_debug: None,
             last_activity_time: std::time::Instant::now(),
         }
     }
@@ -1794,6 +1797,24 @@ impl<'a> App<'a> {
                 content.move_to_final_line();
                 content.newline();
             }
+        }
+
+        if self.mode.is_running()
+            && self.settings.key_debug
+            && let Some((key, action)) = &self.last_key_debug
+        {
+            content.write_tagged_line(
+                &TaggedLine::from_line(
+                    Line::from(format!("key: {key}  action: {action}")).style(
+                        self.settings
+                            .colour_palette
+                            .secondary_text()
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Tag::Normal,
+                ),
+                true,
+            );
         }
 
         content.prompt_start = Some(content.cursor_position());

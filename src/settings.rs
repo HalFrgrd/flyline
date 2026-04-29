@@ -195,6 +195,8 @@ pub struct Settings {
     pub keybindings: Vec<actions::Binding>,
     /// User defined key remappings (applied before matching bindings).
     pub key_remappings: Vec<actions::KeyRemap>,
+    /// Show the last key event and dispatched action above the prompt.
+    pub key_debug: bool,
     /// Tracks commands that were cancelled via Ctrl+C (non-empty buffer).
     pub cancelled_command_history_manager: HistoryManager,
     /// Tracks prompts that were submitted to agent mode.
@@ -227,6 +229,7 @@ impl Default for Settings {
             colour_theme: ColourTheme::default(),
             keybindings: Vec::new(),
             key_remappings: Vec::new(),
+            key_debug: false,
             cancelled_command_history_manager: HistoryManager::new_empty(),
             agent_prompt_history_manager: HistoryManager::new_empty(),
             #[cfg(feature = "integration-tests")]
