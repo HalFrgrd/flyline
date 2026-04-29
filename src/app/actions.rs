@@ -1642,8 +1642,8 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
                 let s = a.as_str();
                 if s.to_lowercase().contains(&action_lower) {
                     Some(
-                        CompletionCandidate::new(s)
-                            .tag(Some(clap::builder::StyledStr::from(prefix.to_string()))),
+                        CompletionCandidate::new(format!("{}PREFIX_DELIM{}", prefix, s))
+                            .help(a.get_message().map(|m| clap::builder::StyledStr::from(m))),
                     )
                 } else {
                     None
@@ -1668,11 +1668,21 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
             let name = v.as_str();
             let description: Option<&str> = v.get_message();
             if name.to_lowercase().contains(&partial_lower) {
-                Some(
-                    CompletionCandidate::new(format!("{}{}", neg_prefix, name))
-                        .tag(Some(clap::builder::StyledStr::from(prefix.to_string())))
+                let extras = if name.eq_ignore_ascii_case(partial_clean) {
+                    vec!["+", "="]
+                } else {
+                    vec![""]
+                };
+                for extra in extras {
+
+                    Some(
+                        CompletionCandidate::new(format!(
+                            "{}PREFIX_DELIM{}{}{}NO_SUFFIX",
+                            prefix, neg_prefix, name, extra
+                        ))
                         .help(description.map(|d| clap::builder::StyledStr::from(d))),
-                )
+                    )
+                }
             } else {
                 None
             }
@@ -1747,7 +1757,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
                         prefix + "+"
                     };
                     out.push(CompletionCandidate::new(format!(
-                        "{}{}+",
+                        "{}{}+NO_SUFFIX",
                         prefix,
                         capitalize_first(equiv)
                     )));
