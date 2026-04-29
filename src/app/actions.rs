@@ -1474,9 +1474,21 @@ pub fn expand_variations_one(kem: KeyEventMatch) -> Vec<KeyEventMatch> {
                     exact(Char('d'), M::META),
                 ];
             }
-            // Alt+X → also Meta+X (Alt/Meta terminal equivalence, generic case).
-            (code, m) if m == M::ALT => {
-                return vec![exact(code, M::ALT), exact(code, M::META)];
+            // Alt+Enter / Meta+Enter (Alt/Meta terminal equivalence).
+            (Enter, m) if m == M::ALT => {
+                return vec![exact(Enter, M::ALT), exact(Enter, M::META)];
+            }
+            // Alt+Backspace / Meta+Backspace.
+            (Backspace, m) if m == M::ALT => {
+                return vec![exact(Backspace, M::ALT), exact(Backspace, M::META)];
+            }
+            // Alt+d / Meta+d (word-delete-right shortcut).
+            (Char('d'), m) if m == M::ALT => {
+                return vec![exact(Char('d'), M::ALT), exact(Char('d'), M::META)];
+            }
+            // Alt+w / Meta+w (used as a Ctrl+w alias for word-delete-left).
+            (Char('w'), m) if m == M::ALT => {
+                return vec![exact(Char('w'), M::ALT), exact(Char('w'), M::META)];
             }
             // Home → also Ctrl+a (Emacs move-beginning-of-line).
             (Home, m) if m.is_empty() => {
