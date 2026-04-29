@@ -38,7 +38,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 > [!TIP]
 > Quick install:
-> run the following command to automatically download and set your `.bashrc` to run the latest flyline version:
+> run the following command to automatically download flyline and your `.bashrc` to run the latest version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
@@ -316,7 +316,7 @@ This allows you to write a command in plain English and your agent will convert 
 
 After setting up your agent with flyline, you can pass the buffer to your agent with Alt+Enter or simply Enter when your command starts with your trigger prefix (e.g. `ai: list files older than three days`).
 
-[See the examples on how to set this up.](examples/agent_mode.sh) or simply press Alt+Enter and flyline will try to configure agent mode for you.
+[See the examples for how to set this up.](examples/agent_mode.sh). Alternatively, press Alt+Enter and flyline will try to configure agent mode for you.
 
 Flyline will syntax highlight the suggested commands and render markdown output.
 
