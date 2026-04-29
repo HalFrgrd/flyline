@@ -234,13 +234,13 @@ Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
 with ENABLED_TEXT when mouse capture is on, and DISABLED_TEXT when off.
 
 Examples:
-  flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE '🖱️' '🔴'
+  flyline create-prompt-widget mouse-mode '🖱️' '🔴'
   # Now use FLYLINE_MOUSE_MODE in your prompt:
   PS1='\u@\h:\w [FLYLINE_MOUSE_MODE] $ '
 
   flyline create-prompt-widget mouse-mode --name MOUSE_MODE "on " "off"
 
-Usage: flyline create-prompt-widget mouse-mode --name <NAME> <ENABLED_TEXT> <DISABLED_TEXT>
+Usage: flyline create-prompt-widget mouse-mode [OPTIONS] <ENABLED_TEXT> <DISABLED_TEXT>
 
 Arguments:
   <ENABLED_TEXT>
@@ -251,7 +251,9 @@ Arguments:
 
 Options:
       --name <NAME>
-          Name to embed in prompt strings as the widget placeholder
+          Name to embed in prompt strings as the widget placeholder. Defaults to `FLYLINE_MOUSE_MODE`
+          
+          [default: FLYLINE_MOUSE_MODE]
 
   -h, --help
           Print help (see a summary with '-h')
