@@ -1,6 +1,7 @@
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use std::sync::LazyLock;
+use strum::VariantArray;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::content_builder::{ClipboardTypes, Tag, TaggedLine, TaggedSpan};
@@ -86,7 +87,7 @@ pub fn generate_welcome_action_line(now: std::time::Instant, width: u16) -> (u16
 }
 
 /// Tracks progress through the interactive tutorial.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, VariantArray)]
 pub enum TutorialStep {
     Welcome,
     TutorialsTutorial,
@@ -108,44 +109,20 @@ pub enum TutorialStep {
 }
 
 impl TutorialStep {
-    const STEPS_IN_ORDER: [TutorialStep; 15] = [
-        TutorialStep::Welcome,
-        TutorialStep::TutorialsTutorial,
-        TutorialStep::RecommendedSettings,
-        TutorialStep::MouseMode,
-        TutorialStep::AgentMode,
-        TutorialStep::FuzzyHistorySearch,
-        TutorialStep::Autocompletions,
-        TutorialStep::AutoClosing,
-        TutorialStep::FineGrainDeletion,
-        TutorialStep::ThemeColours,
-        TutorialStep::CursorStyleEffects,
-        TutorialStep::Keybindings,
-        TutorialStep::FontDetection,
-        TutorialStep::End,
-        TutorialStep::NotRunning,
-    ];
-
     pub fn next(&mut self) {
         if self == &TutorialStep::NotRunning {
             return;
         }
 
-        let self_idx = Self::STEPS_IN_ORDER
-            .iter()
-            .position(|s| s == self)
-            .unwrap_or(0);
-        let next_idx = (self_idx + 1) % Self::STEPS_IN_ORDER.len();
-        *self = Self::STEPS_IN_ORDER[next_idx];
+        let self_idx = Self::VARIANTS.iter().position(|s| s == self).unwrap_or(0);
+        let next_idx = (self_idx + 1) % Self::VARIANTS.len();
+        *self = Self::VARIANTS[next_idx];
     }
 
     pub fn prev(&mut self) {
-        let self_idx = Self::STEPS_IN_ORDER
-            .iter()
-            .position(|s| s == self)
-            .unwrap_or(0);
+        let self_idx = Self::VARIANTS.iter().position(|s| s == self).unwrap_or(0);
 
-        *self = Self::STEPS_IN_ORDER[self_idx.saturating_sub(1)];
+        *self = Self::VARIANTS[self_idx.saturating_sub(1)];
     }
 
     /// Whether the tutorial is currently active (any step other than `NotRunning`).
