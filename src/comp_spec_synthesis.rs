@@ -911,7 +911,7 @@ mod tests {
 Commands:
   set-agent-mode        Configure AI agent mode.
   create-prompt-widget  Create a custom prompt widget.
-  set-colour             Configure the colour palette.
+  set-style             Configure the colour palette.
   set-cursor            Configure the cursor appearance and animation.
   key                   Manage keybindings.
   dump-logs             Dump in-memory logs to file.
@@ -978,7 +978,7 @@ Read more at https://github.com/HalFrgrd/flyline
         let subs = subcommand_names(&cmd);
         assert!(subs.contains(&"set-agent-mode"));
         assert!(subs.contains(&"create-prompt-widget"));
-        assert!(subs.contains(&"set-colour"));
+        assert!(subs.contains(&"set-style"));
         assert!(subs.contains(&"key"));
         assert!(subs.contains(&"dump-logs"));
         assert!(subs.contains(&"stream-logs"));

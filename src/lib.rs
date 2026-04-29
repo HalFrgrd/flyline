@@ -1,7 +1,6 @@
 use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 use clap_complete::{ArgValueCompleter, Shell, generate};
 use libc::{c_char, c_int};
-use ratatui::style::Style;
 use std::sync::Mutex;
 
 #[cfg(feature = "pre_bash_4_4")]
@@ -273,72 +272,29 @@ enum Commands {
     /// (bold, dim, italic, underline, blink, reverse, strike) and colours
     /// (e.g. red, #ff0000, rgb(255,0,0), color(196)).
     ///
+    /// Valid style names:
+    ///   recognised-command, unrecognised-command, single-quoted-text,
+    ///   double-quoted-text, secondary-text, inline-suggestion, tutorial-hint,
+    ///   matching-char, opening-and-closing-pair, normal-text, comment,
+    ///   env-var, markdown-heading1, markdown-heading2, markdown-heading3,
+    ///   markdown-code, key-sequence-style, selected-text
+    ///
     /// Examples:
-    ///   flyline set-colour --default-theme dark
-    ///   flyline set-colour --inline-suggestion "dim italic"
-    ///   flyline set-colour --matching-char "bold green"
-    ///   flyline set-colour --default-theme light --matching-char "bold blue"
-    ///   flyline set-colour --recognised-command "green" --unrecognised-command "bold red"
-    ///   flyline set-colour --secondary-text "dim" --tutorial-hint "bold italic"
-    #[command(name = "set-colour", verbatim_doc_comment)]
+    ///   flyline set-style --default-theme dark
+    ///   flyline set-style inline-suggestion="dim italic"
+    ///   flyline set-style matching-char="bold green"
+    ///   flyline set-style --default-theme light matching-char="bold blue"
+    ///   flyline set-style recognised-command="green" unrecognised-command="bold red"
+    ///   flyline set-style secondary-text="dim" tutorial-hint="bold italic"
+    #[command(name = "set-style", verbatim_doc_comment)]
     SetColour {
         /// Apply a built-in colour preset for dark or light terminals.
         #[arg(long = "default-theme", value_name = "MODE")]
         default_theme: Option<settings::ColourTheme>,
-        /// Style for recognised (valid) commands (e.g. "green").
-        #[arg(long = "recognised-command", value_name = "STYLE")]
-        recognised_command: Option<String>,
-        /// Style for unrecognised (invalid) commands (e.g. "red").
-        #[arg(long = "unrecognised-command", value_name = "STYLE")]
-        unrecognised_command: Option<String>,
-        /// Style for single-quoted strings (e.g. "yellow").
-        #[arg(long = "single-quoted-text", value_name = "STYLE")]
-        single_quoted_text: Option<String>,
-        /// Style for double-quoted strings (e.g. "red").
-        #[arg(long = "double-quoted-text", value_name = "STYLE")]
-        double_quoted_text: Option<String>,
-        /// Style for secondary / muted text (e.g. "dim").
-        #[arg(long = "secondary-text", value_name = "STYLE")]
-        secondary_text: Option<String>,
-        /// Style for inline history suggestions (e.g. "dim italic", "bold red").
-        #[arg(long = "inline-suggestion", value_name = "STYLE")]
-        inline_suggestion: Option<String>,
-        /// Style for tutorial hint text (e.g. "bold").
-        #[arg(long = "tutorial-hint", value_name = "STYLE")]
-        tutorial_hint: Option<String>,
-        /// Style for matched characters in fuzzy-search results (e.g. "bold green").
-        #[arg(long = "matching-char", value_name = "STYLE")]
-        matching_char: Option<String>,
-        /// Style for opening/closing bracket pairs (e.g. "bold green underline").
-        #[arg(long = "opening-closing-pair", value_name = "STYLE")]
-        opening_closing_pair: Option<String>,
-        /// Style for normal (unstyled) text.
-        #[arg(long = "normal-text", value_name = "STYLE")]
-        normal_text: Option<String>,
-        /// Style for shell comments (e.g. "dim italic gray").
-        #[arg(long = "comment", value_name = "STYLE")]
-        comment: Option<String>,
-        /// Style for environment variables (e.g. "cyan").
-        #[arg(long = "env-var", value_name = "STYLE")]
-        env_var: Option<String>,
-        /// Style for markdown H1 headings (e.g. "bold cyan").
-        #[arg(long = "markdown-heading1", value_name = "STYLE")]
-        markdown_heading1: Option<String>,
-        /// Style for markdown H2 headings (e.g. "bold blue").
-        #[arg(long = "markdown-heading2", value_name = "STYLE")]
-        markdown_heading2: Option<String>,
-        /// Style for markdown H3+ headings (e.g. "bold magenta").
-        #[arg(long = "markdown-heading3", value_name = "STYLE")]
-        markdown_heading3: Option<String>,
-        /// Style for markdown inline/block code (e.g. "dim").
-        #[arg(long = "markdown-code", value_name = "STYLE")]
-        markdown_code: Option<String>,
-        /// Style for key sequences shown in the tutorial (e.g. "dim").
-        #[arg(long = "key-sequence-style", value_name = "STYLE")]
-        key_sequence_style: Option<String>,
-        /// Style for the active text selection in the command buffer (e.g. "on lightred", "white on blue").
-        #[arg(long = "selected-text", value_name = "STYLE")]
-        selected_text: Option<String>,
+        /// One or more palette style assignments as NAME=STYLE.
+        /// NAME is the kebab-case style slot name; STYLE is a rich-style string.
+        #[arg(value_name = "NAME=STYLE")]
+        styles: Vec<String>,
     },
     /// Configure the cursor appearance and animation.
     ///
@@ -1051,101 +1007,45 @@ impl Flyline {
                     },
                     Some(Commands::SetColour {
                         default_theme,
-                        recognised_command,
-                        unrecognised_command,
-                        single_quoted_text,
-                        double_quoted_text,
-                        secondary_text,
-                        inline_suggestion,
-                        tutorial_hint,
-                        matching_char,
-                        opening_closing_pair,
-                        normal_text,
-                        comment,
-                        env_var,
-                        markdown_heading1,
-                        markdown_heading2,
-                        markdown_heading3,
-                        markdown_code,
-                        key_sequence_style,
-                        selected_text,
+                        styles,
                     }) => {
                         if let Some(preset) = default_theme {
                             self.settings.colour_palette.apply_theme(preset);
-                            log::info!("Colour theme set to {:?}", self.settings.colour_theme);
+                            log::info!("Colour theme set to {:?}", preset);
                         }
 
-                        let style_overrides: &[(
-                            &Option<String>,
-                            &str,
-                            fn(&mut palette::Palette, Style),
-                        )] = &[
-                            (&recognised_command, "recognised-command", |p, s| {
-                                p.recognised_command_override = Some(s)
-                            }),
-                            (&unrecognised_command, "unrecognised-command", |p, s| {
-                                p.unrecognised_command_override = Some(s)
-                            }),
-                            (&single_quoted_text, "single-quoted-text", |p, s| {
-                                p.single_quoted_text_override = Some(s)
-                            }),
-                            (&double_quoted_text, "double-quoted-text", |p, s| {
-                                p.double_quoted_text_override = Some(s)
-                            }),
-                            (&secondary_text, "secondary-text", |p, s| {
-                                p.secondary_text_override = Some(s)
-                            }),
-                            (&inline_suggestion, "inline-suggestion", |p, s| {
-                                p.inline_suggestion_override = Some(s)
-                            }),
-                            (&tutorial_hint, "tutorial-hint", |p, s| {
-                                p.tutorial_hint_override = Some(s)
-                            }),
-                            (&matching_char, "matching-char", |p, s| {
-                                p.matching_char_override = Some(s)
-                            }),
-                            (&opening_closing_pair, "opening-closing-pair", |p, s| {
-                                p.opening_and_closing_pair_override = Some(s)
-                            }),
-                            (&normal_text, "normal-text", |p, s| {
-                                p.normal_text_override = Some(s)
-                            }),
-                            (&comment, "comment", |p, s| p.comment_override = Some(s)),
-                            (&env_var, "env-var", |p, s| p.env_var_override = Some(s)),
-                            (&markdown_heading1, "markdown-heading1", |p, s| {
-                                p.markdown_heading1_override = Some(s)
-                            }),
-                            (&markdown_heading2, "markdown-heading2", |p, s| {
-                                p.markdown_heading2_override = Some(s)
-                            }),
-                            (&markdown_heading3, "markdown-heading3", |p, s| {
-                                p.markdown_heading3_override = Some(s)
-                            }),
-                            (&markdown_code, "markdown-code", |p, s| {
-                                p.markdown_code_override = Some(s)
-                            }),
-                            (&key_sequence_style, "key-sequence-style", |p, s| {
-                                p.key_sequence_style_override = Some(s)
-                            }),
-                            (&selected_text, "selected-text", |p, s| {
-                                p.selected_text_override = Some(s)
-                            }),
-                        ];
-
-                        for (opt, flag_name, setter) in style_overrides {
-                            if let Some(style_str) = opt {
-                                match palette::parse_str_to_style(style_str) {
-                                    Ok(style) => {
-                                        setter(&mut self.settings.colour_palette, style);
-                                        log::info!("{} style set to {:?}", flag_name, style_str);
-                                    }
-                                    Err(e) => {
-                                        eprintln!(
-                                            "flyline set-colour: invalid --{} style {:?}: {}",
-                                            flag_name, style_str, e
-                                        );
-                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
-                                    }
+                        for spec in &styles {
+                            let (name, style_str) = match spec.split_once('=') {
+                                Some(pair) => pair,
+                                None => {
+                                    eprintln!(
+                                        "flyline set-style: argument must be NAME=STYLE, got {:?}",
+                                        spec
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            };
+                            let kind = match name.parse::<palette::PaletteStyleKind>() {
+                                Ok(k) => k,
+                                Err(_) => {
+                                    eprintln!(
+                                        "flyline set-style: unknown style name {:?}. Run 'flyline set-style --help' for valid names.",
+                                        name
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                }
+                            };
+                            match palette::parse_str_to_style(style_str) {
+                                Ok(style) => {
+                                    self.settings.colour_palette.set(kind, style);
+                                    log::info!("{} style set to {:?}", name, style_str);
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "flyline set-style: invalid style for {:?}: {}",
+                                        name, e
+                                    );
+                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
                                 }
                             }
                         }

@@ -1,4 +1,5 @@
 use ratatui::style::{Color, Modifier, Style};
+use strum::EnumIter;
 
 use crate::cursor::CursorStyleConfig;
 use crate::settings::ColourTheme;
@@ -118,156 +119,159 @@ fn parse_color_to_ratatui(c: parse_style::Color) -> ratatui::style::Color {
     }
 }
 
-/// The colour palette. Holds theme-default styles and per-field user overrides.
+/// All individually-configurable palette slots.
 ///
-/// Each style is stored as a default (`field: Style`, from the active theme preset)
-/// and an optional user override (`field_override: Option<Style>`).  The getter
-/// method (`palette.field()`) returns the override when set, falling back to the
-/// theme default.
+/// The kebab-case name of each variant (e.g. `"recognised-command"`) is used
+/// in the `flyline set-colour --style NAME=STYLE` command-line interface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, strum::Display, strum::EnumString)]
+#[strum(serialize_all = "kebab-case")]
+pub enum PaletteStyleKind {
+    RecognisedCommand,
+    UnrecognisedCommand,
+    SingleQuotedText,
+    DoubleQuotedText,
+    SecondaryText,
+    InlineSuggestion,
+    TutorialHint,
+    MatchingChar,
+    OpeningAndClosingPair,
+    NormalText,
+    Comment,
+    EnvVar,
+    MarkdownHeading1,
+    MarkdownHeading2,
+    MarkdownHeading3,
+    MarkdownCode,
+    KeySequenceStyle,
+    SelectedText,
+}
+
+/// The colour palette.  One [`Style`] per slot.
 ///
-/// Use [`Palette::apply_theme`] to change the theme defaults (overrides are left
-/// untouched).  Set `palette.field_override = Some(style)` directly to record a
-/// user override.
+/// Use [`Palette::apply_theme`] to reset all slots from a built-in preset,
+/// then call [`Palette::set`] (or set the public fields directly) to customise
+/// individual slots.
 #[derive(Debug, Clone)]
 pub struct Palette {
     recognised_command: Style,
-    pub recognised_command_override: Option<Style>,
-
     unrecognised_command: Style,
-    pub unrecognised_command_override: Option<Style>,
-
     single_quoted_text: Style,
-    pub single_quoted_text_override: Option<Style>,
-
     double_quoted_text: Style,
-    pub double_quoted_text_override: Option<Style>,
-
     secondary_text: Style,
-    pub secondary_text_override: Option<Style>,
-
     inline_suggestion: Style,
-    pub inline_suggestion_override: Option<Style>,
-
     tutorial_hint: Style,
-    pub tutorial_hint_override: Option<Style>,
-
     matching_char: Style,
-    pub matching_char_override: Option<Style>,
-
     opening_and_closing_pair: Style,
-    pub opening_and_closing_pair_override: Option<Style>,
-
     normal_text: Style,
-    pub normal_text_override: Option<Style>,
-
     comment: Style,
-    pub comment_override: Option<Style>,
-
     env_var: Style,
-    pub env_var_override: Option<Style>,
-
     markdown_heading1: Style,
-    pub markdown_heading1_override: Option<Style>,
-
     markdown_heading2: Style,
-    pub markdown_heading2_override: Option<Style>,
-
     markdown_heading3: Style,
-    pub markdown_heading3_override: Option<Style>,
-
     markdown_code: Style,
-    pub markdown_code_override: Option<Style>,
-
     key_sequence_style: Style,
-    pub key_sequence_style_override: Option<Style>,
-
     selected_text: Style,
-    pub selected_text_override: Option<Style>,
 }
 
 impl Palette {
-    // ── Getters (override wins over theme default) ────────────────────
+    // ── Getters ───────────────────────────────────────────────────────
 
     pub fn recognised_command(&self) -> Style {
-        self.recognised_command_override
-            .unwrap_or(self.recognised_command)
+        self.recognised_command
     }
 
     pub fn unrecognised_command(&self) -> Style {
-        self.unrecognised_command_override
-            .unwrap_or(self.unrecognised_command)
+        self.unrecognised_command
     }
 
     pub fn single_quoted_text(&self) -> Style {
-        self.single_quoted_text_override
-            .unwrap_or(self.single_quoted_text)
+        self.single_quoted_text
     }
 
     pub fn double_quoted_text(&self) -> Style {
-        self.double_quoted_text_override
-            .unwrap_or(self.double_quoted_text)
+        self.double_quoted_text
     }
 
     pub fn secondary_text(&self) -> Style {
-        self.secondary_text_override.unwrap_or(self.secondary_text)
+        self.secondary_text
     }
 
     pub fn inline_suggestion(&self) -> Style {
-        self.inline_suggestion_override
-            .unwrap_or(self.inline_suggestion)
+        self.inline_suggestion
     }
 
     pub fn tutorial_hint(&self) -> Style {
-        self.tutorial_hint_override.unwrap_or(self.tutorial_hint)
+        self.tutorial_hint
     }
 
     pub fn matching_char(&self) -> Style {
-        self.matching_char_override.unwrap_or(self.matching_char)
+        self.matching_char
     }
 
     pub fn opening_and_closing_pair(&self) -> Style {
-        self.opening_and_closing_pair_override
-            .unwrap_or(self.opening_and_closing_pair)
+        self.opening_and_closing_pair
     }
 
     pub fn normal_text(&self) -> Style {
-        self.normal_text_override.unwrap_or(self.normal_text)
+        self.normal_text
     }
 
     pub fn comment(&self) -> Style {
-        self.comment_override.unwrap_or(self.comment)
+        self.comment
     }
 
     pub fn env_var(&self) -> Style {
-        self.env_var_override.unwrap_or(self.env_var)
+        self.env_var
     }
 
     pub fn markdown_heading1(&self) -> Style {
-        self.markdown_heading1_override
-            .unwrap_or(self.markdown_heading1)
+        self.markdown_heading1
     }
 
     pub fn markdown_heading2(&self) -> Style {
-        self.markdown_heading2_override
-            .unwrap_or(self.markdown_heading2)
+        self.markdown_heading2
     }
 
     pub fn markdown_heading3(&self) -> Style {
-        self.markdown_heading3_override
-            .unwrap_or(self.markdown_heading3)
+        self.markdown_heading3
     }
 
     pub fn markdown_code(&self) -> Style {
-        self.markdown_code_override.unwrap_or(self.markdown_code)
+        self.markdown_code
     }
 
     pub fn key_sequence_style(&self) -> Style {
-        self.key_sequence_style_override
-            .unwrap_or(self.key_sequence_style)
+        self.key_sequence_style
     }
 
     pub fn selected_text(&self) -> Style {
-        self.selected_text_override.unwrap_or(self.selected_text)
+        self.selected_text
+    }
+
+    // ── Setter ────────────────────────────────────────────────────────
+
+    /// Set an individual palette slot by kind.
+    pub fn set(&mut self, kind: PaletteStyleKind, style: Style) {
+        match kind {
+            PaletteStyleKind::RecognisedCommand => self.recognised_command = style,
+            PaletteStyleKind::UnrecognisedCommand => self.unrecognised_command = style,
+            PaletteStyleKind::SingleQuotedText => self.single_quoted_text = style,
+            PaletteStyleKind::DoubleQuotedText => self.double_quoted_text = style,
+            PaletteStyleKind::SecondaryText => self.secondary_text = style,
+            PaletteStyleKind::InlineSuggestion => self.inline_suggestion = style,
+            PaletteStyleKind::TutorialHint => self.tutorial_hint = style,
+            PaletteStyleKind::MatchingChar => self.matching_char = style,
+            PaletteStyleKind::OpeningAndClosingPair => self.opening_and_closing_pair = style,
+            PaletteStyleKind::NormalText => self.normal_text = style,
+            PaletteStyleKind::Comment => self.comment = style,
+            PaletteStyleKind::EnvVar => self.env_var = style,
+            PaletteStyleKind::MarkdownHeading1 => self.markdown_heading1 = style,
+            PaletteStyleKind::MarkdownHeading2 => self.markdown_heading2 = style,
+            PaletteStyleKind::MarkdownHeading3 => self.markdown_heading3 = style,
+            PaletteStyleKind::MarkdownCode => self.markdown_code = style,
+            PaletteStyleKind::KeySequenceStyle => self.key_sequence_style = style,
+            PaletteStyleKind::SelectedText => self.selected_text = style,
+        }
     }
 
     // ── Presets ──────────────────────────────────────────────────────
@@ -276,55 +280,37 @@ impl Palette {
     pub fn dark() -> Self {
         Palette {
             recognised_command: Style::default().fg(Color::Green),
-            recognised_command_override: None,
             unrecognised_command: Style::default().fg(Color::Red),
-            unrecognised_command_override: None,
             single_quoted_text: Style::default().fg(Color::Yellow),
-            single_quoted_text_override: None,
             double_quoted_text: Style::default().fg(Color::Magenta),
-            double_quoted_text_override: None,
             secondary_text: Style::default().add_modifier(Modifier::DIM),
-            secondary_text_override: None,
             inline_suggestion: Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::ITALIC),
-            inline_suggestion_override: None,
             tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
-            tutorial_hint_override: None,
             matching_char: Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD)
                 .add_modifier(Modifier::UNDERLINED),
-            matching_char_override: None,
             opening_and_closing_pair: Style::default()
                 .fg(Color::Red)
                 .add_modifier(Modifier::BOLD)
                 .add_modifier(Modifier::UNDERLINED),
-            opening_and_closing_pair_override: None,
             normal_text: Style::default(),
-            normal_text_override: None,
             comment: Style::default()
                 .fg(Color::Red)
                 .add_modifier(Modifier::ITALIC),
-            comment_override: None,
             env_var: Style::default().fg(Color::Cyan),
-            env_var_override: None,
             markdown_heading1: Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
-            markdown_heading1_override: None,
             markdown_heading2: Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            markdown_heading2_override: None,
             markdown_heading3: Style::default()
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
-            markdown_heading3_override: None,
             markdown_code: Style::default().add_modifier(Modifier::DIM),
-            markdown_code_override: None,
             key_sequence_style: Style::default().add_modifier(Modifier::DIM),
-            key_sequence_style_override: None,
             selected_text: Style::default().bg(Color::LightRed),
-            selected_text_override: None,
         }
     }
 
@@ -332,82 +318,45 @@ impl Palette {
     pub fn light() -> Self {
         Palette {
             recognised_command: Style::default().fg(Color::Green).bold(),
-            recognised_command_override: None,
             unrecognised_command: Style::default().fg(Color::Red).bold(),
-            unrecognised_command_override: None,
             single_quoted_text: Style::default().fg(Color::Magenta),
-            single_quoted_text_override: None,
             double_quoted_text: Style::default().fg(Color::Magenta),
-            double_quoted_text_override: None,
             secondary_text: Style::default().dim().bold(),
-            secondary_text_override: None,
             inline_suggestion: Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::ITALIC),
-            inline_suggestion_override: None,
             tutorial_hint: Style::default().add_modifier(Modifier::BOLD),
-            tutorial_hint_override: None,
             matching_char: Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
-            matching_char_override: None,
             opening_and_closing_pair: Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD)
                 .add_modifier(Modifier::UNDERLINED),
-            opening_and_closing_pair_override: None,
             normal_text: Style::default(),
-            normal_text_override: None,
             comment: Style::default()
                 .fg(Color::Gray)
                 .add_modifier(Modifier::ITALIC),
-            comment_override: None,
             env_var: Style::default().fg(Color::Blue),
-            env_var_override: None,
             markdown_heading1: Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
-            markdown_heading1_override: None,
             markdown_heading2: Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            markdown_heading2_override: None,
             markdown_heading3: Style::default()
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
-            markdown_heading3_override: None,
             markdown_code: Style::default().add_modifier(Modifier::DIM),
-            markdown_code_override: None,
             key_sequence_style: Style::default().fg(Color::DarkGray),
-            key_sequence_style_override: None,
             selected_text: Style::default().bg(Color::LightRed),
-            selected_text_override: None,
         }
     }
 
-    /// Apply a new theme preset to the default style values, leaving any
-    /// user-specified overrides intact.
+    /// Reset all palette slots to the given theme preset.
     pub fn apply_theme(&mut self, mode: ColourTheme) {
-        let template = match mode {
+        *self = match mode {
             ColourTheme::Dark => Self::dark(),
             ColourTheme::Light => Self::light(),
         };
-        self.recognised_command = template.recognised_command;
-        self.unrecognised_command = template.unrecognised_command;
-        self.single_quoted_text = template.single_quoted_text;
-        self.double_quoted_text = template.double_quoted_text;
-        self.secondary_text = template.secondary_text;
-        self.inline_suggestion = template.inline_suggestion;
-        self.tutorial_hint = template.tutorial_hint;
-        self.matching_char = template.matching_char;
-        self.opening_and_closing_pair = template.opening_and_closing_pair;
-        self.normal_text = template.normal_text;
-        self.comment = template.comment;
-        self.env_var = template.env_var;
-        self.markdown_heading1 = template.markdown_heading1;
-        self.markdown_heading2 = template.markdown_heading2;
-        self.markdown_heading3 = template.markdown_heading3;
-        self.markdown_code = template.markdown_code;
-        self.key_sequence_style = template.key_sequence_style;
-        self.selected_text = template.selected_text;
     }
 
     // ── Derived / constant styles ───────────────────────────────────
