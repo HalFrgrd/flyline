@@ -532,7 +532,7 @@ flyline set-style secondary-text="dim" tutorial-hint="bold italic"
 
 List all keybindings with `flyline key list`.
 Flyline allows configurable keybindings with the `flyline key bind [KEY SEQUENCE] [CONTEXT_EXPR]=[ACTION]` subcommand.
-The context expression is an `&&`-separated chain of camelCase context variables (each optionally prefixed with `!` to negate).
+The context expression is a `+`-separated chain of camelCase context variables (each optionally prefixed with `!` to negate).
 A binding only fires when its context expression evaluates to true.
 This allows the same key sequence to trigger different actions under different circumstances.
 
@@ -545,9 +545,9 @@ When you press `Enter`, flyline will accept the tab completion entry if `tabComp
 If `tabCompletionAvailable` is false, then it will try the next keybinding for `Enter` and run that action if its context expression evaluates to true.
 The `always` context variable is always true.
 
-A context expression may combine multiple variables with `&&`:
+A context expression may combine multiple variables with `+`:
 ```bash
-flyline key bind Tab inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion
+flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion
 ```
 `||` and parentheses are not supported.  Use `!` in front of a variable to negate it (e.g. `!textSelected`).
 

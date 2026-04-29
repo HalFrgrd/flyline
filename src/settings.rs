@@ -189,8 +189,6 @@ pub struct Settings {
     pub enable_extended_key_codes: bool,
     /// Configurable colour palette for UI elements.
     pub colour_palette: Palette,
-    /// Which colour theme the user has selected (dark or light).
-    pub colour_theme: ColourTheme,
     /// User defined keybindings
     pub keybindings: Vec<actions::Binding>,
     /// User defined key remappings (applied before matching bindings).
@@ -226,7 +224,6 @@ impl Default for Settings {
             send_shell_integration_codes: ShellIntegrationLevel::default(),
             enable_extended_key_codes: true,
             colour_palette: Palette::default(),
-            colour_theme: ColourTheme::default(),
             keybindings: Vec::new(),
             key_remappings: Vec::new(),
             key_debug: false,

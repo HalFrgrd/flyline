@@ -453,7 +453,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline key bind Escape inlineSuggestionAvailable&&cursorAtEnd=dismissInlineSuggestion"
+                    "flyline key bind Escape inlineSuggestionAvailable+cursorAtEnd=dismissInlineSuggestion"
                         .to_string(),
                     ClipboardTypes::TutorialKeybindingsBind2,
                 ),
@@ -466,7 +466,7 @@ pub fn generate_tutorial_text(
             lines.push(TaggedLine::from(vec![
                 TaggedSpan::new(Span::styled("    ", text_style), Tag::Tutorial),
                 ts_copiable(
-                    "flyline key bind Tab inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion".to_string(),
+                    "flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion".to_string(),
                     ClipboardTypes::TutorialKeybindingsBind3,
                 ),
             ]));

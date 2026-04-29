@@ -461,7 +461,7 @@ enum KeySubcommands {
     ///
     /// KEY_SEQUENCE is a key combination such as "Ctrl+Enter" or "Alt+Left".
     /// CONTEXT_AND_ACTION has the form `<contextExpr>=<actionName>`, where
-    /// `<contextExpr>` is an `&&`-separated chain of camelCase context variables
+    /// `<contextExpr>` is a `+`-separated chain of camelCase context variables
     /// (each optionally prefixed with `!` to negate).  Use `always` for
     /// unconditional bindings.  Parentheses and `||` are not supported.
     ///
@@ -473,7 +473,7 @@ enum KeySubcommands {
     ///
     /// Examples:
     ///   flyline key bind Ctrl+Enter always=submitOrNewline
-    ///   flyline key bind Tab inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion
+    ///   flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion
     ///   flyline key bind Alt+Left always=moveLeftOneWordFineGrained
     #[command(name = "bind", verbatim_doc_comment, disable_help_flag = true)]
     Bind {

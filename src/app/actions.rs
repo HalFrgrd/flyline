@@ -8,7 +8,7 @@ use clap_complete::CompletionCandidate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 use std::io::IsTerminal;
-use std::ops::{Add, BitAnd, Not};
+use std::ops::{Add, Not};
 use std::sync::LazyLock;
 use strum::{
     AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr, VariantArray,
@@ -217,7 +217,7 @@ impl Not for ContextLiteral {
 
 /// A context expression: a conjunction (AND-chain) of literals.
 ///
-/// The grammar is intentionally small: a `&&`-separated list of context
+/// The grammar is intentionally small: a `+`-separated list of context
 /// variable names, each optionally prefixed with `!` for negation.
 /// Parentheses and `||` are not supported.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -238,7 +238,7 @@ impl ContextExpr {
         })
     }
 
-    /// Render the expression in canonical form (e.g. `a&&!b&&c`).
+    /// Render the expression in canonical form (e.g. `a+!b+c`).
     pub fn display(&self) -> String {
         if self.literals.is_empty() {
             return ContextVar::Always.as_str().to_string();
@@ -253,39 +253,39 @@ impl ContextExpr {
                 }
             })
             .collect::<Vec<_>>()
-            .join("&&")
+            .join("+")
     }
 }
 
-impl<Rhs> BitAnd<Rhs> for ContextVar
+impl<Rhs> Add<Rhs> for ContextVar
 where
     Rhs: Into<ContextExpr>,
 {
     type Output = ContextExpr;
 
-    fn bitand(self, rhs: Rhs) -> Self::Output {
-        ContextExpr::from(self) & rhs
+    fn add(self, rhs: Rhs) -> Self::Output {
+        ContextExpr::from(self) + rhs
     }
 }
 
-impl<Rhs> BitAnd<Rhs> for ContextLiteral
+impl<Rhs> Add<Rhs> for ContextLiteral
 where
     Rhs: Into<ContextExpr>,
 {
     type Output = ContextExpr;
 
-    fn bitand(self, rhs: Rhs) -> Self::Output {
-        ContextExpr::from(self) & rhs
+    fn add(self, rhs: Rhs) -> Self::Output {
+        ContextExpr::from(self) + rhs
     }
 }
 
-impl<Rhs> BitAnd<Rhs> for ContextExpr
+impl<Rhs> Add<Rhs> for ContextExpr
 where
     Rhs: Into<ContextExpr>,
 {
     type Output = ContextExpr;
 
-    fn bitand(mut self, rhs: Rhs) -> Self::Output {
+    fn add(mut self, rhs: Rhs) -> Self::Output {
         self.literals.extend(rhs.into().literals);
         self
     }
@@ -299,9 +299,9 @@ impl TryFrom<&str> for ContextExpr {
         if s.is_empty() {
             return Err(anyhow::anyhow!("Empty context expression"));
         }
-        if s.contains("||") {
+        if s.contains("&&") || s.contains("||") {
             return Err(anyhow::anyhow!(
-                "Context expressions only support '&&' (no '||'): '{}'",
+                "Context expressions only support '+' as a separator (no '&&' or '||'): '{}'",
                 s
             ));
         }
@@ -312,7 +312,7 @@ impl TryFrom<&str> for ContextExpr {
             ));
         }
         let mut literals = Vec::new();
-        for raw in s.split("&&") {
+        for raw in s.split('+') {
             let raw = raw.trim();
             if raw.is_empty() {
                 return Err(anyhow::anyhow!(
@@ -1649,10 +1649,10 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
             .collect();
     }
     // Completing context variables.  Determine the prefix already typed
-    // (everything up to and including the last `&&`) and the partial
+    // (everything up to and including the last `+`) and the partial
     // variable name being typed.
-    let (prefix, partial) = if let Some(idx) = current.rfind("&&") {
-        (&current[..idx + 2], &current[idx + 2..])
+    let (prefix, partial) = if let Some(idx) = current.rfind('+') {
+        (&current[..idx + 1], &current[idx + 1..])
     } else {
         ("", current.as_str())
     };
@@ -1893,7 +1893,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 84]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            (ContextVar::MultilineBuffer & ContextVar::CursorAtEndTrimmed).into(),
+            (ContextVar::MultilineBuffer + ContextVar::CursorAtEndTrimmed).into(),
             Action::SubmitOrNewline,
         ),
         Binding::new(
@@ -2174,7 +2174,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 84]> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Left.into()],
-            (ContextVar::CursorAtStart & !ContextVar::PromptDirSelect).into(),
+            (ContextVar::CursorAtStart + !ContextVar::PromptDirSelect).into(),
             Action::StartPromptDirSelect,
         ),
         // PromptCwdEdit Left must appear before the Normal Left binding.
@@ -2196,8 +2196,8 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 84]> = LazyLock::new(|| {
         Binding::new(
             &expand_variations![KC::Right.into(), KC::End.into()],
             (ContextVar::InlineSuggestionAvailable
-                & ContextVar::CursorAtEnd
-                & !ContextVar::TabCompletion)
+                + ContextVar::CursorAtEnd
+                + !ContextVar::TabCompletion)
                 .into(),
             Action::AcceptInlineSuggestion,
         ),
@@ -3184,7 +3184,7 @@ mod tests {
     #[test]
     fn test_context_expr_parse_new_vars() {
         let e = ContextExpr::try_from(
-            "bufferIsEmpty&&tabCompletionsNoFilteredResults&&tabCompletionsNoResults&&multilineBuffer",
+            "bufferIsEmpty+tabCompletionsNoFilteredResults+tabCompletionsNoResults+multilineBuffer",
         )
         .unwrap();
         assert!(e.literals[0].var == ContextVar::BufferIsEmpty);
@@ -3195,7 +3195,7 @@ mod tests {
 
     #[test]
     fn test_context_expr_parse_and_chain() {
-        let e = ContextExpr::try_from("inlineSuggestionAvailable&&cursorAtEnd").unwrap();
+        let e = ContextExpr::try_from("inlineSuggestionAvailable+cursorAtEnd").unwrap();
         assert!(e.literals.len() == 2);
         assert!(e.literals[0].var == ContextVar::InlineSuggestionAvailable);
         assert!(e.literals[1].var == ContextVar::CursorAtEnd);
@@ -3203,7 +3203,7 @@ mod tests {
 
     #[test]
     fn test_context_expr_parse_negation() {
-        let e = ContextExpr::try_from("!textSelected&&cursorAtEnd").unwrap();
+        let e = ContextExpr::try_from("!textSelected+cursorAtEnd").unwrap();
         assert!(e.literals[0].negated);
         assert!(e.literals[0].var == ContextVar::TextSelected);
         assert!(!e.literals[1].negated);
@@ -3216,8 +3216,13 @@ mod tests {
     }
 
     #[test]
+    fn test_context_expr_rejects_old_and_separator() {
+        assert!(ContextExpr::try_from("a&&b").is_err());
+    }
+
+    #[test]
     fn test_context_expr_rejects_parens() {
-        assert!(ContextExpr::try_from("(a&&b)").is_err());
+        assert!(ContextExpr::try_from("(a+b)").is_err());
     }
 
     #[test]
@@ -3227,14 +3232,14 @@ mod tests {
 
     #[test]
     fn test_context_expr_display_roundtrip() {
-        let s = "inlineSuggestionAvailable&&!textSelected&&cursorAtEnd";
+        let s = "inlineSuggestionAvailable+!textSelected+cursorAtEnd";
         let e = ContextExpr::try_from(s).unwrap();
         assert!(e.display() == s);
     }
 
     #[test]
     fn test_context_expr_operator_and_from_vars() {
-        let e = ContextVar::FuzzyHistorySearch & ContextVar::CursorAtEnd;
+        let e = ContextVar::FuzzyHistorySearch + ContextVar::CursorAtEnd;
         assert!(e.literals.len() == 2);
         assert!(e.literals[0] == ContextLiteral::new(ContextVar::FuzzyHistorySearch, false));
         assert!(e.literals[1] == ContextLiteral::new(ContextVar::CursorAtEnd, false));
@@ -3242,7 +3247,7 @@ mod tests {
 
     #[test]
     fn test_context_expr_operator_not_and_chain() {
-        let e = !ContextVar::TextSelected & ContextVar::CursorAtEnd;
+        let e = !ContextVar::TextSelected + ContextVar::CursorAtEnd;
         assert!(e.literals.len() == 2);
         assert!(e.literals[0] == ContextLiteral::new(ContextVar::TextSelected, true));
         assert!(e.literals[1] == ContextLiteral::new(ContextVar::CursorAtEnd, false));
@@ -3250,9 +3255,9 @@ mod tests {
 
     #[test]
     fn test_context_expr_operator_chain_exprs() {
-        let e = (ContextVar::InlineSuggestionAvailable & !ContextVar::TextSelected)
-            & ContextVar::CursorAtEnd;
-        assert!(e.display() == "inlineSuggestionAvailable&&!textSelected&&cursorAtEnd");
+        let e = (ContextVar::InlineSuggestionAvailable + !ContextVar::TextSelected)
+            + ContextVar::CursorAtEnd;
+        assert!(e.display() == "inlineSuggestionAvailable+!textSelected+cursorAtEnd");
     }
 
     #[test]
@@ -3280,7 +3285,7 @@ mod tests {
     fn test_binding_try_new_from_strs_compound_context() {
         let b = Binding::try_new_from_strs(
             "Tab",
-            "inlineSuggestionAvailable&&cursorAtEnd=acceptInlineSuggestion",
+            "inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion",
         )
         .unwrap();
         assert!(b.action == Action::AcceptInlineSuggestion);
