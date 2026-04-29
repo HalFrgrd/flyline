@@ -280,20 +280,20 @@ enum Commands {
     ///   markdown-code, key-sequence-style, selected-text
     ///
     /// Examples:
-    ///   flyline set-colour --default-theme dark
-    ///   flyline set-colour --style inline-suggestion="dim italic"
-    ///   flyline set-colour --style matching-char="bold green"
-    ///   flyline set-colour --default-theme light --style matching-char="bold blue"
-    ///   flyline set-colour --style recognised-command="green" --style unrecognised-command="bold red"
-    ///   flyline set-colour --style secondary-text="dim" --style tutorial-hint="bold italic"
-    #[command(name = "set-colour", verbatim_doc_comment)]
+    ///   flyline set-style --default-theme dark
+    ///   flyline set-style inline-suggestion="dim italic"
+    ///   flyline set-style matching-char="bold green"
+    ///   flyline set-style --default-theme light matching-char="bold blue"
+    ///   flyline set-style recognised-command="green" unrecognised-command="bold red"
+    ///   flyline set-style secondary-text="dim" tutorial-hint="bold italic"
+    #[command(name = "set-style", verbatim_doc_comment)]
     SetColour {
         /// Apply a built-in colour preset for dark or light terminals.
         #[arg(long = "default-theme", value_name = "MODE")]
         default_theme: Option<settings::ColourTheme>,
-        /// Set an individual palette style as NAME=STYLE (may be repeated).
+        /// One or more palette style assignments as NAME=STYLE.
         /// NAME is the kebab-case style slot name; STYLE is a rich-style string.
-        #[arg(long = "style", value_name = "NAME=STYLE", action = clap::ArgAction::Append)]
+        #[arg(value_name = "NAME=STYLE")]
         styles: Vec<String>,
     },
     /// Configure the cursor appearance and animation.
@@ -1019,7 +1019,7 @@ impl Flyline {
                                 Some(pair) => pair,
                                 None => {
                                     eprintln!(
-                                        "flyline set-colour: --style value must be NAME=STYLE, got {:?}",
+                                        "flyline set-style: argument must be NAME=STYLE, got {:?}",
                                         spec
                                     );
                                     return bash_symbols::BuiltinExitCode::Usage as c_int;
@@ -1029,7 +1029,7 @@ impl Flyline {
                                 Ok(k) => k,
                                 Err(_) => {
                                     eprintln!(
-                                        "flyline set-colour: unknown style name {:?}. Run 'flyline set-colour --help' for valid names.",
+                                        "flyline set-style: unknown style name {:?}. Run 'flyline set-style --help' for valid names.",
                                         name
                                     );
                                     return bash_symbols::BuiltinExitCode::Usage as c_int;
@@ -1042,7 +1042,7 @@ impl Flyline {
                                 }
                                 Err(e) => {
                                     eprintln!(
-                                        "flyline set-colour: invalid style for {:?}: {}",
+                                        "flyline set-style: invalid style for {:?}: {}",
                                         name, e
                                     );
                                     return bash_symbols::BuiltinExitCode::Usage as c_int;
