@@ -456,6 +456,32 @@ impl TextBuffer {
         }
     }
 
+    /// Extend the selection one whitespace-delimited word to the left with
+    /// "smart" anchor adjustment: when the selection anchor sits in the middle
+    /// of a word (i.e. the characters immediately on either side of the anchor
+    /// are both non-whitespace) and the cursor is to the left of the anchor,
+    /// move the anchor rightward to the end of that word instead of moving
+    /// the cursor further left. This makes a sequence of Ctrl+Shift+Left
+    /// presses from the middle of a word naturally select first the left
+    /// half of the word, then the entire word, then continue extending word
+    /// by word — without maintaining any extra state.
+    pub fn move_left_one_word_whitespace_extend_selection(&mut self) {
+        if let Some(anchor) = self.selection_byte
+            && self.cursor_byte < anchor
+            && Self::is_inside_word(&self.buf, anchor)
+        {
+            // Extend the anchor rightward to the end of the word it sits in.
+            let new_anchor = self.buf[anchor..]
+                .char_indices()
+                .find(|(_, c)| c.is_whitespace())
+                .map_or(self.buf.len(), |(i, _)| anchor + i);
+            self.selection_byte = Some(new_anchor);
+        } else {
+            self.start_selection_if_none();
+            self.move_one_word_left(WordDelim::WhiteSpace);
+        }
+    }
+
     /// Returns `true` when `pos` is strictly inside a word — that is, both the
     /// character immediately before `pos` and the character at `pos` exist and
     /// are non-whitespace.
@@ -678,6 +704,63 @@ mod test_movement {
         tb.move_right_one_word_whitespace_extend_selection();
         assert_eq!(tb.selection_byte(), Some(3));
         assert_eq!(tb.cursor_byte, "abc def".len());
+    }
+
+    #[test]
+    fn move_left_one_word_extend_selection_smart_from_middle_of_word() {
+        // Cursor in the middle of "ghi": first press selects "gh", second press
+        // grows the selection forward to include the whole word "ghi",
+        // subsequent presses continue extending word by word to the left.
+        let mut tb = TextBuffer::new("abc def ghi");
+        tb.cursor_byte = "abc def gh".len(); // between 'h' and 'i'
+
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def gh".len()));
+        assert_eq!(tb.cursor_byte, "abc def ".len());
+        assert_eq!(tb.selected_text().as_deref(), Some("gh"));
+
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def ghi".len()));
+        assert_eq!(tb.cursor_byte, "abc def ".len());
+        assert_eq!(tb.selected_text().as_deref(), Some("ghi"));
+
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def ghi".len()));
+        assert_eq!(tb.cursor_byte, "abc ".len());
+        assert_eq!(tb.selected_text().as_deref(), Some("def ghi"));
+
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def ghi".len()));
+        assert_eq!(tb.cursor_byte, 0);
+        assert_eq!(tb.selected_text().as_deref(), Some("abc def ghi"));
+    }
+
+    #[test]
+    fn move_left_one_word_extend_selection_from_end_of_word() {
+        // Cursor at the end of "ghi" (anchor would not be inside a word) —
+        // behaves as a plain word-extending selection.
+        let mut tb = TextBuffer::new("abc def");
+        tb.move_end_of_line();
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def".len()));
+        assert_eq!(tb.cursor_byte, "abc ".len());
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc def".len()));
+        assert_eq!(tb.cursor_byte, 0);
+    }
+
+    #[test]
+    fn move_left_one_word_extend_selection_anchor_at_start_of_word() {
+        // Anchor immediately before a word (' ' before, 'd' after) is not
+        // "inside a word", so the cursor moves normally.
+        let mut tb = TextBuffer::new("abc def");
+        tb.cursor_byte = "abc ".len(); // right before 'd'
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc ".len()));
+        assert_eq!(tb.cursor_byte, 0);
+        tb.move_left_one_word_whitespace_extend_selection();
+        assert_eq!(tb.selection_byte(), Some("abc ".len()));
+        assert_eq!(tb.cursor_byte, 0);
     }
 
     #[test]

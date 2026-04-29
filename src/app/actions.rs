@@ -868,8 +868,7 @@ impl Action {
                 app.buffer.move_end_of_line();
             }
             Action::MoveLeftOneWordWhitespaceExtendSelection => {
-                app.buffer.start_selection_if_none();
-                app.buffer.move_one_word_left(WordDelim::WhiteSpace);
+                app.buffer.move_left_one_word_whitespace_extend_selection();
             }
             Action::MoveRightOneWordWhitespaceExtendSelection => {
                 app.buffer.move_right_one_word_whitespace_extend_selection();
