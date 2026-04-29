@@ -460,6 +460,14 @@ pub enum Action {
     #[strum(message = "Copy the current text selection to the system clipboard via OSC 52")]
     CopySelectionOsc52,
     #[strum(
+        message = "Cut the current text selection: copy it to the clipboard via OSC 52 and delete it from the buffer"
+    )]
+    CutSelection,
+    #[strum(message = "Select the entire command buffer")]
+    SelectAll,
+    #[strum(message = "Do nothing (useful for unbinding a key)")]
+    Nothing,
+    #[strum(
         message = "Start prompt directory selection mode, allowing navigation via the prompt's directory segments"
     )]
     StartPromptDirSelect,
@@ -899,6 +907,27 @@ impl Action {
                     app.buffer.clear_selection();
                 }
             }
+            Action::CutSelection => {
+                if let Some(text) = app.buffer.selected_text() {
+                    match crossterm::execute!(
+                        std::io::stdout(),
+                        crossterm::clipboard::CopyToClipboard::to_clipboard_from(text)
+                    ) {
+                        Ok(()) => {
+                            log::info!("Cut selection to clipboard via OSC 52");
+                        }
+                        Err(e) => {
+                            log::error!("Failed to copy to clipboard via OSC 52: {}", e);
+                        }
+                    }
+                    app.buffer.delete_selection();
+                }
+            }
+            Action::SelectAll => {
+                let len = app.buffer.buffer().len();
+                app.buffer.set_selection_range(0..len, false);
+            }
+            Action::Nothing => {}
             Action::StartPromptDirSelect => {
                 if app.prompt_manager.cwd_display_segment_count() > 0 {
                     app.content_mode = ContentMode::PromptDirSelect(0);
@@ -1580,7 +1609,7 @@ pub fn key_sequence_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandid
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 79]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 81]> = LazyLock::new(|| {
     [
         Binding::try_new(
             &["Down"],
@@ -1787,6 +1816,13 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 79]> = LazyLock::new(|| {
         .unwrap(),
         Binding::try_new(&["Esc"], ContextVar::Always.into(), Action::ToggleMouse).unwrap(),
         Binding::try_new(&["Ctrl+d"], ContextVar::Always.into(), Action::Exit).unwrap(),
+        // TextSelected Ctrl+x cuts the selection to the clipboard.
+        Binding::try_new(
+            &["Ctrl+x", "Meta+x"],
+            ContextVar::TextSelected.into(),
+            Action::CutSelection,
+        )
+        .unwrap(),
         // TextSelected Ctrl+c must appear before the Default Ctrl+c binding
         // so that copying the selection takes precedence over cancelling.
         Binding::try_new(
@@ -1882,6 +1918,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 79]> = LazyLock::new(|| {
             &expand_variations!["Ctrl+Right", "Alt+Right"],
             ContextVar::PromptDirSelect.into(),
             Action::PromptDirMoveRight,
+        )
+        .unwrap(),
+        Binding::try_new(
+            &["Ctrl+Shift+A", "Super+Shift+A"],
+            ContextVar::Always.into(),
+            Action::SelectAll,
         )
         .unwrap(),
         Binding::try_new(
