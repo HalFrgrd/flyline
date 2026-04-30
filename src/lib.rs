@@ -300,7 +300,7 @@ enum Commands {
         default_theme: Option<settings::ColourTheme>,
         /// One or more palette style assignments as NAME=STYLE.
         /// NAME is the kebab-case style slot name; STYLE is a rich-style string.
-        #[arg(value_name = "NAME=STYLE")]
+        #[arg(value_name = "NAME=STYLE", add = ArgValueCompleter::new(palette::possible_style_name_completions))]
         styles: Vec<String>,
     },
     /// Configure the cursor appearance and animation.
