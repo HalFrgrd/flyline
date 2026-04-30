@@ -390,19 +390,33 @@ pub fn highlight_matching_indices(
 ///
 /// | Duration range | Example output |
 /// |---|---|
-/// | 0 s | ` now ` |
-/// | 1–59 s | `01sec` |
-/// | 1–59 min | `01min` |
-/// | 1–23 h | `01hou` |
-/// | 1–30 days | `01day` |
-/// | 1–11 months | `01Mon` |
-/// | 1–99 years | `01Yea` |
+/// | 0 ns (exact zero) | ` now ` |
+/// | 1–999 ns | `  1ns` |
+/// | 1–999 µs | `  1us` |
+/// | 1–999 ms | `  1ms` |
+/// | 1–59 s | ` 1sec` |
+/// | 1–59 min | ` 1min` |
+/// | 1–23 h | ` 1hou` |
+/// | 1–30 days | ` 1day` |
+/// | 1–11 months | ` 1Mon` |
+/// | 1–99 years | ` 1Yea` |
 /// | > 99 years | ` OLD ` |
 pub fn duration_to_5chars(duration: std::time::Duration) -> String {
     const S_IN_MNTH: u64 = 2_628_003;
     let s = duration.as_secs();
     let raw = match s {
-        0 => " now ".into(),
+        0 => {
+            let ns = duration.as_nanos() as u64;
+            if ns == 0 {
+                " now ".into()
+            } else if ns < 1_000 {
+                format!("{ns:03}ns")
+            } else if ns < 1_000_000 {
+                format!("{:03}us", ns / 1_000)
+            } else {
+                format!("{:03}ms", ns / 1_000_000)
+            }
+        }
         x if (1..60).contains(&x) => format!("{x:02}sec"),
         x if (60..3600).contains(&x) => format!("{:02}min", x / 60),
         x if (3600..86400).contains(&x) => format!("{:02}hou", x / 3600),
@@ -435,6 +449,27 @@ mod tests {
     #[test]
     fn test_duration_to_5chars_now() {
         assert_eq!(duration_to_5chars(Duration::from_secs(0)), " now ");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_nanoseconds() {
+        assert_eq!(duration_to_5chars(Duration::from_nanos(1)), "  1ns");
+        assert_eq!(duration_to_5chars(Duration::from_nanos(42)), " 42ns");
+        assert_eq!(duration_to_5chars(Duration::from_nanos(999)), "999ns");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_microseconds() {
+        assert_eq!(duration_to_5chars(Duration::from_micros(1)), "  1us");
+        assert_eq!(duration_to_5chars(Duration::from_micros(42)), " 42us");
+        assert_eq!(duration_to_5chars(Duration::from_micros(999)), "999us");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_milliseconds() {
+        assert_eq!(duration_to_5chars(Duration::from_millis(1)), "  1ms");
+        assert_eq!(duration_to_5chars(Duration::from_millis(42)), " 42ms");
+        assert_eq!(duration_to_5chars(Duration::from_millis(999)), "999ms");
     }
 
     #[test]
