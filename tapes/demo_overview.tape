@@ -142,6 +142,7 @@ Sleep 800ms
 
 Type `git commit -m a multi word message`
 Sleep 1000ms
+# Press Shift+Left 20 times to select "a multi word message" (20 characters) from the end
 Shift+Left
 Shift+Left
 Shift+Left
