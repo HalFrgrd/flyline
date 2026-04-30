@@ -1134,7 +1134,7 @@ fn collect_and_finalize(
             );
         }
     }
-    let stdout = String::from_utf8_lossy(&stdout_buf).trim().to_string();
+    let stdout = String::from_utf8_lossy(&stdout_buf).into_owned();
     let stderr = String::from_utf8_lossy(&stderr_buf).trim().to_string();
     log::info!("Custom prompt widget {:?} exited with {}", command, status);
     log::debug!("Custom prompt widget stdout: {}", stdout);
