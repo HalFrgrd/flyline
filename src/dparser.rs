@@ -1,166 +1,8 @@
-use flash::lexer::{Lexer, Position, Token, TokenKind};
-use itertools::Itertools;
+use flash::lexer::{Lexer, Token, TokenKind};
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
 
-/// Applies bash quote-removal to a heredoc delimiter word.
-///
-/// From the bash manual: "If any part of word is quoted, the delimiter is the
-/// result of quote removal on word."  Quote removal strips:
-///  - surrounding or partial single-quote pairs (`'…'`)
-///  - surrounding or partial double-quote pairs (`"…"`)
-///  - backslash escapes (`\X` → `X`)
-///
-/// Examples:
-///  `'EOF'`  → `EOF`
-///  `"EOF"`  → `EOF`
-///  `\EOF`   → `EOF`
-///  `E'O'F`  → `EOF`
-fn strip_heredoc_delimiter_quotes(delim: &str) -> String {
-    let mut result = String::new();
-    let chars: Vec<char> = delim.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        match chars[i] {
-            '\\' => {
-                i += 1;
-                if i < chars.len() {
-                    result.push(chars[i]);
-                    i += 1;
-                } else {
-                    // Trailing backslash with no following character: keep it literally.
-                    result.push('\\');
-                }
-            }
-            '\'' => {
-                i += 1;
-                while i < chars.len() && chars[i] != '\'' {
-                    result.push(chars[i]);
-                    i += 1;
-                }
-                if i < chars.len() {
-                    i += 1;
-                }
-            }
-            '"' => {
-                i += 1;
-                while i < chars.len() && chars[i] != '"' {
-                    // Inside double quotes, backslash is special only before
-                    // $, `, ", \, or newline (POSIX quote removal rules).
-                    if chars[i] == '\\' && i + 1 < chars.len() {
-                        match chars[i + 1] {
-                            '$' | '`' | '"' | '\\' | '\n' => {
-                                i += 1;
-                                result.push(chars[i]);
-                            }
-                            _ => {
-                                result.push('\\');
-                            }
-                        }
-                    } else {
-                        result.push(chars[i]);
-                    }
-                    i += 1;
-                }
-                if i < chars.len() {
-                    i += 1;
-                }
-            }
-            c => {
-                result.push(c);
-                i += 1;
-            }
-        }
-    }
-    result
-}
 
-fn split_token_into_lines(token: Token) -> Vec<Token> {
-    match &token.kind {
-        TokenKind::Word(s) => {
-            let mut tokens = vec![];
-
-            let mut row = token.position.line;
-            let mut col = token.position.column;
-
-            for (_, chunk) in &s
-                .char_indices()
-                .chunk_by(|(idx, c)| if *c == '\n' { *idx as i32 } else { -1 })
-            {
-                let chunk: Vec<(usize, char)> = chunk.collect();
-                let chunk_str: String = chunk.iter().map(|(_, c)| *c).collect();
-                let chunk_byte_start = chunk.first().map(|(idx, _)| *idx).unwrap_or(0);
-
-                match chunk_str.as_str() {
-                    "\n" => {
-                        tokens.push(Token {
-                            kind: TokenKind::Newline,
-                            value: chunk_str,
-                            position: Position {
-                                line: row,
-                                column: col,
-                                byte: token.position.byte + chunk_byte_start,
-                            },
-                        });
-
-                        row += 1;
-                        col = 1; // flash lexer uses 1 based column numbers
-                    }
-                    _ => {
-                        tokens.push(Token {
-                            kind: TokenKind::Word(chunk_str.clone()),
-                            value: chunk_str.clone(),
-                            position: Position {
-                                line: row,
-                                column: col,
-                                byte: token.position.byte + chunk_byte_start,
-                            },
-                        });
-
-                        // flash lexer uses char indicies for col counts instead of grapheme width.
-                        col += chunk_str.chars().count();
-                    }
-                }
-            }
-            tokens
-        }
-        _ => vec![token],
-    }
-}
-
-#[test]
-fn test_split_token_into_lines() {
-    let token = Token {
-        kind: TokenKind::Word("hello\nworld".to_string()),
-        value: "hello\nworld".to_string(),
-        position: Position {
-            line: 1,
-            column: 1,
-            byte: 0,
-        },
-    };
-
-    let tokens = split_token_into_lines(token);
-    assert_eq!(tokens.len(), 3);
-    assert_eq!(tokens[0].kind, TokenKind::Word("hello".to_string()));
-    assert_eq!(tokens[0].position.line, 1);
-    assert_eq!(tokens[0].position.column, 1);
-    assert_eq!(tokens[0].position.byte, 0);
-
-    assert_eq!(tokens[1].kind, TokenKind::Newline);
-    assert_eq!(tokens[1].position.line, 1);
-    assert_eq!(tokens[1].position.column, 6);
-    assert_eq!(tokens[1].position.byte, 5);
-
-    assert_eq!(tokens[2].kind, TokenKind::Word("world".to_string()));
-    assert_eq!(tokens[2].position.line, 2);
-    assert_eq!(tokens[2].position.column, 1);
-    assert_eq!(tokens[2].position.byte, 6);
-
-    let tokens = split_token_into_lines(tokens[0].clone());
-    assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].kind, TokenKind::Word("hello".to_string()));
-}
 
 pub fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
     let mut lexer = Lexer::new(input);
@@ -172,7 +14,7 @@ pub fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
         if is_eof {
             break;
         }
-        tokens.extend(split_token_into_lines(token));
+        tokens.push(token);
     }
 
     tokens
@@ -447,10 +289,10 @@ impl DParser {
                     command_start_stack.push(self.current_command_range.clone());
                     self.current_command_range = None; // set for next word after this
                 }
-                TokenKind::HereDoc(delim) | TokenKind::HereDocDash(delim) => {
+                TokenKind::HereDoc{delimiter, ..} | TokenKind::HereDocDash {delimiter, ..} => {
                     self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
 
-                    heredocs.push_back((idx, strip_heredoc_delimiter_quotes(delim)));
+                    heredocs.push_back((idx, delimiter.clone()));
                 }
                 TokenKind::RParen
                 | TokenKind::DoubleRParen
@@ -1562,23 +1404,6 @@ mod tests {
             DParser::closing_char_to_insert(&parser.tokens(), '{', just_inserted_pos),
             None
         );
-    }
-
-    #[test]
-    fn test_strip_heredoc_delimiter_quotes() {
-        assert_eq!(strip_heredoc_delimiter_quotes("EOF"), "EOF");
-        assert_eq!(strip_heredoc_delimiter_quotes("'EOF'"), "EOF");
-        assert_eq!(strip_heredoc_delimiter_quotes("\"EOF\""), "EOF");
-        assert_eq!(strip_heredoc_delimiter_quotes("\\EOF"), "EOF");
-        assert_eq!(strip_heredoc_delimiter_quotes("E'O'F"), "EOF");
-        assert_eq!(strip_heredoc_delimiter_quotes("E\"O\"F"), "EOF");
-        assert_eq!(strip_heredoc_delimiter_quotes("'E'O'F'"), "EOF");
-        assert_eq!(strip_heredoc_delimiter_quotes("\\E\\O\\F"), "EOF");
-        // Trailing backslash is kept literally.
-        assert_eq!(strip_heredoc_delimiter_quotes("EOF\\"), "EOF\\");
-        // Backslash inside double quotes: only special before $`"\newline.
-        assert_eq!(strip_heredoc_delimiter_quotes("\"E\\\\F\""), "E\\F");
-        assert_eq!(strip_heredoc_delimiter_quotes("\"E\\xF\""), "E\\xF");
     }
 
     #[test]
