@@ -143,6 +143,21 @@ enum PromptSegment {
     },
     /// A clickable widget that copies the current command buffer to the clipboard.
     WidgetCopyBuffer { text: Vec<TaggedSpan<'static>> },
+    /// A widget that displays how long ago the flyline app last closed.
+    ///
+    /// At render time the elapsed duration (from `last_app_closed_at` to now) is
+    /// formatted according to `format`:
+    /// * `"five-chars"` or empty string – compact 5-character duration string.
+    /// * Any other string – Chrono `strftime` format applied to the absolute
+    ///   local datetime of the last close.
+    ///
+    /// The widget's text is styled with `base_style` patched by an empty style
+    /// (i.e. the full surrounding-span style is applied).
+    WidgetLastCommandDuration {
+        last_app_closed_at: Option<std::time::Instant>,
+        format: String,
+        base_style: Style,
+    },
     /// A custom-command widget.  On each render the child process is polled
     /// with `try_wait`; once it exits the output (processed through
     /// `expand_prompt_through_bash`) is shown.  While still pending the
@@ -290,6 +305,10 @@ struct PromptStringBuilder<'a> {
     cwd: Option<String>,
     /// Home directory, used to recognise `~`-prefixed path representations.
     home: Option<String>,
+    /// Timestamp of the most recent flyline app session close.
+    /// Passed through to [`PromptSegment::WidgetLastCommandDuration`] so that
+    /// the elapsed duration can be computed at render time.
+    last_app_closed_at: Option<std::time::Instant>,
 }
 
 impl<'a> PromptStringBuilder<'a> {
@@ -301,6 +320,7 @@ impl<'a> PromptStringBuilder<'a> {
             widgets,
             cwd: None,
             home: None,
+            last_app_closed_at: None,
         }
     }
 
@@ -308,6 +328,12 @@ impl<'a> PromptStringBuilder<'a> {
     fn with_cwd(mut self, cwd: String, home: Option<String>) -> Self {
         self.cwd = Some(cwd);
         self.home = home;
+        self
+    }
+
+    /// Set the timestamp of the most recent flyline app session close.
+    fn with_last_app_closed_at(mut self, t: Option<std::time::Instant>) -> Self {
+        self.last_app_closed_at = t;
         self
     }
 
@@ -496,6 +522,7 @@ impl<'a> PromptStringBuilder<'a> {
         // Pass 3: widgets.  Custom widgets with an empty command are excluded
         // (they have no valid name to match) so their placeholder text stays
         // literal.  Each match spawns a fresh independent widget segment.
+        let last_app_closed_at = self.last_app_closed_at;
         let segs = split_static_segments(segs, |s| {
             let style = s.style;
             split_span_by(s, |text| {
@@ -507,11 +534,18 @@ impl<'a> PromptStringBuilder<'a> {
                             PromptWidget::CopyBuffer(w) => w.name.as_str(),
                             PromptWidget::Custom(w) if !w.command.is_empty() => w.name.as_str(),
                             PromptWidget::Custom(_) => return None,
+                            PromptWidget::LastCommandDuration(w) => w.name.as_str(),
                         };
                         text.find(name).map(|pos| (pos, name.len(), widget))
                     })
                     .min_by_key(|(pos, _, _)| *pos)
-                    .map(|(pos, len, widget)| (pos, len, make_widget_segment(widget, style)))
+                    .map(|(pos, len, widget)| {
+                        (
+                            pos,
+                            len,
+                            make_widget_segment(widget, style, last_app_closed_at),
+                        )
+                    })
             })
         });
 
@@ -594,7 +628,11 @@ fn split_span_by(
 /// `Pending` if it hasn't finished yet.  Any positive value (including
 /// `i32::MAX` ≈ 24.8 days, which is effectively indefinite) polls up to that
 /// many milliseconds before moving on.
-fn make_widget_segment(widget: &PromptWidget, base_style: Style) -> PromptSegment {
+fn make_widget_segment(
+    widget: &PromptWidget,
+    base_style: Style,
+    last_app_closed_at: Option<std::time::Instant>,
+) -> PromptSegment {
     match widget {
         PromptWidget::MouseMode(w) => PromptSegment::WidgetMouseMode {
             enabled_text: stdout_to_tagged_spans(w.enabled_text.clone()),
@@ -665,6 +703,11 @@ fn make_widget_segment(widget: &PromptWidget, base_style: Style) -> PromptSegmen
             };
             PromptSegment::WidgetCustom { state, base_style }
         }
+        PromptWidget::LastCommandDuration(w) => PromptSegment::WidgetLastCommandDuration {
+            last_app_closed_at,
+            format: w.format.clone(),
+            base_style,
+        },
     }
 }
 
@@ -1003,6 +1046,28 @@ fn format_prompt_line(
                     tagged.clone()
                 }
                 PromptSegment::WidgetCopyBuffer { text } => text.clone(),
+                PromptSegment::WidgetLastCommandDuration {
+                    last_app_closed_at,
+                    format,
+                    base_style,
+                } => {
+                    let elapsed = last_app_closed_at.map(|t| t.elapsed()).unwrap_or_default();
+                    let text = if format.is_empty() || format == "five-chars" {
+                        crate::content_utils::duration_to_5chars(elapsed)
+                    } else {
+                        // Chrono format applied to the absolute datetime of the last close.
+                        let now = chrono::Local::now();
+                        let closed_at = chrono::Duration::from_std(elapsed)
+                            .ok()
+                            .map(|d| now - d)
+                            .unwrap_or(now);
+                        closed_at.format(format).to_string()
+                    };
+                    vec![TaggedSpan::new(
+                        Span::styled(text, *base_style),
+                        Tag::Ps1Prompt,
+                    )]
+                }
                 PromptSegment::WidgetCustom { state, base_style } => {
                     let raw_spans = match state {
                         WidgetCustomState::Pending { placeholder, .. } => placeholder.clone(),
@@ -1163,6 +1228,7 @@ impl PromptManager {
         unfinished_from_prev_command: bool,
         animations: &[PromptAnimation],
         widgets: &[PromptWidget],
+        last_app_closed_at: Option<std::time::Instant>,
     ) -> Self {
         if unfinished_from_prev_command {
             // If the previous command was unfinished, use a simple prompt to avoid confusion
@@ -1233,8 +1299,9 @@ impl PromptManager {
             let cwd = bash_funcs::get_cwd();
             let home = bash_funcs::get_envvar_value("HOME");
             log::debug!("CWD for prompt detection: {:?}, HOME: {:?}", cwd, home);
-            let mut builder =
-                PromptStringBuilder::new(processed_animations, widgets).with_cwd(cwd.clone(), home);
+            let mut builder = PromptStringBuilder::new(processed_animations, widgets)
+                .with_cwd(cwd.clone(), home)
+                .with_last_app_closed_at(last_app_closed_at);
 
             // Read the raw PS1 env var so we can intercept time format codes
             // before handing the string to decode_prompt_string.  Fall back to
@@ -2276,5 +2343,94 @@ mod tests {
             Some(Color::Green),
             "base fg should be used when output fg is unset"
         );
+    }
+
+    // --- WidgetLastCommandDuration rendering --------------------------------
+
+    #[test]
+    fn test_format_prompt_line_widget_last_command_duration_five_chars_no_close() {
+        // When last_app_closed_at is None (first session), elapsed is 0 → " now ".
+        let segs = vec![PromptSegment::WidgetLastCommandDuration {
+            last_app_closed_at: None,
+            format: "five-chars".to_string(),
+            base_style: Style::default(),
+        }];
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
+        assert_eq!(content, " now ");
+    }
+
+    #[test]
+    fn test_format_prompt_line_widget_last_command_duration_five_chars_elapsed() {
+        // An Instant from ~65 seconds ago should format as " 1min".
+        let t = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(65))
+            .unwrap();
+        let segs = vec![PromptSegment::WidgetLastCommandDuration {
+            last_app_closed_at: Some(t),
+            format: "five-chars".to_string(),
+            base_style: Style::default(),
+        }];
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
+        let content: String = line.spans.iter().map(|s| s.span.content.as_ref()).collect();
+        assert_eq!(content, " 1min");
+    }
+
+    #[test]
+    fn test_format_prompt_line_widget_last_command_duration_inherits_base_style() {
+        // The rendered span should carry the base_style set on the segment.
+        let base_style = Style::default().fg(Color::Cyan);
+        let segs = vec![PromptSegment::WidgetLastCommandDuration {
+            last_app_closed_at: None,
+            format: "five-chars".to_string(),
+            base_style,
+        }];
+        let line = format_prompt_line(&segs, &fixed_time(0), false);
+        assert_eq!(line.spans[0].span.style.fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn test_expand_span_widget_last_command_duration_name() {
+        // The widget name in a span should produce a WidgetLastCommandDuration segment.
+        use crate::settings::PromptWidgetLastCommandDuration;
+        let widget = PromptWidget::LastCommandDuration(PromptWidgetLastCommandDuration {
+            name: "FLYLINE_LAST_COMMAND_DURATION".to_string(),
+            format: "five-chars".to_string(),
+        });
+        let widgets = [widget];
+        let builder = PromptStringBuilder::new(vec![], &widgets);
+        let segs = builder.expand_span_to_segments(Span::raw("FLYLINE_LAST_COMMAND_DURATION"));
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            PromptSegment::WidgetLastCommandDuration { format, .. } => {
+                assert_eq!(format, "five-chars");
+            }
+            _ => panic!("expected WidgetLastCommandDuration"),
+        }
+    }
+
+    #[test]
+    fn test_expand_span_widget_last_command_duration_surrounded_by_text() {
+        use crate::settings::PromptWidgetLastCommandDuration;
+        let widget = PromptWidget::LastCommandDuration(PromptWidgetLastCommandDuration {
+            name: "MY_DUR".to_string(),
+            format: "five-chars".to_string(),
+        });
+        let widgets = [widget];
+        let builder = PromptStringBuilder::new(vec![], &widgets);
+        let segs = builder.expand_span_to_segments(Span::raw("time: MY_DUR done"));
+        assert_eq!(segs.len(), 3);
+        match &segs[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content, "time: "),
+            _ => panic!("expected Static at 0"),
+        }
+        match &segs[1] {
+            PromptSegment::WidgetLastCommandDuration { .. } => {}
+            _ => panic!("expected WidgetLastCommandDuration at 1"),
+        }
+        match &segs[2] {
+            PromptSegment::Static(s) => assert_eq!(s.content, " done"),
+            _ => panic!("expected Static at 2"),
+        }
     }
 }

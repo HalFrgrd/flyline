@@ -84,12 +84,31 @@ pub struct PromptWidgetCustom {
     pub prev_output: std::sync::Arc<std::sync::Mutex<Vec<TaggedSpan<'static>>>>,
 }
 
+/// A prompt widget that shows how long ago the flyline app last closed.
+///
+/// The `format` field controls the output:
+/// * `"five-chars"` (the default) – compact 5-character duration string
+///   produced by [`crate::content_utils::duration_to_5chars`] (e.g. `"01min"`, `"02hou"`).
+/// * Any other string – treated as a Chrono `strftime` format applied to the
+///   absolute local [`chrono::DateTime`] when the app last closed (e.g. `"%H:%M:%S"`).
+///
+/// When the app has not yet closed in the current session the widget renders
+/// `" now "` (five-chars mode) or the current time (format mode).
+#[derive(Debug, Clone)]
+pub struct PromptWidgetLastCommandDuration {
+    /// Name used as placeholder in prompt strings (e.g., `FLYLINE_LAST_COMMAND_DURATION`).
+    pub name: String,
+    /// Output format: `"five-chars"` or a Chrono strftime format string.
+    pub format: String,
+}
+
 /// A custom prompt widget registered with `flyline create-prompt-widget`.
 #[derive(Debug, Clone)]
 pub enum PromptWidget {
     MouseMode(PromptWidgetMouseMode),
     CopyBuffer(PromptWidgetCopyBuffer),
     Custom(PromptWidgetCustom),
+    LastCommandDuration(PromptWidgetLastCommandDuration),
 }
 
 /// A configured agent-mode command with its optional system prompt.
@@ -199,6 +218,12 @@ pub struct Settings {
     pub cancelled_command_history_manager: HistoryManager,
     /// Tracks prompts that were submitted to agent mode.
     pub agent_prompt_history_manager: HistoryManager,
+    /// Timestamp of the most recent flyline app session close.
+    ///
+    /// Set to `Some(Instant::now())` immediately after each `app::get_command`
+    /// call returns. Used by the `last-command-duration` prompt widget to
+    /// compute and display the elapsed time since the last command.
+    pub last_app_closed_at: Option<std::time::Instant>,
     /// Whether to run tab completion tests (used for integration testing).
     #[cfg(feature = "integration-tests")]
     pub run_tab_completion_tests: bool,
@@ -229,6 +254,7 @@ impl Default for Settings {
             key_debug: false,
             cancelled_command_history_manager: HistoryManager::new_empty(),
             agent_prompt_history_manager: HistoryManager::new_empty(),
+            last_app_closed_at: None,
             #[cfg(feature = "integration-tests")]
             run_tab_completion_tests: false,
         }

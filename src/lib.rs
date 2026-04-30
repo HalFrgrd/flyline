@@ -218,41 +218,25 @@ pub fn complete_flyline_args(
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Print a timestamp or elapsed time.
+    /// Print a timestamp.
     ///
     /// With no flags, prints nanoseconds since the Unix epoch.
-    /// With --format, formats the current time using a Chrono format string
-    /// (e.g. "%Y-%m-%dT%H:%M:%S").
-    /// With --since-last-exec, prints nanoseconds since the flyline app last
-    /// closed (0 if it has never closed in this session).
-    /// --five-chars (only with --since-last-exec) prints a compact 5-character
-    /// representation of the elapsed duration.
-    /// --format with --since-last-exec formats the absolute timestamp of the
-    /// last close rather than an elapsed nanosecond count.
+    /// With --format, formats the current local time using a Chrono strftime
+    /// format string (e.g. "%Y-%m-%dT%H:%M:%S").
+    ///
+    /// To display elapsed time since the last command, use the
+    /// `last-command-duration` prompt widget instead:
+    ///   flyline create-prompt-widget last-command-duration
     ///
     /// Examples:
     ///   flyline time
     ///   flyline time --format "%Y-%m-%dT%H:%M:%S"
-    ///   flyline time --since-last-exec
-    ///   flyline time --since-last-exec --five-chars
-    ///   flyline time --since-last-exec --format "%H:%M:%S"
     #[command(name = "time", verbatim_doc_comment)]
     Time {
-        /// Print time since the flyline app last closed instead of the current
-        /// epoch time. If the app has never closed in this session, prints 0.
-        #[arg(long = "since-last-exec")]
-        since_last_exec: bool,
         /// Format string passed to Chrono's `strftime` formatter.
-        /// Without --since-last-exec this formats the current local time.
-        /// With --since-last-exec this formats the absolute local time of the
-        /// last app close.
+        /// When omitted, prints nanoseconds since the Unix epoch.
         #[arg(long = "format", value_name = "FORMAT")]
         format: Option<String>,
-        /// Print the elapsed duration since the last exec as a compact
-        /// 5-character string (e.g. "01min", "02hou"). Only valid with
-        /// --since-last-exec.
-        #[arg(long = "five-chars", requires = "since_last_exec")]
-        five_chars: bool,
     },
     /// Configure AI agent mode.
     ///
@@ -293,9 +277,10 @@ enum Commands {
     ///
     /// Widget types:
     ///   animation   Cycles through a list of frames at a given fps.
-    ///   mouse-mode  Shows different text depending on whether mouse capture is enabled.
-    ///   copy-buffer Shows clickable text that copies the current buffer to the clipboard.
-    ///   custom      Runs a shell command and displays its output.
+    ///   mouse-mode             Shows different text depending on whether mouse capture is enabled.
+    ///   copy-buffer            Shows clickable text that copies the current buffer to the clipboard.
+    ///   custom                 Runs a shell command and displays its output.
+    ///   last-command-duration  Shows how long ago the flyline app last closed.
     ///
     /// Examples:
     ///   flyline create-prompt-widget animation --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
@@ -304,6 +289,8 @@ enum Commands {
     ///   flyline create-prompt-widget copy-buffer --name COPY_BUFFER '[copy]'
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder 10
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
+    ///   flyline create-prompt-widget last-command-duration
+    ///   flyline create-prompt-widget last-command-duration --format "%H:%M:%S"
     #[command(name = "create-prompt-widget", verbatim_doc_comment)]
     CreatePromptWidget {
         #[command(subcommand)]
@@ -723,6 +710,36 @@ enum PromptWidgetSubcommands {
         #[arg(long)]
         placeholder: Option<String>,
     },
+    /// Show how long ago the flyline app last closed in the prompt.
+    ///
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// with the elapsed duration on every render.  The output format is
+    /// controlled by --format:
+    ///   five-chars (default)  Compact 5-character string, e.g. "01min", "02hou".
+    ///   <chrono-fmt>          Chrono strftime format applied to the absolute
+    ///                         datetime when the app last closed, e.g. "%H:%M:%S".
+    ///
+    /// The widget text inherits (and may override) the style of the prompt span
+    /// it is embedded in, just like other widgets.
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget last-command-duration
+    ///   # Now use FLYLINE_LAST_COMMAND_DURATION in your prompt:
+    ///   RPS1=' FLYLINE_LAST_COMMAND_DURATION'
+    ///
+    ///   flyline create-prompt-widget last-command-duration --format "%H:%M:%S"
+    ///   flyline create-prompt-widget last-command-duration --name MY_DURATION --format five-chars
+    #[command(name = "last-command-duration", verbatim_doc_comment)]
+    LastCommandDuration {
+        /// Name to embed in prompt strings as the widget placeholder.
+        /// Defaults to `FLYLINE_LAST_COMMAND_DURATION`.
+        #[arg(long, default_value = "FLYLINE_LAST_COMMAND_DURATION")]
+        name: String,
+        /// Output format: `five-chars` (default) or a Chrono strftime format
+        /// string (e.g. `"%H:%M:%S"`).
+        #[arg(long, default_value = "five-chars")]
+        format: String,
+    },
 }
 
 // Global state for our custom input stream
@@ -817,7 +834,6 @@ struct Flyline {
     content: Vec<u8>,
     position: usize,
     settings: settings::Settings,
-    last_app_closed_at: Option<std::time::Instant>,
 }
 
 impl Flyline {
@@ -826,7 +842,6 @@ impl Flyline {
             content: vec![],
             position: 0,
             settings: settings::Settings::default(),
-            last_app_closed_at: None,
         }
     }
 
@@ -1053,6 +1068,19 @@ impl Flyline {
                                 }),
                             );
                         }
+                        PromptWidgetSubcommands::LastCommandDuration { name, format } => {
+                            log::info!(
+                                "Registering last-command-duration widget '{}' (format={:?})",
+                                name,
+                                format
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::LastCommandDuration(
+                                    settings::PromptWidgetLastCommandDuration { name, format },
+                                ),
+                            );
+                        }
                     },
                     Some(Commands::SetColour {
                         default_theme,
@@ -1251,40 +1279,8 @@ impl Flyline {
                             }
                         }
                     }
-                    Some(Commands::Time {
-                        since_last_exec,
-                        format,
-                        five_chars,
-                    }) => {
-                        if since_last_exec {
-                            let elapsed = self
-                                .last_app_closed_at
-                                .map(|t| t.elapsed())
-                                .unwrap_or_default();
-                            if five_chars {
-                                println!(
-                                    "{}",
-                                    crate::content_utils::duration_to_5chars(elapsed).trim()
-                                );
-                            } else if let Some(fmt) = format {
-                                let closed_at = match self.last_app_closed_at {
-                                    None => chrono::Local::now(),
-                                    Some(t) => match chrono::Duration::from_std(t.elapsed()) {
-                                        Ok(d) => chrono::Local::now() - d,
-                                        Err(e) => {
-                                            eprintln!(
-                                                "flyline time: could not compute close time: {}",
-                                                e
-                                            );
-                                            return bash_symbols::BuiltinExitCode::Usage as c_int;
-                                        }
-                                    },
-                                };
-                                println!("{}", closed_at.format(&fmt));
-                            } else {
-                                println!("{}", elapsed.as_nanos());
-                            }
-                        } else if let Some(fmt) = format {
+                    Some(Commands::Time { format }) => {
+                        if let Some(fmt) = format {
                             println!("{}", chrono::Local::now().format(&fmt));
                         } else {
                             let ns = std::time::SystemTime::now()
@@ -1505,7 +1501,7 @@ impl Flyline {
 
             let result = app::get_command(&mut self.settings);
 
-            self.last_app_closed_at = Some(std::time::Instant::now());
+            self.settings.last_app_closed_at = Some(std::time::Instant::now());
 
             unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 

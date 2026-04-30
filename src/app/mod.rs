@@ -444,6 +444,7 @@ impl<'a> App<'a> {
                         .values()
                         .cloned()
                         .collect::<Vec<_>>(),
+                    settings.last_app_closed_at,
                 )
             ),
             history_manager: time_it!("startup: history manager", HistoryManager::new(settings)),
