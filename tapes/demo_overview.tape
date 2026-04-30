@@ -8,7 +8,7 @@ Require claude
 
 Hide
 Sleep 50ms
-Type `flyline editor --auto-close-chars true && clear`
+Type `flyline editor --auto-close-chars true && flyline key bind PageUp always=moveLeftOneWordWhitespaceExtendSelection && clear`
 Enter
 Show
 
@@ -76,28 +76,6 @@ Sleep 500ms
 Ctrl+C
 Sleep 800ms
 
-Type `# Flyline can intelligently close opening quotes and brackets: `
-Enter
-Sleep 800ms
-Type `echo "`
-Sleep 1000ms
-Type `$(`
-Sleep 1000ms
-Type `foo`
-Sleep 800ms
-Backspace
-Backspace
-Backspace
-Sleep 800ms
-Backspace
-Sleep 1000ms
-Backspace
-Sleep 1000ms
-Backspace
-Sleep 800ms
-Ctrl+C
-Sleep 800ms
-
 Type `# Flyline can interface with your AI agent to help you write commands`
 Enter
 Sleep 800ms
@@ -136,34 +114,43 @@ Type "# flyline automatically detects the current working directory in your prom
 Enter
 Sleep 800ms
 
-Type `# flyline supports text selection like you would expect in a code editor`
+Type `# Flyline can intelligently close opening quotes and brackets: `
+Enter
+Sleep 800ms
+Type `echo "`
+Sleep 1000ms
+Type `$(`
+Sleep 1000ms
+Type `foo`
+Sleep 800ms
+Backspace
+Backspace
+Backspace
+Sleep 800ms
+Backspace
+Sleep 1000ms
+Backspace
+Sleep 1000ms
+Backspace
+Sleep 800ms
+Ctrl+C
+Sleep 800ms
+
+Type `# flyline also supports text selection like you would expect in a code editor`
 Enter
 Sleep 800ms
 
 Type `git commit -m a multi word message`
 Sleep 1000ms
-# Press Shift+Left 20 times to select "a multi word message" (20 characters) from the end
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
-Shift+Left
+# I rigged page up to select left one word
+PageUp
 Sleep 500ms
+PageUp
+Sleep 500ms
+PageUp
+Sleep 500ms
+PageUp
+Sleep 1000ms
 Type `"`
 Sleep 1500ms
 Escape
