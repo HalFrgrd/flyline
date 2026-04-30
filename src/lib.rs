@@ -218,6 +218,42 @@ pub fn complete_flyline_args(
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Print a timestamp or elapsed time.
+    ///
+    /// With no flags, prints nanoseconds since the Unix epoch.
+    /// With --format, formats the current time using a Chrono format string
+    /// (e.g. "%Y-%m-%dT%H:%M:%S").
+    /// With --since-last-exec, prints nanoseconds since the flyline app last
+    /// closed (0 if it has never closed in this session).
+    /// --five-chars (only with --since-last-exec) prints a compact 5-character
+    /// representation of the elapsed duration.
+    /// --format with --since-last-exec formats the absolute timestamp of the
+    /// last close rather than an elapsed nanosecond count.
+    ///
+    /// Examples:
+    ///   flyline time
+    ///   flyline time --format "%Y-%m-%dT%H:%M:%S"
+    ///   flyline time --since-last-exec
+    ///   flyline time --since-last-exec --five-chars
+    ///   flyline time --since-last-exec --format "%H:%M:%S"
+    #[command(name = "time", verbatim_doc_comment)]
+    Time {
+        /// Print time since the flyline app last closed instead of the current
+        /// epoch time. If the app has never closed in this session, prints 0.
+        #[arg(long = "since-last-exec")]
+        since_last_exec: bool,
+        /// Format string passed to Chrono's `strftime` formatter.
+        /// Without --since-last-exec this formats the current local time.
+        /// With --since-last-exec this formats the absolute local time of the
+        /// last app close.
+        #[arg(long = "format", value_name = "FORMAT")]
+        format: Option<String>,
+        /// Print the elapsed duration since the last exec as a compact
+        /// 5-character string (e.g. "01min", "02hou"). Only valid with
+        /// --since-last-exec.
+        #[arg(long = "five-chars", requires = "since_last_exec")]
+        five_chars: bool,
+    },
     /// Configure AI agent mode.
     ///
     /// When Alt+Enter is pressed, flyline invokes COMMAND with the current buffer
@@ -781,6 +817,7 @@ struct Flyline {
     content: Vec<u8>,
     position: usize,
     settings: settings::Settings,
+    last_app_closed_at: Option<std::time::Instant>,
 }
 
 impl Flyline {
@@ -789,6 +826,7 @@ impl Flyline {
             content: vec![],
             position: 0,
             settings: settings::Settings::default(),
+            last_app_closed_at: None,
         }
     }
 
@@ -1213,6 +1251,49 @@ impl Flyline {
                             }
                         }
                     }
+                    Some(Commands::Time {
+                        since_last_exec,
+                        format,
+                        five_chars,
+                    }) => {
+                        if since_last_exec {
+                            let elapsed = self
+                                .last_app_closed_at
+                                .map(|t| t.elapsed())
+                                .unwrap_or_default();
+                            if five_chars {
+                                println!(
+                                    "{}",
+                                    crate::content_utils::duration_to_5chars(elapsed).trim()
+                                );
+                            } else if let Some(fmt) = format {
+                                let closed_at = match self.last_app_closed_at {
+                                    None => chrono::Local::now(),
+                                    Some(t) => match chrono::Duration::from_std(t.elapsed()) {
+                                        Ok(d) => chrono::Local::now() - d,
+                                        Err(e) => {
+                                            eprintln!(
+                                                "flyline time: could not compute close time: {}",
+                                                e
+                                            );
+                                            return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                        }
+                                    },
+                                };
+                                println!("{}", closed_at.format(&fmt));
+                            } else {
+                                println!("{}", elapsed.as_nanos());
+                            }
+                        } else if let Some(fmt) = format {
+                            println!("{}", chrono::Local::now().format(&fmt));
+                        } else {
+                            let ns = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_nanos();
+                            println!("{}", ns);
+                        }
+                    }
                     Some(Commands::SetCursor {
                         backend,
                         interpolate,
@@ -1423,6 +1504,8 @@ impl Flyline {
             let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
 
             let result = app::get_command(&mut self.settings);
+
+            self.last_app_closed_at = Some(std::time::Instant::now());
 
             unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 
