@@ -144,6 +144,7 @@ pub enum PaletteStyleKind {
     MarkdownCode,
     KeySequenceStyle,
     SelectedText,
+    BashReserved,
 }
 
 /// The colour palette.  One [`Style`] per slot.
@@ -171,6 +172,7 @@ pub struct Palette {
     markdown_code: Style,
     key_sequence_style: Style,
     selected_text: Style,
+    bash_reserved: Style,
 }
 
 impl Palette {
@@ -248,6 +250,10 @@ impl Palette {
         self.selected_text
     }
 
+    pub fn bash_reserved(&self) -> Style {
+        self.bash_reserved
+    }
+
     // ── Setter ────────────────────────────────────────────────────────
 
     /// Set an individual palette slot by kind.
@@ -271,6 +277,7 @@ impl Palette {
             PaletteStyleKind::MarkdownCode => self.markdown_code = style,
             PaletteStyleKind::KeySequenceStyle => self.key_sequence_style = style,
             PaletteStyleKind::SelectedText => self.selected_text = style,
+            PaletteStyleKind::BashReserved => self.bash_reserved = style,
         }
     }
 
@@ -311,6 +318,9 @@ impl Palette {
             markdown_code: Style::default().add_modifier(Modifier::DIM),
             key_sequence_style: Style::default().add_modifier(Modifier::DIM),
             selected_text: Style::default().bg(Color::LightRed),
+            bash_reserved: Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         }
     }
 
@@ -348,6 +358,9 @@ impl Palette {
             markdown_code: Style::default().add_modifier(Modifier::DIM),
             key_sequence_style: Style::default().fg(Color::DarkGray),
             selected_text: Style::default().bg(Color::LightRed),
+            bash_reserved: Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
         }
     }
 
