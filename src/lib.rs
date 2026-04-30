@@ -218,6 +218,26 @@ pub fn complete_flyline_args(
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Print a timestamp.
+    ///
+    /// With no flags, prints nanoseconds since the Unix epoch.
+    /// With --format, formats the current local time using a Chrono strftime
+    /// format string (e.g. "%Y-%m-%dT%H:%M:%S").
+    ///
+    /// To display elapsed time since the last command, use the
+    /// `last-command-duration` prompt widget instead:
+    ///   flyline create-prompt-widget last-command-duration
+    ///
+    /// Examples:
+    ///   flyline time
+    ///   flyline time --format "%Y-%m-%dT%H:%M:%S"
+    #[command(name = "time", verbatim_doc_comment)]
+    Time {
+        /// Format string passed to Chrono's `strftime` formatter.
+        /// When omitted, prints nanoseconds since the Unix epoch.
+        #[arg(long = "format", value_name = "FORMAT")]
+        format: Option<String>,
+    },
     /// Configure AI agent mode.
     ///
     /// When Alt+Enter is pressed, flyline invokes COMMAND with the current buffer
@@ -257,9 +277,10 @@ enum Commands {
     ///
     /// Widget types:
     ///   animation   Cycles through a list of frames at a given fps.
-    ///   mouse-mode  Shows different text depending on whether mouse capture is enabled.
-    ///   copy-buffer Shows clickable text that copies the current buffer to the clipboard.
-    ///   custom      Runs a shell command and displays its output.
+    ///   mouse-mode             Shows different text depending on whether mouse capture is enabled.
+    ///   copy-buffer            Shows clickable text that copies the current buffer to the clipboard.
+    ///   custom                 Runs a shell command and displays its output.
+    ///   last-command-duration  Shows how long ago the flyline app last closed.
     ///
     /// Examples:
     ///   flyline create-prompt-widget animation --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
@@ -268,6 +289,8 @@ enum Commands {
     ///   flyline create-prompt-widget copy-buffer --name COPY_BUFFER '[copy]'
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder 10
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
+    ///   flyline create-prompt-widget last-command-duration
+    ///   flyline create-prompt-widget last-command-duration --format "%H:%M:%S"
     #[command(name = "create-prompt-widget", verbatim_doc_comment)]
     CreatePromptWidget {
         #[command(subcommand)]
@@ -687,6 +710,36 @@ enum PromptWidgetSubcommands {
         #[arg(long)]
         placeholder: Option<String>,
     },
+    /// Show how long ago the flyline app last closed in the prompt.
+    ///
+    /// Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+    /// with the elapsed duration on every render.  The output format is
+    /// controlled by --format:
+    ///   five-chars (default)  Compact 5-character string, e.g. "01min", "02hou".
+    ///   <chrono-fmt>          Chrono strftime format applied to the absolute
+    ///                         datetime when the app last closed, e.g. "%H:%M:%S".
+    ///
+    /// The widget text inherits (and may override) the style of the prompt span
+    /// it is embedded in, just like other widgets.
+    ///
+    /// Examples:
+    ///   flyline create-prompt-widget last-command-duration
+    ///   # Now use FLYLINE_LAST_COMMAND_DURATION in your prompt:
+    ///   RPS1=' FLYLINE_LAST_COMMAND_DURATION'
+    ///
+    ///   flyline create-prompt-widget last-command-duration --format "%H:%M:%S"
+    ///   flyline create-prompt-widget last-command-duration --name MY_DURATION --format five-chars
+    #[command(name = "last-command-duration", verbatim_doc_comment)]
+    LastCommandDuration {
+        /// Name to embed in prompt strings as the widget placeholder.
+        /// Defaults to `FLYLINE_LAST_COMMAND_DURATION`.
+        #[arg(long, default_value = "FLYLINE_LAST_COMMAND_DURATION")]
+        name: String,
+        /// Output format: `five-chars` (default) or a Chrono strftime format
+        /// string (e.g. `"%H:%M:%S"`).
+        #[arg(long, default_value = "five-chars")]
+        format: String,
+    },
 }
 
 // Global state for our custom input stream
@@ -1015,6 +1068,19 @@ impl Flyline {
                                 }),
                             );
                         }
+                        PromptWidgetSubcommands::LastCommandDuration { name, format } => {
+                            log::info!(
+                                "Registering last-command-duration widget '{}' (format={:?})",
+                                name,
+                                format
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::LastCommandDuration(
+                                    settings::PromptWidgetLastCommandDuration { name, format },
+                                ),
+                            );
+                        }
                     },
                     Some(Commands::SetColour {
                         default_theme,
@@ -1211,6 +1277,17 @@ impl Flyline {
                                 eprintln!("flyline comp-spec-synthesis: {}", e);
                                 return bash_symbols::BuiltinExitCode::Usage as c_int;
                             }
+                        }
+                    }
+                    Some(Commands::Time { format }) => {
+                        if let Some(fmt) = format {
+                            println!("{}", chrono::Local::now().format(&fmt));
+                        } else {
+                            let ns = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_nanos();
+                            println!("{}", ns);
                         }
                     }
                     Some(Commands::SetCursor {
@@ -1423,6 +1500,8 @@ impl Flyline {
             let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
 
             let result = app::get_command(&mut self.settings);
+
+            self.settings.last_app_closed_at = Some(std::time::Instant::now());
 
             unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 

@@ -383,6 +383,53 @@ pub fn highlight_matching_indices(
     normal_lines
 }
 
+/// Format a [`Duration`] as a compact, exactly-5-character string.
+///
+/// The output always occupies exactly 5 terminal columns so it can be used
+/// as a fixed-width column in the history list UI.
+///
+/// | Duration range | Example output |
+/// |---|---|
+/// | 0 ns (exact zero) | ` now ` |
+/// | 1–999 ns | `  1ns` |
+/// | 1–999 µs | `  1us` |
+/// | 1–999 ms | `  1ms` |
+/// | 1–59 s | ` 1sec` |
+/// | 1–59 min | ` 1min` |
+/// | 1–23 h | ` 1hou` |
+/// | 1–30 days | ` 1day` |
+/// | 1–11 months | ` 1Mon` |
+/// | 1–99 years | ` 1Yea` |
+/// | > 99 years | ` OLD ` |
+pub fn duration_to_5chars(duration: std::time::Duration) -> String {
+    const S_IN_MNTH: u64 = 2_628_003;
+    let s = duration.as_secs();
+    let raw = match s {
+        0 => {
+            let ns = duration.as_nanos() as u64;
+            if ns == 0 {
+                " now ".into()
+            } else if ns < 1_000 {
+                format!("{ns:03}ns")
+            } else if ns < 1_000_000 {
+                format!("{:03}us", ns / 1_000)
+            } else {
+                format!("{:03}ms", ns / 1_000_000)
+            }
+        }
+        x if (1..60).contains(&x) => format!("{x:02}sec"),
+        x if (60..3600).contains(&x) => format!("{:02}min", x / 60),
+        x if (3600..86400).contains(&x) => format!("{:02}hou", x / 3600),
+        x if (86400..S_IN_MNTH).contains(&x) => format!("{:02}day", x / 86400),
+        x if (S_IN_MNTH..(12 * S_IN_MNTH)).contains(&x) => format!("{:02}Mon", x / S_IN_MNTH),
+        x if ((12 * S_IN_MNTH)..=(99 * 12 * S_IN_MNTH)).contains(&x) => {
+            format!("{:02}Yea", x / (12 * S_IN_MNTH))
+        }
+        _ => " OLD ".into(),
+    };
+    format!("{:>5}", raw.trim_start_matches('0'))
+}
+
 pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
     let duration = std::time::Duration::from_secs(
         std::time::SystemTime::now()
@@ -391,8 +438,88 @@ pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
             .as_secs()
             .saturating_sub(ts),
     );
-    let s = timeago::format_5chars(duration);
-    format!("{:>5}", s.trim_start_matches('0'))
+    duration_to_5chars(duration)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::duration_to_5chars;
+    use std::time::Duration;
+
+    #[test]
+    fn test_duration_to_5chars_now() {
+        assert_eq!(duration_to_5chars(Duration::from_secs(0)), " now ");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_nanoseconds() {
+        assert_eq!(duration_to_5chars(Duration::from_nanos(1)), "  1ns");
+        assert_eq!(duration_to_5chars(Duration::from_nanos(42)), " 42ns");
+        assert_eq!(duration_to_5chars(Duration::from_nanos(999)), "999ns");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_microseconds() {
+        assert_eq!(duration_to_5chars(Duration::from_micros(1)), "  1us");
+        assert_eq!(duration_to_5chars(Duration::from_micros(42)), " 42us");
+        assert_eq!(duration_to_5chars(Duration::from_micros(999)), "999us");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_milliseconds() {
+        assert_eq!(duration_to_5chars(Duration::from_millis(1)), "  1ms");
+        assert_eq!(duration_to_5chars(Duration::from_millis(42)), " 42ms");
+        assert_eq!(duration_to_5chars(Duration::from_millis(999)), "999ms");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_seconds() {
+        assert_eq!(duration_to_5chars(Duration::from_secs(1)), " 1sec");
+        assert_eq!(duration_to_5chars(Duration::from_secs(9)), " 9sec");
+        assert_eq!(duration_to_5chars(Duration::from_secs(59)), "59sec");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_minutes() {
+        assert_eq!(duration_to_5chars(Duration::from_secs(60)), " 1min");
+        assert_eq!(duration_to_5chars(Duration::from_secs(3599)), "59min");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_hours() {
+        assert_eq!(duration_to_5chars(Duration::from_secs(3600)), " 1hou");
+        assert_eq!(duration_to_5chars(Duration::from_secs(86399)), "23hou");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_days() {
+        assert_eq!(duration_to_5chars(Duration::from_secs(86400)), " 1day");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_months() {
+        assert_eq!(duration_to_5chars(Duration::from_secs(2_628_003)), " 1Mon");
+    }
+
+    #[test]
+    fn test_duration_to_5chars_years() {
+        assert_eq!(
+            duration_to_5chars(Duration::from_secs(12 * 2_628_003)),
+            " 1Yea"
+        );
+        assert_eq!(
+            duration_to_5chars(Duration::from_secs(99 * 12 * 2_628_003)),
+            "99Yea"
+        );
+    }
+
+    #[test]
+    fn test_duration_to_5chars_old() {
+        assert_eq!(
+            duration_to_5chars(Duration::from_secs(100 * 12 * 2_628_003)),
+            " OLD "
+        );
+    }
 }
 
 /// Convert an ANSI-escaped string into a flat list of styled [`Span`]s.
