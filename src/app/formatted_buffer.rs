@@ -129,9 +129,9 @@ fn is_bash_reserved_token_kind(kind: &TokenKind) -> bool {
             | TokenKind::Less       // <
             | TokenKind::Great      // >
             | TokenKind::DGreat     // >>
-            // Special builtins / expansions
-            | TokenKind::History    // !
-            | TokenKind::Complete // complete
+            // History expansion token and complete builtin (explicitly requested)
+            | TokenKind::History    // ! - history expansion
+            | TokenKind::Complete // complete - tab completion builtin
     )
 }
 
