@@ -181,17 +181,17 @@ main() {
         TARGET="${ARCH}-apple-darwin"
         LIB_NAME="libflyline.dylib"
 
-        # Flyline can run on the 3.2.57 version of bash.
-        # However, the bash binary on macOS is often compiled without linkable symbols required to load the Flyline plugin.
+        # Flyline can run on the 3.2.57 version of Bash.
+        # However, the Bash binary on macOS is often compiled without linkable symbols required to load the Flyline plugin.
         if $use_bash_pre_4_4; then
             BREW_BASH="$(find_homebrew_bash)"
             if [ -n "$BREW_BASH" ]; then
-                warn "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support."
+                warn "Your system Bash is older than 4.4. This version won't have been compiled with custom plugin support."
                 warn "Ensure that you use $BREW_BASH for flyline."
                 use_bash_pre_4_4=false
             else
-                err_no_exit "Your system bash is older than 4.4. This version won't have been compiled with custom plugin support."
-                err_no_exit "Please install a newer bash before trying to use flyline:"
+                err_no_exit "Your system Bash is older than 4.4. This version won't have been compiled with custom plugin support."
+                err_no_exit "Please install a newer Bash before trying to use flyline:"
                 err "    brew install bash"
             fi
         fi
@@ -221,7 +221,7 @@ main() {
     ARCHIVE_STEM="libflyline-${VERSION}-${TARGET}"
 
     if $use_bash_pre_4_4; then
-        say "Detected bash < 4.4, using pre-bash-4.4 build..."
+        say "Detected Bash < 4.4, using pre-bash-4.4 build..."
         ARCHIVE="${ARCHIVE_STEM}_pre_bash_4_4.tar.gz"
         ARCHIVE_SHA256="${ARCHIVE}.sha256"
     else

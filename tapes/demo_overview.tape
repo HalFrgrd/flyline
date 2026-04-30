@@ -29,7 +29,7 @@ Delete
 Enter
 Enter
 Enter
-Type `No other process is drawing this; it is all happening inside of bash!`
+Type `No other process is drawing this; it is all happening inside of Bash!`
 Enter
 Enter
 Type `"`
