@@ -94,6 +94,47 @@ impl std::fmt::Debug for FormattedBufferPart {
     }
 }
 
+fn is_bash_reserved_token_kind(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        // Control flow keywords
+        TokenKind::If
+            | TokenKind::Then
+            | TokenKind::Elif
+            | TokenKind::Else
+            | TokenKind::Fi
+            | TokenKind::Case
+            | TokenKind::Esac
+            | TokenKind::For
+            | TokenKind::While
+            | TokenKind::Until
+            | TokenKind::Do
+            | TokenKind::Done
+            | TokenKind::In
+            | TokenKind::Select
+            | TokenKind::Function
+            // Other keywords
+            | TokenKind::Break
+            | TokenKind::Continue
+            | TokenKind::Return
+            | TokenKind::Export
+            // Operators and separators
+            | TokenKind::And        // &&
+            | TokenKind::Or         // ||
+            | TokenKind::Pipe       // |
+            | TokenKind::Semicolon  // ;
+            | TokenKind::DoubleSemicolon // ;;
+            | TokenKind::Assignment // =
+            | TokenKind::Background // &
+            | TokenKind::Less       // <
+            | TokenKind::Great      // >
+            | TokenKind::DGreat     // >>
+            // Special builtins / expansions
+            | TokenKind::History    // !
+            | TokenKind::Complete // complete
+    )
+}
+
 fn token_to_style(
     token: &AnnotatedToken,
     recognised_command: Option<bool>,
@@ -128,6 +169,10 @@ fn token_to_style(
 
     if token.annotations.is_comment {
         return palette.comment();
+    }
+
+    if is_bash_reserved_token_kind(&token.token.kind) {
+        return palette.bash_reserved();
     }
 
     palette.normal_text()

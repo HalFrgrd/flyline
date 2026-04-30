@@ -526,6 +526,7 @@ flyline set-style inline-suggestion="dim italic"
 flyline set-style --default-theme light matching-char="bold blue"
 flyline set-style recognised-command="green" unrecognised-command="bold red"
 flyline set-style secondary-text="dim" tutorial-hint="bold italic"
+flyline set-style bash-reserved="bold yellow"
 ```
 
 ## Keybindings
