@@ -1,5 +1,6 @@
+use clap_complete::CompletionCandidate;
 use ratatui::style::{Color, Modifier, Style};
-use strum::EnumIter;
+use strum::{EnumIter, EnumMessage, IntoEnumIterator};
 
 use crate::cursor::CursorStyleConfig;
 use crate::settings::ColourTheme;
@@ -123,27 +124,48 @@ fn parse_color_to_ratatui(c: parse_style::Color) -> ratatui::style::Color {
 ///
 /// The kebab-case name of each variant (e.g. `"recognised-command"`) is used
 /// in the `flyline set-colour --style NAME=STYLE` command-line interface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, strum::Display, strum::EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumMessage, strum::Display, strum::EnumString,
+)]
 #[strum(serialize_all = "kebab-case")]
 pub enum PaletteStyleKind {
+    #[strum(message = "Syntax highlighting for recognised shell commands (e.g. ls, git)")]
     RecognisedCommand,
+    #[strum(message = "Syntax highlighting for unrecognised commands")]
     UnrecognisedCommand,
+    #[strum(message = "Syntax highlighting for single-quoted strings")]
     SingleQuotedText,
+    #[strum(message = "Syntax highlighting for double-quoted strings")]
     DoubleQuotedText,
+    #[strum(message = "Dimmed style for secondary and decorative text")]
     SecondaryText,
+    #[strum(message = "Style for inline history suggestions shown after the cursor")]
     InlineSuggestion,
+    #[strum(message = "Style for tutorial hint text")]
     TutorialHint,
+    #[strum(message = "Highlight style for characters matched by fuzzy search")]
     MatchingChar,
+    #[strum(message = "Style for matched opening/closing bracket or quote pairs")]
     OpeningAndClosingPair,
+    #[strum(message = "Default style for unclassified command buffer text")]
     NormalText,
+    #[strum(message = "Syntax highlighting for shell comments (text after #)")]
     Comment,
+    #[strum(message = "Syntax highlighting for environment variable references (e.g. $HOME)")]
     EnvVar,
+    #[strum(message = "Style for level-1 Markdown headings (# heading)")]
     MarkdownHeading1,
+    #[strum(message = "Style for level-2 Markdown headings (## heading)")]
     MarkdownHeading2,
+    #[strum(message = "Style for level-3 Markdown headings (### heading)")]
     MarkdownHeading3,
+    #[strum(message = "Style for inline code spans in Markdown")]
     MarkdownCode,
+    #[strum(message = "Style used to render key sequences in the UI")]
     KeySequenceStyle,
+    #[strum(message = "Highlight style for the current text selection")]
     SelectedText,
+    #[strum(message = "Syntax highlighting for bash reserved words (e.g. if, while, for)")]
     BashReserved,
 }
 
@@ -404,5 +426,76 @@ impl Palette {
 impl Default for Palette {
     fn default() -> Self {
         Self::dark()
+    }
+}
+
+/// Tab-completion for the `NAME=STYLE` arguments of `flyline set-style`.
+///
+/// Yields each [`PaletteStyleKind`] name (in kebab-case) with `=` appended and
+/// `NO_SUFFIX` so that flyline's completion engine suppresses the trailing
+/// space, allowing the user to type the style value immediately after the `=`.
+///
+/// When the current token already contains `=` the user is typing the style
+/// value (a free-form rich-style string), so no candidates are returned.
+pub fn possible_style_name_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    let current = current.to_string_lossy().to_string();
+    if current.contains('=') {
+        return Vec::new();
+    }
+    let current_lower = current.to_lowercase();
+    PaletteStyleKind::iter()
+        .filter_map(|kind| {
+            let name = kind.to_string();
+            if name.to_lowercase().contains(&current_lower) {
+                let candidate = CompletionCandidate::new(format!("{}=NO_SUFFIX", name))
+                    .help(kind.get_message().map(clap::builder::StyledStr::from));
+                Some(candidate)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_possible_style_name_completions_empty_yields_all() {
+        let values: Vec<String> = possible_style_name_completions(std::ffi::OsStr::new(""))
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().to_string())
+            .collect();
+        assert!(values.contains(&"recognised-command=NO_SUFFIX".to_string()));
+        assert!(values.contains(&"inline-suggestion=NO_SUFFIX".to_string()));
+        assert!(values.contains(&"bash-reserved=NO_SUFFIX".to_string()));
+        assert_eq!(values.len(), PaletteStyleKind::iter().count());
+    }
+
+    #[test]
+    fn test_possible_style_name_completions_partial_filters() {
+        let values: Vec<String> = possible_style_name_completions(std::ffi::OsStr::new("inline"))
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().to_string())
+            .collect();
+        assert!(values.contains(&"inline-suggestion=NO_SUFFIX".to_string()));
+        assert!(!values.contains(&"recognised-command=NO_SUFFIX".to_string()));
+    }
+
+    #[test]
+    fn test_possible_style_name_completions_after_equals_returns_empty() {
+        let values =
+            possible_style_name_completions(std::ffi::OsStr::new("inline-suggestion=bold"));
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn test_possible_style_name_completions_have_help() {
+        let candidates = possible_style_name_completions(std::ffi::OsStr::new("recognised"));
+        assert!(!candidates.is_empty());
+        for c in &candidates {
+            assert!(c.get_help().is_some());
+        }
     }
 }
