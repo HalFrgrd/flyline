@@ -284,7 +284,7 @@ enum Commands {
     ///   double-quoted-text, secondary-text, inline-suggestion, tutorial-hint,
     ///   matching-char, opening-and-closing-pair, normal-text, comment,
     ///   env-var, markdown-heading1, markdown-heading2, markdown-heading3,
-    ///   markdown-code, key-sequence-style, selected-text
+    ///   markdown-code, key-sequence-style, selected-text, bash-reserved
     ///
     /// Examples:
     ///   flyline set-style --default-theme dark

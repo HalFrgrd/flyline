@@ -33,7 +33,8 @@ jobs:
             *.cache-to=type=gha,mode=max
 
       # flyline_help.txt, flyline_create_prompt_widget_animation_help.txt,
-      # flyline_create_prompt_widget_mouse_mode_help.txt, and
+      # flyline_create_prompt_widget_mouse_mode_help.txt,
+      # flyline_create_prompt_widget_copy_buffer_help.txt, and
       # flyline_create_prompt_widget_custom_help.txt are now in the project root (output of extract-help-text)
       - name: Update README between marker comments
         run: |
@@ -69,6 +70,14 @@ jobs:
               "<!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_START -->",
               "<!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_END -->",
               ["<!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_START -->\n", "```\n", *[l + "\n" for l in mouse_mode_help_text.splitlines()], "```\n", "<!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_END -->\n"],
+          )
+
+          copy_buffer_help_text = pathlib.Path("flyline_create_prompt_widget_copy_buffer_help.txt").read_text().rstrip("\n")
+          lines = replace_between_markers(
+              lines,
+              "<!-- FLYLINE_CREATE_PROMPT_WIDGET_COPY_BUFFER_HELP_START -->",
+              "<!-- FLYLINE_CREATE_PROMPT_WIDGET_COPY_BUFFER_HELP_END -->",
+              ["<!-- FLYLINE_CREATE_PROMPT_WIDGET_COPY_BUFFER_HELP_START -->\n", "```\n", *[l + "\n" for l in copy_buffer_help_text.splitlines()], "```\n", "<!-- FLYLINE_CREATE_PROMPT_WIDGET_COPY_BUFFER_HELP_END -->\n"],
           )
 
           custom_help_text = pathlib.Path("flyline_create_prompt_widget_custom_help.txt").read_text().rstrip("\n")

@@ -260,6 +260,40 @@ Options:
 ```
 <!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_END -->
 
+### Copy-buffer widget
+
+The block below is auto-generated from `flyline create-prompt-widget copy-buffer --help`:
+
+<!-- FLYLINE_CREATE_PROMPT_WIDGET_COPY_BUFFER_HELP_START -->
+```
+Show clickable text that copies the current command buffer to the clipboard.
+
+Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
+with TEXT. Clicking the rendered widget copies the current command buffer
+to the clipboard via OSC 52.
+
+Examples:
+  flyline create-prompt-widget copy-buffer '[copy]'
+  # Now use FLYLINE_COPY_BUFFER in your prompt:
+  RPS1=' FLYLINE_COPY_BUFFER'
+
+Usage: flyline create-prompt-widget copy-buffer [OPTIONS] <TEXT>
+
+Arguments:
+  <TEXT>
+          Text to display in the prompt
+
+Options:
+      --name <NAME>
+          Name to embed in prompt strings as the widget placeholder. Defaults to `FLYLINE_COPY_BUFFER`
+          
+          [default: FLYLINE_COPY_BUFFER]
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+<!-- FLYLINE_CREATE_PROMPT_WIDGET_COPY_BUFFER_HELP_END -->
+
 ### Custom command widget
 
 The block below is auto-generated from `flyline create-prompt-widget custom --help`:
