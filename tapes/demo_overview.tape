@@ -136,6 +136,41 @@ Type "# flyline automatically detects the current working directory in your prom
 Enter
 Sleep 800ms
 
+Type `# flyline supports text selection like you would expect in a code editor`
+Enter
+Sleep 800ms
+
+Type `git commit -m a multi word message`
+Sleep 1000ms
+# Press Shift+Left 20 times to select "a multi word message" (20 characters) from the end
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Shift+Left
+Sleep 500ms
+Type `"`
+Sleep 1500ms
+Escape
+Sleep 500ms
+Ctrl+C
+Sleep 800ms
+
 Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
 Enter
 Type `RPS1='\t`

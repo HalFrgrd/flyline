@@ -63,6 +63,8 @@ enum ContextVar {
     MultilineBuffer,
     #[strum(message = "The command buffer starts with an agent mode prefix")]
     BufferHasAgentModePrefix,
+    #[strum(message = "The content mode is normal editing (no overlay is active)")]
+    NormalEditing,
 }
 
 impl ContextVar {
@@ -91,7 +93,7 @@ impl ContextVar {
             ContextVar::TabCompletionMultiColAvailable => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active_suggestions)
-                    if active_suggestions.last_num_visible_cols > 1
+                    if active_suggestions.last_num_data_cols > 1
             ),
             ContextVar::TabCompletionsNoFilteredResults => matches!(
                 &app.content_mode,
@@ -124,6 +126,7 @@ impl ContextVar {
             ContextVar::BufferHasAgentModePrefix => {
                 app.buffer_starts_with_agent_command_prefix().is_some()
             }
+            ContextVar::NormalEditing => matches!(app.content_mode, ContentMode::Normal),
         }
     }
 }
@@ -1808,7 +1811,7 @@ fn capitalize_first(s: &str) -> String {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 84]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     [
@@ -2004,6 +2007,17 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 84]> = LazyLock::new(|| {
             &[KC::Esc.into()],
             ContextVar::Always.into(),
             Action::ToggleMouse,
+        ),
+        // Ctrl+D / Super+D (Cmd+D on macOS): delete character under cursor when
+        // the buffer is non-empty.  The BufferIsEmpty+Ctrl+D binding below takes
+        // precedence on an empty buffer and sends EOF to Bash.
+        Binding::new(
+            &[
+                M::CONTROL + KC::Char('d').into(),
+                M::SUPER + KC::Char('d').into(),
+            ],
+            (!ContextVar::BufferIsEmpty).into(),
+            Action::DeleteRight,
         ),
         Binding::new(
             &[M::CONTROL + KC::Char('d').into()],

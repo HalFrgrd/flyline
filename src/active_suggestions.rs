@@ -730,6 +730,12 @@ pub struct ActiveSuggestions {
     /// Number of columns that were actually visible in the last rendered
     /// grid.  Used to compute the scroll offset.
     pub last_num_visible_cols: usize,
+    /// Total number of data columns (all candidates, regardless of how many
+    /// fit in the viewport).  Used by the `TabCompletionMultiColAvailable`
+    /// context variable so that left/right navigation is enabled whenever
+    /// there is more than one column of candidates, even when the terminal
+    /// is too narrow to show them all simultaneously.
+    pub last_num_data_cols: usize,
     col_window_to_show: StatefulSlidingWindow,
     fuzzy_matcher: ArinaeMatcher,
     /// How long it took to generate the completions.
@@ -754,6 +760,7 @@ impl std::fmt::Debug for ActiveSuggestions {
             )
             .field("last_num_rows_per_col", &self.last_num_rows_per_col)
             .field("last_num_visible_cols", &self.last_num_visible_cols)
+            .field("last_num_data_cols", &self.last_num_data_cols)
             .field("col_window_to_show", &self.col_window_to_show)
             .finish()
     }
@@ -782,6 +789,7 @@ impl ActiveSuggestions {
             word_under_cursor_dequoted: bash_funcs::dequoting_function_rust(&word_under_cursor.s),
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
+            last_num_data_cols: 0,
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
             load_time,
@@ -942,6 +950,7 @@ impl ActiveSuggestions {
         let selected_1d = self.current_1d_index();
         let n = self.filtered_suggestions.len();
         if n == 0 || max_rows == 0 {
+            self.last_num_data_cols = 0;
             return vec![];
         }
 
@@ -955,6 +964,7 @@ impl ActiveSuggestions {
         let mut untruncated_total_width: usize = 0;
 
         let max_col_index = (n - 1) / max_rows;
+        self.last_num_data_cols = max_col_index + 1;
 
         self.col_window_to_show.update_max_index(max_col_index + 1);
         self.col_window_to_show
