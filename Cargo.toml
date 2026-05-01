@@ -21,7 +21,7 @@ unicode-width = { version = "0.2.0", default-features = false }
 unicode-segmentation = "1.13.2"
 itertools = "0.14.0"
 glob = "0.3.3"
-flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "eb1814df591da000a59210b29c125cda5752c852" }
+flash = { git = "https://github.com/HalFrgrd/flash.git", rev = "e661e31c0fb864a993b4add880026b1c4795a84f" }
 skim = { git = "https://github.com/HalFrgrd/skim", rev = "7908ee85a5f6cd49575925fcc0bdef3999409d26", default-features =  false, features = ["algos_only"]}
 lscolors = "0.21.0"
 serde_json = "1.0"

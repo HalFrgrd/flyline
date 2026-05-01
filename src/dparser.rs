@@ -2,8 +2,6 @@ use flash::lexer::{Lexer, Token, TokenKind};
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
 
-
-
 pub fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
     let mut lexer = Lexer::new(input);
     let mut tokens = Vec::new();
@@ -67,6 +65,16 @@ impl Annotations {
     /// Returns `true` if no annotations have been set on this token.
     pub fn is_empty(&self) -> bool {
         *self == Annotations::default()
+    }
+
+    pub fn with_is_inside_single_quotes(mut self) -> Self {
+        self.is_inside_single_quotes = true;
+        self
+    }
+
+    pub fn with_is_inside_double_quotes(mut self) -> Self {
+        self.is_inside_double_quotes = true;
+        self
     }
 }
 
@@ -179,7 +187,7 @@ impl DParser {
         // The index of the last opening nesting token and its kind
         let mut nestings: Vec<(usize, TokenKind)> = Vec::new();
         // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
-        let mut heredocs: VecDeque<(usize, String)> = VecDeque::new();
+        let mut heredocs: VecDeque<(usize, String, bool)> = VecDeque::new();
 
         let mut stop_parsing_at_command_boundary = false;
 
@@ -289,10 +297,11 @@ impl DParser {
                     command_start_stack.push(self.current_command_range.clone());
                     self.current_command_range = None; // set for next word after this
                 }
-                TokenKind::HereDoc{delimiter, ..} | TokenKind::HereDocDash {delimiter, ..} => {
+                TokenKind::HereDoc { delimiter, quoted }
+                | TokenKind::HereDocDash { delimiter, quoted } => {
                     self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
 
-                    heredocs.push_back((idx, delimiter.clone()));
+                    heredocs.push_back((idx, delimiter.clone(), *quoted));
                 }
                 TokenKind::RParen
                 | TokenKind::DoubleRParen
@@ -382,9 +391,18 @@ impl DParser {
                     self.current_command_range = None;
                 }
                 TokenKind::Word(word)
-                    if heredocs.front().is_some_and(|(_, delim)| delim == word) =>
+                    if heredocs
+                        .front()
+                        .is_some_and(|(heredoc_opening_idx, delim, _quoted)| {
+                            let word_matches = delim == word;
+                            let in_a_more_recent_nesting = nestings
+                                .last()
+                                .is_some_and(|(idx, _)| *idx > *heredoc_opening_idx);
+
+                            word_matches && !in_a_more_recent_nesting
+                        }) =>
                 {
-                    let (opening_idx, _) = heredocs.pop_front().unwrap();
+                    let (opening_idx, _, _) = heredocs.pop_front().unwrap();
                     self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
                         opening_idx,
                         is_auto_inserted: false,
@@ -426,9 +444,41 @@ impl DParser {
                 }
 
                 _ => {
-                    let in_single_quote =
-                        matches!(nestings.last(), Some((_, TokenKind::SingleQuote)));
-                    let in_double_quote = matches!(nestings.last(), Some((_, TokenKind::Quote)));
+                    let in_single_quote = {
+                        let last_nesting_is_single_quote_idx = nestings
+                            .last()
+                            .filter(|(_, k)| *k == TokenKind::SingleQuote)
+                            .map(|(idx, _)| *idx);
+                        let cur_heredoc_is_quoted_idx = heredocs
+                            .front()
+                            .filter(|(_, _, quoted)| *quoted)
+                            .map(|(idx, _, _)| *idx);
+                        match (last_nesting_is_single_quote_idx, cur_heredoc_is_quoted_idx) {
+                            (Some(nesting_idx), Some(heredoc_idx)) => nesting_idx > heredoc_idx,
+                            (Some(_), None) => true,
+                            (None, Some(_)) => true,
+                            (None, None) => false,
+                        }
+                    };
+                    let in_double_quote = {
+                        let last_nesting_is_double_quote_idx = nestings
+                            .last()
+                            .filter(|(_, k)| *k == TokenKind::Quote)
+                            .map(|(idx, _)| *idx);
+                        let cur_heredoc_is_unquoted_idx = heredocs
+                            .front()
+                            .filter(|(_, _, quoted)| !*quoted)
+                            .map(|(idx, _, _)| *idx);
+                        match (
+                            last_nesting_is_double_quote_idx,
+                            cur_heredoc_is_unquoted_idx,
+                        ) {
+                            (Some(nesting_idx), Some(heredoc_idx)) => nesting_idx > heredoc_idx,
+                            (Some(_), None) => true,
+                            (None, Some(_)) => true,
+                            (None, None) => false,
+                        }
+                    };
 
                     if in_single_quote {
                         self.tokens[idx].annotations.is_inside_single_quotes = true;
@@ -873,11 +923,20 @@ mod tests {
             Some(OpeningState::Matched(12))
         );
         assert_eq!(tokens[5].token.value, "\n");
-        assert_eq!(tokens[5].annotations, Annotations::default());
+        assert_eq!(
+            tokens[5].annotations,
+            Annotations::default().with_is_inside_double_quotes()
+        );
         assert_eq!(tokens[6].token.value, "line1");
-        assert_eq!(tokens[6].annotations, Annotations::default());
+        assert_eq!(
+            tokens[6].annotations,
+            Annotations::default().with_is_inside_double_quotes()
+        );
         assert_eq!(tokens[7].token.value, "\n");
-        assert_eq!(tokens[7].annotations, Annotations::default());
+        assert_eq!(
+            tokens[7].annotations,
+            Annotations::default().with_is_inside_double_quotes()
+        );
         assert_eq!(tokens[8].token.value, "A");
         assert_eq!(
             tokens[8].annotations.closing,
@@ -887,11 +946,20 @@ mod tests {
             })
         );
         assert_eq!(tokens[9].token.value, "\n");
-        assert_eq!(tokens[9].annotations, Annotations::default());
+        assert_eq!(
+            tokens[9].annotations,
+            Annotations::default().with_is_inside_double_quotes()
+        );
         assert_eq!(tokens[10].token.value, "line2");
-        assert_eq!(tokens[10].annotations, Annotations::default());
+        assert_eq!(
+            tokens[10].annotations,
+            Annotations::default().with_is_inside_double_quotes()
+        );
         assert_eq!(tokens[11].token.value, "\n");
-        assert_eq!(tokens[11].annotations, Annotations::default());
+        assert_eq!(
+            tokens[11].annotations,
+            Annotations::default().with_is_inside_double_quotes()
+        );
         assert_eq!(tokens[12].token.value, "B");
         assert_eq!(
             tokens[12].annotations.closing,
@@ -1506,6 +1574,36 @@ mod tests {
                 is_auto_inserted: false,
             })
         );
+    }
+
+    #[test]
+    fn test_heredoc_before_open_quote() {
+        // Partially-quoted delimiter: E'O'F is equivalent to EOF.
+        let input = "cat <<E'O'F'\nhello\nEOF\n";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        assert_eq!(
+            tokens[2].token.kind,
+            TokenKind::HereDoc {
+                delimiter: "EOF".to_string(),
+                quoted: true
+            }
+        );
+        assert_eq!(tokens[2].token.value, "<<E'O'F");
+        assert!(tokens[2].annotations.opening == Some(OpeningState::Unmatched));
+
+        assert_eq!(tokens[3].token.kind, TokenKind::SingleQuote);
+        assert_eq!(tokens[4].token.kind, TokenKind::Newline);
+        assert_eq!(tokens[5].token.kind, TokenKind::Word("hello".to_string()));
+        assert_eq!(tokens[6].token.kind, TokenKind::Newline);
+        // This is just a plain word, not a closing token for the heredoc because the stray ' after the delim opens a multiline single-quoted string that isn't closed until the end of the buffer. The heredoc is left unmatched.
+        assert_eq!(tokens[7].token.kind, TokenKind::Word("EOF".to_string()));
     }
 
     #[test]
