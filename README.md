@@ -463,6 +463,7 @@ The block below is auto-generated from `flyline --help`:
 Usage: flyline [OPTIONS] [COMMAND]
 
 Commands:
+  time                  Print a timestamp.
   set-agent-mode        Configure AI agent mode.
   create-prompt-widget  Create a custom prompt widget.
   set-style             Configure the colour palette.
