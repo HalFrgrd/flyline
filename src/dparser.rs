@@ -445,36 +445,41 @@ impl DParser {
 
                 _ => {
                     let in_single_quote = {
-                        let last_nesting_is_single_quote_idx = nestings
+                        let last_nesting_should_single_quote_idx = nestings
                             .last()
-                            .filter(|(_, k)| *k == TokenKind::SingleQuote)
-                            .map(|(idx, _)| *idx);
+                            .map(|(idx, k)| (*idx, *k == TokenKind::SingleQuote));
                         let cur_heredoc_is_quoted_idx = heredocs
                             .front()
                             .filter(|(_, _, quoted)| *quoted)
                             .map(|(idx, _, _)| *idx);
-                        match (last_nesting_is_single_quote_idx, cur_heredoc_is_quoted_idx) {
-                            (Some(nesting_idx), Some(heredoc_idx)) => nesting_idx > heredoc_idx,
-                            (Some(_), None) => true,
+                        match (
+                            last_nesting_should_single_quote_idx,
+                            cur_heredoc_is_quoted_idx,
+                        ) {
+                            (Some((nesting_idx, should_single_quote)), Some(heredoc_idx)) => {
+                                nesting_idx > heredoc_idx && should_single_quote
+                            }
+                            (Some((_, should_single_quote)), None) => should_single_quote,
                             (None, Some(_)) => true,
                             (None, None) => false,
                         }
                     };
                     let in_double_quote = {
-                        let last_nesting_is_double_quote_idx = nestings
+                        let last_nesting_should_double_quote_idx = nestings
                             .last()
-                            .filter(|(_, k)| *k == TokenKind::Quote)
-                            .map(|(idx, _)| *idx);
+                            .map(|(idx, k)| (*idx, *k == TokenKind::Quote));
                         let cur_heredoc_is_unquoted_idx = heredocs
                             .front()
                             .filter(|(_, _, quoted)| !*quoted)
                             .map(|(idx, _, _)| *idx);
                         match (
-                            last_nesting_is_double_quote_idx,
+                            last_nesting_should_double_quote_idx,
                             cur_heredoc_is_unquoted_idx,
                         ) {
-                            (Some(nesting_idx), Some(heredoc_idx)) => nesting_idx > heredoc_idx,
-                            (Some(_), None) => true,
+                            (Some((nesting_idx, should_double_quote)), Some(heredoc_idx)) => {
+                                nesting_idx > heredoc_idx && should_double_quote
+                            }
+                            (Some((_, should_double_quote)), None) => should_double_quote,
                             (None, Some(_)) => true,
                             (None, None) => false,
                         }
