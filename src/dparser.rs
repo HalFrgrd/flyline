@@ -899,7 +899,7 @@ mod tests {
 
     #[test]
     fn test_heredoc_annotations() {
-        let input = "cat <<A <<-B\nline1\nA\nline2\nB\n";
+        let input = "cat <<A <<-\\B\nline1\nA\nline2\nB\n";
         let mut parser = DParser::from(input);
         parser.walk_to_end();
 
@@ -917,7 +917,7 @@ mod tests {
             Some(OpeningState::Matched(8))
         );
         assert_eq!(tokens[3].token.value, " ");
-        assert_eq!(tokens[4].token.value, "<<-B");
+        assert_eq!(tokens[4].token.value, "<<-\\B");
         assert_eq!(
             tokens[4].annotations.opening,
             Some(OpeningState::Matched(12))
@@ -945,20 +945,24 @@ mod tests {
                 is_auto_inserted: false
             })
         );
+
+        // These ones had a heredoc that was quoted in some way
+        // So the heredoc body should not be expanded.
+        // So I treat it like a single quoted string.
         assert_eq!(tokens[9].token.value, "\n");
         assert_eq!(
             tokens[9].annotations,
-            Annotations::default().with_is_inside_double_quotes()
+            Annotations::default().with_is_inside_single_quotes()
         );
         assert_eq!(tokens[10].token.value, "line2");
         assert_eq!(
             tokens[10].annotations,
-            Annotations::default().with_is_inside_double_quotes()
+            Annotations::default().with_is_inside_single_quotes()
         );
         assert_eq!(tokens[11].token.value, "\n");
         assert_eq!(
             tokens[11].annotations,
-            Annotations::default().with_is_inside_double_quotes()
+            Annotations::default().with_is_inside_single_quotes()
         );
         assert_eq!(tokens[12].token.value, "B");
         assert_eq!(
