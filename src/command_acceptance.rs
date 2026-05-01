@@ -103,6 +103,14 @@ mod tests {
         // Heredoc-dash with quoted delimiter.
         assert_eq!(will_bash_accept_buffer("cat <<-'EOF'\nhello"), false);
         assert_eq!(will_bash_accept_buffer("cat <<-'EOF'\nhello\nEOF"), true);
+
+        // Heredoc followed by a single quote opener
+        assert_eq!(will_bash_accept_buffer("cat <<<'EOF''\nhello\nEOF"), false);
+        // You need to first close the single quote before you can close the heredoc
+        assert_eq!(
+            will_bash_accept_buffer("cat <<<'EOF''\nhello\nEOF'\nfoo\nEOF"),
+            true
+        );
     }
 
     #[test]
