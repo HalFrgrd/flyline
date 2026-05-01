@@ -16,7 +16,7 @@
 When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
-- [Rich prompt customizations, (asynchronous) widgets, animations](#rich-prompts)
+- [Rich prompt customizations, asynchronous widgets, and animations](#rich-prompts)
 - [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
 - [Improvements to Bash's tab completion](#tab-completion-improvements)
@@ -38,7 +38,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 > [!TIP]
 > Quick install:
-> run the following command to automatically download flyline and your `.bashrc` to run the latest version:
+> run the following command to automatically download flyline and update your `.bashrc` to load the latest version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
@@ -104,7 +104,7 @@ Explore this readme and [examples](examples/) for what you can configure.
 Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
 ## PS1
-The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship ](https://starship.rs/) for more information.
+The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship](https://starship.rs/) for more information.
 ![PS1 demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_prompts_ps1.gif)
 ```bash
 PS1='\u@\h:\w$ '
@@ -173,6 +173,7 @@ RPS1='\D{%H:%M}'
 
 Create custom prompt widgets with `flyline create-prompt-widget`.
 Flyline will replace strings in the prompt matching the widget name with the widget's output.
+The available widget types are `animation`, `mouse-mode`, `copy-buffer`, `custom`, and `last-command-duration`.
 
 ### Animations
 
@@ -260,6 +261,16 @@ Options:
 ```
 <!-- FLYLINE_CREATE_PROMPT_WIDGET_MOUSE_MODE_HELP_END -->
 
+### Copy-buffer widget
+
+Render clickable text in your prompt that copies the current command buffer to the clipboard via OSC 52.
+
+```bash
+flyline create-prompt-widget copy-buffer '[copy]'
+# Now use FLYLINE_COPY_BUFFER in your prompt:
+RPS1=' FLYLINE_COPY_BUFFER'
+```
+
 ### Custom command widget
 
 The block below is auto-generated from `flyline create-prompt-widget custom --help`:
@@ -307,6 +318,18 @@ Options:
 ```
 <!-- FLYLINE_CREATE_PROMPT_WIDGET_CUSTOM_HELP_END -->
 
+### Last-command-duration widget
+
+Show how long ago the flyline app last closed. By default it uses the compact `five-chars` format, and you can switch to a Chrono format string with `--format`.
+
+```bash
+flyline create-prompt-widget last-command-duration
+# Now use FLYLINE_LAST_COMMAND_DURATION in your prompt:
+RPS1=' FLYLINE_LAST_COMMAND_DURATION'
+
+flyline create-prompt-widget last-command-duration --format "%H:%M:%S"
+```
+
 
 # Agent mode
 Flyline can interact with your AI agent to suggest commands.
@@ -316,7 +339,7 @@ This allows you to write a command in plain English and your agent will convert 
 
 After setting up your agent with flyline, you can pass the buffer to your agent with Alt+Enter or simply Enter when your command starts with your trigger prefix (e.g. `ai: list files older than three days`).
 
-[See the examples for how to set this up.](examples/agent_mode.sh). Alternatively, press Alt+Enter and flyline will try to configure agent mode for you.
+[See the examples for how to set this up.](examples/agent_mode.sh). If agent mode is not configured yet, pressing Alt+Enter will prompt flyline to help configure it.
 
 Flyline will syntax highlight the suggested commands and render markdown output.
 
