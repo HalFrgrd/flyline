@@ -154,9 +154,21 @@ pub fn complete_flyline_args(
         .map(|annoted_token| annoted_token.token)
         .collect::<Vec<_>>();
 
+
+    use flash::lexer;
+
     let relevant_tokens = tokens
         .into_iter()
         .filter(|x| !x.kind.is_whitespace() || x.byte_range().contains(&cursor_byte))
+        .filter(|x| {
+            !matches!(
+                x.kind,
+                lexer::TokenKind::Comment
+                    | lexer::TokenKind::Newline
+                    | lexer::TokenKind::Quote
+                    | lexer::TokenKind::SingleQuote
+            )
+        })
         .collect::<Vec<_>>();
 
     let args_os_string = relevant_tokens
