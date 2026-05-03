@@ -61,17 +61,21 @@ pub struct Annotations {
     pub command_word: Option<String>,
 }
 
+
 impl Annotations {
     /// Returns `true` if no annotations have been set on this token.
-    pub fn is_empty(&self) -> bool {
+    #[allow(dead_code)]
+    pub fn has_no_annotations(&self) -> bool {
         *self == Annotations::default()
     }
 
+    #[allow(dead_code)]
     pub fn with_is_inside_single_quotes(mut self) -> Self {
         self.is_inside_single_quotes = true;
         self
     }
-
+    
+    #[allow(dead_code)]
     pub fn with_is_inside_double_quotes(mut self) -> Self {
         self.is_inside_double_quotes = true;
         self
