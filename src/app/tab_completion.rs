@@ -228,24 +228,6 @@ fn common_prefix_of_suggestions(suggestions: &mut [MaybeProcessedSuggestion]) ->
     }
 }
 
-fn post_process_completions(
-    completions: Vec<String>,
-    comp_resultflags: bash_funcs::CompletionFlags,
-    word_under_cursor: &str,
-) -> Vec<MaybeProcessedSuggestion> {
-    completions
-        .into_iter()
-        .map(|sug| {
-            MaybeProcessedSuggestion::Unprocessed(UnprocessedSuggestion {
-                raw_text: sug,
-                full_path: None,
-                flags: comp_resultflags,
-                word_under_cursor: word_under_cursor.to_string(),
-            })
-        })
-        .collect()
-}
-
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
     cursor_config: &crate::cursor::CursorConfig,
@@ -407,11 +389,19 @@ pub(crate) fn gen_completions_internal(
                             );
                             log::debug!("Completions: {:#?}", comp_result);
 
-                            let suggestions = post_process_completions(
-                                comp_result.completions,
-                                comp_result.flags,
-                                word_under_cursor.as_ref(),
-                            );
+                            let suggestions = comp_result
+                                .completions
+                                .into_iter()
+                                .map(|sug| {
+                                    MaybeProcessedSuggestion::Unprocessed(UnprocessedSuggestion {
+                                        raw_text: sug,
+                                        full_path: None,
+                                        flags: comp_result.flags,
+                                        word_under_cursor: word_under_cursor.as_ref().to_string(),
+                                    })
+                                })
+                                .collect();
+
                             return Some((suggestions, REPLACE_WITH_COMMON_PREFIX));
                         }
                         Ok(comp_result) => {
@@ -832,10 +822,15 @@ impl App<'_> {
                 );
             }
             let result = suggestions.map(|(mut sugs, replace_with_common_prefix)| {
-                active_suggestions::process_chunk(&mut sugs);
+                let all_processed = active_suggestions::try_process_suggestions(&mut sugs);
+                if !all_processed {
+                    log::debug!(
+                        "Not all suggestions were fully processed; skipping common prefix calculation"
+                    );
+                }
                 let common_prefix =
-                    if replace_with_common_prefix && sugs.iter().all(|s| s.is_processed()) {
-                        common_prefix_of_suggestions(&mut sugs)
+                    if replace_with_common_prefix  && all_processed {
+                            common_prefix_of_suggestions(&mut sugs)
                     } else {
                         None
                     };

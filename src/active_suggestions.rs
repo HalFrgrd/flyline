@@ -706,21 +706,19 @@ impl MaybeProcessedSuggestion {
         }
     }
 
-    pub fn is_processed(&self) -> bool {
-        matches!(self, MaybeProcessedSuggestion::Processed(_))
-    }
 }
 
 const CHUNK_PROCESSING_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
 
-pub fn process_chunk(suggestions: &mut Vec<MaybeProcessedSuggestion>) {
+pub fn try_process_suggestions(suggestions: &mut Vec<MaybeProcessedSuggestion>) -> bool {
     let start_time = std::time::Instant::now();
     for sug in suggestions.iter_mut() {
-        sug.processed();
         if start_time.elapsed() > CHUNK_PROCESSING_TIMEOUT {
-            break;
+            return false;
         }
+        sug.processed();
     }
+    true
 }
 
 /// Split a raw completion string into the completion text and description frames.
@@ -767,7 +765,6 @@ pub struct ActiveSuggestions {
     pub selected_row: usize,
     pub selected_col: usize,
     pub word_under_cursor: SubString,
-    word_under_cursor_dequoted: String,
     /// Number of suggestion rows per column as used in the last rendered
     /// grid.  Kept in sync by [`update_grid_size`].
     last_num_rows_per_col: usize,
@@ -802,10 +799,6 @@ impl std::fmt::Debug for ActiveSuggestions {
             .field("selected_row", &self.selected_row)
             .field("selected_col", &self.selected_col)
             .field("word_under_cursor", &self.word_under_cursor)
-            .field(
-                "word_under_cursor_dequoted",
-                &self.word_under_cursor_dequoted,
-            )
             .field("last_num_rows_per_col", &self.last_num_rows_per_col)
             .field("last_num_visible_cols", &self.last_num_visible_cols)
             .field("last_num_data_cols", &self.last_num_data_cols)
@@ -848,7 +841,6 @@ impl ActiveSuggestions {
             selected_row: 0,
             selected_col: 0,
             word_under_cursor: word_under_cursor.clone(),
-            word_under_cursor_dequoted: bash_funcs::dequoting_function_rust(&word_under_cursor.s),
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
             last_num_data_cols: 0,
@@ -858,11 +850,11 @@ impl ActiveSuggestions {
             should_fuzzy_match: true,
         };
 
-        active_sug.update_word_under_cursor(&word_under_cursor);
+        active_sug.update_fuzzy_filtered();
 
         if active_sug.filtered_suggestions_len() == 0 {
             active_sug.should_fuzzy_match = false;
-            active_sug.update_word_under_cursor(&word_under_cursor);
+            active_sug.update_fuzzy_filtered();
         }
         active_sug
     }
@@ -892,7 +884,6 @@ impl ActiveSuggestions {
     }
 
     pub fn on_tab(&mut self, shift_tab: bool) {
-        // Logic to handle tab key when active suggestions are present
         if shift_tab {
             self.on_up_arrow();
         } else {
@@ -908,7 +899,7 @@ impl ActiveSuggestions {
     }
 
     /// Set the selected position from a flat (1-D) suggestion index.
-    fn set_from_1d_index(&mut self, idx: usize) {
+    pub fn set_selected_by_idx(&mut self, idx: usize) {
         if self.last_num_rows_per_col == 0 {
             self.selected_row = idx;
             self.selected_col = 0;
@@ -935,7 +926,6 @@ impl ActiveSuggestions {
         }
     }
 
-    // TODO arrow keys when not all suggestions are visible
     pub fn on_right_arrow(&mut self) {
         let n = self.filtered_suggestions.len();
         if n == 0 || self.last_num_rows_per_col == 0 {
@@ -1021,10 +1011,6 @@ impl ActiveSuggestions {
         }
     }
 
-    pub fn set_selected_by_idx(&mut self, idx: usize) {
-        self.set_from_1d_index(idx);
-    }
-
     /// Return the portion of the suggestions grid that fits within the given
     /// terminal width, starting from column `col_offset`.
     pub fn into_grid(
@@ -1037,7 +1023,7 @@ impl ActiveSuggestions {
         // rendering so they become available in subsequent frames.
         let newly_processed = self.process_chunk();
         if !newly_processed.is_empty() {
-            self.fuzzy_match_and_append(newly_processed);
+            self.update_fuzzy_filtered();
         }
 
         let selected_1d = self.current_1d_index();
@@ -1206,36 +1192,17 @@ impl ActiveSuggestions {
             })
     }
 
-    /// Fuzzy-match the suggestions in `range` (indices into
-    /// `processed_suggestions`) and append the matches into
-    /// `filtered_suggestions`, keeping the list sorted by descending score.
-    fn fuzzy_match_and_append(&mut self, range: std::ops::Range<usize>) {
-        for idx in range {
-            let sug = &self.processed_suggestions[idx];
-            if let Some(fi) = self.fuzzy_match_for_processed(idx, sug) {
-                self.filtered_suggestions.push(fi);
-            }
-        }
-        self.filtered_suggestions
-            .sort_by(|a, b| b.score.cmp(&a.score));
+    pub fn update_word_under_cursor(&mut self, new_word_under_cursor: &SubString) {
+        self.word_under_cursor = new_word_under_cursor.clone();
+        self.update_fuzzy_filtered();
     }
 
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
-    pub fn update_word_under_cursor(&mut self, new_word_under_cursor: &SubString) {
-        self.word_under_cursor = new_word_under_cursor.clone();
-        self.word_under_cursor_dequoted =
-            bash_funcs::dequoting_function_rust(&self.word_under_cursor.s);
-
-        // Try to convert another chunk of unprocessed suggestions before
-        // re-filtering so they participate in the new fuzzy match.
-        self.process_chunk();
-
+    fn update_fuzzy_filtered(&mut self) {
         let raw_pattern = self.word_under_cursor.s.as_str();
-        let dequoted_pattern = &self.word_under_cursor_dequoted;
         log::debug!(
-            "Applying fuzzy filter with raw_pattern {:?} and dequoted_pattern {:?} on {} processed suggestions ({} still unprocessed)",
+            "Applying fuzzy filter with raw_pattern {:?} on {} processed suggestions ({} still unprocessed)",
             raw_pattern,
-            dequoted_pattern,
             self.processed_suggestions.len(),
             self.unprocessed_suggestions.len()
         );
