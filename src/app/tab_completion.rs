@@ -722,7 +722,7 @@ fn tab_complete_fuzzy_filename(
             // Match only against the last path segment so that e.g. the
             // directory prefix doesn't inflate the score.
             let match_text = sug.match_text();
-            let filename = match_text.rsplit('/').next().unwrap_or(match_text);
+            let filename = match_text.rsplit('/').next().unwrap_or(&match_text);
             matcher
                 .fuzzy_match(filename, &dequoted_fragment)
                 .map(|score| (score, sug))
@@ -1138,6 +1138,14 @@ impl App<'_> {
             &[
                 &ProcessedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
                 &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
+            ],
+        );
+
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/spaces",
+            &[
+                &ProcessedSuggestion::new(r#"$PWD/file\ with\ spaces.txt"#, "", " "),
+                &ProcessedSuggestion::new(r#"$PWD/many\ spaces\ here/"#, "", ""),
             ],
         );
 

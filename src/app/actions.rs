@@ -3218,7 +3218,7 @@ mod tests {
     #[test]
     fn test_context_expr_parse_new_vars() {
         let e = ContextExpr::try_from(
-            "bufferIsEmpty+tabCompletionsNoFilteredResults+tabCompletionsNoResults+multilineBuffer",
+            "bufferIsEmpty+tabCompletionNoFilteredResults+tabCompletionNoResults+multilineBuffer",
         )
         .unwrap();
         assert!(e.literals[0].var == ContextVar::BufferIsEmpty);
@@ -3298,7 +3298,7 @@ mod tests {
     fn test_action_id_from_str_known() {
         assert!(Action::try_from("submitOrNewline").unwrap() == Action::SubmitOrNewline);
         assert!(
-            Action::try_from("acceptInlineSuggestion").unwrap() == Action::InlineSuggestionAccept
+            Action::try_from("inlineSuggestionAccept").unwrap() == Action::InlineSuggestionAccept
         );
     }
 
@@ -3319,7 +3319,7 @@ mod tests {
     fn test_binding_try_new_from_strs_compound_context() {
         let b = Binding::try_new_from_strs(
             "Tab",
-            "inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion",
+            "inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept",
         )
         .unwrap();
         assert!(b.action == Action::InlineSuggestionAccept);
