@@ -1,5 +1,6 @@
 use crate::active_suggestions::{
-    ActiveSuggestions, MaybeProcessedSuggestion, ProcessedSuggestion, SuggestionDescription,
+    self, ActiveSuggestions, MaybeProcessedSuggestion, ProcessedSuggestion, SuggestionDescription,
+    UnprocessedSuggestion,
 };
 use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
@@ -196,22 +197,12 @@ fn expand_alias_for_completion(
 
 /// Very important that we post process these now since we want to operate on their final form
 /// that will be inserted into the buffer.
-///
-/// Returns `None` either when there is no common prefix or when `exit_flag` is set to `true`
-/// during iteration (i.e. tab completion has been cancelled).
-fn common_prefix_of_suggestions(
-    suggestions: &mut [MaybeProcessedSuggestion],
-    exit_flag: &std::sync::atomic::AtomicBool,
-) -> Option<String> {
+fn common_prefix_of_suggestions(suggestions: &mut [MaybeProcessedSuggestion]) -> Option<String> {
     let mut first_text: Option<String> = None;
     let mut prefix_byte_len: usize = 0;
 
     for sug in suggestions.iter_mut() {
-        if exit_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            log::debug!("common_prefix_of_suggestions: exit flag set, stopping early");
-            return None;
-        }
-        let text = sug.clone().into_processed().formatted();
+        let text = sug.processed().formatted();
         match first_text {
             None => {
                 prefix_byte_len = text.len();
@@ -245,7 +236,7 @@ fn post_process_completions(
     completions
         .into_iter()
         .map(|sug| {
-            MaybeProcessedSuggestion::Raw(crate::active_suggestions::RawSuggestion {
+            MaybeProcessedSuggestion::Unprocessed(UnprocessedSuggestion {
                 raw_text: sug,
                 full_path: None,
                 flags: comp_resultflags,
@@ -381,7 +372,7 @@ pub(crate) fn gen_completions_internal(
                                         _ => help_description(),
                                     };
 
-                                    MaybeProcessedSuggestion::Ready(
+                                    MaybeProcessedSuggestion::Processed(
                                         ProcessedSuggestion::new(&value, prefix, suffix)
                                             .with_description(description),
                                     )
@@ -446,7 +437,7 @@ pub(crate) fn gen_completions_internal(
                     return Some((
                         ProcessedSuggestion::from_string_vec(matching_vars, "", " ")
                             .into_iter()
-                            .map(MaybeProcessedSuggestion::Ready)
+                            .map(MaybeProcessedSuggestion::Processed)
                             .collect(),
                         REPLACE_WITH_COMMON_PREFIX,
                     ));
@@ -466,28 +457,24 @@ pub(crate) fn gen_completions_internal(
             }
             tab_completion_context::CompType::GlobExpansion => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
-                let completions =
+                let mut completions =
                     tab_complete_glob_expansion(word_under_cursor.as_ref(), comp_res_flags);
 
-                match completions.len() {
-                    0 => {
+                match completions.as_mut_slice() {
+                    [] => {
                         log::debug!(
                             "No glob expansion completions found for pattern: {}",
                             word_under_cursor.as_ref()
                         );
                     }
-                    1 => {
-                        let single_completion =
-                            completions.into_iter().next().unwrap().into_processed();
+                    [single_completion] => {
+                        single_completion.processed();
                         log::debug!(
                             "Only one glob expansion completion found for pattern '{}': '{:?}'",
                             word_under_cursor.as_ref(),
                             single_completion
                         );
-                        return Some((
-                            vec![MaybeProcessedSuggestion::Ready(single_completion)],
-                            REPLACE_WITH_COMMON_PREFIX,
-                        ));
+                        return Some((vec![single_completion.clone()], REPLACE_WITH_COMMON_PREFIX));
                     }
                     _ => {
                         // Unlike other completions, if there are multiple glob completions,
@@ -522,11 +509,9 @@ pub(crate) fn gen_completions_internal(
                                 acc
                             });
                         return Some((
-                            vec![MaybeProcessedSuggestion::Ready(ProcessedSuggestion::new(
-                                completions_as_string,
-                                "",
-                                "",
-                            ))],
+                            vec![MaybeProcessedSuggestion::Processed(
+                                ProcessedSuggestion::new(completions_as_string, "", ""),
+                            )],
                             REPLACE_WITH_COMMON_PREFIX,
                         ));
                     }
@@ -592,7 +577,7 @@ fn tab_complete_first_word(command: &str) -> Vec<MaybeProcessedSuggestion> {
         res = bash_funcs::get_fuzzy_first_word_completions(command);
         return ProcessedSuggestion::from_string_vec(res, "", " ")
             .into_iter()
-            .map(MaybeProcessedSuggestion::Ready)
+            .map(MaybeProcessedSuggestion::Processed)
             .collect();
     }
 
@@ -601,7 +586,7 @@ fn tab_complete_first_word(command: &str) -> Vec<MaybeProcessedSuggestion> {
     res.dedup();
     ProcessedSuggestion::from_string_vec(res, "", " ")
         .into_iter()
-        .map(MaybeProcessedSuggestion::Ready)
+        .map(MaybeProcessedSuggestion::Processed)
         .collect()
 }
 
@@ -667,14 +652,14 @@ fn tab_complete_glob_expansion(
                 continue;
             }
 
-            results.push(MaybeProcessedSuggestion::Raw(
-                crate::active_suggestions::RawSuggestion {
+            results.push(MaybeProcessedSuggestion::Unprocessed(
+                UnprocessedSuggestion {
                     raw_text: unexpanded,
                     full_path: Some(path),
                     flags: comp_resultflags,
                     // The glob expansion path already preserves the raw prefix in
                     // `unexpanded` via PathPatternExpansion; pass "" here so
-                    // post_process_completion doesn't attempt a second
+                    // into_processed doesn't attempt a second
                     // prefix split (filename_quoting_desired is false anyway).
                     word_under_cursor: String::new(),
                 },
@@ -745,27 +730,22 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
         return vec![];
     };
 
-    // `~` alone — suggest the current user's home directory as `~/`
-    // if user_pattern.is_empty() {
-    //     return vec![MaybeProcessedSuggestion::Ready(ProcssedSuggestion::new(
-    //         "~/", "", "",
-    //     ))];
-    // }
-
     // `~username` — find matching users from the users module
     let mut suggestions = Vec::new();
 
     for user in users::get_all_users() {
         if user.username.starts_with(user_pattern) {
-            suggestions.push(MaybeProcessedSuggestion::Ready(ProcessedSuggestion::new(
-                if user.home_dir.ends_with('/') {
-                    user.home_dir.clone()
-                } else {
-                    format!("{}/", user.home_dir)
-                },
-                "",
-                "",
-            )));
+            suggestions.push(MaybeProcessedSuggestion::Processed(
+                ProcessedSuggestion::new(
+                    if user.home_dir.ends_with('/') {
+                        user.home_dir.clone()
+                    } else {
+                        format!("{}/", user.home_dir)
+                    },
+                    "",
+                    "",
+                ),
+            ));
         }
     }
 
@@ -843,12 +823,6 @@ impl App<'_> {
 
         let start_time = std::time::Instant::now();
 
-        // Create the exit flag.  It is set to `false` now (at spawn time) and will be
-        // set to `true` automatically when the `TabCompletionHandle` is dropped (i.e.
-        // when tab completion is cancelled or interrupted in any way).
-        let exit_tab_completion = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let exit_tab_completion_for_thread = exit_tab_completion.clone();
-
         let thread_handle = std::thread::spawn(move || {
             let suggestions = gen_completions_internal(&completion_context_owned, &cursor_settings);
             if suggestions.is_none() {
@@ -858,10 +832,10 @@ impl App<'_> {
                 );
             }
             let result = suggestions.map(|(mut sugs, replace_with_common_prefix)| {
-                const MAX_FOR_COMMON_PREFIX: usize = 1000;
+                active_suggestions::process_chunk(&mut sugs);
                 let common_prefix =
-                    if replace_with_common_prefix && sugs.len() < MAX_FOR_COMMON_PREFIX {
-                        common_prefix_of_suggestions(&mut sugs, &exit_tab_completion_for_thread)
+                    if replace_with_common_prefix && sugs.iter().all(|s| s.is_processed()) {
+                        common_prefix_of_suggestions(&mut sugs)
                     } else {
                         None
                     };
@@ -890,7 +864,6 @@ impl App<'_> {
                     handle: TabCompletionHandle {
                         receiver: rx,
                         thread: Some(thread_handle),
-                        exit_tab_completion,
                     },
                     wuc_substring,
                     start_time,

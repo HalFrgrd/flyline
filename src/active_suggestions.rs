@@ -315,7 +315,7 @@ mod description_tests {
 
     #[test]
     fn raw_match_text_strips_description() {
-        let item = RawSuggestion {
+        let item = UnprocessedSuggestion {
             raw_text: "git-commit\tRecord changes".to_string(),
             full_path: None,
             flags: crate::bash_funcs::CompletionFlags::default(),
@@ -326,7 +326,7 @@ mod description_tests {
 
     #[test]
     fn raw_match_text_no_tab_unchanged() {
-        let item = RawSuggestion {
+        let item = UnprocessedSuggestion {
             raw_text: "git-commit".to_string(),
             full_path: None,
             flags: crate::bash_funcs::CompletionFlags::default(),
@@ -496,20 +496,20 @@ impl Ord for ProcessedSuggestion {
 }
 
 /// Raw completion from bash plus the metadata needed to post-process it into
-/// a [`ProcessedSuggestion`] via [`post_process_completion`].
+/// a [`ProcessedSuggestion`] via [`into_processed`].
 ///
 /// The expensive filesystem calls (`is_dir`, `style_for_path`,
 /// `fully_expand_path`) only happen when this is converted to a
 /// [`ProcessedSuggestion`].
-#[derive(Debug, Clone)]
-pub struct RawSuggestion {
+#[derive(Debug, Clone, Default)]
+pub struct UnprocessedSuggestion {
     pub raw_text: String,
     pub full_path: Option<PathBuf>,
     pub flags: bash_funcs::CompletionFlags,
     pub word_under_cursor: String,
 }
 
-impl RawSuggestion {
+impl UnprocessedSuggestion {
     /// The text used for sorting/dedup of raw completions before processing.
     /// Strips any tab-separated description suffix.
     pub fn match_text(&self) -> &str {
@@ -519,49 +519,206 @@ impl RawSuggestion {
             .unwrap_or(&self.raw_text)
     }
 
-    /// Convert this raw completion into a [`ProcessedSuggestion`] by running
-    /// the (potentially expensive) post-processing logic.
+    /// Post-process a single raw completion string into a [`ProcessedSuggestion`].
+    ///
+    /// This performs quoting, filesystem checks (`is_dir`, `style_for_path`), and
+    /// suffix computation.  Expensive for filenames due to syscalls; call lazily.
+    ///
+    /// If `raw_sug` contains tab characters the text before the first tab is the
+    /// completion value; the remaining tab-separated segments are treated as
+    /// animation frames for the description (used when no higher-priority
+    /// description type applies).
     pub fn into_processed(self) -> ProcessedSuggestion {
-        post_process_completion(
-            &self.raw_text,
-            self.full_path,
-            self.flags,
-            &self.word_under_cursor,
-        )
+        let raw_sug = &self.raw_text;
+        let mut path_to_use = self.full_path;
+        let comp_result_flags = self.flags;
+        let word_under_cursor = &self.word_under_cursor;
+
+        let (sug, desc_frames) = split_completion_description(raw_sug);
+        let mut sug = sug.to_string();
+
+        if comp_result_flags.filename_completion_desired {
+            if path_to_use.is_none() {
+                path_to_use = Some(std::path::PathBuf::from(bash_funcs::fully_expand_path(
+                    &sug,
+                )));
+            }
+        }
+
+        let suffix_char = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
+            sug = format!("{}/", sug);
+            None
+        } else if comp_result_flags.quote_type.is_some_and(|q| {
+            q == bash_funcs::QuoteType::SingleQuote || q == bash_funcs::QuoteType::DoubleQuote
+        }) {
+            // If we put a space after a filename that is quoted, bash thinks we want a filename ending in a space.
+            None
+        } else if comp_result_flags.no_suffix_desired {
+            None
+        } else if comp_result_flags.suffix_character == ' ' {
+            if sug.ends_with(" ") { None } else { Some(' ') }
+        } else {
+            Some(comp_result_flags.suffix_character)
+        };
+
+        let quoted = if comp_result_flags.filename_quoting_desired
+            && comp_result_flags.filename_completion_desired
+        {
+            if !word_under_cursor.is_empty()
+                && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
+            {
+                let quoted_suffix = bash_funcs::quoting_function_rust(
+                    new_suffix,
+                    comp_result_flags.quote_type.unwrap_or_default(),
+                    true,
+                    false,
+                );
+                format!("{}{}", word_under_cursor, quoted_suffix)
+            } else {
+                bash_funcs::quoting_function_rust(
+                    &sug,
+                    comp_result_flags.quote_type.unwrap_or_default(),
+                    true,
+                    false,
+                )
+            }
+        } else {
+            sug.to_string()
+        };
+
+        let (quoted_no_prefix, prefix) = {
+            // wuc_prefix does not depend on sug. only wuc
+            let wuc_prefix = if comp_result_flags.filename_completion_desired {
+                if !word_under_cursor.contains("/") {
+                    "".to_string()
+                } else if word_under_cursor.ends_with("/") {
+                    word_under_cursor.to_string()
+                } else {
+                    let parent = Path::new(word_under_cursor)
+                        .parent()
+                        .and_then(|p| p.to_str())
+                        .map(|s| {
+                            if !s.ends_with("/") {
+                                format!("{}/", s)
+                            } else {
+                                s.to_string()
+                            }
+                        });
+
+                    if let Some(p) = parent {
+                        p
+                    } else {
+                        "".to_string()
+                    }
+                }
+            } else {
+                "".to_string()
+            };
+
+            if let Some(quoted_no_prefix) = quoted.strip_prefix(&wuc_prefix) {
+                (quoted_no_prefix.to_string(), wuc_prefix)
+            } else {
+                (quoted.to_string(), "".to_string())
+            }
+        };
+
+        let style = path_to_use
+            .as_ref()
+            .and_then(|p| bash_funcs::style_for_path(p));
+        let mtime = path_to_use
+            .as_ref()
+            .and_then(|p| p.metadata().ok())
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs());
+
+        // Determine description type by priority:
+        let description = if let Some(ts) = mtime {
+            SuggestionDescription::LastMTime(ts)
+        } else if let Some(easing) = CursorEasing::try_from_value_name(&sug) {
+            SuggestionDescription::Animation(easing_animation_frames(easing))
+        } else if !desc_frames.is_empty() {
+            SuggestionDescription::Animation(
+                desc_frames
+                    .into_iter()
+                    .map(|f| ansi_string_to_spans(&f))
+                    .collect(),
+            )
+        } else {
+            SuggestionDescription::Static(vec![])
+        };
+
+        let suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();
+        let suggestion = ProcessedSuggestion::new(quoted_no_prefix, prefix, &suffix_str)
+            .with_description(description);
+        match style {
+            Some(s) => suggestion.with_style(s),
+            None => suggestion,
+        }
     }
 }
 
 /// A completion that may or may not have been post-processed yet.
 ///
-/// The `Ready` variant holds a fully processed [`ProcessedSuggestion`] (used
+/// The `Processed` variant holds a fully processed [`ProcessedSuggestion`] (used
 /// by code paths that produce suggestions directly, e.g. env-var or tilde
 /// expansion).
 ///
-/// The `Raw` variant holds a [`RawSuggestion`] from bash that needs to be run
-/// through [`post_process_completion`] before it can be rendered.
+/// The `Unprocessed` variant holds a [`UnprocessedSuggestion`] from bash that needs to be run
+/// through [`into_processed`] before it can be rendered.
 #[derive(Debug, Clone)]
 pub enum MaybeProcessedSuggestion {
-    Ready(ProcessedSuggestion),
-    Raw(RawSuggestion),
+    Processed(ProcessedSuggestion),
+    Unprocessed(UnprocessedSuggestion),
 }
 
 impl MaybeProcessedSuggestion {
     /// The text used for sorting/dedup before any post-processing happens.
-    /// For raw items, only the text up to the first tab is considered (the
+    /// For unprocessed items, only the text up to the first tab is considered (the
     /// remainder is a display-only description).
     pub fn match_text(&self) -> &str {
         match self {
-            MaybeProcessedSuggestion::Ready(s) => &s.s,
-            MaybeProcessedSuggestion::Raw(r) => r.match_text(),
+            MaybeProcessedSuggestion::Processed(s) => &s.s,
+            MaybeProcessedSuggestion::Unprocessed(r) => r.match_text(),
         }
     }
 
-    /// Eagerly convert this suggestion into a [`ProcessedSuggestion`], running
+    /// Eagerly process this suggestion in place and return a reference to the
+    /// processed value.
+    pub fn processed(&mut self) -> &ProcessedSuggestion {
+        if let MaybeProcessedSuggestion::Unprocessed(raw) = self {
+            let raw = std::mem::take(raw);
+            *self = MaybeProcessedSuggestion::Processed(raw.into_processed());
+        }
+
+        match self {
+            MaybeProcessedSuggestion::Processed(p) => p,
+            MaybeProcessedSuggestion::Unprocessed(_) => unreachable!(),
+        }
+    }
+
+    /// Convert this suggestion into a [`ProcessedSuggestion`], running
     /// post-processing if necessary.
     pub fn into_processed(self) -> ProcessedSuggestion {
         match self {
-            MaybeProcessedSuggestion::Ready(p) => p,
-            MaybeProcessedSuggestion::Raw(r) => r.into_processed(),
+            MaybeProcessedSuggestion::Processed(p) => p,
+            MaybeProcessedSuggestion::Unprocessed(r) => r.into_processed(),
+        }
+    }
+
+    pub fn is_processed(&self) -> bool {
+        matches!(self, MaybeProcessedSuggestion::Processed(_))
+    }
+}
+
+const CHUNK_PROCESSING_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
+
+pub fn process_chunk(suggestions: &mut Vec<MaybeProcessedSuggestion>) {
+    let start_time = std::time::Instant::now();
+    for sug in suggestions.iter_mut() {
+        sug.processed();
+        if start_time.elapsed() > CHUNK_PROCESSING_TIMEOUT {
+            break;
         }
     }
 }
@@ -581,144 +738,6 @@ pub(crate) fn split_completion_description(raw: &str) -> (&str, Vec<String>) {
     }
 }
 
-/// Post-process a single raw completion string into a [`Suggestion`].
-///
-/// This performs quoting, filesystem checks (`is_dir`, `style_for_path`), and
-/// suffix computation.  Expensive for filenames due to syscalls; call lazily.
-///
-/// If `raw_sug` contains tab characters the text before the first tab is the
-/// completion value; the remaining tab-separated segments are treated as
-/// animation frames for the description (used when no higher-priority
-/// description type applies).
-pub fn post_process_completion(
-    raw_sug: &str,
-    mut path_to_use: Option<std::path::PathBuf>,
-    comp_result_flags: bash_funcs::CompletionFlags,
-    word_under_cursor: &str,
-) -> ProcessedSuggestion {
-    let (sug, desc_frames) = split_completion_description(raw_sug);
-    let mut sug = sug.to_string();
-
-    if comp_result_flags.filename_completion_desired {
-        if path_to_use.is_none() {
-            path_to_use = Some(std::path::PathBuf::from(bash_funcs::fully_expand_path(
-                &sug,
-            )));
-        }
-    }
-
-    let suffix_char = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
-        sug = format!("{}/", sug);
-        None
-    } else if comp_result_flags.quote_type.is_some_and(|q| {
-        q == bash_funcs::QuoteType::SingleQuote || q == bash_funcs::QuoteType::DoubleQuote
-    }) {
-        // If we put a space after a filename that is quoted, bash thinks we want a filename ending in a space.
-        None
-    } else if comp_result_flags.no_suffix_desired {
-        None
-    } else if comp_result_flags.suffix_character == ' ' {
-        if sug.ends_with(" ") { None } else { Some(' ') }
-    } else {
-        Some(comp_result_flags.suffix_character)
-    };
-
-    let quoted = if comp_result_flags.filename_quoting_desired
-        && comp_result_flags.filename_completion_desired
-    {
-        if !word_under_cursor.is_empty()
-            && let Some(new_suffix) = sug.strip_prefix(word_under_cursor)
-        {
-            let quoted_suffix = bash_funcs::quoting_function_rust(
-                new_suffix,
-                comp_result_flags.quote_type.unwrap_or_default(),
-                true,
-                false,
-            );
-            format!("{}{}", word_under_cursor, quoted_suffix)
-        } else {
-            bash_funcs::quoting_function_rust(
-                &sug,
-                comp_result_flags.quote_type.unwrap_or_default(),
-                true,
-                false,
-            )
-        }
-    } else {
-        sug.to_string()
-    };
-
-    let (quoted_no_prefix, prefix) = {
-        // wuc_prefix does not depend on sug. only wuc
-        let wuc_prefix = if comp_result_flags.filename_completion_desired {
-            if !word_under_cursor.contains("/") {
-                "".to_string()
-            } else if word_under_cursor.ends_with("/") {
-                word_under_cursor.to_string()
-            } else {
-                let parent = Path::new(word_under_cursor)
-                    .parent()
-                    .and_then(|p| p.to_str())
-                    .map(|s| {
-                        if !s.ends_with("/") {
-                            format!("{}/", s)
-                        } else {
-                            s.to_string()
-                        }
-                    });
-
-                if let Some(p) = parent {
-                    p
-                } else {
-                    "".to_string()
-                }
-            }
-        } else {
-            "".to_string()
-        };
-
-        if let Some(quoted_no_prefix) = quoted.strip_prefix(&wuc_prefix) {
-            (quoted_no_prefix.to_string(), wuc_prefix)
-        } else {
-            (quoted.to_string(), "".to_string())
-        }
-    };
-
-    let style = path_to_use
-        .as_ref()
-        .and_then(|p| bash_funcs::style_for_path(p));
-    let mtime = path_to_use
-        .as_ref()
-        .and_then(|p| p.metadata().ok())
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs());
-
-    // Determine description type by priority:
-    let description = if let Some(ts) = mtime {
-        SuggestionDescription::LastMTime(ts)
-    } else if let Some(easing) = CursorEasing::try_from_value_name(&sug) {
-        SuggestionDescription::Animation(easing_animation_frames(easing))
-    } else if !desc_frames.is_empty() {
-        SuggestionDescription::Animation(
-            desc_frames
-                .into_iter()
-                .map(|f| ansi_string_to_spans(&f))
-                .collect(),
-        )
-    } else {
-        SuggestionDescription::Static(vec![])
-    };
-
-    let suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();
-    let suggestion = ProcessedSuggestion::new(quoted_no_prefix, prefix, &suffix_str)
-        .with_description(description);
-    match style {
-        Some(s) => suggestion.with_style(s),
-        None => suggestion,
-    }
-}
-
 /// Lightweight entry in the filtered suggestion list.
 ///
 /// Unlike [`SuggestionFormatted`], this stores only the index, score, and
@@ -733,15 +752,11 @@ struct FilteredItem {
     matching_indices: Vec<usize>,
 }
 
-/// Number of unprocessed suggestions converted to processed ones per call to
-/// [`ActiveSuggestions::into_grid`] and during fuzzy matching.
-const PROCESS_CHUNK_SIZE: usize = 1000;
-
 pub struct ActiveSuggestions {
     /// Raw completions waiting to be post-processed.  Drained from the front
     /// in chunks of [`PROCESS_CHUNK_SIZE`] each time [`into_grid`] is called or
     /// fuzzy matching runs.
-    unprocessed_suggestions: VecDeque<RawSuggestion>,
+    unprocessed_suggestions: VecDeque<UnprocessedSuggestion>,
     /// Fully post-processed suggestions.  This is the only collection used by
     /// fuzzy matching, rendering, and acceptance logic.
     processed_suggestions: Vec<ProcessedSuggestion>,
@@ -804,6 +819,7 @@ pub struct ColumnInfo {
     pub width: usize,
     pub is_selected_col: bool,
 }
+
 impl ActiveSuggestions {
     pub fn new<'underlying_buffer>(
         suggestions: Vec<MaybeProcessedSuggestion>,
@@ -817,11 +833,11 @@ impl ActiveSuggestions {
         // queued up in `unprocessed_suggestions` and converted lazily in
         // chunks of PROCESS_CHUNK_SIZE.
         let mut processed_suggestions: Vec<ProcessedSuggestion> = Vec::new();
-        let mut unprocessed_suggestions: VecDeque<RawSuggestion> = VecDeque::new();
+        let mut unprocessed_suggestions: VecDeque<UnprocessedSuggestion> = VecDeque::new();
         for s in suggestions {
             match s {
-                MaybeProcessedSuggestion::Ready(p) => processed_suggestions.push(p),
-                MaybeProcessedSuggestion::Raw(r) => unprocessed_suggestions.push_back(r),
+                MaybeProcessedSuggestion::Processed(p) => processed_suggestions.push(p),
+                MaybeProcessedSuggestion::Unprocessed(r) => unprocessed_suggestions.push_back(r),
             }
         }
 
@@ -855,17 +871,21 @@ impl ActiveSuggestions {
     /// into `processed_suggestions`, returning the range of newly-processed
     /// indices in `processed_suggestions`.
     fn process_chunk(&mut self) -> std::ops::Range<usize> {
-        let to_process = self.unprocessed_suggestions.len().min(PROCESS_CHUNK_SIZE);
-        if to_process == 0 {
+        let max_to_process = self.unprocessed_suggestions.len();
+        if max_to_process == 0 {
             let len = self.processed_suggestions.len();
             return len..len;
         }
         let start = self.processed_suggestions.len();
         // Pop from the front so the original ordering is preserved.  VecDeque
         // makes this O(1) per element.
-        for _ in 0..to_process {
+        let start_time = std::time::Instant::now();
+        for _ in 0..max_to_process {
             if let Some(raw) = self.unprocessed_suggestions.pop_front() {
                 self.processed_suggestions.push(raw.into_processed());
+            }
+            if start_time.elapsed() > CHUNK_PROCESSING_TIMEOUT {
+                break;
             }
         }
         start..self.processed_suggestions.len()

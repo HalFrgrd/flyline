@@ -210,9 +210,6 @@ impl FuzzyHistorySource {
 struct TabCompletionHandle {
     receiver: std::sync::mpsc::Receiver<Option<(Vec<MaybeProcessedSuggestion>, Option<String>)>>,
     thread: Option<std::thread::JoinHandle<()>>,
-    /// Set to `true` when the handle is dropped (i.e. tab completion is cancelled or interrupted),
-    /// signalling the background thread to exit the post-processing loop early.
-    exit_tab_completion: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl std::fmt::Debug for TabCompletionHandle {
@@ -223,8 +220,6 @@ impl std::fmt::Debug for TabCompletionHandle {
 
 impl Drop for TabCompletionHandle {
     fn drop(&mut self) {
-        self.exit_tab_completion
-            .store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(handle) = self.thread.take() {
             if let Err(e) = handle.join() {
                 log::warn!("Tab completion thread panicked: {:?}", e);
