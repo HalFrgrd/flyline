@@ -1061,7 +1061,7 @@ impl Flyline {
                             );
                         }
                         PromptWidgetSubcommands::LastCommandDuration { name } => {
-                            log::info!("Registering last-command-duration widget '{}'", name,);
+                            log::info!("Registering last-command-duration widget '{}'", name);
                             self.settings.custom_prompt_widgets.insert(
                                 name.clone(),
                                 settings::PromptWidget::LastCommandDuration(

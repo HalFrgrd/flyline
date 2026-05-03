@@ -698,13 +698,12 @@ fn make_widget_segment(
             };
             PromptSegment::WidgetCustom { state, base_style }
         }
-        PromptWidget::LastCommandDuration(w) => {
+        PromptWidget::LastCommandDuration(_widget) => {
             // Compute elapsed duration once at construction time; the result
             // is stored as a static string in the segment and reused on every
             // render without further computation.
             let elapsed = last_app_closed_at.map(|t| t.elapsed()).unwrap_or_default();
             let text = crate::content_utils::format_duration(elapsed);
-            let _ = w; // name is used as the placeholder key, not needed here
             PromptSegment::WidgetLastCommandDuration { text, base_style }
         }
     }
