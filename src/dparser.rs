@@ -61,7 +61,6 @@ pub struct Annotations {
     pub command_word: Option<String>,
 }
 
-
 impl Annotations {
     /// Returns `true` if no annotations have been set on this token.
     #[allow(dead_code)]
@@ -74,7 +73,7 @@ impl Annotations {
         self.is_inside_single_quotes = true;
         self
     }
-    
+
     #[allow(dead_code)]
     pub fn with_is_inside_double_quotes(mut self) -> Self {
         self.is_inside_double_quotes = true;

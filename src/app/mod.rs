@@ -881,7 +881,7 @@ impl<'a> App<'a> {
                 self.last_mouse_over_cell = None;
                 // Exit PromptDirSelect mode when clicking on a non-CWD cell
                 // that is within the terminal viewport (not above scrollback).
-                if matches!(mouse.kind, MouseEventKind::Down(_))
+                if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_))
                     && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
                     && !matches!(t, Some((Tag::Ps1PromptCwd(_), _)))
                     && self
@@ -1038,16 +1038,19 @@ impl<'a> App<'a> {
                 }
             }
             Some(Tag::Ps1PromptCwd(idx)) => {
-                if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                    self.content_mode = ContentMode::PromptDirSelect(idx);
-                    handled_mouse_action = true;
-                } else if matches!(mouse.kind, MouseEventKind::Up(_))
+                if matches!(mouse.kind, MouseEventKind::Up(_))
                     && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
                 {
                     Action::PromptDirAcceptEntry.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );
+                    handled_mouse_action = true;
+                } else if matches!(
+                    mouse.kind,
+                    MouseEventKind::Down(_) | MouseEventKind::Drag(_)
+                ) {
+                    self.content_mode = ContentMode::PromptDirSelect(idx);
                     handled_mouse_action = true;
                 }
             }
