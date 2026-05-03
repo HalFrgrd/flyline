@@ -211,7 +211,7 @@ fn common_prefix_of_suggestions(
             log::debug!("common_prefix_of_suggestions: exit flag set, stopping early");
             return None;
         }
-        let text = sug.to_processed_sug().formatted();
+        let text = sug.clone().into_processed().formatted();
         match first_text {
             None => {
                 prefix_byte_len = text.len();
@@ -244,11 +244,13 @@ fn post_process_completions(
 ) -> Vec<MaybeProcessedSuggestion> {
     completions
         .into_iter()
-        .map(|sug| MaybeProcessedSuggestion::Raw {
-            raw_text: sug,
-            full_path: None,
-            flags: comp_resultflags,
-            word_under_cursor: word_under_cursor.to_string(),
+        .map(|sug| {
+            MaybeProcessedSuggestion::Raw(crate::active_suggestions::RawSuggestion {
+                raw_text: sug,
+                full_path: None,
+                flags: comp_resultflags,
+                word_under_cursor: word_under_cursor.to_string(),
+            })
         })
         .collect()
 }
@@ -476,7 +478,7 @@ pub(crate) fn gen_completions_internal(
                     }
                     1 => {
                         let single_completion =
-                            completions.into_iter().next().unwrap().to_processed_sug();
+                            completions.into_iter().next().unwrap().into_processed();
                         log::debug!(
                             "Only one glob expansion completion found for pattern '{}': '{:?}'",
                             word_under_cursor.as_ref(),
@@ -493,7 +495,7 @@ pub(crate) fn gen_completions_internal(
                         // Process each item eagerly here since we need the final text.
                         let completions_as_string = completions
                             .into_iter()
-                            .map(|mut item| item.to_processed_sug())
+                            .map(|item| item.into_processed())
                             .flag_first_last()
                             .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
                                 if !is_first {
@@ -665,16 +667,18 @@ fn tab_complete_glob_expansion(
                 continue;
             }
 
-            results.push(MaybeProcessedSuggestion::Raw {
-                raw_text: unexpanded,
-                full_path: Some(path),
-                flags: comp_resultflags,
-                // The glob expansion path already preserves the raw prefix in
-                // `unexpanded` via PathPatternExpansion; pass "" here so
-                // post_process_completion doesn't attempt a second
-                // prefix split (filename_quoting_desired is false anyway).
-                word_under_cursor: String::new(),
-            });
+            results.push(MaybeProcessedSuggestion::Raw(
+                crate::active_suggestions::RawSuggestion {
+                    raw_text: unexpanded,
+                    full_path: Some(path),
+                    flags: comp_resultflags,
+                    // The glob expansion path already preserves the raw prefix in
+                    // `unexpanded` via PathPatternExpansion; pass "" here so
+                    // post_process_completion doesn't attempt a second
+                    // prefix split (filename_quoting_desired is false anyway).
+                    word_under_cursor: String::new(),
+                },
+            ));
         }
     }
 
@@ -940,8 +944,8 @@ impl App<'_> {
             let mut suggestions: Vec<ProcessedSuggestion> = some_suggestions
                 .unwrap()
                 .0
-                .iter_mut()
-                .map(|item: &mut MaybeProcessedSuggestion| item.to_processed_sug())
+                .into_iter()
+                .map(|item: MaybeProcessedSuggestion| item.into_processed())
                 .collect();
 
             suggestions.sort_by(|a, b| a.s.cmp(&b.s));
