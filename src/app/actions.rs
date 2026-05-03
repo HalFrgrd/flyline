@@ -1676,7 +1676,7 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
             }
 
             let extras: &[&str] = if name.eq_ignore_ascii_case(partial_clean) {
-                &["+", "="]
+                &["=", "+"]
             } else {
                 &[""]
             };

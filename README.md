@@ -290,7 +290,7 @@ Examples:
   PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 
   # Non-blocking with a 10-space placeholder while the new output is being computed.
-  flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder 10
+  flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder prev
 
   # Blocking: waits for the command to finish before showing the prompt.
   flyline create-prompt-widget custom --name CUSTOM_WIDGET2 --command 'run_something.sh' --block

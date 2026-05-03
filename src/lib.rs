@@ -287,7 +287,7 @@ enum Commands {
     ///   flyline create-prompt-widget animation --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
     ///   flyline create-prompt-widget mouse-mode --name FLYLINE_MOUSE_MODE 'mouse is enabled' 'mouse is disabled'
     ///   flyline create-prompt-widget copy-buffer --name COPY_BUFFER '[copy]'
-    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder 10
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder prev
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
     ///   flyline create-prompt-widget last-command-duration
     ///   flyline create-prompt-widget last-command-duration --format "%H:%M:%S"
@@ -681,7 +681,7 @@ enum PromptWidgetSubcommands {
     ///   PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
     ///
     ///   # Non-blocking with a 10-space placeholder while the new output is being computed.
-    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder 10
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder prev
     ///
     ///   # Blocking: waits for the command to finish before showing the prompt.
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET2 --command 'run_something.sh' --block
