@@ -34,14 +34,14 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 # Installation
 
-### Quick install: run `install.sh`
+### Quick install: `install.sh`
 
 > [!TIP]
-> Quick install:
-> run the following command to automatically download flyline and update your `.bashrc` to load the latest version:
+> Run the following command to automatically download flyline and update your `.bashrc` to load the latest version:
 ```bash
 curl -sSfL https://raw.githubusercontent.com/HalFrgrd/flyline/master/install.sh | sh
 ```
+No need for `sudo`!
 
 > [!IMPORTANT]
 > On macOS you must first install a version of bash that supports custom builtins: `brew install bash`
