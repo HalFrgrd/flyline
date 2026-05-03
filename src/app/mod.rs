@@ -210,6 +210,9 @@ impl FuzzyHistorySource {
 struct TabCompletionHandle {
     receiver: std::sync::mpsc::Receiver<Option<(Vec<MaybeProcessedSuggestion>, Option<String>)>>,
     thread: Option<std::thread::JoinHandle<()>>,
+    /// Set to `true` when the handle is dropped (i.e. tab completion is cancelled or interrupted),
+    /// signalling the background thread to exit the post-processing loop early.
+    exit_tab_completion: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl std::fmt::Debug for TabCompletionHandle {
@@ -220,6 +223,8 @@ impl std::fmt::Debug for TabCompletionHandle {
 
 impl Drop for TabCompletionHandle {
     fn drop(&mut self) {
+        self.exit_tab_completion
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(handle) = self.thread.take() {
             if let Err(e) = handle.join() {
                 log::warn!("Tab completion thread panicked: {:?}", e);
@@ -688,7 +693,10 @@ impl<'a> App<'a> {
                 }
                 Ok(None) => true,
                 Err(err) => {
-                    log::info!("Terminal input problem, exiting: {}", err);
+                    log::info!(
+                        "Terminal input problem, setting mode to exiting with EOF: {}",
+                        err
+                    );
                     self.mode = AppRunningState::Exiting(ExitState::EOF);
                     break 'main_loop;
                 }
@@ -1032,6 +1040,10 @@ impl<'a> App<'a> {
             Some(Tag::Ps1PromptCwd(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Down(_)) {
                     self.content_mode = ContentMode::PromptDirSelect(idx);
+                    handled_mouse_action = true;
+                } else if matches!(mouse.kind, MouseEventKind::Up(_))
+                    && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
+                {
                     Action::PromptDirAcceptEntry.run(
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),

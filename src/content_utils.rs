@@ -430,6 +430,47 @@ pub fn duration_to_5chars(duration: std::time::Duration) -> String {
     format!("{:>5}", raw.trim_start_matches('0'))
 }
 
+/// Format a duration as a compact human-readable string for the
+/// last-command-duration prompt widget.
+///
+/// | Range | Example output |
+/// |---|---|
+/// | sub-microsecond | `456ns` |
+/// | microseconds | `124us` |
+/// | milliseconds | `312ms`, `5ms` |
+/// | sub-minute seconds | `9.2s`, `59.2s` |
+/// | minutes + seconds | `1m23s`, `59m02s` |
+/// | hours + minutes + seconds | `1h02m03s` |
+/// | days + hours + minutes | `1d20h43m`, `123d10h05m` |
+pub fn format_duration(duration: std::time::Duration) -> String {
+    let total_ns = duration.as_nanos();
+    let total_secs = duration.as_secs();
+    let total_mins = total_secs / 60;
+    let total_hours = total_secs / 3_600;
+    let total_days = total_secs / 86_400;
+
+    if total_days > 0 {
+        let h = total_hours % 24;
+        let m = total_mins % 60;
+        format!("{}d{:02}h{:02}m", total_days, h, m)
+    } else if total_hours > 0 {
+        let m = total_mins % 60;
+        let s = total_secs % 60;
+        format!("{}h{:02}m{:02}s", total_hours, m, s)
+    } else if total_mins > 0 {
+        let s = total_secs % 60;
+        format!("{}m{:02}s", total_mins, s)
+    } else if total_secs >= 1 {
+        format!("{:.1}s", duration.as_secs_f64())
+    } else if total_ns >= 1_000_000 {
+        format!("{}ms", total_ns / 1_000_000)
+    } else if total_ns >= 1_000 {
+        format!("{}us", total_ns / 1_000)
+    } else {
+        format!("{}ns", total_ns)
+    }
+}
+
 pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
     let duration = std::time::Duration::from_secs(
         std::time::SystemTime::now()
@@ -443,7 +484,7 @@ pub fn ts_to_timeago_string_5chars(ts: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::duration_to_5chars;
+    use super::{duration_to_5chars, format_duration};
     use std::time::Duration;
 
     #[test]
@@ -518,6 +559,57 @@ mod tests {
         assert_eq!(
             duration_to_5chars(Duration::from_secs(100 * 12 * 2_628_003)),
             " OLD "
+        );
+    }
+
+    #[test]
+    fn test_format_duration_nanoseconds() {
+        assert_eq!(format_duration(Duration::from_nanos(456)), "456ns");
+        assert_eq!(format_duration(Duration::from_nanos(1)), "1ns");
+    }
+
+    #[test]
+    fn test_format_duration_microseconds() {
+        assert_eq!(format_duration(Duration::from_micros(124)), "124us");
+        assert_eq!(format_duration(Duration::from_micros(1)), "1us");
+    }
+
+    #[test]
+    fn test_format_duration_milliseconds() {
+        assert_eq!(format_duration(Duration::from_millis(312)), "312ms");
+        assert_eq!(format_duration(Duration::from_millis(5)), "5ms");
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        assert_eq!(format_duration(Duration::from_millis(9_200)), "9.2s");
+        assert_eq!(format_duration(Duration::from_millis(59_200)), "59.2s");
+        assert_eq!(format_duration(Duration::from_secs(1)), "1.0s");
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        assert_eq!(format_duration(Duration::from_secs(60 + 23)), "1m23s");
+        assert_eq!(format_duration(Duration::from_secs(59 * 60 + 2)), "59m02s");
+    }
+
+    #[test]
+    fn test_format_duration_hours() {
+        assert_eq!(
+            format_duration(Duration::from_secs(3600 + 2 * 60 + 3)),
+            "1h02m03s"
+        );
+    }
+
+    #[test]
+    fn test_format_duration_days() {
+        assert_eq!(
+            format_duration(Duration::from_secs(86400 + 20 * 3600 + 43 * 60)),
+            "1d20h43m"
+        );
+        assert_eq!(
+            format_duration(Duration::from_secs(123 * 86400 + 10 * 3600 + 5 * 60)),
+            "123d10h05m"
         );
     }
 }

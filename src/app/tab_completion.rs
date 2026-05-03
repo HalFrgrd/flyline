@@ -196,22 +196,40 @@ fn expand_alias_for_completion(
 
 /// Very important that we post process these now since we want to operate on their final form
 /// that will be inserted into the buffer.
-fn common_prefix_of_suggestions(suggestions: &mut [MaybeProcessedSuggestion]) -> Option<String> {
-    let mut iter = suggestions
-        .iter_mut()
-        .map(|sug| sug.to_processed_sug().formatted());
-    let first_text = iter.next()?;
+///
+/// Returns `None` either when there is no common prefix or when `exit_flag` is set to `true`
+/// during iteration (i.e. tab completion has been cancelled).
+fn common_prefix_of_suggestions(
+    suggestions: &mut [MaybeProcessedSuggestion],
+    exit_flag: &std::sync::atomic::AtomicBool,
+) -> Option<String> {
+    let mut first_text: Option<String> = None;
+    let mut prefix_byte_len: usize = 0;
 
-    let prefix_byte_len = iter.fold(first_text.len(), |acc, text| {
-        let common: usize = first_text
-            .chars()
-            .zip(text.chars())
-            .take_while(|(a, b)| a == b)
-            .map(|(c, _)| c.len_utf8())
-            .sum();
-        acc.min(common)
-    });
+    for sug in suggestions.iter_mut() {
+        if exit_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            log::debug!("common_prefix_of_suggestions: exit flag set, stopping early");
+            return None;
+        }
+        let text = sug.to_processed_sug().formatted();
+        match first_text {
+            None => {
+                prefix_byte_len = text.len();
+                first_text = Some(text);
+            }
+            Some(ref ft) => {
+                let common: usize = ft
+                    .chars()
+                    .zip(text.chars())
+                    .take_while(|(a, b)| a == b)
+                    .map(|(c, _)| c.len_utf8())
+                    .sum();
+                prefix_byte_len = prefix_byte_len.min(common);
+            }
+        }
+    }
 
+    let first_text = first_text?;
     if prefix_byte_len == 0 {
         None
     } else {
@@ -809,6 +827,12 @@ impl App<'_> {
 
         let start_time = std::time::Instant::now();
 
+        // Create the exit flag.  It is set to `false` now (at spawn time) and will be
+        // set to `true` automatically when the `TabCompletionHandle` is dropped (i.e.
+        // when tab completion is cancelled or interrupted in any way).
+        let exit_tab_completion = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let exit_tab_completion_for_thread = exit_tab_completion.clone();
+
         let thread_handle = std::thread::spawn(move || {
             let suggestions = gen_completions_internal(&completion_context_owned, &cursor_settings);
             if suggestions.is_none() {
@@ -821,7 +845,7 @@ impl App<'_> {
                 const MAX_FOR_COMMON_PREFIX: usize = 1000;
                 let common_prefix =
                     if replace_with_common_prefix && sugs.len() < MAX_FOR_COMMON_PREFIX {
-                        common_prefix_of_suggestions(&mut sugs)
+                        common_prefix_of_suggestions(&mut sugs, &exit_tab_completion_for_thread)
                     } else {
                         None
                     };
@@ -850,6 +874,7 @@ impl App<'_> {
                     handle: TabCompletionHandle {
                         receiver: rx,
                         thread: Some(thread_handle),
+                        exit_tab_completion,
                     },
                     wuc_substring,
                     start_time,

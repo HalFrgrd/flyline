@@ -320,14 +320,12 @@ Options:
 
 ### Last-command-duration widget
 
-Show how long ago the flyline app last closed. By default it uses the compact `five-chars` format, and you can switch to a Chrono format string with `--format`.
+Show how long ago the flyline app last closed. The duration is displayed in a compact human-readable format, for example `9.2s`, `1m23s`, `1h02m03s`, `1d20h43m`.
 
 ```bash
 flyline create-prompt-widget last-command-duration
 # Now use FLYLINE_LAST_COMMAND_DURATION in your prompt:
 RPS1=' FLYLINE_LAST_COMMAND_DURATION'
-
-flyline create-prompt-widget last-command-duration --format "%H:%M:%S"
 ```
 
 

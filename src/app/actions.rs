@@ -702,6 +702,7 @@ impl Action {
             Action::Exit => {
                 // We shouldn't check bash_symbols::ignoreeof here.
                 // Bash handles this itself.
+                log::info!("Action::Exit: setting app mode to exiting with EOF");
                 app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
             }
             Action::Cancel => {

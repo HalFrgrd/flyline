@@ -86,20 +86,12 @@ pub struct PromptWidgetCustom {
 
 /// A prompt widget that shows how long ago the flyline app last closed.
 ///
-/// The `format` field controls the output:
-/// * `"five-chars"` (the default) – compact 5-character duration string
-///   produced by [`crate::content_utils::duration_to_5chars`] (e.g. `"01min"`, `"02hou"`).
-/// * Any other string – treated as a Chrono `strftime` format applied to the
-///   absolute local [`chrono::DateTime`] when the app last closed (e.g. `"%H:%M:%S"`).
-///
-/// When the app has not yet closed in the current session the widget renders
-/// `" now "` (five-chars mode) or the current time (format mode).
+/// The elapsed duration is formatted as a compact human-readable string, for
+/// example `9.2s`, `1m23s`, `1h02m03s`, `1d20h43m`.
 #[derive(Debug, Clone)]
 pub struct PromptWidgetLastCommandDuration {
     /// Name used as placeholder in prompt strings (e.g., `FLYLINE_LAST_COMMAND_DURATION`).
     pub name: String,
-    /// Output format: `"five-chars"` or a Chrono strftime format string.
-    pub format: String,
 }
 
 /// A custom prompt widget registered with `flyline create-prompt-widget`.

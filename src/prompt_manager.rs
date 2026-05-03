@@ -703,17 +703,8 @@ fn make_widget_segment(
             // is stored as a static string in the segment and reused on every
             // render without further computation.
             let elapsed = last_app_closed_at.map(|t| t.elapsed()).unwrap_or_default();
-            let text = if w.format.is_empty() || w.format == "five-chars" {
-                crate::content_utils::duration_to_5chars(elapsed)
-            } else {
-                // Chrono format applied to the absolute datetime of the last close.
-                let now = chrono::Local::now();
-                let closed_at = chrono::Duration::from_std(elapsed)
-                    .ok()
-                    .map(|d| now - d)
-                    .unwrap_or(now);
-                closed_at.format(&w.format).to_string()
-            };
+            let text = crate::content_utils::format_duration(elapsed);
+            let _ = w; // name is used as the placeholder key, not needed here
             PromptSegment::WidgetLastCommandDuration { text, base_style }
         }
     }
@@ -2378,11 +2369,10 @@ mod tests {
     #[test]
     fn test_expand_span_widget_last_command_duration_name() {
         // The widget name in a span should produce a WidgetLastCommandDuration segment
-        // with a pre-computed text value (" now " when last_app_closed_at is None).
+        // with a pre-computed text value ("0ns" when last_app_closed_at is None).
         use crate::settings::PromptWidgetLastCommandDuration;
         let widget = PromptWidget::LastCommandDuration(PromptWidgetLastCommandDuration {
             name: "FLYLINE_LAST_COMMAND_DURATION".to_string(),
-            format: "five-chars".to_string(),
         });
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
@@ -2390,8 +2380,8 @@ mod tests {
         assert_eq!(segs.len(), 1);
         match &segs[0] {
             PromptSegment::WidgetLastCommandDuration { text, .. } => {
-                // No prior close → elapsed ≈ 0 → " now " (exact-zero path).
-                assert_eq!(text, " now ");
+                // No prior close → elapsed = 0 → "0ns".
+                assert_eq!(text, "0ns");
             }
             _ => panic!("expected WidgetLastCommandDuration"),
         }
@@ -2402,7 +2392,6 @@ mod tests {
         use crate::settings::PromptWidgetLastCommandDuration;
         let widget = PromptWidget::LastCommandDuration(PromptWidgetLastCommandDuration {
             name: "MY_DUR".to_string(),
-            format: "five-chars".to_string(),
         });
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);

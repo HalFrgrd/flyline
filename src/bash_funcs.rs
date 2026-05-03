@@ -1109,12 +1109,16 @@ pub fn get_fuzzy_first_word_completions(command: &str) -> Vec<String> {
     exe_guard.update_cache();
 
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+
+    // Deduplicate across sources while preserving first-occurrence order, then score.
+    let mut seen = HashSet::new();
     let mut scored: Vec<(i64, String)> = aliases
         .iter()
         .chain(reserved_words.iter())
         .chain(shell_functions.iter())
         .chain(builtins.iter())
         .chain(exe_guard.iter_names())
+        .filter(|c| seen.insert(c.as_str()))
         .filter_map(|poss_completion| {
             matcher
                 .fuzzy_match(poss_completion, command)
