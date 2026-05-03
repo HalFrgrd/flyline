@@ -21,6 +21,7 @@ When Bash prompts you for a command, a library called [readline](https://www.gnu
 - [Mouse support](#mouse-support)
 - [Improvements to Bash's tab completion](#tab-completion-improvements)
 - Tooltips
+- Text selection
 - Auto close brackets and quotes
 - Syntax highlighting
 - Runs in the same process as Bash

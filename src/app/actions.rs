@@ -38,19 +38,15 @@ enum ContextVar {
     #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
     TabCompletionMultiColAvailable,
     #[strum(message = "Tab completion overlay is active but fuzzy filtering has no matches")]
-    TabCompletionsNoFilteredResults,
+    TabCompletionNoFilteredResults,
     #[strum(message = "Tab completion overlay is active and has no candidates at all")]
-    TabCompletionsNoResults,
-    #[strum(
-        message = "Tab completion overlay is active and you have shortened the word under cursor"
-    )]
-    TabCompletionWordShortened,
+    TabCompletionNoResults,
     #[strum(message = "Waiting for the agent mode subprocess to finish")]
     AgentModeWaiting,
     #[strum(message = "Agent mode finished and is showing a list of selectable suggestions")]
     AgentOutputSelection,
     #[strum(message = "Agent mode failed and is showing an error message")]
-    AgentError,
+    AgentModeError,
     #[strum(message = "An inline history suggestion is available to be accepted")]
     InlineSuggestionAvailable,
     #[strum(message = "Cursor is at the end of the buffer")]
@@ -60,7 +56,7 @@ enum ContextVar {
     #[strum(message = "Cursor is at the start of the buffer")]
     CursorAtStart,
     #[strum(message = "Prompt directory selection mode is active")]
-    PromptDirSelect,
+    PromptDirSelection,
     #[strum(message = "There is an active text selection in the buffer")]
     TextSelected,
     #[strum(message = "The command buffer contains at least one newline")]
@@ -99,31 +95,30 @@ impl ContextVar {
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.last_num_data_cols > 1
             ),
-            ContextVar::TabCompletionsNoFilteredResults => matches!(
+            ContextVar::TabCompletionNoFilteredResults => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.filtered_suggestions_len() == 0
             ),
-            ContextVar::TabCompletionsNoResults => matches!(
+            ContextVar::TabCompletionNoResults => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.all_suggestions_len() == 0
             ),
-            ContextVar::TabCompletionWordShortened => false,
             ContextVar::AgentModeWaiting => {
                 matches!(app.content_mode, ContentMode::AgentModeWaiting { .. })
             }
             ContextVar::AgentOutputSelection => {
                 matches!(app.content_mode, ContentMode::AgentOutputSelection { .. })
             }
-            ContextVar::AgentError => {
+            ContextVar::AgentModeError => {
                 matches!(app.content_mode, ContentMode::AgentError { .. })
             }
             ContextVar::InlineSuggestionAvailable => app.inline_history_suggestion.is_some(),
             ContextVar::CursorAtEnd => app.buffer.is_cursor_at_end(),
             ContextVar::CursorAtEndTrimmed => app.buffer.is_cursor_at_trimmed_end(),
             ContextVar::CursorAtStart => app.buffer.is_cursor_at_start(),
-            ContextVar::PromptDirSelect => {
+            ContextVar::PromptDirSelection => {
                 matches!(app.content_mode, ContentMode::PromptDirSelect(_))
             }
             ContextVar::TextSelected => app.buffer.selection_range().is_some(),
@@ -366,9 +361,9 @@ impl TryFrom<&str> for ContextExpr {
 #[strum(serialize_all = "camelCase")]
 pub enum Action {
     #[strum(message = "Accept inline history suggestion")]
-    AcceptInlineSuggestion,
+    InlineSuggestionAccept,
     #[strum(message = "Temporarily dismiss the inline history suggestion")]
-    DismissInlineSuggestion,
+    InlineSuggestionDismiss,
     #[strum(message = "Move down in agent output selection")]
     AgentOutputSelectNext,
     #[strum(message = "Move up in agent output selection")]
@@ -408,7 +403,7 @@ pub enum Action {
     #[strum(message = "Run the agent mode command")]
     RunAgentMode,
     #[strum(message = "Run the agent mode help command")]
-    RunHelpCommand,
+    AgentModeRunHelpCommand,
     #[strum(
         message = "Submit the current command or insert a newline if the buffer is an incomplete expression"
     )]
@@ -432,37 +427,41 @@ pub enum Action {
     #[strum(message = "Delete until start of line")]
     DeleteLeftUntilStartOfLine,
     #[strum(
-        message = "Delete one word to the left stopping at punctuation or path segment boundaries"
+        message = "Delete one word part to the left stopping at punctuation or path segment boundaries"
     )]
-    DeleteLeftOneWordFineGrained,
-    #[strum(message = "Delete one word to the left, using whitespace as delimiter")]
-    DeleteLeftOneWordWhitespace,
+    DeleteLeftOneWordPart,
+    #[strum(message = "Delete one word to the left using whitespace as delimiter")]
+    DeleteLeftOneWord,
     #[strum(message = "Delete character before cursor")]
     DeleteLeft,
     #[strum(message = "Delete until end of line")]
     DeleteRightUntilEndOfLine,
     #[strum(
-        message = "Delete one word to the right stopping at punctuation or path segment boundaries"
+        message = "Delete one word part to the right stopping at punctuation or path segment boundaries"
     )]
-    DeleteRightOneWordFineGrained,
-    #[strum(message = "Delete one word to the right, using whitespace as delimiter")]
-    DeleteRightOneWordWhitespace,
+    DeleteRightOneWordPart,
+    #[strum(message = "Delete one word to the right using whitespace as delimiter")]
+    DeleteRightOneWord,
     #[strum(message = "Delete character after cursor")]
     DeleteRight,
     #[strum(message = "Move cursor to start of line")]
     MoveLeftStartOfLine,
-    #[strum(message = "Move one word left, using whitespace as delimiter")]
-    MoveLeftOneWordWhitespace,
-    #[strum(message = "Move one word left, stopping at punctuation or path segment boundaries")]
-    MoveLeftOneWordFineGrained,
+    #[strum(message = "Move one word left using whitespace as delimiter")]
+    MoveLeftOneWord,
+    #[strum(
+        message = "Move one word part to the left, stopping at punctuation or path segment boundaries"
+    )]
+    MoveLeftOneWordPart,
     #[strum(message = "Move cursor left")]
     MoveLeft,
     #[strum(message = "Move cursor to end of line")]
     MoveRightEndOfLine,
-    #[strum(message = "Move one word right, using whitespace as delimiter")]
-    MoveRightOneWordWhitespace,
-    #[strum(message = "Move one word right, stopping at punctuation or path segment boundaries")]
-    MoveRightOneWordFineGrained,
+    #[strum(message = "Move one word right using whitespace as delimiter")]
+    MoveRightOneWord,
+    #[strum(
+        message = "Move one word part to the right, stopping at punctuation or path segment boundaries"
+    )]
+    MoveRightOneWordPart,
     #[strum(message = "Move cursor right")]
     MoveRight,
     #[strum(message = "Move cursor up one line or navigate history if on the first buffer line")]
@@ -488,13 +487,13 @@ pub enum Action {
     #[strum(message = "Move cursor to end of line, extending the text selection")]
     MoveRightEndOfLineExtendSelection,
     #[strum(message = "Move one word left (whitespace delimiter), extending the text selection")]
-    MoveLeftOneWordWhitespaceExtendSelection,
+    MoveLeftOneWordExtendSelection,
     #[strum(message = "Move one word right (whitespace delimiter), extending the text selection")]
-    MoveRightOneWordWhitespaceExtendSelection,
-    #[strum(message = "Move one word left (fine-grained), extending the text selection")]
-    MoveLeftOneWordFineGrainedExtendSelection,
-    #[strum(message = "Move one word right (fine-grained), extending the text selection")]
-    MoveRightOneWordFineGrainedExtendSelection,
+    MoveRightOneWordExtendSelection,
+    #[strum(message = "Move one word part left, extending the text selection")]
+    MoveLeftOneWordPartExtendSelection,
+    #[strum(message = "Move one word part right, extending the text selection")]
+    MoveRightOneWordPartExtendSelection,
     #[strum(message = "Copy the current text selection to the system clipboard via OSC 52")]
     CopySelectionOsc52,
     #[strum(
@@ -538,13 +537,13 @@ impl Action {
     /// Run the action's logic against the given `App` and key event.
     pub(crate) fn run(&self, app: &mut App, key: KeyEvent) {
         match self {
-            Action::AcceptInlineSuggestion => {
+            Action::InlineSuggestionAccept => {
                 if let Some((_, suf)) = &app.inline_history_suggestion {
                     let new_buffer = format!("{}{}", app.buffer.buffer(), suf);
                     app.buffer.replace_buffer(&new_buffer);
                 }
             }
-            Action::DismissInlineSuggestion => {
+            Action::InlineSuggestionDismiss => {
                 app.dismissed_inline_suggestion_buffer = Some(app.buffer_for_history().to_owned());
                 app.inline_history_suggestion = None;
             }
@@ -665,7 +664,7 @@ impl Action {
                     app.show_agent_mode_not_configured_error();
                 }
             }
-            Action::RunHelpCommand => match &app.content_mode {
+            Action::AgentModeRunHelpCommand => match &app.content_mode {
                 ContentMode::AgentError {
                     suggested_setup_command: Some(setup_cmd),
                     ..
@@ -750,13 +749,13 @@ impl Action {
                 }
                 app.buffer.delete_until_start_of_line();
             }
-            Action::DeleteLeftOneWordFineGrained => {
+            Action::DeleteLeftOneWordPart => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_one_word_left(WordDelim::FineGrained);
             }
-            Action::DeleteLeftOneWordWhitespace => {
+            Action::DeleteLeftOneWord => {
                 if app.buffer.delete_selection() {
                     return;
                 }
@@ -779,13 +778,13 @@ impl Action {
                 }
                 app.buffer.delete_until_end_of_line();
             }
-            Action::DeleteRightOneWordFineGrained => {
+            Action::DeleteRightOneWordPart => {
                 if app.buffer.delete_selection() {
                     return;
                 }
                 app.buffer.delete_right_one_word(WordDelim::FineGrained);
             }
-            Action::DeleteRightOneWordWhitespace => {
+            Action::DeleteRightOneWord => {
                 if app.buffer.delete_selection() {
                     return;
                 }
@@ -801,11 +800,11 @@ impl Action {
                 app.buffer.clear_selection();
                 app.buffer.move_start_of_line();
             }
-            Action::MoveLeftOneWordWhitespace => {
+            Action::MoveLeftOneWord => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_left(WordDelim::WhiteSpace);
             }
-            Action::MoveLeftOneWordFineGrained => {
+            Action::MoveLeftOneWordPart => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_left_fine_grained();
             }
@@ -816,11 +815,11 @@ impl Action {
                 app.buffer.clear_selection();
                 app.buffer.move_end_of_line();
             }
-            Action::MoveRightOneWordWhitespace => {
+            Action::MoveRightOneWord => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_right(WordDelim::WhiteSpace);
             }
-            Action::MoveRightOneWordFineGrained => {
+            Action::MoveRightOneWordPart => {
                 app.buffer.clear_selection();
                 app.buffer.move_one_word_right_fine_grained();
             }
@@ -917,17 +916,17 @@ impl Action {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_end_of_line();
             }
-            Action::MoveLeftOneWordWhitespaceExtendSelection => {
+            Action::MoveLeftOneWordExtendSelection => {
                 app.buffer.move_left_one_word_whitespace_extend_selection();
             }
-            Action::MoveRightOneWordWhitespaceExtendSelection => {
+            Action::MoveRightOneWordExtendSelection => {
                 app.buffer.move_right_one_word_whitespace_extend_selection();
             }
-            Action::MoveLeftOneWordFineGrainedExtendSelection => {
+            Action::MoveLeftOneWordPartExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_one_word_left_fine_grained();
             }
-            Action::MoveRightOneWordFineGrainedExtendSelection => {
+            Action::MoveRightOneWordPartExtendSelection => {
                 app.buffer.start_selection_if_none();
                 app.buffer.move_one_word_right_fine_grained();
             }
@@ -1901,8 +1900,8 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            ContextVar::AgentError.into(),
-            Action::RunHelpCommand,
+            ContextVar::AgentModeError.into(),
+            Action::AgentModeRunHelpCommand,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
@@ -1912,7 +1911,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         // PromptCwdEdit Enter must appear before the Normal Enter binding.
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            ContextVar::PromptDirSelect.into(),
+            ContextVar::PromptDirSelection.into(),
             Action::PromptDirAcceptEntry,
         ),
         Binding::new(
@@ -1963,7 +1962,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Esc.into()],
-            ContextVar::AgentError.into(),
+            ContextVar::AgentModeError.into(),
             Action::EscapeToNormalMode,
         ),
         Binding::new(
@@ -1983,7 +1982,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Esc.into()],
-            ContextVar::PromptDirSelect.into(),
+            ContextVar::PromptDirSelection.into(),
             Action::EscapeToNormalMode,
         ),
         Binding::new(
@@ -2094,7 +2093,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         Binding::new(
             &expand_variations![M::ALT + KC::Backspace.into()],
             ContextVar::Always.into(),
-            Action::DeleteLeftOneWordFineGrained,
+            Action::DeleteLeftOneWordPart,
         ),
         Binding::new(
             &expand_variations![
@@ -2104,7 +2103,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
                 M::CONTROL + KC::Char('w').into(),
             ],
             ContextVar::Always.into(),
-            Action::DeleteLeftOneWordWhitespace,
+            Action::DeleteLeftOneWord,
         ),
         Binding::new(
             &[KC::Backspace.into()],
@@ -2123,12 +2122,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         Binding::new(
             &expand_variations![M::ALT + KC::Delete.into()],
             ContextVar::Always.into(),
-            Action::DeleteRightOneWordFineGrained,
+            Action::DeleteRightOneWordPart,
         ),
         Binding::new(
             &expand_variations![M::CONTROL + KC::Delete.into()],
             ContextVar::Always.into(),
-            Action::DeleteRightOneWordWhitespace,
+            Action::DeleteRightOneWord,
         ),
         Binding::new(
             &[KC::Delete.into()],
@@ -2139,22 +2138,22 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         // the corresponding Default/InlineHistoryAcceptable bindings.
         Binding::new(
             &expand_variations![KC::Home.into()],
-            ContextVar::PromptDirSelect.into(),
+            ContextVar::PromptDirSelection.into(),
             Action::PromptDirMoveToStart,
         ),
         Binding::new(
             &expand_variations![KC::End.into()],
-            ContextVar::PromptDirSelect.into(),
+            ContextVar::PromptDirSelection.into(),
             Action::PromptDirMoveToEnd,
         ),
         Binding::new(
             &expand_variations![M::CONTROL + KC::Left.into(), M::ALT + KC::Left.into()],
-            ContextVar::PromptDirSelect.into(),
+            ContextVar::PromptDirSelection.into(),
             Action::PromptDirMoveLeft,
         ),
         Binding::new(
             &expand_variations![M::CONTROL + KC::Right.into(), M::ALT + KC::Right.into()],
-            ContextVar::PromptDirSelect.into(),
+            ContextVar::PromptDirSelection.into(),
             Action::PromptDirMoveRight,
         ),
         Binding::new(
@@ -2186,12 +2185,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         Binding::new(
             &[(M::CONTROL | M::SHIFT) + KC::Left.into()],
             ContextVar::Always.into(),
-            Action::MoveLeftOneWordWhitespaceExtendSelection,
+            Action::MoveLeftOneWordExtendSelection,
         ),
         Binding::new(
             &[M::CONTROL + KC::Left.into()], // Emacs-style whitespace word-left
             ContextVar::Always.into(),
-            Action::MoveLeftOneWordWhitespace,
+            Action::MoveLeftOneWord,
         ),
         Binding::new(
             &[
@@ -2199,23 +2198,23 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
                 (M::META | M::SHIFT) + KC::Left.into(),
             ],
             ContextVar::Always.into(),
-            Action::MoveLeftOneWordFineGrainedExtendSelection,
+            Action::MoveLeftOneWordPartExtendSelection,
         ),
         Binding::new(
             // Fine-grained word-left (stops at punctuation / path boundaries)
             &expand_variations![M::ALT + KC::Left.into()],
             ContextVar::Always.into(),
-            Action::MoveLeftOneWordFineGrained,
+            Action::MoveLeftOneWordPart,
         ),
         Binding::new(
             &[KC::Left.into()],
-            (ContextVar::CursorAtStart + !ContextVar::PromptDirSelect).into(),
+            (ContextVar::CursorAtStart + !ContextVar::PromptDirSelection).into(),
             Action::StartPromptDirSelect,
         ),
         // PromptCwdEdit Left must appear before the Normal Left binding.
         Binding::new(
             &[KC::Left.into()],
-            ContextVar::PromptDirSelect.into(),
+            ContextVar::PromptDirSelection.into(),
             Action::PromptDirMoveLeft,
         ),
         Binding::new(
@@ -2234,7 +2233,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
                 + ContextVar::CursorAtEnd
                 + !ContextVar::TabCompletion)
                 .into(),
-            Action::AcceptInlineSuggestion,
+            Action::InlineSuggestionAccept,
         ),
         Binding::new(
             &[
@@ -2257,12 +2256,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         Binding::new(
             &[(M::CONTROL | M::SHIFT) + KC::Right.into()],
             ContextVar::Always.into(),
-            Action::MoveRightOneWordWhitespaceExtendSelection,
+            Action::MoveRightOneWordExtendSelection,
         ),
         Binding::new(
             &[M::CONTROL + KC::Right.into()], // Emacs-style whitespace word-right
             ContextVar::Always.into(),
-            Action::MoveRightOneWordWhitespace,
+            Action::MoveRightOneWord,
         ),
         Binding::new(
             &[
@@ -2270,18 +2269,18 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
                 (M::META | M::SHIFT) + KC::Right.into(),
             ],
             ContextVar::Always.into(),
-            Action::MoveRightOneWordFineGrainedExtendSelection,
+            Action::MoveRightOneWordPartExtendSelection,
         ),
         Binding::new(
             // Fine-grained word-right (stops at punctuation / path boundaries)
             &expand_variations![M::ALT + KC::Right.into()],
             ContextVar::Always.into(),
-            Action::MoveRightOneWordFineGrained,
+            Action::MoveRightOneWordPart,
         ),
         // PromptCwdEdit Right must appear before the Normal Right binding.
         Binding::new(
             &[KC::Right.into()],
-            ContextVar::PromptDirSelect.into(),
+            ContextVar::PromptDirSelection.into(),
             Action::PromptDirMoveRight,
         ),
         Binding::new(
@@ -3223,8 +3222,8 @@ mod tests {
         )
         .unwrap();
         assert!(e.literals[0].var == ContextVar::BufferIsEmpty);
-        assert!(e.literals[1].var == ContextVar::TabCompletionsNoFilteredResults);
-        assert!(e.literals[2].var == ContextVar::TabCompletionsNoResults);
+        assert!(e.literals[1].var == ContextVar::TabCompletionNoFilteredResults);
+        assert!(e.literals[2].var == ContextVar::TabCompletionNoResults);
         assert!(e.literals[3].var == ContextVar::MultilineBuffer);
     }
 
@@ -3299,7 +3298,7 @@ mod tests {
     fn test_action_id_from_str_known() {
         assert!(Action::try_from("submitOrNewline").unwrap() == Action::SubmitOrNewline);
         assert!(
-            Action::try_from("acceptInlineSuggestion").unwrap() == Action::AcceptInlineSuggestion
+            Action::try_from("acceptInlineSuggestion").unwrap() == Action::InlineSuggestionAccept
         );
     }
 
@@ -3323,7 +3322,7 @@ mod tests {
             "inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion",
         )
         .unwrap();
-        assert!(b.action == Action::AcceptInlineSuggestion);
+        assert!(b.action == Action::InlineSuggestionAccept);
         assert!(b.context.literals.len() == 2);
     }
 
