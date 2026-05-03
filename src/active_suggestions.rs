@@ -11,7 +11,7 @@ use itertools::Itertools;
 use ratatui::prelude::*;
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::vec;
 
 use unicode_width::UnicodeWidthStr;
@@ -74,6 +74,67 @@ pub struct ProcessedSuggestion {
     pub style: Option<Style>,
     /// Description to display as a visual suffix (not inserted).
     pub description: SuggestionDescription,
+}
+
+impl ProcessedSuggestion {
+    pub fn new<S: Into<String>, P: Into<String>, X: Into<String>>(
+        s: S,
+        prefix: P,
+        suffix: X,
+    ) -> Self {
+        ProcessedSuggestion {
+            s: s.into(),
+            prefix: prefix.into(),
+            suffix: suffix.into(),
+            style: None,
+            description: SuggestionDescription::Static(vec![]),
+        }
+    }
+
+    /// Set the description on this suggestion.
+    pub fn with_description(mut self, description: SuggestionDescription) -> Self {
+        self.description = description;
+        self
+    }
+
+    /// Set an optional display style (e.g. derived from `LS_COLORS`) on this suggestion.
+    pub fn with_style(mut self, style: Style) -> Self {
+        self.style = Some(style);
+        self
+    }
+
+    pub fn formatted(&self) -> String {
+        format!("{}{}{}", self.prefix, self.s, self.suffix)
+    }
+
+    pub fn from_string_vec(
+        suggestions: Vec<String>,
+        prefix: &str,
+        suffix: &str,
+    ) -> Vec<ProcessedSuggestion> {
+        suggestions
+            .into_iter()
+            .map(|s| {
+                let new_suffix = if suffix == " " && s.ends_with(suffix) {
+                    "".to_string()
+                } else {
+                    suffix.to_string()
+                };
+                ProcessedSuggestion::new(s, prefix.to_string(), new_suffix)
+            })
+            .collect()
+    }
+}
+
+impl PartialOrd for ProcessedSuggestion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.s.partial_cmp(&other.s)
+    }
+}
+impl Ord for ProcessedSuggestion {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.s.cmp(&other.s)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -433,121 +494,6 @@ mod description_tests {
     }
 }
 
-impl ProcessedSuggestion {
-    pub fn new<S: Into<String>, P: Into<String>, X: Into<String>>(
-        s: S,
-        prefix: P,
-        suffix: X,
-    ) -> Self {
-        ProcessedSuggestion {
-            s: s.into(),
-            prefix: prefix.into(),
-            suffix: suffix.into(),
-            style: None,
-            description: SuggestionDescription::Static(vec![]),
-        }
-    }
-
-    /// Set the description on this suggestion.
-    pub fn with_description(mut self, description: SuggestionDescription) -> Self {
-        self.description = description;
-        self
-    }
-
-    /// Set an optional display style (e.g. derived from `LS_COLORS`) on this suggestion.
-    pub fn with_style(mut self, style: Style) -> Self {
-        self.style = Some(style);
-        self
-    }
-
-    pub fn formatted(&self) -> String {
-        format!("{}{}{}", self.prefix, self.s, self.suffix)
-    }
-
-    pub fn from_string_vec(
-        suggestions: Vec<String>,
-        prefix: &str,
-        suffix: &str,
-    ) -> Vec<ProcessedSuggestion> {
-        suggestions
-            .into_iter()
-            .map(|s| {
-                let new_suffix = if suffix == " " && s.ends_with(suffix) {
-                    "".to_string()
-                } else {
-                    suffix.to_string()
-                };
-                ProcessedSuggestion::new(s, prefix.to_string(), new_suffix)
-            })
-            .collect()
-    }
-}
-
-impl PartialOrd for ProcessedSuggestion {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.s.partial_cmp(&other.s)
-    }
-}
-impl Ord for ProcessedSuggestion {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.s.cmp(&other.s)
-    }
-}
-
-/// A completion that may or may not have been post-processed yet.
-///
-/// The `Ready` variant holds a fully processed [`Suggestion`] (used by code
-/// paths that produce suggestions directly, e.g. env-var or tilde expansion).
-///
-/// The `Raw` variant holds a raw completion string from bash together with the
-/// metadata needed to produce a [`Suggestion`] on demand via
-/// [`post_process_completion`].  The expensive filesystem calls (`is_dir`,
-/// `style_for_path`, `fully_expand_path`) are deferred until the item is
-/// actually rendered or accepted.
-#[derive(Debug, Clone)]
-pub enum MaybeProcessedSuggestion {
-    Ready(ProcessedSuggestion),
-    Raw {
-        raw_text: String,
-        full_path: Option<PathBuf>,
-        flags: bash_funcs::CompletionFlags,
-        word_under_cursor: String,
-    },
-}
-
-impl MaybeProcessedSuggestion {
-    /// The text used for fuzzy matching and sorting.
-    ///
-    /// For `Raw` items, only the text up to the first tab character is considered
-    /// (the remainder is a display-only description).
-    pub fn match_text(&self) -> &str {
-        match self {
-            MaybeProcessedSuggestion::Ready(s) => &s.s,
-            MaybeProcessedSuggestion::Raw { raw_text, .. } => raw_text
-                .split_once('\t')
-                .map(|(text, _)| text)
-                .unwrap_or(raw_text),
-        }
-    }
-
-    pub fn to_processed_sug(&mut self) -> ProcessedSuggestion {
-        match self {
-            MaybeProcessedSuggestion::Ready(s) => s.clone(),
-            MaybeProcessedSuggestion::Raw {
-                raw_text,
-                full_path,
-                flags,
-                word_under_cursor,
-            } => {
-                let processed =
-                    post_process_completion(raw_text, full_path.clone(), *flags, word_under_cursor);
-                *self = MaybeProcessedSuggestion::Ready(processed.clone());
-                processed
-            }
-        }
-    }
-}
-
 /// Split a raw completion string into the completion text and description frames.
 ///
 /// Any tab characters in `raw` serve as separators: the text before the first
@@ -711,11 +657,10 @@ struct FilteredItem {
     suggestion_idx: usize,
     score: i64,
     matching_indices: Vec<usize>,
-    was_for_raw: bool,
 }
 
 pub struct ActiveSuggestions {
-    all_maybe_processed_suggestions: Vec<MaybeProcessedSuggestion>,
+    all_processed_suggestions: Vec<ProcessedSuggestion>,
     filtered_suggestions: Vec<FilteredItem>,
     /// 2-D position of the currently-selected suggestion within the grid.
     /// `selected_col * last_num_rows_per_col + selected_row` gives the 1-D
@@ -746,10 +691,7 @@ pub struct ActiveSuggestions {
 impl std::fmt::Debug for ActiveSuggestions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ActiveSuggestions")
-            .field(
-                "all_suggestions_len",
-                &self.all_maybe_processed_suggestions.len(),
-            )
+            .field("all_suggestions_len", &self.all_processed_suggestions.len())
             .field("filtered_suggestions_len", &self.filtered_suggestions.len())
             .field("selected_row", &self.selected_row)
             .field("selected_col", &self.selected_col)
@@ -773,7 +715,7 @@ pub struct ColumnInfo {
 }
 impl ActiveSuggestions {
     pub fn new<'underlying_buffer>(
-        suggestions: Vec<MaybeProcessedSuggestion>,
+        suggestions: Vec<ProcessedSuggestion>,
         word_under_cursor: SubString,
         load_time: std::time::Duration,
     ) -> Self {
@@ -781,7 +723,7 @@ impl ActiveSuggestions {
         let sug_len = suggestions.len();
 
         let mut active_sug = ActiveSuggestions {
-            all_maybe_processed_suggestions: suggestions,
+            all_processed_suggestions: suggestions,
             filtered_suggestions,
             selected_row: 0,
             selected_col: 0,
@@ -979,30 +921,11 @@ impl ActiveSuggestions {
 
             let col_items: Vec<(SuggestionFormatted, bool)> = (start..end)
                 .map(|filtered_idx| {
-                    {
-                        let fi: &FilteredItem = &self.filtered_suggestions[filtered_idx];
-                        self.all_maybe_processed_suggestions[fi.suggestion_idx].to_processed_sug();
-
-                        let unprocessed_suggestion =
-                            &self.all_maybe_processed_suggestions[fi.suggestion_idx];
-
-                        if fi.was_for_raw {
-                            if let Some(new_if) = self.fuzzy_match_for_suggestion(
-                                fi.suggestion_idx,
-                                unprocessed_suggestion,
-                            ) {
-                                self.filtered_suggestions[filtered_idx] = new_if;
-                            }
-                            self.filtered_suggestions[filtered_idx].was_for_raw = false;
-                        }
-                    }
-
                     let fi = &self.filtered_suggestions[filtered_idx];
-                    let suggestion =
-                        self.all_maybe_processed_suggestions[fi.suggestion_idx].to_processed_sug();
+                    let suggestion = &self.all_processed_suggestions[fi.suggestion_idx];
 
                     let formatted = SuggestionFormatted::new(
-                        &suggestion,
+                        suggestion,
                         fi.suggestion_idx,
                         fi.matching_indices.clone(),
                         palette,
@@ -1102,42 +1025,35 @@ impl ActiveSuggestions {
     }
 
     pub fn all_suggestions_len(&self) -> usize {
-        self.all_maybe_processed_suggestions.len()
+        self.all_processed_suggestions.len()
     }
 
     fn fuzzy_match_for_suggestion(
         &self,
         idx: usize,
-        item: &MaybeProcessedSuggestion,
+        sug: &ProcessedSuggestion,
     ) -> Option<FilteredItem> {
-        let was_for_raw = matches!(item, MaybeProcessedSuggestion::Raw { .. });
-
         if !self.should_fuzzy_match {
             return Some(FilteredItem {
                 score: 0,
                 suggestion_idx: idx,
                 matching_indices: vec![],
-                was_for_raw,
             });
         }
 
-        let pattern = match item {
-            MaybeProcessedSuggestion::Raw { .. } => &self.word_under_cursor_dequoted,
-            MaybeProcessedSuggestion::Ready(sug) => {
-                let pattern_with_prefix = &self.word_under_cursor.s;
-                pattern_with_prefix
-                    .strip_prefix(&sug.prefix)
-                    .unwrap_or(pattern_with_prefix)
-            }
+        let pattern = {
+            let pattern_with_prefix = &self.word_under_cursor.s;
+            pattern_with_prefix
+                .strip_prefix(&sug.prefix)
+                .unwrap_or(pattern_with_prefix)
         };
 
         self.fuzzy_matcher
-            .fuzzy_indices(item.match_text(), pattern)
+            .fuzzy_indices(&sug.s, pattern)
             .map(|(score, indices)| FilteredItem {
                 score,
                 suggestion_idx: idx,
                 matching_indices: indices,
-                was_for_raw,
             })
     }
 
@@ -1151,15 +1067,15 @@ impl ActiveSuggestions {
             "Applying fuzzy filter with raw_pattern {:?} and dequoted_pattern {:?} on {} suggestions",
             raw_pattern,
             dequoted_pattern,
-            self.all_maybe_processed_suggestions.len()
+            self.all_processed_suggestions.len()
         );
 
         // Score and filter suggestions using the stored matcher
         self.filtered_suggestions = self
-            .all_maybe_processed_suggestions
+            .all_processed_suggestions
             .iter()
             .enumerate()
-            .filter_map(|(idx, item): (usize, &MaybeProcessedSuggestion)| {
+            .filter_map(|(idx, item): (usize, &ProcessedSuggestion)| {
                 self.fuzzy_match_for_suggestion(idx, item)
             })
             .collect();
@@ -1178,17 +1094,16 @@ impl ActiveSuggestions {
     }
 
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
-        match self.all_maybe_processed_suggestions.as_mut_slice() {
+        match self.all_processed_suggestions.as_slice() {
             [] => {
                 log::debug!("No completions found. all_maybe_processed_suggestions is empty");
                 return Some(self);
             }
             [single_suggestion] => {
-                let suggestion = single_suggestion.to_processed_sug();
-                self.accept_item(&suggestion, buffer);
+                self.accept_item(&single_suggestion, buffer);
                 log::debug!(
                     "Only one completion found: auto-accepted '{:?}'",
-                    suggestion
+                    single_suggestion
                 );
                 return None;
             }
@@ -1222,18 +1137,17 @@ impl ActiveSuggestions {
         };
 
         match self
-            .all_maybe_processed_suggestions
-            .get_mut(filtered_item.suggestion_idx)
+            .all_processed_suggestions
+            .get(filtered_item.suggestion_idx)
         {
-            Some(s) => {
-                let suggestion = s.to_processed_sug();
-                self.accept_item(&suggestion, buffer);
+            Some(sug) => {
+                self.accept_item(&sug, buffer);
             }
             None => {
                 log::warn!(
                     "Suggestion index {} out of bounds (len={})",
                     filtered_item.suggestion_idx,
-                    self.all_maybe_processed_suggestions.len()
+                    self.all_processed_suggestions.len()
                 );
                 return;
             }
