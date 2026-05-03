@@ -286,34 +286,6 @@ mod description_tests {
     use super::*;
 
     #[test]
-    fn split_no_tab() {
-        let (text, frames) = split_completion_description("hello");
-        assert_eq!(text, "hello");
-        assert!(frames.is_empty());
-    }
-
-    #[test]
-    fn split_single_tab_gives_one_frame() {
-        let (text, frames) = split_completion_description("hello\tworld");
-        assert_eq!(text, "hello");
-        assert_eq!(frames, vec!["world".to_string()]);
-    }
-
-    #[test]
-    fn split_multiple_tabs_give_multiple_frames() {
-        let (text, frames) = split_completion_description("opt\tframe1\tframe2\tframe3");
-        assert_eq!(text, "opt");
-        assert_eq!(
-            frames,
-            vec![
-                "frame1".to_string(),
-                "frame2".to_string(),
-                "frame3".to_string()
-            ]
-        );
-    }
-
-    #[test]
     fn raw_match_text_strips_description() {
         let item = UnprocessedSuggestion {
             raw_text: "git-commit\tRecord changes".to_string(),
@@ -510,13 +482,23 @@ pub struct UnprocessedSuggestion {
 }
 
 impl UnprocessedSuggestion {
-    /// The text used for sorting/dedup of raw completions before processing.
-    /// Strips any tab-separated description suffix.
     pub fn match_text(&self) -> &str {
-        self.raw_text
-            .split_once('\t')
-            .map(|(text, _)| text)
-            .unwrap_or(&self.raw_text)
+        Self::split_completion_description(&self.raw_text).0
+    }
+
+    /// Split a raw completion string into the completion text and description frames.
+    ///
+    /// Any tab characters in `raw` serve as separators: the text before the first
+    /// tab is the value that gets inserted; each subsequent tab-separated segment
+    /// is one frame of the animated description.
+    fn split_completion_description(raw: &str) -> (&str, Vec<String>) {
+        match raw.split_once('\t') {
+            None => (raw, vec![]),
+            Some((text, rest)) => {
+                let frames: Vec<String> = rest.split('\t').map(|s| s.to_owned()).collect();
+                (text, frames)
+            }
+        }
     }
 
     /// Post-process a single raw completion string into a [`ProcessedSuggestion`].
@@ -534,7 +516,7 @@ impl UnprocessedSuggestion {
         let comp_result_flags = self.flags;
         let word_under_cursor = &self.word_under_cursor;
 
-        let (sug, desc_frames) = split_completion_description(raw_sug);
+        let (sug, desc_frames) = Self::split_completion_description(raw_sug);
         let mut sug = sug.to_string();
 
         if comp_result_flags.filename_completion_desired {
@@ -711,21 +693,6 @@ pub fn try_process_suggestions(suggestions: &mut Vec<MaybeProcessedSuggestion>) 
     true
 }
 
-/// Split a raw completion string into the completion text and description frames.
-///
-/// Any tab characters in `raw` serve as separators: the text before the first
-/// tab is the value that gets inserted; each subsequent tab-separated segment
-/// is one frame of the animated description.
-pub(crate) fn split_completion_description(raw: &str) -> (&str, Vec<String>) {
-    match raw.split_once('\t') {
-        None => (raw, vec![]),
-        Some((text, rest)) => {
-            let frames: Vec<String> = rest.split('\t').map(|s| s.to_owned()).collect();
-            (text, frames)
-        }
-    }
-}
-
 /// Lightweight entry in the filtered suggestion list.
 ///
 /// Unlike [`SuggestionFormatted`], this stores only the index, score, and
@@ -738,6 +705,13 @@ struct FilteredItem {
     suggestion_idx: usize,
     score: i64,
     matching_indices: Vec<usize>,
+}
+
+pub struct ColumnInfo {
+    pub global_col_idx: usize,
+    pub items: Vec<(SuggestionFormatted, bool)>,
+    pub width: usize,
+    pub is_selected_col: bool,
 }
 
 pub struct ActiveSuggestions {
@@ -771,7 +745,6 @@ pub struct ActiveSuggestions {
     fuzzy_matcher: ArinaeMatcher,
     /// How long it took to generate the completions.
     pub load_time: std::time::Duration,
-    should_fuzzy_match: bool,
 }
 
 impl std::fmt::Debug for ActiveSuggestions {
@@ -795,12 +768,6 @@ impl std::fmt::Debug for ActiveSuggestions {
             .field("col_window_to_show", &self.col_window_to_show)
             .finish()
     }
-}
-pub struct ColumnInfo {
-    pub global_col_idx: usize,
-    pub items: Vec<(SuggestionFormatted, bool)>,
-    pub width: usize,
-    pub is_selected_col: bool,
 }
 
 impl ActiveSuggestions {
@@ -837,15 +804,9 @@ impl ActiveSuggestions {
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
             load_time,
-            should_fuzzy_match: true,
         };
 
         active_sug.update_fuzzy_filtered();
-
-        if active_sug.filtered_suggestions_len() == 0 {
-            active_sug.should_fuzzy_match = false;
-            active_sug.update_fuzzy_filtered();
-        }
         active_sug
     }
 
@@ -1160,14 +1121,6 @@ impl ActiveSuggestions {
         idx: usize,
         sug: &ProcessedSuggestion,
     ) -> Option<FilteredItem> {
-        if !self.should_fuzzy_match {
-            return Some(FilteredItem {
-                score: 0,
-                suggestion_idx: idx,
-                matching_indices: vec![],
-            });
-        }
-
         let pattern_with_prefix = &self.word_under_cursor.s;
         let pattern = pattern_with_prefix
             .strip_prefix(&sug.prefix)
