@@ -572,7 +572,7 @@ A context expression may combine multiple variables with `+`:
 ```bash
 flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion
 ```
-`||` and parentheses are not supported.  Use `!` in front of a variable to negate it (e.g. `!textSelected`).
+Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses are not supported. 
 
 It is possible to remap keys entirely with:
 ```bash
