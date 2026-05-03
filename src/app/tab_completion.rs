@@ -470,11 +470,10 @@ pub(crate) fn gen_completions_internal(
                         // Unlike other completions, if there are multiple glob completions,
                         // we join them with spaces and insert them all at once.
                         // Process each item eagerly here since we need the final text.
-                        let completions_as_string = completions
-                            .into_iter()
-                            .map(|item| item.into_processed())
-                            .flag_first_last()
-                            .fold(String::new(), |mut acc, (is_first, is_last, sug)| {
+                        let completions_as_string = completions.into_iter().flag_first_last().fold(
+                            String::new(),
+                            |mut acc, (is_first, is_last, mut item)| {
+                                let sug = item.processed();
                                 if !is_first {
                                     acc.push(' ');
                                 }
@@ -497,7 +496,8 @@ pub(crate) fn gen_completions_internal(
                                 }
 
                                 acc
-                            });
+                            },
+                        );
                         return Some((
                             vec![MaybeProcessedSuggestion::Processed(
                                 ProcessedSuggestion::new(completions_as_string, "", ""),
@@ -913,7 +913,7 @@ impl App<'_> {
                 .unwrap()
                 .0
                 .into_iter()
-                .map(|item: MaybeProcessedSuggestion| item.into_processed())
+                .map(|mut item: MaybeProcessedSuggestion| item.processed().clone())
                 .collect();
 
             suggestions.sort_by(|a, b| a.s.cmp(&b.s));

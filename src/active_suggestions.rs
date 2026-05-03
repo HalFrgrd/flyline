@@ -696,16 +696,6 @@ impl MaybeProcessedSuggestion {
             MaybeProcessedSuggestion::Unprocessed(_) => unreachable!(),
         }
     }
-
-    /// Convert this suggestion into a [`ProcessedSuggestion`], running
-    /// post-processing if necessary.
-    pub fn into_processed(self) -> ProcessedSuggestion {
-        match self {
-            MaybeProcessedSuggestion::Processed(p) => p,
-            MaybeProcessedSuggestion::Unprocessed(r) => r.into_processed(),
-        }
-    }
-
 }
 
 const CHUNK_PROCESSING_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
