@@ -18,7 +18,7 @@ Sleep 500ms
 Ctrl+C
 Sleep 1000ms
 
-Type "# Flyline uses skim-rs' `arinae` typo-resistant algorithm:"
+Type "# flyline uses skim-rs' `arinae` typo-resistant algorithm:"
 Enter
 Sleep 500ms
 Type "cagro"

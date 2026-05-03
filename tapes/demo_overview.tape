@@ -76,7 +76,7 @@ Sleep 500ms
 Ctrl+C
 Sleep 800ms
 
-Type `# Flyline can interface with your AI agent to help you write commands`
+Type `# flyline can interface with your AI agent to help you write commands`
 Enter
 Sleep 800ms
 Type "list files older than three days"
@@ -114,7 +114,7 @@ Type "# flyline automatically detects the current working directory in your prom
 Enter
 Sleep 800ms
 
-Type `# Flyline can intelligently close opening quotes and brackets: `
+Type `# flyline can intelligently close opening quotes and brackets: `
 Enter
 Sleep 800ms
 Type `echo "`
