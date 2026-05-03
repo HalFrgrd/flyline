@@ -725,23 +725,24 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
 
     for user in users::get_all_users() {
         if user.username.starts_with(user_pattern) {
-            suggestions.push(MaybeProcessedSuggestion::Processed(
-                ProcessedSuggestion::new(
-                    if user.home_dir.ends_with('/') {
-                        user.home_dir.clone()
-                    } else {
-                        format!("{}/", user.home_dir)
-                    },
-                    "",
-                    "",
-                ),
+            suggestions.push(ProcessedSuggestion::new(
+                if user.home_dir.ends_with('/') {
+                    user.home_dir.clone()
+                } else {
+                    format!("{}/", user.home_dir)
+                },
+                "",
+                "",
             ));
         }
     }
 
-    suggestions.sort_by(|a, b| a.match_text().cmp(b.match_text()));
-    suggestions.dedup_by(|a, b| a.match_text() == b.match_text());
+    suggestions.sort_by(|a, b| a.s.cmp(&b.s));
+    suggestions.dedup_by(|a, b| a.s == b.s);
     suggestions
+        .into_iter()
+        .map(MaybeProcessedSuggestion::Processed)
+        .collect()
 }
 
 impl App<'_> {
