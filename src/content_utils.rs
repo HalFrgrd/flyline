@@ -462,12 +462,14 @@ pub fn format_duration(duration: std::time::Duration) -> String {
     } else if total_mins > 0 {
         let s = total_secs % 60;
         format!("{}m{:02}s", total_mins, s)
+    } else if total_secs >= 10 {
+        format!("{}.{}s", total_secs, (total_ms % 1000) / 100)
     } else if total_secs >= 1 {
-        format!("{}s{:03}ms", total_secs, total_ms % 1000)
+        format!("{}.{:03}s", total_secs, total_ms % 1000)
     } else if total_ms >= 1 {
-        format!("{}ms{:03}us", total_ms, total_us % 1000)
+        format!("{}ms", total_ms)
     } else if total_us >= 1 {
-        format!("{}us{:03}ns", total_us, total_ns % 1000)
+        format!("{}us", total_us)
     } else {
         format!("{}ns", total_ns)
     }
@@ -572,21 +574,21 @@ mod tests {
 
     #[test]
     fn test_format_duration_microseconds() {
-        assert_eq!(format_duration(Duration::from_micros(124)), "124us000ns");
-        assert_eq!(format_duration(Duration::from_micros(1)), "1us000ns");
+        assert_eq!(format_duration(Duration::from_micros(124)), "124us");
+        assert_eq!(format_duration(Duration::from_micros(1)), "1us");
     }
 
     #[test]
     fn test_format_duration_milliseconds() {
-        assert_eq!(format_duration(Duration::from_micros(312001)), "312ms001us");
-        assert_eq!(format_duration(Duration::from_millis(5)), "5ms000us");
+        assert_eq!(format_duration(Duration::from_micros(312001)), "312ms");
+        assert_eq!(format_duration(Duration::from_millis(5)), "5ms");
     }
 
     #[test]
     fn test_format_duration_seconds() {
-        assert_eq!(format_duration(Duration::from_millis(9_201)), "9s201ms");
-        assert_eq!(format_duration(Duration::from_millis(59_200)), "59s200ms");
-        assert_eq!(format_duration(Duration::from_secs(1)), "1s000ms");
+        assert_eq!(format_duration(Duration::from_millis(9_201)), "9.201s");
+        assert_eq!(format_duration(Duration::from_millis(59_200)), "59.2s");
+        assert_eq!(format_duration(Duration::from_secs(1)), "1.000s");
     }
 
     #[test]
