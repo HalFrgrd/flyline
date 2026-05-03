@@ -2077,9 +2077,7 @@ impl<'a> App<'a> {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 content.newline();
 
-                // Early exit when there are no suggestions to display.
-                if active_suggestions.filtered_suggestions_len() == 0 {
-                } else {
+                if active_suggestions.all_suggestions_len() > 0 {
                     let grid_start_row = content.cursor_position().row;
                     let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
 
