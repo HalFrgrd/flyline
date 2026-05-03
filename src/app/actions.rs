@@ -41,6 +41,10 @@ enum ContextVar {
     TabCompletionsNoFilteredResults,
     #[strum(message = "Tab completion overlay is active and has no candidates at all")]
     TabCompletionsNoResults,
+    #[strum(
+        message = "Tab completion overlay is active and you have shortened the word under cursor"
+    )]
+    TabCompletionWordShortened,
     #[strum(message = "Waiting for the agent mode subprocess to finish")]
     AgentModeWaiting,
     #[strum(message = "Agent mode finished and is showing a list of selectable suggestions")]
@@ -105,6 +109,7 @@ impl ContextVar {
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.all_suggestions_len() == 0
             ),
+            ContextVar::TabCompletionWordShortened => false,
             ContextVar::AgentModeWaiting => {
                 matches!(app.content_mode, ContentMode::AgentModeWaiting { .. })
             }

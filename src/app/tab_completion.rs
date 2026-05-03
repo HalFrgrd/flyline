@@ -308,19 +308,29 @@ pub(crate) fn gen_completions_internal(
                     // bash post-processing pipeline entirely and build
                     // ProcssedSuggestions directly so descriptions (the help text
                     // attached to each candidate) are preserved as-is.
-                    match complete_flyline_args(&full_command, cursor_byte_pos) {
+                    match complete_flyline_args(
+                        &full_command,
+                        word_under_cursor.as_ref(),
+                        cursor_byte_pos,
+                    ) {
                         Ok(candidates) if !candidates.is_empty() => {
-                            fn preceding_flyline_flag(cmd_before_cursor: &str) -> Option<&str> {
-                                cmd_before_cursor
-                                    .split_whitespace()
-                                    .rfind(|w| w.starts_with("--"))
-                            }
+                            let preceding_flag = &full_command[..cursor_byte_pos]
+                                .split_whitespace()
+                                .rfind(|w| w.starts_with("--"));
 
-                            let flag = preceding_flyline_flag(&full_command[..cursor_byte_pos]);
+                            let quote_type =
+                                bash_funcs::find_quote_type(word_under_cursor.as_ref());
+
                             let suggestions: Vec<MaybeProcessedSuggestion> = candidates
                                 .into_iter()
                                 .map(|c| {
                                     let value = c.get_value().to_string_lossy().to_string();
+                                    let value = if let Some(qt) = quote_type {
+                                        bash_funcs::quoting_function_rust(&value, qt, true, false)
+                                    } else {
+                                        value.clone()
+                                    };
+
                                     let (value, suffix) =
                                         if let Some(stripped) = value.strip_suffix("NO_SUFFIX") {
                                             (stripped.to_string(), "")
@@ -349,23 +359,25 @@ pub(crate) fn gen_completions_internal(
                                             None => SuggestionDescription::Static(vec![]),
                                         }
                                     };
-                                    let description =
-                                        match (flag, CursorEasing::try_from_value_name(&value)) {
-                                            (Some("--effect-easing"), Some(easing)) => {
-                                                SuggestionDescription::Animation(
-                                                    cursor_effect_animation_frames(
-                                                        easing,
-                                                        cursor_config.effect_speed,
-                                                    ),
-                                                )
-                                            }
-                                            (Some("--interpolate-easing"), Some(easing)) => {
-                                                SuggestionDescription::Animation(
-                                                    easing_animation_frames(easing),
-                                                )
-                                            }
-                                            _ => help_description(),
-                                        };
+                                    let description = match (
+                                        preceding_flag,
+                                        CursorEasing::try_from_value_name(&value),
+                                    ) {
+                                        (Some("--effect-easing"), Some(easing)) => {
+                                            SuggestionDescription::Animation(
+                                                cursor_effect_animation_frames(
+                                                    easing,
+                                                    cursor_config.effect_speed,
+                                                ),
+                                            )
+                                        }
+                                        (Some("--interpolate-easing"), Some(easing)) => {
+                                            SuggestionDescription::Animation(
+                                                easing_animation_frames(easing),
+                                            )
+                                        }
+                                        _ => help_description(),
+                                    };
 
                                     MaybeProcessedSuggestion::Ready(
                                         ProcessedSuggestion::new(&value, prefix, suffix)

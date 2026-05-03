@@ -137,14 +137,16 @@ struct FlylineArgs {
 
 pub fn complete_flyline_args(
     raw_command: &str,
+    wuc: &str,
     cursor_byte: usize,
 ) -> anyhow::Result<Vec<clap_complete::CompletionCandidate>> {
+    let command_pre_wuc = raw_command_before_word_under_cursor(raw_command, wuc, cursor_byte)?;
+    log::info!("Completing flyline args after: {:?}", command_pre_wuc);
+
     let current_dir = std::env::current_dir().ok();
     let current_dir_asdf = current_dir.as_ref().map(|p| p.to_path_buf());
 
-    let mut command = FlylineArgs::command();
-
-    let mut parser = dparser::DParser::from(raw_command);
+    let mut parser = dparser::DParser::from(command_pre_wuc);
     parser.walk_to_end();
     let tokens = parser
         .into_tokens()
@@ -152,36 +154,12 @@ pub fn complete_flyline_args(
         .map(|annoted_token| annoted_token.token)
         .collect::<Vec<_>>();
 
-    // if the cursor is not in any of the tokens, append a whitespace token at the end so that we can generate completions for an empty token after the last word
-    let tokens =
-        if tokens.is_empty() || !tokens.iter().any(|t| t.byte_range().contains(&cursor_byte)) {
-            let mut tokens = tokens;
-            tokens.push(flash::lexer::Token {
-                kind: flash::lexer::TokenKind::Whitespace(" ".to_string()),
-                value: " ".to_string(),
-                position: flash::lexer::Position {
-                    line: 0,
-                    column: 0,
-                    byte: cursor_byte,
-                },
-            });
-            tokens
-        } else {
-            tokens
-        };
-
-    let non_whitespace_tokens = tokens
+    let relevant_tokens = tokens
         .into_iter()
         .filter(|x| !x.kind.is_whitespace() || x.byte_range().contains(&cursor_byte))
         .collect::<Vec<_>>();
 
-    let index = non_whitespace_tokens
-        .iter()
-        .filter(|x| !x.kind.is_whitespace())
-        .take_while(|&tok| tok.byte_range().end < cursor_byte)
-        .count();
-
-    let args_os_string = non_whitespace_tokens
+    let args_os_string = relevant_tokens
         .iter()
         .map(|t| {
             if t.kind.is_whitespace() {
@@ -190,7 +168,12 @@ pub fn complete_flyline_args(
                 std::ffi::OsString::from(&t.value)
             }
         })
+        .chain(std::iter::once(std::ffi::OsString::from(
+            bash_funcs::dequoting_function_rust(wuc),
+        )))
         .collect::<Vec<_>>();
+
+    let index = args_os_string.len() - 1;
 
     log::info!(
         "Completing command: cursor_byte: {}, parsed args: {:?}, index: {}, ",
@@ -199,8 +182,10 @@ pub fn complete_flyline_args(
         index
     );
 
+    let mut clap_command = FlylineArgs::command();
+
     match clap_complete::engine::complete(
-        &mut command,
+        &mut clap_command,
         args_os_string,
         index,
         current_dir_asdf.as_deref(),
@@ -214,6 +199,31 @@ pub fn complete_flyline_args(
             return Err(anyhow::anyhow!("Error generating bash completion: {e}"));
         }
     };
+}
+
+fn raw_command_before_word_under_cursor<'a>(
+    raw_command: &'a str,
+    wuc: &str,
+    cursor_byte: usize,
+) -> anyhow::Result<&'a str> {
+    if cursor_byte > raw_command.len() {
+        anyhow::bail!("cursor is outside raw command");
+    }
+
+    if wuc.is_empty() {
+        if !raw_command.is_char_boundary(cursor_byte) {
+            anyhow::bail!("cursor is not on a char boundary");
+        }
+        return Ok(&raw_command[..cursor_byte]);
+    }
+
+    raw_command
+        .match_indices(wuc)
+        .find_map(|(start, _)| {
+            let end = start + wuc.len();
+            (start <= cursor_byte && cursor_byte <= end).then_some(&raw_command[..start])
+        })
+        .ok_or_else(|| anyhow::anyhow!("word under cursor not found at cursor"))
 }
 
 #[derive(Subcommand, Debug)]
