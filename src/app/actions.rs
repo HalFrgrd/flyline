@@ -1880,7 +1880,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            ContextVar::BufferHasAgentModePrefix.into(),
+            (ContextVar::BufferHasAgentModePrefix + ContextVar::NormalEditing).into(),
             Action::RunAgentMode,
         ),
         Binding::new(
