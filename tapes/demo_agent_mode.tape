@@ -16,7 +16,7 @@ Type `flyline set-agent-mode --system-prompt "Answer with a JSON array of at mos
 Enter
 Type `  --trigger-prefix "ai: " \`
 Enter
-Type `  --command 'claude --prompt --effort low'`
+Type `  --command 'claude --effort low --print'`
 Enter
 Sleep 500ms
 

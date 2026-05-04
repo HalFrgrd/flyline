@@ -8,7 +8,7 @@ Require claude
 
 Hide
 Sleep 50ms
-Type `flyline editor --auto-close-chars true && flyline key bind PageUp always=moveLeftOneWordExtendSelection && clear`
+Type `export PATH="/home/john/bin/:$PATH && flyline editor --auto-close-chars true && flyline key bind PageUp always=moveLeftOneWordExtendSelection && clear`
 Enter
 Show
 

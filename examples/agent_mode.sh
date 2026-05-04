@@ -9,7 +9,7 @@
 flyline set-agent-mode \
     --system-prompt "Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a Bash command." \
     --trigger-prefix ': ' \
-    --command 'claude --effort low --prompt'
+    --command 'claude --effort low --print'
 
 # Copilot
 flyline set-agent-mode \

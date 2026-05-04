@@ -892,6 +892,16 @@ impl<'a> App<'a> {
         let mut update_buffer = false;
         let mut handled_mouse_action = false;
 
+        if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
+            match self.last_mouse_over_cell {
+                Some(Tag::Ps1PromptCwd(_)) => {
+                }
+                _ => {
+                    self.content_mode = ContentMode::Normal;
+                }
+            }
+        }
+
         match self.last_mouse_over_cell {
             Some(Tag::Suggestion(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
