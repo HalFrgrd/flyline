@@ -176,6 +176,7 @@ impl DParser {
             (TokenKind::RBrace, TokenKind::ParamExpansion) => true,
             (TokenKind::RBrace, TokenKind::LBrace) => true,
             (TokenKind::DoubleRParen, TokenKind::ArithSubst) => true,
+            (TokenKind::DoubleRParen, TokenKind::ArithCommand) => true,
             (TokenKind::Backtick, TokenKind::Backtick) => true,
             (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
             (TokenKind::Quote, TokenKind::Quote) => true,
@@ -220,7 +221,10 @@ impl DParser {
             // When closing an ArithSubst, two consecutive ) tokens are required.
             // Merge them into a single DoubleRParen by modifying self.tokens[idx] in place
             // and removing the second ) from the vector.
-            if nestings.last().map(|(_, k)| k) == Some(&TokenKind::ArithSubst)
+            if matches!(
+                nestings.last().map(|(_, k)| k),
+                Some(TokenKind::ArithSubst | TokenKind::ArithCommand)
+            )
                 && self.tokens[idx].token.kind == TokenKind::RParen
                 && idx + 1 < self.tokens.len()
                 && self.tokens[idx + 1].token.kind == TokenKind::RParen
@@ -687,18 +691,48 @@ impl DParser {
             return false;
         };
 
-        let Some(OpeningState::Matched(closing_idx)) = opening_token.annotations.opening else {
+        if let Some(OpeningState::Matched(closing_idx)) = opening_token.annotations.opening {
+            return tokens.get(closing_idx).is_some_and(|closing_token| {
+                let is_empty_arith_command_pair = opening_token.token.kind == TokenKind::ArithCommand
+                    && opening_token.token.byte_range().end == cursor_pos
+                    && matches!(closing_token.token.kind, TokenKind::DoubleRParen | TokenKind::RParen)
+                    && closing_token.token.value.starts_with(')');
+
+                closing_token.token.byte_range().start == cursor_pos
+                    && (closing_token
+                        .annotations
+                        .closing
+                        .as_ref()
+                        .is_some_and(|closing| closing.is_auto_inserted)
+                        || is_empty_arith_command_pair)
+            });
+        }
+
+        // Fallback for lexer/parser edge cases where no structural opening/closing annotation
+        // is available (e.g. consecutive `(` merged into ArithCommand tokens). If the cursor is
+        // exactly between an opening char and an auto-inserted matching closing token, delete it.
+        let Some(opening_char) = opening_token.token.value.chars().next_back() else {
+            return false;
+        };
+        let Some(expected_closing_char) = surround_closing_char(opening_char) else {
             return false;
         };
 
-        tokens.get(closing_idx).is_some_and(|closing_token| {
+        opening_token.token.byte_range().end == cursor_pos
+            && tokens.iter().any(|closing_token| {
+                let is_empty_arith_command_pair = opening_token.token.kind == TokenKind::ArithCommand
+                    && matches!(closing_token.token.kind, TokenKind::DoubleRParen | TokenKind::RParen)
+                    && closing_token.token.value.starts_with(')');
+
             closing_token.token.byte_range().start == cursor_pos
-                && closing_token
+                && closing_token.token.value.starts_with(expected_closing_char)
+                && (closing_token
                     .annotations
                     .closing
                     .as_ref()
                     .is_some_and(|closing| closing.is_auto_inserted)
-        })
+                    || is_empty_arith_command_pair)
+            })
     }
 
     pub fn mark_auto_inserted_closing(

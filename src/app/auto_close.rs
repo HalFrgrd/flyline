@@ -81,11 +81,25 @@ pub(crate) fn delete_auto_inserted_closing_if_present(
     buffer: &mut TextBuffer,
     dparser_tokens_cache: &[dparser::AnnotatedToken],
 ) {
+    let cursor_pos = buffer.cursor_byte_pos();
+
     if dparser::DParser::should_delete_auto_inserted_closing(
         dparser_tokens_cache,
-        buffer.cursor_byte_pos(),
+        cursor_pos,
     ) {
         buffer.delete_right();
+        return;
+    }
+
+    // Fallback for parser edge cases (notably consecutive `(` that can be tokenized
+    // as arithmetic-command boundaries): if the cursor is directly between `(` and `)`,
+    // delete the right paren first so Backspace removes the innermost pair.
+    if cursor_pos > 0 {
+        let left_char = buffer.buffer()[..cursor_pos].chars().next_back();
+        let right_char = buffer.buffer()[cursor_pos..].chars().next();
+        if left_char == Some('(') && right_char == Some(')') {
+            buffer.delete_right();
+        }
     }
 }
 
@@ -250,5 +264,37 @@ mod tests {
 
         assert_eq!(buffer.buffer(), "echo \"$($(echo foo '' ))\"");
         assert_eq!(buffer.cursor_byte_pos(), insertion_pos + 1);
+    }
+
+    #[test]
+    fn repeated_backspace_on_nested_auto_inserted_parens_removes_inner_pair_each_time() {
+        let mut buffer = TextBuffer::new("");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '(');
+        handle_char_insertion(&mut buffer, &mut tokens, '(');
+        handle_char_insertion(&mut buffer, &mut tokens, '(');
+        assert_eq!(buffer.buffer(), "((()))");
+        assert_eq!(buffer.cursor_byte_pos(), 3);
+
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+        assert_eq!(buffer.buffer(), "(())");
+        assert_eq!(buffer.cursor_byte_pos(), 2);
+
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+        assert_eq!(buffer.buffer(), "()");
+        assert_eq!(buffer.cursor_byte_pos(), 1);
+
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+        assert_eq!(buffer.buffer(), "");
+        assert_eq!(buffer.cursor_byte_pos(), 0);
+
+        let _ = tokens;
     }
 }
