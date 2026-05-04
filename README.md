@@ -98,7 +98,7 @@ Then you can simply run `enable flyline`.
 Flyline sets up its own tab completion
 so you can type `flyline <Tab>` in your shell to interactively browse and configure settings. Copy the commands into your `.bashrc` so they persist.
 
-Explore this readme and [examples](examples/) for what you can configure.
+Explore this README and [examples](examples/) for what you can configure.
 
 # Rich prompts
 
@@ -290,7 +290,7 @@ Examples:
   # PS1 usage:
   PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 
-  # Non-blocking with a 10-space placeholder while the new output is being computed.
+  # Non-blocking with previous output placeholder while the new output is being computed.
   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder prev
 
   # Blocking: waits for the command to finish before showing the prompt.
