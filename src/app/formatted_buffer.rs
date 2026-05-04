@@ -201,14 +201,6 @@ fn get_word_info(token: &AnnotatedToken) -> Option<WordInfo> {
             tooltip: Some(description.to_string()),
             is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
         });
-    } else if token.annotations.has_no_annotations() && token.token.value.starts_with('~') {
-        let expanded = bash_funcs::expand_filename(&token.token.value);
-        if expanded != token.token.value {
-            return Some(WordInfo {
-                tooltip: Some(format!("{}={}", token.token.value, expanded)),
-                is_recognised_command: false,
-            });
-        }
     }
     None
 }
