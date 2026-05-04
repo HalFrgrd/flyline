@@ -63,8 +63,15 @@ impl PathPatternExpansion {
         }
     }
 
-    fn glob_pattern(&self) -> String {
-        format!("{}/{}", self.expanded_prefix, self.rhs_pattern)
+    /// Build the glob pattern(s) used to match against the filesystem.
+    ///
+    /// The returned vector contains the cartesian product of any brace
+    /// expansions present in the pattern (e.g. `foo*{1,3}/bar*{A,C}`
+    /// expands to four patterns).  When the pattern contains no brace
+    /// alternatives, the returned vector has a single element.
+    fn glob_pattern(&self) -> Vec<String> {
+        let combined = format!("{}/{}", self.expanded_prefix, self.rhs_pattern);
+        expand_braces(&combined)
     }
 
     fn wants_hidden(&self) -> bool {
@@ -101,6 +108,95 @@ impl PathPatternExpansion {
             (expanded_match.to_string(), expanded_match.to_string())
         }
     }
+}
+
+/// Expand bash-style brace alternatives in `pattern` (the `{a,b,c}` form).
+///
+/// Returns the cartesian product of all top-level brace groups. Brace groups
+/// may be nested, in which case the inner alternatives are expanded first.
+/// A brace group must contain at least one unescaped top-level comma to be
+/// treated as an alternation; otherwise the braces are left untouched (this
+/// matches bash's behaviour for things like `${VAR}` or `{single}`).
+///
+/// Sequence expressions like `{1..5}` are intentionally NOT supported here —
+/// only comma-separated alternatives, which is what tab completion needs to
+/// drive `glob::glob` from a pattern such as `foo*{1,3}/bar*{A,C}`.
+///
+/// When `pattern` contains no expandable braces, the returned vector contains
+/// `pattern` unchanged.
+fn expand_braces(pattern: &str) -> Vec<String> {
+    // Find the first unescaped '{' that has a matching '}' at the same nesting
+    // level and at least one top-level comma between them.
+    let bytes = pattern.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'{' {
+            if let Some((end, alternatives)) = find_brace_alternatives(pattern, i) {
+                let prefix = &pattern[..i];
+                let suffix = &pattern[end + 1..];
+                // Recursively expand the suffix (and any further braces in it)
+                // for every alternative, then expand each alternative itself
+                // (in case it contained nested braces that we left alone above).
+                let suffix_expansions = expand_braces(suffix);
+                let mut out = Vec::new();
+                for alt in &alternatives {
+                    for alt_expanded in expand_braces(alt) {
+                        for suf in &suffix_expansions {
+                            out.push(format!("{}{}{}", prefix, alt_expanded, suf));
+                        }
+                    }
+                }
+                return out;
+            }
+        }
+        i += 1;
+    }
+    vec![pattern.to_string()]
+}
+
+/// Given that `pattern[start]` is an unescaped `{`, look for the matching `}`
+/// at the same nesting level. If found, and there is at least one top-level
+/// (unescaped, un-nested) comma between them, return the index of the closing
+/// `}` together with the list of alternatives. Otherwise return `None`.
+fn find_brace_alternatives(pattern: &str, start: usize) -> Option<(usize, Vec<String>)> {
+    let bytes = pattern.as_bytes();
+    debug_assert_eq!(bytes[start], b'{');
+    let mut depth: i32 = 0;
+    let mut alt_start = start + 1;
+    let mut alternatives: Vec<String> = Vec::new();
+    let mut i = start;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => {
+                i += 2;
+                continue;
+            }
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    alternatives.push(pattern[alt_start..i].to_string());
+                    if alternatives.len() < 2 {
+                        // No top-level comma -> not a brace alternation.
+                        return None;
+                    }
+                    return Some((i, alternatives));
+                }
+            }
+            b',' if depth == 1 => {
+                alternatives.push(pattern[alt_start..i].to_string());
+                alt_start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    // Unmatched '{'.
+    None
 }
 
 // bash programmable completions:
@@ -603,18 +699,31 @@ fn tab_complete_glob_expansion(
 
     const MAX_GLOB_RESULTS: usize = 5_000;
 
-    let glob_pattern = expanded.glob_pattern();
+    let glob_patterns = expanded.glob_pattern();
 
-    log::debug!("Using glob_pattern{:?}", glob_pattern);
+    log::debug!("Using glob_patterns {:?}", glob_patterns);
 
-    if let Ok(paths) = glob::glob(&glob_pattern) {
-        for (idx, path) in paths.filter_map(Result::ok).enumerate() {
-            if idx >= MAX_GLOB_RESULTS {
+    let mut seen_paths: std::collections::HashSet<std::path::PathBuf> =
+        std::collections::HashSet::new();
+
+    'outer: for glob_pattern in &glob_patterns {
+        let Ok(paths) = glob::glob(glob_pattern) else {
+            continue;
+        };
+        for path in paths.filter_map(Result::ok) {
+            if results.len() >= MAX_GLOB_RESULTS {
                 log::debug!(
                     "Reached maximum glob results limit of {}. Stopping further processing.",
                     MAX_GLOB_RESULTS
                 );
-                break;
+                break 'outer;
+            }
+
+            // When multiple brace-expanded patterns are searched, the same
+            // path may match more than one of them; deduplicate so the user
+            // doesn't see the same suggestion twice.
+            if !seen_paths.insert(path.clone()) {
+                continue;
             }
 
             let path_str = path.to_string_lossy();
@@ -1157,6 +1266,164 @@ impl App<'_> {
             &[&ProcessedSuggestion::new(r#"a.txt"#, "", " ")],
         );
 
+        // ----------------------------------------------------------------
+        // Brace expansion in glob tab completion.
+        // The fixture lives at /tmp/example_braces (see tab_completions.Dockerfile).
+        //   foo1/{barA, barB, barC}
+        //   foo2/{barA, barC}
+        //   foo3/{barA, barC}
+        // The pattern `$PWD/foo*{1,3}/bar*{A,C}` should expand to the
+        // cartesian product of `{1,3}` x `{A,C}` and therefore match only
+        // entries under foo1 and foo3, and only bar*A / bar*C — never foo2
+        // and never barB.
+        std::env::set_current_dir("/tmp/example_braces").unwrap();
+
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo*{1,3}/bar*{A,C}",
+            &[
+                &ProcessedSuggestion::new(r#"$PWD/foo1/barA"#, "", " "),
+                &ProcessedSuggestion::new(r#"$PWD/foo1/barC"#, "", " "),
+                &ProcessedSuggestion::new(r#"$PWD/foo3/barA"#, "", " "),
+                &ProcessedSuggestion::new(r#"$PWD/foo3/barC"#, "", " "),
+            ],
+        );
+
+        // Single brace group combined with a glob character. This expands
+        // to two patterns (`$PWD/foo1/bar*A` and `$PWD/foo1/bar*C`) which
+        // together match exactly `barA` and `barC` under foo1.
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo1/bar*{A,C}",
+            &[
+                &ProcessedSuggestion::new(r#"$PWD/foo1/barA"#, "", " "),
+                &ProcessedSuggestion::new(r#"$PWD/foo1/barC"#, "", " "),
+            ],
+        );
+
+        // Brace alternatives where one branch matches nothing should still
+        // surface the matches from the other branch (foo2 has no barB).
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo{1,2}/bar*B",
+            &[&ProcessedSuggestion::new(r#"$PWD/foo1/barB"#, "", " ")],
+        );
+
+        // The same path matched by multiple brace expansions must only be
+        // reported once. `bar*{A,A}` would otherwise produce duplicates.
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo1/bar*{A,A}",
+            &[&ProcessedSuggestion::new(r#"$PWD/foo1/barA"#, "", " ")],
+        );
+
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a `PathPatternExpansion` directly from its fields without going
+    /// through `PathPatternExpansion::new`, which would require bash symbols
+    /// at link time. Used to unit-test `glob_pattern` in isolation.
+    fn make_expansion(expanded_prefix: &str, rhs_pattern: &str) -> PathPatternExpansion {
+        PathPatternExpansion {
+            raw_prefix: String::new(),
+            expanded_prefix: expanded_prefix.to_string(),
+            rhs_pattern: rhs_pattern.to_string(),
+        }
+    }
+
+    #[test]
+    fn glob_pattern_no_braces() {
+        let e = make_expansion("/tmp/foo", "bar*");
+        assert_eq!(e.glob_pattern(), vec!["/tmp/foo/bar*".to_string()]);
+    }
+
+    #[test]
+    fn glob_pattern_single_brace_in_rhs() {
+        let e = make_expansion("/tmp/foo", "bar*{A,C}");
+        assert_eq!(
+            e.glob_pattern(),
+            vec!["/tmp/foo/bar*A".to_string(), "/tmp/foo/bar*C".to_string()]
+        );
+    }
+
+    #[test]
+    fn glob_pattern_cartesian_product_two_braces() {
+        // Mirrors the integration test pattern: `$PWD/foo*{1,3}/bar*{A,C}`.
+        let e = make_expansion("/tmp/example_braces", "foo*{1,3}/bar*{A,C}");
+        assert_eq!(
+            e.glob_pattern(),
+            vec![
+                "/tmp/example_braces/foo*1/bar*A".to_string(),
+                "/tmp/example_braces/foo*1/bar*C".to_string(),
+                "/tmp/example_braces/foo*3/bar*A".to_string(),
+                "/tmp/example_braces/foo*3/bar*C".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn glob_pattern_three_alternatives() {
+        let e = make_expansion("/tmp/x", "{a,b,c}.txt");
+        assert_eq!(
+            e.glob_pattern(),
+            vec![
+                "/tmp/x/a.txt".to_string(),
+                "/tmp/x/b.txt".to_string(),
+                "/tmp/x/c.txt".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn glob_pattern_brace_without_comma_is_literal() {
+        // `{single}` is not a brace alternation in bash — it's left intact.
+        let e = make_expansion("/tmp/x", "{single}");
+        assert_eq!(e.glob_pattern(), vec!["/tmp/x/{single}".to_string()]);
+    }
+
+    #[test]
+    fn glob_pattern_nested_braces() {
+        // `{a,b{c,d}}` -> a, bc, bd
+        let e = make_expansion("/tmp/x", "{a,b{c,d}}");
+        assert_eq!(
+            e.glob_pattern(),
+            vec![
+                "/tmp/x/a".to_string(),
+                "/tmp/x/bc".to_string(),
+                "/tmp/x/bd".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn glob_pattern_unmatched_brace_left_alone() {
+        let e = make_expansion("/tmp/x", "foo{bar");
+        assert_eq!(e.glob_pattern(), vec!["/tmp/x/foo{bar".to_string()]);
+    }
+
+    #[test]
+    fn glob_pattern_brace_in_expanded_prefix() {
+        // Brace expansion should also kick in when the brace lives in the
+        // expanded prefix portion.
+        let e = make_expansion("/tmp/{a,b}", "x*");
+        assert_eq!(
+            e.glob_pattern(),
+            vec!["/tmp/a/x*".to_string(), "/tmp/b/x*".to_string()]
+        );
+    }
+
+    #[test]
+    fn expand_braces_no_braces() {
+        assert_eq!(expand_braces("plain"), vec!["plain".to_string()]);
+    }
+
+    #[test]
+    fn expand_braces_empty_alternative() {
+        // `{,foo}` -> "" and "foo"
+        assert_eq!(
+            expand_braces("x{,foo}y"),
+            vec!["xy".to_string(), "xfooy".to_string()]
+        );
     }
 }
