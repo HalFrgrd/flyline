@@ -191,7 +191,6 @@ pub enum CursorStyleConfig {
     Custom(ratatui::style::Style),
 }
 
-
 /// Complete cursor configuration set by `flyline set-cursor`.
 #[derive(Debug, Clone)]
 pub struct CursorConfig {

@@ -130,7 +130,6 @@ impl AppRunningState {
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum LastKeyPressAction {
-    InsertedAutoClosing { char: char, byte_pos: usize },
     AffectedMouseState,
 }
 
@@ -894,8 +893,7 @@ impl<'a> App<'a> {
 
         if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
             match self.last_mouse_over_cell {
-                Some(Tag::Ps1PromptCwd(_)) => {
-                }
+                Some(Tag::Ps1PromptCwd(_)) => {}
                 _ => {
                     self.content_mode = ContentMode::Normal;
                 }
@@ -1455,17 +1453,10 @@ impl<'a> App<'a> {
             }
         }
 
-        let mut parser = dparser::DParser::from(self.buffer.buffer());
-        parser.walk_to_end();
-        let mut new_tokens = parser.into_tokens();
-        if let Some(LastKeyPressAction::InsertedAutoClosing { char, byte_pos }) =
-            self.last_keypress_action
-        {
-            // If the last keypress inserted an auto-closing char, mark the corresponding token in the new cache as auto-inserted.
-            Self::mark_auto_inserted_closing(&mut new_tokens, char, byte_pos);
-        }
-
-        dparser::DParser::transfer_auto_inserted_flags(&self.dparser_tokens_cache, &mut new_tokens);
+        let new_tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(
+            self.buffer.buffer(),
+            &self.dparser_tokens_cache,
+        );
         // for token in &new_tokens {
         //     log::trace!("Parsed token '{:#?}", token);
         // }
