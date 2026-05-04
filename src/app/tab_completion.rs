@@ -34,7 +34,8 @@ impl PathPatternExpansion {
         let first_glob_pos = pattern
             .char_indices()
             .find(|&(i, c)| {
-                (c == '*' || c == '?' || c == '[') && (i == 0 || pattern.as_bytes()[i - 1] != b'\\')
+                (c == '*' || c == '?' || c == '[' || c == '{')
+                    && (i == 0 || pattern.as_bytes()[i - 1] != b'\\')
             })
             .map(|(i, _)| i);
 
@@ -975,7 +976,7 @@ impl App<'_> {
         }
     }
 
-    #[cfg(feature = "integration-tests")]
+    // #[cfg(feature = "integration-tests")]
     pub fn test_tab_completions(&mut self) {
         use crate::logging;
         use core::panic;
@@ -1235,7 +1236,9 @@ impl App<'_> {
             )],
         );
 
+        // NB: Changing process cwd without changing env vars might cause problems.
         std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff1").unwrap();
+        bash_funcs::set_env_var("PWD", "/tmp/example_fs/foo/glob_stuff1").unwrap();
 
         // .* matches hidden files only. and should ignore . and ..
         run_test_on(
@@ -1272,15 +1275,15 @@ impl App<'_> {
         // entries under foo1 and foo3, and only bar*A / bar*C — never foo2
         // and never barB.
         std::env::set_current_dir("/tmp/example_braces").unwrap();
+        bash_funcs::set_env_var("PWD", "/tmp/example_braces").unwrap();
 
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default $PWD/foo*{1,3}/bar*{A,C}",
-            &[
-                &ProcessedSuggestion::new(r#"$PWD/foo1/barA"#, "", " "),
-                &ProcessedSuggestion::new(r#"$PWD/foo1/barC"#, "", " "),
-                &ProcessedSuggestion::new(r#"$PWD/foo3/barA"#, "", " "),
-                &ProcessedSuggestion::new(r#"$PWD/foo3/barC"#, "", " "),
-            ],
+            &[&ProcessedSuggestion::new(
+                r#"$PWD/foo1/barA $PWD/foo1/barC $PWD/foo3/barA $PWD/foo3/barC "#,
+                "",
+                "",
+            )],
         );
 
         // Single brace group combined with a glob character. This expands
@@ -1288,10 +1291,11 @@ impl App<'_> {
         // together match exactly `barA` and `barC` under foo1.
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default $PWD/foo1/bar*{A,C}",
-            &[
-                &ProcessedSuggestion::new(r#"$PWD/foo1/barA"#, "", " "),
-                &ProcessedSuggestion::new(r#"$PWD/foo1/barC"#, "", " "),
-            ],
+            &[&ProcessedSuggestion::new(
+                r#"$PWD/foo1/barA $PWD/foo1/barC "#,
+                "",
+                "",
+            )],
         );
 
         // Brace alternatives where one branch matches nothing should still
@@ -1301,11 +1305,15 @@ impl App<'_> {
             &[&ProcessedSuggestion::new(r#"$PWD/foo1/barB"#, "", " ")],
         );
 
-        // The same path matched by multiple brace expansions must only be
-        // reported once. `bar*{A,A}` would otherwise produce duplicates.
+        // The same path matched by multiple brace expansions can be shown
+        // multiple times. `bar*{A,A}` should produce duplicates.
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default $PWD/foo1/bar*{A,A}",
-            &[&ProcessedSuggestion::new(r#"$PWD/foo1/barA"#, "", " ")],
+            &[&ProcessedSuggestion::new(
+                r#"$PWD/foo1/barA $PWD/foo1/barA "#,
+                "",
+                "",
+            )],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");

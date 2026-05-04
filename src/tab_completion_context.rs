@@ -1401,7 +1401,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_is_glob_pattern_detects_supported_patterns() {
         assert!(CompType::is_glob_pattern("./foo*"));
@@ -1409,6 +1408,7 @@ mod tests {
         assert!(CompType::is_glob_pattern("./foo[ab].txt"));
         assert!(CompType::is_glob_pattern("./{foo,bar}.txt"));
         assert!(CompType::is_glob_pattern("./foo{1..3}.txt"));
+        assert!(CompType::is_glob_pattern("$PWD/foo{1,3}"));
         assert!(CompType::is_glob_pattern("./{foo,bar}/{baz,qux}.txt"));
     }
 
@@ -1491,5 +1491,4 @@ mod tests {
             ]
         );
     }
-
 }
