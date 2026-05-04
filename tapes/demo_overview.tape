@@ -52,7 +52,7 @@ Sleep 1500ms
 Type ` $HOME`
 Sleep 1500ms
 Type ` && echo $BASH_VERSINFO`
-Sleep 1500ms
+Sleep 2000ms
 Ctrl+C
 Sleep 800ms
 
