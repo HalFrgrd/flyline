@@ -6,102 +6,13 @@ use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
 use crate::content_utils::{ansi_string_to_spans, easing_animation_frames};
 use crate::cursor::{CursorEasing, cursor_effect_animation_frames};
+use crate::globbing::PathPatternExpansion;
 use crate::iter_first_last::FirstLast;
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
 use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
-
-#[derive(Debug)]
-struct PathPatternExpansion {
-    /// The part of the pattern before the last '/' that separates the pattern kept in its original form
-    /// (e.g. `~/foo` for `~/foo/baz*` or `relative/dir` for `relative/dir/*/*.txt`).
-    /// it might be empty : e.g. `baz*`
-    raw_prefix: String,
-    /// `raw_prefix` after tilde expansion, conversion to an absolute path, and
-    /// environment-variable expansion (e.g. `/home/user/foo` or `/cwd/relative/dir`).
-    /// it might be empty: e.g. `/pro*/123*`.
-    expanded_prefix: String,
-    /// The part of the pattern after the separating`/`— the glob portion
-    /// (e.g. `baz*` or `*/*.txt`).
-    rhs_pattern: String,
-}
-
-impl PathPatternExpansion {
-    fn new(pattern: &str) -> Self {
-        // Find the first unescaped glob metacharacter (* ? [).
-        let first_glob_pos = pattern
-            .char_indices()
-            .find(|&(i, c)| {
-                (c == '*' || c == '?' || c == '[') && (i == 0 || pattern.as_bytes()[i - 1] != b'\\')
-            })
-            .map(|(i, _)| i);
-
-        // When the pattern contains glob characters, split at the last `/`
-        // that comes *before* the first glob metacharacter so that the
-        // prefix never contains unresolved globs (which would prevent
-        // `strip_prefix` from working later).  When there are no glob
-        // characters, fall back to splitting at the last `/`.
-        let search_end = first_glob_pos.unwrap_or(pattern.len());
-        let (raw_prefix, rhs_pattern) = if let Some(slash_pos) = pattern[..search_end].rfind('/') {
-            (
-                pattern[..slash_pos].to_string(),
-                pattern[slash_pos + 1..].to_string(),
-            )
-        } else {
-            (String::new(), pattern.to_string())
-        };
-        let expanded_prefix = bash_funcs::fully_expand_path(&raw_prefix);
-
-        let rhs_pattern = bash_funcs::dequoting_function_rust(&rhs_pattern);
-
-        PathPatternExpansion {
-            raw_prefix,
-            expanded_prefix,
-            rhs_pattern,
-        }
-    }
-
-    fn glob_pattern(&self) -> String {
-        format!("{}/{}", self.expanded_prefix, self.rhs_pattern)
-    }
-
-    fn wants_hidden(&self) -> bool {
-        self.rhs_pattern.starts_with('.') && !self.rhs_pattern.starts_with("./")
-    }
-
-    fn convert_expanded_match_to_unexpanded(
-        &self,
-        expanded_match: &str,
-        quote_type: Option<QuoteType>,
-    ) -> (String, String) {
-        let expected_prefix = format!("{}/", self.expanded_prefix);
-
-        if let Some(rhs) = expanded_match.strip_prefix(&expected_prefix) {
-            let quoted_rhs = bash_funcs::quoting_function_rust(
-                rhs,
-                quote_type.unwrap_or_default(),
-                false,
-                false,
-            );
-            let combined = format!(
-                "{}{}{}",
-                self.raw_prefix,
-                if self.raw_prefix.is_empty() { "" } else { "/" },
-                quoted_rhs
-            );
-            (combined.clone(), quoted_rhs)
-        } else {
-            log::warn!(
-                "Expected expanded match '{}' to start with expanded_prefix '{}', but it did not.",
-                expanded_match,
-                expected_prefix
-            );
-            (expanded_match.to_string(), expanded_match.to_string())
-        }
-    }
-}
 
 // bash programmable completions:
 //
@@ -467,6 +378,11 @@ pub(crate) fn gen_completions_internal(
                         return Some((vec![single_completion.clone()], REPLACE_WITH_COMMON_PREFIX));
                     }
                     _ => {
+                        log::debug!(
+                            "Multiple glob expansion completions found for pattern '{}': {:#?}",
+                            word_under_cursor.as_ref(),
+                            completions
+                        );
                         // Unlike other completions, if there are multiple glob completions,
                         // we join them with spaces and insert them all at once.
                         // Process each item eagerly here since we need the final text.
@@ -603,18 +519,21 @@ fn tab_complete_glob_expansion(
 
     const MAX_GLOB_RESULTS: usize = 5_000;
 
-    let glob_pattern = expanded.glob_pattern();
+    let glob_patterns = expanded.glob_pattern();
 
-    log::debug!("Using glob_pattern{:?}", glob_pattern);
+    log::debug!("Using glob_patterns {:?}", glob_patterns);
 
-    if let Ok(paths) = glob::glob(&glob_pattern) {
-        for (idx, path) in paths.filter_map(Result::ok).enumerate() {
-            if idx >= MAX_GLOB_RESULTS {
+    'outer: for glob_pattern in &glob_patterns {
+        let Ok(paths) = glob::glob(glob_pattern) else {
+            continue;
+        };
+        for path in paths.filter_map(Result::ok) {
+            if results.len() >= MAX_GLOB_RESULTS {
                 log::debug!(
                     "Reached maximum glob results limit of {}. Stopping further processing.",
                     MAX_GLOB_RESULTS
                 );
-                break;
+                break 'outer;
             }
 
             let path_str = path.to_string_lossy();
@@ -1131,7 +1050,9 @@ impl App<'_> {
             )],
         );
 
+        // NB: Changing process cwd without changing env vars might cause problems.
         std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff1").unwrap();
+        bash_funcs::set_env_var("PWD", "/tmp/example_fs/foo/glob_stuff1").unwrap();
 
         // .* matches hidden files only. and should ignore . and ..
         run_test_on(
@@ -1155,6 +1076,58 @@ impl App<'_> {
         run_test_on(
             "fl_comp_util_bashdefault --fallback-to-default *",
             &[&ProcessedSuggestion::new(r#"a.txt"#, "", " ")],
+        );
+
+        // ----------------------------------------------------------------
+        // Brace expansion in glob tab completion.
+        // The fixture lives at /tmp/example_braces (see tab_completions.Dockerfile).
+        //   foo1/{barA, barB, barC}
+        //   foo2/{barA, barC}
+        //   foo3/{barA, barC}
+        // The pattern `$PWD/foo*{1,3}/bar*{A,C}` should expand to the
+        // cartesian product of `{1,3}` x `{A,C}` and therefore match only
+        // entries under foo1 and foo3, and only bar*A / bar*C — never foo2
+        // and never barB.
+        std::env::set_current_dir("/tmp/example_braces").unwrap();
+        bash_funcs::set_env_var("PWD", "/tmp/example_braces").unwrap();
+
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo*{1,3}/bar*{A,C}",
+            &[&ProcessedSuggestion::new(
+                r#"$PWD/foo1/barA $PWD/foo1/barC $PWD/foo3/barA $PWD/foo3/barC "#,
+                "",
+                "",
+            )],
+        );
+
+        // Single brace group combined with a glob character. This expands
+        // to two patterns (`$PWD/foo1/bar*A` and `$PWD/foo1/bar*C`) which
+        // together match exactly `barA` and `barC` under foo1.
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo1/bar*{A,C}",
+            &[&ProcessedSuggestion::new(
+                r#"$PWD/foo1/barA $PWD/foo1/barC "#,
+                "",
+                "",
+            )],
+        );
+
+        // Brace alternatives where one branch matches nothing should still
+        // surface the matches from the other branch (foo2 has no barB).
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo{1,2}/bar*B",
+            &[&ProcessedSuggestion::new(r#"$PWD/foo1/barB"#, "", " ")],
+        );
+
+        // The same path matched by multiple brace expansions can be shown
+        // multiple times. `bar*{A,A}` should produce duplicates.
+        run_test_on(
+            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo1/bar*{A,A}",
+            &[&ProcessedSuggestion::new(
+                r#"$PWD/foo1/barA $PWD/foo1/barA "#,
+                "",
+                "",
+            )],
         );
 
         println!("Tab completion tests FLYLINE_TEST_SUCCESS");

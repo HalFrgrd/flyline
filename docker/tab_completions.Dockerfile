@@ -23,6 +23,25 @@ RUN set -eux; \
     mkdir -p  /root/foo; \
     touch    '/root/foo/$baz.txt'
 
+# Fixture for brace-expansion glob completion tests.
+# Layout:
+#   /tmp/example_braces/
+#       foo1/{barA,barB,barC}
+#       foo2/{barA,barC}            <-- foo2 is excluded by the {1,3} brace
+#       foo3/{barA,barC}
+# The pattern `$PWD/foo*{1,3}/bar*{A,C}` (expanded in cartesian-product form
+# by Flyline) should match exactly the bar A/C entries under foo1 and foo3,
+# but not anything under foo2 nor the barB entry.
+RUN set -eux; \
+    mkdir -p /tmp/example_braces/foo1 /tmp/example_braces/foo2 /tmp/example_braces/foo3; \
+    touch    /tmp/example_braces/foo1/barA \
+             /tmp/example_braces/foo1/barB \
+             /tmp/example_braces/foo1/barC \
+             /tmp/example_braces/foo2/barA \
+             /tmp/example_braces/foo2/barC \
+             /tmp/example_braces/foo3/barA \
+             /tmp/example_braces/foo3/barC
+
 RUN set -eux; \
     cat > /root/tab_completion_test_bashrc <<'EOF'
 set -e

@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     dparser::{DParser, ToInclusiveRange},
+    globbing,
     text_buffer::SubString,
 };
 
@@ -21,6 +22,12 @@ pub enum CompType {
     GlobExpansion,          // the glob pattern under the cursor, e.g. "*.rs|t"
     FilenameExpansion,      // the filename under the cursor, e.g. "fi|le.txt"
     FuzzyFilenameExpansion, // fuzzy-match files in the parent directory when FilenameExpansion finds nothing
+}
+
+impl CompType {
+    pub fn is_glob_pattern(s: &str) -> bool {
+        globbing::is_glob_pattern(s)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -69,7 +76,7 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::EnvVariable);
         } else if wuc.starts_with('~') && !wuc.contains("/") {
             comp_types.push(CompType::TildeExpansion);
-        } else if wuc.contains('*') || wuc.contains('?') || wuc.contains('[') {
+        } else if CompType::is_glob_pattern(wuc) {
             comp_types.push(CompType::GlobExpansion);
         } else {
             comp_types.push(CompType::FilenameExpansion);
@@ -1293,6 +1300,66 @@ mod tests {
             vec![
                 CompType::CommandComp {
                     command_word: "ll".to_string()
+                },
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
+        );
+    }
+
+    #[test]
+    fn test_completion_context_uses_glob_expansion_for_patterns() {
+        let ctx = run_inline(r"echo ./{foo,bar}.txt█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), "./{foo,bar}.txt");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::GlobExpansion
+            ]
+        );
+
+        let ctx = run_inline(r"echo ./foo*█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), "./foo*");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::GlobExpansion
+            ]
+        );
+    }
+
+    #[test]
+    fn test_completion_context_uses_filename_expansion_for_literals() {
+        let ctx = run_inline(r"echo ./foo\*█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), r"./foo\*");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
+        );
+
+        let ctx = run_inline(r"echo ./foo{bar}.txt█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), "./foo{bar}.txt");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
