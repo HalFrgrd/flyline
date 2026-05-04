@@ -13,7 +13,7 @@ Type "# Type something vaguely like the file / folder you want and press tab"
 Enter
 Sleep 500ms
 Type "cat nna"
-Sleep 500ms
+Sleep 1200ms
 Tab
 
-Sleep 2s
+Sleep 2000ms

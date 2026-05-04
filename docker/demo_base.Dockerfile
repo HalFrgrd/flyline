@@ -51,6 +51,8 @@ COPY docker/claude /home/john/bin/claude
 COPY docker/claude /home/john/bin/cargo
 COPY docker/claude /home/john/bin/git
 COPY docker/claude /home/john/bin/crontab
+COPY docker/claude /home/john/bin/wget
+COPY docker/claude /home/john/bin/curl
 
 RUN touch /home/john/.bash_history && \
     printf '%s\n' \
