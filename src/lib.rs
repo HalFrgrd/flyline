@@ -518,8 +518,8 @@ enum KeySubcommands {
     ///
     /// Examples:
     ///   flyline key bind Ctrl+Enter always=submitOrNewline
-    ///   flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion
-    ///   flyline key bind Alt+Left always=moveLeftOneWordFineGrained
+    ///   flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept
+    ///   flyline key bind Alt+Left always=moveLeftOneWordPart
     #[command(name = "bind", verbatim_doc_comment, disable_help_flag = true)]
     Bind {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").

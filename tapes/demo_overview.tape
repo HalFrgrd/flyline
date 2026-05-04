@@ -8,7 +8,7 @@ Require claude
 
 Hide
 Sleep 50ms
-Type `flyline editor --auto-close-chars true && flyline key bind PageUp always=moveLeftOneWordWhitespaceExtendSelection && clear`
+Type `flyline editor --auto-close-chars true && flyline key bind PageUp always=moveLeftOneWordExtendSelection && clear`
 Enter
 Show
 

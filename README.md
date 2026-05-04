@@ -571,7 +571,7 @@ The `always` context variable is always true.
 
 A context expression may combine multiple variables with `+`:
 ```bash
-flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion
+flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept
 ```
 Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses are not supported. 
 
