@@ -630,6 +630,23 @@ impl DParser {
         })
     }
 
+    /// Returns `true` if `byte_pos` falls inside a matched `$(...)` or backtick
+    /// command-substitution. `$()` and backticks reset the quoting context, so
+    /// callers can use this to decide that the outer double-quote restriction
+    /// does not apply.
+    fn is_inside_cmdsubst_or_backtick(tokens: &[AnnotatedToken], byte_pos: usize) -> bool {
+        tokens.iter().any(|t| {
+            if let Some(OpeningState::Matched(close_idx)) = t.annotations.opening {
+                if matches!(t.token.kind, TokenKind::CmdSubst | TokenKind::Backtick) {
+                    let open_end = t.token.byte_range().end;
+                    let close_start = tokens[close_idx].token.byte_range().start;
+                    return open_end <= byte_pos && byte_pos <= close_start;
+                }
+            }
+            false
+        })
+    }
+
     pub fn consume_overwritten_auto_inserted_closing(
         tokens: &mut [AnnotatedToken],
         c: char,
@@ -726,6 +743,8 @@ impl DParser {
             Self::is_inside_matched_quote(tokens, TokenKind::SingleQuote, just_inserted_pos);
         let is_inside_double_quote =
             Self::is_inside_matched_quote(tokens, TokenKind::Quote, just_inserted_pos);
+        let is_inside_cmdsubst_or_backtick =
+            Self::is_inside_cmdsubst_or_backtick(tokens, just_inserted_pos);
         let inserted_end = just_inserted_pos + c.len_utf8();
 
         // If a word token begins immediately after the inserted character, we inserted the quote
@@ -735,11 +754,18 @@ impl DParser {
             .iter()
             .any(|t| t.token.kind.is_word() && t.token.byte_range().start == inserted_end);
 
-        // Inside a matched quoted string the typed character is literal content – don't
-        // auto-close. Exception: `$` expansions are active inside double quotes, so `$(` → `)`
-        // and `${` → `}` are still auto-closed there (but not inside single quotes).
-        if is_inside_single_quote || is_inside_double_quote {
-            if is_inside_double_quote && !is_before_word && matches!(c, '(' | '{') {
+        // Inside a single-quoted string nothing is special – no auto-closing at all.
+        if is_inside_single_quote {
+            return None;
+        }
+
+        // Inside a double-quoted string, auto-closing is limited:
+        //   • $( → )  and  ${ → }  are always allowed (expansions active inside "...").
+        //   • When inside a $() or backtick nested inside the double quote, the quoting
+        //     context is reset, so all normal auto-closing rules apply (fall through).
+        //   • Everything else is suppressed.
+        if is_inside_double_quote && !is_inside_cmdsubst_or_backtick {
+            if !is_before_word && matches!(c, '(' | '{') {
                 let token_at_insertion = tokens
                     .iter()
                     .find(|t| t.token.byte_range().contains(&just_inserted_pos))
