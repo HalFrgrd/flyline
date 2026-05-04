@@ -49,6 +49,8 @@ RUN mkdir -p /home/john/bin
 COPY docker/claude /home/john/bin/claude
 # just a dummy file so it shows up as being an available command in the demo
 COPY docker/claude /home/john/bin/cargo
+COPY docker/claude /home/john/bin/git
+COPY docker/claude /home/john/bin/crontab
 
 RUN touch /home/john/.bash_history && \
     printf '%s\n' \
