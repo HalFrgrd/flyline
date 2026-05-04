@@ -24,6 +24,7 @@ mod content_builder;
 mod content_utils;
 mod cursor;
 mod dparser;
+mod globbing;
 mod history;
 mod iter_first_last;
 mod kill_on_drop_child;

@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     dparser::{DParser, ToInclusiveRange},
+    globbing,
     text_buffer::SubString,
 };
 
@@ -25,102 +26,7 @@ pub enum CompType {
 
 impl CompType {
     pub fn is_glob_pattern(s: &str) -> bool {
-        let mut escaped = false;
-        let mut quote = None;
-        let mut prev_char = None;
-
-        for (i, c) in s.char_indices() {
-            if escaped {
-                escaped = false;
-                prev_char = Some(c);
-                continue;
-            }
-
-            if c == '\\' {
-                escaped = true;
-                prev_char = Some(c);
-                continue;
-            }
-
-            if c == '\'' || c == '"' {
-                if quote == Some(c) {
-                    quote = None;
-                } else if quote.is_none() {
-                    quote = Some(c);
-                }
-                prev_char = Some(c);
-                continue;
-            }
-
-            if quote.is_some() {
-                prev_char = Some(c);
-                continue;
-            }
-
-            match c {
-                '*' | '?' => return true,
-                '[' if Self::has_unescaped_closing_bracket(&s[i + c.len_utf8()..]) => {
-                    return true;
-                }
-                '{' if prev_char != Some('$')
-                    && Self::has_unescaped_brace_expansion(&s[i + c.len_utf8()..]) =>
-                {
-                    return true;
-                }
-                _ => {}
-            }
-
-            prev_char = Some(c);
-        }
-
-        false
-    }
-
-    fn has_unescaped_closing_bracket(s: &str) -> bool {
-        let mut escaped = false;
-
-        for c in s.chars() {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-
-            match c {
-                '\\' => escaped = true,
-                ']' => return true,
-                _ => {}
-            }
-        }
-
-        false
-    }
-
-    fn has_unescaped_brace_expansion(s: &str) -> bool {
-        let mut escaped = false;
-        let mut depth = 0;
-        let mut has_comma = false;
-        let mut has_sequence = false;
-
-        for (i, c) in s.char_indices() {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-
-            match c {
-                '\\' => escaped = true,
-                '{' => depth += 1,
-                '}' if depth == 0 => return has_comma || has_sequence,
-                '}' => depth -= 1,
-                ',' if depth == 0 => has_comma = true,
-                '.' if depth == 0 && s[i + c.len_utf8()..].starts_with('.') => {
-                    has_sequence = true;
-                }
-                _ => {}
-            }
-        }
-
-        false
+        globbing::is_glob_pattern(s)
     }
 }
 
@@ -1399,37 +1305,6 @@ mod tests {
                 CompType::FuzzyFilenameExpansion
             ]
         );
-    }
-
-    #[test]
-    fn test_is_glob_pattern_detects_supported_patterns() {
-        assert!(CompType::is_glob_pattern("./foo*"));
-        assert!(CompType::is_glob_pattern("./foo?.txt"));
-        assert!(CompType::is_glob_pattern("./foo[ab].txt"));
-        assert!(CompType::is_glob_pattern("./{foo,bar}.txt"));
-        assert!(CompType::is_glob_pattern("./foo{1..3}.txt"));
-        assert!(CompType::is_glob_pattern("$PWD/foo{1,3}"));
-        assert!(CompType::is_glob_pattern("./{foo,bar}/{baz,qux}.txt"));
-    }
-
-    #[test]
-    fn test_is_glob_pattern_ignores_literal_or_incomplete_patterns() {
-        assert!(!CompType::is_glob_pattern(r"./foo\*"));
-        assert!(!CompType::is_glob_pattern(r"./foo\?.txt"));
-        assert!(!CompType::is_glob_pattern(r"./foo\[ab].txt"));
-        assert!(!CompType::is_glob_pattern(r"./\{foo,bar}.txt"));
-        assert!(!CompType::is_glob_pattern("./foo[ab.txt"));
-        assert!(!CompType::is_glob_pattern("./foo{bar}.txt"));
-        assert!(!CompType::is_glob_pattern("./foo{bar,baz.txt"));
-        assert!(!CompType::is_glob_pattern(r"./${foo,bar}.txt"));
-        assert!(!CompType::is_glob_pattern(r#""./foo*""#));
-        assert!(!CompType::is_glob_pattern("'./foo*'"));
-    }
-
-    #[test]
-    fn test_is_glob_pattern_detects_unescaped_pattern_after_escaped_literal() {
-        assert!(CompType::is_glob_pattern(r"./foo\*bar*.txt"));
-        assert!(CompType::is_glob_pattern(r"./foo\{bar,baz}/*.txt"));
     }
 
     #[test]
