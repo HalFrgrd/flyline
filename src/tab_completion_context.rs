@@ -23,6 +23,107 @@ pub enum CompType {
     FuzzyFilenameExpansion, // fuzzy-match files in the parent directory when FilenameExpansion finds nothing
 }
 
+impl CompType {
+    pub fn is_glob_pattern(s: &str) -> bool {
+        let mut escaped = false;
+        let mut quote = None;
+        let mut prev_char = None;
+
+        for (i, c) in s.char_indices() {
+            if escaped {
+                escaped = false;
+                prev_char = Some(c);
+                continue;
+            }
+
+            if c == '\\' {
+                escaped = true;
+                prev_char = Some(c);
+                continue;
+            }
+
+            if c == '\'' || c == '"' {
+                if quote == Some(c) {
+                    quote = None;
+                } else if quote.is_none() {
+                    quote = Some(c);
+                }
+                prev_char = Some(c);
+                continue;
+            }
+
+            if quote.is_some() {
+                prev_char = Some(c);
+                continue;
+            }
+
+            match c {
+                '*' | '?' => return true,
+                '[' if Self::has_unescaped_closing_bracket(&s[i + c.len_utf8()..]) => {
+                    return true;
+                }
+                '{' if prev_char != Some('$')
+                    && Self::has_unescaped_brace_expansion(&s[i + c.len_utf8()..]) =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+
+            prev_char = Some(c);
+        }
+
+        false
+    }
+
+    fn has_unescaped_closing_bracket(s: &str) -> bool {
+        let mut escaped = false;
+
+        for c in s.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+
+            match c {
+                '\\' => escaped = true,
+                ']' => return true,
+                _ => {}
+            }
+        }
+
+        false
+    }
+
+    fn has_unescaped_brace_expansion(s: &str) -> bool {
+        let mut escaped = false;
+        let mut depth = 0;
+        let mut has_comma = false;
+        let mut has_sequence = false;
+
+        for (i, c) in s.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+
+            match c {
+                '\\' => escaped = true,
+                '{' => depth += 1,
+                '}' if depth == 0 => return has_comma || has_sequence,
+                '}' => depth -= 1,
+                ',' if depth == 0 => has_comma = true,
+                '.' if depth == 0 && s[i + c.len_utf8()..].starts_with('.') => {
+                    has_sequence = true;
+                }
+                _ => {}
+            }
+        }
+
+        false
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct CompletionContext<'a> {
     pub buffer: Cow<'a, str>,
@@ -69,7 +170,7 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::EnvVariable);
         } else if wuc.starts_with('~') && !wuc.contains("/") {
             comp_types.push(CompType::TildeExpansion);
-        } else if wuc.contains('*') || wuc.contains('?') || wuc.contains('[') {
+        } else if CompType::is_glob_pattern(wuc) {
             comp_types.push(CompType::GlobExpansion);
         } else {
             comp_types.push(CompType::FilenameExpansion);
@@ -1299,4 +1400,96 @@ mod tests {
             ]
         );
     }
+
+
+    #[test]
+    fn test_is_glob_pattern_detects_supported_patterns() {
+        assert!(CompType::is_glob_pattern("./foo*"));
+        assert!(CompType::is_glob_pattern("./foo?.txt"));
+        assert!(CompType::is_glob_pattern("./foo[ab].txt"));
+        assert!(CompType::is_glob_pattern("./{foo,bar}.txt"));
+        assert!(CompType::is_glob_pattern("./foo{1..3}.txt"));
+        assert!(CompType::is_glob_pattern("./{foo,bar}/{baz,qux}.txt"));
+    }
+
+    #[test]
+    fn test_is_glob_pattern_ignores_literal_or_incomplete_patterns() {
+        assert!(!CompType::is_glob_pattern(r"./foo\*"));
+        assert!(!CompType::is_glob_pattern(r"./foo\?.txt"));
+        assert!(!CompType::is_glob_pattern(r"./foo\[ab].txt"));
+        assert!(!CompType::is_glob_pattern(r"./\{foo,bar}.txt"));
+        assert!(!CompType::is_glob_pattern("./foo[ab.txt"));
+        assert!(!CompType::is_glob_pattern("./foo{bar}.txt"));
+        assert!(!CompType::is_glob_pattern("./foo{bar,baz.txt"));
+        assert!(!CompType::is_glob_pattern(r"./${foo,bar}.txt"));
+        assert!(!CompType::is_glob_pattern(r#""./foo*""#));
+        assert!(!CompType::is_glob_pattern("'./foo*'"));
+    }
+
+    #[test]
+    fn test_is_glob_pattern_detects_unescaped_pattern_after_escaped_literal() {
+        assert!(CompType::is_glob_pattern(r"./foo\*bar*.txt"));
+        assert!(CompType::is_glob_pattern(r"./foo\{bar,baz}/*.txt"));
+    }
+
+    #[test]
+    fn test_completion_context_uses_glob_expansion_for_patterns() {
+        let ctx = run_inline(r"echo ./{foo,bar}.txt█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), "./{foo,bar}.txt");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::GlobExpansion
+            ]
+        );
+
+        let ctx = run_inline(r"echo ./foo*█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), "./foo*");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::GlobExpansion
+            ]
+        );
+    }
+
+    #[test]
+    fn test_completion_context_uses_filename_expansion_for_literals() {
+        let ctx = run_inline(r"echo ./foo\*█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), r"./foo\*");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
+        );
+
+        let ctx = run_inline(r"echo ./foo{bar}.txt█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), "./foo{bar}.txt");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FilenameExpansion,
+                CompType::FuzzyFilenameExpansion
+            ]
+        );
+    }
+
 }

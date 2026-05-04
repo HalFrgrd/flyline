@@ -563,6 +563,11 @@ pub(crate) fn gen_completions_internal(
                         return Some((vec![single_completion.clone()], REPLACE_WITH_COMMON_PREFIX));
                     }
                     _ => {
+                        log::debug!(
+                            "Multiple glob expansion completions found for pattern '{}': {:#?}",
+                            word_under_cursor.as_ref(),
+                            completions
+                        );
                         // Unlike other completions, if there are multiple glob completions,
                         // we join them with spaces and insert them all at once.
                         // Process each item eagerly here since we need the final text.
@@ -703,9 +708,6 @@ fn tab_complete_glob_expansion(
 
     log::debug!("Using glob_patterns {:?}", glob_patterns);
 
-    let mut seen_paths: std::collections::HashSet<std::path::PathBuf> =
-        std::collections::HashSet::new();
-
     'outer: for glob_pattern in &glob_patterns {
         let Ok(paths) = glob::glob(glob_pattern) else {
             continue;
@@ -717,13 +719,6 @@ fn tab_complete_glob_expansion(
                     MAX_GLOB_RESULTS
                 );
                 break 'outer;
-            }
-
-            // When multiple brace-expanded patterns are searched, the same
-            // path may match more than one of them; deduplicate so the user
-            // doesn't see the same suggestion twice.
-            if !seen_paths.insert(path.clone()) {
-                continue;
             }
 
             let path_str = path.to_string_lossy();
