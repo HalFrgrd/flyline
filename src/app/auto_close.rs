@@ -210,28 +210,45 @@ mod tests {
 
         delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
         buffer.delete_left();
-        let tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(
-            buffer.buffer(),
-            &tokens,
-        );
+        let tokens =
+            dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
 
         assert_eq!(buffer.buffer(), "echo ");
         assert_eq!(buffer.cursor_byte_pos(), 5);
         let _ = tokens;
     }
 
-    // #[test]
-    // fn single_quote_inside_cmdsubst_inside_double_quote_autocloses() {
-    //     // Buffer: echo "$(echo foo )"
-    //     // Inserting ' at position 16 (just after "foo") → post-insertion: echo "$(echo foo' )"
-    //     // The ' is inside $() which resets quoting context, so it should auto-close.
-    //     let previous = parsed("echo \"$(echo foo )\"");
-    //     let current = "echo \"$(echo foo' )\"";
-    //     let tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(current, &previous);
+    #[test]
+    fn single_quote_inside_cmdsubst_inside_double_quote_autocloses() {
+        let mut buffer = TextBuffer::new("echo \"$(echo foo  )\"");
+        buffer.move_left();
+        buffer.move_left();
+        buffer.move_left();
+        let mut tokens = parsed(buffer.buffer());
 
-    //     assert_eq!(
-    //         dparser::DParser::closing_char_to_insert_after_insertion(&tokens, '\'', 16),
-    //         Some('\'')
-    //     );
-    // }
+        handle_char_insertion(&mut buffer, &mut tokens, '\'');
+
+        assert_eq!(buffer.buffer(), "echo \"$(echo foo '' )\"");
+        assert_eq!(buffer.cursor_byte_pos(), 18);
+    }
+
+    #[test]
+    fn single_quote_inside_nested_cmdsubst_inside_double_quote_autocloses() {
+        let mut buffer = TextBuffer::new("echo \"$($(echo foo  ))\"");
+        let insertion_pos = buffer
+            .buffer()
+            .find("  ))\"")
+            .expect("fixture should contain the nested cmdsubst tail")
+            + 1;
+        buffer.move_to_start();
+        while buffer.cursor_byte_pos() < insertion_pos {
+            buffer.move_right();
+        }
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '\'');
+
+        assert_eq!(buffer.buffer(), "echo \"$($(echo foo '' ))\"");
+        assert_eq!(buffer.cursor_byte_pos(), insertion_pos + 1);
+    }
 }

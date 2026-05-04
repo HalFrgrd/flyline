@@ -2,6 +2,8 @@ use flash::lexer::{Lexer, Token, TokenKind};
 use std::collections::VecDeque;
 use std::ops::{Range, RangeInclusive};
 
+use crate::app::auto_close::surround_closing_char;
+
 pub fn collect_tokens_include_whitespace(input: &str) -> Vec<Token> {
     let mut lexer = Lexer::new(input);
     let mut tokens = Vec::new();
@@ -728,6 +730,10 @@ impl DParser {
         c: char,
         just_inserted_pos: usize,
     ) -> Option<char> {
+        let Some(default_closing) = surround_closing_char(c) else {
+            return None;
+        };
+
         // Never auto-close inside a comment.
         if tokens.iter().any(|t| {
             t.token
@@ -750,9 +756,15 @@ impl DParser {
         // If a word token begins immediately after the inserted character, we inserted the quote
         // right before or in the middle of an existing word. Auto-closing would wrap only an
         // empty string and leave that word outside the quotes.
-        let is_before_word = tokens
-            .iter()
-            .any(|t| t.token.kind.is_word() && t.token.byte_range().start == inserted_end);
+        let is_before_word = tokens.iter().any(|t| {
+            t.token.kind.is_word()
+                && t.token.byte_range().start == inserted_end
+                && t.token
+                    .value
+                    .chars()
+                    .next()
+                    .is_some_and(|ch| !ch.is_whitespace())
+        });
 
         // Inside a single-quoted string nothing is special – no auto-closing at all.
         if is_inside_single_quote {
@@ -787,22 +799,12 @@ impl DParser {
         }
 
         // Unambiguously opening characters – always auto-close.
-        match c {
-            '{' => return Some('}'),
-            '[' => return Some(']'),
-            '(' => return Some(')'),
-            _ => {}
+        if matches!(c, '{' | '[' | '(') {
+            return Some(default_closing);
         }
 
         // Ambiguous characters: if the inserted token is acting as a closer in the current parse,
         // don't auto-insert another copy.
-        let closing = match c {
-            '"' => '"',
-            '\'' => '\'',
-            '`' => '`',
-            _ => return None,
-        };
-
         let inserted_token_is_closing = tokens.iter().any(|token| {
             token.token.byte_range().start == just_inserted_pos
                 && token.token.value.starts_with(c)
@@ -812,7 +814,7 @@ impl DParser {
         if inserted_token_is_closing {
             None
         } else {
-            Some(closing)
+            Some(default_closing)
         }
     }
 

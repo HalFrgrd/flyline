@@ -1,5 +1,5 @@
 pub(crate) mod actions;
-mod auto_close;
+pub(crate) mod auto_close;
 pub(crate) mod formatted_buffer;
 mod tab_completion;
 
