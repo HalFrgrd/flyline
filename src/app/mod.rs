@@ -2089,7 +2089,9 @@ impl<'a> App<'a> {
                         &self.settings.colour_palette,
                     );
 
-                    for row_idx in 0..grid[0].items.len() {
+                    let num_rows = grid.get(0).map_or(0, |col| col.items.len());
+
+                    for row_idx in 0..num_rows {
                         for (is_first, _, col) in grid.iter().flag_first_last() {
                             if let Some((formatted, is_selected)) = col.items.get(row_idx) {
                                 if !is_first {
