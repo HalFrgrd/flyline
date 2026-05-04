@@ -311,7 +311,7 @@ enum Commands {
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --placeholder prev
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_something.sh' --block
     ///   flyline create-prompt-widget last-command-duration
-    ///   flyline create-prompt-widget last-command-duration --format "%H:%M:%S"
+    ///   flyline create-prompt-widget last-command-duration --name MY_DURATION
     #[command(name = "create-prompt-widget", verbatim_doc_comment)]
     CreatePromptWidget {
         #[command(subcommand)]
@@ -511,14 +511,15 @@ enum KeySubcommands {
     ///
     /// Available context variables: always, bufferIsEmpty, fuzzyHistorySearch,
     ///   tabCompletionWaiting, tabCompletion, tabCompletionAvailable,
-    ///   tabCompletionMultiColAvailable, tabCompletionsNoFilteredResults, tabCompletionsNoResults,
-    ///   agentModeWaiting, agentOutputSelection, agentError, inlineSuggestionAvailable,
-    ///   cursorAtEnd, cursorAtStart, promptDirSelect, textSelected, multilineBuffer.
+    ///   tabCompletionMultiColAvailable, tabCompletionNoFilteredResults, tabCompletionNoResults,
+    ///   agentModeWaiting, agentOutputSelection, agentModeError, inlineSuggestionAvailable,
+    ///   cursorAtEnd, cursorAtEndTrimmed, cursorAtStart, promptDirSelection, textSelected,
+    ///   multilineBuffer, bufferHasAgentModePrefix, normalEditing.
     ///
     /// Examples:
     ///   flyline key bind Ctrl+Enter always=submitOrNewline
-    ///   flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion
-    ///   flyline key bind Alt+Left always=moveLeftOneWordFineGrained
+    ///   flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept
+    ///   flyline key bind Alt+Left always=moveLeftOneWordPart
     #[command(name = "bind", verbatim_doc_comment, disable_help_flag = true)]
     Bind {
         /// Key sequence to bind (e.g. "Ctrl+Enter", "Alt+Left").
@@ -702,7 +703,7 @@ enum PromptWidgetSubcommands {
     ///   PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
     ///
     ///   # Non-blocking with a 10-space placeholder while the new output is being computed.
-    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder prev
+    ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder 10
     ///
     ///   # Blocking: waits for the command to finish before showing the prompt.
     ///   flyline create-prompt-widget custom --name CUSTOM_WIDGET2 --command 'run_something.sh' --block

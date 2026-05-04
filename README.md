@@ -16,7 +16,7 @@
 When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
-- [Rich prompt customizations, (asynchronous widgets), and animations](#rich-prompts)
+- [Rich prompt customizations, asynchronous widgets, and animations](#rich-prompts)
 - [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
 - [Improvements to Bash's tab completion](#tab-completion-improvements)
@@ -31,7 +31,7 @@ Flyline is similar to [ble.sh](https://github.com/akinomyoga/ble.sh) but is writ
 
 ### Who is it for?
 1. You want an out-of-the-box great shell experience without the hassle of setting up half a dozen plugins, plugin managers, keyboard shortcuts, and startup scripts (any one of which might phone home).
-2. You're a terminal power user who wants to fine-tune their shell experience by writing in a modern language like Rust. Flyline can be the starting platform for you; contributions welcome!
+2. You're a terminal power user who wants to fine-tune their shell experience by writing in a modern language like Rust. Flyline can be a starting platform for you; contributions welcome!
 
 # Installation
 
@@ -49,7 +49,7 @@ No need for `sudo`!
 
 ### Download from releases
 
-Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you know you are on a `musl` based Linux distro (e.g. Alpine, Chimera).
+Download the latest `libflyline.so` for your system from [the releases page](https://github.com/HalFrgrd/flyline/releases). If you are on Linux, you probably want the `gnu` variant unless you know you are on a `musl`-based Linux distro (e.g. Alpine, Chimera).
 Then, in your `.bashrc` (or in your current Bash session):
 ```bash
 enable -f /path/to/libflyline.so flyline
@@ -98,7 +98,7 @@ Then you can simply run `enable flyline`.
 Flyline sets up its own tab completion
 so you can type `flyline <Tab>` in your shell to interactively browse and configure settings. Copy the commands into your `.bashrc` so they persist.
 
-Explore this readme and [examples](examples/) for what you can configure.
+Explore this README and [examples](examples/) for what you can configure.
 
 # Rich prompts
 
@@ -291,7 +291,7 @@ Examples:
   PS1='\u@\h:\w [CUSTOM_WIDGET1] $ '
 
   # Non-blocking with a 10-space placeholder while the new output is being computed.
-  flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder prev
+  flyline create-prompt-widget custom --name CUSTOM_WIDGET1 --command 'run_slow_git_metrics.sh' --placeholder 10
 
   # Blocking: waits for the command to finish before showing the prompt.
   flyline create-prompt-widget custom --name CUSTOM_WIDGET2 --command 'run_something.sh' --block
@@ -571,7 +571,7 @@ The `always` context variable is always true.
 
 A context expression may combine multiple variables with `+`:
 ```bash
-flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=acceptInlineSuggestion
+flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept
 ```
 Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses are not supported. 
 
