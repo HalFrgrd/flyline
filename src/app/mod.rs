@@ -1718,7 +1718,7 @@ impl<'a> App<'a> {
                 content.move_to_final_line();
                 content.newline();
             } else if let Some(tutorial_tagged_lines) = crate::tutorial::generate_tutorial_text(
-                &self.settings,
+                self.settings,
                 self.settings.tutorial_step,
                 &self.settings.colour_palette,
             ) {

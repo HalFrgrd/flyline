@@ -1651,7 +1651,7 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
                 if s.to_lowercase().contains(&action_lower) {
                     Some(
                         CompletionCandidate::new(format!("{}PREFIX_DELIM{}", prefix, s))
-                            .help(a.get_message().map(|m| clap::builder::StyledStr::from(m))),
+                            .help(a.get_message().map(clap::builder::StyledStr::from)),
                     )
                 } else {
                     None
@@ -1692,7 +1692,7 @@ pub fn possible_context_action_completions(current: &std::ffi::OsStr) -> Vec<Com
                         "{}PREFIX_DELIM{}{}{}NO_SUFFIX",
                         prefix, neg_prefix, name, extra
                     ))
-                    .help(description.map(|d| clap::builder::StyledStr::from(d)))
+                    .help(description.map(clap::builder::StyledStr::from))
                 })
                 .collect::<Vec<_>>()
         })
@@ -1880,7 +1880,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            (ContextVar::BufferHasAgentModePrefix + ContextVar::NormalEditing).into(),
+            ContextVar::BufferHasAgentModePrefix + ContextVar::NormalEditing,
             Action::RunAgentMode,
         ),
         Binding::new(
@@ -1916,7 +1916,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            (ContextVar::MultilineBuffer + ContextVar::CursorAtEndTrimmed).into(),
+            ContextVar::MultilineBuffer + ContextVar::CursorAtEndTrimmed,
             Action::SubmitOrNewline,
         ),
         Binding::new(
