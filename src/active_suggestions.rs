@@ -1199,33 +1199,26 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
-        let filtered_item = match self.filtered_suggestions.get(self.current_1d_index()) {
-            Some(s) => s,
-            None => {
-                log::warn!(
-                    "No suggestion at selected index {}",
-                    self.current_1d_index()
-                );
-                return;
-            }
+        let selected_idx = self.current_1d_index();
+
+        let Some(filtered_item) = self.filtered_suggestions.get(selected_idx) else {
+            log::warn!("No suggestion at selected index {}", selected_idx);
+            return;
         };
 
-        match self.processed_suggestions.get(filtered_item.suggestion_idx) {
-            Some(s) => {
-                let suggestion = s.clone();
-                if let Err(e) = buffer
-                    .replace_word_under_cursor(&suggestion.formatted(), &self.word_under_cursor)
-                {
-                    log::error!("Failed to apply suggestion: {}", e);
-                }
-            }
-            None => {
-                log::warn!(
-                    "Suggestion index {} out of bounds (processed len={})",
-                    filtered_item.suggestion_idx,
-                    self.processed_suggestions.len()
-                );
-            }
+        let Some(suggestion) = self.processed_suggestions.get(filtered_item.suggestion_idx) else {
+            log::warn!(
+                "Suggestion index {} out of bounds (processed len={})",
+                filtered_item.suggestion_idx,
+                self.processed_suggestions.len()
+            );
+            return;
         };
+
+        if let Err(e) =
+            buffer.replace_word_under_cursor(&suggestion.formatted(), &self.word_under_cursor)
+        {
+            log::error!("Failed to apply suggestion: {}", e);
+        }
     }
 }

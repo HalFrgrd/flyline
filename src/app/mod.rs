@@ -1426,8 +1426,6 @@ impl<'a> App<'a> {
     }
 
     /// Submit the current buffer if bash would accept it, otherwise insert a newline.
-    /// If it's a single line complete command, exit.
-    /// If it's a multi-line complete command, cursor needs to be at end to exit.
     fn try_submit_current_buffer(&mut self) {
         let complete_command = command_acceptance::will_bash_accept_buffer(self.buffer.buffer());
         if self.unfinished_from_prev_command || complete_command {
