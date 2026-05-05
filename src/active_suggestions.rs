@@ -670,23 +670,30 @@ impl ActiveSuggestionsBuilder {
         }
     }
 
+    /// Override [`auto_accept_if_solo`].  Set to `false` for fuzzy filename
+    /// matching, where the user should confirm the match even when only a
+    /// single candidate survives the fuzzy scoring.
     pub fn with_auto_accept_if_solo(mut self, auto_accept_if_solo: bool) -> Self {
         self.auto_accept_if_solo = auto_accept_if_solo;
         self
     }
 
+    /// Append a single already-processed suggestion.
     pub fn push_processed(&mut self, sug: ProcessedSuggestion) {
         self.processed.push(sug);
     }
 
+    /// Append already-processed suggestions in bulk.
     pub fn extend_processed<I: IntoIterator<Item = ProcessedSuggestion>>(&mut self, iter: I) {
         self.processed.extend(iter);
     }
 
+    /// Queue raw suggestions for lazy post-processing.
     pub fn extend_unprocessed<I: IntoIterator<Item = UnprocessedSuggestion>>(&mut self, iter: I) {
         self.unprocessed.extend(iter);
     }
 
+    /// `true` when no suggestions of either kind have been collected.
     pub fn is_empty(&self) -> bool {
         self.processed.is_empty() && self.unprocessed.is_empty()
     }
