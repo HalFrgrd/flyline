@@ -191,13 +191,15 @@ pub fn get_completion_context<'a>(
                     Some(t) if t.token.kind == TokenKind::Dollar => {
                         start = t.token.byte_range().start;
                     }
-                    Some(t)
-                        if t.token.kind.is_word()
-                            && t.token.value.contains('{')
-                            && t.token.value.contains('}') =>
-                    {
+                    Some(t) if t.token.kind == TokenKind::RBrace => {
                         // Merge brace expressions like {foo,bar} with following glob patterns like *
-                        start = t.token.byte_range().start;
+                        // Find the matching LBrace by looking at the closing annotation
+                        if let Some(closing) = &t.annotations.closing {
+                            if let Some(opening_token) = context_tokens.get(closing.opening_idx) {
+                                start = opening_token.token.byte_range().start;
+                                break; // Stop here after merging the entire brace group
+                            }
+                        }
                     }
                     _ => break,
                 }
@@ -1380,15 +1382,5 @@ mod tests {
         let ctx = run_inline(r"echo {foo,bar}*█");
 
         assert_eq!(ctx.word_under_cursor.as_ref(), r"{foo,bar}*");
-        // assert_eq!(
-        //     ctx.comp_types,
-        //     vec![
-        //         CompType::CommandComp {
-        //             command_word: "echo".to_string()
-        //         },
-        //         CompType::FilenameExpansion,
-        //         CompType::FuzzyFilenameExpansion
-        //     ]
-        // );
     }
 }
