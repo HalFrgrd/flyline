@@ -461,25 +461,15 @@ fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
     builder
 }
 
-fn tab_complete_glob_expansion(
-    pattern: &str,
-    mut comp_resultflags: bash_funcs::CompletionFlags,
+/// Core glob expansion logic that works with an already-expanded PathPatternExpansion.
+/// This is the common logic used by both prefix-matching and fuzzy-filename completion paths.
+///
+/// `should_skip_hidden`: If true, skip files starting with `.` (unless pattern explicitly requests them).
+fn tab_complete_with_expanded_pattern(
+    expanded: &PathPatternExpansion,
+    comp_resultflags: bash_funcs::CompletionFlags,
+    should_skip_hidden: bool,
 ) -> Vec<UnprocessedSuggestion> {
-    // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
-    // e.g. my_command $PWD/fi<TAB> should expand to:
-    // my_command $PWD/file\ with\ spaces.txt
-    // not
-    // my_command \$PWD/file\ with\ spaces.txt
-    comp_resultflags.filename_quoting_desired = false;
-    comp_resultflags.filename_completion_desired = true;
-
-    comp_resultflags.quote_type = bash_funcs::find_quote_type(pattern);
-    log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
-
-    let expanded = PathPatternExpansion::new(pattern);
-    log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
-
-    // Use globwalker to find matching paths
     let mut results = Vec::new();
 
     const MAX_GLOB_RESULTS: usize = 5_000;
@@ -518,8 +508,9 @@ fn tab_complete_glob_expansion(
                 continue;
             }
 
-            // Only include hidden if the pattern explicitly requested it
-            if !expanded.wants_hidden()
+            // Only include hidden if filtering is desired and the pattern doesn't explicitly want them
+            if should_skip_hidden
+                && !expanded.wants_hidden()
                 && quoted_rhs.starts_with('.')
                 && !quoted_rhs.starts_with("./")
             {
@@ -543,6 +534,27 @@ fn tab_complete_glob_expansion(
     results
 }
 
+fn tab_complete_glob_expansion(
+    pattern: &str,
+    mut comp_resultflags: bash_funcs::CompletionFlags,
+) -> Vec<UnprocessedSuggestion> {
+    // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
+    // e.g. my_command $PWD/fi<TAB> should expand to:
+    // my_command $PWD/file\ with\ spaces.txt
+    // not
+    // my_command \$PWD/file\ with\ spaces.txt
+    comp_resultflags.filename_quoting_desired = false;
+    comp_resultflags.filename_completion_desired = true;
+
+    comp_resultflags.quote_type = bash_funcs::find_quote_type(pattern);
+    log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
+
+    let expanded = PathPatternExpansion::new(pattern);
+    log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
+
+    tab_complete_with_expanded_pattern(&expanded, comp_resultflags, true)
+}
+
 /// List all files in the directory implied by `word_under_cursor` and return
 /// those that fuzzy-match the last path segment using the Arinae matcher.
 ///
@@ -551,18 +563,21 @@ fn tab_complete_glob_expansion(
 /// but the fuzzy matcher will.
 fn tab_complete_fuzzy_filename(
     word_under_cursor: &str,
-    comp_res_flags: bash_funcs::CompletionFlags,
+    mut comp_res_flags: bash_funcs::CompletionFlags,
 ) -> Vec<UnprocessedSuggestion> {
     // Split at the last '/' to separate the directory prefix from the filename
     // fragment that will be used as the fuzzy-match pattern.
+
+    let last_seg_glob_pattern = |s: &str| format!("{{{}*,{}.*}}", s, s);
+
     let (dir_glob_pattern, filename_fragment) =
         if let Some(slash_pos) = word_under_cursor.rfind('/') {
             (
-                word_under_cursor[..slash_pos + 1].to_string() + "*",
+                last_seg_glob_pattern(&word_under_cursor[..slash_pos + 1]),
                 word_under_cursor[slash_pos + 1..].to_string(),
             )
         } else {
-            ("*".to_string(), word_under_cursor.to_string())
+            (last_seg_glob_pattern(""), word_under_cursor.to_string())
         };
 
     // Nothing to fuzzy-match against — let the caller fall through.
@@ -573,12 +588,19 @@ fn tab_complete_fuzzy_filename(
     // glob expansion handles dequoting the pattern, so we only need to dequote
     let dequoted_fragment = bash_funcs::dequoting_function_rust(&filename_fragment);
 
-    let all_files = tab_complete_glob_expansion(&dir_glob_pattern, comp_res_flags);
+    // Set up flags for glob expansion
+    comp_res_flags.filename_quoting_desired = false;
+    comp_res_flags.filename_completion_desired = true;
+    comp_res_flags.quote_type = bash_funcs::find_quote_type(&dir_glob_pattern);
+
+    let expanded = PathPatternExpansion::new(&dir_glob_pattern);
+    let all_files = tab_complete_with_expanded_pattern(&expanded, comp_res_flags, false);
 
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
 
     let mut scored: Vec<(i64, UnprocessedSuggestion)> = all_files
         .into_iter()
+        .inspect(|sug| log::debug!("Fuzzy matching candidate: '{}'", sug.match_text()))
         .filter_map(|sug| {
             // Match only against the last path segment so that e.g. the
             // directory prefix doesn't inflate the score.
@@ -588,10 +610,12 @@ fn tab_complete_fuzzy_filename(
                 .fuzzy_match(filename, &dequoted_fragment)
                 .map(|score| (score, sug))
         })
+        .inspect(|x| log::debug!("Fuzzy match scored {} for '{}'", x.0, x.1.match_text()))
         .collect();
 
     // Best matches first.
     scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.dedup_by(|a, b| a.1.match_text() == b.1.match_text());
     scored.into_iter().map(|(_, sug)| sug).collect()
 }
 
