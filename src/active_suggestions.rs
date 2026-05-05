@@ -640,57 +640,101 @@ impl UnprocessedSuggestion {
     }
 }
 
-/// A completion that may or may not have been post-processed yet.
-///
-/// The `Processed` variant holds a fully processed [`ProcessedSuggestion`] (used
-/// by code paths that produce suggestions directly, e.g. env-var or tilde
-/// expansion).
-///
-/// The `Unprocessed` variant holds a [`UnprocessedSuggestion`] from bash that needs to be run
-/// through [`into_processed`] before it can be rendered.
-#[derive(Debug, Clone)]
-pub enum MaybeProcessedSuggestion {
-    Processed(ProcessedSuggestion),
-    Unprocessed(UnprocessedSuggestion),
-}
-
-impl MaybeProcessedSuggestion {
-    /// The text used for sorting/dedup before any post-processing happens.
-    /// For unprocessed items, only the text up to the first tab is considered (the
-    /// remainder is a display-only description).
-    pub fn match_text(&self) -> &str {
-        match self {
-            MaybeProcessedSuggestion::Processed(s) => &s.s,
-            MaybeProcessedSuggestion::Unprocessed(r) => r.match_text(),
-        }
-    }
-
-    /// Eagerly process this suggestion in place and return a reference to the
-    /// processed value.
-    pub fn processed(&mut self) -> &ProcessedSuggestion {
-        if let MaybeProcessedSuggestion::Unprocessed(raw) = self {
-            let raw = std::mem::take(raw);
-            *self = MaybeProcessedSuggestion::Processed(raw.into_processed());
-        }
-
-        match self {
-            MaybeProcessedSuggestion::Processed(p) => p,
-            MaybeProcessedSuggestion::Unprocessed(_) => unreachable!(),
-        }
-    }
-}
-
 const CHUNK_PROCESSING_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
 
-pub fn try_process_suggestions(suggestions: &mut Vec<MaybeProcessedSuggestion>) -> bool {
-    let start_time = std::time::Instant::now();
-    for sug in suggestions.iter_mut() {
-        if start_time.elapsed() > CHUNK_PROCESSING_TIMEOUT {
-            return false;
+/// Collects the candidate completions produced by the various `tab_complete_*`
+/// helpers before they are handed off to [`ActiveSuggestions`].
+///
+/// Suggestions are kept in two collections so that already-processed items
+/// (env vars, tilde expansion, flyline's own clap completions, ...) are never
+/// re-wrapped, while raw bash completions stay queued in `unprocessed` and
+/// are converted lazily.  `auto_accept_if_solo` controls whether
+/// [`ActiveSuggestions::try_accept`] will silently accept the candidate when
+/// there is only one of them (set to `false` for fuzzy filename matching, where
+/// the user generally wants to see and confirm the match).
+#[derive(Debug, Clone)]
+pub struct ActiveSuggestionsBuilder {
+    pub processed: Vec<ProcessedSuggestion>,
+    pub unprocessed: VecDeque<UnprocessedSuggestion>,
+    pub auto_accept_if_solo: bool,
+}
+
+impl ActiveSuggestionsBuilder {
+    /// Create an empty builder with `auto_accept_if_solo = true`, the sensible
+    /// default for every completion source other than fuzzy filename matching.
+    pub fn new() -> Self {
+        Self {
+            processed: Vec::new(),
+            unprocessed: VecDeque::new(),
+            auto_accept_if_solo: true,
         }
-        sug.processed();
     }
-    true
+
+    pub fn with_auto_accept_if_solo(mut self, auto_accept_if_solo: bool) -> Self {
+        self.auto_accept_if_solo = auto_accept_if_solo;
+        self
+    }
+
+    pub fn push_processed(&mut self, sug: ProcessedSuggestion) {
+        self.processed.push(sug);
+    }
+
+    pub fn extend_processed<I: IntoIterator<Item = ProcessedSuggestion>>(&mut self, iter: I) {
+        self.processed.extend(iter);
+    }
+
+    pub fn extend_unprocessed<I: IntoIterator<Item = UnprocessedSuggestion>>(&mut self, iter: I) {
+        self.unprocessed.extend(iter);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.processed.is_empty() && self.unprocessed.is_empty()
+    }
+
+    /// Drain every queued unprocessed suggestion into `processed`, returning
+    /// `true` if the work fits within [`CHUNK_PROCESSING_TIMEOUT`] and `false`
+    /// if processing was cut short.
+    pub fn try_process_all(&mut self) -> bool {
+        let start_time = std::time::Instant::now();
+        while let Some(raw) = self.unprocessed.pop_front() {
+            self.processed.push(raw.into_processed());
+            if start_time.elapsed() > CHUNK_PROCESSING_TIMEOUT {
+                return self.unprocessed.is_empty();
+            }
+        }
+        true
+    }
+
+    /// Longest common prefix (in bytes, on char boundaries) of the formatted
+    /// text of the processed suggestions.  Returns `None` when the prefix is
+    /// empty or there are no processed suggestions.
+    ///
+    /// Only `processed` is considered; call [`try_process_all`] first if the
+    /// caller cares about every candidate.
+    pub fn common_prefix(&self) -> Option<String> {
+        let mut iter = self.processed.iter().map(|s| s.formatted());
+        let first = iter.next()?;
+        let mut prefix_byte_len = first.len();
+
+        for text in iter {
+            prefix_byte_len = first
+                .chars()
+                .zip(text.chars())
+                .take_while(|(a, b)| a == b)
+                .map(|(c, _)| c.len_utf8())
+                .sum::<usize>()
+                .min(prefix_byte_len);
+            if prefix_byte_len == 0 {
+                return None;
+            }
+        }
+
+        if prefix_byte_len == 0 {
+            None
+        } else {
+            Some(first[..prefix_byte_len].to_string())
+        }
+    }
 }
 
 /// Lightweight entry in the filtered suggestion list.
@@ -716,8 +760,7 @@ pub struct ColumnInfo {
 
 pub struct ActiveSuggestions {
     /// Raw completions waiting to be post-processed.  Drained from the front
-    /// in chunks of [`PROCESS_CHUNK_SIZE`] each time [`into_grid`] is called or
-    /// fuzzy matching runs.
+    /// in chunks each time [`into_grid`] is called or fuzzy matching runs.
     unprocessed_suggestions: VecDeque<UnprocessedSuggestion>,
     /// Fully post-processed suggestions.  This is the only collection used by
     /// fuzzy matching, rendering, and acceptance logic.
@@ -743,6 +786,10 @@ pub struct ActiveSuggestions {
     pub last_num_data_cols: usize,
     col_window_to_show: StatefulSlidingWindow,
     fuzzy_matcher: ArinaeMatcher,
+    /// When `true`, [`try_accept`] silently accepts the only candidate when
+    /// there is exactly one.  Disabled for fuzzy filename matching where the
+    /// user generally wants to confirm the match.
+    auto_accept_if_solo: bool,
     /// How long it took to generate the completions.
     pub load_time: std::time::Duration,
 }
@@ -772,24 +819,16 @@ impl std::fmt::Debug for ActiveSuggestions {
 
 impl ActiveSuggestions {
     pub fn new<'underlying_buffer>(
-        suggestions: Vec<MaybeProcessedSuggestion>,
+        builder: ActiveSuggestionsBuilder,
         word_under_cursor: SubString,
         load_time: std::time::Duration,
     ) -> Self {
-        let sug_len = suggestions.len();
-
-        // Split incoming suggestions into the two backing vecs.  Already-ready
-        // suggestions go directly into `processed_suggestions`; raw ones are
-        // queued up in `unprocessed_suggestions` and converted lazily in
-        // chunks of PROCESS_CHUNK_SIZE.
-        let mut processed_suggestions: Vec<ProcessedSuggestion> = Vec::new();
-        let mut unprocessed_suggestions: VecDeque<UnprocessedSuggestion> = VecDeque::new();
-        for s in suggestions {
-            match s {
-                MaybeProcessedSuggestion::Processed(p) => processed_suggestions.push(p),
-                MaybeProcessedSuggestion::Unprocessed(r) => unprocessed_suggestions.push_back(r),
-            }
-        }
+        let ActiveSuggestionsBuilder {
+            processed: processed_suggestions,
+            unprocessed: unprocessed_suggestions,
+            auto_accept_if_solo,
+        } = builder;
+        let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
 
         let mut active_sug = ActiveSuggestions {
             unprocessed_suggestions,
@@ -803,6 +842,7 @@ impl ActiveSuggestions {
             last_num_data_cols: 0,
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
+            auto_accept_if_solo,
             load_time,
         };
 
@@ -810,9 +850,9 @@ impl ActiveSuggestions {
         active_sug
     }
 
-    /// Move up to [`PROCESS_CHUNK_SIZE`] entries from `unprocessed_suggestions`
-    /// into `processed_suggestions`, returning the range of newly-processed
-    /// indices in `processed_suggestions`.
+    /// Move as many entries as fit within [`CHUNK_PROCESSING_TIMEOUT`] from
+    /// `unprocessed_suggestions` into `processed_suggestions`, returning the
+    /// range of newly-processed indices in `processed_suggestions`.
     fn process_chunk(&mut self) -> std::ops::Range<usize> {
         let max_to_process = self.unprocessed_suggestions.len();
         if max_to_process == 0 {
@@ -1172,11 +1212,15 @@ impl ActiveSuggestions {
     }
 
     pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
-        // If there is exactly one suggestion in total (whether processed or
-        // not), auto-accept it.  Make sure it is processed first.
-        if self.all_suggestions_len() == 1 {
-            // Drain any pending unprocessed entry so we have a Suggestion.
-            // There is at most one item here so this is O(1).
+        if self.all_suggestions_len() == 0 {
+            log::debug!("No completions found. suggestion vecs are empty");
+            return Some(self);
+        }
+
+        // Auto-accept the only candidate when the caller opted in.  Drain any
+        // pending unprocessed entry first so we have a `ProcessedSuggestion`
+        // (there is at most one item, so this is O(1)).
+        if self.auto_accept_if_solo && self.all_suggestions_len() == 1 {
             while let Some(raw) = self.unprocessed_suggestions.pop_front() {
                 self.processed_suggestions.push(raw.into_processed());
             }
@@ -1189,19 +1233,15 @@ impl ActiveSuggestions {
                 return None;
             }
         }
-        if self.all_suggestions_len() == 0 {
-            log::debug!("No completions found. suggestion vecs are empty");
-            return Some(self);
-        }
 
         match self.filtered_suggestions.as_slice() {
             [] => {
                 log::debug!("No completions found. filtered_suggestions is empty");
                 Some(self)
             }
-            [_filtered_item] => {
+            [_filtered_item] if self.auto_accept_if_solo => {
                 self.accept_selected_filtered_item(buffer);
-                log::debug!("Only one completion found for first word: auto-accepted");
+                log::debug!("Only one filtered completion: auto-accepted");
                 None
             }
             _ => Some(self),

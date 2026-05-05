@@ -3,7 +3,7 @@ pub(crate) mod auto_close;
 pub(crate) mod formatted_buffer;
 mod tab_completion;
 
-use crate::active_suggestions::{ActiveSuggestions, COLUMN_PADDING, MaybeProcessedSuggestion};
+use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::Action;
 use crate::app::formatted_buffer::{FormattedBuffer, format_buffer};
@@ -207,7 +207,7 @@ impl FuzzyHistorySource {
 /// Guard that owns the tab-completion background thread and the result channel.
 /// Joining the thread (on drop) ensures it does not outlive the app.
 struct TabCompletionHandle {
-    receiver: std::sync::mpsc::Receiver<Option<(Vec<MaybeProcessedSuggestion>, Option<String>)>>,
+    receiver: std::sync::mpsc::Receiver<Option<(ActiveSuggestionsBuilder, Option<String>)>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -1198,7 +1198,7 @@ impl<'a> App<'a> {
     fn poll_tab_completion(&mut self) -> bool {
         if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
             match handle.receiver.try_recv() {
-                Ok(Some((sugs, common_prefix))) => {
+                Ok(Some((builder, common_prefix))) => {
                     // Take ownership of wuc_substring and start_time from the waiting state.
                     let (wuc, load_time) =
                         match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
@@ -1209,7 +1209,7 @@ impl<'a> App<'a> {
                             } => (wuc_substring, start_time.elapsed()),
                             _ => unreachable!(),
                         };
-                    self.finish_tab_complete(sugs, common_prefix, wuc, load_time);
+                    self.finish_tab_complete(builder, common_prefix, wuc, load_time);
                     return true;
                 }
                 Ok(None) => {
