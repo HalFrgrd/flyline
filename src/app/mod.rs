@@ -126,7 +126,10 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
     };
     // SAFETY: pfd is a valid, stack-allocated pollfd.  Passing its address with
     // nfds=1 and timeout=0 is a standard non-blocking poll probe.
-    if unsafe { libc::poll(&raw mut pfd, 1, 0) } >= 0 && (pfd.revents & libc::POLLHUP) != 0 {
+    // poll(2) returns -1 on error, 0 on timeout, or a positive count of ready
+    // fds.  We check > 0 so that we only inspect revents when poll actually
+    // reported an event; a return of 0 (timeout) leaves revents as 0.
+    if unsafe { libc::poll(&raw mut pfd, 1, 0) } > 0 && (pfd.revents & libc::POLLHUP) != 0 {
         return Some("stdin PTY has hung up (POLLHUP)");
     }
 
