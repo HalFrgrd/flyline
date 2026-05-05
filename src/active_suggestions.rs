@@ -834,7 +834,7 @@ impl ActiveSuggestions {
             processed: processed_suggestions,
             unprocessed: unprocessed_suggestions,
             common_prefix: _,
-            auto_accept_if_solo,
+            auto_accept_if_solo: _,
         } = builder;
         let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
 
