@@ -43,6 +43,53 @@ mod tutorial;
 pub mod unicode_helpers;
 mod users;
 
+// #[cfg(target_os = "linux")]
+// struct ParentDeathSignalGuard {
+//     previous_signal: libc::c_int,
+// }
+
+// #[cfg(target_os = "linux")]
+// impl ParentDeathSignalGuard {
+//     fn set_to_kill() -> Option<Self> {
+//         let mut previous_signal: libc::c_int = 0;
+
+//         // SAFETY: PR_GET_PDEATHSIG writes an int to the provided pointer.
+//         if unsafe { libc::prctl(libc::PR_GET_PDEATHSIG, &mut previous_signal as *mut libc::c_int) }
+//             != 0
+//         {
+//             log::warn!(
+//                 "Failed to get parent-death signal via prctl(PR_GET_PDEATHSIG): {}",
+//                 std::io::Error::last_os_error()
+//             );
+//             return None;
+//         }
+
+//         // SAFETY: PR_SET_PDEATHSIG sets a process attribute for current process.
+//         if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
+//             log::warn!(
+//                 "Failed to set parent-death signal to SIGKILL via prctl(PR_SET_PDEATHSIG): {}",
+//                 std::io::Error::last_os_error()
+//             );
+//             return None;
+//         }
+
+//         Some(Self { previous_signal })
+//     }
+// }
+
+// #[cfg(target_os = "linux")]
+// impl Drop for ParentDeathSignalGuard {
+//     fn drop(&mut self) {
+//         // SAFETY: restores previously read parent-death signal for this process.
+//         if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, self.previous_signal) } != 0 {
+//             log::warn!(
+//                 "Failed to restore parent-death signal via prctl(PR_SET_PDEATHSIG): {}",
+//                 std::io::Error::last_os_error()
+//             );
+//         }
+//     }
+// }
+
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
         .header(
@@ -1514,6 +1561,9 @@ impl Flyline {
             // SAFETY: signal(2) only modifies the signal disposition; no other
             // thread depends on SIGCHLD disposition at this instant.
             let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+
+            // #[cfg(target_os = "linux")]
+            // let _parent_death_signal_guard = ParentDeathSignalGuard::set_to_kill();
 
             let result = app::get_command(&mut self.settings);
 

@@ -10,7 +10,10 @@ crate-type = ["cdylib"]
 clap = { version = "4.6.0", features = ["derive"] }
 clap_complete = { version = "4.6.2", features = ["unstable-dynamic"] }
 ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default", "unstable-rendered-line-info"] }
-crossterm = { version = "0.29.0", features = ["osc52"] }
+# default flags include "windows" which just causes bloat
+# "use-dev-tty" is needed to avoid crossterm's event loop from spinning on closed stdin.
+# See https://github.com/crossterm-rs/crossterm/blob/fce58c879a748f3159216f68833100aa16141ab0/src/event/source/unix/mio.rs#L97-L104 and https://github.com/openai/codex/issues/14962
+crossterm = { version = "0.29.0", default-features = false, features = ["bracketed-paste", "events", "osc52", "use-dev-tty"] }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
@@ -33,8 +36,6 @@ easing-function = "0.1.1"
 ctor = "0.10.0"
 strum = { version = "0.28.0", features = ["derive"] }
 
-# tokio is not used directly by flyline; it remains a transitive dependency pulled
-# in by `skim` (via `interprocess` and `tokio-util`).
 [features]
 integration-tests = []
 pre_bash_4_4 = []

@@ -80,6 +80,8 @@ fn set_panic_hook(extended_key_codes: bool) {
     }));
 }
 
+/// https://github.com/openai/codex/issues/14962
+/// https://github.com/crossterm-rs/crossterm/issues/793
 fn stdin_unavailable_reason() -> Option<&'static str> {
     // If stdin has been closed outright, bail out before crossterm enters its
     // Unix event loop. In crossterm 0.29 that path can spin on closed input.
@@ -141,6 +143,11 @@ fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<CrosstermEve
         log::error!("Cannot read terminal events: {}", reason);
         return Err(Error::new(ErrorKind::UnexpectedEof, reason));
     }
+
+    log::trace!(
+        "Polling for terminal event with timeout of {:?}...",
+        timeout
+    );
 
     if event::poll(timeout)? {
         event::read().map(Some)
