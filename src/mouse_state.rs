@@ -71,6 +71,7 @@ impl MouseState {
         if !self.enabled {
             return;
         }
+        self.left_button_down = false;
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
                 log::trace!("Mouse capture disabled: {}", reason);
