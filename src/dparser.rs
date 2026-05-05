@@ -61,6 +61,14 @@ pub struct Annotations {
     pub closing: Option<ClosingAnnotation>,
     /// `Some(name)` = this token is the first word of a command (e.g. `git` in `git commit`).
     pub command_word: Option<String>,
+    /// When the lexer merges an opener and its auto-inserted closer into a single `Word` token
+    /// (e.g. `[` + `]` → `Word("[]")`), we cannot attach a `closing` annotation to a separate
+    /// closer token.  Instead we record the byte offset **within** this token's value at which
+    /// the auto-inserted character begins.
+    ///
+    /// `Some(offset)` means the character at `token.value[offset..]` was auto-inserted.
+    /// `None` means no auto-inserted character is tracked this way.
+    pub auto_inserted_char_offset: Option<usize>,
 }
 
 impl Annotations {
@@ -154,6 +162,10 @@ impl DParser {
             {
                 new_closing.is_auto_inserted = true;
             }
+            if old.annotations.auto_inserted_char_offset.is_some() {
+                new.annotations.auto_inserted_char_offset =
+                    old.annotations.auto_inserted_char_offset;
+            }
         }
 
         // Go from the right while we see identical tokens and do the same.
@@ -168,6 +180,10 @@ impl DParser {
                 && let Some(new_closing) = &mut new.annotations.closing
             {
                 new_closing.is_auto_inserted = true;
+            }
+            if old.annotations.auto_inserted_char_offset.is_some() {
+                new.annotations.auto_inserted_char_offset =
+                    old.annotations.auto_inserted_char_offset;
             }
         }
 
@@ -692,15 +708,34 @@ impl DParser {
             return false;
         }
 
-        if let Some(dparser_token) = tokens
+        let Some(dparser_token) = tokens
             .iter_mut()
             .find(|t| t.token.byte_range().contains(&cursor_pos))
+        else {
+            return false;
+        };
+
+        let range = dparser_token.token.byte_range();
+        let offset = cursor_pos - range.start;
+
+        // Case 1: a dedicated closer token starting at cursor_pos.
+        if offset == 0
+            && dparser_token.token.value.starts_with(c)
             && let Some(closing) = dparser_token.annotations.closing.as_mut()
             && closing.is_auto_inserted
-            && dparser_token.token.value.starts_with(c)
         {
             closing.is_auto_inserted = false;
             return true;
+        }
+
+        // Case 2: the opener and auto-inserted closer were merged into a single Word token
+        // (e.g. `[` + `]` → `Word("[]")`).  The offset is recorded in
+        // `auto_inserted_char_offset`.
+        if let Some(recorded_offset) = dparser_token.annotations.auto_inserted_char_offset {
+            if recorded_offset == offset && dparser_token.token.value[offset..].starts_with(c) {
+                dparser_token.annotations.auto_inserted_char_offset = None;
+                return true;
+            }
         }
 
         false
@@ -779,12 +814,23 @@ impl DParser {
         byte_pos: usize,
     ) -> bool {
         for token in tokens {
-            if token.token.byte_range().start == byte_pos
-                && token.token.value.starts_with(c)
-                && let Some(closing) = &mut token.annotations.closing
-            {
-                closing.is_auto_inserted = true;
-                return true;
+            let range = token.token.byte_range();
+
+            if range.start == byte_pos && token.token.value.starts_with(c) {
+                // The token is a dedicated closer that starts at byte_pos.
+                if let Some(closing) = &mut token.annotations.closing {
+                    closing.is_auto_inserted = true;
+                    return true;
+                }
+            } else if range.contains(&byte_pos) {
+                // The lexer merged the opener and the auto-inserted closer into a single Word
+                // token (e.g. `[` + `]` → `Word("[]")`).  Record the offset within the token's
+                // value at which the auto-inserted character lives.
+                let offset = byte_pos - range.start;
+                if token.token.value[offset..].starts_with(c) {
+                    token.annotations.auto_inserted_char_offset = Some(offset);
+                    return true;
+                }
             }
         }
 

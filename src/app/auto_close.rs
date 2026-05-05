@@ -91,10 +91,15 @@ pub(crate) fn delete_auto_inserted_closing_if_present(
     // Fallback for parser edge cases (notably consecutive `(` that can be tokenized
     // as arithmetic-command boundaries): if the cursor is directly between `(` and `)`,
     // delete the right paren first so Backspace removes the innermost pair.
+    // The same applies to `[` and `]`, which the lexer merges into a single `Word("[]")`
+    // token and therefore never receives structural opening/closing annotations.
     if cursor_pos > 0 {
         let left_char = buffer.buffer()[..cursor_pos].chars().next_back();
         let right_char = buffer.buffer()[cursor_pos..].chars().next();
-        if left_char == Some('(') && right_char == Some(')') {
+        if matches!(
+            (left_char, right_char),
+            (Some('('), Some(')')) | (Some('['), Some(']'))
+        ) {
             buffer.delete_right();
         }
     }
@@ -261,6 +266,71 @@ mod tests {
 
         assert_eq!(buffer.buffer(), "echo \"$($(echo foo '' ))\"");
         assert_eq!(buffer.cursor_byte_pos(), insertion_pos + 1);
+    }
+
+    #[test]
+    fn inserting_left_bracket_autocloses_right_bracket() {
+        let mut buffer = TextBuffer::new("echo ");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 6);
+    }
+
+    #[test]
+    fn inserting_right_bracket_over_auto_inserted_one_moves_cursor_without_duplicating() {
+        let mut buffer = TextBuffer::new("echo ");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 6);
+
+        handle_char_insertion(&mut buffer, &mut tokens, ']');
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 7);
+    }
+
+    #[test]
+    fn backspace_on_left_bracket_also_removes_auto_inserted_right_bracket() {
+        let mut buffer = TextBuffer::new("echo ");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 6);
+
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        let tokens =
+            dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+
+        assert_eq!(buffer.buffer(), "echo ");
+        assert_eq!(buffer.cursor_byte_pos(), 5);
+        let _ = tokens;
+    }
+
+    #[test]
+    fn right_bracket_not_duplicated_after_bracket_autoclose_survives_token_retransfer() {
+        // Typing `[` auto-inserts `]`.  Then re-parsing with the same buffer must
+        // preserve the auto_inserted_char_offset so that typing `]` still moves the
+        // cursor instead of inserting a duplicate.
+        let mut buffer = TextBuffer::new("");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        assert_eq!(buffer.buffer(), "[]");
+        assert_eq!(buffer.cursor_byte_pos(), 1);
+
+        // Simulate re-parsing the same buffer (e.g. from a redraw path) – the
+        // auto_inserted_char_offset must survive the round-trip transfer.
+        tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+
+        handle_char_insertion(&mut buffer, &mut tokens, ']');
+        assert_eq!(buffer.buffer(), "[]");
+        assert_eq!(buffer.cursor_byte_pos(), 2);
     }
 
     #[test]
