@@ -1,5 +1,5 @@
 use crate::active_suggestions::{
-    self, ActiveSuggestions, MaybeProcessedSuggestion, ProcessedSuggestion, SuggestionDescription,
+    ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
     UnprocessedSuggestion,
 };
 use crate::app::{App, ContentMode, TabCompletionHandle};
@@ -106,50 +106,15 @@ fn expand_alias_for_completion(
     }
 }
 
-/// Very important that we post process these now since we want to operate on their final form
-/// that will be inserted into the buffer.
-fn common_prefix_of_suggestions(suggestions: &mut [MaybeProcessedSuggestion]) -> Option<String> {
-    let mut first_text: Option<String> = None;
-    let mut prefix_byte_len: usize = 0;
-
-    for sug in suggestions.iter_mut() {
-        let text = sug.processed().formatted();
-        match first_text {
-            None => {
-                prefix_byte_len = text.len();
-                first_text = Some(text);
-            }
-            Some(ref ft) => {
-                let common: usize = ft
-                    .chars()
-                    .zip(text.chars())
-                    .take_while(|(a, b)| a == b)
-                    .map(|(c, _)| c.len_utf8())
-                    .sum();
-                prefix_byte_len = prefix_byte_len.min(common);
-            }
-        }
-    }
-
-    let first_text = first_text?;
-    if prefix_byte_len == 0 {
-        None
-    } else {
-        Some(first_text[..prefix_byte_len].to_string())
-    }
-}
-
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
     cursor_config: &crate::cursor::CursorConfig,
-) -> Option<(Vec<MaybeProcessedSuggestion>, bool)> {
+) -> Option<ActiveSuggestionsBuilder> {
     log::debug!("Completion context: {:#?}", completion_context);
 
     let word_under_cursor = &completion_context.word_under_cursor;
 
     let mut comp_res_flags = bash_funcs::CompletionFlags::default();
-
-    const REPLACE_WITH_COMMON_PREFIX: bool = true;
 
     for comp_type in &completion_context.comp_types {
         log::debug!("Processing completion type: {:?}", comp_type);
@@ -163,7 +128,7 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some((completions, REPLACE_WITH_COMMON_PREFIX));
+                    return Some(completions);
                 }
             }
             tab_completion_context::CompType::CommandComp {
@@ -207,71 +172,67 @@ pub(crate) fn gen_completions_internal(
                             let quote_type =
                                 bash_funcs::find_quote_type(word_under_cursor.as_ref());
 
-                            let suggestions: Vec<MaybeProcessedSuggestion> = candidates
-                                .into_iter()
-                                .map(|c| {
-                                    let value = c.get_value().to_string_lossy().to_string();
-                                    let value = if let Some(qt) = quote_type {
-                                        bash_funcs::quoting_function_rust(&value, qt, true, false)
+                            let mut builder = ActiveSuggestionsBuilder::new();
+                            builder.extend_processed(candidates.into_iter().map(|c| {
+                                let value = c.get_value().to_string_lossy().to_string();
+                                let value = if let Some(qt) = quote_type {
+                                    bash_funcs::quoting_function_rust(&value, qt, true, false)
+                                } else {
+                                    value.clone()
+                                };
+
+                                let (value, suffix) =
+                                    if let Some(stripped) = value.strip_suffix("NO_SUFFIX") {
+                                        (stripped.to_string(), "")
                                     } else {
-                                        value.clone()
+                                        (value, " ")
                                     };
+                                let (prefix, value) = if let Some(delim_pos) =
+                                    value.find("PREFIX_DELIM")
+                                {
+                                    let p = value[..delim_pos].to_string();
+                                    let v = value[delim_pos + "PREFIX_DELIM".len()..].to_string();
+                                    (p, v)
+                                } else {
+                                    (String::new(), value)
+                                };
 
-                                    let (value, suffix) =
-                                        if let Some(stripped) = value.strip_suffix("NO_SUFFIX") {
-                                            (stripped.to_string(), "")
-                                        } else {
-                                            (value, " ")
-                                        };
-                                    let (prefix, value) =
-                                        if let Some(delim_pos) = value.find("PREFIX_DELIM") {
-                                            let p = value[..delim_pos].to_string();
-                                            let v = value[delim_pos + "PREFIX_DELIM".len()..]
-                                                .to_string();
-                                            (p, v)
-                                        } else {
-                                            (String::new(), value)
-                                        };
+                                let help_description = || {
+                                    let help = c
+                                        .get_help()
+                                        .map(|h| h.to_string())
+                                        .filter(|h| !h.is_empty());
+                                    match help {
+                                        Some(h) => SuggestionDescription::Animation(vec![
+                                            ansi_string_to_spans(&h),
+                                        ]),
+                                        None => SuggestionDescription::Static(vec![]),
+                                    }
+                                };
+                                let description = match (
+                                    preceding_flag,
+                                    CursorEasing::try_from_value_name(&value),
+                                ) {
+                                    (Some("--effect-easing"), Some(easing)) => {
+                                        SuggestionDescription::Animation(
+                                            cursor_effect_animation_frames(
+                                                easing,
+                                                cursor_config.effect_speed,
+                                            ),
+                                        )
+                                    }
+                                    (Some("--interpolate-easing"), Some(easing)) => {
+                                        SuggestionDescription::Animation(easing_animation_frames(
+                                            easing,
+                                        ))
+                                    }
+                                    _ => help_description(),
+                                };
 
-                                    let help_description = || {
-                                        let help = c
-                                            .get_help()
-                                            .map(|h| h.to_string())
-                                            .filter(|h| !h.is_empty());
-                                        match help {
-                                            Some(h) => SuggestionDescription::Animation(vec![
-                                                ansi_string_to_spans(&h),
-                                            ]),
-                                            None => SuggestionDescription::Static(vec![]),
-                                        }
-                                    };
-                                    let description = match (
-                                        preceding_flag,
-                                        CursorEasing::try_from_value_name(&value),
-                                    ) {
-                                        (Some("--effect-easing"), Some(easing)) => {
-                                            SuggestionDescription::Animation(
-                                                cursor_effect_animation_frames(
-                                                    easing,
-                                                    cursor_config.effect_speed,
-                                                ),
-                                            )
-                                        }
-                                        (Some("--interpolate-easing"), Some(easing)) => {
-                                            SuggestionDescription::Animation(
-                                                easing_animation_frames(easing),
-                                            )
-                                        }
-                                        _ => help_description(),
-                                    };
-
-                                    MaybeProcessedSuggestion::Processed(
-                                        ProcessedSuggestion::new(&value, prefix, suffix)
-                                            .with_description(description),
-                                    )
-                                })
-                                .collect();
-                            return Some((suggestions, REPLACE_WITH_COMMON_PREFIX));
+                                ProcessedSuggestion::new(&value, prefix, suffix)
+                                    .with_description(description)
+                            }));
+                            return Some(builder);
                         }
                         Ok(_) => {
                             log::debug!(
@@ -300,20 +261,16 @@ pub(crate) fn gen_completions_internal(
                             );
                             log::debug!("Completions: {:#?}", comp_result);
 
-                            let suggestions = comp_result
-                                .completions
-                                .into_iter()
-                                .map(|sug| {
-                                    MaybeProcessedSuggestion::Unprocessed(UnprocessedSuggestion {
-                                        raw_text: sug,
-                                        full_path: None,
-                                        flags: comp_result.flags,
-                                        word_under_cursor: word_under_cursor.as_ref().to_string(),
-                                    })
-                                })
-                                .collect();
-
-                            return Some((suggestions, REPLACE_WITH_COMMON_PREFIX));
+                            let mut builder = ActiveSuggestionsBuilder::new();
+                            builder.extend_unprocessed(comp_result.completions.into_iter().map(
+                                |sug| UnprocessedSuggestion {
+                                    raw_text: sug,
+                                    full_path: None,
+                                    flags: comp_result.flags,
+                                    word_under_cursor: word_under_cursor.as_ref().to_string(),
+                                },
+                            ));
+                            return Some(builder);
                         }
                         Ok(comp_result) => {
                             // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
@@ -335,13 +292,13 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some((
-                        ProcessedSuggestion::from_string_vec(matching_vars, "", " ")
-                            .into_iter()
-                            .map(MaybeProcessedSuggestion::Processed)
-                            .collect(),
-                        REPLACE_WITH_COMMON_PREFIX,
+                    let mut builder = ActiveSuggestionsBuilder::new();
+                    builder.extend_processed(ProcessedSuggestion::from_string_vec(
+                        matching_vars,
+                        "",
+                        " ",
                     ));
+                    return Some(builder);
                 }
             }
             tab_completion_context::CompType::TildeExpansion => {
@@ -353,15 +310,17 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some((completions, REPLACE_WITH_COMMON_PREFIX));
+                    let mut builder = ActiveSuggestionsBuilder::new();
+                    builder.extend_processed(completions);
+                    return Some(builder);
                 }
             }
             tab_completion_context::CompType::GlobExpansion => {
                 log::debug!("Glob expansion for: {:?}", word_under_cursor);
-                let mut completions =
+                let completions =
                     tab_complete_glob_expansion(word_under_cursor.as_ref(), comp_res_flags);
 
-                match completions.as_mut_slice() {
+                match completions.as_slice() {
                     [] => {
                         log::debug!(
                             "No glob expansion completions found for pattern: {}",
@@ -369,13 +328,15 @@ pub(crate) fn gen_completions_internal(
                         );
                     }
                     [single_completion] => {
-                        single_completion.processed();
+                        let processed = single_completion.clone().into_processed();
                         log::debug!(
                             "Only one glob expansion completion found for pattern '{}': '{:?}'",
                             word_under_cursor.as_ref(),
-                            single_completion
+                            processed
                         );
-                        return Some((vec![single_completion.clone()], REPLACE_WITH_COMMON_PREFIX));
+                        let mut builder = ActiveSuggestionsBuilder::new();
+                        builder.push_processed(processed);
+                        return Some(builder);
                     }
                     _ => {
                         log::debug!(
@@ -388,8 +349,8 @@ pub(crate) fn gen_completions_internal(
                         // Process each item eagerly here since we need the final text.
                         let completions_as_string = completions.into_iter().flag_first_last().fold(
                             String::new(),
-                            |mut acc, (is_first, is_last, mut item)| {
-                                let sug = item.processed();
+                            |mut acc, (is_first, is_last, item)| {
+                                let sug = item.into_processed();
                                 if !is_first {
                                     acc.push(' ');
                                 }
@@ -414,12 +375,13 @@ pub(crate) fn gen_completions_internal(
                                 acc
                             },
                         );
-                        return Some((
-                            vec![MaybeProcessedSuggestion::Processed(
-                                ProcessedSuggestion::new(completions_as_string, "", ""),
-                            )],
-                            REPLACE_WITH_COMMON_PREFIX,
+                        let mut builder = ActiveSuggestionsBuilder::new();
+                        builder.push_processed(ProcessedSuggestion::new(
+                            completions_as_string,
+                            "",
+                            "",
                         ));
+                        return Some(builder);
                     }
                 }
             }
@@ -436,7 +398,9 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some((completions, REPLACE_WITH_COMMON_PREFIX));
+                    let mut builder = ActiveSuggestionsBuilder::new();
+                    builder.extend_unprocessed(completions);
+                    return Some(builder);
                 }
             }
             tab_completion_context::CompType::FuzzyFilenameExpansion => {
@@ -450,7 +414,10 @@ pub(crate) fn gen_completions_internal(
                         word_under_cursor.as_ref()
                     );
                 } else {
-                    return Some((completions, false));
+                    let mut builder =
+                        ActiveSuggestionsBuilder::new().with_auto_accept_if_solo(false);
+                    builder.extend_unprocessed(completions);
+                    return Some(builder);
                 }
             }
         }
@@ -461,18 +428,20 @@ pub(crate) fn gen_completions_internal(
     None
 }
 
-fn tab_complete_first_word(command: &str) -> Vec<MaybeProcessedSuggestion> {
+fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
     log::debug!("Generating first word completions for: '{}'", command);
+    let mut builder = ActiveSuggestionsBuilder::new();
     if command.is_empty() {
-        return vec![];
+        return builder;
     }
 
     if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
         // Path to executable
-        return tab_complete_glob_expansion(
+        builder.extend_unprocessed(tab_complete_glob_expansion(
             &(command.to_string() + "*"),
             bash_funcs::CompletionFlags::default(),
-        );
+        ));
+        return builder;
     }
 
     let mut res = bash_funcs::get_first_word_completions(command);
@@ -481,25 +450,21 @@ fn tab_complete_first_word(command: &str) -> Vec<MaybeProcessedSuggestion> {
         // No prefix matches found, fall back to fuzzy search
         log::debug!("No prefix matches for '{}', trying fuzzy search", command);
         res = bash_funcs::get_fuzzy_first_word_completions(command);
-        return ProcessedSuggestion::from_string_vec(res, "", " ")
-            .into_iter()
-            .map(MaybeProcessedSuggestion::Processed)
-            .collect();
+        builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
+        return builder;
     }
 
     // TODO: could prioritize based on frequency of use
     res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
     res.dedup();
-    ProcessedSuggestion::from_string_vec(res, "", " ")
-        .into_iter()
-        .map(MaybeProcessedSuggestion::Processed)
-        .collect()
+    builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
+    builder
 }
 
 fn tab_complete_glob_expansion(
     pattern: &str,
     mut comp_resultflags: bash_funcs::CompletionFlags,
-) -> Vec<MaybeProcessedSuggestion> {
+) -> Vec<UnprocessedSuggestion> {
     // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
     // e.g. my_command $PWD/fi<TAB> should expand to:
     // my_command $PWD/file\ with\ spaces.txt
@@ -561,18 +526,16 @@ fn tab_complete_glob_expansion(
                 continue;
             }
 
-            results.push(MaybeProcessedSuggestion::Unprocessed(
-                UnprocessedSuggestion {
-                    raw_text: unexpanded,
-                    full_path: Some(path),
-                    flags: comp_resultflags,
-                    // The glob expansion path already preserves the raw prefix in
-                    // `unexpanded` via PathPatternExpansion; pass "" here so
-                    // into_processed doesn't attempt a second
-                    // prefix split (filename_quoting_desired is false anyway).
-                    word_under_cursor: String::new(),
-                },
-            ));
+            results.push(UnprocessedSuggestion {
+                raw_text: unexpanded,
+                full_path: Some(path),
+                flags: comp_resultflags,
+                // The glob expansion path already preserves the raw prefix in
+                // `unexpanded` via PathPatternExpansion; pass "" here so
+                // into_processed doesn't attempt a second
+                // prefix split (filename_quoting_desired is false anyway).
+                word_under_cursor: String::new(),
+            });
         }
     }
 
@@ -589,7 +552,7 @@ fn tab_complete_glob_expansion(
 fn tab_complete_fuzzy_filename(
     word_under_cursor: &str,
     comp_res_flags: bash_funcs::CompletionFlags,
-) -> Vec<MaybeProcessedSuggestion> {
+) -> Vec<UnprocessedSuggestion> {
     // Split at the last '/' to separate the directory prefix from the filename
     // fragment that will be used as the fuzzy-match pattern.
     let (dir_glob_pattern, filename_fragment) =
@@ -614,13 +577,13 @@ fn tab_complete_fuzzy_filename(
 
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
 
-    let mut scored: Vec<(i64, MaybeProcessedSuggestion)> = all_files
+    let mut scored: Vec<(i64, UnprocessedSuggestion)> = all_files
         .into_iter()
         .filter_map(|sug| {
             // Match only against the last path segment so that e.g. the
             // directory prefix doesn't inflate the score.
             let match_text = sug.match_text();
-            let filename = match_text.rsplit('/').next().unwrap_or(&match_text);
+            let filename = match_text.rsplit('/').next().unwrap_or(match_text);
             matcher
                 .fuzzy_match(filename, &dequoted_fragment)
                 .map(|score| (score, sug))
@@ -632,7 +595,7 @@ fn tab_complete_fuzzy_filename(
     scored.into_iter().map(|(_, sug)| sug).collect()
 }
 
-fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> {
+fn tab_complete_tilde_expansion(pattern: &str) -> Vec<ProcessedSuggestion> {
     let user_pattern = if let Some(stripped) = pattern.strip_prefix('~') {
         stripped
     } else {
@@ -659,37 +622,40 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<MaybeProcessedSuggestion> 
     suggestions.sort_by(|a, b| a.s.cmp(&b.s));
     suggestions.dedup_by(|a, b| a.s == b.s);
     suggestions
-        .into_iter()
-        .map(MaybeProcessedSuggestion::Processed)
-        .collect()
 }
 
 impl App<'_> {
-    fn try_accept_tab_completion(&mut self, suggs: ActiveSuggestions) {
-        match suggs.try_accept(&mut self.buffer) {
-            None => {
-                self.content_mode = ContentMode::Normal;
-            }
-            Some(suggestions) => {
-                self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
-            }
-        }
-    }
-
     /// Apply the results of tab completion generation (Phase 2 & 3: common
     /// prefix insertion and handing suggestions to the UI).
     pub(crate) fn finish_tab_complete(
         &mut self,
-        sugs: Vec<MaybeProcessedSuggestion>,
-        common_prefix: Option<String>,
+        builder: ActiveSuggestionsBuilder,
         wuc_substring: SubString,
         load_time: std::time::Duration,
     ) {
+        if builder.len() == 1
+            && builder.auto_accept_if_solo
+            && let Some(suggestion) = builder.processed.iter().next()
+        {
+            log::info!("Auto-accepting solo suggestion: '{:?}'", suggestion);
+            self.buffer
+                .replace_word_under_cursor(&suggestion.formatted(), &wuc_substring)
+                .ok();
+            self.content_mode = ContentMode::Normal;
+            return;
+        }
+
+        if builder.len() == 0 {
+            log::info!(
+                "No suggestions generated for word under cursor '{:?}'",
+                wuc_substring
+            );
+        }
         let mut final_wuc = wuc_substring.clone();
-        // Phase 2: if the background thread found a common prefix, insert it.
+        // if the background thread found a common prefix, insert it.
         // e.g. ~foo<TAB> might produce /home/foobar and /home/foobaz,
         // which have common prefix /home/foo that should be inserted to aid fuzzy matching.
-        if let Some(common_prefix) = common_prefix {
+        if let Some(common_prefix) = builder.common_prefix.as_ref() {
             match self
                 .buffer
                 .replace_word_under_cursor(&common_prefix, &wuc_substring)
@@ -708,8 +674,8 @@ impl App<'_> {
             }
         }
 
-        // Phase 3: hand the suggestions off to the UI layer.
-        self.try_accept_tab_completion(ActiveSuggestions::new(sugs, final_wuc, load_time));
+        let suggestions = ActiveSuggestions::new(builder, final_wuc, load_time);
+        self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
     }
 
     pub fn start_tab_complete(&mut self) {
@@ -724,8 +690,7 @@ impl App<'_> {
 
         let wuc_substring = completion_context.word_under_cursor.clone();
 
-        let (tx, rx) =
-            std::sync::mpsc::channel::<Option<(Vec<MaybeProcessedSuggestion>, Option<String>)>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Option<ActiveSuggestionsBuilder>>();
 
         let completion_context_owned = completion_context.into_owned();
 
@@ -741,20 +706,20 @@ impl App<'_> {
                     completion_context_owned
                 );
             }
-            let result = suggestions.map(|(mut sugs, replace_with_common_prefix)| {
-                let all_processed = active_suggestions::try_process_suggestions(&mut sugs);
+            // Auto-accept-if-solo and common-prefix insertion go hand in hand:
+            // both are skipped for fuzzy filename matching so the user gets to
+            // see and confirm the picked match.
+            let result = suggestions.map(|mut builder| {
+                let all_processed = builder.try_process_all();
                 if !all_processed {
                     log::debug!(
                         "Not all suggestions were fully processed; skipping common prefix calculation"
                     );
                 }
-                let common_prefix =
-                    if replace_with_common_prefix  && all_processed {
-                            common_prefix_of_suggestions(&mut sugs)
-                    } else {
-                        None
-                    };
-                (sugs, common_prefix)
+                if builder.auto_accept_if_solo && all_processed {
+                    builder.set_common_prefix()
+                };
+                builder
             });
             if let Err(e) = tx.send(result) {
                 log::warn!(
@@ -766,12 +731,16 @@ impl App<'_> {
 
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(Some((sugs, common_prefix))) => {
-                self.finish_tab_complete(sugs, common_prefix, wuc_substring, start_time.elapsed());
+            Ok(Some(builder)) => {
+                self.finish_tab_complete(builder, wuc_substring, start_time.elapsed());
             }
             Ok(None) => {
                 // No suggestions generated.
-                self.finish_tab_complete(vec![], None, wuc_substring, start_time.elapsed());
+                self.finish_tab_complete(
+                    ActiveSuggestionsBuilder::new(),
+                    wuc_substring,
+                    start_time.elapsed(),
+                );
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Thread hasn't finished yet; enter waiting mode.
@@ -829,12 +798,13 @@ impl App<'_> {
                 }
             }
 
-            let mut suggestions: Vec<ProcessedSuggestion> = some_suggestions
-                .unwrap()
-                .0
-                .into_iter()
-                .map(|mut item: MaybeProcessedSuggestion| item.processed().clone())
-                .collect();
+            let mut builder = some_suggestions.unwrap();
+            // Drain any remaining unprocessed suggestions (the timeout in
+            // try_process_all is only meaningful for the interactive path).
+            while !builder.unprocessed.is_empty() {
+                builder.try_process_all();
+            }
+            let mut suggestions: Vec<ProcessedSuggestion> = builder.processed;
 
             suggestions.sort_by(|a, b| a.s.cmp(&b.s));
 
