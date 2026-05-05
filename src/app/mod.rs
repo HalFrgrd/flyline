@@ -1457,9 +1457,9 @@ impl<'a> App<'a> {
             self.buffer.buffer(),
             &self.dparser_tokens_cache,
         );
-        for token in &new_tokens {
-            log::info!("Parsed token '{:#?}", token);
-        }
+        // for token in &new_tokens {
+        //     log::info!("Parsed token '{:#?}", token);
+        // }
 
         self.dparser_tokens_cache = new_tokens;
 
