@@ -470,12 +470,14 @@ fn tab_complete_with_expanded_pattern(
     comp_resultflags: bash_funcs::CompletionFlags,
     should_skip_hidden: bool,
 ) -> Vec<UnprocessedSuggestion> {
+    
     let mut results = Vec::new();
-
+    
     const MAX_GLOB_RESULTS: usize = 5_000;
-
+    
     let glob_patterns = expanded.glob_pattern();
-
+    
+    log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
     log::debug!("Using glob_patterns {:?}", glob_patterns);
 
     'outer: for glob_pattern in &glob_patterns {
@@ -550,7 +552,6 @@ fn tab_complete_glob_expansion(
     log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
 
     let expanded = PathPatternExpansion::new(pattern);
-    log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
 
     tab_complete_with_expanded_pattern(&expanded, comp_resultflags, true)
 }
@@ -568,16 +569,14 @@ fn tab_complete_fuzzy_filename(
     // Split at the last '/' to separate the directory prefix from the filename
     // fragment that will be used as the fuzzy-match pattern.
 
-    let last_seg_glob_pattern = |s: &str| format!("{{{}*,{}.*}}", s, s);
-
     let (dir_glob_pattern, filename_fragment) =
         if let Some(slash_pos) = word_under_cursor.rfind('/') {
             (
-                last_seg_glob_pattern(&word_under_cursor[..slash_pos + 1]),
+                word_under_cursor[..slash_pos + 1].to_string() + "*",
                 word_under_cursor[slash_pos + 1..].to_string(),
             )
         } else {
-            (last_seg_glob_pattern(""), word_under_cursor.to_string())
+            ("*".to_string(), word_under_cursor.to_string())
         };
 
     // Nothing to fuzzy-match against — let the caller fall through.
@@ -585,18 +584,19 @@ fn tab_complete_fuzzy_filename(
         return vec![];
     }
 
-    // glob expansion handles dequoting the pattern, so we only need to dequote
-    let dequoted_fragment = bash_funcs::dequoting_function_rust(&filename_fragment);
 
     // Set up flags for glob expansion
     comp_res_flags.filename_quoting_desired = false;
     comp_res_flags.filename_completion_desired = true;
     comp_res_flags.quote_type = bash_funcs::find_quote_type(&dir_glob_pattern);
-
+    
     let expanded = PathPatternExpansion::new(&dir_glob_pattern);
     let all_files = tab_complete_with_expanded_pattern(&expanded, comp_res_flags, false);
-
+    
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+
+    // glob expansion handles dequoting the pattern, so we only need to dequote
+    let dequoted_fragment = bash_funcs::dequoting_function_rust(&filename_fragment);
 
     let mut scored: Vec<(i64, UnprocessedSuggestion)> = all_files
         .into_iter()
