@@ -33,6 +33,7 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{Frame, TerminalOptions, Viewport, text::Line};
 use std::boxed::Box;
+use std::cell::LazyCell;
 use std::io::{Error, ErrorKind, IsTerminal};
 use std::time::Duration;
 use std::vec;
@@ -1457,6 +1458,12 @@ impl<'a> App<'a> {
             }
         }
 
+        let new_wuc = LazyCell::new(|| {
+            let buffer: &str = self.buffer.buffer();
+            tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos())
+                .word_under_cursor
+        });
+
         // Cancel a pending tab-completion background thread when the word under
         // cursor has changed in a way that invalidates the in-flight completion.
         // Keep waiting if the new word is a prefix of the old one or vice-versa
@@ -1465,38 +1472,38 @@ impl<'a> App<'a> {
             ref wuc_substring, ..
         } = self.content_mode
         {
-            let buffer: &str = self.buffer.buffer();
-            let completion_context = tab_completion_context::get_completion_context(
-                buffer,
-                self.buffer.cursor_byte_pos(),
-            );
-            let new_wuc = completion_context.word_under_cursor.s;
             let old_wuc = &wuc_substring.s;
-            if !new_wuc.starts_with(old_wuc.as_str()) && !old_wuc.starts_with(&new_wuc) {
+            if !new_wuc.s.starts_with(old_wuc.as_str()) && !old_wuc.starts_with(&new_wuc.s) {
                 self.content_mode = ContentMode::Normal;
             }
         }
 
         // Apply fuzzy filtering to active tab completion suggestions
         if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-            let buffer: &str = self.buffer.buffer();
-            let completion_context = tab_completion_context::get_completion_context(
-                buffer,
-                self.buffer.cursor_byte_pos(),
-            );
-            let word_under_cursor = completion_context.word_under_cursor;
-            if word_under_cursor.overlaps_with(&active_suggestions.word_under_cursor) {
+            if new_wuc.s == active_suggestions.word_under_cursor.s {
+                // No change to the word under cursor; keep the same suggestions.
+                log::debug!(
+                    "Word under cursor unchanged ('{}'), keeping existing tab completion suggestions",
+                    new_wuc.s
+                );
+            } else if new_wuc.s.is_empty()
+                && !active_suggestions.original_word_under_cursor.s.is_empty()
+            {
+                log::debug!("Word under cursor cleared, discarding tab completion suggestions",);
+                // If the word under cursor is cleared, discard suggestions
+                self.content_mode = ContentMode::Normal;
+            } else if new_wuc.overlaps_with(&active_suggestions.word_under_cursor) {
                 log::debug!(
                     "Word under cursor changed slightly ('{}' -> '{}'), applying fuzzy filter to tab completion suggestions",
                     active_suggestions.word_under_cursor.s,
-                    word_under_cursor.s
+                    new_wuc.s
                 );
-                active_suggestions.update_word_under_cursor(&word_under_cursor);
+                active_suggestions.update_word_under_cursor(&new_wuc);
             } else {
                 log::debug!(
                     "Word under cursor changed significantly ('{:?}' -> '{:?}'), discarding tab completion suggestions",
                     active_suggestions.word_under_cursor,
-                    word_under_cursor
+                    new_wuc
                 );
                 // If the word under cursor has changed significantly, discard suggestions
                 self.content_mode = ContentMode::Normal;
@@ -1543,21 +1550,25 @@ impl<'a> App<'a> {
             &self.settings.colour_palette,
         );
 
-        self.tooltip = None;
-        for part in self.formatted_buffer_cache.parts.iter() {
-            if part
-                .token
-                .token
-                .byte_range()
-                .to_inclusive()
-                .contains(&self.buffer.cursor_byte_pos())
-                && let Some(tooltip) = part.tooltip.as_ref()
-            {
-                self.tooltip = Some(tooltip.clone());
-            }
-        }
-
-        // log::debug!("Formatted buffer cache updated:\n{:#?}", self.formatted_buffer_cache);
+        let cursor_byte_pos = self.buffer.cursor_byte_pos();
+        self.tooltip = self
+            .formatted_buffer_cache
+            .parts
+            .iter()
+            .rev()
+            .find_map(|part| {
+                if part
+                    .token
+                    .token
+                    .byte_range()
+                    .to_inclusive()
+                    .contains(&cursor_byte_pos)
+                {
+                    part.tooltip.clone()
+                } else {
+                    None
+                }
+            });
     }
 
     /// Returns the buffer string with any trailing auto-inserted closing tokens stripped.

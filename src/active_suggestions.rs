@@ -769,6 +769,7 @@ pub struct ColumnInfo {
     pub is_selected_col: bool,
 }
 
+#[derive(Debug)]
 pub struct ActiveSuggestions {
     /// Raw completions waiting to be post-processed.  Drained from the front
     /// in chunks each time [`into_grid`] is called or fuzzy matching runs.
@@ -782,6 +783,7 @@ pub struct ActiveSuggestions {
     /// index into `filtered_suggestions`.
     pub selected_row: usize,
     pub selected_col: usize,
+    pub original_word_under_cursor: SubString,
     pub word_under_cursor: SubString,
     /// Number of suggestion rows per column as used in the last rendered
     /// grid.  Kept in sync by [`update_grid_size`].
@@ -799,29 +801,6 @@ pub struct ActiveSuggestions {
     fuzzy_matcher: ArinaeMatcher,
     /// How long it took to generate the completions.
     pub load_time: std::time::Duration,
-}
-
-impl std::fmt::Debug for ActiveSuggestions {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ActiveSuggestions")
-            .field(
-                "unprocessed_suggestions_len",
-                &self.unprocessed_suggestions.len(),
-            )
-            .field(
-                "processed_suggestions_len",
-                &self.processed_suggestions.len(),
-            )
-            .field("filtered_suggestions_len", &self.filtered_suggestions.len())
-            .field("selected_row", &self.selected_row)
-            .field("selected_col", &self.selected_col)
-            .field("word_under_cursor", &self.word_under_cursor)
-            .field("last_num_rows_per_col", &self.last_num_rows_per_col)
-            .field("last_num_visible_cols", &self.last_num_visible_cols)
-            .field("last_num_data_cols", &self.last_num_data_cols)
-            .field("col_window_to_show", &self.col_window_to_show)
-            .finish()
-    }
 }
 
 impl ActiveSuggestions {
@@ -844,6 +823,7 @@ impl ActiveSuggestions {
             filtered_suggestions: vec![],
             selected_row: 0,
             selected_col: 0,
+            original_word_under_cursor: word_under_cursor.clone(),
             word_under_cursor: word_under_cursor.clone(),
             last_num_rows_per_col: 0,
             last_num_visible_cols: 0,
