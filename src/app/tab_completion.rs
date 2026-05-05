@@ -342,7 +342,7 @@ pub(crate) fn gen_completions_internal(
                         log::debug!(
                             "Multiple glob expansion completions found for pattern '{}': {:#?}",
                             word_under_cursor.as_ref(),
-                            completions
+                            completions.iter().take(20)
                         );
                         // Unlike other completions, if there are multiple glob completions,
                         // we join them with spaces and insert them all at once.
@@ -600,7 +600,6 @@ fn tab_complete_fuzzy_filename(
 
     let mut scored: Vec<(i64, UnprocessedSuggestion)> = all_files
         .into_iter()
-        .inspect(|sug| log::debug!("Fuzzy matching candidate: '{}'", sug.match_text()))
         .filter_map(|sug| {
             // Match only against the last path segment so that e.g. the
             // directory prefix doesn't inflate the score.
@@ -610,7 +609,6 @@ fn tab_complete_fuzzy_filename(
                 .fuzzy_match(filename, &dequoted_fragment)
                 .map(|score| (score, sug))
         })
-        .inspect(|x| log::debug!("Fuzzy match scored {} for '{}'", x.0, x.1.match_text()))
         .collect();
 
     // Best matches first.
@@ -661,7 +659,11 @@ impl App<'_> {
             && builder.auto_accept_if_solo
             && let Some(suggestion) = builder.processed.iter().next()
         {
-            log::info!("Auto-accepting solo suggestion: '{:?}'", suggestion);
+            log::info!(
+                "Auto-accepting solo suggestion: '{:?}' for word under cursor '{:?}'",
+                suggestion,
+                wuc_substring
+            );
             self.buffer
                 .replace_word_under_cursor(&suggestion.formatted(), &wuc_substring)
                 .ok();
