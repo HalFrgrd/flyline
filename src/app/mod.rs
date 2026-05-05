@@ -80,9 +80,12 @@ fn set_panic_hook(extended_key_codes: bool) {
     }));
 }
 
-/// https://github.com/openai/codex/issues/14962
-/// https://github.com/crossterm-rs/crossterm/issues/793
 fn stdin_unavailable_reason() -> Option<&'static str> {
+    // I was finding bash processes were often spinning trying to read from stdin
+    // When the terminal emulator closed.
+    // I believe this problem was fixed by setting `use-dev-tty` in crossterm.
+    // The following are defensive checks to avoid calling crossterm poll when the terminal closes.
+
     // If stdin has been closed outright, bail out before crossterm enters its
     // Unix event loop. In crossterm 0.29 that path can spin on closed input.
     if unsafe { libc::fcntl(libc::STDIN_FILENO, libc::F_GETFD) } == -1

@@ -16,6 +16,7 @@ ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f02484
 # https://github.com/openai/codex/issues/14962
 # https://github.com/ki-editor/ki-editor/commit/1dd31aa8eae9ff84498fb23b1319aa05783ca7d7
 # https://github.com/crossterm-rs/crossterm/issues/828
+# https://github.com/crossterm-rs/crossterm/issues/793
 crossterm = { version = "0.29.0", default-features = false, features = ["bracketed-paste", "events", "windows", "osc52", "use-dev-tty", "libc"] }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
