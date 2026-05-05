@@ -170,7 +170,7 @@ impl DParser {
                 new_closing.is_auto_inserted = true;
             }
         }
-    
+
         new_tokens
     }
 
@@ -255,8 +255,7 @@ impl DParser {
             if matches!(
                 nestings.last().map(|(_, k)| k),
                 Some(TokenKind::ArithSubst | TokenKind::ArithCommand)
-            )
-                && self.tokens[idx].token.kind == TokenKind::RParen
+            ) && self.tokens[idx].token.kind == TokenKind::RParen
                 && idx + 1 < self.tokens.len()
                 && self.tokens[idx + 1].token.kind == TokenKind::RParen
             {
@@ -724,9 +723,13 @@ impl DParser {
 
         if let Some(OpeningState::Matched(closing_idx)) = opening_token.annotations.opening {
             return tokens.get(closing_idx).is_some_and(|closing_token| {
-                let is_empty_arith_command_pair = opening_token.token.kind == TokenKind::ArithCommand
+                let is_empty_arith_command_pair = opening_token.token.kind
+                    == TokenKind::ArithCommand
                     && opening_token.token.byte_range().end == cursor_pos
-                    && matches!(closing_token.token.kind, TokenKind::DoubleRParen | TokenKind::RParen)
+                    && matches!(
+                        closing_token.token.kind,
+                        TokenKind::DoubleRParen | TokenKind::RParen
+                    )
                     && closing_token.token.value.starts_with(')');
 
                 closing_token.token.byte_range().start == cursor_pos
@@ -751,18 +754,22 @@ impl DParser {
 
         opening_token.token.byte_range().end == cursor_pos
             && tokens.iter().any(|closing_token| {
-                let is_empty_arith_command_pair = opening_token.token.kind == TokenKind::ArithCommand
-                    && matches!(closing_token.token.kind, TokenKind::DoubleRParen | TokenKind::RParen)
+                let is_empty_arith_command_pair = opening_token.token.kind
+                    == TokenKind::ArithCommand
+                    && matches!(
+                        closing_token.token.kind,
+                        TokenKind::DoubleRParen | TokenKind::RParen
+                    )
                     && closing_token.token.value.starts_with(')');
 
-            closing_token.token.byte_range().start == cursor_pos
-                && closing_token.token.value.starts_with(expected_closing_char)
-                && (closing_token
-                    .annotations
-                    .closing
-                    .as_ref()
-                    .is_some_and(|closing| closing.is_auto_inserted)
-                    || is_empty_arith_command_pair)
+                closing_token.token.byte_range().start == cursor_pos
+                    && closing_token.token.value.starts_with(expected_closing_char)
+                    && (closing_token
+                        .annotations
+                        .closing
+                        .as_ref()
+                        .is_some_and(|closing| closing.is_auto_inserted)
+                        || is_empty_arith_command_pair)
             })
     }
 
@@ -903,8 +910,6 @@ impl DParser {
             .sum();
         &buffer[..buffer.len().saturating_sub(trailing_len)]
     }
-
-
 }
 
 // Implicitly tested by command acceptance and tab_completion_context
@@ -1295,7 +1300,6 @@ mod tests {
         assert!(tokens[3].annotations.is_inside_double_quotes);
         assert!(tokens[3].annotations.command_word.is_none());
     }
-
 
     #[test]
     fn test_heredoc_single_quoted_delimiter() {

@@ -83,10 +83,7 @@ pub(crate) fn delete_auto_inserted_closing_if_present(
 ) {
     let cursor_pos = buffer.cursor_byte_pos();
 
-    if dparser::DParser::should_delete_auto_inserted_closing(
-        dparser_tokens_cache,
-        cursor_pos,
-    ) {
+    if dparser::DParser::should_delete_auto_inserted_closing(dparser_tokens_cache, cursor_pos) {
         buffer.delete_right();
         return;
     }
