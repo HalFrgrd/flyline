@@ -657,6 +657,7 @@ pub struct ActiveSuggestionsBuilder {
     pub processed: Vec<ProcessedSuggestion>,
     pub unprocessed: VecDeque<UnprocessedSuggestion>,
     pub auto_accept_if_solo: bool,
+    pub common_prefix: Option<String>,
 }
 
 impl ActiveSuggestionsBuilder {
@@ -667,6 +668,7 @@ impl ActiveSuggestionsBuilder {
             processed: Vec::new(),
             unprocessed: VecDeque::new(),
             auto_accept_if_solo: true,
+            common_prefix: None,
         }
     }
 
@@ -698,6 +700,10 @@ impl ActiveSuggestionsBuilder {
         self.processed.is_empty() && self.unprocessed.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.processed.len() + self.unprocessed.len()
+    }
+
     /// Drain every queued unprocessed suggestion into `processed`, returning
     /// `true` if the work fits within [`CHUNK_PROCESSING_TIMEOUT`] and `false`
     /// if processing was cut short.
@@ -712,15 +718,12 @@ impl ActiveSuggestionsBuilder {
         true
     }
 
-    /// Longest common prefix (in bytes, on char boundaries) of the formatted
-    /// text of the processed suggestions.  Returns `None` when the prefix is
-    /// empty or there are no processed suggestions.
-    ///
-    /// Only `processed` is considered; call [`try_process_all`] first if the
-    /// caller cares about every candidate.
-    pub fn common_prefix(&self) -> Option<String> {
+    pub fn set_common_prefix(&mut self) {
         let mut iter = self.processed.iter().map(|s| s.formatted());
-        let first = iter.next()?;
+        let Some(first) = iter.next() else {
+            self.common_prefix = None;
+            return;
+        };
         let mut prefix_byte_len = first.len();
 
         for text in iter {
@@ -732,14 +735,15 @@ impl ActiveSuggestionsBuilder {
                 .sum::<usize>()
                 .min(prefix_byte_len);
             if prefix_byte_len == 0 {
-                return None;
+                self.common_prefix = None;
+                return;
             }
         }
 
         if prefix_byte_len == 0 {
-            None
+            self.common_prefix = None;
         } else {
-            Some(first[..prefix_byte_len].to_string())
+            self.common_prefix = Some(first[..prefix_byte_len].to_string());
         }
     }
 }
@@ -793,10 +797,6 @@ pub struct ActiveSuggestions {
     pub last_num_data_cols: usize,
     col_window_to_show: StatefulSlidingWindow,
     fuzzy_matcher: ArinaeMatcher,
-    /// When `true`, [`try_accept`] silently accepts the only candidate when
-    /// there is exactly one.  Disabled for fuzzy filename matching where the
-    /// user generally wants to confirm the match.
-    auto_accept_if_solo: bool,
     /// How long it took to generate the completions.
     pub load_time: std::time::Duration,
 }
@@ -833,6 +833,7 @@ impl ActiveSuggestions {
         let ActiveSuggestionsBuilder {
             processed: processed_suggestions,
             unprocessed: unprocessed_suggestions,
+            common_prefix: _,
             auto_accept_if_solo,
         } = builder;
         let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
@@ -849,7 +850,6 @@ impl ActiveSuggestions {
             last_num_data_cols: 0,
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
-            auto_accept_if_solo,
             load_time,
         };
 
@@ -1218,43 +1218,6 @@ impl ActiveSuggestions {
         }
     }
 
-    pub fn try_accept(mut self, buffer: &mut TextBuffer) -> Option<Self> {
-        if self.all_suggestions_len() == 0 {
-            log::debug!("No completions found. suggestion vecs are empty");
-            return Some(self);
-        }
-
-        // Auto-accept the only candidate when the caller opted in.  Drain any
-        // pending unprocessed entry first so we have a `ProcessedSuggestion`
-        // (there is at most one item, so this is O(1)).
-        if self.auto_accept_if_solo && self.all_suggestions_len() == 1 {
-            while let Some(raw) = self.unprocessed_suggestions.pop_front() {
-                self.processed_suggestions.push(raw.into_processed());
-            }
-            if let Some(suggestion) = self.processed_suggestions.first().cloned() {
-                self.accept_item(&suggestion, buffer);
-                log::debug!(
-                    "Only one completion found: auto-accepted '{:?}'",
-                    suggestion
-                );
-                return None;
-            }
-        }
-
-        match self.filtered_suggestions.as_slice() {
-            [] => {
-                log::debug!("No completions found. filtered_suggestions is empty");
-                Some(self)
-            }
-            [_filtered_item] if self.auto_accept_if_solo => {
-                self.accept_selected_filtered_item(buffer);
-                log::debug!("Only one filtered completion: auto-accepted");
-                None
-            }
-            _ => Some(self),
-        }
-    }
-
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
         let filtered_item = match self.filtered_suggestions.get(self.current_1d_index()) {
             Some(s) => s,
@@ -1270,7 +1233,11 @@ impl ActiveSuggestions {
         match self.processed_suggestions.get(filtered_item.suggestion_idx) {
             Some(s) => {
                 let suggestion = s.clone();
-                self.accept_item(&suggestion, buffer);
+                if let Err(e) = buffer
+                    .replace_word_under_cursor(&suggestion.formatted(), &self.word_under_cursor)
+                {
+                    log::error!("Failed to apply suggestion: {}", e);
+                }
             }
             None => {
                 log::warn!(
@@ -1280,12 +1247,5 @@ impl ActiveSuggestions {
                 );
             }
         };
-    }
-
-    fn accept_item(&self, item: &ProcessedSuggestion, buffer: &mut TextBuffer) {
-        if let Err(e) = buffer.replace_word_under_cursor(&item.formatted(), &self.word_under_cursor)
-        {
-            log::error!("Failed to apply suggestion: {}", e);
-        }
     }
 }

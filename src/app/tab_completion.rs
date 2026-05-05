@@ -625,31 +625,37 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<ProcessedSuggestion> {
 }
 
 impl App<'_> {
-    fn try_accept_tab_completion(&mut self, suggs: ActiveSuggestions) {
-        match suggs.try_accept(&mut self.buffer) {
-            None => {
-                self.content_mode = ContentMode::Normal;
-            }
-            Some(suggestions) => {
-                self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
-            }
-        }
-    }
-
     /// Apply the results of tab completion generation (Phase 2 & 3: common
     /// prefix insertion and handing suggestions to the UI).
     pub(crate) fn finish_tab_complete(
         &mut self,
         builder: ActiveSuggestionsBuilder,
-        common_prefix: Option<String>,
         wuc_substring: SubString,
         load_time: std::time::Duration,
     ) {
+        if builder.len() == 1
+            && builder.auto_accept_if_solo
+            && let Some(suggestion) = builder.processed.iter().next()
+        {
+            log::info!("Auto-accepting solo suggestion: '{:?}'", suggestion);
+            self.buffer
+                .replace_word_under_cursor(&suggestion.formatted(), &wuc_substring)
+                .ok();
+            self.content_mode = ContentMode::Normal;
+            return;
+        }
+
+        if builder.len() == 0 {
+            log::info!(
+                "No suggestions generated for word under cursor '{:?}'",
+                wuc_substring
+            );
+        }
         let mut final_wuc = wuc_substring.clone();
-        // Phase 2: if the background thread found a common prefix, insert it.
+        // if the background thread found a common prefix, insert it.
         // e.g. ~foo<TAB> might produce /home/foobar and /home/foobaz,
         // which have common prefix /home/foo that should be inserted to aid fuzzy matching.
-        if let Some(common_prefix) = common_prefix {
+        if let Some(common_prefix) = builder.common_prefix.as_ref() {
             match self
                 .buffer
                 .replace_word_under_cursor(&common_prefix, &wuc_substring)
@@ -668,8 +674,8 @@ impl App<'_> {
             }
         }
 
-        // Phase 3: hand the suggestions off to the UI layer.
-        self.try_accept_tab_completion(ActiveSuggestions::new(builder, final_wuc, load_time));
+        let suggestions = ActiveSuggestions::new(builder, final_wuc, load_time);
+        self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
     }
 
     pub fn start_tab_complete(&mut self) {
@@ -684,8 +690,7 @@ impl App<'_> {
 
         let wuc_substring = completion_context.word_under_cursor.clone();
 
-        let (tx, rx) =
-            std::sync::mpsc::channel::<Option<(ActiveSuggestionsBuilder, Option<String>)>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Option<ActiveSuggestionsBuilder>>();
 
         let completion_context_owned = completion_context.into_owned();
 
@@ -711,12 +716,10 @@ impl App<'_> {
                         "Not all suggestions were fully processed; skipping common prefix calculation"
                     );
                 }
-                let common_prefix = if builder.auto_accept_if_solo && all_processed {
-                    builder.common_prefix()
-                } else {
-                    None
+                if builder.auto_accept_if_solo && all_processed {
+                    builder.set_common_prefix()
                 };
-                (builder, common_prefix)
+                builder
             });
             if let Err(e) = tx.send(result) {
                 log::warn!(
@@ -728,19 +731,13 @@ impl App<'_> {
 
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(Some((builder, common_prefix))) => {
-                self.finish_tab_complete(
-                    builder,
-                    common_prefix,
-                    wuc_substring,
-                    start_time.elapsed(),
-                );
+            Ok(Some(builder)) => {
+                self.finish_tab_complete(builder, wuc_substring, start_time.elapsed());
             }
             Ok(None) => {
                 // No suggestions generated.
                 self.finish_tab_complete(
                     ActiveSuggestionsBuilder::new(),
-                    None,
                     wuc_substring,
                     start_time.elapsed(),
                 );
