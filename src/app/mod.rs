@@ -93,8 +93,52 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
         return Some("stdin is no longer attached to a terminal");
     }
 
+    // On macOS there are several reasons why the two checks above are
+    // insufficient to detect a closed terminal emulator window:
+    //
+    // 1. `isatty()` uses `TIOCGETA` which reads locally-cached TTY settings
+    //    and succeeds even after the PTY master fd has been closed.  On Linux
+    //    the equivalent path correctly returns ENOTTY / 0 once the master is
+    //    gone, so `!is_terminal()` catches it there but not on macOS.
+    //
+    // 2. crossterm 0.29 on macOS uses kqueue (via mio).  When the PTY master
+    //    closes, kqueue fires a `EVFILT_READ` event with the `EV_EOF` flag
+    //    rather than a dedicated hangup event.  Depending on how mio maps
+    //    `EV_EOF` to its readiness flags, crossterm may call `read()`, receive
+    //    `EIO` (the macOS PTY slave behaviour on orphaned master), and retry
+    //    instead of propagating the error.  On Linux, epoll raises `EPOLLHUP`
+    //    which mio correctly exposes as `is_read_closed() = true`, so crossterm
+    //    exits cleanly without spinning.
+    //
+    // 3. On macOS some terminal emulators do not reliably deliver SIGHUP to
+    //    the foreground process group when the window closes, so the
+    //    `terminating_signal` check further down the main loop may never fire.
+    //
+    // A zero-timeout `poll(2)` with no requested events will still set
+    // `POLLHUP` / `POLLERR` in `revents` if the PTY master has been closed,
+    // on both macOS and Linux, regardless of `isatty()`.
+    let mut pfd = libc::pollfd {
+        fd: libc::STDIN_FILENO,
+        events: 0,
+        revents: 0,
+    };
+    if unsafe { libc::poll(&mut pfd, 1, 0) } >= 0
+        && (pfd.revents & (libc::POLLHUP | libc::POLLERR)) != 0
+    {
+        return Some("stdin PTY has been disconnected (POLLHUP/POLLERR)");
+    }
+
     None
 }
+
+/// Maximum duration for a single `crossterm::event::poll()` call.
+///
+/// On macOS, when the PTY master is closed, kqueue may fire a readable event
+/// that causes `read()` to return `EIO`.  crossterm may retry this internally
+/// for the full requested timeout rather than propagating the error.  Capping
+/// each call at this value means `stdin_unavailable_reason()` is re-checked at
+/// least this often, bounding the spin window.
+const MAX_POLL_CHUNK: Duration = Duration::from_millis(250);
 
 fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<CrosstermEvent>> {
     if let Some(reason) = stdin_unavailable_reason() {
@@ -102,10 +146,25 @@ fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<CrosstermEve
         return Err(Error::new(ErrorKind::UnexpectedEof, reason));
     }
 
-    if event::poll(timeout)? {
-        event::read().map(Some)
-    } else {
-        Ok(None)
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let chunk = remaining.min(MAX_POLL_CHUNK);
+
+        match event::poll(chunk) {
+            Ok(true) => return event::read().map(Some),
+            Ok(false) => {}
+            Err(e) => return Err(e),
+        }
+
+        if std::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+
+        if let Some(reason) = stdin_unavailable_reason() {
+            log::error!("Cannot read terminal events: {}", reason);
+            return Err(Error::new(ErrorKind::UnexpectedEof, reason));
+        }
     }
 }
 
