@@ -93,6 +93,43 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
         return Some("stdin is no longer attached to a terminal");
     }
 
+    // On macOS, when the terminal emulator closes its end of the PTY (the
+    // master), the slave PTY fd (stdin) remains valid and isatty() continues to
+    // return true.  The is_terminal() check above therefore does NOT fire on
+    // macOS after the terminal is closed, so crossterm is called even though
+    // input is gone.
+    //
+    // Crossterm uses mio, which on macOS uses kqueue.  kqueue registers
+    // EVFILT_READ on the slave PTY fd.  After the PTY master closes, kqueue
+    // immediately marks the fd readable (it reports the EOF/hangup condition as
+    // a read-ready event).  Crossterm's inner read loop then calls read(2),
+    // which returns 0 bytes (macOS PTY slave returns EOF rather than EIO when
+    // the master closes).  Since read_count == 0 is not treated as WouldBlock,
+    // the loop never breaks and spins at 100% CPU indefinitely.
+    //
+    // On Linux the is_terminal() guard above is sufficient: after the PTY
+    // master closes, Linux updates the slave's session state so that isatty()
+    // returns 0, which is caught above.  If isatty() somehow still returns 1,
+    // Linux's epoll reports EPOLLHUP without EPOLLIN, so mio's poll times out
+    // normally.  And when Linux read() does return EIO the same inner-loop
+    // fall-through occurs, but the earlier guards prevent reaching that point.
+    //
+    // The reliable cross-platform guard is to call poll(2) with a zero timeout
+    // and check for POLLHUP.  POSIX guarantees that POLLHUP is set in revents
+    // whenever a hang-up has occurred on the fd, regardless of which events
+    // were requested.  A set POLLHUP therefore means we should not call
+    // crossterm.
+    let mut pfd = libc::pollfd {
+        fd: libc::STDIN_FILENO,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: pfd is a valid, stack-allocated pollfd.  Passing its address with
+    // nfds=1 and timeout=0 is a standard non-blocking poll probe.
+    if unsafe { libc::poll(&raw mut pfd, 1, 0) } >= 0 && (pfd.revents & libc::POLLHUP) != 0 {
+        return Some("stdin PTY has hung up (POLLHUP)");
+    }
+
     None
 }
 
