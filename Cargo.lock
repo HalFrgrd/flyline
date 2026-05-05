@@ -346,6 +346,7 @@ dependencies = [
  "derive_more",
  "document-features",
  "filedescriptor",
+ "libc",
  "mio",
  "parking_lot",
  "rustix",

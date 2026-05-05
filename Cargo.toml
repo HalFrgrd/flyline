@@ -12,8 +12,11 @@ clap_complete = { version = "4.6.2", features = ["unstable-dynamic"] }
 ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default", "unstable-rendered-line-info"] }
 # default flags include "windows" which just causes bloat
 # "use-dev-tty" is needed to avoid crossterm's event loop from spinning on closed stdin.
-# See https://github.com/crossterm-rs/crossterm/blob/fce58c879a748f3159216f68833100aa16141ab0/src/event/source/unix/mio.rs#L97-L104 and https://github.com/openai/codex/issues/14962
-crossterm = { version = "0.29.0", default-features = false, features = ["bracketed-paste", "events", "osc52", "use-dev-tty"] }
+# See https://github.com/crossterm-rs/crossterm/blob/fce58c879a748f3159216f68833100aa16141ab0/src/event/source/unix/mio.rs#L97-L104
+# https://github.com/openai/codex/issues/14962
+# https://github.com/ki-editor/ki-editor/commit/1dd31aa8eae9ff84498fb23b1319aa05783ca7d7
+# https://github.com/crossterm-rs/crossterm/issues/828
+crossterm = { version = "0.29.0", default-features = false, features = ["bracketed-paste", "events", "windows", "osc52", "use-dev-tty", "libc"] }
 chrono = { version = "0.4" }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
