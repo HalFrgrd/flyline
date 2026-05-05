@@ -125,7 +125,7 @@ fn stdin_unavailable_reason() -> Option<&'static str> {
     if unsafe { libc::poll(&mut pfd, 1, 0) } >= 0
         && (pfd.revents & (libc::POLLHUP | libc::POLLERR)) != 0
     {
-        return Some("stdin PTY has been disconnected (POLLHUP/POLLERR)");
+        return Some("stdin PTY has been disconnected");
     }
 
     None
