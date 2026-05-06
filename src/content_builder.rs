@@ -159,7 +159,6 @@ pub enum ClipboardTypes {
     TutorialAgentMode,
     TutorialGrep,
     TutorialBashCompletion,
-    TutorialIosevka,
     TutorialKeybindingsList,
     TutorialKeybindingsBind1,
     TutorialKeybindingsBind2,

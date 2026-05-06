@@ -10,8 +10,7 @@ use crate::palette::Palette;
 use crate::shell_integration;
 use crate::{bash_funcs, settings};
 
-/// A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
-const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🯁🯂🯃 🬛 🮐 🮑 🮔 🮖 🮘";
+
 
 /// Large block-art logo displayed on the welcome screen.
 const LOGO_LINES: &[&str] = &[
@@ -101,7 +100,7 @@ pub enum TutorialStep {
     ThemeColours,
     CursorStyleEffects,
     Keybindings,
-    FontDetection,
+    // FontDetection,
     End,
     /// Tutorial is not active.
     #[default]
@@ -348,28 +347,22 @@ pub fn generate_tutorial_text(
             lines.push(tl(Span::styled("Mouse Capture", heading_style)));
             lines.push(empty());
             lines.push(tl(Span::styled(
-                "Click to move your cursor, select suggestions, and hover for tooltips. Flyline must capture mouse events for the entire terminal which isn't always desirable. For instance, you might want to select text above the current prompt with your mouse.",
+                "Flyline needs to capture mouse events so that you can click to move your cursor, select suggestions, and hover for tooltips.",
                 text_style,
             )));
             lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Flyline offers three mouse modes:",
-                text_style,
-            )));
             lines.push(TaggedLine::from(vec![
-                ts_key("  Disabled:"),
-                ts_text(" Never capture mouse events"),
+                ts_text("Disable mouse capture: click above the viewport or scroll."),
             ]));
             lines.push(TaggedLine::from(vec![
-                ts_key("  Simple:"),
-                ts_text(" Mouse interactions are enabled by default and toggled when "),
+                ts_text("Toggle with "),
                 ts_key("Escape"),
-                ts_text(" is pressed."),
+                ts_text("."),
             ]));
             lines.push(TaggedLine::from(vec![
-                ts_key("  Smart:"),
-                ts_text(" (default): Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained"),
+                ts_text("Typing enables mouse capture."),
             ]));
+
             lines.push(empty());
             lines.push(tl(Span::styled(
                 "Switch mouse interaction modes with `flyline --mouse-mode smart/simple/disabled`.", //NO_FMT
@@ -715,31 +708,33 @@ pub fn generate_tutorial_text(
             ]));
             lines.push(empty());
         }
-        TutorialStep::FontDetection => {
-            lines.push(tl(Span::styled("Font Detection", heading_style)));
-            lines.push(empty());
-            lines.push(tl(Span::styled(
-                "Optional: For the best terminal experience, use a font that supports the Unicode legacy computing symbols (U+1FB00-U+1FB3B).",
-                text_style,
-            )));
-            lines.push(empty());
-            lines.push(tl(Span::styled(
-                LEGACY_COMPUTING_SYMBOLS_SAMPLE,
-                text_style,
-            )));
-            lines.push(empty());
-            lines.push(TaggedLine::from(vec![
-                TaggedSpan::new(Span::styled(
-                    "If the symbols above are not rendering correctly, install a font that supports this range, such as Iosevka Term Sans Serif (",
-                    text_style,
-                ), Tag::Tutorial),
-                ts_copiable(
-                    "https://github.com/be5invis/Iosevka".to_string(),
-                    ClipboardTypes::TutorialIosevka,
-                ),
-                TaggedSpan::new(Span::styled(").", text_style), Tag::Tutorial),
-            ]));
-        }
+        // TutorialStep::FontDetection => {
+        // A sample of symbols from the Unicode legacy computing supplement range (U+1FB00–U+1FB3B).
+        // const LEGACY_COMPUTING_SYMBOLS_SAMPLE: &str = "🯁🯂🯃 🬛 🮐 🮑 🮔 🮖 🮘";
+        //     lines.push(tl(Span::styled("Font Detection", heading_style)));
+        //     lines.push(empty());
+        //     lines.push(tl(Span::styled(
+        //         "Optional: For the best terminal experience, use a font that supports the Unicode legacy computing symbols (U+1FB00-U+1FB3B).",
+        //         text_style,
+        //     )));
+        //     lines.push(empty());
+        //     lines.push(tl(Span::styled(
+        //         LEGACY_COMPUTING_SYMBOLS_SAMPLE,
+        //         text_style,
+        //     )));
+        //     lines.push(empty());
+        //     lines.push(TaggedLine::from(vec![
+        //         TaggedSpan::new(Span::styled(
+        //             "If the symbols above are not rendering correctly, install a font that supports this range, such as Iosevka Term Sans Serif (",
+        //             text_style,
+        //         ), Tag::Tutorial),
+        //         ts_copiable(
+        //             "https://github.com/be5invis/Iosevka".to_string(),
+        //             ClipboardTypes::TutorialIosevka,
+        //         ),
+        //         TaggedSpan::new(Span::styled(").", text_style), Tag::Tutorial),
+        //     ]));
+        // }
         TutorialStep::End => {
             lines.push(tl(Span::styled(
                 "You've reached the end of the tutorial!",
