@@ -2,15 +2,14 @@ use std::cell::OnceCell;
 use std::time::Instant;
 use std::vec;
 
-use crate::bash_symbols;
 use crate::content_utils::apply_match_indices_to_lines;
 use crate::palette::Palette;
 use crate::settings::Settings;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
+use crate::{bash_symbols, content_utils};
 use flash::lexer::TokenKind;
 use itertools::Itertools;
 use ratatui::text::{Line, Span};
-use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 #[derive(Debug, Clone)]
@@ -688,13 +687,6 @@ impl FuzzyHistorySearch {
         let start_index = self.global_index;
         let time_budget = std::time::Duration::from_millis(Self::TIME_BUDGET_MS);
 
-        let score_threshold = match current_cmd.len() {
-            0..1 => 0,
-            1..3 => 10,
-            3..5 => 20,
-            _ => 30,
-        };
-
         let mut new_cache_entries = Vec::with_capacity(256);
 
         // Process as many entries as possible within the time budget
@@ -709,9 +701,11 @@ impl FuzzyHistorySearch {
             let entry_index = entries.len() - 1 - self.global_index;
             let entry = &entries[entry_index];
 
-            if let Some((score, indices)) = self.matcher.fuzzy_indices(&entry.command, current_cmd)
-                && score >= score_threshold
-            {
+            if let Some((score, indices)) = content_utils::fuzzy_indices_with_threshold(
+                &self.matcher,
+                &entry.command,
+                current_cmd,
+            ) {
                 new_cache_entries.push(HistoryEntryFormatted::new(entry_index, score, indices));
             }
             self.global_index += 1;

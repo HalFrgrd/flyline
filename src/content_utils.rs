@@ -4,6 +4,8 @@ use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
 use itertools::Itertools;
 use ratatui::prelude::*;
+use skim::fuzzy_matcher::FuzzyMatcher;
+use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -687,4 +689,38 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
     }
 
     frames
+}
+
+fn fuzzy_pattern_score_threshold(pattern_len: usize) -> i64 {
+    match pattern_len {
+        0..1 => 0,
+        1..3 => 10,
+        3..5 => 25,
+        5..9 => 35,
+        _ => 45,
+    }
+}
+
+pub fn fuzzy_match_with_threshold(
+    matcher: &ArinaeMatcher,
+    candidate: &str,
+    pattern: &str,
+) -> Option<i64> {
+    let score_threshold = fuzzy_pattern_score_threshold(pattern.len());
+
+    matcher
+        .fuzzy_match(candidate, pattern)
+        .filter(|&score| score >= score_threshold)
+}
+
+pub fn fuzzy_indices_with_threshold(
+    matcher: &ArinaeMatcher,
+    candidate: &str,
+    pattern: &str,
+) -> Option<(i64, Vec<usize>)> {
+    let score_threshold = fuzzy_pattern_score_threshold(pattern.len());
+
+    matcher
+        .fuzzy_indices(candidate, pattern)
+        .filter(|&(score, _)| score >= score_threshold)
 }

@@ -7,14 +7,13 @@ use crate::active_suggestions::{
 };
 use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
-use crate::content_utils::{ansi_string_to_spans, easing_animation_frames};
+use crate::content_utils::{self, ansi_string_to_spans, easing_animation_frames};
 use crate::cursor::{CursorEasing, cursor_effect_animation_frames};
 use crate::globbing::PathPatternExpansion;
 use crate::iter_first_last::FirstLast;
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{complete_flyline_args, tab_completion_context};
-use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 // bash programmable completions:
@@ -135,7 +134,10 @@ pub(crate) fn gen_completions_internal(
                 }
             }
             tab_completion_context::CompType::FuzzyFirstWord => {
-                log::debug!("CompType::FuzzyFirstWord for: {}", word_under_cursor.as_ref());
+                log::debug!(
+                    "CompType::FuzzyFirstWord for: {}",
+                    word_under_cursor.as_ref()
+                );
                 let completions = tab_complete_fuzzy_first_word(word_under_cursor.as_ref());
                 log::debug!(
                     "CompType::FuzzyFirstWord found {} completions for prefix: {}",
@@ -317,7 +319,10 @@ pub(crate) fn gen_completions_internal(
                 }
             }
             tab_completion_context::CompType::TildeExpansion => {
-                log::debug!("CompType::TildeExpansion for {}", word_under_cursor.as_ref());
+                log::debug!(
+                    "CompType::TildeExpansion for {}",
+                    word_under_cursor.as_ref()
+                );
                 let completions = tab_complete_tilde_expansion(word_under_cursor.as_ref());
                 log::debug!(
                     "CompType::TildeExpansion found {} completions for pattern: {}",
@@ -391,7 +396,10 @@ pub(crate) fn gen_completions_internal(
                 }
             }
             tab_completion_context::CompType::FilenameExpansion => {
-                log::debug!("CompType::FilenameExpansion for: {}", word_under_cursor.as_ref());
+                log::debug!(
+                    "CompType::FilenameExpansion for: {}",
+                    word_under_cursor.as_ref()
+                );
                 let completions = tab_complete_glob_expansion(
                     &(word_under_cursor.as_ref().to_string() + "*"),
                     comp_res_flags,
@@ -497,11 +505,6 @@ fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
     builder
 }
 
-/// Fuzzy-match commands when [`tab_complete_first_word`] prefix-matching finds nothing.
-///
-/// Path-like commands (starting with `.`, `/`, or `~`) are not fuzzy-matched
-/// here — they are already handled by the glob-expansion branch in
-/// [`tab_complete_first_word`].
 fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
     log::debug!("Generating fuzzy first word completions for: '{}'", command);
     let mut builder = ActiveSuggestionsBuilder::new();
@@ -523,7 +526,8 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
     let mut seen: HashSet<String> = HashSet::new();
     for poss_completion in bash_funcs::get_possible_command_words() {
         if seen.insert(poss_completion.clone())
-            && let Some(score) = matcher.fuzzy_match(&poss_completion, command)
+            && let Some(score) =
+                content_utils::fuzzy_match_with_threshold(&matcher, &poss_completion, command)
         {
             scored.push((score, poss_completion));
         }
@@ -677,8 +681,7 @@ fn tab_complete_fuzzy_filename(
             // directory prefix doesn't inflate the score.
             let match_text = sug.match_text();
             let filename = match_text.rsplit('/').next().unwrap_or(match_text);
-            matcher
-                .fuzzy_match(filename, &dequoted_fragment)
+            content_utils::fuzzy_match_with_threshold(&matcher, filename, &dequoted_fragment)
                 .map(|score| (score, sug))
         })
         .collect();
