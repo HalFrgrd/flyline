@@ -240,7 +240,7 @@ pub fn get_completion_context<'a>(
     let context_until_cursor = &buffer[comp_context_range.start..cursor_byte_pos];
     let context = &buffer[comp_context_range];
 
-    let word_under_cursor = SubString::new(&buffer, &buffer[word_under_cursor_range]).unwrap();
+    let word_under_cursor = SubString::new(buffer, &buffer[word_under_cursor_range]).unwrap();
 
     CompletionContext::new(buffer, context_until_cursor, context, word_under_cursor)
 }

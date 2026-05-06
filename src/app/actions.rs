@@ -710,24 +710,13 @@ impl Action {
                 app.mode = crate::app::AppRunningState::Exiting(crate::app::ExitState::EOF);
             }
             Action::Cancel => {
-                let buf = app.buffer.buffer().to_string();
-                if false && buf.is_empty() {
-                    // TODO think of good UX for this
-                    // Warm with "" to display all cancelled commands regardless of buffer.
-                    app.settings
-                        .cancelled_command_history_manager
-                        .warm_fuzzy_search_cache("");
-                    app.content_mode =
-                        ContentMode::FuzzyHistorySearch(FuzzyHistorySource::CancelledCommands);
-                } else {
-                    if false {
-                        app.settings
-                            .cancelled_command_history_manager
-                            .push_entry(buf);
-                    }
-                    app.mode =
-                        crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
-                }
+                // TODO: think of good UX for cancelled-command history. We
+                // currently neither push the cancelled buffer onto the
+                // cancelled-command history manager nor open the fuzzy
+                // history search for it; both code paths are intentionally
+                // disabled until the UX is designed.
+                app.mode =
+                    crate::app::AppRunningState::Exiting(crate::app::ExitState::WithoutCommand);
             }
             Action::CommentLineSubmit => {
                 app.buffer.move_to_start();

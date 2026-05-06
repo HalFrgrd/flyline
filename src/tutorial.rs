@@ -379,7 +379,7 @@ pub fn generate_tutorial_text(
             if settings
                 .custom_prompt_widgets
                 .values()
-                .all(|w| !matches!(w, settings::PromptWidget::MouseMode(_)))
+                .all(|w| !matches!(w, settings::PromptWidget::MouseMode { .. }))
             {
                 lines.push(TaggedLine::from_line(Line::from(""), Tag::Tutorial));
                 lines.push(tl(Span::styled(

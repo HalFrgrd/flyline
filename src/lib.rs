@@ -204,13 +204,13 @@ pub fn complete_flyline_args(
     ) {
         Ok(candidates) => {
             log::info!("{:#?}", candidates);
-            return Ok(candidates);
+            Ok(candidates)
         }
         Err(e) => {
             log::error!("Error generating bash completion: {e}");
-            return Err(anyhow::anyhow!("Error generating bash completion: {e}"));
+            Err(anyhow::anyhow!("Error generating bash completion: {e}"))
         }
-    };
+    }
 }
 
 fn raw_command_before_word_under_cursor<'a>(
@@ -943,8 +943,7 @@ impl Flyline {
                                 command.split_whitespace().map(String::from).collect()
                             });
                         if command_args.is_empty() {
-                            eprintln!("flyline set-agent-mode: --command must not be empty");
-                            return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            return_usage_error!("flyline set-agent-mode: --command must not be empty");
                         }
                         log::info!(
                             "AI command set: {:?} (trigger_prefix={:?})",
@@ -967,11 +966,11 @@ impl Flyline {
                             ping_pong,
                         } => {
                             if fps <= 0.0 {
-                                eprintln!(
+                                return_usage_error!(
                                     "flyline create-prompt-widget animation: --fps must be greater than 0 (got {}); animation '{}' not registered",
-                                    fps, name
+                                    fps,
+                                    name
                                 );
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
                             }
                             log::info!(
                                 "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
@@ -1003,13 +1002,11 @@ impl Flyline {
                             );
                             self.settings.custom_prompt_widgets.insert(
                                 name.clone(),
-                                settings::PromptWidget::MouseMode(
-                                    settings::PromptWidgetMouseMode {
-                                        name,
-                                        enabled_text,
-                                        disabled_text,
-                                    },
-                                ),
+                                settings::PromptWidget::MouseMode {
+                                    name,
+                                    enabled_text,
+                                    disabled_text,
+                                },
                             );
                         }
                         PromptWidgetSubcommands::CopyBuffer { name, text } => {
@@ -1020,9 +1017,7 @@ impl Flyline {
                             );
                             self.settings.custom_prompt_widgets.insert(
                                 name.clone(),
-                                settings::PromptWidget::CopyBuffer(
-                                    settings::PromptWidgetCopyBuffer { name, text },
-                                ),
+                                settings::PromptWidget::CopyBuffer { name, text },
                             );
                         }
                         PromptWidgetSubcommands::Custom {
@@ -1036,19 +1031,17 @@ impl Flyline {
                                     command.split_whitespace().map(String::from).collect()
                                 });
                             if command_args.is_empty() {
-                                eprintln!(
+                                return_usage_error!(
                                     "flyline create-prompt-widget custom: --command must not be empty"
                                 );
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
                             }
-                            if let Some(ms) = block {
-                                if ms < 0 {
-                                    eprintln!(
-                                        "flyline create-prompt-widget custom: --block timeout must be non-negative (got {})",
-                                        ms
-                                    );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
-                                }
+                            if let Some(ms) = block
+                                && ms < 0
+                            {
+                                return_usage_error!(
+                                    "flyline create-prompt-widget custom: --block timeout must be non-negative (got {})",
+                                    ms
+                                );
                             }
                             let placeholder_spec = match placeholder {
                                 None => None,
@@ -1056,11 +1049,10 @@ impl Flyline {
                                 Some(ref s) => match s.parse::<usize>() {
                                     Ok(n) => Some(settings::Placeholder::Spaces(n)),
                                     Err(_) => {
-                                        eprintln!(
+                                        return_usage_error!(
                                             "flyline create-prompt-widget custom: --placeholder must be a number or 'prev', got {:?}",
                                             s
                                         );
-                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
                                     }
                                 },
                             };
@@ -1086,9 +1078,7 @@ impl Flyline {
                             log::info!("Registering last-command-duration widget '{}'", name);
                             self.settings.custom_prompt_widgets.insert(
                                 name.clone(),
-                                settings::PromptWidget::LastCommandDuration(
-                                    settings::PromptWidgetLastCommandDuration { name },
-                                ),
+                                settings::PromptWidget::LastCommandDuration { name },
                             );
                         }
                     },
@@ -1102,24 +1092,19 @@ impl Flyline {
                         }
 
                         for spec in &styles {
-                            let (name, style_str) = match spec.split_once('=') {
-                                Some(pair) => pair,
-                                None => {
-                                    eprintln!(
-                                        "flyline set-style: argument must be NAME=STYLE, got {:?}",
-                                        spec
-                                    );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
-                                }
+                            let Some((name, style_str)) = spec.split_once('=') else {
+                                return_usage_error!(
+                                    "flyline set-style: argument must be NAME=STYLE, got {:?}",
+                                    spec
+                                );
                             };
                             let kind = match name.parse::<palette::PaletteStyleKind>() {
                                 Ok(k) => k,
                                 Err(_) => {
-                                    eprintln!(
+                                    return_usage_error!(
                                         "flyline set-style: unknown style name {:?}. Run 'flyline set-style --help' for valid names.",
                                         name
                                     );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
                                 }
                             };
                             match palette::parse_str_to_style(style_str) {
@@ -1128,11 +1113,11 @@ impl Flyline {
                                     log::info!("{} style set to {:?}", name, style_str);
                                 }
                                 Err(e) => {
-                                    eprintln!(
+                                    return_usage_error!(
                                         "flyline set-style: invalid style for {:?}: {}",
-                                        name, e
+                                        name,
+                                        e
                                     );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
                                 }
                             }
                         }
@@ -1162,11 +1147,12 @@ impl Flyline {
                                         self.settings.keybindings.push(binding);
                                     }
                                     Err(e) => {
-                                        eprintln!(
+                                        return_usage_error!(
                                             "flyline key bind: failed to parse key sequence '{}' or context/action '{}': {}",
-                                            key_sequence, context_and_action, e
+                                            key_sequence,
+                                            context_and_action,
+                                            e
                                         );
-                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
                                     }
                                 }
                             }
@@ -1184,11 +1170,12 @@ impl Flyline {
                                         self.settings.key_remappings.push(remap);
                                     }
                                     Err(e) => {
-                                        eprintln!(
+                                        return_usage_error!(
                                             "flyline key remap: failed to parse remap '{}' -> '{}': {}",
-                                            from, to, e
+                                            from,
+                                            to,
+                                            e
                                         );
-                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
                                     }
                                 }
                             }
@@ -1284,8 +1271,7 @@ impl Flyline {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("flyline comp-spec-synthesis: {}", e);
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                return_usage_error!("flyline comp-spec-synthesis: {}", e);
                             }
                         }
                     }
@@ -1294,8 +1280,10 @@ impl Flyline {
                             let has_error = chrono::format::strftime::StrftimeItems::new(&fmt)
                                 .any(|item| matches!(item, chrono::format::Item::Error));
                             if has_error {
-                                eprintln!("flyline time: invalid Chrono format string: {:?}", fmt);
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                return_usage_error!(
+                                    "flyline time: invalid Chrono format string: {:?}",
+                                    fmt
+                                );
                             }
                             println!("{}", chrono::Local::now().format(&fmt));
                         } else {
@@ -1319,19 +1307,22 @@ impl Flyline {
                         if let Some(b) = backend {
                             log::info!("Cursor backend set to {:?}", b);
                             self.settings.cursor_config.backend = b;
-                            if b == cursor::CursorBackend::Terminal {
-                                if style.is_some()
+                            if b == cursor::CursorBackend::Terminal
+                                && (style.is_some()
                                     || effect.is_some()
                                     || effect_speed.is_some()
-                                    || effect_easing.is_some()
-                                {
-                                    eprintln!(
-                                        "flyline set-cursor: --style, --effect, --effect-speed, and --effect-easing require --backend flyline"
-                                    );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
-                                }
+                                    || effect_easing.is_some())
+                            {
+                                return_usage_error!(
+                                    "flyline set-cursor: --style, --effect, --effect-speed, and --effect-easing require --backend flyline"
+                                );
                             }
                         }
+
+                        // Helper closure: every flyline-only option emits the same error.
+                        // Returning a `bool` lets callers chain it with the option-presence check.
+                        let backend_is_terminal =
+                            self.settings.cursor_config.backend == cursor::CursorBackend::Terminal;
 
                         if let Some(interp_str) = interpolate {
                             if interp_str.eq_ignore_ascii_case("none") {
@@ -1344,11 +1335,10 @@ impl Flyline {
                                         self.settings.cursor_config.interpolate = Some(speed);
                                     }
                                     _ => {
-                                        eprintln!(
+                                        return_usage_error!(
                                             "flyline set-cursor: --interpolate must be a positive number or 'none' (got {:?})",
                                             interp_str
                                         );
-                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
                                     }
                                 }
                             }
@@ -1360,11 +1350,10 @@ impl Flyline {
                         }
 
                         if let Some(style_str) = style {
-                            if self.settings.cursor_config.backend
-                                == cursor::CursorBackend::Terminal
-                            {
-                                eprintln!("flyline set-cursor: --style requires --backend flyline");
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
+                            if backend_is_terminal {
+                                return_usage_error!(
+                                    "flyline set-cursor: --style requires --backend flyline"
+                                );
                             }
                             match palette::parse_cursor_style_str(&style_str) {
                                 Ok(s) => {
@@ -1372,71 +1361,56 @@ impl Flyline {
                                     self.settings.cursor_config.style = s;
                                 }
                                 Err(e) => {
-                                    eprintln!(
+                                    return_usage_error!(
                                         "flyline set-cursor: invalid --style {:?}: {}",
-                                        style_str, e
+                                        style_str,
+                                        e
                                     );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
                                 }
                             }
                         }
 
                         if let Some(eff) = effect {
-                            if self.settings.cursor_config.backend
-                                == cursor::CursorBackend::Terminal
-                            {
-                                eprintln!(
+                            if backend_is_terminal {
+                                return_usage_error!(
                                     "flyline set-cursor: --effect requires --backend flyline"
                                 );
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
                             }
                             if eff == cursor::CursorEffect::Fade
                                 && let CursorStyleConfig::Custom(style) =
                                     self.settings.cursor_config.style
+                                && !matches!(style.bg, Some(ratatui::style::Color::Rgb(..)))
                             {
-                                match style.bg {
-                                    Some(ratatui::style::Color::Rgb(..)) => {}
-                                    _ => {
-                                        eprintln!(
-                                            "flyline set-cursor: --effect fade requires a custom style with an RGB background color (e.g. '#ff0000')",
-                                        );
-                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
-                                    }
-                                }
+                                return_usage_error!(
+                                    "flyline set-cursor: --effect fade requires a custom style with an RGB background color (e.g. '#ff0000')"
+                                );
                             }
                             log::info!("Cursor effect set to {:?}", eff);
                             self.settings.cursor_config.effect = eff;
                         }
 
                         if let Some(speed) = effect_speed {
-                            if self.settings.cursor_config.backend
-                                == cursor::CursorBackend::Terminal
-                            {
-                                eprintln!(
+                            if backend_is_terminal {
+                                return_usage_error!(
                                     "flyline set-cursor: --effect-speed requires --backend flyline"
                                 );
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
                             }
                             if speed > 0.0 {
                                 log::info!("Cursor effect speed set to {}", speed);
                                 self.settings.cursor_config.effect_speed = speed;
                             } else {
-                                eprintln!(
+                                return_usage_error!(
                                     "flyline set-cursor: --effect-speed must be positive (got {})",
                                     speed
                                 );
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
                             }
                         }
 
                         if let Some(easing) = effect_easing {
-                            if self.settings.cursor_config.backend
-                                == cursor::CursorBackend::Terminal
-                            {
-                                eprintln!(
+                            if backend_is_terminal {
+                                return_usage_error!(
                                     "flyline set-cursor: --effect-easing requires --backend flyline"
                                 );
-                                return bash_symbols::BuiltinExitCode::Usage as c_int;
                             }
                             log::info!("Cursor effect easing set to {:?}", easing);
                             self.settings.cursor_config.effect_easing = easing;
@@ -1665,7 +1639,7 @@ fn flyline_load_common() -> c_int {
     let setup_bash_input = |bash_input: *mut bash_symbols::BashInput| {
         // Bash expects name to be heap allocated so it can free it later
         let name = c"flyline";
-        let name_ptr = unsafe { bash_symbols::xmalloc_cstr(&name) };
+        let name_ptr = unsafe { bash_symbols::xmalloc_cstr(name) };
         unsafe {
             (*bash_input).stream_type = bash_symbols::StreamType::Stdin;
             (*bash_input).name = name_ptr;
