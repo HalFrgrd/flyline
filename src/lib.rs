@@ -943,7 +943,7 @@ impl Flyline {
                                 command.split_whitespace().map(String::from).collect()
                             });
                         if command_args.is_empty() {
-                            usage_error!("flyline set-agent-mode: --command must not be empty");
+                            return_usage_error!("flyline set-agent-mode: --command must not be empty");
                         }
                         log::info!(
                             "AI command set: {:?} (trigger_prefix={:?})",
@@ -966,7 +966,7 @@ impl Flyline {
                             ping_pong,
                         } => {
                             if fps <= 0.0 {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline create-prompt-widget animation: --fps must be greater than 0 (got {}); animation '{}' not registered",
                                     fps,
                                     name
@@ -1031,14 +1031,14 @@ impl Flyline {
                                     command.split_whitespace().map(String::from).collect()
                                 });
                             if command_args.is_empty() {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline create-prompt-widget custom: --command must not be empty"
                                 );
                             }
                             if let Some(ms) = block
                                 && ms < 0
                             {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline create-prompt-widget custom: --block timeout must be non-negative (got {})",
                                     ms
                                 );
@@ -1049,7 +1049,7 @@ impl Flyline {
                                 Some(ref s) => match s.parse::<usize>() {
                                     Ok(n) => Some(settings::Placeholder::Spaces(n)),
                                     Err(_) => {
-                                        usage_error!(
+                                        return_usage_error!(
                                             "flyline create-prompt-widget custom: --placeholder must be a number or 'prev', got {:?}",
                                             s
                                         );
@@ -1093,7 +1093,7 @@ impl Flyline {
 
                         for spec in &styles {
                             let Some((name, style_str)) = spec.split_once('=') else {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline set-style: argument must be NAME=STYLE, got {:?}",
                                     spec
                                 );
@@ -1101,7 +1101,7 @@ impl Flyline {
                             let kind = match name.parse::<palette::PaletteStyleKind>() {
                                 Ok(k) => k,
                                 Err(_) => {
-                                    usage_error!(
+                                    return_usage_error!(
                                         "flyline set-style: unknown style name {:?}. Run 'flyline set-style --help' for valid names.",
                                         name
                                     );
@@ -1113,7 +1113,7 @@ impl Flyline {
                                     log::info!("{} style set to {:?}", name, style_str);
                                 }
                                 Err(e) => {
-                                    usage_error!(
+                                    return_usage_error!(
                                         "flyline set-style: invalid style for {:?}: {}",
                                         name,
                                         e
@@ -1147,7 +1147,7 @@ impl Flyline {
                                         self.settings.keybindings.push(binding);
                                     }
                                     Err(e) => {
-                                        usage_error!(
+                                        return_usage_error!(
                                             "flyline key bind: failed to parse key sequence '{}' or context/action '{}': {}",
                                             key_sequence,
                                             context_and_action,
@@ -1170,7 +1170,7 @@ impl Flyline {
                                         self.settings.key_remappings.push(remap);
                                     }
                                     Err(e) => {
-                                        usage_error!(
+                                        return_usage_error!(
                                             "flyline key remap: failed to parse remap '{}' -> '{}': {}",
                                             from,
                                             to,
@@ -1271,7 +1271,7 @@ impl Flyline {
                                 }
                             }
                             Err(e) => {
-                                usage_error!("flyline comp-spec-synthesis: {}", e);
+                                return_usage_error!("flyline comp-spec-synthesis: {}", e);
                             }
                         }
                     }
@@ -1280,7 +1280,7 @@ impl Flyline {
                             let has_error = chrono::format::strftime::StrftimeItems::new(&fmt)
                                 .any(|item| matches!(item, chrono::format::Item::Error));
                             if has_error {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline time: invalid Chrono format string: {:?}",
                                     fmt
                                 );
@@ -1313,7 +1313,7 @@ impl Flyline {
                                     || effect_speed.is_some()
                                     || effect_easing.is_some())
                             {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline set-cursor: --style, --effect, --effect-speed, and --effect-easing require --backend flyline"
                                 );
                             }
@@ -1335,7 +1335,7 @@ impl Flyline {
                                         self.settings.cursor_config.interpolate = Some(speed);
                                     }
                                     _ => {
-                                        usage_error!(
+                                        return_usage_error!(
                                             "flyline set-cursor: --interpolate must be a positive number or 'none' (got {:?})",
                                             interp_str
                                         );
@@ -1351,7 +1351,7 @@ impl Flyline {
 
                         if let Some(style_str) = style {
                             if backend_is_terminal {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline set-cursor: --style requires --backend flyline"
                                 );
                             }
@@ -1361,7 +1361,7 @@ impl Flyline {
                                     self.settings.cursor_config.style = s;
                                 }
                                 Err(e) => {
-                                    usage_error!(
+                                    return_usage_error!(
                                         "flyline set-cursor: invalid --style {:?}: {}",
                                         style_str,
                                         e
@@ -1372,7 +1372,7 @@ impl Flyline {
 
                         if let Some(eff) = effect {
                             if backend_is_terminal {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline set-cursor: --effect requires --backend flyline"
                                 );
                             }
@@ -1381,7 +1381,7 @@ impl Flyline {
                                     self.settings.cursor_config.style
                                 && !matches!(style.bg, Some(ratatui::style::Color::Rgb(..)))
                             {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline set-cursor: --effect fade requires a custom style with an RGB background color (e.g. '#ff0000')"
                                 );
                             }
@@ -1391,7 +1391,7 @@ impl Flyline {
 
                         if let Some(speed) = effect_speed {
                             if backend_is_terminal {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline set-cursor: --effect-speed requires --backend flyline"
                                 );
                             }
@@ -1399,7 +1399,7 @@ impl Flyline {
                                 log::info!("Cursor effect speed set to {}", speed);
                                 self.settings.cursor_config.effect_speed = speed;
                             } else {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline set-cursor: --effect-speed must be positive (got {})",
                                     speed
                                 );
@@ -1408,7 +1408,7 @@ impl Flyline {
 
                         if let Some(easing) = effect_easing {
                             if backend_is_terminal {
-                                usage_error!(
+                                return_usage_error!(
                                     "flyline set-cursor: --effect-easing requires --backend flyline"
                                 );
                             }

@@ -32,7 +32,7 @@ macro_rules! time_it {
 /// `Usage` exit code from the enclosing function. Equivalent to writing
 /// `eprintln!(…); return bash_symbols::BuiltinExitCode::Usage as c_int;` but
 /// keeps the CLI subcommand handlers in `Flyline::call` readable.
-macro_rules! usage_error {
+macro_rules! return_usage_error {
     ($($arg:tt)*) => {{
         eprintln!($($arg)*);
         return $crate::bash_symbols::BuiltinExitCode::Usage as ::libc::c_int;
