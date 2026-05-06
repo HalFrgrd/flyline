@@ -131,6 +131,18 @@ pub(crate) fn gen_completions_internal(
                     return Some(completions);
                 }
             }
+            tab_completion_context::CompType::FuzzyFirstWord => {
+                log::debug!("Fuzzy first word completion for: {:?}", word_under_cursor);
+                let completions = tab_complete_fuzzy_first_word(word_under_cursor.as_ref());
+                if completions.is_empty() {
+                    log::debug!(
+                        "No fuzzy first word completions found for: {}",
+                        word_under_cursor.as_ref()
+                    );
+                } else {
+                    return Some(completions);
+                }
+            }
             tab_completion_context::CompType::CommandComp {
                 command_word: initial_command_word,
             } => {
@@ -445,18 +457,35 @@ fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
     }
 
     let mut res = bash_funcs::get_first_word_completions(command);
-
     if res.is_empty() {
-        // No prefix matches found, fall back to fuzzy search
-        log::debug!("No prefix matches for '{}', trying fuzzy search", command);
-        res = bash_funcs::get_fuzzy_first_word_completions(command);
-        builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
         return builder;
     }
 
     // TODO: could prioritize based on frequency of use
     res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
     res.dedup();
+    builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
+    builder
+}
+
+/// Fuzzy-match commands when [`tab_complete_first_word`] prefix-matching finds nothing.
+///
+/// Path-like commands (starting with `.`, `/`, or `~`) are not fuzzy-matched
+/// here — they are already handled by the glob-expansion branch in
+/// [`tab_complete_first_word`].
+fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
+    log::debug!("Generating fuzzy first word completions for: '{}'", command);
+    let mut builder = ActiveSuggestionsBuilder::new();
+    if command.is_empty() {
+        return builder;
+    }
+
+    // Path-like commands are handled by FirstWord with glob expansion.
+    if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
+        return builder;
+    }
+
+    let res = bash_funcs::get_fuzzy_first_word_completions(command);
     builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
     builder
 }
@@ -470,13 +499,12 @@ fn tab_complete_with_expanded_pattern(
     comp_resultflags: bash_funcs::CompletionFlags,
     should_skip_hidden: bool,
 ) -> Vec<UnprocessedSuggestion> {
-    
     let mut results = Vec::new();
-    
+
     const MAX_GLOB_RESULTS: usize = 5_000;
-    
+
     let glob_patterns = expanded.glob_pattern();
-    
+
     log::debug!("Performing glob expansion for expanded: {:#?}", expanded);
     log::debug!("Using glob_patterns {:?}", glob_patterns);
 
@@ -584,15 +612,14 @@ fn tab_complete_fuzzy_filename(
         return vec![];
     }
 
-
     // Set up flags for glob expansion
     comp_res_flags.filename_quoting_desired = false;
     comp_res_flags.filename_completion_desired = true;
     comp_res_flags.quote_type = bash_funcs::find_quote_type(&dir_glob_pattern);
-    
+
     let expanded = PathPatternExpansion::new(&dir_glob_pattern);
     let all_files = tab_complete_with_expanded_pattern(&expanded, comp_res_flags, false);
-    
+
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
 
     // glob expansion handles dequoting the pattern, so we only need to dequote

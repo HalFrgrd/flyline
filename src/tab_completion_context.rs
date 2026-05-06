@@ -12,7 +12,8 @@ use crate::{
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CompType {
-    FirstWord, // the first word under the cursor. cursor might be in the middle of it
+    FirstWord,      // the first word under the cursor. cursor might be in the middle of it
+    FuzzyFirstWord, // fuzzy-match commands when FirstWord prefix-matching finds nothing
     CommandComp {
         // "git commi asdf" with cursor just after com
         command_word: String, // "git"
@@ -66,6 +67,7 @@ impl<'a> CompletionContext<'a> {
 
         if context.trim().is_empty() || !context_until_cursor.chars().any(|c| c.is_whitespace()) {
             comp_types.push(CompType::FirstWord);
+            comp_types.push(CompType::FuzzyFirstWord);
         } else {
             let command_word = context.split_whitespace().next().unwrap_or("").to_string();
 
@@ -98,7 +100,7 @@ impl<'a> CompletionContext<'a> {
             context: Cow::Borrowed(""),
             context_until_cursor: Cow::Borrowed(""),
             word_under_cursor: SubString::new(buffer, &buffer[0..0]).unwrap(),
-            comp_types: vec![CompType::FirstWord],
+            comp_types: vec![CompType::FirstWord, CompType::FuzzyFirstWord],
         }
     }
 
@@ -664,6 +666,7 @@ mod tests {
             res.comp_types,
             vec![
                 CompType::FirstWord,
+                CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -681,6 +684,7 @@ mod tests {
             res.comp_types,
             vec![
                 CompType::FirstWord,
+                CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -698,6 +702,7 @@ mod tests {
             res.comp_types,
             vec![
                 CompType::FirstWord,
+                CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -715,6 +720,7 @@ mod tests {
             res.comp_types,
             vec![
                 CompType::FirstWord,
+                CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -1290,6 +1296,7 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::FirstWord,
+                CompType::FuzzyFirstWord,
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
