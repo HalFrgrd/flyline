@@ -1143,7 +1143,7 @@ fn format_prompt_line(
                     vec![TaggedSpan::new(span.clone(), Tag::Ps1Prompt)]
                 }
                 PromptSegment::Cwd(spans) => {
-                    // Only selectable spans get a Ps1PromptCwd(n) tag.
+                    // Only selectable spans get a PromptCwdWidget(n) tag.
                     // A span is selectable when it is not a "/" separator, or
                     // when it is the very first span (the leading "/" of an
                     // absolute path).  Internal "/" separators get Ps1Prompt so
@@ -1158,7 +1158,7 @@ fn format_prompt_line(
                     for (i, span) in spans.iter().enumerate() {
                         let is_selectable = span.content.as_ref() != "/" || i == 0;
                         let tag = if is_selectable {
-                            let t = Tag::PromptCwdWidget(selectable_count - 1 - sel_idx);
+                            let t = Tag::Ps1PromptCwdWidget(selectable_count - 1 - sel_idx);
                             sel_idx += 1;
                             t
                         } else {
@@ -1511,7 +1511,7 @@ impl PromptManager {
     /// Return the number of CWD display segments in the left prompt.
     ///
     /// This is the count of *selectable* path spans tagged with
-    /// [`Tag::Ps1PromptCwd`]: every non-`"/"` span, plus the leading `"/"` of
+    /// [`Tag::PromptCwdWidget`]: every non-`"/"` span, plus the leading `"/"` of
     /// an absolute path (index 0).  Internal `"/"` separator spans are not
     /// counted.  Returns 0 when no CWD segments are present.
     pub fn cwd_display_segment_count(&self) -> usize {
@@ -2204,30 +2204,30 @@ mod tests {
         let segments = vec![PromptSegment::Cwd(spans)];
         let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans.len(), 5);
-        // "..." → Ps1PromptCwd(2)
+        // "..." → PromptCwdWidget(2)
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(2))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(2))
         );
         // "/" separator → Ps1Prompt (not selectable)
         assert_eq!(
             line.spans[1].tag,
             crate::content_builder::SpanTag::Constant(Tag::Ps1Prompt)
         );
-        // "foo" → Ps1PromptCwd(1)
+        // "foo" → PromptCwdWidget(1)
         assert_eq!(
             line.spans[2].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(1))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(1))
         );
         // "/" separator → Ps1Prompt
         assert_eq!(
             line.spans[3].tag,
             crate::content_builder::SpanTag::Constant(Tag::Ps1Prompt)
         );
-        // "bar" → Ps1PromptCwd(0)
+        // "bar" → PromptCwdWidget(0)
         assert_eq!(
             line.spans[4].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(0))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(0))
         );
     }
 
@@ -2241,15 +2241,15 @@ mod tests {
         assert_eq!(line.spans.len(), 5);
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(2))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(2))
         );
         assert_eq!(
             line.spans[2].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(1))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(1))
         );
         assert_eq!(
             line.spans[4].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(0))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(0))
         );
     }
 
@@ -2361,7 +2361,7 @@ mod tests {
         // "~" → index 2
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(2))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(2))
         );
         // "/" separator → Ps1Prompt
         assert_eq!(
@@ -2371,7 +2371,7 @@ mod tests {
         // "foo" → index 1
         assert_eq!(
             line.spans[2].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(1))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(1))
         );
         // "/" separator → Ps1Prompt
         assert_eq!(
@@ -2381,7 +2381,7 @@ mod tests {
         // "bar" is rightmost → index 0
         assert_eq!(
             line.spans[4].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(0))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(0))
         );
     }
 
@@ -2393,7 +2393,7 @@ mod tests {
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(0))
+            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwdWidget(0))
         );
     }
 

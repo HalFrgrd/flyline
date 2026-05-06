@@ -1333,6 +1333,7 @@ impl Flyline {
 
                 #[cfg(feature = "integration-tests")]
                 if parsed.run_tab_completion_tests {
+                    use crate::app;
                     self.settings.run_tab_completion_tests = true;
                     println!("Running tab completion tests...");
                     let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };

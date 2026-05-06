@@ -373,7 +373,7 @@ impl DrawnContent {
                     | Tag::TutorialNext
                     | Tag::PromptCopyBufferWidget
                     | Tag::Clipboard(_)
-                    | Tag::PromptCwdWidget(_)
+                    | Tag::Ps1PromptCwdWidget(_)
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
@@ -905,7 +905,7 @@ impl<'a> App<'a> {
             Some((tag @ Tag::PromptCopyBufferWidget, true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
-            Some((tag @ Tag::PromptCwdWidget(_), _)) => {
+            Some((tag @ Tag::Ps1PromptCwdWidget(_), _)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
             _ => {
@@ -917,7 +917,7 @@ impl<'a> App<'a> {
 
         if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
             match self.last_mouse_over_cell {
-                Some(Tag::PromptCwdWidget(_)) | Some(Tag::PromptCopyBufferWidget) => {}
+                Some(Tag::Ps1PromptCwdWidget(_)) | Some(Tag::PromptCopyBufferWidget) => {}
                 _ => {
                     self.content_mode = ContentMode::Normal;
                 }
@@ -1064,7 +1064,7 @@ impl<'a> App<'a> {
                     return true;
                 }
             }
-            Some(Tag::PromptCwdWidget(idx)) => {
+            Some(Tag::Ps1PromptCwdWidget(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
                     && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
                 {
@@ -1896,7 +1896,7 @@ impl<'a> App<'a> {
         {
             for line in &mut lprompt {
                 for span in &mut line.spans {
-                    if span.tag == SpanTag::Constant(Tag::PromptCwdWidget(cwd_index)) {
+                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCwdWidget(cwd_index)) {
                         span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
@@ -1905,13 +1905,13 @@ impl<'a> App<'a> {
 
         // Apply hover/depress styling to whichever CWD segment the mouse is over.
         if self.mode.is_running()
-            && let Some(Tag::PromptCwdWidget(hovered_idx)) = self.last_mouse_over_cell
+            && let Some(Tag::Ps1PromptCwdWidget(hovered_idx)) = self.last_mouse_over_cell
         {
-            let cwd_state = self.button_state_for(Tag::PromptCwdWidget(hovered_idx));
+            let cwd_state = self.button_state_for(Tag::Ps1PromptCwdWidget(hovered_idx));
             if !matches!(cwd_state, ButtonState::Normal) {
                 for line in &mut lprompt {
                     for span in &mut line.spans {
-                        if span.tag == SpanTag::Constant(Tag::PromptCwdWidget(hovered_idx)) {
+                        if span.tag == SpanTag::Constant(Tag::Ps1PromptCwdWidget(hovered_idx)) {
                             span.span.style =
                                 Palette::apply_button_style(span.span.style, cwd_state);
                         }

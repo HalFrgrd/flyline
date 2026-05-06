@@ -170,7 +170,7 @@ pub enum Tag {
     Blank,
     Normal,
     Ps1Prompt,
-    PromptCwdWidget(usize),
+    Ps1PromptCwdWidget(usize),
     Ps1PromptDynamicTime,
     Ps1PromptAnimation,
     PromptCopyBufferWidget,

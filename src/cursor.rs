@@ -7,7 +7,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 use std::time::Instant;
 use strum::{
-    AsRefStr, EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr, VariantArray,
+    AsRefStr, EnumString, VariantArray,
 };
 
 /// Cursor intensity used when the terminal has lost focus (or in modes where
@@ -29,6 +29,7 @@ pub enum CursorBackend {
 /// Corresponds to the standard easings from the `easing-function` crate:
 /// <https://docs.rs/easing-function/latest/easing_function/easings/index.html>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, AsRefStr, VariantArray, EnumString)]
+#[strum(serialize_all = "kebab-case")]
 pub enum CursorEasing {
     #[default]
     Linear,
