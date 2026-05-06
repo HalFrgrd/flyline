@@ -887,14 +887,24 @@ fn preceding_cwd_segment<'a>(cwd_match_text: &str, cwd: &'a str) -> Option<&'a s
 /// Attempt to extend `cwd_range.start` leftward to include a truncated path
 /// segment that was stripped when the prompt shortened the CWD.
 ///
-/// The extension is applied when the text immediately before the detected CWD
-/// range (i.e. `text[..cwd_range.start]`) ends with a non-`'/'`, non-whitespace
-/// character sequence that either:
+/// The algorithm works in two passes, both reading right-to-left through the
+/// text that immediately precedes the detected CWD range:
 ///
-/// 1. Looks like an ellipsis (`"..."`, `"…"`, etc.), or
-/// 2. Is a suffix of the CWD segment that immediately precedes the first
-///    segment visible in the match (e.g. `"uncated"` is a suffix of
-///    `"truncated"`).
+/// 1. **Consume CWD suffix chars** – walk backward through the prefix one
+///    character at a time, matching against the *end* of the CWD segment that
+///    immediately precedes the first visible segment.  For example, if the
+///    preceding segment is `"truncated"` and the prefix ends with `"uncated"`,
+///    those seven characters are consumed.
+///
+/// 2. **Consume ellipsis** – once no more CWD-segment characters can be
+///    consumed, check whether the text immediately before the consumed suffix
+///    ends with an ellipsis-like string (`"..."`, `"…"`, etc.).  If so, absorb
+///    that too.
+///
+/// This handles all of the following prompt patterns:
+/// - `.../foo/bar`       → `...` is absorbed (ellipsis, no partial segment)
+/// - `uncated/foo/bar`   → `uncated` is absorbed (partial segment, no ellipsis)
+/// - `...uncated/foo/bar`→ both `...` and `uncated` are absorbed
 ///
 /// Returns the (possibly unchanged) start index for the CWD range.
 fn extend_cwd_range_start(text: &str, cwd_range: &Range<usize>, cwd: &str) -> usize {
@@ -903,34 +913,54 @@ fn extend_cwd_range_start(text: &str, cwd_range: &Range<usize>, cwd: &str) -> us
     }
 
     let prefix = &text[..cwd_range.start];
+    let cwd_match_text = &text[cwd_range.clone()];
 
-    // Find the start of the contiguous run of non-separator characters that
-    // immediately precedes the CWD match.  A "separator" is any whitespace or
-    // '/' character: these cannot appear inside the truncated prefix itself.
-    let candidate_start = prefix
+    // Step 1: walk backward through the prefix consuming characters that match
+    // the end of the preceding CWD segment one by one.
+    let preceding = preceding_cwd_segment(cwd_match_text, cwd);
+    let seg_chars: Vec<char> = preceding.map(|s| s.chars().collect()).unwrap_or_default();
+
+    let prefix_chars: Vec<(usize, char)> = prefix.char_indices().collect();
+    let mut prefix_idx = prefix_chars.len(); // remaining unconsumed prefix chars (from left)
+    let mut seg_idx = seg_chars.len(); // remaining unconsumed segment chars (from right)
+
+    while prefix_idx > 0 && seg_idx > 0 {
+        let (_, ch) = prefix_chars[prefix_idx - 1];
+        if ch == seg_chars[seg_idx - 1] {
+            prefix_idx -= 1;
+            seg_idx -= 1;
+        } else {
+            break;
+        }
+    }
+
+    // Byte offset in `prefix` where the consumed CWD-suffix characters begin.
+    // When nothing was consumed this equals `cwd_range.start` (= prefix.len()).
+    let cwd_suffix_byte_start = prefix_chars
+        .get(prefix_idx)
+        .map(|&(i, _)| i)
+        .unwrap_or(cwd_range.start);
+
+    // Step 2: look for an ellipsis-like string immediately before the consumed
+    // CWD-suffix characters (or before the CWD range if nothing was consumed).
+    let before_suffix = &prefix[..cwd_suffix_byte_start];
+
+    // Find the last contiguous non-separator run at the end of `before_suffix`.
+    // Separators are whitespace and '/'; they cannot be part of the ellipsis.
+    let ellipsis_candidate_start = before_suffix
         .char_indices()
         .rev()
         .find(|(_, c)| c.is_whitespace() || *c == '/')
         .map(|(i, c)| i + c.len_utf8())
         .unwrap_or(0);
-    let candidate = &prefix[candidate_start..];
+    let ellipsis_candidate = &before_suffix[ellipsis_candidate_start..];
 
-    if candidate.is_empty() {
-        return cwd_range.start;
+    if is_ellipsis_like(ellipsis_candidate) {
+        return ellipsis_candidate_start;
     }
 
-    if is_ellipsis_like(candidate) {
-        return candidate_start;
-    }
-
-    let cwd_match_text = &text[cwd_range.clone()];
-    if let Some(preceding) = preceding_cwd_segment(cwd_match_text, cwd) {
-        if preceding.ends_with(candidate) {
-            return candidate_start;
-        }
-    }
-
-    cwd_range.start
+    // Return the start of the consumed CWD-suffix chars, even without an ellipsis.
+    cwd_suffix_byte_start
 }
 
 /// Split a static [`Span`] at the first (longest) detected CWD substring,
@@ -2043,7 +2073,76 @@ mod tests {
         assert_eq!(new_start, cwd_range.start);
     }
 
+    #[test]
+    fn test_extend_cwd_range_start_ellipsis_then_truncated_segment() {
+        // "...uncated/foo/bar" — the "..." before the partial segment should also be absorbed.
+        // find_cwd_in_span detects "/foo/bar"; step 1 consumes "uncated" (suffix of "truncated"),
+        // step 2 finds "..." as an ellipsis immediately before it.
+        let text = "...uncated/foo/bar";
+        let cwd = "/home/user/truncated/foo/bar";
+        let cwd_range = find_cwd_in_span(text, cwd).expect("should find range");
+        let new_start = extend_cwd_range_start(text, &cwd_range, cwd);
+        assert_eq!(new_start, 0);
+        assert_eq!(&text[new_start..cwd_range.end], "...uncated/foo/bar");
+    }
+
+    #[test]
+    fn test_extend_cwd_range_start_prefix_then_ellipsis_then_truncated_segment() {
+        // "user@host ...uncated/foo/bar" — static prefix + ellipsis + partial segment.
+        // Only the ellipsis and partial segment should be absorbed into the CWD range.
+        let text = "user@host ...uncated/foo/bar";
+        let cwd = "/home/user/truncated/foo/bar";
+        let cwd_range = find_cwd_in_span(text, cwd).expect("should find range");
+        let new_start = extend_cwd_range_start(text, &cwd_range, cwd);
+        // "user@host " ends at 10, "..." starts at 10
+        assert_eq!(new_start, 10);
+        assert_eq!(&text[new_start..cwd_range.end], "...uncated/foo/bar");
+    }
+
     // --- split_static_span_by_cwd with truncated prefix ----------------------
+
+    #[test]
+    fn test_split_span_ellipsis_then_truncated_segment_becomes_cwd() {
+        // "...uncated/foo/bar" — the entire "...uncated" prefix is absorbed.
+        let span = Span::raw("...uncated/foo/bar");
+        let cwd = "/home/user/truncated/foo/bar";
+        let segs = split_static_span_by_cwd(span, cwd);
+        assert_eq!(segs.len(), 1);
+        match &segs[0] {
+            PromptSegment::Cwd(spans) => {
+                let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+                assert_eq!(text, "...uncated/foo/bar");
+                // split_cwd_text_into_spans produces "...uncated" as one span (no '/' inside it)
+                assert_eq!(spans[0].content.as_ref(), "...uncated");
+            }
+            _ => panic!("expected Cwd segment"),
+        }
+    }
+
+    #[test]
+    fn test_split_span_prefix_ellipsis_truncated_segment_in_larger_prompt() {
+        // "host ...uncated/foo/bar $ " — static parts are preserved around the CWD.
+        let span = Span::raw("host ...uncated/foo/bar $ ");
+        let cwd = "/home/user/truncated/foo/bar";
+        let segs = split_static_span_by_cwd(span, cwd);
+        assert_eq!(segs.len(), 3);
+        match &segs[0] {
+            PromptSegment::Static(s) => assert_eq!(s.content.as_ref(), "host "),
+            _ => panic!("expected Static"),
+        }
+        match &segs[1] {
+            PromptSegment::Cwd(spans) => {
+                let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+                assert_eq!(text, "...uncated/foo/bar");
+                assert_eq!(spans[0].content.as_ref(), "...uncated");
+            }
+            _ => panic!("expected Cwd"),
+        }
+        match &segs[2] {
+            PromptSegment::Static(s) => assert_eq!(s.content.as_ref(), " $ "),
+            _ => panic!("expected Static"),
+        }
+    }
 
     #[test]
     fn test_split_span_ellipsis_prefix_becomes_cwd() {
