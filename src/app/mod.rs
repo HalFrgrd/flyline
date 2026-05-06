@@ -720,7 +720,10 @@ impl<'a> App<'a> {
                             // log::trace!("Terminal focus gained");
                             self.term_has_focus = true;
                             if self.settings.mouse_mode == MouseMode::Smart {
-                                self.mouse_state.enable("smart mode: focus gained");
+                                log::debug!(
+                                    "Enabling mouse capture due to terminal focus gain in smart mode"
+                                );
+                                self.mouse_state.enable();
                             }
                             false
                         }
@@ -842,8 +845,8 @@ impl<'a> App<'a> {
                 | MouseEventKind::ScrollDown
                 | MouseEventKind::ScrollLeft
                 | MouseEventKind::ScrollRight => {
-                    self.mouse_state
-                        .disable("smart mode: scroll event detected");
+                    log::debug!("Disabling mouse capture due to scroll event in smart mode");
+                    self.mouse_state.disable();
                     self.last_mouse_over_cell = None;
                     return false;
                 }
@@ -858,8 +861,10 @@ impl<'a> App<'a> {
                 // indicating intent to interact with terminal content above (e.g. select text).
                 // Mere mouse movement above the viewport does not disable capture.
                 if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                    self.mouse_state
-                        .disable("smart mode: click above the viewport");
+                    log::debug!(
+                        "Disabling mouse capture due to click above the viewport in smart mode"
+                    );
+                    self.mouse_state.disable();
                 }
                 self.last_mouse_over_cell = None;
                 return false;

@@ -46,13 +46,13 @@ impl MouseState {
 
     /// Enable mouse capture, logging `reason` to explain why.
     /// Does nothing (and logs nothing) if mouse capture is already enabled.
-    pub fn enable(&mut self, reason: &str) {
+    pub fn enable(&mut self) {
         if self.enabled {
             return;
         }
         match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
             Ok(_) => {
-                log::trace!("Mouse capture enabled: {}", reason);
+                log::trace!("Mouse capture enabled");
                 self.enabled = true;
             }
             Err(e) => {
@@ -63,14 +63,14 @@ impl MouseState {
 
     /// Disable mouse capture, logging `reason` to explain why.
     /// Does nothing (and logs nothing) if mouse capture is already disabled.
-    pub fn disable(&mut self, reason: &str) {
+    pub fn disable(&mut self) {
         if !self.enabled {
             return;
         }
         self.left_button_down = false;
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
-                log::trace!("Mouse capture disabled: {}", reason);
+                log::trace!("Mouse capture disabled");
                 self.enabled = false;
             }
             Err(e) => {
@@ -81,9 +81,9 @@ impl MouseState {
 
     pub fn toggle(&mut self) {
         if self.enabled {
-            self.disable("toggle_mouse action");
+            self.disable();
         } else {
-            self.enable("toggle_mouse action");
+            self.enable();
         }
     }
 

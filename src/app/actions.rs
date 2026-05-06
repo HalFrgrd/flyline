@@ -2792,11 +2792,12 @@ impl<'a> App<'a> {
             action.run(self, key);
         }
 
-        if matched.is_some_and(|action| action != Action::ToggleMouse) {
-            if self.mouse_state.is_disabled() {
-                log::debug!("Reenabling mouse due to key event");
-                self.mouse_state.enable("Keypress that wasnt mouse related");
-            }
+        if matched.is_some_and(|action| action != Action::ToggleMouse)
+            && self.settings.mouse_mode == MouseMode::Smart
+            && self.mouse_state.is_disabled()
+        {
+            log::debug!("Reenabling mouse due to key event");
+            self.mouse_state.enable();
         }
 
         self.on_possible_buffer_change();

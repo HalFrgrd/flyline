@@ -143,6 +143,7 @@ pub enum MouseMode {
     Simple,
     /// Mouse capture is on by default with automatic management: disabled on scroll or when the
     /// user clicks above the viewport, re-enabled on any keypress or when focus is regained.
+    /// Also can manually toggle with Escape.
     #[default]
     Smart,
 }
