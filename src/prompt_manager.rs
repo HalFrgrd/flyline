@@ -524,13 +524,14 @@ impl<'a> PromptStringBuilder<'a> {
                 self.widgets
                     .iter()
                     .filter_map(|widget| {
-                        let name = match widget {
-                            PromptWidget::MouseMode(w) => w.name.as_str(),
-                            PromptWidget::CopyBuffer(w) => w.name.as_str(),
-                            PromptWidget::Custom(w) if !w.command.is_empty() => w.name.as_str(),
-                            PromptWidget::Custom(_) => return None,
-                            PromptWidget::LastCommandDuration(w) => w.name.as_str(),
-                        };
+                        // Custom widgets with an empty command line are inert and should not
+                        // be matched in the prompt text.
+                        if let PromptWidget::Custom(w) = widget
+                            && w.command.is_empty()
+                        {
+                            return None;
+                        }
+                        let name = widget.name();
                         text.find(name).map(|pos| (pos, name.len(), widget))
                     })
                     .min_by_key(|(pos, _, _)| *pos)
@@ -629,17 +630,21 @@ fn make_widget_segment(
     last_app_closed_at: Option<std::time::Instant>,
 ) -> PromptSegment {
     match widget {
-        PromptWidget::MouseMode(w) => PromptSegment::WidgetMouseMode {
-            enabled_text: stdout_to_tagged_spans(w.enabled_text.clone()),
-            disabled_text: stdout_to_tagged_spans(w.disabled_text.clone()),
+        PromptWidget::MouseMode {
+            enabled_text,
+            disabled_text,
+            ..
+        } => PromptSegment::WidgetMouseMode {
+            enabled_text: stdout_to_tagged_spans(enabled_text.clone()),
+            disabled_text: stdout_to_tagged_spans(disabled_text.clone()),
         },
-        PromptWidget::CopyBuffer(w) => {
+        PromptWidget::CopyBuffer { text, .. } => {
             // Apply the surrounding prompt span's base style to each span of
             // the widget output so the widget visually inherits the styling
             // of the span it appears in (matching Animation/Cwd behaviour).
             // The widget output's own style takes precedence
             // (`base_style.patch(span.style)`).
-            let text = stdout_to_tagged_spans_with_tag(w.text.clone(), Tag::Ps1PromptCopyBuffer)
+            let text = stdout_to_tagged_spans_with_tag(text.clone(), Tag::Ps1PromptCopyBuffer)
                 .into_iter()
                 .map(|mut ts| {
                     ts.span.style = base_style.patch(ts.span.style);
@@ -698,7 +703,7 @@ fn make_widget_segment(
             };
             PromptSegment::WidgetCustom { state, base_style }
         }
-        PromptWidget::LastCommandDuration(_widget) => {
+        PromptWidget::LastCommandDuration { .. } => {
             // Compute elapsed duration once at construction time; the result
             // is stored as a static string in the segment and reused on every
             // render without further computation.
@@ -1413,7 +1418,7 @@ impl PromptManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::{PromptWidgetCopyBuffer, PromptWidgetCustom, PromptWidgetMouseMode};
+    use crate::settings::PromptWidgetCustom;
     use chrono::TimeZone;
 
     fn fixed_time(ms: i64) -> chrono::DateTime<chrono::Local> {
@@ -2073,11 +2078,11 @@ mod tests {
 
     #[test]
     fn test_expand_span_widget_mouse_mode_name_only() {
-        let widget = PromptWidget::MouseMode(PromptWidgetMouseMode {
+        let widget = PromptWidget::MouseMode {
             name: "MOUSE_WIDGET".to_string(),
             enabled_text: "on".to_string(),
             disabled_text: "off".to_string(),
-        });
+        };
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
         let span = Span::raw("MOUSE_WIDGET");
@@ -2098,11 +2103,11 @@ mod tests {
 
     #[test]
     fn test_expand_span_widget_mouse_mode_surrounded_by_text() {
-        let widget = PromptWidget::MouseMode(PromptWidgetMouseMode {
+        let widget = PromptWidget::MouseMode {
             name: "MMODE".to_string(),
             enabled_text: "on".to_string(),
             disabled_text: "off".to_string(),
-        });
+        };
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
         let span = Span::raw("before MMODE after");
@@ -2137,10 +2142,10 @@ mod tests {
 
     #[test]
     fn test_expand_span_widget_copy_buffer_name_only() {
-        let widget = PromptWidget::CopyBuffer(PromptWidgetCopyBuffer {
+        let widget = PromptWidget::CopyBuffer {
             name: "COPY_WIDGET".to_string(),
             text: "copy".to_string(),
-        });
+        };
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
         let segs = builder.expand_span_to_segments(Span::raw("COPY_WIDGET"));
@@ -2162,10 +2167,10 @@ mod tests {
         // The copy-buffer widget output should inherit the surrounding prompt
         // span's style (matching how Animation and Cwd segments behave), with
         // the widget's own style winning when both are set.
-        let widget = PromptWidget::CopyBuffer(PromptWidgetCopyBuffer {
+        let widget = PromptWidget::CopyBuffer {
             name: "COPY_WIDGET".to_string(),
             text: "copy".to_string(),
-        });
+        };
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
         let base_style = Style::default().fg(Color::Blue);
@@ -2369,10 +2374,9 @@ mod tests {
     fn test_expand_span_widget_last_command_duration_name() {
         // The widget name in a span should produce a WidgetLastCommandDuration segment
         // with a pre-computed text value ("0ns" when last_app_closed_at is None).
-        use crate::settings::PromptWidgetLastCommandDuration;
-        let widget = PromptWidget::LastCommandDuration(PromptWidgetLastCommandDuration {
+        let widget = PromptWidget::LastCommandDuration {
             name: "FLYLINE_LAST_COMMAND_DURATION".to_string(),
-        });
+        };
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
         let segs = builder.expand_span_to_segments(Span::raw("FLYLINE_LAST_COMMAND_DURATION"));
@@ -2388,10 +2392,9 @@ mod tests {
 
     #[test]
     fn test_expand_span_widget_last_command_duration_surrounded_by_text() {
-        use crate::settings::PromptWidgetLastCommandDuration;
-        let widget = PromptWidget::LastCommandDuration(PromptWidgetLastCommandDuration {
+        let widget = PromptWidget::LastCommandDuration {
             name: "MY_DUR".to_string(),
-        });
+        };
         let widgets = [widget];
         let builder = PromptStringBuilder::new(vec![], &widgets);
         let segs = builder.expand_span_to_segments(Span::raw("time: MY_DUR done"));

@@ -241,7 +241,13 @@ pub fn get_command(settings: &mut Settings) -> ExitState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FuzzyHistorySource {
     PastCommands,
+    // CancelledCommands / AgentPrompts are not currently constructed (the
+    // entry points that would do so are gated behind TODOs about UX). Allow
+    // dead_code so the supporting machinery elsewhere is preserved for when
+    // those entry points are wired up.
+    #[allow(dead_code)]
     CancelledCommands,
+    #[allow(dead_code)]
     AgentPrompts,
 }
 
@@ -1359,15 +1365,9 @@ impl<'a> App<'a> {
     /// Words that contain a space are quoted with single quotes in the display string.
     /// If `buffer_str` is empty, opens the agent-prompts fuzzy history search instead.
     fn start_agent_mode(&mut self, agent_cmd: settings::AgentModeCommand, buffer_str: &str) {
-        if false && buffer_str.is_empty() {
-            // TODO think through UX for this
-            // Warm with "" to display all agent prompts regardless of the current buffer.
-            self.settings
-                .agent_prompt_history_manager
-                .warm_fuzzy_search_cache("");
-            self.content_mode = ContentMode::FuzzyHistorySearch(FuzzyHistorySource::AgentPrompts);
-            return;
-        }
+        // TODO: think through UX for running agent mode with an empty buffer
+        // (e.g. opening the agent-prompts fuzzy history search). For now we
+        // always push the (possibly empty) buffer and spawn the command.
         self.settings
             .agent_prompt_history_manager
             .push_entry(buffer_str.to_string());

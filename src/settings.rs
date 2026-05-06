@@ -32,24 +32,49 @@ pub struct PromptAnimation {
     pub ping_pong: bool,
 }
 
-/// A prompt widget that shows different text depending on whether mouse capture is enabled.
+/// A custom prompt widget registered with `flyline create-prompt-widget`.
 #[derive(Debug, Clone)]
-pub struct PromptWidgetMouseMode {
-    /// Name used as placeholder in prompt strings (e.g., `FLYLINE_MOUSE_MODE`).
-    pub name: String,
-    /// Text shown when mouse capture is enabled.
-    pub enabled_text: String,
-    /// Text shown when mouse capture is disabled.
-    pub disabled_text: String,
+pub enum PromptWidget {
+    /// Show different text depending on whether mouse capture is enabled.
+    MouseMode {
+        /// Name used as placeholder in prompt strings (e.g., `FLYLINE_MOUSE_MODE`).
+        name: String,
+        /// Text shown when mouse capture is enabled.
+        enabled_text: String,
+        /// Text shown when mouse capture is disabled.
+        disabled_text: String,
+    },
+    /// Copies the current command buffer to the clipboard when clicked.
+    CopyBuffer {
+        /// Name used as placeholder in prompt strings (e.g., `FLYLINE_COPY_BUFFER`).
+        name: String,
+        /// Text shown in the prompt.
+        text: String,
+    },
+    /// Runs a shell command and displays its output. Kept as a named struct
+    /// because methods/helpers (e.g. `resolve_placeholder`) take `&PromptWidgetCustom`
+    /// directly.
+    Custom(PromptWidgetCustom),
+    /// Shows how long ago the flyline app last closed.
+    ///
+    /// The elapsed duration is formatted as a compact human-readable string,
+    /// for example `9.2s`, `1m23s`, `1h02m03s`, `1d20h43m`.
+    LastCommandDuration {
+        /// Name used as placeholder in prompt strings (e.g., `FLYLINE_LAST_COMMAND_DURATION`).
+        name: String,
+    },
 }
 
-/// A prompt widget that copies the current command buffer to the clipboard when clicked.
-#[derive(Debug, Clone)]
-pub struct PromptWidgetCopyBuffer {
-    /// Name used as placeholder in prompt strings (e.g., `FLYLINE_COPY_BUFFER`).
-    pub name: String,
-    /// Text shown in the prompt.
-    pub text: String,
+impl PromptWidget {
+    /// The placeholder name that is replaced inside prompt strings (PS1, RPS1, PS1_FILL).
+    pub fn name(&self) -> &str {
+        match self {
+            PromptWidget::MouseMode { name, .. } => name,
+            PromptWidget::CopyBuffer { name, .. } => name,
+            PromptWidget::Custom(w) => &w.name,
+            PromptWidget::LastCommandDuration { name } => name,
+        }
+    }
 }
 
 /// What to show as a placeholder while a non-blocking (or timed-out blocking)
@@ -82,25 +107,6 @@ pub struct PromptWidgetCustom {
     /// Most recent successful output of the command; shared across clones so
     /// that the `Placeholder::Prev` option can pick it up on subsequent renders.
     pub prev_output: std::sync::Arc<std::sync::Mutex<Vec<TaggedSpan<'static>>>>,
-}
-
-/// A prompt widget that shows how long ago the flyline app last closed.
-///
-/// The elapsed duration is formatted as a compact human-readable string, for
-/// example `9.2s`, `1m23s`, `1h02m03s`, `1d20h43m`.
-#[derive(Debug, Clone)]
-pub struct PromptWidgetLastCommandDuration {
-    /// Name used as placeholder in prompt strings (e.g., `FLYLINE_LAST_COMMAND_DURATION`).
-    pub name: String,
-}
-
-/// A custom prompt widget registered with `flyline create-prompt-widget`.
-#[derive(Debug, Clone)]
-pub enum PromptWidget {
-    MouseMode(PromptWidgetMouseMode),
-    CopyBuffer(PromptWidgetCopyBuffer),
-    Custom(PromptWidgetCustom),
-    LastCommandDuration(PromptWidgetLastCommandDuration),
 }
 
 /// A configured agent-mode command with its optional system prompt.

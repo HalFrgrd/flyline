@@ -67,7 +67,6 @@ fn expand_alias_for_completion(
     context: &str,
     context_until_cursor: &str,
 ) -> AliasExpandedCompletion {
-    // Capture the original length before potentially moving `command_word`.
     let command_word_len = command_word.len();
 
     let poss_alias = bash_funcs::find_alias(&command_word);
@@ -77,13 +76,10 @@ fn expand_alias_for_completion(
         poss_alias
     );
 
-    let alias = if let Some(a) = poss_alias
-        && !a.is_empty()
-    {
-        a
-    } else {
-        command_word
-    };
+    // `find_alias` may return `Some("")` for known-but-empty aliases; treat
+    // those as "no alias" and fall back to the original command word.
+    // `alias` is guaranteed non-empty after this point.
+    let alias = poss_alias.filter(|a| !a.is_empty()).unwrap_or(command_word);
 
     let len_delta = alias.len() as isize - command_word_len as isize;
     let word_under_cursor_end = word_under_cursor.end().saturating_add_signed(len_delta);
@@ -91,9 +87,7 @@ fn expand_alias_for_completion(
     // cursor position relative to the start of the completion context
     let cursor_byte_pos = context_until_cursor.len().saturating_add_signed(len_delta);
 
-    let full_command = alias.to_string() + &context[command_word_len..];
-    // `alias` is guaranteed non-empty: it is either a non-empty alias string
-    // (guarded by `!a.is_empty()` above) or the original non-empty command word.
+    let full_command = alias.clone() + &context[command_word_len..];
     let command_word = alias
         .split_whitespace()
         .next()
@@ -759,7 +753,7 @@ impl App<'_> {
         if let Some(common_prefix) = builder.common_prefix.as_ref() {
             match self
                 .buffer
-                .replace_word_under_cursor(&common_prefix, &wuc_substring)
+                .replace_word_under_cursor(common_prefix, &wuc_substring)
             {
                 Ok(new_wuc) => {
                     log::info!(
