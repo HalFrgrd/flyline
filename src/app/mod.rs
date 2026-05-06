@@ -327,7 +327,8 @@ impl DrawnContent {
     }
 
     fn term_em_row_to_content_row(&self, term_em_row: u16) -> isize {
-        term_em_row as isize - self.viewport_start as isize + self.content_visible_row_range.start as isize
+        term_em_row as isize - self.viewport_start as isize
+            + self.content_visible_row_range.start as isize
     }
 
     pub fn term_em_cursor_pos(&self) -> Option<Position> {
