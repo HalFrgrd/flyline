@@ -247,6 +247,12 @@ impl DParser {
 
         let mut previous_token: Option<AnnotatedToken> = None;
 
+        // Set to true when a closing nesting restores a command range whose first token
+        // is an env-var name (e.g. closing `"` in `FOO="bar"`).  The next non-whitespace
+        // word token will then reset current_command_range to None so that it can be
+        // recognised as a fresh command word.
+        let mut assignment_value_just_closed = false;
+
         let mut idx = 0;
         while idx < self.tokens.len() {
             // When closing an ArithSubst, two consecutive ) tokens are required.
@@ -262,6 +268,21 @@ impl DParser {
                 let second = self.tokens.remove(idx + 1);
                 self.tokens[idx].token.value.push_str(&second.token.value);
                 self.tokens[idx].token.kind = TokenKind::DoubleRParen;
+            }
+
+            // If the previous env-var value nesting just closed, reset the command range
+            // now (before the arg-merging check below) so that the next word token is
+            // treated as the start of a fresh command rather than as another argument to
+            // the assignment statement.  The reset is deferred until here so that it skips
+            // over any intervening whitespace tokens.  For non-word, non-whitespace tokens
+            // (e.g. redirects) the flag is cleared without resetting the range.
+            if assignment_value_just_closed {
+                if self.tokens[idx].token.kind.is_word() {
+                    self.current_command_range = None;
+                }
+                if !matches!(self.tokens[idx].token.kind, TokenKind::Whitespace(_)) {
+                    assignment_value_just_closed = false;
+                }
             }
 
             // Something like `echo foo=bar` is not an assignment.
@@ -404,6 +425,19 @@ impl DParser {
                         if let Some(range) = &mut self.current_command_range {
                             *range = *range.start()..=idx;
                         }
+                    }
+
+                    // If the restored range begins with an env-var token (e.g. the `FOO` in
+                    // `FOO="bar"`), the nesting we just closed was the value of an env-var
+                    // assignment.  The next word token should start a fresh command, so defer
+                    // the reset of current_command_range until then.
+                    if self
+                        .current_command_range
+                        .as_ref()
+                        .and_then(|r| self.tokens.get(*r.start()))
+                        .is_some_and(|t| t.annotations.is_env_var)
+                    {
+                        assignment_value_just_closed = true;
                     }
                 }
                 TokenKind::Assignment => {
@@ -1540,6 +1574,94 @@ mod tests {
         // hello – a plain argument
         assert_eq!(tokens[6].token.value, "hello");
         assert_eq!(tokens[6].annotations, Annotations::default());
+    }
+
+    #[test]
+    fn test_quoted_assignment_value_followed_by_command() {
+        // `ASD="123" foo`: `ASD` is the env-var name, `"123"` is a quoted value,
+        // and `foo` is the command that should receive the command_word annotation.
+        let input = r#"ASD="123" foo"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        // ASD – the variable name, marked as env var
+        assert_eq!(tokens[0].token.value, "ASD");
+        assert!(tokens[0].annotations.is_env_var);
+        assert_eq!(tokens[0].annotations.command_word, None);
+
+        // = – the assignment operator
+        assert_eq!(tokens[1].token.kind, TokenKind::Assignment);
+
+        // " – opening double-quote for the value
+        assert_eq!(tokens[2].token.value, "\"");
+
+        // 123 – the quoted value, inside double quotes
+        assert_eq!(tokens[3].token.value, "123");
+        assert!(tokens[3].annotations.is_inside_double_quotes);
+
+        // " – closing double-quote
+        assert_eq!(tokens[4].token.value, "\"");
+
+        // foo – this is the command word
+        assert_eq!(tokens[6].token.value, "foo");
+        assert_eq!(tokens[6].annotations.command_word, Some("foo".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_quoted_assignments_then_command() {
+        // `A="1" B="2" cmd`: two quoted env-var assignments, then `cmd` as the command word.
+        let input = r#"A="1" B="2" cmd"#;
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        // A – first env var name
+        assert_eq!(tokens[0].token.value, "A");
+        assert!(tokens[0].annotations.is_env_var);
+        assert_eq!(tokens[0].annotations.command_word, None);
+
+        // B – second env var name
+        let b_idx = tokens.iter().position(|t| t.token.value == "B").unwrap();
+        assert!(tokens[b_idx].annotations.is_env_var);
+        assert_eq!(tokens[b_idx].annotations.command_word, None);
+
+        // cmd – the command word
+        let cmd_idx = tokens.iter().position(|t| t.token.value == "cmd").unwrap();
+        assert_eq!(
+            tokens[cmd_idx].annotations.command_word,
+            Some("cmd".to_string())
+        );
+    }
+
+    #[test]
+    fn test_single_quoted_assignment_value_followed_by_command() {
+        // `ASD='123' foo`: single-quoted value, then `foo` as the command word.
+        let input = "ASD='123' foo";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+        for t in tokens {
+            dbg!("{:?} - {:?}", &t.token, &t.annotations);
+        }
+
+        // ASD – env var name
+        assert_eq!(tokens[0].token.value, "ASD");
+        assert!(tokens[0].annotations.is_env_var);
+        assert_eq!(tokens[0].annotations.command_word, None);
+
+        // foo – the command word
+        let foo_idx = tokens.iter().position(|t| t.token.value == "foo").unwrap();
+        assert_eq!(
+            tokens[foo_idx].annotations.command_word,
+            Some("foo".to_string())
+        );
     }
 
     #[test]
