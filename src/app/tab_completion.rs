@@ -13,7 +13,7 @@ use crate::globbing::PathPatternExpansion;
 use crate::iter_first_last::FirstLast;
 use crate::text_buffer::SubString;
 use crate::users;
-use crate::{complete_flyline_args, tab_completion_context};
+use crate::{cli::complete_flyline_args, tab_completion_context};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 // bash programmable completions:

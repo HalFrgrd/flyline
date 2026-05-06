@@ -1,15 +1,8 @@
-use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
-use clap_complete::{ArgValueCompleter, Shell, generate};
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
 #[cfg(feature = "pre_bash_4_4")]
 use ctor::ctor;
-
-use crate::{
-    app::actions::{self},
-    cursor::CursorStyleConfig,
-};
 
 #[macro_use]
 mod macros;

@@ -1,9 +1,10 @@
 use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
 use clap_complete::{ArgValueCompleter, Shell, generate};
-use libc::{ c_int};
+use libc::c_int;
 
 use crate::{
-    Flyline, app::actions::{self}, bash_symbols, cursor::CursorStyleConfig, settings
+    Flyline, app::actions::{self}, bash_funcs, bash_symbols, comp_spec_synthesis,
+    cursor::{self, CursorStyleConfig}, dparser, logging, palette, settings, tutorial,
 };
 
 
@@ -721,7 +722,7 @@ enum PromptWidgetSubcommands {
     },
 }
 impl Flyline {
-    fn call(&mut self, words: *const bash_symbols::WordList) -> c_int {
+    pub(crate) fn call(&mut self, words: *const bash_symbols::WordList) -> c_int {
         let mut args = vec![];
         unsafe {
             let mut current = words;
