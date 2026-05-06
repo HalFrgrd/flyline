@@ -123,7 +123,7 @@ pub(crate) fn gen_completions_internal(
         log::debug!("Processing completion type: {:?}", comp_type);
         match comp_type {
             tab_completion_context::CompType::FirstWord => {
-                log::debug!("CompType::FirstWord for: {:?}", word_under_cursor);
+                log::debug!("CompType::FirstWord for: {}", word_under_cursor.as_ref());
                 let completions = tab_complete_first_word(word_under_cursor.as_ref());
                 log::debug!(
                     "CompType::FirstWord found {} completions for prefix: {}",
@@ -135,7 +135,7 @@ pub(crate) fn gen_completions_internal(
                 }
             }
             tab_completion_context::CompType::FuzzyFirstWord => {
-                log::debug!("CompType::FuzzyFirstWord for: {:?}", word_under_cursor);
+                log::debug!("CompType::FuzzyFirstWord for: {}", word_under_cursor.as_ref());
                 let completions = tab_complete_fuzzy_first_word(word_under_cursor.as_ref());
                 log::debug!(
                     "CompType::FuzzyFirstWord found {} completions for prefix: {}",
@@ -298,7 +298,7 @@ pub(crate) fn gen_completions_internal(
             }
 
             tab_completion_context::CompType::EnvVariable => {
-                log::debug!("CompType::EnvVariable for {:?}", word_under_cursor);
+                log::debug!("CompType::EnvVariable for {}", word_under_cursor.as_ref());
                 let matching_vars =
                     bash_funcs::get_all_variables_with_prefix(word_under_cursor.as_ref());
                 log::debug!(
@@ -317,7 +317,7 @@ pub(crate) fn gen_completions_internal(
                 }
             }
             tab_completion_context::CompType::TildeExpansion => {
-                log::debug!("CompType::TildeExpansion for {:?}", word_under_cursor);
+                log::debug!("CompType::TildeExpansion for {}", word_under_cursor.as_ref());
                 let completions = tab_complete_tilde_expansion(word_under_cursor.as_ref());
                 log::debug!(
                     "CompType::TildeExpansion found {} completions for pattern: {}",
@@ -331,7 +331,7 @@ pub(crate) fn gen_completions_internal(
                 }
             }
             tab_completion_context::CompType::GlobExpansion => {
-                log::debug!("CompType::GlobExpansion for {:?}", word_under_cursor);
+                log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
                 let completions =
                     tab_complete_glob_expansion(word_under_cursor.as_ref(), comp_res_flags);
 
@@ -391,7 +391,7 @@ pub(crate) fn gen_completions_internal(
                 }
             }
             tab_completion_context::CompType::FilenameExpansion => {
-                log::debug!("CompType::FilenameExpansion for: {:?}", word_under_cursor);
+                log::debug!("CompType::FilenameExpansion for: {}", word_under_cursor.as_ref());
                 let completions = tab_complete_glob_expansion(
                     &(word_under_cursor.as_ref().to_string() + "*"),
                     comp_res_flags,
@@ -410,8 +410,8 @@ pub(crate) fn gen_completions_internal(
             }
             tab_completion_context::CompType::FuzzyFilenameExpansion => {
                 log::debug!(
-                    "CompType::FuzzyFilenameExpansion for: {:?}",
-                    word_under_cursor
+                    "CompType::FuzzyFilenameExpansion for: {}",
+                    word_under_cursor.as_ref()
                 );
                 let completions =
                     tab_complete_fuzzy_filename(word_under_cursor.as_ref(), comp_res_flags);
