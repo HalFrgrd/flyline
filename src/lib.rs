@@ -943,7 +943,9 @@ impl Flyline {
                                 command.split_whitespace().map(String::from).collect()
                             });
                         if command_args.is_empty() {
-                            return_usage_error!("flyline set-agent-mode: --command must not be empty");
+                            return_usage_error!(
+                                "flyline set-agent-mode: --command must not be empty"
+                            );
                         }
                         log::info!(
                             "AI command set: {:?} (trigger_prefix={:?})",
