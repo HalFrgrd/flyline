@@ -1,9 +1,8 @@
 use crate::bash_funcs;
 use crate::content_utils::{
-    ansi_string_to_spans, easing_animation_frames, highlight_matching_indices,
-    middle_truncate_spans, take_prefix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
+    ansi_string_to_spans, highlight_matching_indices, middle_truncate_spans, take_prefix_of_spans,
+    ts_to_timeago_string_5chars, vec_spans_width,
 };
-use crate::cursor::CursorEasing;
 use crate::palette::Palette;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
 use crate::text_buffer::{SubString, TextBuffer};
@@ -617,8 +616,6 @@ impl UnprocessedSuggestion {
         // Determine description type by priority:
         let description = if let Some(ts) = mtime {
             SuggestionDescription::LastMTime(ts)
-        } else if let Some(easing) = CursorEasing::try_from_value_name(&sug) {
-            SuggestionDescription::Animation(easing_animation_frames(easing))
         } else if !desc_frames.is_empty() {
             SuggestionDescription::Animation(
                 desc_frames

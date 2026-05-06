@@ -1,11 +1,12 @@
 use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
-use clap_complete::{ArgValueCompleter, Shell, generate};
+use clap_complete::{ArgValueCompleter, CompletionCandidate, Shell, generate};
 use libc::c_int;
+use strum::VariantArray;
 
 use crate::{
     Flyline,
     app::actions::{self},
-    bash_funcs, bash_symbols, comp_spec_synthesis,
+    bash_funcs, bash_symbols, comp_spec_synthesis, content_utils,
     cursor::{self, CursorStyleConfig},
     dparser, logging, palette, settings, tutorial,
 };
@@ -205,6 +206,48 @@ fn raw_command_before_word_under_cursor<'a>(
         .ok_or_else(|| anyhow::anyhow!("word under cursor not found at cursor"))
 }
 
+fn possible_interpolate_easing_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    cursor::CursorEasing::VARIANTS
+        .into_iter()
+        .filter(|s| s.as_ref().starts_with(current.to_string_lossy().as_ref()))
+        .map(|s| {
+            let description = content_utils::easing_animation_frames(*s);
+            let description_str = description
+                .into_iter()
+                .map(|line| {
+                    line.iter()
+                        .map(|span| span.content.clone())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\t");
+
+            CompletionCandidate::new(s.as_ref().to_string()).help(Some(description_str.into()))
+        })
+        .collect()
+}
+
+fn possible_effect_easing_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    cursor::CursorEasing::VARIANTS
+        .into_iter()
+        .filter(|s| s.as_ref().starts_with(current.to_string_lossy().as_ref()))
+        .map(|s| {
+            let description = cursor::cursor_effect_animation_frames(*s, 3.0);
+            let description_str = description
+                .into_iter()
+                .map(|line| {
+                    line.iter()
+                        .map(|span| span.content.clone())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\t");
+
+            CompletionCandidate::new(s.as_ref().to_string()).help(Some(description_str.into()))
+        })
+        .collect()
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Print a timestamp.
@@ -347,7 +390,7 @@ enum Commands {
         #[arg(long, value_name = "SPEED|none")]
         interpolate: Option<String>,
         /// Easing function for position interpolation.  Default is `linear`.
-        #[arg(long, value_name = "EASING")]
+        #[arg(long, value_name = "EASING", add = ArgValueCompleter::new(possible_interpolate_easing_completions))]
         interpolate_easing: Option<cursor::CursorEasing>,
         /// Cursor style.  A single colour (e.g. `red`) is the cursor background.
         /// `"pink on white"` sets foreground and background.  `"reverse"` inverts
@@ -361,7 +404,7 @@ enum Commands {
         #[arg(long, value_name = "SPEED", value_parser = parse_effect_speed)]
         effect_speed: Option<f32>,
         /// Easing function for the cursor effect intensity.  Default is `linear`.
-        #[arg(long, value_name = "EASING")]
+        #[arg(long, value_name = "EASING", add = ArgValueCompleter::new(possible_effect_easing_completions))]
         effect_easing: Option<cursor::CursorEasing>,
     },
     /// Manage keybindings.
