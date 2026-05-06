@@ -143,6 +143,7 @@ pub enum MouseMode {
     Simple,
     /// Mouse capture is on by default with automatic management: disabled on scroll or when the
     /// user clicks above the viewport, re-enabled on any keypress or when focus is regained.
+    /// Also can manually toggle with Escape.
     #[default]
     Smart,
 }
@@ -239,16 +240,16 @@ impl Default for Settings {
             select_with_mouse: true,
             cursor_config: CursorConfig::default(),
             mouse_mode: MouseMode::default(),
-            agent_commands: HashMap::new(),
-            custom_animations: HashMap::new(),
-            custom_prompt_widgets: HashMap::new(),
+            agent_commands: HashMap::default(),
+            custom_animations: HashMap::default(),
+            custom_prompt_widgets: HashMap::default(),
             matrix_animation: MatrixAnimation::default(),
             frame_rate: 24,
             send_shell_integration_codes: ShellIntegrationLevel::default(),
             enable_extended_key_codes: true,
             colour_palette: Palette::default(),
-            keybindings: Vec::new(),
-            key_remappings: Vec::new(),
+            keybindings: Vec::default(),
+            key_remappings: Vec::default(),
             key_debug: false,
             cancelled_command_history_manager: HistoryManager::new_empty(),
             agent_prompt_history_manager: HistoryManager::new_empty(),

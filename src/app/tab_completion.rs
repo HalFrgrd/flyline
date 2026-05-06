@@ -7,13 +7,12 @@ use crate::active_suggestions::{
 };
 use crate::app::{App, ContentMode, TabCompletionHandle};
 use crate::bash_funcs::{self, QuoteType};
-use crate::content_utils::{self, ansi_string_to_spans, easing_animation_frames};
-use crate::cursor::{CursorEasing, cursor_effect_animation_frames};
+use crate::content_utils::{self, ansi_string_to_spans};
 use crate::globbing::PathPatternExpansion;
 use crate::iter_first_last::FirstLast;
 use crate::text_buffer::SubString;
 use crate::users;
-use crate::{complete_flyline_args, tab_completion_context};
+use crate::{cli::complete_flyline_args, tab_completion_context};
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 
 // bash programmable completions:
@@ -104,7 +103,6 @@ fn expand_alias_for_completion(
 
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
-    cursor_config: &crate::cursor::CursorConfig,
 ) -> Option<ActiveSuggestionsBuilder> {
     log::debug!("Completion context: {:#?}", completion_context);
 
@@ -176,10 +174,6 @@ pub(crate) fn gen_completions_internal(
                         cursor_byte_pos,
                     ) {
                         Ok(candidates) if !candidates.is_empty() => {
-                            let preceding_flag = &full_command[..cursor_byte_pos]
-                                .split_whitespace()
-                                .rfind(|w| w.starts_with("--"));
-
                             let quote_type =
                                 bash_funcs::find_quote_type(word_under_cursor.as_ref());
 
@@ -208,36 +202,19 @@ pub(crate) fn gen_completions_internal(
                                     (String::new(), value)
                                 };
 
-                                let help_description = || {
-                                    let help = c
-                                        .get_help()
-                                        .map(|h| h.to_string())
-                                        .filter(|h| !h.is_empty());
-                                    match help {
-                                        Some(h) => SuggestionDescription::Animation(vec![
-                                            ansi_string_to_spans(&h),
-                                        ]),
+                                let description = {
+                                    match c.get_help() {
+                                        Some(h) => {
+                                            let ansi_help = format!("{}", h.ansi());
+                                            SuggestionDescription::Animation(
+                                                ansi_help
+                                                    .split('\t')
+                                                    .map(|s| ansi_string_to_spans(s))
+                                                    .collect(),
+                                            )
+                                        }
                                         None => SuggestionDescription::Static(vec![]),
                                     }
-                                };
-                                let description = match (
-                                    preceding_flag,
-                                    CursorEasing::try_from_value_name(&value),
-                                ) {
-                                    (Some("--effect-easing"), Some(easing)) => {
-                                        SuggestionDescription::Animation(
-                                            cursor_effect_animation_frames(
-                                                easing,
-                                                cursor_config.effect_speed,
-                                            ),
-                                        )
-                                    }
-                                    (Some("--interpolate-easing"), Some(easing)) => {
-                                        SuggestionDescription::Animation(easing_animation_frames(
-                                            easing,
-                                        ))
-                                    }
-                                    _ => help_description(),
                                 };
 
                                 ProcessedSuggestion::new(&value, prefix, suffix)
@@ -789,12 +766,10 @@ impl App<'_> {
 
         let completion_context_owned = completion_context.into_owned();
 
-        let cursor_settings = self.settings.cursor_config.clone();
-
         let start_time = std::time::Instant::now();
 
         let thread_handle = std::thread::spawn(move || {
-            let suggestions = gen_completions_internal(&completion_context_owned, &cursor_settings);
+            let suggestions = gen_completions_internal(&completion_context_owned);
             if suggestions.is_none() {
                 log::debug!(
                     "No suggestions generated for completion context: {:?}",
@@ -876,7 +851,7 @@ impl App<'_> {
                 self.buffer.cursor_byte_pos(),
             );
             let some_suggestions =
-                gen_completions_internal(&comp_context, &self.settings.cursor_config);
+                gen_completions_internal(&comp_context);
 
             if some_suggestions.is_none() {
                 if expected_suggestions.is_empty() {

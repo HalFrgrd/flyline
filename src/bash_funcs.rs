@@ -5,7 +5,6 @@ use anyhow::Result;
 
 use libc::{c_char, c_int};
 use lscolors::LsColors;
-use ratatui::style::{Color, Modifier, Style};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::Read;
@@ -1052,15 +1051,8 @@ impl ExecutablesOnPath {
 static EXECUTABLES_ON_PATH: LazyLock<Mutex<ExecutablesOnPath>> =
     LazyLock::new(|| Mutex::new(ExecutablesOnPath::new()));
 
-static LS_COLORS: LazyLock<Option<LsColors>> =
+pub(crate) static LS_COLORS: LazyLock<Option<LsColors>> =
     LazyLock::new(|| get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s)));
-
-/// Return a ratatui `Style` for the given path based on the `LS_COLORS` environment variable.
-/// Returns `None` if `LS_COLORS` was not set or the path has no matching entry.
-pub fn style_for_path(path: &Path) -> Option<Style> {
-    let lscolors_style = LS_COLORS.as_ref()?.style_for_path(path)?;
-    Some(lscolors_style_to_ratatui(lscolors_style))
-}
 
 /// Get all potential first word completions (aliases, reserved words, functions, builtins, executables)
 pub fn get_possible_command_words() -> impl Iterator<Item = String> {
@@ -1079,73 +1071,6 @@ pub fn get_possible_command_words() -> impl Iterator<Item = String> {
         .chain(shell_functions)
         .chain(builtins)
         .chain(executables)
-}
-
-/// Convert an `lscolors::Color` to a `ratatui::style::Color`.
-fn lscolors_color_to_ratatui(color: lscolors::Color) -> Color {
-    match color {
-        lscolors::Color::Black => Color::Black,
-        lscolors::Color::Red => Color::Red,
-        lscolors::Color::Green => Color::Green,
-        lscolors::Color::Yellow => Color::Yellow,
-        lscolors::Color::Blue => Color::Blue,
-        lscolors::Color::Magenta => Color::Magenta,
-        lscolors::Color::Cyan => Color::Cyan,
-        lscolors::Color::White => Color::White,
-        lscolors::Color::BrightBlack => Color::DarkGray,
-        lscolors::Color::BrightRed => Color::LightRed,
-        lscolors::Color::BrightGreen => Color::LightGreen,
-        lscolors::Color::BrightYellow => Color::LightYellow,
-        lscolors::Color::BrightBlue => Color::LightBlue,
-        lscolors::Color::BrightMagenta => Color::LightMagenta,
-        lscolors::Color::BrightCyan => Color::LightCyan,
-        lscolors::Color::BrightWhite => Color::Gray,
-        lscolors::Color::Fixed(n) => Color::Indexed(n),
-        lscolors::Color::RGB(r, g, b) => Color::Rgb(r, g, b),
-    }
-}
-
-/// Convert an `lscolors::Style` to a `ratatui::style::Style`.
-fn lscolors_style_to_ratatui(style: &lscolors::Style) -> Style {
-    let mut ratatui_style = Style::default();
-
-    if let Some(fg) = style.foreground {
-        ratatui_style = ratatui_style.fg(lscolors_color_to_ratatui(fg));
-    }
-    if let Some(bg) = style.background {
-        ratatui_style = ratatui_style.bg(lscolors_color_to_ratatui(bg));
-    }
-
-    let fs = &style.font_style;
-    if fs.bold {
-        ratatui_style = ratatui_style.add_modifier(Modifier::BOLD);
-    }
-    if fs.dimmed {
-        ratatui_style = ratatui_style.add_modifier(Modifier::DIM);
-    }
-    if fs.italic {
-        ratatui_style = ratatui_style.add_modifier(Modifier::ITALIC);
-    }
-    if fs.underline {
-        ratatui_style = ratatui_style.add_modifier(Modifier::UNDERLINED);
-    }
-    if fs.slow_blink {
-        ratatui_style = ratatui_style.add_modifier(Modifier::SLOW_BLINK);
-    }
-    if fs.rapid_blink {
-        ratatui_style = ratatui_style.add_modifier(Modifier::RAPID_BLINK);
-    }
-    if fs.reverse {
-        ratatui_style = ratatui_style.add_modifier(Modifier::REVERSED);
-    }
-    if fs.hidden {
-        ratatui_style = ratatui_style.add_modifier(Modifier::HIDDEN);
-    }
-    if fs.strikethrough {
-        ratatui_style = ratatui_style.add_modifier(Modifier::CROSSED_OUT);
-    }
-
-    ratatui_style
 }
 
 pub fn read_terminating_signal() -> c_int {

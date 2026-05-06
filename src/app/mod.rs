@@ -179,11 +179,6 @@ impl AppRunningState {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum LastKeyPressAction {
-    AffectedMouseState,
-}
-
 pub fn get_command(settings: &mut Settings) -> ExitState {
     // If stdin is closed, bash expects us to just return EOF a few times
     if let Some(reason) = stdin_unavailable_reason() {
@@ -327,12 +322,13 @@ struct DrawnContent {
 }
 
 impl DrawnContent {
-    pub fn content_row_to_term_em_row(&self, content_row: u16) -> u16 {
+    fn content_row_to_term_em_row(&self, content_row: u16) -> u16 {
         content_row.saturating_sub(self.content_visible_row_range.start) + self.viewport_start
     }
 
-    pub fn term_em_row_to_content_row(&self, term_em_row: u16) -> u16 {
-        term_em_row.saturating_sub(self.viewport_start) + self.content_visible_row_range.start
+    fn term_em_row_to_content_row(&self, term_em_row: u16) -> isize {
+        term_em_row as isize - self.viewport_start as isize
+            + self.content_visible_row_range.start as isize
     }
 
     pub fn term_em_cursor_pos(&self) -> Option<Position> {
@@ -358,6 +354,9 @@ impl DrawnContent {
 
     pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, bool)> {
         let content_row = self.term_em_row_to_content_row(term_em_y);
+        if content_row < 0 {
+            return None;
+        }
 
         let content_buf_row = self.contents.buf.get(content_row as usize)?;
 
@@ -372,9 +371,9 @@ impl DrawnContent {
                     | Tag::AiResult(_)
                     | Tag::TutorialPrev
                     | Tag::TutorialNext
-                    | Tag::Ps1PromptCopyBuffer
+                    | Tag::PromptCopyBufferWidget
                     | Tag::Clipboard(_)
-                    | Tag::Ps1PromptCwd(_)
+                    | Tag::Ps1PromptCwdWidget(_)
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
@@ -443,7 +442,6 @@ pub(crate) struct App<'a> {
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
     needs_screen_cleared: bool,
-    last_keypress_action: Option<LastKeyPressAction>,
     /// Last key event and action dispatched, rendered when key debug mode is enabled.
     last_key_debug: Option<(String, String)>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
@@ -452,24 +450,6 @@ pub(crate) struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(settings: &'a mut Settings) -> Self {
-        // log::info!("fully_expand_path test:");
-        // log::info!(
-        //     "fully_expand_path(\"$PWD\") = {}",
-        //     tab_completion::fully_expand_path("$PWD")
-        // );
-        // log::info!(
-        //     "fully_expand_path($(pwd)) = {}",
-        //     tab_completion::fully_expand_path("$(pwd)")
-        // );
-        // log::info!(
-        //     "fully_expand_path($(pwd)$HOME) = {}",
-        //     tab_completion::fully_expand_path("$(pwd)$HOME")
-        // );
-        // log::info!(
-        //     "fully_expand_path(\"~/Doc\") = {}",
-        //     tab_completion::fully_expand_path("~/Doc")
-        // );
-
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
 
@@ -518,7 +498,6 @@ impl<'a> App<'a> {
             settings,
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
-            last_keypress_action: None,
             last_key_debug: None,
             last_activity_time: std::time::Instant::now(),
         }
@@ -726,10 +705,11 @@ impl<'a> App<'a> {
                         CrosstermEvent::FocusGained => {
                             // log::trace!("Terminal focus gained");
                             self.term_has_focus = true;
-                            if self.settings.mouse_mode == MouseMode::Smart
-                                && !self.mouse_state.is_explicitly_disabled_by_user()
-                            {
-                                self.mouse_state.enable("smart mode: focus gained");
+                            if self.settings.mouse_mode == MouseMode::Smart {
+                                log::debug!(
+                                    "Enabling mouse capture due to terminal focus gain in smart mode"
+                                );
+                                self.mouse_state.enable();
                             }
                             false
                         }
@@ -808,9 +788,9 @@ impl<'a> App<'a> {
         }
     }
 
-    fn toggle_mouse_state(&mut self, reason: &str) {
-        self.mouse_state.toggle(reason);
-        if !self.mouse_state.enabled() {
+    fn toggle_mouse_state(&mut self) {
+        self.mouse_state.toggle();
+        if !self.mouse_state.is_enabled() {
             self.last_mouse_over_cell = None;
         }
     }
@@ -851,8 +831,8 @@ impl<'a> App<'a> {
                 | MouseEventKind::ScrollDown
                 | MouseEventKind::ScrollLeft
                 | MouseEventKind::ScrollRight => {
-                    self.mouse_state
-                        .disable("smart mode: scroll event detected");
+                    log::debug!("Disabling mouse capture due to scroll event in smart mode");
+                    self.mouse_state.disable();
                     self.last_mouse_over_cell = None;
                     return false;
                 }
@@ -867,8 +847,10 @@ impl<'a> App<'a> {
                 // indicating intent to interact with terminal content above (e.g. select text).
                 // Mere mouse movement above the viewport does not disable capture.
                 if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                    self.mouse_state
-                        .disable("smart mode: click above the viewport");
+                    log::debug!(
+                        "Disabling mouse capture due to click above the viewport in smart mode"
+                    );
+                    self.mouse_state.disable();
                 }
                 self.last_mouse_over_cell = None;
                 return false;
@@ -920,37 +902,22 @@ impl<'a> App<'a> {
             Some((tag @ Tag::Clipboard(_), true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
-            Some((tag @ Tag::Ps1PromptCopyBuffer, true)) => {
+            Some((tag @ Tag::PromptCopyBufferWidget, true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
-            Some((tag @ Tag::Ps1PromptCwd(_), _)) => {
+            Some((tag @ Tag::Ps1PromptCwdWidget(_), _)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
-
-            t => {
-                log::trace!("Mouse over  {:?}", t);
+            _ => {
                 self.last_mouse_over_cell = None;
-                // Exit PromptDirSelect mode when clicking on a non-CWD cell
-                // that is within the terminal viewport (not above scrollback).
-                if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_))
-                    && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
-                    && !matches!(t, Some((Tag::Ps1PromptCwd(_), _)))
-                    && self
-                        .last_contents
-                        .as_ref()
-                        .is_some_and(|c| mouse.row >= c.viewport_start)
-                {
-                    self.content_mode = ContentMode::Normal;
-                }
             }
         }
 
         let mut update_buffer = false;
-        let mut handled_mouse_action = false;
 
         if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
             match self.last_mouse_over_cell {
-                Some(Tag::Ps1PromptCwd(_)) => {}
+                Some(Tag::Ps1PromptCwdWidget(_)) | Some(Tag::PromptCopyBufferWidget) => {}
                 _ => {
                     self.content_mode = ContentMode::Normal;
                 }
@@ -1097,7 +1064,7 @@ impl<'a> App<'a> {
                     return true;
                 }
             }
-            Some(Tag::Ps1PromptCwd(idx)) => {
+            Some(Tag::Ps1PromptCwdWidget(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
                     && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
                 {
@@ -1105,13 +1072,13 @@ impl<'a> App<'a> {
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );
-                    handled_mouse_action = true;
+                    update_buffer = true;
                 } else if matches!(
                     mouse.kind,
                     MouseEventKind::Down(_) | MouseEventKind::Drag(_)
                 ) {
                     self.content_mode = ContentMode::PromptDirSelect(idx);
-                    handled_mouse_action = true;
+                    update_buffer = true;
                 }
             }
             Some(Tag::Clipboard(clipboard_type)) => {
@@ -1130,12 +1097,12 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            Some(Tag::Ps1PromptCopyBuffer) => {
+            Some(Tag::PromptCopyBufferWidget) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
                     let text = self.buffer.buffer().to_string();
                     if self.copy_to_clipboard(text.as_bytes()) {
                         log::info!("Copied current buffer to clipboard via copy-buffer widget");
-                        handled_mouse_action = true;
+                        update_buffer = true;
                     }
                 }
             }
@@ -1146,7 +1113,7 @@ impl<'a> App<'a> {
             self.on_possible_buffer_change();
             true
         } else {
-            handled_mouse_action
+            false
         }
     }
 
@@ -1443,17 +1410,6 @@ impl<'a> App<'a> {
             && self.buffer.cursor_byte_pos() != 0
         {
             self.content_mode = ContentMode::Normal;
-        }
-
-        if self
-            .last_keypress_action
-            .as_ref()
-            .is_some_and(|a| *a != LastKeyPressAction::AffectedMouseState)
-        {
-            // Smart mode: any keypress re-enables mouse capture
-            if self.settings.mouse_mode == MouseMode::Smart {
-                self.mouse_state.enable("smart mode: keypress detected");
-            }
         }
 
         let new_wuc = LazyCell::new(|| {
@@ -1846,7 +1802,7 @@ impl<'a> App<'a> {
                     content.newline();
                 }
 
-                if !self.mouse_state.enabled() {
+                if !self.mouse_state.is_enabled() {
                     let red = Style::default().fg(Color::Red).slow_blink();
                     let escape_hint = TaggedLine::from(vec![TaggedSpan::new(
                         Span::styled("Press Escape  to re-enable mouse mode.", red),
@@ -1897,14 +1853,14 @@ impl<'a> App<'a> {
 
         let (mut lprompt, rprompt, fill_span) = self
             .prompt_manager
-            .get_ps1_lines(self.settings.show_animations, self.mouse_state.enabled());
+            .get_ps1_lines(self.settings.show_animations, self.mouse_state.is_enabled());
 
-        let copy_buffer_state = self.button_state_for(Tag::Ps1PromptCopyBuffer);
+        let copy_buffer_state = self.button_state_for(Tag::PromptCopyBufferWidget);
         let copy_buffer_active = !matches!(copy_buffer_state, ButtonState::Normal);
         if copy_buffer_active {
             for line in &mut lprompt {
                 for span in &mut line.spans {
-                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                    if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
                         span.span.style =
                             Palette::apply_button_style(span.span.style, copy_buffer_state);
                     }
@@ -1916,7 +1872,7 @@ impl<'a> App<'a> {
         if copy_buffer_active {
             for line in &mut rprompt {
                 for span in &mut line.spans {
-                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                    if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
                         span.span.style =
                             Palette::apply_button_style(span.span.style, copy_buffer_state);
                     }
@@ -1927,7 +1883,7 @@ impl<'a> App<'a> {
         let mut fill_span = fill_span;
         if copy_buffer_active {
             for span in &mut fill_span.spans {
-                if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
                     span.span.style =
                         Palette::apply_button_style(span.span.style, copy_buffer_state);
                 }
@@ -1940,7 +1896,7 @@ impl<'a> App<'a> {
         {
             for line in &mut lprompt {
                 for span in &mut line.spans {
-                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
+                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCwdWidget(cwd_index)) {
                         span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
@@ -1949,13 +1905,13 @@ impl<'a> App<'a> {
 
         // Apply hover/depress styling to whichever CWD segment the mouse is over.
         if self.mode.is_running()
-            && let Some(Tag::Ps1PromptCwd(hovered_idx)) = self.last_mouse_over_cell
+            && let Some(Tag::Ps1PromptCwdWidget(hovered_idx)) = self.last_mouse_over_cell
         {
-            let cwd_state = self.button_state_for(Tag::Ps1PromptCwd(hovered_idx));
+            let cwd_state = self.button_state_for(Tag::Ps1PromptCwdWidget(hovered_idx));
             if !matches!(cwd_state, ButtonState::Normal) {
                 for line in &mut lprompt {
                     for span in &mut line.spans {
-                        if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(hovered_idx)) {
+                        if span.tag == SpanTag::Constant(Tag::Ps1PromptCwdWidget(hovered_idx)) {
                             span.span.style =
                                 Palette::apply_button_style(span.span.style, cwd_state);
                         }

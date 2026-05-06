@@ -10,9 +10,6 @@ pub enum ClickCount {
 
 pub struct MouseState {
     enabled: bool,
-    /// True when the user has explicitly disabled mouse capture via a toggle action.
-    /// Smart mode will not automatically re-enable while this flag is set.
-    explicitly_disabled_by_user: bool,
     last_left_click_times: Vec<std::time::Instant>,
     last_left_click_buffer_pos: Option<usize>,
     /// True while the left mouse button is currently being held down.
@@ -41,7 +38,6 @@ impl MouseState {
         };
         MouseState {
             enabled,
-            explicitly_disabled_by_user: false,
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
             left_button_down: false,
@@ -50,13 +46,13 @@ impl MouseState {
 
     /// Enable mouse capture, logging `reason` to explain why.
     /// Does nothing (and logs nothing) if mouse capture is already enabled.
-    pub fn enable(&mut self, reason: &str) {
+    pub fn enable(&mut self) {
         if self.enabled {
             return;
         }
         match crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
             Ok(_) => {
-                log::trace!("Mouse capture enabled: {}", reason);
+                log::trace!("Mouse capture enabled");
                 self.enabled = true;
             }
             Err(e) => {
@@ -67,14 +63,14 @@ impl MouseState {
 
     /// Disable mouse capture, logging `reason` to explain why.
     /// Does nothing (and logs nothing) if mouse capture is already disabled.
-    pub fn disable(&mut self, reason: &str) {
+    pub fn disable(&mut self) {
         if !self.enabled {
             return;
         }
         self.left_button_down = false;
         match crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture) {
             Ok(_) => {
-                log::trace!("Mouse capture disabled: {}", reason);
+                log::trace!("Mouse capture disabled");
                 self.enabled = false;
             }
             Err(e) => {
@@ -83,27 +79,20 @@ impl MouseState {
         }
     }
 
-    /// Toggle mouse capture, logging `reason` to explain why.
-    /// Tracks whether the user has explicitly disabled capture so that Smart mode
-    /// automatic re-enable logic can respect user intent.
-    pub fn toggle(&mut self, reason: &str) {
+    pub fn toggle(&mut self) {
         if self.enabled {
-            self.disable(reason);
-            self.explicitly_disabled_by_user = true;
+            self.disable();
         } else {
-            self.enable(reason);
-            self.explicitly_disabled_by_user = false;
+            self.enable();
         }
     }
 
-    pub fn enabled(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
-    /// Whether the user has explicitly disabled mouse capture via a toggle action.
-    /// When true, Smart mode will not automatically re-enable mouse capture.
-    pub fn is_explicitly_disabled_by_user(&self) -> bool {
-        self.explicitly_disabled_by_user
+    pub fn is_disabled(&self) -> bool {
+        !self.enabled
     }
 
     pub fn record_left_click_down(&mut self, byte_pos: usize) -> ClickCount {

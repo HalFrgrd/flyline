@@ -6,6 +6,9 @@ use easing_function::easings::StandardEasing;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 use std::time::Instant;
+use strum::{
+    AsRefStr, EnumString, VariantArray,
+};
 
 /// Cursor intensity used when the terminal has lost focus (or in modes where
 /// the cursor should appear dimmed without animation).
@@ -25,7 +28,8 @@ pub enum CursorBackend {
 ///
 /// Corresponds to the standard easings from the `easing-function` crate:
 /// <https://docs.rs/easing-function/latest/easing_function/easings/index.html>
-#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, AsRefStr, VariantArray, EnumString)]
+#[strum(serialize_all = "kebab-case")]
 pub enum CursorEasing {
     #[default]
     Linear,
@@ -62,12 +66,6 @@ pub enum CursorEasing {
 }
 
 impl CursorEasing {
-    /// Try to parse a string as a `CursorEasing` value using clap's case-insensitive
-    /// value-name matching (e.g. `"in-quad"` → `CursorEasing::InQuad`).
-    pub fn try_from_value_name(s: &str) -> Option<Self> {
-        <Self as clap::ValueEnum>::from_str(s, true).ok()
-    }
-
     /// Apply the easing function to `t` ∈ [0, 1], returning a value in [0, 1].
     pub fn apply(self, t: f32) -> f32 {
         match self {
