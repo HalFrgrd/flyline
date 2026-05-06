@@ -644,7 +644,7 @@ fn make_widget_segment(
             // of the span it appears in (matching Animation/Cwd behaviour).
             // The widget output's own style takes precedence
             // (`base_style.patch(span.style)`).
-            let text = stdout_to_tagged_spans_with_tag(text.clone(), Tag::Ps1PromptCopyBuffer)
+            let text = stdout_to_tagged_spans_with_tag(text.clone(), Tag::PromptCopyBufferWidget)
                 .into_iter()
                 .map(|mut ts| {
                     ts.span.style = base_style.patch(ts.span.style);
@@ -1158,7 +1158,7 @@ fn format_prompt_line(
                     for (i, span) in spans.iter().enumerate() {
                         let is_selectable = span.content.as_ref() != "/" || i == 0;
                         let tag = if is_selectable {
-                            let t = Tag::Ps1PromptCwd(selectable_count - 1 - sel_idx);
+                            let t = Tag::PromptCwdWidget(selectable_count - 1 - sel_idx);
                             sel_idx += 1;
                             t
                         } else {
@@ -2361,7 +2361,7 @@ mod tests {
         // "~" → index 2
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(2))
+            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(2))
         );
         // "/" separator → Ps1Prompt
         assert_eq!(
@@ -2371,7 +2371,7 @@ mod tests {
         // "foo" → index 1
         assert_eq!(
             line.spans[2].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(1))
+            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(1))
         );
         // "/" separator → Ps1Prompt
         assert_eq!(
@@ -2381,7 +2381,7 @@ mod tests {
         // "bar" is rightmost → index 0
         assert_eq!(
             line.spans[4].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(0))
+            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(0))
         );
     }
 
@@ -2393,7 +2393,7 @@ mod tests {
         assert_eq!(line.spans.len(), 1);
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCwd(0))
+            crate::content_builder::SpanTag::Constant(Tag::PromptCwdWidget(0))
         );
     }
 
@@ -2575,13 +2575,16 @@ mod tests {
     #[test]
     fn test_format_prompt_line_widget_copy_buffer() {
         let segments = vec![PromptSegment::WidgetCopyBuffer {
-            text: vec![TaggedSpan::new(Span::raw("copy"), Tag::Ps1PromptCopyBuffer)],
+            text: vec![TaggedSpan::new(
+                Span::raw("copy"),
+                Tag::PromptCopyBufferWidget,
+            )],
         }];
         let line = format_prompt_line(&segments, &fixed_time(0), false);
         assert_eq!(line.spans[0].span.content, "copy");
         assert_eq!(
             line.spans[0].tag,
-            crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCopyBuffer)
+            crate::content_builder::SpanTag::Constant(Tag::PromptCopyBufferWidget)
         );
     }
 
@@ -2600,7 +2603,7 @@ mod tests {
                 assert_eq!(text[0].span.content, "copy");
                 assert_eq!(
                     text[0].tag,
-                    crate::content_builder::SpanTag::Constant(Tag::Ps1PromptCopyBuffer)
+                    crate::content_builder::SpanTag::Constant(Tag::PromptCopyBufferWidget)
                 );
             }
             _ => panic!("expected WidgetCopyBuffer"),

@@ -371,9 +371,9 @@ impl DrawnContent {
                     | Tag::AiResult(_)
                     | Tag::TutorialPrev
                     | Tag::TutorialNext
-                    | Tag::Ps1PromptCopyBuffer
+                    | Tag::PromptCopyBufferWidget
                     | Tag::Clipboard(_)
-                    | Tag::Ps1PromptCwd(_)
+                    | Tag::PromptCwdWidget(_)
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
@@ -902,10 +902,10 @@ impl<'a> App<'a> {
             Some((tag @ Tag::Clipboard(_), true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
-            Some((tag @ Tag::Ps1PromptCopyBuffer, true)) => {
+            Some((tag @ Tag::PromptCopyBufferWidget, true)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
-            Some((tag @ Tag::Ps1PromptCwd(_), _)) => {
+            Some((tag @ Tag::PromptCwdWidget(_), _)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
             _ => {
@@ -914,11 +914,10 @@ impl<'a> App<'a> {
         }
 
         let mut update_buffer = false;
-        let mut handled_mouse_action = false;
 
         if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
             match self.last_mouse_over_cell {
-                Some(Tag::Ps1PromptCwd(_)) | Some(Tag::Ps1PromptCopyBuffer) => {}
+                Some(Tag::PromptCwdWidget(_)) | Some(Tag::PromptCopyBufferWidget) => {}
                 _ => {
                     self.content_mode = ContentMode::Normal;
                 }
@@ -1065,7 +1064,7 @@ impl<'a> App<'a> {
                     return true;
                 }
             }
-            Some(Tag::Ps1PromptCwd(idx)) => {
+            Some(Tag::PromptCwdWidget(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
                     && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
                 {
@@ -1073,13 +1072,13 @@ impl<'a> App<'a> {
                         self,
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );
-                    handled_mouse_action = true;
+                    update_buffer = true;
                 } else if matches!(
                     mouse.kind,
                     MouseEventKind::Down(_) | MouseEventKind::Drag(_)
                 ) {
                     self.content_mode = ContentMode::PromptDirSelect(idx);
-                    handled_mouse_action = true;
+                    update_buffer = true;
                 }
             }
             Some(Tag::Clipboard(clipboard_type)) => {
@@ -1098,12 +1097,12 @@ impl<'a> App<'a> {
                     }
                 }
             }
-            Some(Tag::Ps1PromptCopyBuffer) => {
+            Some(Tag::PromptCopyBufferWidget) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_)) {
                     let text = self.buffer.buffer().to_string();
                     if self.copy_to_clipboard(text.as_bytes()) {
                         log::info!("Copied current buffer to clipboard via copy-buffer widget");
-                        handled_mouse_action = true;
+                        update_buffer = true;
                     }
                 }
             }
@@ -1114,7 +1113,7 @@ impl<'a> App<'a> {
             self.on_possible_buffer_change();
             true
         } else {
-            handled_mouse_action
+            false
         }
     }
 
@@ -1856,12 +1855,12 @@ impl<'a> App<'a> {
             .prompt_manager
             .get_ps1_lines(self.settings.show_animations, self.mouse_state.is_enabled());
 
-        let copy_buffer_state = self.button_state_for(Tag::Ps1PromptCopyBuffer);
+        let copy_buffer_state = self.button_state_for(Tag::PromptCopyBufferWidget);
         let copy_buffer_active = !matches!(copy_buffer_state, ButtonState::Normal);
         if copy_buffer_active {
             for line in &mut lprompt {
                 for span in &mut line.spans {
-                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                    if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
                         span.span.style =
                             Palette::apply_button_style(span.span.style, copy_buffer_state);
                     }
@@ -1873,7 +1872,7 @@ impl<'a> App<'a> {
         if copy_buffer_active {
             for line in &mut rprompt {
                 for span in &mut line.spans {
-                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                    if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
                         span.span.style =
                             Palette::apply_button_style(span.span.style, copy_buffer_state);
                     }
@@ -1884,7 +1883,7 @@ impl<'a> App<'a> {
         let mut fill_span = fill_span;
         if copy_buffer_active {
             for span in &mut fill_span.spans {
-                if span.tag == SpanTag::Constant(Tag::Ps1PromptCopyBuffer) {
+                if span.tag == SpanTag::Constant(Tag::PromptCopyBufferWidget) {
                     span.span.style =
                         Palette::apply_button_style(span.span.style, copy_buffer_state);
                 }
@@ -1897,7 +1896,7 @@ impl<'a> App<'a> {
         {
             for line in &mut lprompt {
                 for span in &mut line.spans {
-                    if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(cwd_index)) {
+                    if span.tag == SpanTag::Constant(Tag::PromptCwdWidget(cwd_index)) {
                         span.span.style = Palette::convert_to_highlighted(span.span.style);
                     }
                 }
@@ -1906,13 +1905,13 @@ impl<'a> App<'a> {
 
         // Apply hover/depress styling to whichever CWD segment the mouse is over.
         if self.mode.is_running()
-            && let Some(Tag::Ps1PromptCwd(hovered_idx)) = self.last_mouse_over_cell
+            && let Some(Tag::PromptCwdWidget(hovered_idx)) = self.last_mouse_over_cell
         {
-            let cwd_state = self.button_state_for(Tag::Ps1PromptCwd(hovered_idx));
+            let cwd_state = self.button_state_for(Tag::PromptCwdWidget(hovered_idx));
             if !matches!(cwd_state, ButtonState::Normal) {
                 for line in &mut lprompt {
                     for span in &mut line.spans {
-                        if span.tag == SpanTag::Constant(Tag::Ps1PromptCwd(hovered_idx)) {
+                        if span.tag == SpanTag::Constant(Tag::PromptCwdWidget(hovered_idx)) {
                             span.span.style =
                                 Palette::apply_button_style(span.span.style, cwd_state);
                         }
