@@ -630,12 +630,10 @@ mod tests {
 /// is returned as a single unstyled span.  Spans from all resulting lines are
 /// flattened into one sequence (descriptions are expected to be single-line).
 pub fn ansi_string_to_spans(s: &str) -> Vec<Span<'static>> {
-    log::debug!("Parsing ANSI string into spans: {:?}", s);
     let owned = s.to_owned();
     match owned.into_text() {
         Ok(text) => {
             let res = text.lines.into_iter().flat_map(|l| l.spans).collect();
-            log::debug!("Parsed spans: {:?}", res);
             res
         }
         Err(_) => vec![Span::raw(s.to_owned())],

@@ -145,7 +145,7 @@ pub fn cursor_effect_animation_frames(
 
     let make_frame = |intensity: f32| -> Vec<Span<'static>> {
         vec![Span::styled(
-            "Z",
+            " ",
             Style::new().bg(intensity_to_rgb(intensity)),
         )]
     };

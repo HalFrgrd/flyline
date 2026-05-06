@@ -207,10 +207,12 @@ pub(crate) fn gen_completions_internal(
                                         Some(h) => {
                                             let ansi_help = format!("{}", h.ansi());
                                             SuggestionDescription::Animation(
-                                            ansi_help.split('\t')
-                                                .map(|s| ansi_string_to_spans(s))
-                                                .collect(),
-                                        )},
+                                                ansi_help
+                                                    .split('\t')
+                                                    .map(|s| ansi_string_to_spans(s))
+                                                    .collect(),
+                                            )
+                                        }
                                         None => SuggestionDescription::Static(vec![]),
                                     }
                                 };
