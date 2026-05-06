@@ -322,12 +322,12 @@ struct DrawnContent {
 }
 
 impl DrawnContent {
-    pub fn content_row_to_term_em_row(&self, content_row: u16) -> u16 {
+    fn content_row_to_term_em_row(&self, content_row: u16) -> u16 {
         content_row.saturating_sub(self.content_visible_row_range.start) + self.viewport_start
     }
 
-    pub fn term_em_row_to_content_row(&self, term_em_row: u16) -> u16 {
-        term_em_row.saturating_sub(self.viewport_start) + self.content_visible_row_range.start
+    fn term_em_row_to_content_row(&self, term_em_row: u16) -> isize {
+        term_em_row as isize - self.viewport_start as isize + self.content_visible_row_range.start as isize
     }
 
     pub fn term_em_cursor_pos(&self) -> Option<Position> {
@@ -353,6 +353,9 @@ impl DrawnContent {
 
     pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, bool)> {
         let content_row = self.term_em_row_to_content_row(term_em_y);
+        if content_row < 0 {
+            return None;
+        }
 
         let content_buf_row = self.contents.buf.get(content_row as usize)?;
 
