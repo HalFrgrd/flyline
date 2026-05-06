@@ -450,24 +450,6 @@ pub(crate) struct App<'a> {
 
 impl<'a> App<'a> {
     fn new(settings: &'a mut Settings) -> Self {
-        // log::info!("fully_expand_path test:");
-        // log::info!(
-        //     "fully_expand_path(\"$PWD\") = {}",
-        //     tab_completion::fully_expand_path("$PWD")
-        // );
-        // log::info!(
-        //     "fully_expand_path($(pwd)) = {}",
-        //     tab_completion::fully_expand_path("$(pwd)")
-        // );
-        // log::info!(
-        //     "fully_expand_path($(pwd)$HOME) = {}",
-        //     tab_completion::fully_expand_path("$(pwd)$HOME")
-        // );
-        // log::info!(
-        //     "fully_expand_path(\"~/Doc\") = {}",
-        //     tab_completion::fully_expand_path("~/Doc")
-        // );
-
         let unfinished_from_prev_command =
             unsafe { crate::bash_symbols::current_command_line_count } > 0;
 
@@ -926,22 +908,8 @@ impl<'a> App<'a> {
             Some((tag @ Tag::Ps1PromptCwd(_), _)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
-
-            t => {
-                log::trace!("Mouse over  {:?}", t);
+            _ => {
                 self.last_mouse_over_cell = None;
-                // Exit PromptDirSelect mode when clicking on a non-CWD cell
-                // that is within the terminal viewport (not above scrollback).
-                if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::Up(_))
-                    && matches!(self.content_mode, ContentMode::PromptDirSelect(_))
-                    && !matches!(t, Some((Tag::Ps1PromptCwd(_), _)))
-                    && self
-                        .last_contents
-                        .as_ref()
-                        .is_some_and(|c| mouse.row >= c.viewport_start)
-                {
-                    self.content_mode = ContentMode::Normal;
-                }
             }
         }
 
@@ -950,7 +918,7 @@ impl<'a> App<'a> {
 
         if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
             match self.last_mouse_over_cell {
-                Some(Tag::Ps1PromptCwd(_)) => {}
+                Some(Tag::Ps1PromptCwd(_)) | Some(Tag::Ps1PromptCopyBuffer) => {}
                 _ => {
                     self.content_mode = ContentMode::Normal;
                 }

@@ -458,12 +458,3 @@ pub extern "C" fn flyline_builtin_unload() {
         }
     }
 }
-
-// TODO try and get this working
-// #[unsafe(no_mangle)]
-// pub extern "C" fn main(_argc: c_int, _argv: *const *const c_char) -> c_int {
-//     println!(
-//         "flyline main called. this should be called only when flyline.so is run as a standalone program."
-//     );
-//     0
-// }
