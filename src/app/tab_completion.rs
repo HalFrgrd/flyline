@@ -203,16 +203,14 @@ pub(crate) fn gen_completions_internal(
                                 };
 
                                 let description = {
-                                    let help = c
-                                        .get_help()
-                                        .map(|h| h.to_string())
-                                        .filter(|h| !h.is_empty());
-                                    match help {
-                                        Some(h) => SuggestionDescription::Animation(
-                                            h.split('\t')
+                                    match c.get_help() {
+                                        Some(h) => {
+                                            let ansi_help = format!("{}", h.ansi());
+                                            SuggestionDescription::Animation(
+                                            ansi_help.split('\t')
                                                 .map(|s| ansi_string_to_spans(s))
                                                 .collect(),
-                                        ),
+                                        )},
                                         None => SuggestionDescription::Static(vec![]),
                                     }
                                 };

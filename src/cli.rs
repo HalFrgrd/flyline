@@ -232,7 +232,7 @@ fn possible_effect_easing_completions(current: &std::ffi::OsStr) -> Vec<Completi
         .into_iter()
         .filter(|s| s.as_ref().starts_with(current.to_string_lossy().as_ref()))
         .map(|s| {
-            let description = cursor::cursor_effect_animation_frames(*s, 3.0);
+            let description = cursor::cursor_effect_animation_frames(*s, cursor::CursorConfig::default().effect_speed);
             let description_str = description
                 .into_iter()
                 .map(|line| {
@@ -240,6 +240,7 @@ fn possible_effect_easing_completions(current: &std::ffi::OsStr) -> Vec<Completi
                         .map(content_utils::span_to_ansi)
                         .collect::<String>()
                 })
+                .inspect(|s| log::info!("Effect easing completion candidate description line: {}", s))
                 .collect::<Vec<_>>()
                 .join("\t");
 

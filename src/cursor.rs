@@ -1,6 +1,5 @@
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
 use crate::content_builder::Coord;
-use crate::unicode_helpers;
 use clap::ValueEnum;
 use easing_function::Easing as _;
 use easing_function::easings::StandardEasing;
@@ -146,7 +145,7 @@ pub fn cursor_effect_animation_frames(
 
     let make_frame = |intensity: f32| -> Vec<Span<'static>> {
         vec![Span::styled(
-            unicode_helpers::FULL_BLOCK.to_string(),
+            "Z",
             Style::new().bg(intensity_to_rgb(intensity)),
         )]
     };
