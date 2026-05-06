@@ -216,7 +216,7 @@ fn possible_interpolate_easing_completions(current: &std::ffi::OsStr) -> Vec<Com
                 .into_iter()
                 .map(|line| {
                     line.iter()
-                        .map(|span| span.content.clone())
+                        .map(content_utils::span_to_ansi)
                         .collect::<String>()
                 })
                 .collect::<Vec<_>>()
@@ -237,7 +237,7 @@ fn possible_effect_easing_completions(current: &std::ffi::OsStr) -> Vec<Completi
                 .into_iter()
                 .map(|line| {
                     line.iter()
-                        .map(|span| span.content.clone())
+                        .map(content_utils::span_to_ansi)
                         .collect::<String>()
                 })
                 .collect::<Vec<_>>()

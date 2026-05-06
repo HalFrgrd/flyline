@@ -1,4 +1,7 @@
+use std::path::Path;
+
 use crate::active_suggestions::ANIMATION_FRAME_FPS;
+use crate::bash_funcs;
 use crate::unicode_helpers::{OctantStyle, octant_from_grid};
 use crate::{cursor::CursorEasing, palette::Palette};
 use ansi_to_tui::IntoText;
@@ -723,4 +726,144 @@ pub fn fuzzy_indices_with_threshold(
     matcher
         .fuzzy_indices(candidate, pattern)
         .filter(|&(score, _)| score >= score_threshold)
+}
+
+pub fn style_for_path(path: &Path) -> Option<Style> {
+    let lscolors_style = bash_funcs::LS_COLORS.as_ref()?.style_for_path(path)?;
+    Some(lscolors_style_to_ratatui(lscolors_style))
+}
+
+/// Convert an `lscolors::Color` to a `ratatui::style::Color`.
+fn lscolors_color_to_ratatui(color: lscolors::Color) -> Color {
+    match color {
+        lscolors::Color::Black => Color::Black,
+        lscolors::Color::Red => Color::Red,
+        lscolors::Color::Green => Color::Green,
+        lscolors::Color::Yellow => Color::Yellow,
+        lscolors::Color::Blue => Color::Blue,
+        lscolors::Color::Magenta => Color::Magenta,
+        lscolors::Color::Cyan => Color::Cyan,
+        lscolors::Color::White => Color::White,
+        lscolors::Color::BrightBlack => Color::DarkGray,
+        lscolors::Color::BrightRed => Color::LightRed,
+        lscolors::Color::BrightGreen => Color::LightGreen,
+        lscolors::Color::BrightYellow => Color::LightYellow,
+        lscolors::Color::BrightBlue => Color::LightBlue,
+        lscolors::Color::BrightMagenta => Color::LightMagenta,
+        lscolors::Color::BrightCyan => Color::LightCyan,
+        lscolors::Color::BrightWhite => Color::Gray,
+        lscolors::Color::Fixed(n) => Color::Indexed(n),
+        lscolors::Color::RGB(r, g, b) => Color::Rgb(r, g, b),
+    }
+}
+
+/// Convert an `lscolors::Style` to a `ratatui::style::Style`.
+fn lscolors_style_to_ratatui(style: &lscolors::Style) -> Style {
+    let mut ratatui_style = Style::default();
+
+    if let Some(fg) = style.foreground {
+        ratatui_style = ratatui_style.fg(lscolors_color_to_ratatui(fg));
+    }
+    if let Some(bg) = style.background {
+        ratatui_style = ratatui_style.bg(lscolors_color_to_ratatui(bg));
+    }
+
+    let fs = &style.font_style;
+    if fs.bold {
+        ratatui_style = ratatui_style.add_modifier(Modifier::BOLD);
+    }
+    if fs.dimmed {
+        ratatui_style = ratatui_style.add_modifier(Modifier::DIM);
+    }
+    if fs.italic {
+        ratatui_style = ratatui_style.add_modifier(Modifier::ITALIC);
+    }
+    if fs.underline {
+        ratatui_style = ratatui_style.add_modifier(Modifier::UNDERLINED);
+    }
+    if fs.slow_blink {
+        ratatui_style = ratatui_style.add_modifier(Modifier::SLOW_BLINK);
+    }
+    if fs.rapid_blink {
+        ratatui_style = ratatui_style.add_modifier(Modifier::RAPID_BLINK);
+    }
+    if fs.reverse {
+        ratatui_style = ratatui_style.add_modifier(Modifier::REVERSED);
+    }
+    if fs.hidden {
+        ratatui_style = ratatui_style.add_modifier(Modifier::HIDDEN);
+    }
+    if fs.strikethrough {
+        ratatui_style = ratatui_style.add_modifier(Modifier::CROSSED_OUT);
+    }
+
+    ratatui_style
+}
+
+fn style_to_ansi(style: Style) -> String {
+    let mut codes = Vec::new();
+
+    // foreground
+    if let Some(fg) = style.fg {
+        codes.push(color_to_ansi(fg, false));
+    }
+
+    // background
+    if let Some(bg) = style.bg {
+        codes.push(color_to_ansi(bg, true));
+    }
+
+    // modifiers
+    if style.add_modifier.contains(Modifier::BOLD) {
+        codes.push("1".into());
+    }
+    if style.add_modifier.contains(Modifier::ITALIC) {
+        codes.push("3".into());
+    }
+    if style.add_modifier.contains(Modifier::UNDERLINED) {
+        codes.push("4".into());
+    }
+
+    if codes.is_empty() {
+        return String::new();
+    }
+
+    format!("\x1b[{}m", codes.join(";"))
+}
+
+fn color_to_ansi(color: Color, is_bg: bool) -> String {
+    match color {
+        Color::Black => if is_bg { "40" } else { "30" }.into(),
+        Color::Red => if is_bg { "41" } else { "31" }.into(),
+        Color::Green => if is_bg { "42" } else { "32" }.into(),
+        Color::Yellow => if is_bg { "43" } else { "33" }.into(),
+        Color::Blue => if is_bg { "44" } else { "34" }.into(),
+        Color::Magenta => if is_bg { "45" } else { "35" }.into(),
+        Color::Cyan => if is_bg { "46" } else { "36" }.into(),
+        Color::Gray => if is_bg { "47" } else { "37" }.into(),
+
+        Color::Rgb(r, g, b) => {
+            if is_bg {
+                format!("48;2;{};{};{}", r, g, b)
+            } else {
+                format!("38;2;{};{};{}", r, g, b)
+            }
+        }
+
+        Color::Indexed(i) => {
+            if is_bg {
+                format!("48;5;{}", i)
+            } else {
+                format!("38;5;{}", i)
+            }
+        }
+
+        _ => String::new(),
+    }
+}
+
+pub(crate) fn span_to_ansi(span: &Span) -> String {
+    let start = style_to_ansi(span.style);
+    let reset = "\x1b[0m";
+    format!("{}{}{}", start, span.content, reset)
 }

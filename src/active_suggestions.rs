@@ -1,7 +1,7 @@
 use crate::bash_funcs;
 use crate::content_utils::{
-    ansi_string_to_spans, highlight_matching_indices, middle_truncate_spans, take_prefix_of_spans,
-    ts_to_timeago_string_5chars, vec_spans_width,
+    ansi_string_to_spans, highlight_matching_indices, middle_truncate_spans, style_for_path,
+    take_prefix_of_spans, ts_to_timeago_string_5chars, vec_spans_width,
 };
 use crate::palette::Palette;
 use crate::stateful_sliding_window::StatefulSlidingWindow;
@@ -603,9 +603,7 @@ impl UnprocessedSuggestion {
             }
         };
 
-        let style = path_to_use
-            .as_ref()
-            .and_then(|p| bash_funcs::style_for_path(p));
+        let style = path_to_use.as_ref().and_then(|p| style_for_path(&p));
         let mtime = path_to_use
             .as_ref()
             .and_then(|p| p.metadata().ok())
@@ -620,7 +618,7 @@ impl UnprocessedSuggestion {
             SuggestionDescription::Animation(
                 desc_frames
                     .into_iter()
-                    .map(|f| ansi_string_to_spans(&f))
+                    .map(|s| ansi_string_to_spans(&s))
                     .collect(),
             )
         } else {
