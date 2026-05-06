@@ -11,6 +11,7 @@ mod agent_mode;
 mod app;
 mod bash_funcs;
 mod bash_symbols;
+mod cli;
 mod command_acceptance;
 mod comp_spec_synthesis;
 mod content_builder;
@@ -35,7 +36,6 @@ mod text_buffer;
 mod tutorial;
 pub mod unicode_helpers;
 mod users;
-mod cli;
 
 // Global state for our custom input stream
 static FLYLINE_INSTANCE_PTR: Mutex<Option<Box<Flyline>>> = Mutex::new(None);
@@ -125,7 +125,7 @@ extern "C" fn flyline_call_command(words: *const bash_symbols::WordList) -> c_in
 }
 
 #[derive(Debug)]
-pub (crate) struct Flyline {
+pub(crate) struct Flyline {
     content: Vec<u8>,
     position: usize,
     settings: settings::Settings,

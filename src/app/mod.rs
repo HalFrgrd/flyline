@@ -179,11 +179,6 @@ impl AppRunningState {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum LastKeyPressAction {
-    AffectedMouseState,
-}
-
 pub fn get_command(settings: &mut Settings) -> ExitState {
     // If stdin is closed, bash expects us to just return EOF a few times
     if let Some(reason) = stdin_unavailable_reason() {
@@ -443,7 +438,6 @@ pub(crate) struct App<'a> {
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
     needs_screen_cleared: bool,
-    last_keypress_action: Option<LastKeyPressAction>,
     /// Last key event and action dispatched, rendered when key debug mode is enabled.
     last_key_debug: Option<(String, String)>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
@@ -518,7 +512,6 @@ impl<'a> App<'a> {
             settings,
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
-            last_keypress_action: None,
             last_key_debug: None,
             last_activity_time: std::time::Instant::now(),
         }
@@ -726,9 +719,7 @@ impl<'a> App<'a> {
                         CrosstermEvent::FocusGained => {
                             // log::trace!("Terminal focus gained");
                             self.term_has_focus = true;
-                            if self.settings.mouse_mode == MouseMode::Smart
-                                && !self.mouse_state.is_explicitly_disabled_by_user()
-                            {
+                            if self.settings.mouse_mode == MouseMode::Smart {
                                 self.mouse_state.enable("smart mode: focus gained");
                             }
                             false
@@ -808,9 +799,9 @@ impl<'a> App<'a> {
         }
     }
 
-    fn toggle_mouse_state(&mut self, reason: &str) {
-        self.mouse_state.toggle(reason);
-        if !self.mouse_state.enabled() {
+    fn toggle_mouse_state(&mut self) {
+        self.mouse_state.toggle();
+        if !self.mouse_state.is_enabled() {
             self.last_mouse_over_cell = None;
         }
     }
@@ -1445,17 +1436,6 @@ impl<'a> App<'a> {
             self.content_mode = ContentMode::Normal;
         }
 
-        if self
-            .last_keypress_action
-            .as_ref()
-            .is_some_and(|a| *a != LastKeyPressAction::AffectedMouseState)
-        {
-            // Smart mode: any keypress re-enables mouse capture
-            if self.settings.mouse_mode == MouseMode::Smart {
-                self.mouse_state.enable("smart mode: keypress detected");
-            }
-        }
-
         let new_wuc = LazyCell::new(|| {
             let buffer: &str = self.buffer.buffer();
             tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos())
@@ -1846,7 +1826,7 @@ impl<'a> App<'a> {
                     content.newline();
                 }
 
-                if !self.mouse_state.enabled() {
+                if !self.mouse_state.is_enabled() {
                     let red = Style::default().fg(Color::Red).slow_blink();
                     let escape_hint = TaggedLine::from(vec![TaggedSpan::new(
                         Span::styled("Press Escape  to re-enable mouse mode.", red),
@@ -1897,7 +1877,7 @@ impl<'a> App<'a> {
 
         let (mut lprompt, rprompt, fill_span) = self
             .prompt_manager
-            .get_ps1_lines(self.settings.show_animations, self.mouse_state.enabled());
+            .get_ps1_lines(self.settings.show_animations, self.mouse_state.is_enabled());
 
         let copy_buffer_state = self.button_state_for(Tag::Ps1PromptCopyBuffer);
         let copy_buffer_active = !matches!(copy_buffer_state, ButtonState::Normal);

@@ -3,11 +3,12 @@ use clap_complete::{ArgValueCompleter, Shell, generate};
 use libc::c_int;
 
 use crate::{
-    Flyline, app::actions::{self}, bash_funcs, bash_symbols, comp_spec_synthesis,
-    cursor::{self, CursorStyleConfig}, dparser, logging, palette, settings, tutorial,
+    Flyline,
+    app::actions::{self},
+    bash_funcs, bash_symbols, comp_spec_synthesis,
+    cursor::{self, CursorStyleConfig},
+    dparser, logging, palette, settings, tutorial,
 };
-
-
 
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
@@ -744,587 +745,588 @@ impl Flyline {
         // args contains words from WordList; first word is not the command name unlike argv
         let args_with_prog = std::iter::once("flyline").chain(args.iter().copied());
 
-    match FlylineArgs::try_parse_from(args_with_prog) {
-        Ok(parsed) if !args.is_empty() => {
-            log::debug!("Parsed flyline arguments: {:?}", parsed);
+        match FlylineArgs::try_parse_from(args_with_prog) {
+            Ok(parsed) if !args.is_empty() => {
+                log::debug!("Parsed flyline arguments: {:?}", parsed);
 
-            if parsed.version {
-                println!(
-                    "flyline version {} ({}) git:{} built:{}",
-                    env!("CARGO_PKG_VERSION"),
-                    if cfg!(debug_assertions) {
-                        "debug"
-                    } else {
-                        "release"
-                    },
-                    env!("GIT_HASH"),
-                    env!("BUILD_TIME"),
-                );
-            }
-
-            if let Some(path) = parsed.load_zsh_history {
-                self.settings.zsh_history_path = Some(path);
-            }
-
-            if let Some(enabled) = parsed.show_animations {
-                log::info!("Animations disabled: {}", enabled);
-                self.settings.show_animations = enabled;
-            }
-
-            if let Some(val) = parsed.matrix_animation {
-                log::info!("Matrix animation set to {:?}", val);
-                self.settings.matrix_animation = val;
-            }
-
-            if let Some(fps) = parsed.frame_rate {
-                log::info!("Frame rate set to {}", fps);
-                self.settings.frame_rate = fps;
-            }
-
-            if let Some(mode) = parsed.mouse_mode {
-                log::info!("Mouse mode set to {:?}", mode);
-                self.settings.mouse_mode = mode;
-            }
-
-            if let Some(level) = parsed.send_shell_integration_codes {
-                log::info!("Shell integration codes set to {:?}", level);
-                self.settings.send_shell_integration_codes = level;
-            }
-
-            if let Some(enabled) = parsed.enable_extended_key_codes {
-                log::info!("Extended keyboard codes enabled: {}", enabled);
-                self.settings.enable_extended_key_codes = enabled;
-            }
-
-            match parsed.command {
-                Some(Commands::AgentMode {
-                    system_prompt,
-                    trigger_prefix,
-                    command,
-                }) => {
-                    let command_args: Vec<String> =
-                        shlex::split(&command).unwrap_or_else(|| {
-                            command.split_whitespace().map(String::from).collect()
-                        });
-                    if command_args.is_empty() {
-                        return_usage_error!("flyline set-agent-mode: --command must not be empty");
-                    }
-                    log::info!(
-                        "AI command set: {:?} (trigger_prefix={:?})",
-                        command_args,
-                        trigger_prefix
-                    );
-                    self.settings.agent_commands.insert(
-                        trigger_prefix.clone(),
-                        settings::AgentModeCommand {
-                            command: command_args,
-                            system_prompt: system_prompt.clone(),
+                if parsed.version {
+                    println!(
+                        "flyline version {} ({}) git:{} built:{}",
+                        env!("CARGO_PKG_VERSION"),
+                        if cfg!(debug_assertions) {
+                            "debug"
+                        } else {
+                            "release"
                         },
+                        env!("GIT_HASH"),
+                        env!("BUILD_TIME"),
                     );
                 }
-                Some(Commands::CreatePromptWidget { subcommand }) => match subcommand {
-                    PromptWidgetSubcommands::Animation {
-                        name,
-                        fps,
-                        frames,
-                        ping_pong,
-                    } => {
-                        if fps <= 0.0 {
-                            return_usage_error!(
-                                "flyline create-prompt-widget animation: --fps must be greater than 0 (got {}); animation '{}' not registered",
-                                fps,
-                                name
-                            );
-                        }
-                        log::info!(
-                            "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
-                            name,
-                            fps,
-                            frames.len(),
-                            ping_pong
-                        );
-                        self.settings.custom_animations.insert(
-                            name.clone(),
-                            settings::PromptAnimation {
-                                name,
-                                fps,
-                                frames,
-                                ping_pong,
-                            },
-                        );
-                    }
-                    PromptWidgetSubcommands::MouseMode {
-                        name,
-                        enabled_text,
-                        disabled_text,
-                    } => {
-                        log::info!(
-                            "Registering mouse-mode widget '{}' (enabled={:?}, disabled={:?})",
-                            name,
-                            enabled_text,
-                            disabled_text
-                        );
-                        self.settings.custom_prompt_widgets.insert(
-                            name.clone(),
-                            settings::PromptWidget::MouseMode {
-                                name,
-                                enabled_text,
-                                disabled_text,
-                            },
-                        );
-                    }
-                    PromptWidgetSubcommands::CopyBuffer { name, text } => {
-                        log::info!(
-                            "Registering copy-buffer widget '{}' (text={:?})",
-                            name,
-                            text
-                        );
-                        self.settings.custom_prompt_widgets.insert(
-                            name.clone(),
-                            settings::PromptWidget::CopyBuffer { name, text },
-                        );
-                    }
-                    PromptWidgetSubcommands::Custom {
-                        name,
+
+                if let Some(path) = parsed.load_zsh_history {
+                    self.settings.zsh_history_path = Some(path);
+                }
+
+                if let Some(enabled) = parsed.show_animations {
+                    log::info!("Animations disabled: {}", enabled);
+                    self.settings.show_animations = enabled;
+                }
+
+                if let Some(val) = parsed.matrix_animation {
+                    log::info!("Matrix animation set to {:?}", val);
+                    self.settings.matrix_animation = val;
+                }
+
+                if let Some(fps) = parsed.frame_rate {
+                    log::info!("Frame rate set to {}", fps);
+                    self.settings.frame_rate = fps;
+                }
+
+                if let Some(mode) = parsed.mouse_mode {
+                    log::info!("Mouse mode set to {:?}", mode);
+                    self.settings.mouse_mode = mode;
+                }
+
+                if let Some(level) = parsed.send_shell_integration_codes {
+                    log::info!("Shell integration codes set to {:?}", level);
+                    self.settings.send_shell_integration_codes = level;
+                }
+
+                if let Some(enabled) = parsed.enable_extended_key_codes {
+                    log::info!("Extended keyboard codes enabled: {}", enabled);
+                    self.settings.enable_extended_key_codes = enabled;
+                }
+
+                match parsed.command {
+                    Some(Commands::AgentMode {
+                        system_prompt,
+                        trigger_prefix,
                         command,
-                        block,
-                        placeholder,
-                    } => {
+                    }) => {
                         let command_args: Vec<String> =
                             shlex::split(&command).unwrap_or_else(|| {
                                 command.split_whitespace().map(String::from).collect()
                             });
                         if command_args.is_empty() {
                             return_usage_error!(
-                                "flyline create-prompt-widget custom: --command must not be empty"
+                                "flyline set-agent-mode: --command must not be empty"
                             );
                         }
-                        if let Some(ms) = block
-                            && ms < 0
-                        {
-                            return_usage_error!(
-                                "flyline create-prompt-widget custom: --block timeout must be non-negative (got {})",
-                                ms
-                            );
-                        }
-                        let placeholder_spec = match placeholder {
-                            None => None,
-                            Some(ref s) if s == "prev" => Some(settings::Placeholder::Prev),
-                            Some(ref s) => match s.parse::<usize>() {
-                                Ok(n) => Some(settings::Placeholder::Spaces(n)),
-                                Err(_) => {
-                                    return_usage_error!(
-                                        "flyline create-prompt-widget custom: --placeholder must be a number or 'prev', got {:?}",
-                                        s
-                                    );
-                                }
-                            },
-                        };
                         log::info!(
-                            "Registering custom widget '{}' (command={:?}, block={:?}, placeholder={:?})",
-                            name,
+                            "AI command set: {:?} (trigger_prefix={:?})",
                             command_args,
-                            block,
-                            placeholder
+                            trigger_prefix
                         );
-                        self.settings.custom_prompt_widgets.insert(
-                            name.clone(),
-                            settings::PromptWidget::Custom(settings::PromptWidgetCustom {
-                                name,
+                        self.settings.agent_commands.insert(
+                            trigger_prefix.clone(),
+                            settings::AgentModeCommand {
                                 command: command_args,
-                                block,
-                                placeholder: placeholder_spec.unwrap_or_default(),
-                                prev_output: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
-                            }),
+                                system_prompt: system_prompt.clone(),
+                            },
                         );
                     }
-                    PromptWidgetSubcommands::LastCommandDuration { name } => {
-                        log::info!("Registering last-command-duration widget '{}'", name);
-                        self.settings.custom_prompt_widgets.insert(
-                            name.clone(),
-                            settings::PromptWidget::LastCommandDuration { name },
-                        );
-                    }
-                },
-                Some(Commands::SetColour {
-                    default_theme,
-                    styles,
-                }) => {
-                    if let Some(preset) = default_theme {
-                        self.settings.colour_palette.apply_theme(preset);
-                        log::info!("Colour theme set to {:?}", preset);
-                    }
-
-                    for spec in &styles {
-                        let Some((name, style_str)) = spec.split_once('=') else {
-                            return_usage_error!(
-                                "flyline set-style: argument must be NAME=STYLE, got {:?}",
-                                spec
-                            );
-                        };
-                        let kind = match name.parse::<palette::PaletteStyleKind>() {
-                            Ok(k) => k,
-                            Err(_) => {
+                    Some(Commands::CreatePromptWidget { subcommand }) => match subcommand {
+                        PromptWidgetSubcommands::Animation {
+                            name,
+                            fps,
+                            frames,
+                            ping_pong,
+                        } => {
+                            if fps <= 0.0 {
                                 return_usage_error!(
-                                    "flyline set-style: unknown style name {:?}. Run 'flyline set-style --help' for valid names.",
+                                    "flyline create-prompt-widget animation: --fps must be greater than 0 (got {}); animation '{}' not registered",
+                                    fps,
                                     name
                                 );
                             }
-                        };
-                        match palette::parse_str_to_style(style_str) {
-                            Ok(style) => {
-                                self.settings.colour_palette.set(kind, style);
-                                log::info!("{} style set to {:?}", name, style_str);
-                            }
-                            Err(e) => {
-                                return_usage_error!(
-                                    "flyline set-style: invalid style for {:?}: {}",
+                            log::info!(
+                                "Registering animation '{}' at {} fps with {} frame(s) (ping_pong={})",
+                                name,
+                                fps,
+                                frames.len(),
+                                ping_pong
+                            );
+                            self.settings.custom_animations.insert(
+                                name.clone(),
+                                settings::PromptAnimation {
                                     name,
-                                    e
+                                    fps,
+                                    frames,
+                                    ping_pong,
+                                },
+                            );
+                        }
+                        PromptWidgetSubcommands::MouseMode {
+                            name,
+                            enabled_text,
+                            disabled_text,
+                        } => {
+                            log::info!(
+                                "Registering mouse-mode widget '{}' (enabled={:?}, disabled={:?})",
+                                name,
+                                enabled_text,
+                                disabled_text
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::MouseMode {
+                                    name,
+                                    enabled_text,
+                                    disabled_text,
+                                },
+                            );
+                        }
+                        PromptWidgetSubcommands::CopyBuffer { name, text } => {
+                            log::info!(
+                                "Registering copy-buffer widget '{}' (text={:?})",
+                                name,
+                                text
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::CopyBuffer { name, text },
+                            );
+                        }
+                        PromptWidgetSubcommands::Custom {
+                            name,
+                            command,
+                            block,
+                            placeholder,
+                        } => {
+                            let command_args: Vec<String> =
+                                shlex::split(&command).unwrap_or_else(|| {
+                                    command.split_whitespace().map(String::from).collect()
+                                });
+                            if command_args.is_empty() {
+                                return_usage_error!(
+                                    "flyline create-prompt-widget custom: --command must not be empty"
                                 );
                             }
-                        }
-                    }
-                }
-                Some(Commands::Key { debug, subcommand }) => {
-                    if let Some(enabled) = debug {
-                        log::info!("Key debug mode enabled: {}", enabled);
-                        self.settings.key_debug = enabled;
-                    }
-
-                    match subcommand {
-                        Some(KeySubcommands::Bind {
-                            key_sequence,
-                            context_and_action,
-                        }) => {
-                            let binding = actions::Binding::try_new_from_strs(
-                                &key_sequence,
-                                &context_and_action,
-                            );
-                            match binding {
-                                Ok(binding) => {
-                                    log::info!(
-                                        "Registering key binding: {} -> {}",
-                                        key_sequence,
-                                        context_and_action
-                                    );
-                                    self.settings.keybindings.push(binding);
-                                }
-                                Err(e) => {
-                                    return_usage_error!(
-                                        "flyline key bind: failed to parse key sequence '{}' or context/action '{}': {}",
-                                        key_sequence,
-                                        context_and_action,
-                                        e
-                                    );
-                                }
+                            if let Some(ms) = block
+                                && ms < 0
+                            {
+                                return_usage_error!(
+                                    "flyline create-prompt-widget custom: --block timeout must be non-negative (got {})",
+                                    ms
+                                );
                             }
-                        }
-                        Some(KeySubcommands::List { key_sequence }) => {
-                            actions::print_bindings_table(
-                                &self.settings.keybindings,
-                                key_sequence.as_deref(),
-                                &self.settings.key_remappings,
+                            let placeholder_spec = match placeholder {
+                                None => None,
+                                Some(ref s) if s == "prev" => Some(settings::Placeholder::Prev),
+                                Some(ref s) => match s.parse::<usize>() {
+                                    Ok(n) => Some(settings::Placeholder::Spaces(n)),
+                                    Err(_) => {
+                                        return_usage_error!(
+                                            "flyline create-prompt-widget custom: --placeholder must be a number or 'prev', got {:?}",
+                                            s
+                                        );
+                                    }
+                                },
+                            };
+                            log::info!(
+                                "Registering custom widget '{}' (command={:?}, block={:?}, placeholder={:?})",
+                                name,
+                                command_args,
+                                block,
+                                placeholder
+                            );
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::Custom(settings::PromptWidgetCustom {
+                                    name,
+                                    command: command_args,
+                                    block,
+                                    placeholder: placeholder_spec.unwrap_or_default(),
+                                    prev_output: std::sync::Arc::new(std::sync::Mutex::new(vec![])),
+                                }),
                             );
                         }
-                        Some(KeySubcommands::Remap { from, to }) => {
-                            match actions::try_parse_remap(&from, &to) {
-                                Ok(remap) => {
-                                    log::info!("Registering key remap: {} -> {}", from, to);
-                                    self.settings.key_remappings.push(remap);
-                                }
-                                Err(e) => {
-                                    return_usage_error!(
-                                        "flyline key remap: failed to parse remap '{}' -> '{}': {}",
-                                        from,
-                                        to,
-                                        e
-                                    );
-                                }
-                            }
+                        PromptWidgetSubcommands::LastCommandDuration { name } => {
+                            log::info!("Registering last-command-duration widget '{}'", name);
+                            self.settings.custom_prompt_widgets.insert(
+                                name.clone(),
+                                settings::PromptWidget::LastCommandDuration { name },
+                            );
                         }
-                        None => {}
-                    }
-                }
-                None => {}
-                Some(Commands::Log { subcommand }) => match subcommand {
-                    LogSubcommands::Dump => {
-                        if let Err(e) = logging::dump_logs_stdout() {
-                            eprintln!("Failed to dump logs: {}", e);
-                        }
-                    }
-                    LogSubcommands::SetLevel { level } => {
-                        let filter = log::LevelFilter::from(level);
-                        log::set_max_level(filter);
-                        log::info!("Log level set to {:?}", filter);
-                    }
-                    LogSubcommands::Stream { dest } => match logging::stream_logs(&dest) {
-                        Ok(()) => {
-                            if dest == "terminal" {
-                                log::info!("Log streaming to terminal");
-                            } else {
-                                println!("Flyline logs streaming to {}", dest);
-                            }
-                        }
-                        Err(e) => eprintln!("Failed to stream logs: {}", e),
                     },
-                },
-                Some(Commands::RunTutorial { enabled }) => {
-                    let enabled = enabled.unwrap_or(true);
-                    log::info!("Run tutorial set to {}", enabled);
-                    self.settings.run_tutorial = enabled;
-                    if enabled {
-                        self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
-                        // clear the terminal:
-                        if let Err(e) = crossterm::execute!(
-                            std::io::stdout(),
-                            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-                            crossterm::cursor::MoveTo(0, 0)
-                        ) {
-                            log::warn!("Failed to clear terminal: {}", e);
+                    Some(Commands::SetColour {
+                        default_theme,
+                        styles,
+                    }) => {
+                        if let Some(preset) = default_theme {
+                            self.settings.colour_palette.apply_theme(preset);
+                            log::info!("Colour theme set to {:?}", preset);
                         }
-                    } else {
-                        self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
-                    }
-                }
-                Some(Commands::Editor {
-                    auto_close_chars,
-                    show_inline_history,
-                    select_with_mouse,
-                }) => {
-                    if let Some(enabled) = auto_close_chars {
-                        log::info!("Auto closing char set to {}", enabled);
-                        self.settings.auto_close_chars = enabled;
-                    }
-                    if let Some(enabled) = show_inline_history {
-                        log::info!("Inline history suggestions set to {}", enabled);
-                        self.settings.show_inline_history = enabled;
-                    }
-                    if let Some(enabled) = select_with_mouse {
-                        log::info!("Select with mouse set to {}", enabled);
-                        self.settings.select_with_mouse = enabled;
-                    }
-                }
-                Some(Commands::CompSpecSynthesis { command }) => {
-                    match comp_spec_synthesis::synthesize_completion(&command, |args| {
-                        let prev_sigchld =
-                            unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-                        let ret = comp_spec_synthesis::run_help(&command, args);
-                        unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
-                        ret
-                    }) {
-                        Ok(parsed_cmd) => {
-                            let cmd_name = std::path::Path::new(&command)
-                                .file_name()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or(&command)
-                                .to_string();
-                            let mut clap_cmd =
-                                comp_spec_synthesis::to_clap_command(&parsed_cmd);
-                            let mut output = Vec::new();
-                            generate(Shell::Bash, &mut clap_cmd, &cmd_name, &mut output);
-                            match std::str::from_utf8(&output) {
-                                Ok(s) => print!("{}", s),
+
+                        for spec in &styles {
+                            let Some((name, style_str)) = spec.split_once('=') else {
+                                return_usage_error!(
+                                    "flyline set-style: argument must be NAME=STYLE, got {:?}",
+                                    spec
+                                );
+                            };
+                            let kind = match name.parse::<palette::PaletteStyleKind>() {
+                                Ok(k) => k,
+                                Err(_) => {
+                                    return_usage_error!(
+                                        "flyline set-style: unknown style name {:?}. Run 'flyline set-style --help' for valid names.",
+                                        name
+                                    );
+                                }
+                            };
+                            match palette::parse_str_to_style(style_str) {
+                                Ok(style) => {
+                                    self.settings.colour_palette.set(kind, style);
+                                    log::info!("{} style set to {:?}", name, style_str);
+                                }
                                 Err(e) => {
-                                    log::error!(
-                                        "flyline comp-spec-synthesis: failed to encode output: {}",
+                                    return_usage_error!(
+                                        "flyline set-style: invalid style for {:?}: {}",
+                                        name,
                                         e
                                     );
-                                    return bash_symbols::BuiltinExitCode::Usage as c_int;
                                 }
                             }
                         }
-                        Err(e) => {
-                            return_usage_error!("flyline comp-spec-synthesis: {}", e);
-                        }
                     }
-                }
-                Some(Commands::Time { format }) => {
-                    if let Some(fmt) = format {
-                        let has_error = chrono::format::strftime::StrftimeItems::new(&fmt)
-                            .any(|item| matches!(item, chrono::format::Item::Error));
-                        if has_error {
-                            return_usage_error!(
-                                "flyline time: invalid Chrono format string: {:?}",
-                                fmt
-                            );
+                    Some(Commands::Key { debug, subcommand }) => {
+                        if let Some(enabled) = debug {
+                            log::info!("Key debug mode enabled: {}", enabled);
+                            self.settings.key_debug = enabled;
                         }
-                        println!("{}", chrono::Local::now().format(&fmt));
-                    } else {
-                        let ns = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_nanos();
-                        println!("{}", ns);
-                    }
-                }
-                Some(Commands::SetCursor {
-                    backend,
-                    interpolate,
-                    interpolate_easing,
-                    style,
-                    effect,
-                    effect_speed,
-                    effect_easing,
-                }) => {
-                    // set backend first since it affects the validity of other options
-                    if let Some(b) = backend {
-                        log::info!("Cursor backend set to {:?}", b);
-                        self.settings.cursor_config.backend = b;
-                        if b == cursor::CursorBackend::Terminal
-                            && (style.is_some()
-                                || effect.is_some()
-                                || effect_speed.is_some()
-                                || effect_easing.is_some())
-                        {
-                            return_usage_error!(
-                                "flyline set-cursor: --style, --effect, --effect-speed, and --effect-easing require --backend flyline"
-                            );
-                        }
-                    }
 
-                    // Helper closure: every flyline-only option emits the same error.
-                    // Returning a `bool` lets callers chain it with the option-presence check.
-                    let backend_is_terminal =
-                        self.settings.cursor_config.backend == cursor::CursorBackend::Terminal;
-
-                    if let Some(interp_str) = interpolate {
-                        if interp_str.eq_ignore_ascii_case("none") {
-                            log::info!("Cursor interpolation disabled");
-                            self.settings.cursor_config.interpolate = None;
+                        match subcommand {
+                            Some(KeySubcommands::Bind {
+                                key_sequence,
+                                context_and_action,
+                            }) => {
+                                let binding = actions::Binding::try_new_from_strs(
+                                    &key_sequence,
+                                    &context_and_action,
+                                );
+                                match binding {
+                                    Ok(binding) => {
+                                        log::info!(
+                                            "Registering key binding: {} -> {}",
+                                            key_sequence,
+                                            context_and_action
+                                        );
+                                        self.settings.keybindings.push(binding);
+                                    }
+                                    Err(e) => {
+                                        return_usage_error!(
+                                            "flyline key bind: failed to parse key sequence '{}' or context/action '{}': {}",
+                                            key_sequence,
+                                            context_and_action,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            Some(KeySubcommands::List { key_sequence }) => {
+                                actions::print_bindings_table(
+                                    &self.settings.keybindings,
+                                    key_sequence.as_deref(),
+                                    &self.settings.key_remappings,
+                                );
+                            }
+                            Some(KeySubcommands::Remap { from, to }) => {
+                                match actions::try_parse_remap(&from, &to) {
+                                    Ok(remap) => {
+                                        log::info!("Registering key remap: {} -> {}", from, to);
+                                        self.settings.key_remappings.push(remap);
+                                    }
+                                    Err(e) => {
+                                        return_usage_error!(
+                                            "flyline key remap: failed to parse remap '{}' -> '{}': {}",
+                                            from,
+                                            to,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                    None => {}
+                    Some(Commands::Log { subcommand }) => match subcommand {
+                        LogSubcommands::Dump => {
+                            if let Err(e) = logging::dump_logs_stdout() {
+                                eprintln!("Failed to dump logs: {}", e);
+                            }
+                        }
+                        LogSubcommands::SetLevel { level } => {
+                            let filter = log::LevelFilter::from(level);
+                            log::set_max_level(filter);
+                            log::info!("Log level set to {:?}", filter);
+                        }
+                        LogSubcommands::Stream { dest } => match logging::stream_logs(&dest) {
+                            Ok(()) => {
+                                if dest == "terminal" {
+                                    log::info!("Log streaming to terminal");
+                                } else {
+                                    println!("Flyline logs streaming to {}", dest);
+                                }
+                            }
+                            Err(e) => eprintln!("Failed to stream logs: {}", e),
+                        },
+                    },
+                    Some(Commands::RunTutorial { enabled }) => {
+                        let enabled = enabled.unwrap_or(true);
+                        log::info!("Run tutorial set to {}", enabled);
+                        self.settings.run_tutorial = enabled;
+                        if enabled {
+                            self.settings.tutorial_step = tutorial::TutorialStep::Welcome;
+                            // clear the terminal:
+                            if let Err(e) = crossterm::execute!(
+                                std::io::stdout(),
+                                crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+                                crossterm::cursor::MoveTo(0, 0)
+                            ) {
+                                log::warn!("Failed to clear terminal: {}", e);
+                            }
                         } else {
-                            match interp_str.parse::<f32>() {
-                                Ok(speed) if speed > 0.0 => {
-                                    log::info!("Cursor interpolation speed set to {}", speed);
-                                    self.settings.cursor_config.interpolate = Some(speed);
-                                }
-                                _ => {
-                                    return_usage_error!(
-                                        "flyline set-cursor: --interpolate must be a positive number or 'none' (got {:?})",
-                                        interp_str
-                                    );
-                                }
-                            }
+                            self.settings.tutorial_step = tutorial::TutorialStep::NotRunning;
                         }
                     }
-
-                    if let Some(easing) = interpolate_easing {
-                        log::info!("Cursor interpolation easing set to {:?}", easing);
-                        self.settings.cursor_config.interpolate_easing = easing;
-                    }
-
-                    if let Some(style_str) = style {
-                        if backend_is_terminal {
-                            return_usage_error!(
-                                "flyline set-cursor: --style requires --backend flyline"
-                            );
+                    Some(Commands::Editor {
+                        auto_close_chars,
+                        show_inline_history,
+                        select_with_mouse,
+                    }) => {
+                        if let Some(enabled) = auto_close_chars {
+                            log::info!("Auto closing char set to {}", enabled);
+                            self.settings.auto_close_chars = enabled;
                         }
-                        match palette::parse_cursor_style_str(&style_str) {
-                            Ok(s) => {
-                                log::info!("Cursor style set to {:?}", s);
-                                self.settings.cursor_config.style = s;
+                        if let Some(enabled) = show_inline_history {
+                            log::info!("Inline history suggestions set to {}", enabled);
+                            self.settings.show_inline_history = enabled;
+                        }
+                        if let Some(enabled) = select_with_mouse {
+                            log::info!("Select with mouse set to {}", enabled);
+                            self.settings.select_with_mouse = enabled;
+                        }
+                    }
+                    Some(Commands::CompSpecSynthesis { command }) => {
+                        match comp_spec_synthesis::synthesize_completion(&command, |args| {
+                            let prev_sigchld =
+                                unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+                            let ret = comp_spec_synthesis::run_help(&command, args);
+                            unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
+                            ret
+                        }) {
+                            Ok(parsed_cmd) => {
+                                let cmd_name = std::path::Path::new(&command)
+                                    .file_name()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or(&command)
+                                    .to_string();
+                                let mut clap_cmd =
+                                    comp_spec_synthesis::to_clap_command(&parsed_cmd);
+                                let mut output = Vec::new();
+                                generate(Shell::Bash, &mut clap_cmd, &cmd_name, &mut output);
+                                match std::str::from_utf8(&output) {
+                                    Ok(s) => print!("{}", s),
+                                    Err(e) => {
+                                        log::error!(
+                                            "flyline comp-spec-synthesis: failed to encode output: {}",
+                                            e
+                                        );
+                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
+                                    }
+                                }
                             }
                             Err(e) => {
-                                return_usage_error!(
-                                    "flyline set-cursor: invalid --style {:?}: {}",
-                                    style_str,
-                                    e
-                                );
+                                return_usage_error!("flyline comp-spec-synthesis: {}", e);
                             }
                         }
                     }
-
-                    if let Some(eff) = effect {
-                        if backend_is_terminal {
-                            return_usage_error!(
-                                "flyline set-cursor: --effect requires --backend flyline"
-                            );
-                        }
-                        if eff == cursor::CursorEffect::Fade
-                            && let CursorStyleConfig::Custom(style) =
-                                self.settings.cursor_config.style
-                            && !matches!(style.bg, Some(ratatui::style::Color::Rgb(..)))
-                        {
-                            return_usage_error!(
-                                "flyline set-cursor: --effect fade requires a custom style with an RGB background color (e.g. '#ff0000')"
-                            );
-                        }
-                        log::info!("Cursor effect set to {:?}", eff);
-                        self.settings.cursor_config.effect = eff;
-                    }
-
-                    if let Some(speed) = effect_speed {
-                        if backend_is_terminal {
-                            return_usage_error!(
-                                "flyline set-cursor: --effect-speed requires --backend flyline"
-                            );
-                        }
-                        if speed > 0.0 {
-                            log::info!("Cursor effect speed set to {}", speed);
-                            self.settings.cursor_config.effect_speed = speed;
+                    Some(Commands::Time { format }) => {
+                        if let Some(fmt) = format {
+                            let has_error = chrono::format::strftime::StrftimeItems::new(&fmt)
+                                .any(|item| matches!(item, chrono::format::Item::Error));
+                            if has_error {
+                                return_usage_error!(
+                                    "flyline time: invalid Chrono format string: {:?}",
+                                    fmt
+                                );
+                            }
+                            println!("{}", chrono::Local::now().format(&fmt));
                         } else {
-                            return_usage_error!(
-                                "flyline set-cursor: --effect-speed must be positive (got {})",
-                                speed
-                            );
+                            let ns = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_nanos();
+                            println!("{}", ns);
                         }
                     }
-
-                    if let Some(easing) = effect_easing {
-                        if backend_is_terminal {
-                            return_usage_error!(
-                                "flyline set-cursor: --effect-easing requires --backend flyline"
-                            );
+                    Some(Commands::SetCursor {
+                        backend,
+                        interpolate,
+                        interpolate_easing,
+                        style,
+                        effect,
+                        effect_speed,
+                        effect_easing,
+                    }) => {
+                        // set backend first since it affects the validity of other options
+                        if let Some(b) = backend {
+                            log::info!("Cursor backend set to {:?}", b);
+                            self.settings.cursor_config.backend = b;
+                            if b == cursor::CursorBackend::Terminal
+                                && (style.is_some()
+                                    || effect.is_some()
+                                    || effect_speed.is_some()
+                                    || effect_easing.is_some())
+                            {
+                                return_usage_error!(
+                                    "flyline set-cursor: --style, --effect, --effect-speed, and --effect-easing require --backend flyline"
+                                );
+                            }
                         }
-                        log::info!("Cursor effect easing set to {:?}", easing);
-                        self.settings.cursor_config.effect_easing = easing;
+
+                        // Helper closure: every flyline-only option emits the same error.
+                        // Returning a `bool` lets callers chain it with the option-presence check.
+                        let backend_is_terminal =
+                            self.settings.cursor_config.backend == cursor::CursorBackend::Terminal;
+
+                        if let Some(interp_str) = interpolate {
+                            if interp_str.eq_ignore_ascii_case("none") {
+                                log::info!("Cursor interpolation disabled");
+                                self.settings.cursor_config.interpolate = None;
+                            } else {
+                                match interp_str.parse::<f32>() {
+                                    Ok(speed) if speed > 0.0 => {
+                                        log::info!("Cursor interpolation speed set to {}", speed);
+                                        self.settings.cursor_config.interpolate = Some(speed);
+                                    }
+                                    _ => {
+                                        return_usage_error!(
+                                            "flyline set-cursor: --interpolate must be a positive number or 'none' (got {:?})",
+                                            interp_str
+                                        );
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(easing) = interpolate_easing {
+                            log::info!("Cursor interpolation easing set to {:?}", easing);
+                            self.settings.cursor_config.interpolate_easing = easing;
+                        }
+
+                        if let Some(style_str) = style {
+                            if backend_is_terminal {
+                                return_usage_error!(
+                                    "flyline set-cursor: --style requires --backend flyline"
+                                );
+                            }
+                            match palette::parse_cursor_style_str(&style_str) {
+                                Ok(s) => {
+                                    log::info!("Cursor style set to {:?}", s);
+                                    self.settings.cursor_config.style = s;
+                                }
+                                Err(e) => {
+                                    return_usage_error!(
+                                        "flyline set-cursor: invalid --style {:?}: {}",
+                                        style_str,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+
+                        if let Some(eff) = effect {
+                            if backend_is_terminal {
+                                return_usage_error!(
+                                    "flyline set-cursor: --effect requires --backend flyline"
+                                );
+                            }
+                            if eff == cursor::CursorEffect::Fade
+                                && let CursorStyleConfig::Custom(style) =
+                                    self.settings.cursor_config.style
+                                && !matches!(style.bg, Some(ratatui::style::Color::Rgb(..)))
+                            {
+                                return_usage_error!(
+                                    "flyline set-cursor: --effect fade requires a custom style with an RGB background color (e.g. '#ff0000')"
+                                );
+                            }
+                            log::info!("Cursor effect set to {:?}", eff);
+                            self.settings.cursor_config.effect = eff;
+                        }
+
+                        if let Some(speed) = effect_speed {
+                            if backend_is_terminal {
+                                return_usage_error!(
+                                    "flyline set-cursor: --effect-speed requires --backend flyline"
+                                );
+                            }
+                            if speed > 0.0 {
+                                log::info!("Cursor effect speed set to {}", speed);
+                                self.settings.cursor_config.effect_speed = speed;
+                            } else {
+                                return_usage_error!(
+                                    "flyline set-cursor: --effect-speed must be positive (got {})",
+                                    speed
+                                );
+                            }
+                        }
+
+                        if let Some(easing) = effect_easing {
+                            if backend_is_terminal {
+                                return_usage_error!(
+                                    "flyline set-cursor: --effect-easing requires --backend flyline"
+                                );
+                            }
+                            log::info!("Cursor effect easing set to {:?}", easing);
+                            self.settings.cursor_config.effect_easing = easing;
+                        }
+                    }
+                }
+
+                #[cfg(feature = "integration-tests")]
+                if parsed.run_tab_completion_tests {
+                    self.settings.run_tab_completion_tests = true;
+                    println!("Running tab completion tests...");
+                    let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+                    app::get_command(&mut self.settings);
+                    unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
+                    println!("Finished running tab completion tests.");
+                }
+
+                bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
+            }
+            Ok(_) => {
+                log::debug!("No arguments provided to flyline");
+                FlylineArgs::command().print_help().ok();
+                bash_symbols::BuiltinExitCode::Usage as c_int
+            }
+            Err(err) => {
+                match err.kind() {
+                    ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+                        // user asked for --help / --version
+                        err.print().unwrap();
+                        bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
+                    }
+                    ErrorKind::UnknownArgument
+                    | ErrorKind::InvalidValue
+                    | ErrorKind::InvalidSubcommand
+                    | ErrorKind::MissingRequiredArgument
+                    | ErrorKind::TooManyValues
+                    | ErrorKind::TooFewValues
+                    | ErrorKind::ValueValidation => {
+                        // user mistake → show error + usage
+                        err.print().unwrap();
+                        bash_symbols::BuiltinExitCode::Usage as c_int
+                    }
+                    _ => {
+                        // unexpected / internal error
+                        eprintln!("{err}");
+                        bash_symbols::BuiltinExitCode::Usage as c_int
                     }
                 }
             }
-
-            #[cfg(feature = "integration-tests")]
-            if parsed.run_tab_completion_tests {
-                self.settings.run_tab_completion_tests = true;
-                println!("Running tab completion tests...");
-                let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-                app::get_command(&mut self.settings);
-                unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
-                println!("Finished running tab completion tests.");
-            }
-
-            bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
         }
-        Ok(_) => {
-            log::debug!("No arguments provided to flyline");
-            FlylineArgs::command().print_help().ok();
-            bash_symbols::BuiltinExitCode::Usage as c_int
-        }
-        Err(err) => {
-            match err.kind() {
-                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
-                    // user asked for --help / --version
-                    err.print().unwrap();
-                    bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
-                }
-                ErrorKind::UnknownArgument
-                | ErrorKind::InvalidValue
-                | ErrorKind::InvalidSubcommand
-                | ErrorKind::MissingRequiredArgument
-                | ErrorKind::TooManyValues
-                | ErrorKind::TooFewValues
-                | ErrorKind::ValueValidation => {
-                    // user mistake → show error + usage
-                    err.print().unwrap();
-                    bash_symbols::BuiltinExitCode::Usage as c_int
-                }
-                _ => {
-                    // unexpected / internal error
-                    eprintln!("{err}");
-                    bash_symbols::BuiltinExitCode::Usage as c_int
-                }
-            }
-        }
-    }
-   
     }
 }

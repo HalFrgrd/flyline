@@ -10,8 +10,6 @@ use crate::palette::Palette;
 use crate::shell_integration;
 use crate::{bash_funcs, settings};
 
-
-
 /// Large block-art logo displayed on the welcome screen.
 const LOGO_LINES: &[&str] = &[
     "",
@@ -351,17 +349,17 @@ pub fn generate_tutorial_text(
                 text_style,
             )));
             lines.push(empty());
-            lines.push(TaggedLine::from(vec![
-                ts_text("Disable mouse capture: click above the viewport or scroll."),
-            ]));
+            lines.push(TaggedLine::from(vec![ts_text(
+                "Disable mouse capture: click above the viewport or scroll.",
+            )]));
             lines.push(TaggedLine::from(vec![
                 ts_text("Toggle with "),
                 ts_key("Escape"),
                 ts_text("."),
             ]));
-            lines.push(TaggedLine::from(vec![
-                ts_text("Typing enables mouse capture."),
-            ]));
+            lines.push(TaggedLine::from(vec![ts_text(
+                "Typing enables mouse capture.",
+            )]));
 
             lines.push(empty());
             lines.push(tl(Span::styled(

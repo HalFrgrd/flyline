@@ -700,7 +700,7 @@ impl Action {
                     MouseMode::Simple | MouseMode::Smart
                 ) {
                     log::info!("Toggling mouse state due to toggle_mouse action");
-                    app.toggle_mouse_state("toggle_mouse action");
+                    app.toggle_mouse_state();
                 }
             }
             Action::Exit => {
@@ -2754,8 +2754,6 @@ impl<'a> App<'a> {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         log::trace!("Key event: {:?}", key);
 
-        self.last_keypress_action = None; // reset last keypress action, to be set by specific actions as needed
-
         let key = apply_remappings(key, &self.settings.key_remappings);
         log::trace!("Key event after remapping: {:?}", key);
 
@@ -2781,15 +2779,24 @@ impl<'a> App<'a> {
                 break;
             }
         }
+
         self.last_key_debug = Some((
             display_key_event(key),
             matched
                 .map(|action| action.as_str().to_string())
                 .unwrap_or_else(|| "none".to_string()),
         ));
+
         if let Some(action) = matched {
             log::trace!("Matched binding: {}", action.as_str());
             action.run(self, key);
+        }
+
+        if matched.is_some_and(|action| action != Action::ToggleMouse) {
+            if self.mouse_state.is_disabled() {
+                log::debug!("Reenabling mouse due to key event");
+                self.mouse_state.enable("Keypress that wasnt mouse related");
+            }
         }
 
         self.on_possible_buffer_change();
