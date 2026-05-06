@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::vec;
+
 use crate::active_suggestions::{
     ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
     UnprocessedSuggestion,
@@ -456,12 +459,18 @@ fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
         return builder;
     }
 
-    let mut res = bash_funcs::get_first_word_completions(command);
+    let mut res = vec![];
+    let mut seen: HashSet<String> = HashSet::new();
+    for poss_completion in bash_funcs::get_possible_command_words() {
+        if poss_completion.starts_with(command) && seen.insert(poss_completion.clone()) {
+            res.push(poss_completion);
+        }
+    }
+
     if res.is_empty() {
         return builder;
     }
 
-    // TODO: could prioritize based on frequency of use
     res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
     res.dedup();
     builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
@@ -485,7 +494,20 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
         return builder;
     }
 
-    let res = bash_funcs::get_fuzzy_first_word_completions(command);
+    let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+    let mut scored = vec![];
+
+    let mut seen: HashSet<String> = HashSet::new();
+    for poss_completion in bash_funcs::get_possible_command_words() {
+        if seen.insert(poss_completion.clone())
+            && let Some(score) = matcher.fuzzy_match(&poss_completion, command)
+        {
+            scored.push((score, poss_completion));
+        }
+    }
+
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    let res = scored.into_iter().map(|(_, s)| s).collect();
     builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
     builder
 }

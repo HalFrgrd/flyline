@@ -6,8 +6,6 @@ use anyhow::Result;
 use libc::{c_char, c_int};
 use lscolors::LsColors;
 use ratatui::style::{Color, Modifier, Style};
-use skim::fuzzy_matcher::FuzzyMatcher;
-use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::Read;
@@ -1065,69 +1063,22 @@ pub fn style_for_path(path: &Path) -> Option<Style> {
 }
 
 /// Get all potential first word completions (aliases, reserved words, functions, builtins, executables)
-pub fn get_first_word_completions(command: &str) -> Vec<String> {
-    let mut res = Vec::new();
-    let mut seen = HashSet::new();
-
-    if command.is_empty() {
-        return res;
-    }
-
+pub fn get_possible_command_words() -> impl Iterator<Item = String> {
     let aliases = get_cached_aliases();
     let reserved_words = get_cached_reserved_words();
     let shell_functions = get_cached_shell_functions();
     let builtins = get_cached_builtins();
     let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
     exe_guard.update_cache();
+    let executables: Vec<String> = exe_guard.iter_names().cloned().collect();
+    drop(exe_guard);
 
-    for poss_completion in aliases
-        .iter()
-        .chain(reserved_words.iter())
-        .chain(shell_functions.iter())
-        .chain(builtins.iter())
-        .chain(exe_guard.iter_names())
-    {
-        if poss_completion.starts_with(command) && seen.insert(poss_completion.as_str()) {
-            res.push(poss_completion.to_string());
-        }
-    }
-
-    res
-}
-
-/// Get fuzzy first word completions using ArinaeMatcher for when no exact prefix match is found
-pub fn get_fuzzy_first_word_completions(command: &str) -> Vec<String> {
-    if command.is_empty() {
-        return vec![];
-    }
-
-    let aliases = get_cached_aliases();
-    let reserved_words = get_cached_reserved_words();
-    let shell_functions = get_cached_shell_functions();
-    let builtins = get_cached_builtins();
-    let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
-    exe_guard.update_cache();
-
-    let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
-
-    // Deduplicate across sources while preserving first-occurrence order, then score.
-    let mut seen = HashSet::new();
-    let mut scored: Vec<(i64, String)> = aliases
-        .iter()
-        .chain(reserved_words.iter())
-        .chain(shell_functions.iter())
-        .chain(builtins.iter())
-        .chain(exe_guard.iter_names())
-        .filter(|c| seen.insert(c.as_str()))
-        .filter_map(|poss_completion| {
-            matcher
-                .fuzzy_match(poss_completion, command)
-                .map(|score| (score, poss_completion.to_string()))
-        })
-        .collect();
-
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
-    scored.into_iter().map(|(_, s)| s).collect()
+    aliases
+        .into_iter()
+        .chain(reserved_words)
+        .chain(shell_functions)
+        .chain(builtins)
+        .chain(executables)
 }
 
 /// Convert an `lscolors::Color` to a `ratatui::style::Color`.
