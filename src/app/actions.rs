@@ -64,7 +64,7 @@ enum ContextVar {
     #[strum(message = "The command buffer starts with an agent mode prefix")]
     BufferHasAgentModePrefix,
     #[strum(message = "The content mode is normal editing (no overlay is active)")]
-    NormalEditing,
+    EditingBufferMode,
 }
 
 impl ContextVar {
@@ -126,7 +126,7 @@ impl ContextVar {
             ContextVar::BufferHasAgentModePrefix => {
                 app.buffer_starts_with_agent_command_prefix().is_some()
             }
-            ContextVar::NormalEditing => matches!(app.content_mode, ContentMode::Normal),
+            ContextVar::EditingBufferMode => matches!(app.content_mode, ContentMode::Normal),
         }
     }
 }
@@ -1869,7 +1869,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            ContextVar::BufferHasAgentModePrefix + ContextVar::NormalEditing,
+            ContextVar::BufferHasAgentModePrefix + ContextVar::EditingBufferMode,
             Action::RunAgentMode,
         ),
         Binding::new(
