@@ -159,14 +159,16 @@ impl<'a> CompletionContext<'a> {
             .map(str::len)
             .unwrap_or_default();
 
-        let len_delta = alias_def.len() as isize - command_word_len as isize;
         let expanded_context = alias_def.to_string() + &context[command_word_len..];
-        let cursor_byte_pos = self.cursor_byte_pos.saturating_add_signed(len_delta);
+        let cursor_byte_pos =
+            Self::adjust_after_alias_expansion(self.cursor_byte_pos, command_word_len, alias_def);
         let word_under_cursor = SubString::from_parts(
             self.word_under_cursor.as_ref(),
-            self.word_under_cursor
-                .start
-                .saturating_add_signed(len_delta),
+            Self::adjust_after_alias_expansion(
+                self.word_under_cursor.start,
+                command_word_len,
+                alias_def,
+            ),
         );
         let context = SubString::from_parts(expanded_context, self.context.start);
         let comp_types = Self::comp_types_for(&context, cursor_byte_pos, &word_under_cursor);
@@ -177,6 +179,14 @@ impl<'a> CompletionContext<'a> {
             cursor_byte_pos,
             word_under_cursor,
             comp_types,
+        }
+    }
+
+    fn adjust_after_alias_expansion(pos: usize, command_word_len: usize, alias_def: &str) -> usize {
+        if alias_def.len() >= command_word_len {
+            pos.saturating_add(alias_def.len() - command_word_len)
+        } else {
+            pos.saturating_sub(command_word_len - alias_def.len())
         }
     }
 }
@@ -387,6 +397,10 @@ mod tests {
         assert_eq!(
             expanded.word_under_cursor_end_context_relative(),
             "fl_comp_util --nosort ban".len()
+        );
+        assert_eq!(
+            expanded.word_under_cursor.start,
+            "fl_comp_util --nosort ".len()
         );
         assert_eq!(expanded.word_under_cursor.as_ref(), "ban");
         assert_eq!(
