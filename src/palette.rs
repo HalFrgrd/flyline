@@ -123,7 +123,7 @@ fn parse_color_to_ratatui(c: parse_style::Color) -> ratatui::style::Color {
 /// All individually-configurable palette slots.
 ///
 /// The kebab-case name of each variant (e.g. `"recognised-command"`) is used
-/// in the `flyline set-colour --style NAME=STYLE` command-line interface.
+/// in the `flyline set-style NAME=STYLE` command-line interface.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, EnumIter, EnumMessage, strum::Display, strum::EnumString,
 )]

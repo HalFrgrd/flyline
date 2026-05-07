@@ -1,6 +1,6 @@
 # Docker building and testing
 
-The goal is to allow the same builds and tests to run locally, with `cargo`, and in GitHub Actions.
+The goal is to allow the same builds and tests to run locally with `cargo` and in GitHub Actions.
 
 For instance, we can easily build the library locally targeting an old glibc version with: `docker buildx bake -f docker/docker-bake.hcl extract-release-artifact`.
 
