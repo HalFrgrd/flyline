@@ -309,6 +309,13 @@ impl DParser {
             } else {
                 false
             };
+            let background_is_part_of_redirection = token.kind == TokenKind::Background
+                && previous_token.as_ref().is_some_and(|token| {
+                    matches!(
+                        token.token.kind,
+                        TokenKind::Great | TokenKind::Less | TokenKind::DGreat
+                    )
+                });
 
             let token_inclusively_contains_cursor = cursor_byte_pos.is_some_and(|pos| {
                 self.tokens[idx]
@@ -503,12 +510,17 @@ impl DParser {
                 | TokenKind::Or
                 | TokenKind::Pipe
                 | TokenKind::Semicolon
-                | TokenKind::Background
                 | TokenKind::DoubleSemicolon
                 | TokenKind::Do
                 | TokenKind::Then
                 | TokenKind::Elif
                 | TokenKind::Else => {
+                    if stop_parsing_at_command_boundary {
+                        break;
+                    }
+                    self.current_command_range = None;
+                }
+                TokenKind::Background if !background_is_part_of_redirection => {
                     if stop_parsing_at_command_boundary {
                         break;
                     }
@@ -1178,6 +1190,36 @@ mod tests {
         let mut parser = DParser::from(input);
         parser.walk_to_cursor(input.len());
         assert_eq!(parser.get_current_command_str(), r#"echo "wörld""#);
+    }
+
+    #[test]
+    fn test_redirection_dup_does_not_split_command_context() {
+        let input = "foo 2>&1 bar";
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(input.len());
+        assert_eq!(parser.get_current_command_str(), input);
+    }
+
+    #[test]
+    fn test_redirection_dup_keeps_following_word_as_argument() {
+        let input = "foo 2>&1 bar";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        assert_eq!(tokens[0].token.value, "foo");
+        assert_eq!(tokens[0].annotations.command_word, Some("foo".to_string()));
+
+        let bar_idx = tokens.iter().position(|t| t.token.value == "bar").unwrap();
+        assert_eq!(tokens[bar_idx].annotations.command_word, None);
+    }
+
+    #[test]
+    fn test_input_redirection_dup_does_not_split_command_context() {
+        let input = "foo 0<&1 bar";
+        let mut parser = DParser::from(input);
+        parser.walk_to_cursor(input.len());
+        assert_eq!(parser.get_current_command_str(), input);
     }
 
     #[test]
