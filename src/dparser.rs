@@ -1211,7 +1211,7 @@ mod tests {
         assert_eq!(tokens[0].annotations.command_word, Some("foo".to_string()));
 
         let bar_idx = tokens.iter().position(|t| t.token.value == "bar").unwrap();
-        assert_eq!(tokens[bar_idx].annotations.command_word, None);
+        assert_eq!(tokens[bar_idx].annotations, Annotations::default());
     }
 
     #[test]
