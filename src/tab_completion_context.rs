@@ -171,14 +171,13 @@ impl<'a> CompletionContext<'a> {
             ),
         );
         let context = SubString::from_parts(expanded_context, self.context.start);
-        let comp_types = Self::comp_types_for(&context, cursor_byte_pos, &word_under_cursor);
 
         CompletionContext {
             buffer: Cow::Owned(self.buffer.clone().into_owned()),
             context,
             cursor_byte_pos,
             word_under_cursor,
-            comp_types,
+            comp_types: self.comp_types.clone(),
         }
     }
 
@@ -406,7 +405,7 @@ mod tests {
         assert_eq!(
             expanded.comp_types.first().unwrap(),
             &CompType::CommandComp {
-                command_word: "fl_comp_util".to_string()
+                command_word: "fl_comp_alias".to_string()
             }
         );
     }

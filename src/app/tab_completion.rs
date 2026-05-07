@@ -104,28 +104,32 @@ pub(crate) fn gen_completions_internal(
                     .as_deref()
                     .filter(|alias| !alias.is_empty())
                     .unwrap_or(initial_command_word);
-                let completion_context = completion_context.with_expanded_alias(alias_def);
-                let command_word = alias_def
+                let alias_expanded_completion_context =
+                    completion_context.with_expanded_alias(alias_def);
+                let alias_expanded_command_word = alias_def
                     .split_whitespace()
                     .next()
                     .unwrap_or(alias_def)
                     .to_string();
-                let full_command = completion_context.context.as_ref();
-                let cursor_byte_pos = completion_context.cursor_byte_pos_context_relative();
-                let word_under_cursor = &completion_context.word_under_cursor;
-                let word_under_cursor_end =
-                    completion_context.word_under_cursor_end_context_relative();
+                let alias_expanded_full_command =
+                    alias_expanded_completion_context.context.as_ref();
+                let alias_expanded_cursor_byte_pos =
+                    alias_expanded_completion_context.cursor_byte_pos_context_relative();
+                let alias_expanded_word_under_cursor =
+                    alias_expanded_completion_context.word_under_cursor.as_ref();
+                let alias_expanded_word_under_cursor_end =
+                    alias_expanded_completion_context.word_under_cursor_end_context_relative();
 
-                if command_word == "flyline" {
+                if alias_expanded_command_word == "flyline" {
                     // Flyline's own subcommand/flag completions are produced by
                     // clap_complete and are already escaped/finalized. Skip the
                     // bash post-processing pipeline entirely and build
                     // ProcssedSuggestions directly so descriptions (the help text
                     // attached to each candidate) are preserved as-is.
                     match complete_flyline_args(
-                        &full_command,
-                        word_under_cursor.as_ref(),
-                        cursor_byte_pos,
+                        alias_expanded_full_command,
+                        alias_expanded_word_under_cursor,
+                        alias_expanded_cursor_byte_pos,
                     ) {
                         Ok(candidates) if !candidates.is_empty() => {
                             let quote_type =
@@ -179,7 +183,7 @@ pub(crate) fn gen_completions_internal(
                         Ok(_) => {
                             log::debug!(
                                 "No flyline completions found for command '{}'",
-                                full_command
+                                alias_expanded_full_command
                             );
                         }
                         Err(e) => {
@@ -188,18 +192,18 @@ pub(crate) fn gen_completions_internal(
                     }
                 } else {
                     let poss_completions = bash_funcs::run_programmable_completions(
-                        &full_command,
-                        &command_word,
-                        word_under_cursor.as_ref(),
-                        cursor_byte_pos,
-                        word_under_cursor_end,
+                        alias_expanded_full_command,
+                        &alias_expanded_command_word,
+                        alias_expanded_word_under_cursor,
+                        alias_expanded_cursor_byte_pos,
+                        alias_expanded_word_under_cursor_end,
                     );
 
                     match poss_completions {
                         Ok(comp_result) if !comp_result.completions.is_empty() => {
                             log::debug!(
                                 "Programmable completion results for command: {}",
-                                full_command
+                                alias_expanded_full_command
                             );
                             log::debug!("Completions: {:#?}", comp_result);
 
