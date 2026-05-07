@@ -15,6 +15,12 @@ pub enum CompType {
         // "git commi asdf" with cursor just after com
         command_word: String, // "git"
     },
+    FuzzyCommandComp {
+        // Fallback after CommandComp: re-run programmable completion with just
+        // the first character of the word under cursor as the prefix and
+        // fuzzy-match the candidates against the full word under cursor.
+        command_word: String,
+    },
     EnvVariable,            // the env variable under the cursor, with the leading $
     TildeExpansion,         // the tilde under the cursor, e.g. "~us|erna"
     GlobExpansion,          // the glob pattern under the cursor, e.g. "*.rs|t"
@@ -113,7 +119,10 @@ impl<'a> CompletionContext<'a> {
                 .unwrap_or("")
                 .to_string();
 
-            comp_types.push(CompType::CommandComp { command_word });
+            comp_types.push(CompType::CommandComp {
+                command_word: command_word.clone(),
+            });
+            comp_types.push(CompType::FuzzyCommandComp { command_word });
         }
 
         if (wuc.starts_with('$') || wuc.starts_with("\"$")) && !wuc.contains("/") {
@@ -186,6 +195,55 @@ impl<'a> CompletionContext<'a> {
             pos.saturating_add(alias_def.len() - command_word_len)
         } else {
             pos.saturating_sub(command_word_len - alias_def.len())
+        }
+    }
+
+    /// Returns a new `CompletionContext` with the word under the cursor
+    /// replaced by `new_wuc`. The context is updated in-place (the bytes of
+    /// the old wuc inside `context` are swapped for `new_wuc`), the wuc's
+    /// `start` is preserved, and the cursor position is shifted by the
+    /// length delta if it was at or after the end of the old wuc — otherwise
+    /// the cursor is placed at the end of the new wuc.
+    ///
+    /// `comp_types` is intentionally not recomputed; callers are expected to
+    /// use this for short-lived rewrites (e.g. running bash completion
+    /// against a broader prefix) where the original comp-type pipeline still
+    /// applies.
+    pub fn with_wuc_replaced(&self, new_wuc: &str) -> CompletionContext<'static> {
+        let context = self.context.as_ref();
+        let wuc_start_in_context = self
+            .word_under_cursor
+            .start
+            .saturating_sub(self.context.start);
+        let wuc_end_in_context = wuc_start_in_context + self.word_under_cursor.as_ref().len();
+
+        let mut new_context_str = String::with_capacity(
+            context.len() - self.word_under_cursor.as_ref().len() + new_wuc.len(),
+        );
+        new_context_str.push_str(&context[..wuc_start_in_context]);
+        new_context_str.push_str(new_wuc);
+        new_context_str.push_str(&context[wuc_end_in_context..]);
+
+        let new_context = SubString::from_parts(new_context_str, self.context.start);
+        let new_word_under_cursor =
+            SubString::from_parts(new_wuc.to_string(), self.word_under_cursor.start);
+
+        let old_wuc_end_abs = self.word_under_cursor.end();
+        let new_wuc_end_abs = new_word_under_cursor.end();
+        let cursor_byte_pos = if self.cursor_byte_pos >= old_wuc_end_abs {
+            new_wuc_end_abs + (self.cursor_byte_pos - old_wuc_end_abs)
+        } else if self.cursor_byte_pos <= self.word_under_cursor.start {
+            self.cursor_byte_pos
+        } else {
+            new_wuc_end_abs
+        };
+
+        CompletionContext {
+            buffer: Cow::Owned(self.buffer.clone().into_owned()),
+            context: new_context,
+            cursor_byte_pos,
+            word_under_cursor: new_word_under_cursor,
+            comp_types: self.comp_types.clone(),
         }
     }
 }
@@ -443,6 +501,88 @@ mod tests {
     }
 
     #[test]
+    fn test_with_wuc_replaced_basic() {
+        let res = run_inline(r#"git com█mit"#);
+        assert_eq!(res.word_under_cursor.as_ref(), "commit");
+
+        let replaced = res.with_wuc_replaced("c");
+
+        assert_eq!(replaced.context, "git c");
+        assert_eq!(replaced.context.start, res.context.start);
+        assert_eq!(replaced.word_under_cursor.as_ref(), "c");
+        assert_eq!(
+            replaced.word_under_cursor.start,
+            res.word_under_cursor.start
+        );
+        // cursor was inside the old wuc, so it gets clamped to the end of the new wuc
+        assert_eq!(replaced.cursor_byte_pos_context_relative(), "git c".len());
+        assert_eq!(
+            replaced.word_under_cursor_end_context_relative(),
+            "git c".len()
+        );
+        // comp_types are preserved verbatim
+        assert_eq!(replaced.comp_types, res.comp_types);
+    }
+
+    #[test]
+    fn test_with_wuc_replaced_cursor_after_wuc_shifts_by_delta() {
+        let res = run_inline(r#"git commit█ -m"#);
+        assert_eq!(res.word_under_cursor.as_ref(), "commit");
+
+        let replaced = res.with_wuc_replaced("c");
+
+        assert_eq!(replaced.context, "git c -m");
+        assert_eq!(replaced.word_under_cursor.as_ref(), "c");
+        // cursor was at end of old wuc; should now be at end of new wuc
+        assert_eq!(replaced.cursor_byte_pos_context_relative(), "git c".len());
+    }
+
+    #[test]
+    fn test_with_wuc_replaced_grows_wuc() {
+        let res = run_inline(r#"git c█ -m"#);
+        assert_eq!(res.word_under_cursor.as_ref(), "c");
+        let cursor_offset_past_wuc = res.cursor_byte_pos - res.word_under_cursor.end();
+
+        let replaced = res.with_wuc_replaced("commit");
+
+        assert_eq!(replaced.context, "git commit -m");
+        assert_eq!(replaced.word_under_cursor.as_ref(), "commit");
+        assert_eq!(
+            replaced.word_under_cursor.start,
+            res.word_under_cursor.start
+        );
+        // cursor was past the wuc; preserves its offset past the (now longer) wuc
+        assert_eq!(
+            replaced.cursor_byte_pos - replaced.word_under_cursor.end(),
+            cursor_offset_past_wuc
+        );
+    }
+
+    #[test]
+    fn test_with_wuc_replaced_preserves_context_start() {
+        let res = run_inline(r#"echo ok; git com█mit"#);
+        let replaced = res.with_wuc_replaced("c");
+
+        assert_eq!(replaced.context.start, res.context.start);
+        assert_eq!(replaced.context, "git c");
+        assert_eq!(
+            replaced.word_under_cursor.start,
+            res.word_under_cursor.start
+        );
+    }
+
+    #[test]
+    fn test_with_wuc_replaced_does_not_update_comp_types() {
+        // Even though the new wuc looks like it would change which comp_types
+        // are produced (e.g. "$" would normally trigger EnvVariable), the
+        // method intentionally does not recompute comp_types.
+        let res = run_inline(r#"git com█mit"#);
+        let original_comp_types = res.comp_types.clone();
+        let replaced = res.with_wuc_replaced("$");
+        assert_eq!(replaced.comp_types, original_comp_types);
+    }
+
+    #[test]
     fn test_with_assignment_basic() {
         let res = run_inline(r#"A=b █ls -la"#);
         assert_eq!(res.context, "ls -la");
@@ -559,6 +699,9 @@ mod tests {
             res.comp_types,
             vec![
                 CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
@@ -878,6 +1021,9 @@ mod tests {
             res.comp_types,
             vec![
                 CompType::CommandComp {
+                    command_word: "diff".to_string()
+                },
+                CompType::FuzzyCommandComp {
                     command_word: "diff".to_string()
                 },
                 CompType::FilenameExpansion,
@@ -1325,6 +1471,9 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "cd".to_string()
                 },
+                CompType::FuzzyCommandComp {
+                    command_word: "cd".to_string()
+                },
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -1340,6 +1489,9 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
@@ -1359,6 +1511,9 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FuzzyCommandComp {
+                    command_word: "echo".to_string()
+                },
                 CompType::EnvVariable
             ]
         );
@@ -1375,6 +1530,9 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FuzzyCommandComp {
+                    command_word: "echo".to_string()
+                },
                 CompType::EnvVariable
             ]
         );
@@ -1389,6 +1547,9 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
@@ -1408,6 +1569,9 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FuzzyCommandComp {
+                    command_word: "echo".to_string()
+                },
                 CompType::EnvVariable
             ]
         );
@@ -1422,6 +1586,9 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::EnvVariable
@@ -1461,6 +1628,9 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "ll".to_string()
                 },
+                CompType::FuzzyCommandComp {
+                    command_word: "ll".to_string()
+                },
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -1478,6 +1648,9 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FuzzyCommandComp {
+                    command_word: "echo".to_string()
+                },
                 CompType::GlobExpansion
             ]
         );
@@ -1489,6 +1662,9 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::GlobExpansion
@@ -1507,6 +1683,9 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FuzzyCommandComp {
+                    command_word: "echo".to_string()
+                },
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -1519,6 +1698,9 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
+                    command_word: "echo".to_string()
+                },
+                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
