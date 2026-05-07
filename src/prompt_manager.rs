@@ -904,7 +904,11 @@ fn find_cwd_in_span(text: &str, cwd: &str, home: Option<&str>) -> Option<Range<u
 ///
 /// If no CWD-like substring is found the original span is returned unchanged
 /// as a single `Static` segment.
-fn split_static_span_by_cwd(span: Span<'static>, cwd: &str, home: Option<&str>) -> Vec<PromptSegment> {
+fn split_static_span_by_cwd(
+    span: Span<'static>,
+    cwd: &str,
+    home: Option<&str>,
+) -> Vec<PromptSegment> {
     let text = span.content.as_ref().to_owned();
     let style = span.style;
 
