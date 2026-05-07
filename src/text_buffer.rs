@@ -2044,6 +2044,10 @@ impl SubString {
         })
     }
 
+    pub fn from_parts(s: impl Into<String>, start: usize) -> Self {
+        Self { s: s.into(), start }
+    }
+
     pub fn end(&self) -> usize {
         self.start + self.s.len()
     }
@@ -2057,5 +2061,11 @@ impl SubString {
 impl AsRef<str> for SubString {
     fn as_ref(&self) -> &str {
         &self.s
+    }
+}
+
+impl PartialEq<&str> for SubString {
+    fn eq(&self, other: &&str) -> bool {
+        self.s == *other
     }
 }

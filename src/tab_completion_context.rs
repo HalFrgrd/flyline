@@ -1,8 +1,5 @@
 use flash::lexer::TokenKind;
-use std::{
-    borrow::{Cow, ToOwned},
-    vec,
-};
+use std::{borrow::Cow, vec};
 
 use crate::{
     dparser::{DParser, ToInclusiveRange},
@@ -34,8 +31,8 @@ impl CompType {
 #[derive(Debug, Eq, PartialEq)]
 pub struct CompletionContext<'a> {
     pub buffer: Cow<'a, str>,
-    pub context: Cow<'a, str>,
-    pub context_until_cursor: Cow<'a, str>,
+    pub context: SubString,
+    pub cursor_byte_pos: usize,
     pub word_under_cursor: SubString,
     pub comp_types: Vec<CompType>,
 }
@@ -43,17 +40,54 @@ pub struct CompletionContext<'a> {
 impl<'a> CompletionContext<'a> {
     pub fn new(
         buffer: &'a str,
-        context_until_cursor: &'a str,
+        cursor_byte_pos: usize,
         context: &'a str,
         word_under_cursor: SubString,
     ) -> Self {
         if cfg!(test) {
             dbg!(&buffer);
-            dbg!(&context_until_cursor);
+            dbg!(&cursor_byte_pos);
             dbg!(&context);
             dbg!(&word_under_cursor);
         }
 
+        let context = SubString::new(buffer, context).unwrap();
+        let comp_types = Self::comp_types_for(&context, cursor_byte_pos, &word_under_cursor);
+
+        CompletionContext {
+            buffer: Cow::Borrowed(buffer),
+            context,
+            cursor_byte_pos,
+            word_under_cursor,
+            comp_types,
+        }
+    }
+
+    pub fn dummy(buffer: &'a str) -> Self {
+        CompletionContext {
+            buffer: Cow::Borrowed(buffer),
+            context: SubString::new(buffer, &buffer[0..0]).unwrap(),
+            cursor_byte_pos: 0,
+            word_under_cursor: SubString::new(buffer, &buffer[0..0]).unwrap(),
+            comp_types: vec![CompType::FirstWord, CompType::FuzzyFirstWord],
+        }
+    }
+
+    pub fn into_owned(self) -> CompletionContext<'static> {
+        CompletionContext {
+            buffer: Cow::Owned(self.buffer.into_owned()),
+            context: self.context,
+            cursor_byte_pos: self.cursor_byte_pos,
+            word_under_cursor: self.word_under_cursor.to_owned(),
+            comp_types: self.comp_types.clone(),
+        }
+    }
+
+    fn comp_types_for(
+        context: &SubString,
+        cursor_byte_pos: usize,
+        word_under_cursor: &SubString,
+    ) -> Vec<CompType> {
         let wuc = word_under_cursor.as_ref();
         let mut comp_types = vec![];
 
@@ -65,11 +99,19 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::TildeExpansion);
         }
 
-        if context.trim().is_empty() || !context_until_cursor.chars().any(|c| c.is_whitespace()) {
+        let context_until_cursor = Self::context_until_cursor_for(context, cursor_byte_pos);
+        if context.as_ref().trim().is_empty()
+            || !context_until_cursor.chars().any(|c| c.is_whitespace())
+        {
             comp_types.push(CompType::FirstWord);
             comp_types.push(CompType::FuzzyFirstWord);
         } else {
-            let command_word = context.split_whitespace().next().unwrap_or("").to_string();
+            let command_word = context
+                .as_ref()
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
 
             comp_types.push(CompType::CommandComp { command_word });
         }
@@ -85,32 +127,52 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::FuzzyFilenameExpansion);
         }
 
+        comp_types
+    }
+
+    fn context_until_cursor_for(context: &SubString, cursor_byte_pos: usize) -> &str {
+        let end = cursor_byte_pos
+            .saturating_sub(context.start)
+            .min(context.as_ref().len());
+        &context.as_ref()[..end]
+    }
+
+    pub fn context_until_cursor(&self) -> &str {
+        Self::context_until_cursor_for(&self.context, self.cursor_byte_pos)
+    }
+
+    pub fn cursor_byte_pos_context_relative(&self) -> usize {
+        self.cursor_byte_pos.saturating_sub(self.context.start)
+    }
+
+    pub fn word_under_cursor_end_context_relative(&self) -> usize {
+        self.word_under_cursor.end().saturating_sub(self.context.start)
+    }
+
+    pub fn with_expanded_alias(&self, alias_def: &str) -> CompletionContext<'static> {
+        let context = self.context.as_ref();
+        let command_word_len = context
+            .split_whitespace()
+            .next()
+            .map(str::len)
+            .unwrap_or_default();
+
+        let len_delta = alias_def.len() as isize - command_word_len as isize;
+        let expanded_context = alias_def.to_string() + &context[command_word_len..];
+        let cursor_byte_pos = self.cursor_byte_pos.saturating_add_signed(len_delta);
+        let word_under_cursor = SubString::from_parts(
+            self.word_under_cursor.as_ref(),
+            self.word_under_cursor.start.saturating_add_signed(len_delta),
+        );
+        let context = SubString::from_parts(expanded_context, self.context.start);
+        let comp_types = Self::comp_types_for(&context, cursor_byte_pos, &word_under_cursor);
+
         CompletionContext {
-            buffer: Cow::Borrowed(buffer),
-            context_until_cursor: Cow::Borrowed(context_until_cursor),
-            context: Cow::Borrowed(context),
+            buffer: Cow::Owned(self.buffer.clone().into_owned()),
+            context,
+            cursor_byte_pos,
             word_under_cursor,
             comp_types,
-        }
-    }
-
-    pub fn dummy(buffer: &'a str) -> Self {
-        CompletionContext {
-            buffer: Cow::Borrowed(buffer),
-            context: Cow::Borrowed(""),
-            context_until_cursor: Cow::Borrowed(""),
-            word_under_cursor: SubString::new(buffer, &buffer[0..0]).unwrap(),
-            comp_types: vec![CompType::FirstWord, CompType::FuzzyFirstWord],
-        }
-    }
-
-    pub fn into_owned(self) -> CompletionContext<'static> {
-        CompletionContext {
-            buffer: Cow::Owned(self.buffer.into_owned()),
-            context: Cow::Owned(self.context.into_owned()),
-            context_until_cursor: Cow::Owned(self.context_until_cursor.into_owned()),
-            word_under_cursor: self.word_under_cursor.to_owned(),
-            comp_types: self.comp_types.clone(),
         }
     }
 }
@@ -237,12 +299,11 @@ pub fn get_completion_context<'a>(
             ..context_tokens.last().unwrap().token.byte_range().end
     };
 
-    let context_until_cursor = &buffer[comp_context_range.start..cursor_byte_pos];
     let context = &buffer[comp_context_range];
 
     let word_under_cursor = SubString::new(buffer, &buffer[word_under_cursor_range]).unwrap();
 
-    CompletionContext::new(buffer, context_until_cursor, context, word_under_cursor)
+    CompletionContext::new(buffer, cursor_byte_pos, context, word_under_cursor)
 }
 
 #[cfg(test)]
@@ -266,7 +327,7 @@ mod tests {
     fn test_command_extraction() {
         let res = run_inline(r#"git com█mi café"#);
 
-        assert_eq!(res.context_until_cursor, "git com");
+        assert_eq!(res.context_until_cursor(), "git com");
         assert_eq!(res.context, "git commi café");
 
         match res.comp_types.first().unwrap() {
@@ -281,7 +342,7 @@ mod tests {
     #[test]
     fn test_command_extraction_at_end() {
         let res = run_inline(r#"cd a█ b"#);
-        assert_eq!(res.context_until_cursor, "cd a");
+        assert_eq!(res.context_until_cursor(), "cd a");
         assert_eq!(res.context, "cd a b");
 
         match res.comp_types.first().unwrap() {
@@ -296,7 +357,7 @@ mod tests {
     #[test]
     fn test_command_extraction_at_end_2() {
         let res = run_inline(r#"cd  █"#);
-        assert_eq!(res.context_until_cursor, "cd  ");
+        assert_eq!(res.context_until_cursor(), "cd  ");
         assert_eq!(res.context, "cd  ");
 
         match res.comp_types.first().unwrap() {
@@ -309,10 +370,60 @@ mod tests {
     }
 
     #[test]
+    fn test_with_expanded_alias_expands_context_and_positions() {
+        let res = run_inline(r#"fl_comp_alias b█an"#);
+        let expanded = res.with_expanded_alias("fl_comp_util --nosort");
+
+        assert_eq!(expanded.context, "fl_comp_util --nosort ban");
+        assert_eq!(expanded.context_until_cursor(), "fl_comp_util --nosort b");
+        assert_eq!(
+            expanded.cursor_byte_pos_context_relative(),
+            "fl_comp_util --nosort b".len()
+        );
+        assert_eq!(
+            expanded.word_under_cursor_end_context_relative(),
+            "fl_comp_util --nosort ban".len()
+        );
+        assert_eq!(expanded.word_under_cursor.as_ref(), "ban");
+        assert_eq!(
+            expanded.comp_types.first().unwrap(),
+            &CompType::CommandComp {
+                command_word: "fl_comp_util".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_with_expanded_alias_preserves_context_start() {
+        let res = run_inline(r#"echo ok; ga ch█eckout"#);
+        let expanded = res.with_expanded_alias("git add");
+
+        assert_eq!(expanded.context.start, res.context.start);
+        assert_eq!(expanded.context, "git add checkout");
+        assert_eq!(expanded.context_until_cursor(), "git add ch");
+        assert_eq!(expanded.cursor_byte_pos_context_relative(), "git add ch".len());
+        assert_eq!(
+            expanded.word_under_cursor_end_context_relative(),
+            "git add checkout".len()
+        );
+    }
+
+    #[test]
+    fn test_with_expanded_alias_handles_shorter_alias() {
+        let res = run_inline(r#"longcmd u█p"#);
+        let expanded = res.with_expanded_alias("l");
+
+        assert_eq!(expanded.context, "l up");
+        assert_eq!(expanded.context_until_cursor(), "l u");
+        assert_eq!(expanded.cursor_byte_pos_context_relative(), "l u".len());
+        assert_eq!(expanded.word_under_cursor_end_context_relative(), "l up".len());
+    }
+
+    #[test]
     fn test_with_assignment_basic() {
         let res = run_inline(r#"A=b █ls -la"#);
         assert_eq!(res.context, "ls -la");
-        assert_eq!(res.context_until_cursor, "");
+        assert_eq!(res.context_until_cursor(), "");
         match res.comp_types.first().unwrap() {
             CompType::FirstWord => {
                 assert_eq!(res.word_under_cursor.as_ref(), "ls");
@@ -325,14 +436,14 @@ mod tests {
     fn test_with_assignment_before_command() {
         let res = run_inline(r#"VAR=valué ABC=qwe   █      ls -la"#);
         assert_eq!(res.context, "");
-        assert_eq!(res.context_until_cursor, "");
+        assert_eq!(res.context_until_cursor(), "");
     }
 
     #[test]
     fn test_empty_command() {
         let res = run_inline(r#"█"#);
         assert_eq!(res.context, "");
-        assert_eq!(res.context_until_cursor, "");
+        assert_eq!(res.context_until_cursor(), "");
         assert_eq!(res.word_under_cursor.as_ref(), "");
     }
 
@@ -340,7 +451,7 @@ mod tests {
     fn test_whitespace_command() {
         let res = run_inline(r#"   █   "#);
         assert_eq!(res.context, "");
-        assert_eq!(res.context_until_cursor, "");
+        assert_eq!(res.context_until_cursor(), "");
         assert_eq!(res.word_under_cursor.as_ref(), "");
     }
 
@@ -348,21 +459,21 @@ mod tests {
     fn test_with_assignment_at_end() {
         let res = run_inline(r#"VAR=valué ABC=qwe█ ls -la"#);
         assert_eq!(res.context, "ABC=qwe");
-        assert_eq!(res.context_until_cursor, "ABC=qwe");
+        assert_eq!(res.context_until_cursor(), "ABC=qwe");
     }
 
     #[test]
     fn test_list_of_commands() {
         let res = run_inline(r#"git commit -m "Initial "; ls -la█"#);
         assert_eq!(res.context, "ls -la");
-        assert_eq!(res.context_until_cursor, "ls -la");
+        assert_eq!(res.context_until_cursor(), "ls -la");
     }
 
     #[test]
     fn test_cursor_at_start_of_word() {
         let res = run_inline(r#"git █commit"#);
         assert_eq!(res.context, "git commit");
-        assert_eq!(res.context_until_cursor, "git ");
+        assert_eq!(res.context_until_cursor(), "git ");
         assert_eq!(res.word_under_cursor.as_ref(), "commit");
     }
 
@@ -370,7 +481,7 @@ mod tests {
     fn test_dollar_sign() {
         let res = run_inline(r#"echo $█"#);
         assert_eq!(res.context, "echo $");
-        assert_eq!(res.context_until_cursor, "echo $");
+        assert_eq!(res.context_until_cursor(), "echo $");
         assert_eq!(res.word_under_cursor.as_ref(), "$");
     }
 
@@ -378,7 +489,7 @@ mod tests {
     fn test_dollar_sign_one_letter() {
         let res = run_inline(r#"echo $A█"#);
         assert_eq!(res.context, "echo $A");
-        assert_eq!(res.context_until_cursor, "echo $A");
+        assert_eq!(res.context_until_cursor(), "echo $A");
         assert_eq!(res.word_under_cursor.as_ref(), "$A");
     }
 
@@ -386,12 +497,12 @@ mod tests {
     fn test_dollar_concatenation() {
         let res = run_inline(r#"echo $A█$B"#);
         assert_eq!(res.context, "echo $A$B");
-        assert_eq!(res.context_until_cursor, "echo $A");
+        assert_eq!(res.context_until_cursor(), "echo $A");
         assert_eq!(res.word_under_cursor.as_ref(), "$A");
 
         let res = run_inline(r#"echo $A$█B"#);
         assert_eq!(res.context, "echo $A$B");
-        assert_eq!(res.context_until_cursor, "echo $A$");
+        assert_eq!(res.context_until_cursor(), "echo $A$");
         assert_eq!(res.word_under_cursor.as_ref(), "$");
     }
 
@@ -399,15 +510,15 @@ mod tests {
     fn test_with_pipeline() {
         let res = run_inline(r#"cat filé.txt | grep "pattern" | sort█"#);
         assert_eq!(res.context, "sort");
-        assert_eq!(res.context_until_cursor, "sort");
+        assert_eq!(res.context_until_cursor(), "sort");
 
         let res2 = run_inline(r#"echo "héllo" && echo "wörld"█"#);
         assert_eq!(res2.context, r#"echo "wörld""#);
-        assert_eq!(res2.context_until_cursor, r#"echo "wörld""#);
+        assert_eq!(res2.context_until_cursor(), r#"echo "wörld""#);
 
         let res3 = run_inline(r#"false || echo "fallback 😅"█"#);
         assert_eq!(res3.context, r#"echo "fallback 😅""#);
-        assert_eq!(res3.context_until_cursor, r#"echo "fallback 😅""#);
+        assert_eq!(res3.context_until_cursor(), r#"echo "fallback 😅""#);
     }
 
     #[test]
@@ -415,7 +526,7 @@ mod tests {
         let res = run_inline("echo $(git rev-parse HEAD) résumé█");
         assert_eq!(res.context, "echo $(git rev-parse HEAD) résumé");
         assert_eq!(
-            res.context_until_cursor,
+            res.context_until_cursor(),
             "echo $(git rev-parse HEAD) résumé"
         );
 
@@ -437,70 +548,70 @@ mod tests {
     fn test_cursor_in_middle_of_subshell_command() {
         let res = run_inline(r#"echo $(git rev-parse HEA█D) café"#);
         assert_eq!(res.context, r#"git rev-parse HEAD"#);
-        assert_eq!(res.context_until_cursor, r#"git rev-parse HEA"#);
+        assert_eq!(res.context_until_cursor(), r#"git rev-parse HEA"#);
     }
 
     #[test]
     fn test_cursor_at_end_of_subshell_command() {
         let res = run_inline(r#"echo $(git rev-parse HEAD█) 🎉"#);
         assert_eq!(res.context, r#"git rev-parse HEAD"#);
-        assert_eq!(res.context_until_cursor, r#"git rev-parse HEAD"#);
+        assert_eq!(res.context_until_cursor(), r#"git rev-parse HEAD"#);
     }
 
     #[test]
     fn test_cursor_just_outside_of_subshell_command() {
         let res = run_inline(r#"echo $(git rev-parse HEAD)█ 🎉"#);
         assert_eq!(res.context, r#"echo $(git rev-parse HEAD) 🎉"#);
-        assert_eq!(res.context_until_cursor, r#"echo $(git rev-parse HEAD)"#);
+        assert_eq!(res.context_until_cursor(), r#"echo $(git rev-parse HEAD)"#);
     }
 
     #[test]
     fn test_command_at_end_of_subshell() {
         let res = run_inline(r#"echo $(ls -la)█"#);
         assert_eq!(res.context, "echo $(ls -la)");
-        assert_eq!(res.context_until_cursor, "echo $(ls -la)");
+        assert_eq!(res.context_until_cursor(), "echo $(ls -la)");
     }
 
     #[test]
     fn test_param_expansion_in_command() {
         let res = run_inline(r#"echo ${HOME} naïve█"#);
         assert_eq!(res.context, r#"echo ${HOME} naïve"#);
-        assert_eq!(res.context_until_cursor, r#"echo ${HOME} naïve"#);
+        assert_eq!(res.context_until_cursor(), r#"echo ${HOME} naïve"#);
     }
 
     #[test]
     fn test_cursor_in_middle_of_param_expansion() {
         let res = run_inline(r#"echo ${HO█ME} asdf"#);
         assert_eq!(res.context, r#"HOME"#);
-        assert_eq!(res.context_until_cursor, "HO");
+        assert_eq!(res.context_until_cursor(), "HO");
     }
 
     #[test]
     fn test_cursor_at_end_of_param_expansion() {
         let res = run_inline(r#"echo ${HOME█} asdf"#);
         assert_eq!(res.context, "HOME");
-        assert_eq!(res.context_until_cursor, "HOME");
+        assert_eq!(res.context_until_cursor(), "HOME");
     }
 
     #[test]
     fn test_command_at_end_of_param_expansion() {
         let res = run_inline(r#"ls -la ${PWD}█"#);
         assert_eq!(res.context, "ls -la ${PWD}");
-        assert_eq!(res.context_until_cursor, "ls -la ${PWD}");
+        assert_eq!(res.context_until_cursor(), "ls -la ${PWD}");
     }
 
     #[test]
     fn test_complex_param_expansion() {
         let res = run_inline(r#"echo ${VAR:-dëfault} test 🎯█"#);
         assert_eq!(res.context, r#"echo ${VAR:-dëfault} test 🎯"#);
-        assert_eq!(res.context_until_cursor, r#"echo ${VAR:-dëfault} test 🎯"#);
+        assert_eq!(res.context_until_cursor(), r#"echo ${VAR:-dëfault} test 🎯"#);
     }
 
     #[test]
     fn test_cursor_inside_complex_param_expansion() {
         let res = run_inline(r#"echo ${VAR:-dëf█ault} tëst"#);
         assert_eq!(res.context, "VAR:-dëfault");
-        assert_eq!(res.context_until_cursor, "VAR:-dëf");
+        assert_eq!(res.context_until_cursor(), "VAR:-dëf");
     }
 
     #[test]
@@ -508,7 +619,7 @@ mod tests {
         let res = run_inline(r#"echo `git rev-parse HEAD` café█"#);
         assert_eq!(res.context, r#"echo `git rev-parse HEAD` café"#);
         assert_eq!(
-            res.context_until_cursor,
+            res.context_until_cursor(),
             r#"echo `git rev-parse HEAD` café"#
         );
     }
@@ -517,98 +628,98 @@ mod tests {
     fn test_cursor_in_middle_of_backtick_command() {
         let res = run_inline(r#"echo `git rev-parse█ HEAD` asdf"#);
         assert_eq!(res.context, r#"git rev-parse HEAD"#);
-        assert_eq!(res.context_until_cursor, r#"git rev-parse"#);
+        assert_eq!(res.context_until_cursor(), r#"git rev-parse"#);
     }
 
     #[test]
     fn test_cursor_at_end_of_backtick_command() {
         let res = run_inline(r#"echo `b c█`"#);
         assert_eq!(res.context, "b c");
-        assert_eq!(res.context_until_cursor, "b c");
+        assert_eq!(res.context_until_cursor(), "b c");
     }
 
     #[test]
     fn test_command_at_end_of_backtick() {
         let res = run_inline(r#"echo `ls -la`█ qwe"#);
         assert_eq!(res.context, "echo `ls -la` qwe");
-        assert_eq!(res.context_until_cursor, "echo `ls -la`");
+        assert_eq!(res.context_until_cursor(), "echo `ls -la`");
     }
 
     #[test]
     fn test_nested_backticks_in_command() {
         let res = run_inline(r#"echo `echo \`date\`` tëst 🎯█"#);
         assert_eq!(res.context, r#"echo `echo \`date\`` tëst 🎯"#);
-        assert_eq!(res.context_until_cursor, r#"echo `echo \`date\`` tëst 🎯"#);
+        assert_eq!(res.context_until_cursor(), r#"echo `echo \`date\`` tëst 🎯"#);
     }
 
     #[test]
     fn test_cursor_in_backtick_with_pipe() {
         let res = run_inline(r#"echo `ls | grep█ test` done"#);
         assert_eq!(res.context, r#"grep test"#);
-        assert_eq!(res.context_until_cursor, r#"grep"#);
+        assert_eq!(res.context_until_cursor(), r#"grep"#);
     }
 
     #[test]
     fn test_arith_subst_in_command() {
         let res = run_inline(r#"echo $((5 + 3)) rësult 📊█"#);
         assert_eq!(res.context, r#"echo $((5 + 3)) rësult 📊"#);
-        assert_eq!(res.context_until_cursor, r#"echo $((5 + 3)) rësult 📊"#);
+        assert_eq!(res.context_until_cursor(), r#"echo $((5 + 3)) rësult 📊"#);
     }
 
     #[test]
     fn test_cursor_near_end_of_arith_subst() {
         let res = run_inline(r#"echo $((5 + 3█)) result"#);
         assert_eq!(res.context, "5 + 3");
-        assert_eq!(res.context_until_cursor, "5 + 3");
+        assert_eq!(res.context_until_cursor(), "5 + 3");
     }
 
     #[test]
     fn test_cursor_in_middle_of_arith_subst_end() {
         let res = run_inline(r#"echo $((5 + 3)█) result"#);
         assert_eq!(res.context, "echo $((5 + 3)) result");
-        assert_eq!(res.context_until_cursor, "echo $((5 + 3)");
+        assert_eq!(res.context_until_cursor(), "echo $((5 + 3)");
     }
 
     #[test]
     fn test_cursor_at_end_of_arith_subst() {
         let res = run_inline(r#"echo $((10 * 2))█ bar"#);
         assert_eq!(res.context, "echo $((10 * 2)) bar");
-        assert_eq!(res.context_until_cursor, "echo $((10 * 2))");
+        assert_eq!(res.context_until_cursor(), "echo $((10 * 2))");
     }
 
     #[test]
     fn test_command_at_mid_end_of_arith_subst() {
         let res = run_inline(r#"result=$((100 / 5)█)"#);
         assert_eq!(res.context, r#"result=$((100 / 5))"#);
-        assert_eq!(res.context_until_cursor, r#"result=$((100 / 5)"#);
+        assert_eq!(res.context_until_cursor(), r#"result=$((100 / 5)"#);
     }
 
     #[test]
     fn test_command_at_end_end_of_arith_subst() {
         let res = run_inline(r#"result=$((100 / 5))█"#);
         assert_eq!(res.context, r#"result=$((100 / 5))"#);
-        assert_eq!(res.context_until_cursor, r#"result=$((100 / 5))"#);
+        assert_eq!(res.context_until_cursor(), r#"result=$((100 / 5))"#);
     }
 
     #[test]
     fn test_complex_arith_with_variables() {
         let res = run_inline(r#"echo $(($VAR + 10)) test█"#);
         assert_eq!(res.context, r#"echo $(($VAR + 10)) test"#);
-        assert_eq!(res.context_until_cursor, r#"echo $(($VAR + 10)) test"#);
+        assert_eq!(res.context_until_cursor(), r#"echo $(($VAR + 10)) test"#);
     }
 
     #[test]
     fn test_cursor_inside_complex_arith() {
         let res = run_inline(r#"val=$((VAR * 2█ + 5))"#);
         assert_eq!(res.context, "VAR * 2 + 5");
-        assert_eq!(res.context_until_cursor, "VAR * 2");
+        assert_eq!(res.context_until_cursor(), "VAR * 2");
     }
 
     #[test]
     fn test_nested_arith_operations() {
         let res = run_inline(r#"echo $(( $(( 5 +█ 3 )) * 2 )) ënd ✅"#);
         assert_eq!(res.context, r#"5 + 3"#);
-        assert_eq!(res.context_until_cursor, r#"5 +"#);
+        assert_eq!(res.context_until_cursor(), r#"5 +"#);
     }
 
     #[test]
@@ -616,7 +727,7 @@ mod tests {
         let res = run_inline(r#"diff <(ls /tmp) <(ls /var) résult 🔍█"#);
         assert_eq!(res.context, r#"diff <(ls /tmp) <(ls /var) résult 🔍"#);
         assert_eq!(
-            res.context_until_cursor,
+            res.context_until_cursor(),
             r#"diff <(ls /tmp) <(ls /var) résult 🔍"#
         );
     }
@@ -625,21 +736,21 @@ mod tests {
     fn test_cursor_in_middle_of_proc_subst_in() {
         let res = run_inline(r#"diff <(ls /t█mp) <(ls /var) done"#);
         assert_eq!(res.context, r#"ls /tmp"#);
-        assert_eq!(res.context_until_cursor, r#"ls /t"#);
+        assert_eq!(res.context_until_cursor(), r#"ls /t"#);
     }
 
     #[test]
     fn test_cursor_at_end_of_proc_subst_in() {
         let res = run_inline(r#"diff <(ls /tmp█) <(ls /var) done"#);
         assert_eq!(res.context, r#"ls /tmp"#);
-        assert_eq!(res.context_until_cursor, r#"ls /tmp"#);
+        assert_eq!(res.context_until_cursor(), r#"ls /tmp"#);
     }
 
     #[test]
     fn test_command_at_end_of_proc_subst_in() {
         let res = run_inline(r#"cat <(echo test)█"#);
         assert_eq!(res.context, r#"cat <(echo test)"#);
-        assert_eq!(res.context_until_cursor, r#"cat <(echo test)"#);
+        assert_eq!(res.context_until_cursor(), r#"cat <(echo test)"#);
     }
 
     #[test]
@@ -650,7 +761,7 @@ mod tests {
             r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
         );
         assert_eq!(
-            res.context_until_cursor,
+            res.context_until_cursor(),
             r#"tee >(gzip > filé.gz) >(bzip2 > filé.bz2) 🎉"#
         );
     }
@@ -660,7 +771,7 @@ mod tests {
         // The original failing case: cursor is in the word before a process substitution.
         let res = run_inline(r#"x█ <( echo too )"#);
         assert_eq!(res.context, "x <( echo too )");
-        assert_eq!(res.context_until_cursor, "x");
+        assert_eq!(res.context_until_cursor(), "x");
         assert_eq!(res.word_under_cursor.as_ref(), "x");
         assert_eq!(
             res.comp_types,
@@ -678,7 +789,7 @@ mod tests {
         // Cursor before two consecutive process substitutions.
         let res = run_inline(r#"diff█ <(cat a) <(cat b)"#);
         assert_eq!(res.context, "diff <(cat a) <(cat b)");
-        assert_eq!(res.context_until_cursor, "diff");
+        assert_eq!(res.context_until_cursor(), "diff");
         assert_eq!(res.word_under_cursor.as_ref(), "diff");
         assert_eq!(
             res.comp_types,
@@ -696,7 +807,7 @@ mod tests {
         // Cursor before a command substitution $(...).
         let res = run_inline(r#"echo█ $(git rev-parse HEAD)"#);
         assert_eq!(res.context, "echo $(git rev-parse HEAD)");
-        assert_eq!(res.context_until_cursor, "echo");
+        assert_eq!(res.context_until_cursor(), "echo");
         assert_eq!(res.word_under_cursor.as_ref(), "echo");
         assert_eq!(
             res.comp_types,
@@ -714,7 +825,7 @@ mod tests {
         // Cursor in the command word before a process substitution out >(...)
         let res = run_inline(r#"tee█ >(gzip > file.gz)"#);
         assert_eq!(res.context, "tee >(gzip > file.gz)");
-        assert_eq!(res.context_until_cursor, "tee");
+        assert_eq!(res.context_until_cursor(), "tee");
         assert_eq!(res.word_under_cursor.as_ref(), "tee");
         assert_eq!(
             res.comp_types,
@@ -732,7 +843,7 @@ mod tests {
         // Cursor is in an argument (not first word) that precedes a process substitution.
         let res = run_inline(r#"diff file█ <(echo too)"#);
         assert_eq!(res.context, "diff file <(echo too)");
-        assert_eq!(res.context_until_cursor, "diff file");
+        assert_eq!(res.context_until_cursor(), "diff file");
         assert_eq!(res.word_under_cursor.as_ref(), "file");
         assert_eq!(
             res.comp_types,
@@ -750,14 +861,14 @@ mod tests {
     fn test_cursor_in_middle_of_proc_subst_out() {
         let res = run_inline(r#"tee >(gzip > fi█le.gz) test"#);
         assert_eq!(res.context, r#"gzip > file.gz"#);
-        assert_eq!(res.context_until_cursor, r#"gzip > fi"#);
+        assert_eq!(res.context_until_cursor(), r#"gzip > fi"#);
     }
 
     #[test]
     fn test_cursor_at_end_of_proc_subst_out() {
         let res = run_inline(r#"tee >(cat█) done"#);
         assert_eq!(res.context, r#"cat"#);
-        assert_eq!(res.context_until_cursor, r#"cat"#);
+        assert_eq!(res.context_until_cursor(), r#"cat"#);
     }
 
     #[test]
@@ -765,7 +876,7 @@ mod tests {
         let res = run_inline(r#"cmd <(input cmd) >(output cmd) final█"#);
         assert_eq!(res.context, r#"cmd <(input cmd) >(output cmd) final"#);
         assert_eq!(
-            res.context_until_cursor,
+            res.context_until_cursor(),
             r#"cmd <(input cmd) >(output cmd) final"#
         );
     }
@@ -776,7 +887,7 @@ mod tests {
         let res = run_inline(r#"if [[ -f file.txt ]]; then echo found; fi█"#);
         assert_eq!(res.context, "if [[ -f file.txt ]]; then echo found; fi");
         assert_eq!(
-            res.context_until_cursor,
+            res.context_until_cursor(),
             "if [[ -f file.txt ]]; then echo found; fi"
         );
         assert_eq!(res.word_under_cursor.as_ref(), "fi");
@@ -786,56 +897,56 @@ mod tests {
     fn test_cursor_inside_double_bracket() {
         let res = run_inline(r#"[[ -f filé█.txt ]] && echo yës"#);
         assert_eq!(res.context, "-f filé.txt");
-        assert_eq!(res.context_until_cursor, "-f filé");
+        assert_eq!(res.context_until_cursor(), "-f filé");
     }
 
     #[test]
     fn test_double_bracket_with_string_comparison() {
         let res = run_inline(r#"[[ "$var" == "café" ]] && echo match 🎯█"#);
         assert_eq!(res.context, r#"echo match 🎯"#);
-        assert_eq!(res.context_until_cursor, r#"echo match 🎯"#);
+        assert_eq!(res.context_until_cursor(), r#"echo match 🎯"#);
     }
 
     #[test]
     fn test_double_bracket_with_pattern() {
         let res = run_inline(r#"[[ $file == *.txt ]█] || echo "not a text file""#);
         assert_eq!(res.context, "[[ $file == *.txt ]]");
-        assert_eq!(res.context_until_cursor, "[[ $file == *.txt ]");
+        assert_eq!(res.context_until_cursor(), "[[ $file == *.txt ]");
     }
 
     #[test]
     fn test_start_with_subshell() {
         let res = run_inline(r#"$(echo test)█"#);
         assert_eq!(res.context, "$(echo test)");
-        assert_eq!(res.context_until_cursor, "$(echo test)");
+        assert_eq!(res.context_until_cursor(), "$(echo test)");
     }
 
     #[test]
     fn test_double_bracket_with_regex() {
         let res = run_inline(r#"[[ $email =~ ^[a-z]+@[a-z]+$ ]]█"#);
         assert_eq!(res.context, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
-        assert_eq!(res.context_until_cursor, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
+        assert_eq!(res.context_until_cursor(), "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
     }
 
     #[test]
     fn test_double_bracket_logical_operators() {
         let res = run_inline(r#"[[ -f file.txt && -r file.txt ]] && cat file.txt█"#);
         assert_eq!(res.context, "cat file.txt");
-        assert_eq!(res.context_until_cursor, "cat file.txt");
+        assert_eq!(res.context_until_cursor(), "cat file.txt");
     }
 
     #[test]
     fn test_cursor_before_double_bracket() {
         let res = run_inline(r#"if [[ -d /path/caf█é ]]; then ls; fi"#);
         assert_eq!(res.context, "-d /path/café");
-        assert_eq!(res.context_until_cursor, "-d /path/caf");
+        assert_eq!(res.context_until_cursor(), "-d /path/caf");
     }
 
     #[test]
     fn test_double_bracket_with_emoji() {
         let res = run_inline(r#"[[ "$msg" == "✅ done" ]] && echo success█"#);
         assert_eq!(res.context, "echo success");
-        assert_eq!(res.context_until_cursor, "echo success");
+        assert_eq!(res.context_until_cursor(), "echo success");
     }
 
     // Tests for CompletionContext with various cursor positions and non-ASCII characters

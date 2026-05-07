@@ -45,62 +45,6 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 //   if (iscompgen && iscompleting == 0 && rl_completion_found_quote == 0
 //   && rl_filename_dequoting_function) { ... }
 
-struct AliasExpandedCompletion {
-    command_word: String,
-    full_command: String,
-    cursor_byte_pos: usize,
-    word_under_cursor_end: usize,
-}
-
-/// Expands `command_word` through bash alias resolution and recomputes the
-/// context offsets to account for any length change introduced by the alias.
-///
-/// Taking `command_word` by value (ownership) ensures that the pre-expansion
-/// name is no longer accessible at the call site after this function is called,
-/// preventing accidental re-use of stale data.
-///
-/// `word_under_cursor` must be a sub-slice of `context`.
-fn expand_alias_for_completion(
-    command_word: String,
-    word_under_cursor: &SubString,
-    context: &str,
-    context_until_cursor: &str,
-) -> AliasExpandedCompletion {
-    let command_word_len = command_word.len();
-
-    let poss_alias = bash_funcs::find_alias(&command_word);
-    log::debug!(
-        "Checking for alias for command word '{}': {:?}",
-        command_word,
-        poss_alias
-    );
-
-    // `find_alias` may return `Some("")` for known-but-empty aliases; treat
-    // those as "no alias" and fall back to the original command word.
-    // `alias` is guaranteed non-empty after this point.
-    let alias = poss_alias.filter(|a| !a.is_empty()).unwrap_or(command_word);
-
-    let len_delta = alias.len() as isize - command_word_len as isize;
-    let word_under_cursor_end = word_under_cursor.end().saturating_add_signed(len_delta);
-
-    // cursor position relative to the start of the completion context
-    let cursor_byte_pos = context_until_cursor.len().saturating_add_signed(len_delta);
-
-    let full_command = alias.clone() + &context[command_word_len..];
-    let command_word = alias
-        .split_whitespace()
-        .next()
-        .unwrap_or(&alias)
-        .to_string();
-
-    AliasExpandedCompletion {
-        command_word,
-        full_command,
-        cursor_byte_pos,
-        word_under_cursor_end,
-    }
-}
-
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
 ) -> Option<ActiveSuggestionsBuilder> {
@@ -150,17 +94,27 @@ pub(crate) fn gen_completions_internal(
                 // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
-                let AliasExpandedCompletion {
-                    command_word,
-                    full_command,
-                    cursor_byte_pos,
-                    word_under_cursor_end,
-                } = expand_alias_for_completion(
-                    initial_command_word.to_string(),
-                    word_under_cursor,
-                    completion_context.context.as_ref(),
-                    completion_context.context_until_cursor.as_ref(),
+                let poss_alias = bash_funcs::find_alias(initial_command_word);
+                log::debug!(
+                    "Checking for alias for command word '{}': {:?}",
+                    initial_command_word,
+                    poss_alias
                 );
+                let alias_def = poss_alias
+                    .as_deref()
+                    .filter(|alias| !alias.is_empty())
+                    .unwrap_or(initial_command_word);
+                let completion_context = completion_context.with_expanded_alias(alias_def);
+                let command_word = alias_def
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or(alias_def)
+                    .to_string();
+                let full_command = completion_context.context.as_ref();
+                let cursor_byte_pos = completion_context.cursor_byte_pos_context_relative();
+                let word_under_cursor = &completion_context.word_under_cursor;
+                let word_under_cursor_end =
+                    completion_context.word_under_cursor_end_context_relative();
 
                 if command_word == "flyline" {
                     // Flyline's own subcommand/flag completions are produced by
