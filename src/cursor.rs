@@ -6,9 +6,7 @@ use easing_function::easings::StandardEasing;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 use std::time::Instant;
-use strum::{
-    AsRefStr, EnumString, VariantArray,
-};
+use strum::{AsRefStr, EnumString, VariantArray};
 
 /// Cursor intensity used when the terminal has lost focus (or in modes where
 /// the cursor should appear dimmed without animation).

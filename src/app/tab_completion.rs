@@ -804,8 +804,7 @@ impl App<'_> {
                 self.buffer.buffer(),
                 self.buffer.cursor_byte_pos(),
             );
-            let some_suggestions =
-                gen_completions_internal(&comp_context);
+            let some_suggestions = gen_completions_internal(&comp_context);
 
             if some_suggestions.is_none() {
                 if expected_suggestions.is_empty() {

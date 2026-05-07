@@ -146,7 +146,9 @@ impl<'a> CompletionContext<'a> {
     }
 
     pub fn word_under_cursor_end_context_relative(&self) -> usize {
-        self.word_under_cursor.end().saturating_sub(self.context.start)
+        self.word_under_cursor
+            .end()
+            .saturating_sub(self.context.start)
     }
 
     pub fn with_expanded_alias(&self, alias_def: &str) -> CompletionContext<'static> {
@@ -162,7 +164,9 @@ impl<'a> CompletionContext<'a> {
         let cursor_byte_pos = self.cursor_byte_pos.saturating_add_signed(len_delta);
         let word_under_cursor = SubString::from_parts(
             self.word_under_cursor.as_ref(),
-            self.word_under_cursor.start.saturating_add_signed(len_delta),
+            self.word_under_cursor
+                .start
+                .saturating_add_signed(len_delta),
         );
         let context = SubString::from_parts(expanded_context, self.context.start);
         let comp_types = Self::comp_types_for(&context, cursor_byte_pos, &word_under_cursor);
@@ -401,7 +405,10 @@ mod tests {
         assert_eq!(expanded.context.start, res.context.start);
         assert_eq!(expanded.context, "git add checkout");
         assert_eq!(expanded.context_until_cursor(), "git add ch");
-        assert_eq!(expanded.cursor_byte_pos_context_relative(), "git add ch".len());
+        assert_eq!(
+            expanded.cursor_byte_pos_context_relative(),
+            "git add ch".len()
+        );
         assert_eq!(
             expanded.word_under_cursor_end_context_relative(),
             "git add checkout".len()
@@ -416,7 +423,10 @@ mod tests {
         assert_eq!(expanded.context, "l up");
         assert_eq!(expanded.context_until_cursor(), "l u");
         assert_eq!(expanded.cursor_byte_pos_context_relative(), "l u".len());
-        assert_eq!(expanded.word_under_cursor_end_context_relative(), "l up".len());
+        assert_eq!(
+            expanded.word_under_cursor_end_context_relative(),
+            "l up".len()
+        );
     }
 
     #[test]
@@ -604,7 +614,10 @@ mod tests {
     fn test_complex_param_expansion() {
         let res = run_inline(r#"echo ${VAR:-dëfault} test 🎯█"#);
         assert_eq!(res.context, r#"echo ${VAR:-dëfault} test 🎯"#);
-        assert_eq!(res.context_until_cursor(), r#"echo ${VAR:-dëfault} test 🎯"#);
+        assert_eq!(
+            res.context_until_cursor(),
+            r#"echo ${VAR:-dëfault} test 🎯"#
+        );
     }
 
     #[test]
@@ -649,7 +662,10 @@ mod tests {
     fn test_nested_backticks_in_command() {
         let res = run_inline(r#"echo `echo \`date\`` tëst 🎯█"#);
         assert_eq!(res.context, r#"echo `echo \`date\`` tëst 🎯"#);
-        assert_eq!(res.context_until_cursor(), r#"echo `echo \`date\`` tëst 🎯"#);
+        assert_eq!(
+            res.context_until_cursor(),
+            r#"echo `echo \`date\`` tëst 🎯"#
+        );
     }
 
     #[test]
@@ -925,7 +941,10 @@ mod tests {
     fn test_double_bracket_with_regex() {
         let res = run_inline(r#"[[ $email =~ ^[a-z]+@[a-z]+$ ]]█"#);
         assert_eq!(res.context, "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
-        assert_eq!(res.context_until_cursor(), "[[ $email =~ ^[a-z]+@[a-z]+$ ]]");
+        assert_eq!(
+            res.context_until_cursor(),
+            "[[ $email =~ ^[a-z]+@[a-z]+$ ]]"
+        );
     }
 
     #[test]
