@@ -147,9 +147,7 @@ fn run_comp_spec_completion(
                     return CompSpecCompletionResult::None;
                 }
 
-                CompSpecCompletionResult::Found(ActiveSuggestionsBuilder::from_processed(
-                    processed,
-                ))
+                CompSpecCompletionResult::Found(ActiveSuggestionsBuilder::from_processed(processed))
             }
             Ok(_) => {
                 log::debug!(
@@ -181,14 +179,15 @@ fn run_comp_spec_completion(
                 log::debug!("Completions: {:#?}", comp_result);
                 let flags = comp_result.flags;
                 CompSpecCompletionResult::Found(ActiveSuggestionsBuilder::from_unprocessed(
-                    comp_result.completions.into_iter().map(move |sug| {
-                        UnprocessedSuggestion {
+                    comp_result
+                        .completions
+                        .into_iter()
+                        .map(move |sug| UnprocessedSuggestion {
                             raw_text: sug,
                             full_path: None,
                             flags,
                             word_under_cursor: alias_expanded_word_under_cursor.to_string(),
-                        }
-                    }),
+                        }),
                 ))
             }
             Ok(comp_result) => CompSpecCompletionResult::NoneWithFlags(comp_result.flags),
@@ -429,7 +428,9 @@ pub(crate) fn gen_completions_internal(
                 );
                 if !completions.is_empty() {
                     return Some(ActiveSuggestionsBuilder::from_unprocessed(completions));
-                } => {
+                }
+            }
+            tab_completion_context::CompType::FuzzyFilenameExpansion => {
                 log::debug!(
                     "CompType::FuzzyFilenameExpansion for: {}",
                     word_under_cursor.as_ref()
