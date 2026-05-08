@@ -311,10 +311,7 @@ mod tests {
     fn test_syntax_errors() {
         assert_eq!(will_bash_accept_buffer("echo ("), true);
         assert_eq!(will_bash_accept_buffer("echo )"), true);
-        // `[` after a command word is treated as a nesting opener, so `echo [(`
-        // has two unclosed openers and is reported as needing more input.
-        assert_eq!(will_bash_accept_buffer("echo [("), false);
-        assert_eq!(will_bash_accept_buffer("echo [()]"), true);
+        assert_eq!(will_bash_accept_buffer("echo [("), true);
     }
 
     #[test]
