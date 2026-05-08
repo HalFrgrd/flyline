@@ -126,9 +126,6 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::CommandComp {
                 command_word: command_word.clone(),
             });
-            if !wuc_looks_like_path && !wuc_looks_like_env_var {
-                comp_types.push(CompType::FuzzyCommandComp { command_word });
-            }
         }
 
         if wuc_looks_like_env_var {
@@ -139,6 +136,16 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::GlobExpansion);
         } else {
             comp_types.push(CompType::FilenameExpansion);
+
+            for comp_type in &comp_types {
+                if !wuc_looks_like_path && let CompType::CommandComp { command_word } = comp_type {
+                    comp_types.push(CompType::FuzzyCommandComp {
+                        command_word: command_word.clone(),
+                    });
+                    break;
+                }
+            }
+
             comp_types.push(CompType::FuzzyFilenameExpansion);
         }
 
@@ -707,10 +714,10 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FilenameExpansion,
                 CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
         );
@@ -1029,10 +1036,10 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "diff".to_string()
                 },
+                CompType::FilenameExpansion,
                 CompType::FuzzyCommandComp {
                     command_word: "diff".to_string()
                 },
-                CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
         );
@@ -1477,10 +1484,10 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "cd".to_string()
                 },
+                CompType::FilenameExpansion,
                 CompType::FuzzyCommandComp {
                     command_word: "cd".to_string()
                 },
-                CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
         );
@@ -1497,10 +1504,10 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FilenameExpansion,
                 CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
         );

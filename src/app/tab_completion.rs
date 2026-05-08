@@ -990,6 +990,11 @@ mod tab_completion_tests {
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
     }
 
+    fn cd_to_example_glob_fs() {
+        let dir = find_test_fixture_dir("example_glob_fs");
+        std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
+    }
+
     rusty_fork_test! {
         // ------- dummy git completion (clap-based, no bash symbols) -------
 
@@ -1098,6 +1103,20 @@ mod tab_completion_tests {
                 "mycmd $PWD/foo*{1,3}/bar*{A,C}",
                 &[ProcessedSuggestion::new(
                     "$PWD/foo1/barA $PWD/foo1/barC $PWD/foo3/barA $PWD/foo3/barC ",
+                    "",
+                    "",
+                )],
+            );
+        }
+
+
+        #[test]
+        fn globbing_test_1() {
+            cd_to_example_glob_fs();
+            assert_completions(
+                "mycmd bar*",
+                &[ProcessedSuggestion::new(
+                    "bar1 bar2 bar3 ",
                     "",
                     "",
                 )],
