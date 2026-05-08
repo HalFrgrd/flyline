@@ -1038,6 +1038,20 @@ mod tab_completion_tests {
             }
         }
 
+        // ------- dummy git completion fuzzy matching
+        /// This tests the [`CompType::FuzzyCommandComp`] branch where we re-run the
+        #[test]
+        fn git_commit_fuzzy_command_comp() {
+            cd_to_example_fs();
+            let actual = run_completion("git cmomit"); // Typoe of commit
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            for flag in ["commit"] {
+                assert!(names.contains(&flag), "expected {flag} in {:?}", names);
+            }
+        }
+
+
+
         // ------- alias expansion (find_alias / get_all_aliases) ----------
 
         #[test]
