@@ -41,7 +41,6 @@ ctor = "0.10.0"
 strum = { version = "0.28.0", features = ["derive"] }
 
 [features]
-integration-tests = []
 pre_bash_4_4 = []
 
 [dev-dependencies]

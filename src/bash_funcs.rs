@@ -109,8 +109,10 @@ pub fn find_alias(cmd: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-pub fn find_alias(_cmd: &str) -> Option<String> {
-    None
+pub fn find_alias(cmd: &str) -> Option<String> {
+    test_fixtures::test_aliases()
+        .iter()
+        .find_map(|(name, value)| (*name == cmd).then(|| (*value).to_string()))
 }
 
 #[cfg(not(test))]
@@ -205,8 +207,21 @@ pub fn get_command_info(cmd: &str) -> (CommandType, String) {
 }
 
 #[cfg(test)]
-pub fn get_command_info(_cmd: &str) -> (CommandType, String) {
-    (CommandType::Unknown, String::new())
+pub fn get_command_info(cmd: &str) -> (CommandType, String) {
+    // The test environment models a tiny world: `git` is the only "real"
+    // executable on PATH, so it gets reported as a File at /usr/bin/git.
+    // Everything else is unknown — tests that need additional command types
+    // can extend this match arm.
+    if cmd == "git" {
+        return (CommandType::File, "file: /usr/bin/git".to_string());
+    }
+    if test_fixtures::test_aliases()
+        .iter()
+        .any(|(name, _)| *name == cmd)
+    {
+        return (CommandType::Alias, format!("alias: {cmd}"));
+    }
+    (CommandType::Unknown, "unknown".to_string())
 }
 
 #[cfg(not(test))]
@@ -299,7 +314,10 @@ pub fn get_all_aliases() -> Vec<String> {
 
 #[cfg(test)]
 pub fn get_all_aliases() -> Vec<String> {
-    Vec::new()
+    test_fixtures::test_aliases()
+        .iter()
+        .map(|(name, _)| (*name).to_string())
+        .collect()
 }
 
 pub fn get_all_reserved_words() -> Vec<String> {
@@ -344,7 +362,8 @@ pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
 #[cfg(test)]
 pub fn get_all_variables_with_prefix(prefix: &str) -> Vec<String> {
     let bare_prefix = prefix.strip_prefix('$').unwrap_or(prefix);
-    let mut variables: Vec<String> = std::env::vars()
+    let mut variables: Vec<String> = test_fixtures::test_env_vars()
+        .into_iter()
         .map(|(name, _)| name)
         .filter(|name| name.starts_with(bare_prefix))
         .map(|name| format!("${}", name))
@@ -698,7 +717,7 @@ pub fn run_programmable_completions(
         ));
     }
 
-    let candidates = crate::cli::tests_test_git_completions(full_command, word_under_cursor);
+    let candidates = test_fixtures::dummy_git_completions(full_command, word_under_cursor);
     let completions: Vec<String> = candidates
         .into_iter()
         .map(|c| c.get_value().to_string_lossy().to_string())
@@ -752,7 +771,9 @@ pub fn get_envvar_value(var_name: &str) -> Option<String> {
 
 #[cfg(test)]
 pub fn get_envvar_value(var_name: &str) -> Option<String> {
-    std::env::var(var_name).ok()
+    test_fixtures::test_env_vars()
+        .into_iter()
+        .find_map(|(name, value)| (name == var_name).then_some(value))
 }
 
 #[cfg(not(test))]
@@ -813,39 +834,37 @@ pub fn expand_filename(filename: &str) -> String {
 }
 
 /// Test-only filename expansion. Supports a tiny subset of bash expansion:
-///   * `$PWD` → current working directory
-///   * `$HOME` and a leading `~/` → [`TEST_HOME_DIR`]
+///   * `$PWD` / `$HOME` (and a leading `~/`) are expanded by looking the
+///     name up in [`test_fixtures::test_env_vars`].
 ///   * `./` and `../` are left in place (resolved by the OS as relative paths)
 ///
 /// Panics if the resulting path does not exist on disk after expansion. This
 /// catches mistakes in test fixtures and matches the user's request to keep
 /// expansion deterministic.
 #[cfg(test)]
-pub const TEST_HOME_DIR: &str = "/home/john";
-
-#[cfg(test)]
 pub fn expand_filename(filename: &str) -> String {
     if filename.is_empty() {
         return String::new();
     }
 
+    let home = get_envvar_value("HOME").unwrap_or_default();
+
     // Tilde expansion: leading `~/` only (we don't try to support `~user`).
     let mut expanded = if let Some(rest) = filename.strip_prefix("~/") {
-        format!("{}/{}", TEST_HOME_DIR, rest)
+        format!("{}/{}", home, rest)
     } else if filename == "~" {
-        TEST_HOME_DIR.to_string()
+        home.clone()
     } else {
         filename.to_string()
     };
 
-    // Expand $PWD and $HOME (both `$HOME` and `${HOME}` forms).
-    let pwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    expanded = expanded.replace("${PWD}", &pwd).replace("$PWD", &pwd);
-    expanded = expanded
-        .replace("${HOME}", TEST_HOME_DIR)
-        .replace("$HOME", TEST_HOME_DIR);
+    // Expand every variable known to the test fixture (both `$NAME` and
+    // `${NAME}` forms). The set is small and fixed, so a linear pass is fine.
+    for (name, value) in test_fixtures::test_env_vars() {
+        let braced = format!("${{{name}}}");
+        let unbraced = format!("${name}");
+        expanded = expanded.replace(&braced, &value).replace(&unbraced, &value);
+    }
 
     if !Path::new(&expanded).exists() {
         panic!(
@@ -1391,5 +1410,146 @@ mod tests {
         assert_eq!(find_quote_type(r#"qwe\ asdf"#), Some(QuoteType::Backslash));
         assert_eq!(find_quote_type(r#"qwe asdf"#), None);
         assert_eq!(find_quote_type(r#"qwe\\asdf"#), None);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test fixtures
+// ---------------------------------------------------------------------------
+//
+// Hardcoded data used to back the `#[cfg(test)]` versions of bash_funcs.
+// Centralising these keeps the various test stubs consistent — for example
+// `find_alias` and `get_all_aliases` both read from the same alias table,
+// and every test stub that needs to look up an environment variable goes
+// through `test_env_vars` so the only non-fixed value in the test
+// environment is the current working directory (returned for `$PWD`).
+#[cfg(test)]
+pub(crate) mod test_fixtures {
+    use clap::{CommandFactory, Parser, Subcommand};
+
+    /// Aliases visible to the test build of flyline. Shared between
+    /// `find_alias` and `get_all_aliases` so the two stay in sync.
+    pub(crate) fn test_aliases() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("gst", "git status"),
+            ("gcm", "git commit -m"),
+            ("gd", "git diff"),
+        ]
+    }
+
+    /// Hardcoded set of environment variables visible to test code. The
+    /// only non-fixed value is `PWD`, which is sourced from the process
+    /// current working directory; everything else is a fixed string. All
+    /// `#[cfg(test)]` bash_funcs that need an env var look it up here so
+    /// tests never observe variables that happen to be set by `cargo
+    /// test`'s parent shell.
+    pub(crate) fn test_env_vars() -> Vec<(String, String)> {
+        let pwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        vec![
+            ("HOME".to_string(), "/home/john".to_string()),
+            ("PWD".to_string(), pwd),
+            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
+            ("SHELL".to_string(), "/bin/bash".to_string()),
+            ("TERM".to_string(), "xterm-256color".to_string()),
+            ("USER".to_string(), "john".to_string()),
+        ]
+    }
+
+    /// Tiny clap definition used to drive the test build of
+    /// `run_programmable_completions`. It only implements `add`, `commit`,
+    /// `diff`, and `status` with at most four flags each, but that is
+    /// enough to exercise flyline's programmable-completion plumbing
+    /// without needing a real bash instance.
+    #[derive(Parser, Debug)]
+    #[command(name = "git", no_binary_name = true)]
+    struct DummyGitArgs {
+        #[command(subcommand)]
+        command: Option<DummyGitCommand>,
+    }
+
+    #[derive(Subcommand, Debug)]
+    enum DummyGitCommand {
+        Add {
+            #[arg(long = "all", short = 'A')]
+            all: bool,
+            #[arg(long = "patch", short = 'p')]
+            patch: bool,
+            #[arg(long = "verbose", short = 'v')]
+            verbose: bool,
+            #[arg(long = "dry-run", short = 'n')]
+            dry_run: bool,
+            files: Vec<String>,
+        },
+        Commit {
+            #[arg(long = "message", short = 'm')]
+            message: Option<String>,
+            #[arg(long = "amend")]
+            amend: bool,
+            #[arg(long = "all", short = 'a')]
+            all: bool,
+            #[arg(long = "no-verify")]
+            no_verify: bool,
+        },
+        Diff {
+            #[arg(long = "staged")]
+            staged: bool,
+            #[arg(long = "stat")]
+            stat: bool,
+            #[arg(long = "name-only")]
+            name_only: bool,
+            #[arg(long = "color")]
+            color: bool,
+            paths: Vec<String>,
+        },
+        Status {
+            #[arg(long = "short", short = 's')]
+            short: bool,
+            #[arg(long = "branch", short = 'b')]
+            branch: bool,
+            #[arg(long = "porcelain")]
+            porcelain: bool,
+            #[arg(long = "untracked-files", short = 'u')]
+            untracked_files: bool,
+        },
+    }
+
+    pub(crate) fn dummy_git_completions(
+        full_command: &str,
+        word_under_cursor: &str,
+    ) -> Vec<clap_complete::CompletionCandidate> {
+        // Tokenize on whitespace; this is a deliberate simplification
+        // suitable for the dummy git completer used in unit tests.
+        let mut tokens: Vec<String> = full_command
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        // Drop the leading "git" command word; the dummy parser uses
+        // `no_binary_name = true`.
+        if tokens.first().map(String::as_str) == Some("git") {
+            tokens.remove(0);
+        }
+
+        // Determine if the cursor is at the end (i.e. completing a
+        // brand-new empty word) or replacing the last token.
+        let trailing_space = full_command.ends_with(char::is_whitespace);
+        if trailing_space || tokens.is_empty() || word_under_cursor.is_empty() {
+            tokens.push(String::new());
+        } else if tokens.last().map(String::as_str) != Some(word_under_cursor) {
+            // Replace whatever the last token is with the word under
+            // cursor so the clap completer treats it as the prefix.
+            let last = tokens.last_mut().unwrap();
+            *last = word_under_cursor.to_string();
+        }
+
+        let args_os: Vec<std::ffi::OsString> =
+            tokens.into_iter().map(std::ffi::OsString::from).collect();
+        let index = args_os.len() - 1;
+        let mut cmd = DummyGitArgs::command();
+        let current_dir = std::env::current_dir().ok();
+
+        clap_complete::engine::complete(&mut cmd, args_os, index, current_dir.as_deref())
+            .unwrap_or_default()
     }
 }

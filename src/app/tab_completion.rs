@@ -1003,22 +1003,15 @@ mod tab_completion_tests {
     fn cd_to_example_fs() {
         let dir = format!("{}/tests/example_fs", MANIFEST_DIR);
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
-        // SAFETY: we are inside a forked subprocess so the env mutation is
-        // single-threaded.
-        // We update PWD in addition to set_current_dir because the test stub
-        // `expand_filename` (and any glob/path-expansion code that calls it)
-        // resolves `$PWD` via `env::current_dir()` for the cwd part *and*
-        // also string-substitutes the literal `$PWD` token from the typed
-        // command line; keeping the env var aligned with the cwd matches
-        // bash's behaviour and avoids surprising mismatches in the tests.
-        unsafe { std::env::set_var("PWD", &dir) };
+        // No need to set the `PWD` env var: the `#[cfg(test)]` bash_funcs
+        // (in particular `get_envvar_value` / `expand_filename`) source
+        // `$PWD` from the process's current working directory via
+        // `bash_funcs::test_fixtures::test_env_vars`.
     }
 
     fn cd_to_example_braces_fs() {
         let dir = format!("{}/tests/example_braces_fs", MANIFEST_DIR);
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
-        // SAFETY / PWD: see `cd_to_example_fs` above.
-        unsafe { std::env::set_var("PWD", &dir) };
     }
 
     rusty_fork_test! {
@@ -1028,8 +1021,8 @@ mod tab_completion_tests {
         fn git_top_level_subcommand_a_completes_to_add() {
             cd_to_example_fs();
             let actual = run_completion("git a");
-            // The dummy git CLI only knows about add/commit/diff. "a" only
-            // matches "add" so we expect exactly one candidate.
+            // The dummy git CLI only knows about add/commit/diff/status.
+            // "a" only matches "add" so we expect exactly one candidate.
             let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
             assert!(names.contains(&"add"), "expected `add` in {:?}", names);
         }
@@ -1039,7 +1032,7 @@ mod tab_completion_tests {
             cd_to_example_fs();
             let actual = run_completion("git ");
             let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
-            for sub in ["add", "commit", "diff"] {
+            for sub in ["add", "commit", "diff", "status"] {
                 assert!(names.contains(&sub), "expected `{sub}` in {:?}", names);
             }
         }
@@ -1059,9 +1052,29 @@ mod tab_completion_tests {
             cd_to_example_fs();
             let actual = run_completion("git diff --");
             let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
-            for flag in ["--cached", "--stat", "--name-only", "--color"] {
+            for flag in ["--staged", "--stat", "--name-only", "--color"] {
                 assert!(names.contains(&flag), "expected {flag} in {:?}", names);
             }
+        }
+
+        // ------- alias expansion (find_alias / get_all_aliases) ----------
+
+        #[test]
+        fn alias_gd_dashstag_expands_to_dashstaged() {
+            // `gd` is aliased to `git diff` (see bash_funcs::test_fixtures
+            // test_aliases). After alias expansion, completing `--stag`
+            // should yield exactly `--staged`, and because it's a solo
+            // suggestion the buffer should auto-accept it.
+            cd_to_example_fs();
+            let mut buffer = TextBuffer::new("gd --stag");
+            let comp_context =
+                get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
+            let wuc = comp_context.word_under_cursor.clone();
+            let builder = gen_completions_internal(&comp_context).expect("some completions");
+            assert_eq!(builder.len(), 1, "expected solo suggestion, got {:?}", builder.processed);
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
+            assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
+            assert_eq!(buffer.buffer(), "gd --staged ");
         }
 
         // ------- filename completion against tests/example_fs ------------

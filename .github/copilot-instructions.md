@@ -34,19 +34,13 @@ For a quick local (host-native) build during development:
 cargo build --release
 ```
 
-When changing code that is used by the integration tests, also verify that the crate still compiles with the integration-tests feature enabled:
-
-```bash
-cargo build --features integration-tests
-```
-
 `src/bash_symbols.rs` declares extern Bash/readline symbols that are provided by
 Bash when `libflyline.so` is loaded with `enable -f ... flyline`. Those symbols
 are not available when Rust links a normal unit-test binary, so test code must
-avoid pulling them in directly. `cargo build --features integration-tests`
-checks that the non-test code paths used by the integration-test feature still
-compile even though `cargo test --lib` uses `#[cfg(test)]` fallbacks in some
-places to avoid requiring Bash-owned symbols at unit-test link time.
+avoid pulling them in directly. The crate uses `#[cfg(test)]` shims in
+`src/bash_funcs.rs` to provide hardcoded test-only behaviour (see the
+`test_fixtures` module) so `cargo test --lib` links cleanly without any
+Bash-owned symbols.
 
 CI also builds the library inside Docker to target glibc 2.23 (Ubuntu 16.04), ensuring broad host compatibility:
 
@@ -63,11 +57,9 @@ docker buildx bake -f docker/docker-bake.hcl extract-release-artifact
 cargo test --lib
 ```
 
-Always try `cargo test --lib` for unit-test coverage, and also try
-`cargo build --features integration-tests` after changes that touch code shared
-with integration tests. The unit-test build alone is not enough because
-`#[cfg(test)]` shims can hide linkage-sensitive code paths that depend on Bash
-symbols.
+Always validate Flyline changes with `cargo test --lib`. To additionally
+check that the production code paths still compile (i.e. without the
+`#[cfg(test)]` shims), run `cargo build --release` as well.
 
 **Bash integration tests** (load `libflyline.so` into real Bash builds):
 

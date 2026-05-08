@@ -202,101 +202,6 @@ fn raw_command_before_word_under_cursor<'a>(
         .ok_or_else(|| anyhow::anyhow!("word under cursor not found at cursor"))
 }
 
-/// A deliberately tiny `git` clap definition used by the test version of
-/// `bash_funcs::run_programmable_completions`. It only implements the
-/// `add`, `commit`, and `diff` subcommands with at most four flags each. We
-/// run it through `clap_complete::engine::complete` to produce candidates for
-/// arbitrary `git ...` command lines, which is enough to exercise flyline's
-/// programmable-completion plumbing without needing a real bash instance.
-#[cfg(test)]
-#[derive(Parser, Debug)]
-#[command(name = "git", no_binary_name = true)]
-struct DummyGitArgs {
-    #[command(subcommand)]
-    command: Option<DummyGitCommand>,
-}
-
-#[cfg(test)]
-#[derive(Subcommand, Debug)]
-enum DummyGitCommand {
-    Add {
-        #[arg(long = "all", short = 'A')]
-        all: bool,
-        #[arg(long = "patch", short = 'p')]
-        patch: bool,
-        #[arg(long = "verbose", short = 'v')]
-        verbose: bool,
-        #[arg(long = "dry-run", short = 'n')]
-        dry_run: bool,
-        files: Vec<String>,
-    },
-    Commit {
-        #[arg(long = "message", short = 'm')]
-        message: Option<String>,
-        #[arg(long = "amend")]
-        amend: bool,
-        #[arg(long = "all", short = 'a')]
-        all: bool,
-        #[arg(long = "no-verify")]
-        no_verify: bool,
-    },
-    Diff {
-        #[arg(long = "cached")]
-        cached: bool,
-        #[arg(long = "stat")]
-        stat: bool,
-        #[arg(long = "name-only")]
-        name_only: bool,
-        #[arg(long = "color")]
-        color: bool,
-        paths: Vec<String>,
-    },
-}
-
-#[cfg(test)]
-pub fn tests_test_git_completions(
-    full_command: &str,
-    word_under_cursor: &str,
-) -> Vec<clap_complete::CompletionCandidate> {
-    // Tokenize on whitespace; this is a deliberate simplification suitable
-    // for the dummy git completer used in unit tests.
-    let mut tokens: Vec<String> = full_command
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect();
-    // Drop the leading "git" command word; the dummy parser uses
-    // `no_binary_name = true`.
-    if tokens.first().map(String::as_str) == Some("git") {
-        tokens.remove(0);
-    }
-
-    // Determine if the cursor is at the end (i.e. completing a brand-new
-    // empty word) or replacing the last token. If the user typed a trailing
-    // space the last token is empty.
-    let trailing_space = full_command.ends_with(char::is_whitespace);
-    if trailing_space || tokens.is_empty() {
-        tokens.push(String::new());
-    } else if word_under_cursor.is_empty() {
-        tokens.push(String::new());
-    } else if tokens.last().map(String::as_str) != Some(word_under_cursor) {
-        // Replace whatever the last token is with the word under cursor so
-        // the clap completer treats it as the prefix to complete.
-        let last = tokens.last_mut().unwrap();
-        *last = word_under_cursor.to_string();
-    }
-
-    let args_os: Vec<std::ffi::OsString> =
-        tokens.into_iter().map(std::ffi::OsString::from).collect();
-    let index = args_os.len() - 1;
-    let mut cmd = DummyGitArgs::command();
-    let current_dir = std::env::current_dir().ok();
-
-    match clap_complete::engine::complete(&mut cmd, args_os, index, current_dir.as_deref()) {
-        Ok(candidates) => candidates,
-        Err(_) => Vec::new(),
-    }
-}
-
 fn possible_interpolate_easing_completions(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     cursor::CursorEasing::VARIANTS
         .into_iter()
@@ -1421,9 +1326,6 @@ impl Flyline {
                         }
                     }
                 }
-
-                #[cfg(feature = "integration-tests")]
-                let _ = parsed; // keep shape of the cfg for now
 
                 bash_symbols::BuiltinExitCode::ExecutionSuccess as c_int
             }
