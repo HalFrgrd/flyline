@@ -7,8 +7,10 @@ use crate::{
     text_buffer::SubString,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub enum CompType {
+    #[default]
+    None,
     FirstWord,      // the first word under the cursor. cursor might be in the middle of it
     FuzzyFirstWord, // fuzzy-match commands when FirstWord prefix-matching finds nothing
     CommandComp {

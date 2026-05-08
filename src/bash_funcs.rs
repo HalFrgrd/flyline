@@ -722,12 +722,45 @@ pub fn run_programmable_completions(
     } else if command_word == "cat" {
         // do a naive filessytem glob.
         // bash sometimes does this if nothing is returned by the prog comp spec.
-        let completions = std::fs::read_dir(".")
-            .unwrap()
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.file_name().to_string_lossy().to_string())
-            .filter(|name| name.starts_with(word_under_cursor))
-            .collect();
+
+        // Split word_under_cursor at the final '/'.
+        // lhs keeps the trailing slash so completions can be reassembled in the
+        // same shape the user typed.
+        let (lhs, rhs) = match word_under_cursor.rsplit_once('/') {
+            Some((left, right)) => (format!("{left}/"), right),
+            None => (String::new(), word_under_cursor),
+        };
+
+        // Expand the directory side (lhs) before filesystem lookup.
+        let expanded_lhs = if lhs.is_empty() {
+            expand_filename(".")
+        } else {
+            expand_filename(&lhs)
+        };
+
+        let mut completions = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&expanded_lhs) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str()
+                    && name.starts_with(rhs)
+                {
+                    let mut candidate = if lhs.is_empty() {
+                        name.to_string()
+                    } else {
+                        format!("{lhs}{name}")
+                    };
+
+                    if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                        candidate.push('/');
+                    }
+
+                    completions.push(candidate);
+                }
+            }
+        }
+
+        completions.sort();
+        completions.dedup();
 
         let mut flags = CompletionFlags::default();
         flags.quote_type = find_quote_type(word_under_cursor);

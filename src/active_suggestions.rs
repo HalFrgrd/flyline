@@ -653,7 +653,7 @@ pub struct ActiveSuggestionsBuilder {
     pub unprocessed: VecDeque<UnprocessedSuggestion>,
     pub auto_accept_if_solo: bool,
     pub common_prefix: Option<String>,
-    pub comp_type: Option<tab_completion_context::CompType>,
+    pub comp_type: tab_completion_context::CompType,
 }
 
 impl ActiveSuggestionsBuilder {
@@ -665,7 +665,7 @@ impl ActiveSuggestionsBuilder {
             unprocessed: VecDeque::new(),
             auto_accept_if_solo: true,
             common_prefix: None,
-            comp_type: None,
+            comp_type: tab_completion_context::CompType::default(),
         }
     }
 
@@ -678,7 +678,7 @@ impl ActiveSuggestionsBuilder {
     }
 
     pub fn with_comp_type(mut self, comp_type: tab_completion_context::CompType) -> Self {
-        self.comp_type = Some(comp_type);
+        self.comp_type = comp_type;
         self
     }
 
@@ -831,6 +831,7 @@ impl ActiveSuggestions {
             unprocessed: unprocessed_suggestions,
             common_prefix: _,
             auto_accept_if_solo: _,
+            comp_type: _,
         } = builder;
         let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
 
