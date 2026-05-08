@@ -1189,6 +1189,8 @@ mod tab_completion_tests {
             );
 
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
+            assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
+            assert_eq!(buffer.buffer(), "mycmd ./abc/foo/baz");
         }
 
 
