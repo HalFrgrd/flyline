@@ -147,9 +147,9 @@ fn run_comp_spec_completion(
                     return CompSpecCompletionResult::None;
                 }
 
-                let mut builder = ActiveSuggestionsBuilder::new();
-                builder.extend_processed(processed);
-                CompSpecCompletionResult::Found(builder)
+                CompSpecCompletionResult::Found(ActiveSuggestionsBuilder::from_processed(
+                    processed,
+                ))
             }
             Ok(_) => {
                 log::debug!(
@@ -180,16 +180,16 @@ fn run_comp_spec_completion(
                 );
                 log::debug!("Completions: {:#?}", comp_result);
                 let flags = comp_result.flags;
-                let mut builder = ActiveSuggestionsBuilder::new();
-                builder.extend_unprocessed(comp_result.completions.into_iter().map(move |sug| {
-                    UnprocessedSuggestion {
-                        raw_text: sug,
-                        full_path: None,
-                        flags,
-                        word_under_cursor: alias_expanded_word_under_cursor.to_string(),
-                    }
-                }));
-                CompSpecCompletionResult::Found(builder)
+                CompSpecCompletionResult::Found(ActiveSuggestionsBuilder::from_unprocessed(
+                    comp_result.completions.into_iter().map(move |sug| {
+                        UnprocessedSuggestion {
+                            raw_text: sug,
+                            full_path: None,
+                            flags,
+                            word_under_cursor: alias_expanded_word_under_cursor.to_string(),
+                        }
+                    }),
+                ))
             }
             Ok(comp_result) => CompSpecCompletionResult::NoneWithFlags(comp_result.flags),
             _ => CompSpecCompletionResult::None,
@@ -338,13 +338,9 @@ pub(crate) fn gen_completions_internal(
                     word_under_cursor.as_ref()
                 );
                 if !matching_vars.is_empty() {
-                    let mut builder = ActiveSuggestionsBuilder::new();
-                    builder.extend_processed(ProcessedSuggestion::from_string_vec(
-                        matching_vars,
-                        "",
-                        " ",
+                    return Some(ActiveSuggestionsBuilder::from_processed(
+                        ProcessedSuggestion::from_string_vec(matching_vars, "", " "),
                     ));
-                    return Some(builder);
                 }
             }
             tab_completion_context::CompType::TildeExpansion => {
@@ -359,9 +355,7 @@ pub(crate) fn gen_completions_internal(
                     word_under_cursor.as_ref()
                 );
                 if !completions.is_empty() {
-                    let mut builder = ActiveSuggestionsBuilder::new();
-                    builder.extend_processed(completions);
-                    return Some(builder);
+                    return Some(ActiveSuggestionsBuilder::from_processed(completions));
                 }
             }
             tab_completion_context::CompType::GlobExpansion => {
@@ -378,9 +372,7 @@ pub(crate) fn gen_completions_internal(
                     [] => {}
                     [single_completion] => {
                         let processed = single_completion.clone().into_processed();
-                        let mut builder = ActiveSuggestionsBuilder::new();
-                        builder.push_processed(processed);
-                        return Some(builder);
+                        return Some(ActiveSuggestionsBuilder::from_processed([processed]));
                     }
                     _ => {
                         // Unlike other completions, if there are multiple glob completions,
@@ -414,13 +406,9 @@ pub(crate) fn gen_completions_internal(
                                 acc
                             },
                         );
-                        let mut builder = ActiveSuggestionsBuilder::new();
-                        builder.push_processed(ProcessedSuggestion::new(
-                            completions_as_string,
-                            "",
-                            "",
-                        ));
-                        return Some(builder);
+                        return Some(ActiveSuggestionsBuilder::from_processed([
+                            ProcessedSuggestion::new(completions_as_string, "", ""),
+                        ]));
                     }
                 }
             }
@@ -440,12 +428,8 @@ pub(crate) fn gen_completions_internal(
                     word_under_cursor.as_ref()
                 );
                 if !completions.is_empty() {
-                    let mut builder = ActiveSuggestionsBuilder::new();
-                    builder.extend_unprocessed(completions);
-                    return Some(builder);
-                }
-            }
-            tab_completion_context::CompType::FuzzyFilenameExpansion => {
+                    return Some(ActiveSuggestionsBuilder::from_unprocessed(completions));
+                } => {
                 log::debug!(
                     "CompType::FuzzyFilenameExpansion for: {}",
                     word_under_cursor.as_ref()
@@ -459,10 +443,10 @@ pub(crate) fn gen_completions_internal(
                     word_under_cursor.as_ref()
                 );
                 if !completions.is_empty() {
-                    let mut builder =
-                        ActiveSuggestionsBuilder::new().with_auto_accept_if_solo(false);
-                    builder.extend_unprocessed(completions);
-                    return Some(builder);
+                    return Some(
+                        ActiveSuggestionsBuilder::from_unprocessed(completions)
+                            .with_auto_accept_if_solo(false),
+                    );
                 }
             }
         }
@@ -500,9 +484,8 @@ fn filter_out_non_executables(paths: Vec<UnprocessedSuggestion>) -> Vec<Unproces
 
 fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
     log::debug!("Generating first word completions for: '{}'", command);
-    let mut builder = ActiveSuggestionsBuilder::new();
     if command.is_empty() {
-        return builder;
+        return ActiveSuggestionsBuilder::new();
     }
 
     if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
@@ -512,8 +495,7 @@ fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
             bash_funcs::CompletionFlags::default(),
         );
         let executable_files = filter_out_non_executables(files);
-        builder.extend_unprocessed(executable_files);
-        return builder;
+        return ActiveSuggestionsBuilder::from_unprocessed(executable_files);
     }
 
     let mut res = vec![];
@@ -525,28 +507,25 @@ fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
     }
 
     if res.is_empty() {
-        return builder;
+        return ActiveSuggestionsBuilder::new();
     }
 
     res.sort_by(|a, b| a.len().cmp(&b.len()).then(a.cmp(b)));
     res.dedup();
-    builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
-    builder
+    ActiveSuggestionsBuilder::from_processed(ProcessedSuggestion::from_string_vec(res, "", " "))
 }
 
 fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
     log::debug!("Generating fuzzy first word completions for: '{}'", command);
-    let mut builder = ActiveSuggestionsBuilder::new();
     if command.is_empty() {
-        return builder;
+        return ActiveSuggestionsBuilder::new();
     }
 
     if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
         let fuzzy_files =
             tab_complete_fuzzy_filename(command, bash_funcs::CompletionFlags::default());
         let executable_files = filter_out_non_executables(fuzzy_files);
-        builder.extend_unprocessed(executable_files);
-        return builder;
+        return ActiveSuggestionsBuilder::from_unprocessed(executable_files);
     }
 
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
@@ -568,8 +547,7 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
 
     scored.sort_by(|a, b| b.0.cmp(&a.0));
     let res = scored.into_iter().map(|(_, s)| s).collect();
-    builder.extend_processed(ProcessedSuggestion::from_string_vec(res, "", " "));
-    builder
+    ActiveSuggestionsBuilder::from_processed(ProcessedSuggestion::from_string_vec(res, "", " "))
 }
 
 /// Core glob expansion logic that works with an already-expanded PathPatternExpansion.

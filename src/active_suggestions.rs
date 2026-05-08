@@ -690,6 +690,20 @@ impl ActiveSuggestionsBuilder {
         self.unprocessed.extend(iter);
     }
 
+    /// Create a builder pre-populated with already-processed suggestions.
+    pub fn from_processed<I: IntoIterator<Item = ProcessedSuggestion>>(iter: I) -> Self {
+        let mut builder = Self::new();
+        builder.extend_processed(iter);
+        builder
+    }
+
+    /// Create a builder pre-populated with raw suggestions for lazy post-processing.
+    pub fn from_unprocessed<I: IntoIterator<Item = UnprocessedSuggestion>>(iter: I) -> Self {
+        let mut builder = Self::new();
+        builder.extend_unprocessed(iter);
+        builder
+    }
+
     /// `true` when no suggestions of either kind have been collected.
     pub fn is_empty(&self) -> bool {
         self.processed.is_empty() && self.unprocessed.is_empty()
