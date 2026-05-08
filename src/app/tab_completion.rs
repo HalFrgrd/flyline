@@ -73,7 +73,6 @@ enum CommandCompletionResult {
 fn run_command_completion(
     completion_context: &tab_completion_context::CompletionContext,
     initial_command_word: &str,
-    fuzzy_match_against: Option<&str>,
 ) -> CommandCompletionResult {
     let poss_alias = bash_funcs::find_alias(initial_command_word);
     log::debug!(
@@ -99,14 +98,6 @@ fn run_command_completion(
     let alias_expanded_word_under_cursor_end =
         alias_expanded_completion_context.word_under_cursor_end_context_relative();
 
-    // The `word_under_cursor` field on the suggestions we emit must be
-    // the *original* word under cursor (what the user actually typed)
-    // so the suggestion-processing pipeline lines up the inserted text
-    // with the buffer correctly. In fuzzy mode the wuc on the
-    // (rewritten) completion_context is the broader prefix, so prefer
-    // `fuzzy_match_against` when set.
-    let original_wuc = fuzzy_match_against.unwrap_or(alias_expanded_word_under_cursor);
-
     if alias_expanded_command_word == "flyline" {
         // Flyline's own subcommand/flag completions are produced by
         // clap_complete and are already escaped/finalized. Skip the
@@ -119,27 +110,17 @@ fn run_command_completion(
             alias_expanded_cursor_byte_pos,
         ) {
             Ok(candidates) if !candidates.is_empty() => {
-                let quote_type = bash_funcs::find_quote_type(original_wuc);
-                let fuzzy_matcher = fuzzy_match_against
-                    .map(|_| ArinaeMatcher::new(skim::CaseMatching::Smart, true));
+                let quote_type = bash_funcs::find_quote_type(alias_expanded_word_under_cursor);
 
                 let processed: Vec<ProcessedSuggestion> = candidates
                     .into_iter()
                     .filter_map(|c| {
-                        let raw_value = c.get_value().to_string_lossy().to_string();
-
-                        if let (Some(matcher), Some(target)) =
-                            (fuzzy_matcher.as_ref(), fuzzy_match_against)
-                        {
-                            content_utils::fuzzy_match_with_threshold(matcher, &raw_value, target)?;
-                        }
-
+                        let value = c.get_value().to_string_lossy().to_string();
                         let value = if let Some(qt) = quote_type {
-                            bash_funcs::quoting_function_rust(&raw_value, qt, true, false)
+                            bash_funcs::quoting_function_rust(&value, qt, true, false)
                         } else {
-                            raw_value.clone()
+                            value.clone()
                         };
-
                         let (value, suffix) =
                             if let Some(stripped) = value.strip_suffix("NO_SUFFIX") {
                                 (stripped.to_string(), "")
@@ -210,36 +191,14 @@ fn run_command_completion(
                     alias_expanded_full_command
                 );
                 log::debug!("Completions: {:#?}", comp_result);
-
-                let final_completions: Vec<String> = if let Some(target) = fuzzy_match_against {
-                    let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
-                    let mut scored: Vec<(i64, String)> = comp_result
-                        .completions
-                        .into_iter()
-                        .filter_map(|sug| {
-                            content_utils::fuzzy_match_with_threshold(&matcher, &sug, target)
-                                .map(|score| (score, sug))
-                        })
-                        .collect();
-                    scored.sort_by(|a, b| b.0.cmp(&a.0));
-                    log::debug!("FuzzyCommandComp kept {} candidates", scored.len());
-                    if scored.is_empty() {
-                        return CommandCompletionResult::NoneWithFlags(comp_result.flags);
-                    }
-                    scored.into_iter().map(|(_, s)| s).collect()
-                } else {
-                    comp_result.completions
-                };
-
                 let flags = comp_result.flags;
-                let wuc_for_suggestions = original_wuc.to_string();
                 let mut builder = ActiveSuggestionsBuilder::new();
-                builder.extend_unprocessed(final_completions.into_iter().map(move |sug| {
+                builder.extend_unprocessed(comp_result.completions.into_iter().map(move |sug| {
                     UnprocessedSuggestion {
                         raw_text: sug,
                         full_path: None,
                         flags,
-                        word_under_cursor: wuc_for_suggestions.clone(),
+                        word_under_cursor: alias_expanded_word_under_cursor.to_string(),
                     }
                 }));
                 CommandCompletionResult::Found(builder)
@@ -299,8 +258,10 @@ pub(crate) fn gen_completions_internal(
                 // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
-                match run_command_completion(completion_context, initial_command_word, None) {
-                    CommandCompletionResult::Found(builder) => return Some(builder),
+                match run_command_completion(completion_context, initial_command_word) {
+                    CommandCompletionResult::Found(builder) => {
+                        return Some(builder);
+                    }
                     CommandCompletionResult::NoneWithFlags(flags) => {
                         // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
                         // Always try to produce secondary completions
@@ -316,31 +277,61 @@ pub(crate) fn gen_completions_internal(
                 let original_wuc = word_under_cursor.as_ref();
                 log::debug!("CompType::FuzzyCommandComp for: {}", original_wuc);
 
-                if original_wuc.chars().count() < 2 {
-                    log::debug!(
-                        "CompType::FuzzyCommandComp skipped: word_under_cursor '{}' has fewer than 2 chars",
-                        original_wuc
-                    );
+                let new_wuc: String = if original_wuc.starts_with("--") {
+                    original_wuc.chars().take(2).collect()
+                } else if original_wuc.len() <= 1 {
                     continue;
-                }
+                } else {
+                    original_wuc.chars().take(1).collect()
+                };
 
-                // Bash's programmable completions filter their candidates by
-                // prefix-matching against the word under the cursor. Build a
-                // temporary completion context with the wuc replaced by just
-                // its first character so bash returns a much wider candidate
-                // pool, then fuzzy-match those candidates against the full
-                // original word under cursor.
-                let first_char = original_wuc.chars().next().unwrap();
-                let first_char_str: String = first_char.to_string();
-                let fuzzy_completion_context =
-                    completion_context.with_wuc_replaced(&first_char_str);
+                let fuzzy_completion_context = completion_context.with_wuc_replaced(&new_wuc);
 
-                match run_command_completion(
-                    &fuzzy_completion_context,
-                    initial_command_word,
-                    Some(original_wuc),
-                ) {
-                    CommandCompletionResult::Found(builder) => return Some(builder),
+                match run_command_completion(&fuzzy_completion_context, initial_command_word) {
+                    CommandCompletionResult::Found(mut builder) => {
+                        let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+
+                        builder.processed = builder
+                            .processed
+                            .into_iter()
+                            .filter_map(|sug| {
+                                let match_text = &sug.s.strip_prefix(&new_wuc).unwrap_or(&sug.s);
+                                content_utils::fuzzy_match_with_threshold(
+                                    &matcher,
+                                    match_text,
+                                    original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc),
+                                    content_utils::FuzzyMatchThreshold::High,
+                                )
+                                .inspect(|score| {
+                                    log::debug!("Fuzzy match score for '{}': {}", match_text, score)
+                                })
+                                .map(|_score| sug)
+                            })
+                            .collect();
+
+                        builder.unprocessed = builder
+                            .unprocessed
+                            .into_iter()
+                            .filter_map(|sug| {
+                                let match_text = &sug
+                                    .match_text()
+                                    .strip_prefix(&new_wuc)
+                                    .unwrap_or(&sug.match_text());
+                                content_utils::fuzzy_match_with_threshold(
+                                    &matcher,
+                                    match_text,
+                                    original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc),
+                                    content_utils::FuzzyMatchThreshold::High,
+                                )
+                                .inspect(|score| {
+                                    log::debug!("Fuzzy match score for '{}': {}", match_text, score)
+                                })
+                                .map(|_score| sug)
+                            })
+                            .collect();
+                        builder = builder.with_auto_accept_if_solo(false);
+                        return Some(builder);
+                    }
                     CommandCompletionResult::NoneWithFlags(flags) => {
                         comp_res_flags = flags;
                     }
@@ -575,8 +566,12 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
     let mut seen: HashSet<String> = HashSet::new();
     for poss_completion in bash_funcs::get_possible_command_words() {
         if seen.insert(poss_completion.clone())
-            && let Some(score) =
-                content_utils::fuzzy_match_with_threshold(&matcher, &poss_completion, command)
+            && let Some(score) = content_utils::fuzzy_match_with_threshold(
+                &matcher,
+                &poss_completion,
+                command,
+                content_utils::FuzzyMatchThreshold::High,
+            )
         {
             scored.push((score, poss_completion));
         }
@@ -730,8 +725,13 @@ fn tab_complete_fuzzy_filename(
             // directory prefix doesn't inflate the score.
             let match_text = sug.match_text();
             let filename = match_text.rsplit('/').next().unwrap_or(match_text);
-            content_utils::fuzzy_match_with_threshold(&matcher, filename, &dequoted_fragment)
-                .map(|score| (score, sug))
+            content_utils::fuzzy_match_with_threshold(
+                &matcher,
+                filename,
+                &dequoted_fragment,
+                content_utils::FuzzyMatchThreshold::Medium,
+            )
+            .map(|score| (score, sug))
         })
         .collect();
 

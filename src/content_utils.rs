@@ -697,13 +697,30 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
     frames
 }
 
-fn fuzzy_pattern_score_threshold(pattern_len: usize) -> i64 {
-    match pattern_len {
-        0..1 => 0,
-        1..3 => 10,
-        3..5 => 25,
-        5..9 => 35,
-        _ => 45,
+#[derive(Debug, Clone, Copy)]
+pub enum FuzzyMatchThreshold {
+    None,
+    Medium,
+    High,
+}
+
+fn fuzzy_pattern_score_threshold(pattern_len: usize, threshold: FuzzyMatchThreshold) -> i64 {
+    match threshold {
+        FuzzyMatchThreshold::None => 0,
+        FuzzyMatchThreshold::Medium => match pattern_len {
+            0..1 => 0,
+            1..3 => 10,
+            3..5 => 25,
+            5..9 => 35,
+            _ => 45,
+        },
+        FuzzyMatchThreshold::High => match pattern_len {
+            0..1 => 0,
+            1..3 => 20,
+            3..5 => 50,
+            5..9 => 70,
+            _ => 90,
+        },
     }
 }
 
@@ -711,8 +728,9 @@ pub fn fuzzy_match_with_threshold(
     matcher: &ArinaeMatcher,
     candidate: &str,
     pattern: &str,
+    threshold: FuzzyMatchThreshold,
 ) -> Option<i64> {
-    let score_threshold = fuzzy_pattern_score_threshold(pattern.len());
+    let score_threshold = fuzzy_pattern_score_threshold(pattern.len(), threshold);
 
     matcher
         .fuzzy_match(candidate, pattern)
@@ -723,8 +741,9 @@ pub fn fuzzy_indices_with_threshold(
     matcher: &ArinaeMatcher,
     candidate: &str,
     pattern: &str,
+    threshold: FuzzyMatchThreshold,
 ) -> Option<(i64, Vec<usize>)> {
-    let score_threshold = fuzzy_pattern_score_threshold(pattern.len());
+    let score_threshold = fuzzy_pattern_score_threshold(pattern.len(), threshold);
 
     matcher
         .fuzzy_indices(candidate, pattern)

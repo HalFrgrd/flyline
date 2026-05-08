@@ -705,6 +705,7 @@ impl FuzzyHistorySearch {
                 &self.matcher,
                 &entry.command,
                 current_cmd,
+                content_utils::FuzzyMatchThreshold::Medium,
             ) {
                 new_cache_entries.push(HistoryEntryFormatted::new(entry_index, score, indices));
             }
