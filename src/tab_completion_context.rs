@@ -97,6 +97,9 @@ impl<'a> CompletionContext<'a> {
         let wuc = word_under_cursor.as_ref();
         let mut comp_types = vec![];
 
+        let wuc_looks_like_path = wuc.starts_with('~') || wuc.contains("/");
+        let wuc_looks_like_env_var = (wuc.starts_with('$') || wuc.starts_with("\"$")) && !wuc_looks_like_path;
+
         // We could just rely on CompType::CommandComp and let bash do this expansion
         // but flyline is better and handles more edge cases around tilde expansion.
         // So we prioritize TildeExpansion over CommandComp if the word under cursor looks like it could be a tilde expansion.
@@ -122,10 +125,12 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::CommandComp {
                 command_word: command_word.clone(),
             });
-            comp_types.push(CompType::FuzzyCommandComp { command_word });
+            if !wuc_looks_like_path && !wuc_looks_like_env_var {
+                comp_types.push(CompType::FuzzyCommandComp { command_word });
+            }
         }
 
-        if (wuc.starts_with('$') || wuc.starts_with("\"$")) && !wuc.contains("/") {
+        if wuc_looks_like_env_var {
             comp_types.push(CompType::EnvVariable);
         } else if wuc.starts_with('~') && !wuc.contains("/") {
             comp_types.push(CompType::TildeExpansion);
@@ -1511,9 +1516,6 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FuzzyCommandComp {
-                    command_word: "echo".to_string()
-                },
                 CompType::EnvVariable
             ]
         );
@@ -1530,9 +1532,6 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FuzzyCommandComp {
-                    command_word: "echo".to_string()
-                },
                 CompType::EnvVariable
             ]
         );
@@ -1547,9 +1546,6 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
-                    command_word: "echo".to_string()
-                },
-                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
@@ -1569,9 +1565,6 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FuzzyCommandComp {
-                    command_word: "echo".to_string()
-                },
                 CompType::EnvVariable
             ]
         );
@@ -1586,9 +1579,6 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
-                    command_word: "echo".to_string()
-                },
-                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::EnvVariable
@@ -1628,9 +1618,6 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "ll".to_string()
                 },
-                CompType::FuzzyCommandComp {
-                    command_word: "ll".to_string()
-                },
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -1648,9 +1635,6 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FuzzyCommandComp {
-                    command_word: "echo".to_string()
-                },
                 CompType::GlobExpansion
             ]
         );
@@ -1662,9 +1646,6 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
-                    command_word: "echo".to_string()
-                },
-                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::GlobExpansion
@@ -1683,9 +1664,6 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FuzzyCommandComp {
-                    command_word: "echo".to_string()
-                },
                 CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
@@ -1698,9 +1676,6 @@ mod tests {
             ctx.comp_types,
             vec![
                 CompType::CommandComp {
-                    command_word: "echo".to_string()
-                },
-                CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
                 CompType::FilenameExpansion,
