@@ -184,6 +184,27 @@ impl<'a> CompletionContext<'a> {
         }
     }
 
+    pub fn word_right_of_cursor(&self) -> &str {
+        match self
+            .buffer
+            .get(self.cursor_byte_pos..self.word_under_cursor.end())
+        {
+            Some(s) => s,
+            None => "",
+        }
+    }
+
+    pub fn with_cursor_at_end_of_wuc(&'a self) -> CompletionContext<'a> {
+        let cursor_byte_pos = self.word_under_cursor.end();
+        CompletionContext {
+            buffer: self.buffer.clone(),
+            context: self.context.clone(),
+            cursor_byte_pos,
+            word_under_cursor: self.word_under_cursor.clone(),
+            comp_types: self.comp_types.clone(),
+        }
+    }
+
     pub fn with_expanded_alias(&self, alias_def: &str) -> CompletionContext<'static> {
         let context = self.context.as_ref();
         let command_word_len = context
@@ -363,6 +384,13 @@ pub fn get_completion_context<'a>(
                     _ => break,
                 }
             }
+
+            // if let Some(cursor_to_end) = buffer.get(cursor_byte_pos..end) {
+            //     // if there is a / in cursor_to_end, move the end closer to cursor so that we dont have the /
+            //     if let Some(slash_pos) = cursor_to_end.find('/') {
+            //         end = cursor_byte_pos + slash_pos;
+            //     }
+            // }
 
             start..end
         }

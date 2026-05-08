@@ -59,7 +59,9 @@ fn run_comp_spec_completion(
         .as_deref()
         .filter(|alias| !alias.is_empty())
         .unwrap_or(initial_command_word);
-    let alias_expanded_completion_context = completion_context.with_expanded_alias(alias_def);
+    let alias_expanded_completion_context = completion_context
+        .with_cursor_at_end_of_wuc()
+        .with_expanded_alias(alias_def);
     let alias_expanded_command_word = alias_def
         .split_whitespace()
         .next()
@@ -74,80 +76,7 @@ fn run_comp_spec_completion(
         alias_expanded_completion_context.word_under_cursor_end_context_relative();
 
     if alias_expanded_command_word == "flyline" {
-        // Flyline's own subcommand/flag completions are produced by
-        // clap_complete and are already escaped/finalized. Skip the
-        // bash post-processing pipeline entirely and build
-        // ProcssedSuggestions directly so descriptions (the help text
-        // attached to each candidate) are preserved as-is.
-        match complete_flyline_args(
-            alias_expanded_full_command,
-            alias_expanded_word_under_cursor,
-            alias_expanded_cursor_byte_pos,
-        ) {
-            Ok(candidates) if !candidates.is_empty() => {
-                let quote_type = bash_funcs::find_quote_type(alias_expanded_word_under_cursor);
-
-                let processed: Vec<ProcessedSuggestion> = candidates
-                    .into_iter()
-                    .filter_map(|c| {
-                        let value = c.get_value().to_string_lossy().to_string();
-                        let value = if let Some(qt) = quote_type {
-                            bash_funcs::quoting_function_rust(&value, qt, true, false)
-                        } else {
-                            value.clone()
-                        };
-                        let (value, suffix) =
-                            if let Some(stripped) = value.strip_suffix("NO_SUFFIX") {
-                                (stripped.to_string(), "")
-                            } else {
-                                (value, " ")
-                            };
-                        let (prefix, value) = if let Some(delim_pos) = value.find("PREFIX_DELIM") {
-                            let p = value[..delim_pos].to_string();
-                            let v = value[delim_pos + "PREFIX_DELIM".len()..].to_string();
-                            (p, v)
-                        } else {
-                            (String::new(), value)
-                        };
-
-                        let description = match c.get_help() {
-                            Some(h) => {
-                                let ansi_help = format!("{}", h.ansi());
-                                SuggestionDescription::Animation(
-                                    ansi_help
-                                        .split('\t')
-                                        .map(|s| ansi_string_to_spans(s))
-                                        .collect(),
-                                )
-                            }
-                            None => SuggestionDescription::Static(vec![]),
-                        };
-
-                        Some(
-                            ProcessedSuggestion::new(&value, prefix, suffix)
-                                .with_description(description),
-                        )
-                    })
-                    .collect();
-
-                if processed.is_empty() {
-                    return None;
-                }
-
-                Some(ActiveSuggestionsBuilder::from_processed(processed))
-            }
-            Ok(_) => {
-                log::debug!(
-                    "No flyline completions found for command '{}'",
-                    alias_expanded_full_command
-                );
-                None
-            }
-            Err(e) => {
-                log::error!("Error generating flyline completions: {}", e);
-                None
-            }
-        }
+        run_flyline_compspec(alias_expanded_completion_context)
     } else {
         let poss_completions = bash_funcs::run_programmable_completions(
             alias_expanded_full_command,
@@ -179,6 +108,84 @@ fn run_comp_spec_completion(
             }
             Ok(_) => None,
             _ => None,
+        }
+    }
+}
+
+fn run_flyline_compspec(
+    completion_context: tab_completion_context::CompletionContext,
+) -> Option<ActiveSuggestionsBuilder> {
+    let full_command = completion_context.context.as_ref();
+    let cursor_byte_pos = completion_context.cursor_byte_pos_context_relative();
+    let word_under_cursor = completion_context.word_under_cursor.as_ref();
+
+    // Flyline's own subcommand/flag completions are produced by
+    // clap_complete and are already escaped/finalized. Skip the
+    // bash post-processing pipeline entirely and build
+    // ProcssedSuggestions directly so descriptions (the help text
+    // attached to each candidate) are preserved as-is.
+    match complete_flyline_args(full_command, word_under_cursor, cursor_byte_pos) {
+        Ok(candidates) if !candidates.is_empty() => {
+            let quote_type = bash_funcs::find_quote_type(word_under_cursor);
+
+            let processed: Vec<ProcessedSuggestion> = candidates
+                .into_iter()
+                .filter_map(|c| {
+                    let value = c.get_value().to_string_lossy().to_string();
+                    let value = if let Some(qt) = quote_type {
+                        bash_funcs::quoting_function_rust(&value, qt, true, false)
+                    } else {
+                        value.clone()
+                    };
+                    let (value, suffix) = if let Some(stripped) = value.strip_suffix("NO_SUFFIX") {
+                        (stripped.to_string(), "")
+                    } else {
+                        (value, " ")
+                    };
+                    let (prefix, value) = if let Some(delim_pos) = value.find("PREFIX_DELIM") {
+                        let p = value[..delim_pos].to_string();
+                        let v = value[delim_pos + "PREFIX_DELIM".len()..].to_string();
+                        (p, v)
+                    } else {
+                        (String::new(), value)
+                    };
+
+                    let description = match c.get_help() {
+                        Some(h) => {
+                            let ansi_help = format!("{}", h.ansi());
+                            SuggestionDescription::Animation(
+                                ansi_help
+                                    .split('\t')
+                                    .map(|s| ansi_string_to_spans(s))
+                                    .collect(),
+                            )
+                        }
+                        None => SuggestionDescription::Static(vec![]),
+                    };
+
+                    Some(
+                        ProcessedSuggestion::new(&value, prefix, suffix)
+                            .with_description(description),
+                    )
+                })
+                .collect();
+
+            if processed.is_empty() {
+                return None;
+            }
+
+            Some(ActiveSuggestionsBuilder::from_processed(processed))
+        }
+        Ok(_) => {
+            log::debug!(
+                "No flyline completions found for command '{}'",
+                full_command
+            );
+            None
+        }
+        Err(e) => {
+            log::error!("Error generating flyline completions: {}", e);
+            None
         }
     }
 }
@@ -428,16 +435,18 @@ fn gen_completions_uncomitted(
             tab_completion_context::CompType::FilenameExpansion => {
                 log::debug!(
                     "CompType::FilenameExpansion for: {}",
-                    completion_context.word_left_of_cursor()
+                    word_under_cursor.as_ref()
                 );
                 let (completions, _comp_res_flags) = tab_complete_glob_expansion(
-                    &(completion_context.word_left_of_cursor().to_string() + "*"),
+                    &(completion_context.word_left_of_cursor().to_string()
+                        + "*"
+                        + completion_context.word_right_of_cursor()),
                 );
 
                 log::debug!(
                     "CompType::FilenameExpansion found {} completions for pattern: {}",
                     completions.len(),
-                    completion_context.word_left_of_cursor()
+                    word_under_cursor.as_ref()
                 );
                 if !completions.is_empty() {
                     return Some(ActiveSuggestionsBuilder::from_unprocessed(completions));
@@ -1192,6 +1201,34 @@ mod tab_completion_tests {
             assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
             assert_eq!(buffer.buffer(), "mycmd ./abc/foo/baz");
         }
+
+
+        // #[test]
+        // fn mid_word_completion_naive_bash_default() {
+        //     cd_to_example_fs();
+        //     // Cat is setup so that run_programmable_completions in test fixtures
+        //     // returns files matching the lhs of
+        //     let mut buffer = TextBuffer::new("cat ./abc/fo/baz");
+        //     for _ in 0..5 {
+        //         buffer.move_left();
+        //     }
+        //     // Cursor is now on the 'o' in 'foo'
+
+        //     let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
+        //     assert_eq!(
+        //         builder.processed,
+        //         &[ProcessedSuggestion::new(
+        //             "./abc/foo/",
+        //             "",
+        //             "",
+        //         )],
+        //     );
+
+        //     let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
+        //     assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
+        //     assert_eq!(buffer.buffer(), "mycmd ./abc/foo/baz");
+        // }
+
 
 
         // ------- finish_tab_complete (auto-accept solo) ------------------

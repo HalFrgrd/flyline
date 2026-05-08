@@ -710,21 +710,34 @@ pub fn run_programmable_completions(
         word_under_cursor
     );
 
-    if command_word != "git" {
-        return Ok(ProgrammableCompleteReturn::new(
+    if command_word == "git" {
+        let candidates = test_fixtures::dummy_git_completions(full_command, word_under_cursor);
+        let completions: Vec<String> = candidates
+            .into_iter()
+            .map(|c| c.get_value().to_string_lossy().to_string())
+            .collect();
+        let mut flags = CompletionFlags::default();
+        flags.quote_type = find_quote_type(word_under_cursor);
+        Ok(ProgrammableCompleteReturn::new(completions, flags))
+    } else if command_word == "cat" {
+        // do a naive filessytem glob.
+        // bash sometimes does this if nothing is returned by the prog comp spec.
+        let completions = std::fs::read_dir(".")
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name.starts_with(word_under_cursor))
+            .collect();
+
+        let mut flags = CompletionFlags::default();
+        flags.quote_type = find_quote_type(word_under_cursor);
+        Ok(ProgrammableCompleteReturn::new(completions, flags))
+    } else {
+        Ok(ProgrammableCompleteReturn::new(
             Vec::new(),
             CompletionFlags::default(),
-        ));
+        ))
     }
-
-    let candidates = test_fixtures::dummy_git_completions(full_command, word_under_cursor);
-    let completions: Vec<String> = candidates
-        .into_iter()
-        .map(|c| c.get_value().to_string_lossy().to_string())
-        .collect();
-    let mut flags = CompletionFlags::default();
-    flags.quote_type = find_quote_type(word_under_cursor);
-    Ok(ProgrammableCompleteReturn::new(completions, flags))
 }
 
 #[cfg(not(test))]
