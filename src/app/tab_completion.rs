@@ -45,20 +45,10 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 //   if (iscompgen && iscompleting == 0 && rl_completion_found_quote == 0
 //   && rl_filename_dequoting_function) { ... }
 
-/// Result of running command-style completion (programmable bash
-/// completion or flyline's own clap-based completer) for a single
-/// completion type.
-enum CompSpecCompletionResult {
-    /// We have suggestions to return.
-    Found(ActiveSuggestionsBuilder),
-    /// No suggestions.
-    None,
-}
-
 fn run_comp_spec_completion(
     completion_context: &tab_completion_context::CompletionContext,
     initial_command_word: &str,
-) -> CompSpecCompletionResult {
+) -> Option<ActiveSuggestionsBuilder> {
     let poss_alias = bash_funcs::find_alias(initial_command_word);
     log::debug!(
         "Checking for alias for command word '{}': {:?}",
@@ -141,21 +131,21 @@ fn run_comp_spec_completion(
                     .collect();
 
                 if processed.is_empty() {
-                    return CompSpecCompletionResult::None;
+                    return None;
                 }
 
-                CompSpecCompletionResult::Found(ActiveSuggestionsBuilder::from_processed(processed))
+                Some(ActiveSuggestionsBuilder::from_processed(processed))
             }
             Ok(_) => {
                 log::debug!(
                     "No flyline completions found for command '{}'",
                     alias_expanded_full_command
                 );
-                CompSpecCompletionResult::None
+                None
             }
             Err(e) => {
                 log::error!("Error generating flyline completions: {}", e);
-                CompSpecCompletionResult::None
+                None
             }
         }
     } else {
@@ -175,7 +165,7 @@ fn run_comp_spec_completion(
                 );
                 log::debug!("Completions: {:#?}", comp_result);
                 let flags = comp_result.flags;
-                CompSpecCompletionResult::Found(ActiveSuggestionsBuilder::from_unprocessed(
+                Some(ActiveSuggestionsBuilder::from_unprocessed(
                     comp_result
                         .completions
                         .into_iter()
@@ -187,8 +177,8 @@ fn run_comp_spec_completion(
                         }),
                 ))
             }
-            Ok(_) => CompSpecCompletionResult::None,
-            _ => CompSpecCompletionResult::None,
+            Ok(_) => None,
+            _ => None,
         }
     }
 }
@@ -274,11 +264,8 @@ fn gen_completions_uncomitted(
                 // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
-                match run_comp_spec_completion(completion_context, initial_command_word) {
-                    CompSpecCompletionResult::Found(builder) => {
-                        return Some(builder);
-                    }
-                    CompSpecCompletionResult::None => {}
+                if let Some(builder) = run_comp_spec_completion(completion_context, initial_command_word) {
+                    return Some(builder);
                 }
             }
 
@@ -298,8 +285,7 @@ fn gen_completions_uncomitted(
 
                 let fuzzy_completion_context = completion_context.with_wuc_replaced(&new_wuc);
 
-                match run_comp_spec_completion(&fuzzy_completion_context, initial_command_word) {
-                    CompSpecCompletionResult::Found(mut builder) => {
+                if let Some(mut builder) = run_comp_spec_completion(&fuzzy_completion_context, initial_command_word) {
                         let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
                         let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
 
@@ -343,8 +329,6 @@ fn gen_completions_uncomitted(
                             .collect();
                         builder = builder.with_auto_accept_if_solo(false);
                         return Some(builder);
-                    }
-                    CompSpecCompletionResult::None => {}
                 }
             }
 
