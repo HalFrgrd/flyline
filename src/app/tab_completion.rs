@@ -48,7 +48,7 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 /// Result of running command-style completion (programmable bash
 /// completion or flyline's own clap-based completer) for a single
 /// completion type.
-enum CommandCompletionResult {
+enum CompSpecCompletionResult {
     /// We have suggestions to return.
     Found(ActiveSuggestionsBuilder),
     /// No suggestions, but bash returned flags worth propagating to
@@ -58,22 +58,11 @@ enum CommandCompletionResult {
     None,
 }
 
-/// Run command-style completion. Used by both `CompType::CommandComp`
-/// (prefix matching) and `CompType::FuzzyCommandComp` (fuzzy fallback).
-///
-/// Handles alias expansion, the flyline-as-command special case, and
-/// calling bash's programmable completer. When `fuzzy_match_against` is
-/// `Some(original_wuc)`, the candidates returned by bash (or by
-/// flyline's clap completer) are fuzzy-matched against `original_wuc`
-/// and sorted by score. In that mode, callers are expected to pass a
-/// `completion_context` that has already had its word-under-cursor
-/// replaced with a broader prefix (e.g. via
-/// `CompletionContext::with_wuc_replaced`) so bash's prefix-matching
-/// returns a wide candidate pool.
-fn run_command_completion(
+
+fn run_comp_spec_completion(
     completion_context: &tab_completion_context::CompletionContext,
     initial_command_word: &str,
-) -> CommandCompletionResult {
+) -> CompSpecCompletionResult {
     let poss_alias = bash_funcs::find_alias(initial_command_word);
     log::debug!(
         "Checking for alias for command word '{}': {:?}",
@@ -156,23 +145,23 @@ fn run_command_completion(
                     .collect();
 
                 if processed.is_empty() {
-                    return CommandCompletionResult::None;
+                    return CompSpecCompletionResult::None;
                 }
 
                 let mut builder = ActiveSuggestionsBuilder::new();
                 builder.extend_processed(processed);
-                CommandCompletionResult::Found(builder)
+                CompSpecCompletionResult::Found(builder)
             }
             Ok(_) => {
                 log::debug!(
                     "No flyline completions found for command '{}'",
                     alias_expanded_full_command
                 );
-                CommandCompletionResult::None
+                CompSpecCompletionResult::None
             }
             Err(e) => {
                 log::error!("Error generating flyline completions: {}", e);
-                CommandCompletionResult::None
+                CompSpecCompletionResult::None
             }
         }
     } else {
@@ -201,10 +190,10 @@ fn run_command_completion(
                         word_under_cursor: alias_expanded_word_under_cursor.to_string(),
                     }
                 }));
-                CommandCompletionResult::Found(builder)
+                CompSpecCompletionResult::Found(builder)
             }
-            Ok(comp_result) => CommandCompletionResult::NoneWithFlags(comp_result.flags),
-            _ => CommandCompletionResult::None,
+            Ok(comp_result) => CompSpecCompletionResult::NoneWithFlags(comp_result.flags),
+            _ => CompSpecCompletionResult::None,
         }
     }
 }
@@ -258,16 +247,16 @@ pub(crate) fn gen_completions_internal(
                 // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
-                match run_command_completion(completion_context, initial_command_word) {
-                    CommandCompletionResult::Found(builder) => {
+                match run_comp_spec_completion(completion_context, initial_command_word) {
+                    CompSpecCompletionResult::Found(builder) => {
                         return Some(builder);
                     }
-                    CommandCompletionResult::NoneWithFlags(flags) => {
+                    CompSpecCompletionResult::NoneWithFlags(flags) => {
                         // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
                         // Always try to produce secondary completions
                         comp_res_flags = flags;
                     }
-                    CommandCompletionResult::None => {}
+                    CompSpecCompletionResult::None => {}
                 }
             }
 
@@ -287,8 +276,8 @@ pub(crate) fn gen_completions_internal(
 
                 let fuzzy_completion_context = completion_context.with_wuc_replaced(&new_wuc);
 
-                match run_command_completion(&fuzzy_completion_context, initial_command_word) {
-                    CommandCompletionResult::Found(mut builder) => {
+                match run_comp_spec_completion(&fuzzy_completion_context, initial_command_word) {
+                    CompSpecCompletionResult::Found(mut builder) => {
                         let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
                         let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
 
@@ -333,10 +322,10 @@ pub(crate) fn gen_completions_internal(
                         builder = builder.with_auto_accept_if_solo(false);
                         return Some(builder);
                     }
-                    CommandCompletionResult::NoneWithFlags(flags) => {
+                    CompSpecCompletionResult::NoneWithFlags(flags) => {
                         comp_res_flags = flags;
                     }
-                    CommandCompletionResult::None => {}
+                    CompSpecCompletionResult::None => {}
                 }
             }
 
