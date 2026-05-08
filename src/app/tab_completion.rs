@@ -222,8 +222,6 @@ fn gen_completions_uncomitted(
 
     let word_under_cursor = &completion_context.word_under_cursor;
 
-    let mut comp_res_flags = bash_funcs::CompletionFlags::default();
-
     for comp_type in &completion_context.comp_types {
         log::debug!("Processing completion type: {:?}", comp_type);
         match comp_type {
@@ -368,8 +366,8 @@ fn gen_completions_uncomitted(
             }
             tab_completion_context::CompType::GlobExpansion => {
                 log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
-                let completions =
-                    tab_complete_glob_expansion(word_under_cursor.as_ref(), comp_res_flags);
+                let (completions, comp_res_flags) =
+                    tab_complete_glob_expansion(word_under_cursor.as_ref());
 
                 log::debug!(
                     "CompType::GlobExpansion found {} completions for pattern: {}",
@@ -425,10 +423,8 @@ fn gen_completions_uncomitted(
                     "CompType::FilenameExpansion for: {}",
                     word_under_cursor.as_ref()
                 );
-                let completions = tab_complete_glob_expansion(
-                    &(word_under_cursor.as_ref().to_string() + "*"),
-                    comp_res_flags,
-                );
+                let (completions, _comp_res_flags) =
+                    tab_complete_glob_expansion(&(word_under_cursor.as_ref().to_string() + "*"));
 
                 log::debug!(
                     "CompType::FilenameExpansion found {} completions for pattern: {}",
@@ -444,8 +440,8 @@ fn gen_completions_uncomitted(
                     "CompType::FuzzyFilenameExpansion for: {}",
                     word_under_cursor.as_ref()
                 );
-                let completions =
-                    tab_complete_fuzzy_filename(word_under_cursor.as_ref(), comp_res_flags);
+                let (completions, _comp_res_flags) =
+                    tab_complete_fuzzy_filename(word_under_cursor.as_ref());
 
                 log::debug!(
                     "CompType::FuzzyFilenameExpansion found {} completions for pattern: {}",
@@ -500,10 +496,7 @@ fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
 
     if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
         // Path to executable
-        let files = tab_complete_glob_expansion(
-            &(command.to_string() + "*"),
-            bash_funcs::CompletionFlags::default(),
-        );
+        let (files, _comp_res_flags) = tab_complete_glob_expansion(&(command.to_string() + "*"));
         let executable_files = filter_out_non_executables(files);
         return ActiveSuggestionsBuilder::from_unprocessed(executable_files);
     }
@@ -532,8 +525,7 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
     }
 
     if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
-        let fuzzy_files =
-            tab_complete_fuzzy_filename(command, bash_funcs::CompletionFlags::default());
+        let (fuzzy_files, _comp_res_flags) = tab_complete_fuzzy_filename(command);
         let executable_files = filter_out_non_executables(fuzzy_files);
         return ActiveSuggestionsBuilder::from_unprocessed(executable_files);
     }
@@ -636,8 +628,8 @@ fn tab_complete_with_expanded_pattern(
 
 fn tab_complete_glob_expansion(
     pattern: &str,
-    mut comp_resultflags: bash_funcs::CompletionFlags,
-) -> Vec<UnprocessedSuggestion> {
+) -> (Vec<UnprocessedSuggestion>, bash_funcs::CompletionFlags) {
+    let mut comp_resultflags = bash_funcs::CompletionFlags::default();
     // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
     // e.g. my_command $PWD/fi<TAB> should expand to:
     // my_command $PWD/file\ with\ spaces.txt
@@ -650,8 +642,9 @@ fn tab_complete_glob_expansion(
     log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
 
     let expanded = PathPatternExpansion::new(pattern);
+    let completions = tab_complete_with_expanded_pattern(&expanded, comp_resultflags, true);
 
-    tab_complete_with_expanded_pattern(&expanded, comp_resultflags, true)
+    (completions, comp_resultflags)
 }
 
 /// List all files in the directory implied by `word_under_cursor` and return
@@ -662,8 +655,8 @@ fn tab_complete_glob_expansion(
 /// but the fuzzy matcher will.
 fn tab_complete_fuzzy_filename(
     word_under_cursor: &str,
-    mut comp_res_flags: bash_funcs::CompletionFlags,
-) -> Vec<UnprocessedSuggestion> {
+) -> (Vec<UnprocessedSuggestion>, bash_funcs::CompletionFlags) {
+    let mut comp_res_flags = bash_funcs::CompletionFlags::default();
     // Split at the last '/' to separate the directory prefix from the filename
     // fragment that will be used as the fuzzy-match pattern.
 
@@ -679,7 +672,7 @@ fn tab_complete_fuzzy_filename(
 
     // Nothing to fuzzy-match against — let the caller fall through.
     if filename_fragment.is_empty() {
-        return vec![];
+        return (vec![], comp_res_flags);
     }
 
     // Set up flags for glob expansion
@@ -715,7 +708,9 @@ fn tab_complete_fuzzy_filename(
     // Best matches first.
     scored.sort_by(|a, b| b.0.cmp(&a.0));
     scored.dedup_by(|a, b| a.1.match_text() == b.1.match_text());
-    scored.into_iter().map(|(_, sug)| sug).collect()
+    let completions = scored.into_iter().map(|(_, sug)| sug).collect();
+
+    (completions, comp_res_flags)
 }
 
 fn tab_complete_tilde_expansion(pattern: &str) -> Vec<ProcessedSuggestion> {
@@ -1039,7 +1034,7 @@ mod tab_completion_tests {
         }
 
         // ------- dummy git completion fuzzy matching
-        /// This tests the [`CompType::FuzzyCommandComp`] branch where we re-run the
+        /// This tests the [crate::tab_completion_context::CompType::FuzzyCommandComp] branch where we re-run the
         #[test]
         fn git_commit_fuzzy_command_comp() {
             cd_to_example_fs();
@@ -1049,8 +1044,6 @@ mod tab_completion_tests {
                 assert!(names.contains(&flag), "expected {flag} in {:?}", names);
             }
         }
-
-
 
         // ------- alias expansion (find_alias / get_all_aliases) ----------
 

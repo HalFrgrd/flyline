@@ -159,6 +159,7 @@ impl<'a> CompletionContext<'a> {
         &context.as_ref()[..end]
     }
 
+    #[cfg(test)]
     pub fn context_until_cursor(&self) -> &str {
         Self::context_until_cursor_for(&self.context, self.cursor_byte_pos)
     }

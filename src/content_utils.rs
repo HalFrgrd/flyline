@@ -699,14 +699,12 @@ pub fn easing_animation_frames(easing: CursorEasing) -> Vec<Vec<Span<'static>>> 
 
 #[derive(Debug, Clone, Copy)]
 pub enum FuzzyMatchThreshold {
-    None,
     Medium,
     High,
 }
 
 fn fuzzy_pattern_score_threshold(pattern_len: usize, threshold: FuzzyMatchThreshold) -> i64 {
     match threshold {
-        FuzzyMatchThreshold::None => 0,
         FuzzyMatchThreshold::Medium => match pattern_len {
             0..1 => 0,
             1..3 => 10,
