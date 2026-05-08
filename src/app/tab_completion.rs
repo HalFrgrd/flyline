@@ -58,7 +58,6 @@ enum CompSpecCompletionResult {
     None,
 }
 
-
 fn run_comp_spec_completion(
     completion_context: &tab_completion_context::CompletionContext,
     initial_command_word: &str,

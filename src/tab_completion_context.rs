@@ -98,7 +98,8 @@ impl<'a> CompletionContext<'a> {
         let mut comp_types = vec![];
 
         let wuc_looks_like_path = wuc.starts_with('~') || wuc.contains("/");
-        let wuc_looks_like_env_var = (wuc.starts_with('$') || wuc.starts_with("\"$")) && !wuc_looks_like_path;
+        let wuc_looks_like_env_var =
+            (wuc.starts_with('$') || wuc.starts_with("\"$")) && !wuc_looks_like_path;
 
         // We could just rely on CompType::CommandComp and let bash do this expansion
         // but flyline is better and handles more edge cases around tilde expansion.
