@@ -126,9 +126,6 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::CommandComp {
                 command_word: command_word.clone(),
             });
-            if !wuc_looks_like_path && !wuc_looks_like_env_var {
-                comp_types.push(CompType::FuzzyCommandComp { command_word });
-            }
         }
 
         if wuc_looks_like_env_var {
@@ -139,6 +136,16 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::GlobExpansion);
         } else {
             comp_types.push(CompType::FilenameExpansion);
+
+            for comp_type in &comp_types {
+                if !wuc_looks_like_path && let CompType::CommandComp { command_word } = comp_type {
+                    comp_types.push(CompType::FuzzyCommandComp {
+                        command_word: command_word.clone(),
+                    });
+                    break;
+                }
+            }
+
             comp_types.push(CompType::FuzzyFilenameExpansion);
         }
 
@@ -152,6 +159,7 @@ impl<'a> CompletionContext<'a> {
         &context.as_ref()[..end]
     }
 
+    #[cfg(test)]
     pub fn context_until_cursor(&self) -> &str {
         Self::context_until_cursor_for(&self.context, self.cursor_byte_pos)
     }
@@ -264,13 +272,13 @@ pub fn get_completion_context<'a>(
 
     let context_tokens = parser.get_current_command_tokens();
 
-    if cfg!(test) {
-        println!("Context tokens:");
-        dbg!(cursor_byte_pos);
-        for t in context_tokens.iter() {
-            println!("{:#?} byte_range={:?}\n", t, t.token.byte_range());
-        }
-    }
+    // if cfg!(test) {
+    //     println!("Context tokens:");
+    //     dbg!(cursor_byte_pos);
+    //     for t in context_tokens.iter() {
+    //         println!("{:#?} byte_range={:?}\n", t, t.token.byte_range());
+    //     }
+    // }
 
     // first try and find a non whitespace token that inclusivly contains the cursor.
     // if there is one, that is the word under the cursor.
@@ -707,10 +715,10 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FilenameExpansion,
                 CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
         );
@@ -1029,10 +1037,10 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "diff".to_string()
                 },
+                CompType::FilenameExpansion,
                 CompType::FuzzyCommandComp {
                     command_word: "diff".to_string()
                 },
-                CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
         );
@@ -1477,10 +1485,10 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "cd".to_string()
                 },
+                CompType::FilenameExpansion,
                 CompType::FuzzyCommandComp {
                     command_word: "cd".to_string()
                 },
-                CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
         );
@@ -1497,10 +1505,10 @@ mod tests {
                 CompType::CommandComp {
                     command_word: "echo".to_string()
                 },
+                CompType::FilenameExpansion,
                 CompType::FuzzyCommandComp {
                     command_word: "echo".to_string()
                 },
-                CompType::FilenameExpansion,
                 CompType::FuzzyFilenameExpansion
             ]
         );

@@ -4,6 +4,8 @@ use log::{LevelFilter, Log, Metadata, Record};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
+#[cfg(test)]
+use std::sync::Once;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -82,6 +84,8 @@ impl Log for MemoryLogger {
 
 static LOGGER: OnceLock<MemoryLogger> = OnceLock::new();
 static TERMINAL_STREAMING: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static TEST_LOG_INIT: Once = Once::new();
 
 pub fn init() -> Result<()> {
     let logger = LOGGER.get_or_init(MemoryLogger::new);
@@ -95,6 +99,19 @@ pub fn init() -> Result<()> {
             Ok(())
         }
     }
+}
+
+#[cfg(test)]
+pub fn init_for_tests_once() {
+    TEST_LOG_INIT.call_once(|| {
+        let _ = init();
+
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            print_logs_stderr();
+            previous_hook(panic_info);
+        }));
+    });
 }
 
 /// Returns true if `flyline log stream terminal` has been configured.

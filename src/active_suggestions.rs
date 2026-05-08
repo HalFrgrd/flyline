@@ -676,6 +676,7 @@ impl ActiveSuggestionsBuilder {
     }
 
     /// Append a single already-processed suggestion.
+    #[allow(dead_code)]
     pub fn push_processed(&mut self, sug: ProcessedSuggestion) {
         self.processed.push(sug);
     }
