@@ -814,25 +814,26 @@ pub fn expand_filename(filename: &str) -> String {
 
 /// Test-only filename expansion. Supports a tiny subset of bash expansion:
 ///   * `$PWD` → current working directory
-///   * `$HOME` and a leading `~/` → `/home/john`
+///   * `$HOME` and a leading `~/` → [`TEST_HOME_DIR`]
 ///   * `./` and `../` are left in place (resolved by the OS as relative paths)
 ///
 /// Panics if the resulting path does not exist on disk after expansion. This
 /// catches mistakes in test fixtures and matches the user's request to keep
 /// expansion deterministic.
 #[cfg(test)]
+pub const TEST_HOME_DIR: &str = "/home/john";
+
+#[cfg(test)]
 pub fn expand_filename(filename: &str) -> String {
     if filename.is_empty() {
         return String::new();
     }
 
-    let test_home = "/home/john";
-
     // Tilde expansion: leading `~/` only (we don't try to support `~user`).
     let mut expanded = if let Some(rest) = filename.strip_prefix("~/") {
-        format!("{}/{}", test_home, rest)
+        format!("{}/{}", TEST_HOME_DIR, rest)
     } else if filename == "~" {
-        test_home.to_string()
+        TEST_HOME_DIR.to_string()
     } else {
         filename.to_string()
     };
@@ -843,8 +844,8 @@ pub fn expand_filename(filename: &str) -> String {
         .unwrap_or_default();
     expanded = expanded.replace("${PWD}", &pwd).replace("$PWD", &pwd);
     expanded = expanded
-        .replace("${HOME}", test_home)
-        .replace("$HOME", test_home);
+        .replace("${HOME}", TEST_HOME_DIR)
+        .replace("$HOME", TEST_HOME_DIR);
 
     if !Path::new(&expanded).exists() {
         panic!(

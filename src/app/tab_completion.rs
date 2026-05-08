@@ -829,7 +829,7 @@ pub(crate) fn apply_tab_complete_to_buffer(
         return TabCompleteBufferOutcome::SoloAccepted;
     }
 
-    if builder.len() == 0 {
+    if builder.is_empty() {
         log::info!(
             "No suggestions generated for word under cursor '{:?}'",
             wuc_substring
@@ -1005,12 +1005,19 @@ mod tab_completion_tests {
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
         // SAFETY: we are inside a forked subprocess so the env mutation is
         // single-threaded.
+        // We update PWD in addition to set_current_dir because the test stub
+        // `expand_filename` (and any glob/path-expansion code that calls it)
+        // resolves `$PWD` via `env::current_dir()` for the cwd part *and*
+        // also string-substitutes the literal `$PWD` token from the typed
+        // command line; keeping the env var aligned with the cwd matches
+        // bash's behaviour and avoids surprising mismatches in the tests.
         unsafe { std::env::set_var("PWD", &dir) };
     }
 
     fn cd_to_example_braces_fs() {
         let dir = format!("{}/tests/example_braces_fs", MANIFEST_DIR);
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
+        // SAFETY / PWD: see `cd_to_example_fs` above.
         unsafe { std::env::set_var("PWD", &dir) };
     }
 
