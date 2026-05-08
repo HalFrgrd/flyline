@@ -1841,28 +1841,9 @@ impl SnapshotManager {
 mod test_undo_redo {
     use super::*;
 
-    use log::{LevelFilter, Log, Metadata, Record};
-
-    fn setup_logging() {
-        struct StdoutLogger;
-        impl Log for StdoutLogger {
-            fn enabled(&self, _metadata: &Metadata) -> bool {
-                true
-            }
-            fn log(&self, record: &Record) {
-                if self.enabled(record.metadata()) {
-                    println!("[{}] {}", record.level(), record.args());
-                }
-            }
-            fn flush(&self) {}
-        }
-        static LOGGER: StdoutLogger = StdoutLogger;
-        let _ = log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Debug));
-    }
-
     #[test]
     fn undo_stack() {
-        setup_logging();
+        crate::logging::init_for_tests_once();
 
         let snap = |s: &str| Snapshot::new(s, 0, None);
 
@@ -1900,7 +1881,7 @@ mod test_undo_redo {
 
     #[test]
     fn undo_redo_basic() {
-        setup_logging();
+        crate::logging::init_for_tests_once();
         let mut tb = TextBuffer::new("Hello");
         tb.insert_str(" World");
         println!("{}", tb.debug_undo_stack());
@@ -1915,7 +1896,7 @@ mod test_undo_redo {
 
     #[test]
     fn undo_redo_multiple_steps() {
-        setup_logging();
+        crate::logging::init_for_tests_once();
         let mut tb = TextBuffer::new("Start");
         tb.insert_str(" One");
         tb.insert_str(" Two");
@@ -1937,7 +1918,7 @@ mod test_undo_redo {
 
     #[test]
     fn undo_and_start_new_edit() {
-        setup_logging();
+        crate::logging::init_for_tests_once();
         let mut tb = TextBuffer::new("Base");
         tb.insert_str(" Edit1");
         tb.insert_str(" Edit2");
@@ -1957,7 +1938,7 @@ mod test_undo_redo {
 
     #[test]
     fn undo_replace_word_under_cursor() {
-        setup_logging();
+        crate::logging::init_for_tests_once();
         let mut tb = TextBuffer::new("The quick brown fox");
         let word = {
             let i = tb.buffer().find("quick").unwrap();
@@ -1977,7 +1958,7 @@ mod test_undo_redo {
 
     #[test]
     fn undo_restores_selection_after_delete() {
-        setup_logging();
+        crate::logging::init_for_tests_once();
         let mut tb = TextBuffer::new("Hello World");
         // Select "World"
         let start = tb.buffer().find("World").unwrap();
@@ -2003,7 +1984,7 @@ mod test_undo_redo {
 
     #[test]
     fn selection_change_does_not_create_snapshot() {
-        setup_logging();
+        crate::logging::init_for_tests_once();
         let mut tb = TextBuffer::new("Hello World");
         tb.insert_str("!");
         assert_eq!(tb.buffer(), "Hello World!");
