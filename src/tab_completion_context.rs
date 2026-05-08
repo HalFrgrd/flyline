@@ -272,13 +272,13 @@ pub fn get_completion_context<'a>(
 
     let context_tokens = parser.get_current_command_tokens();
 
-    if cfg!(test) {
-        println!("Context tokens:");
-        dbg!(cursor_byte_pos);
-        for t in context_tokens.iter() {
-            println!("{:#?} byte_range={:?}\n", t, t.token.byte_range());
-        }
-    }
+    // if cfg!(test) {
+    //     println!("Context tokens:");
+    //     dbg!(cursor_byte_pos);
+    //     for t in context_tokens.iter() {
+    //         println!("{:#?} byte_range={:?}\n", t, t.token.byte_range());
+    //     }
+    // }
 
     // first try and find a non whitespace token that inclusivly contains the cursor.
     // if there is one, that is the word under the cursor.

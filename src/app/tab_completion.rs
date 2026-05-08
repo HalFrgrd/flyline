@@ -330,7 +330,14 @@ fn gen_completions_uncomitted(
                         })
                         .collect();
                     builder = builder.with_auto_accept_if_solo(false);
-                    return Some(builder);
+                    log::debug!(
+                        "CompType::FuzzyCommandComp found {} completions for pattern: {}",
+                        builder.len(),
+                        pattern
+                    );
+                    if !builder.is_empty() {
+                        return Some(builder);
+                    }
                 }
             }
 
@@ -939,6 +946,7 @@ mod tab_completion_tests {
     /// string), drain anything still queued, then return the processed
     /// suggestions sorted by `s` for stable comparison.
     fn run_completion(command: &str) -> Vec<ProcessedSuggestion> {
+        crate::logging::init_for_tests_once();
         let buffer = TextBuffer::new(command);
         let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
         let Some(builder) = gen_completions_internal(&comp_context) else {
@@ -1038,11 +1046,19 @@ mod tab_completion_tests {
         #[test]
         fn git_commit_fuzzy_command_comp() {
             cd_to_example_fs();
-            let actual = run_completion("git cmomit"); // Typoe of commit
+            let actual = run_completion("git cmomit"); // Typo of commit
             let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
             for flag in ["commit"] {
                 assert!(names.contains(&flag), "expected {flag} in {:?}", names);
             }
+        }
+
+        #[test]
+        fn git_commit_fuzzy_command_comp_fallback_if_not_found() {
+            cd_to_example_fs();
+            let actual = run_completion("git symlinktfoo"); // This one should fall back to filenames
+            assert_eq!(actual.len(), 1);
+            assert_eq!(actual[0].s, "sym_link_to_foo/");
         }
 
         // ------- alias expansion (find_alias / get_all_aliases) ----------
