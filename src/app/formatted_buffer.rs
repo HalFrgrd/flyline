@@ -5,7 +5,6 @@ use crate::snake_animation::SnakeAnimation;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-#[cfg(not(test))]
 use crate::bash_funcs;
 use crate::content_builder::Tag;
 use crate::dparser::{AnnotatedToken, ClosingAnnotation, ToInclusiveRange};
@@ -184,7 +183,6 @@ struct WordInfo {
     pub is_recognised_command: bool,
 }
 
-#[cfg(not(test))]
 fn get_word_info(token: &AnnotatedToken) -> Option<WordInfo> {
     if token.annotations.is_env_var && token.token.kind.is_word() {
         let env_var_name = &token.token.value;
@@ -202,11 +200,6 @@ fn get_word_info(token: &AnnotatedToken) -> Option<WordInfo> {
             is_recognised_command: command_type != bash_funcs::CommandType::Unknown,
         });
     }
-    None
-}
-
-#[cfg(test)]
-fn get_word_info(_token: &AnnotatedToken) -> Option<WordInfo> {
     None
 }
 

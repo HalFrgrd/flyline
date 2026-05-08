@@ -223,9 +223,6 @@ pub struct Settings {
     /// call returns. Used by the `last-command-duration` prompt widget to
     /// compute and display the elapsed time since the last command.
     pub last_app_closed_at: Option<std::time::Instant>,
-    /// Whether to run tab completion tests (used for integration testing).
-    #[cfg(feature = "integration-tests")]
-    pub run_tab_completion_tests: bool,
 }
 
 impl Default for Settings {
@@ -254,8 +251,6 @@ impl Default for Settings {
             cancelled_command_history_manager: HistoryManager::new_empty(),
             agent_prompt_history_manager: HistoryManager::new_empty(),
             last_app_closed_at: None,
-            #[cfg(feature = "integration-tests")]
-            run_tab_completion_tests: false,
         }
     }
 }

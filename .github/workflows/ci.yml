@@ -124,19 +124,3 @@ jobs:
             built-artifact.cache-from=type=gha
             built-artifact.cache-to=type=gha,mode=max
 
-  tab-completion-tests:
-    name: Test tab completion using built library
-    needs: build-ubuntu-1604
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Run tab completion tests
-        uses: docker/bake-action@v7
-        with:
-          files: docker/docker-bake.hcl
-          targets: tab-completion-tests
-          set: |
-            *.cache-from=type=gha
-            *.cache-to=type=gha,mode=max

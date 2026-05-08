@@ -120,13 +120,7 @@ target "bash-integration-tests-pre-4-4" {
 }
 
 
-target "tab-completion-tests" {
-    context = "."
-    contexts = {
-        built-artifact = "target:extract-integration-test-build-artifact"
-    }
-    dockerfile = "docker/tab_completions.Dockerfile"
-}
+
 
 # Runs `flyline --help` inside an interactive bash session, strips ANSI codes,
 # and outputs flyline_help.txt to the project root.

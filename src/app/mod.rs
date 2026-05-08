@@ -532,12 +532,6 @@ impl<'a> App<'a> {
     }
 
     pub fn run(mut self) -> ExitState {
-        #[cfg(feature = "integration-tests")]
-        if self.settings.run_tab_completion_tests {
-            self.test_tab_completions();
-            return ExitState::WithoutCommand;
-        }
-
         // Send execution finished escape codes (previous command has completed).
         time_it!("startup: escape codes", {
             if self.settings.send_shell_integration_codes == settings::ShellIntegrationLevel::Full {

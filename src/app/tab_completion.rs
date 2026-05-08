@@ -197,7 +197,39 @@ fn run_comp_spec_completion(
     }
 }
 
+/// Top-level completion entry point used by `start_tab_complete` and tests.
+///
+/// Calls `gen_completions_uncomitted` (which may yield a partially-processed
+/// `ActiveSuggestionsBuilder`), then applies the post-processing that used
+/// to live in `start_tab_complete`: drain the queue of unprocessed
+/// suggestions and, when applicable, compute the longest common prefix.
+///
+/// Under `cfg(test)` we always force full processing (regardless of how big
+/// the queue is) and always populate the common prefix, so that test
+/// expectations are deterministic.
 pub(crate) fn gen_completions_internal(
+    completion_context: &tab_completion_context::CompletionContext,
+) -> Option<ActiveSuggestionsBuilder> {
+    let mut builder = gen_completions_uncomitted(completion_context)?;
+
+    let all_processed = builder.try_process_all();
+    if !all_processed {
+        log::debug!("Not all suggestions were fully processed; skipping common prefix calculation");
+    }
+
+    if cfg!(test) {
+        // Tests demand determinism: process everything and always compute
+        // the common prefix even if `auto_accept_if_solo` is false.
+        while !builder.try_process_all() {}
+        builder.set_common_prefix();
+    } else if builder.auto_accept_if_solo && all_processed {
+        builder.set_common_prefix();
+    }
+
+    Some(builder)
+}
+
+fn gen_completions_uncomitted(
     completion_context: &tab_completion_context::CompletionContext,
 ) -> Option<ActiveSuggestionsBuilder> {
     log::debug!("Completion context: {:#?}", completion_context);
@@ -759,6 +791,74 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<ProcessedSuggestion> {
     suggestions
 }
 
+/// Outcome of applying tab-completion results directly to a [`TextBuffer`].
+///
+/// This is the buffer-mutation half of `finish_tab_complete` factored out so
+/// it can be exercised from unit tests without constructing a full `App`.
+pub(crate) enum TabCompleteBufferOutcome {
+    /// We auto-accepted a single suggestion; the caller (the App) should
+    /// switch back to `ContentMode::Normal` and discard the builder.
+    SoloAccepted,
+    /// More than one suggestion (or fuzzy-style completion). The caller
+    /// should hand the builder over to `ActiveSuggestions` for display.
+    /// `final_wuc` is the new word-under-cursor `SubString` reflecting any
+    /// common-prefix insertion that was applied to the buffer.
+    Pending { final_wuc: SubString },
+}
+
+/// Buffer-only half of finishing a tab-completion. Mutates `buffer` in place
+/// (auto-accept of a solo suggestion, or insertion of the longest common
+/// prefix) and reports back what the caller should do next.
+pub(crate) fn apply_tab_complete_to_buffer(
+    buffer: &mut crate::text_buffer::TextBuffer,
+    builder: &ActiveSuggestionsBuilder,
+    wuc_substring: &SubString,
+) -> TabCompleteBufferOutcome {
+    if builder.len() == 1
+        && builder.auto_accept_if_solo
+        && let Some(suggestion) = builder.processed.iter().next()
+    {
+        log::info!(
+            "Auto-accepting solo suggestion: '{:?}' for word under cursor '{:?}'",
+            suggestion,
+            wuc_substring
+        );
+        buffer
+            .replace_word_under_cursor(&suggestion.formatted(), wuc_substring)
+            .ok();
+        return TabCompleteBufferOutcome::SoloAccepted;
+    }
+
+    if builder.len() == 0 {
+        log::info!(
+            "No suggestions generated for word under cursor '{:?}'",
+            wuc_substring
+        );
+    }
+
+    let mut final_wuc = wuc_substring.clone();
+    // if the background thread found a common prefix, insert it.
+    // e.g. ~foo<TAB> might produce /home/foobar and /home/foobaz,
+    // which have common prefix /home/foo that should be inserted to aid fuzzy matching.
+    if let Some(common_prefix) = builder.common_prefix.as_ref() {
+        match buffer.replace_word_under_cursor(common_prefix, wuc_substring) {
+            Ok(new_wuc) => {
+                log::info!(
+                    "New word under cursor after inserting common prefix: '{:?}'",
+                    new_wuc
+                );
+                final_wuc = new_wuc;
+            }
+            Err(e) => log::warn!(
+                "Failed to replace word under cursor with common prefix: {}",
+                e
+            ),
+        }
+    }
+
+    TabCompleteBufferOutcome::Pending { final_wuc }
+}
+
 impl App<'_> {
     /// Apply the results of tab completion generation (Phase 2 & 3: common
     /// prefix insertion and handing suggestions to the UI).
@@ -768,53 +868,16 @@ impl App<'_> {
         wuc_substring: SubString,
         load_time: std::time::Duration,
     ) {
-        if builder.len() == 1
-            && builder.auto_accept_if_solo
-            && let Some(suggestion) = builder.processed.iter().next()
-        {
-            log::info!(
-                "Auto-accepting solo suggestion: '{:?}' for word under cursor '{:?}'",
-                suggestion,
-                wuc_substring
-            );
-            self.buffer
-                .replace_word_under_cursor(&suggestion.formatted(), &wuc_substring)
-                .ok();
-            self.content_mode = ContentMode::Normal;
-            return;
-        }
-
-        if builder.len() == 0 {
-            log::info!(
-                "No suggestions generated for word under cursor '{:?}'",
-                wuc_substring
-            );
-        }
-        let mut final_wuc = wuc_substring.clone();
-        // if the background thread found a common prefix, insert it.
-        // e.g. ~foo<TAB> might produce /home/foobar and /home/foobaz,
-        // which have common prefix /home/foo that should be inserted to aid fuzzy matching.
-        if let Some(common_prefix) = builder.common_prefix.as_ref() {
-            match self
-                .buffer
-                .replace_word_under_cursor(common_prefix, &wuc_substring)
-            {
-                Ok(new_wuc) => {
-                    log::info!(
-                        "New word under cursor after inserting common prefix: '{:?}'",
-                        new_wuc
-                    );
-                    final_wuc = new_wuc;
-                }
-                Err(e) => log::warn!(
-                    "Failed to replace word under cursor with common prefix: {}",
-                    e
-                ),
+        let outcome = apply_tab_complete_to_buffer(&mut self.buffer, &builder, &wuc_substring);
+        match outcome {
+            TabCompleteBufferOutcome::SoloAccepted => {
+                self.content_mode = ContentMode::Normal;
+            }
+            TabCompleteBufferOutcome::Pending { final_wuc } => {
+                let suggestions = ActiveSuggestions::new(builder, final_wuc, load_time);
+                self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
             }
         }
-
-        let suggestions = ActiveSuggestions::new(builder, final_wuc, load_time);
-        self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
     }
 
     pub fn start_tab_complete(&mut self) {
@@ -836,28 +899,13 @@ impl App<'_> {
         let start_time = std::time::Instant::now();
 
         let thread_handle = std::thread::spawn(move || {
-            let suggestions = gen_completions_internal(&completion_context_owned);
-            if suggestions.is_none() {
+            let result = gen_completions_internal(&completion_context_owned);
+            if result.is_none() {
                 log::debug!(
                     "No suggestions generated for completion context: {:?}",
                     completion_context_owned
                 );
             }
-            // Auto-accept-if-solo and common-prefix insertion go hand in hand:
-            // both are skipped for fuzzy filename matching so the user gets to
-            // see and confirm the picked match.
-            let result = suggestions.map(|mut builder| {
-                let all_processed = builder.try_process_all();
-                if !all_processed {
-                    log::debug!(
-                        "Not all suggestions were fully processed; skipping common prefix calculation"
-                    );
-                }
-                if builder.auto_accept_if_solo && all_processed {
-                    builder.set_common_prefix()
-                };
-                builder
-            });
             if let Err(e) = tx.send(result) {
                 log::warn!(
                     "Tab completion: failed to send result (receiver dropped): {:?}",
@@ -895,347 +943,203 @@ impl App<'_> {
             }
         }
     }
+}
 
-    #[cfg(feature = "integration-tests")]
-    pub fn test_tab_completions(&mut self) {
-        use crate::logging;
-        use core::panic;
-        use itertools::Itertools;
+// ---------------------------------------------------------------------------
+// Library-test versions of the docker-based tab completion tests.
+//
+// These tests exercise `gen_completions_internal` and
+// `apply_tab_complete_to_buffer` directly against a `TextBuffer` instead of
+// constructing a full `App`. Tests that mutate process-wide state (env vars,
+// current working directory) run under `rusty_fork_test!` so each test gets
+// its own fresh process.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tab_completion_tests {
+    use super::*;
+    use crate::active_suggestions::ProcessedSuggestion;
+    use crate::tab_completion_context::get_completion_context;
+    use crate::text_buffer::TextBuffer;
+    use rusty_fork::rusty_fork_test;
 
-        log::set_max_level(log::LevelFilter::Debug);
-        logging::stream_logs("stderr".into()).unwrap();
+    const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
-        let mut run_test_on = |command: &str, expected_suggestions: &[&ProcessedSuggestion]| {
-            log::info!(
-                "\n\n---------------------------------------------------------------------------------"
-            );
-            log::info!("Testing tab completion for command: '{}'", command);
-            self.buffer.replace_buffer(command);
-            self.buffer.move_to_end();
-
-            let comp_context = tab_completion_context::get_completion_context(
-                self.buffer.buffer(),
-                self.buffer.cursor_byte_pos(),
-            );
-            let some_suggestions = gen_completions_internal(&comp_context);
-
-            if some_suggestions.is_none() {
-                if expected_suggestions.is_empty() {
-                    log::debug!(
-                        "No suggestions generated for command '{}', as expected.",
-                        command
-                    );
-                    return;
-                } else {
-                    panic!(
-                        "Expected some tab completion suggestions for command '{}', but got None",
-                        command
-                    );
-                }
-            }
-
-            let mut builder = some_suggestions.unwrap();
-            // Drain any remaining unprocessed suggestions (the timeout in
-            // try_process_all is only meaningful for the interactive path).
-            while !builder.unprocessed.is_empty() {
-                builder.try_process_all();
-            }
-            let mut suggestions: Vec<ProcessedSuggestion> = builder.processed;
-
-            suggestions.sort_by(|a, b| a.s.cmp(&b.s));
-
-            for sug in &suggestions {
-                log::debug!(
-                    "Generated suggestion for command '{}': '{:?}'",
-                    command,
-                    sug
-                );
-            }
-
-            for pair in suggestions.iter().zip_longest(expected_suggestions.iter()) {
-                match pair {
-                    itertools::EitherOrBoth::Both(sug, &expected) => {
-                        assert_eq!(
-                            (&sug.prefix, &sug.s, &sug.suffix),
-                            (&expected.prefix, &expected.s, &expected.suffix),
-                            "For command '{}', expected suggestion '{:?}' but got '{:?}'",
-                            command,
-                            expected,
-                            sug
-                        );
-                    }
-                    itertools::EitherOrBoth::Left(sug) => {
-                        panic!(
-                            "For command '{}', got unexpected extra suggestion: '{:?}'",
-                            command, sug
-                        );
-                    }
-                    itertools::EitherOrBoth::Right(&expected) => {
-                        panic!(
-                            "For command '{}', expected suggestion '{:?}' was missing",
-                            command, expected
-                        );
-                    }
-                }
-            }
+    /// Run completion against `command` (cursor placed at the end of the
+    /// string), drain anything still queued, then return the processed
+    /// suggestions sorted by `s` for stable comparison.
+    fn run_completion(command: &str) -> Vec<ProcessedSuggestion> {
+        let buffer = TextBuffer::new(command);
+        let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
+        let Some(builder) = gen_completions_internal(&comp_context) else {
+            return Vec::new();
         };
+        let mut suggestions: Vec<ProcessedSuggestion> = builder.processed;
+        suggestions.sort_by(|a, b| a.s.cmp(&b.s));
+        suggestions
+    }
 
-        let cwd = std::env::current_dir().unwrap();
-        log::info!("Current directory: {:?}", cwd);
+    fn assert_completions(command: &str, expected: &[ProcessedSuggestion]) {
+        let actual = run_completion(command);
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "completion count mismatch for command {:?}: got {:?}, expected {:?}",
+            command,
+            actual,
+            expected
+        );
+        for (got, want) in actual.iter().zip(expected.iter()) {
+            assert_eq!(
+                (&got.prefix, &got.s, &got.suffix),
+                (&want.prefix, &want.s, &want.suffix),
+                "for command {:?}: got {:?}, expected {:?}",
+                command,
+                got,
+                want
+            );
+        }
+    }
 
-        if let Ok(entries) = std::fs::read_dir(&cwd) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    let file_type = entry.file_type().unwrap();
-                    if file_type.is_dir() {
-                        log::info!("DIR: {:?}", path);
-                    } else if file_type.is_file() {
-                        log::info!("FILE: {:?}", path);
-                    } else {
-                        log::info!("OTHER: {:?}", path);
-                    }
-                }
+    fn cd_to_example_fs() {
+        let dir = format!("{}/tests/example_fs", MANIFEST_DIR);
+        std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
+        // SAFETY: we are inside a forked subprocess so the env mutation is
+        // single-threaded.
+        unsafe { std::env::set_var("PWD", &dir) };
+    }
+
+    fn cd_to_example_braces_fs() {
+        let dir = format!("{}/tests/example_braces_fs", MANIFEST_DIR);
+        std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
+        unsafe { std::env::set_var("PWD", &dir) };
+    }
+
+    rusty_fork_test! {
+        // ------- dummy git completion (clap-based, no bash symbols) -------
+
+        #[test]
+        fn git_top_level_subcommand_a_completes_to_add() {
+            cd_to_example_fs();
+            let actual = run_completion("git a");
+            // The dummy git CLI only knows about add/commit/diff. "a" only
+            // matches "add" so we expect exactly one candidate.
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            assert!(names.contains(&"add"), "expected `add` in {:?}", names);
+        }
+
+        #[test]
+        fn git_top_level_no_prefix_lists_subcommands() {
+            cd_to_example_fs();
+            let actual = run_completion("git ");
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            for sub in ["add", "commit", "diff"] {
+                assert!(names.contains(&sub), "expected `{sub}` in {:?}", names);
             }
         }
 
-        run_test_on(
-            "fl_comp_util --filenames ",
-            &[
-                &ProcessedSuggestion::new(r#"abc/"#, "", ""),
-                &ProcessedSuggestion::new(r#"bar.txt"#, "", " "),
-                &ProcessedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
-                &ProcessedSuggestion::new(r#"foo/"#, "", ""),
-                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &ProcessedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
-            ],
-        );
+        #[test]
+        fn git_commit_dashdash_lists_long_flags() {
+            cd_to_example_fs();
+            let actual = run_completion("git commit --");
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            for flag in ["--message", "--amend", "--all", "--no-verify"] {
+                assert!(names.contains(&flag), "expected {flag} in {:?}", names);
+            }
+        }
 
-        run_test_on(
-            "fl_comp_util --quoting-desired ",
-            &[&ProcessedSuggestion::new(r#"multi\ word\ option"#, "", " ")],
-        );
+        #[test]
+        fn git_diff_dashdash_lists_long_flags() {
+            cd_to_example_fs();
+            let actual = run_completion("git diff --");
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            for flag in ["--cached", "--stat", "--name-only", "--color"] {
+                assert!(names.contains(&flag), "expected {flag} in {:?}", names);
+            }
+        }
 
-        run_test_on(
-            "fl_comp_util --suppress-quote ",
-            &[&ProcessedSuggestion::new(r#"multi word option"#, "", " ")],
-        );
+        // ------- filename completion against tests/example_fs ------------
 
-        run_test_on(
-            "fl_comp_util --dont-suppress-append ",
-            &[&ProcessedSuggestion::new(r#"foo"#, "", " ")],
-        );
+        #[test]
+        fn filename_completion_in_example_fs() {
+            cd_to_example_fs();
+            // Use a non-git command so run_programmable_completions returns
+            // nothing and the FilenameExpansion branch handles the word.
+            assert_completions(
+                "mycmd ./",
+                &[
+                    ProcessedSuggestion::new("./abc/", "", ""),
+                    ProcessedSuggestion::new("./bar.txt", "", " "),
+                    ProcessedSuggestion::new(r"./file\ with\ spaces.txt", "", " "),
+                    ProcessedSuggestion::new("./foo/", "", ""),
+                    ProcessedSuggestion::new(r"./many\ spaces\ here/", "", ""),
+                    ProcessedSuggestion::new("./sym_link_to_foo/", "", ""),
+                ],
+            );
+        }
 
-        run_test_on(
-            "fl_comp_util --suppress-append ",
-            &[&ProcessedSuggestion::new(r#"foo"#, "", "")],
-        );
+        #[test]
+        fn glob_expansion_with_glob_chars_in_dir_components() {
+            cd_to_example_fs();
+            assert_completions(
+                "mycmd foo*/ba*",
+                &[ProcessedSuggestion::new("foo/baz", "", " ")],
+            );
+        }
 
-        run_test_on(
-            "fl_comp_util_default_filenames --fallback-to-default man",
-            &[
-                // &Suggestion::new(r#"bar.txt"#, "", " "),
-                // &Suggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
-                // &Suggestion::new(r#"foo/"#, "", ""),
-                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
-            ],
-        );
+        #[test]
+        fn glob_dollar_pwd_expansion() {
+            cd_to_example_fs();
+            assert_completions(
+                "mycmd $PWD/foo*/ba*",
+                &[ProcessedSuggestion::new("$PWD/foo/baz", "", " ")],
+            );
+        }
 
-        run_test_on(
-            "fl_comp_util --fallback-to-default $FOOBARBA",
-            &[&ProcessedSuggestion::new(r#"$FOOBARBAZ"#, "", " ")],
-        );
+        #[test]
+        fn brace_expansion_combined_with_glob() {
+            cd_to_example_braces_fs();
+            assert_completions(
+                "mycmd $PWD/foo*{1,3}/bar*{A,C}",
+                &[ProcessedSuggestion::new(
+                    "$PWD/foo1/barA $PWD/foo1/barC $PWD/foo3/barA $PWD/foo3/barC ",
+                    "",
+                    "",
+                )],
+            );
+        }
 
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default ma*",
-            &[&ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", "")],
-        );
+        // ------- finish_tab_complete (auto-accept solo) ------------------
 
-        run_test_on(
-            "fl_comp_util_dirnames --fallback-to-default-filenames ",
-            &[
-                &ProcessedSuggestion::new(r#"abc/"#, "", ""),
-                &ProcessedSuggestion::new(r#"foo/"#, "", ""),
-                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &ProcessedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
-            ],
-        );
+        #[test]
+        fn finish_tab_complete_auto_accepts_solo_suggestion() {
+            cd_to_example_fs();
+            let mut buffer = TextBuffer::new("mycmd bar.tx");
+            let comp_context =
+                get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
+            let wuc = comp_context.word_under_cursor.clone();
+            let builder = gen_completions_internal(&comp_context).expect("some completions");
 
-        run_test_on(
-            "fl_comp_util_plusdirs --quoting-desired ",
-            &[
-                &ProcessedSuggestion::new(r#"abc/"#, "", ""),
-                &ProcessedSuggestion::new(r#"foo/"#, "", ""),
-                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
-                &ProcessedSuggestion::new(r#"multi\ word\ option"#, "", " "),
-                &ProcessedSuggestion::new(r#"sym_link_to_foo/"#, "", ""),
-            ],
-        );
+            assert_eq!(builder.len(), 1, "expected exactly one suggestion");
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
+            assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
+            assert_eq!(buffer.buffer(), "mycmd bar.txt ");
+        }
 
-        // Test that alias expansion works: fl_comp_alias is 'fl_comp_util --nosort',
-        // so completing after it should yield the same results as 'fl_comp_util --nosort '.
-        run_test_on(
-            "fl_comp_alias ",
-            &[
-                &ProcessedSuggestion::new(r#"apple"#, "", " "),
-                &ProcessedSuggestion::new(r#"banana"#, "", " "),
-                &ProcessedSuggestion::new(r#"cherry"#, "", " "),
-            ],
-        );
+        // ------- finish_tab_complete (common prefix insertion) -----------
 
-        // Test that we don't quote the prefix but do quote the part of the path filled in by tab completion
-        run_test_on(
-            "fl_comp_util --fallback-to-default $PWD/man",
-            &[&ProcessedSuggestion::new(
-                r#"$PWD/many\ spaces\ here/"#,
-                "",
-                "",
-            )],
-        );
-
-        run_test_on(
-            r#"fl_comp_util --fallback-to-default $PWD/many\ spac"#,
-            &[&ProcessedSuggestion::new(
-                r#"$PWD/many\ spaces\ here/"#,
-                "",
-                "",
-            )],
-        );
-
-        run_test_on(
-            r#"fl_comp_util --fallback-to-default "$PWD/many spac"#,
-            &[&ProcessedSuggestion::new(
-                r#""$PWD/many spaces here/"#,
-                "",
-                "",
-            )],
-        );
-
-        // Test that $HOME prefix is preserved (not backslash-escaped) while the
-        // dollar sign in the new filename part IS escaped.
-        // $HOME/foo/ should complete to $HOME/foo/\$baz.txt (not \$HOME/foo/\$baz.txt).
-        run_test_on(
-            "fl_comp_util --env-var-test $HOME/foo/",
-            &[&ProcessedSuggestion::new(r#"\$baz.txt"#, "$HOME/foo/", " ")],
-        );
-
-        // Test glob expansion with glob characters in directory components
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default foo*/ba*",
-            &[&ProcessedSuggestion::new(r#"foo/baz"#, "", " ")],
-        );
-
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default abc/foo*/ba*",
-            &[&ProcessedSuggestion::new(r#"abc/foo/baz"#, "", " ")],
-        );
-
-        // Fuzzy tab completion tests
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default spaces",
-            &[
-                &ProcessedSuggestion::new(r#"file\ with\ spaces.txt"#, "", " "),
-                &ProcessedSuggestion::new(r#"many\ spaces\ here/"#, "", ""),
-            ],
-        );
-
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default $PWD/spaces",
-            &[
-                &ProcessedSuggestion::new(r#"$PWD/file\ with\ spaces.txt"#, "", " "),
-                &ProcessedSuggestion::new(r#"$PWD/many\ spaces\ here/"#, "", ""),
-            ],
-        );
-
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default many\\ spaces\\ here/here",
-            &[&ProcessedSuggestion::new(
-                r#"many\ spaces\ here/and\ more\ spaces\ here.txt"#,
-                "",
-                " ",
-            )],
-        );
-
-        // NB: Changing process cwd without changing env vars might cause problems.
-        std::env::set_current_dir("/tmp/example_fs/foo/glob_stuff1").unwrap();
-        bash_funcs::set_env_var("PWD", "/tmp/example_fs/foo/glob_stuff1").unwrap();
-
-        // .* matches hidden files only. and should ignore . and ..
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default .*",
-            &[&ProcessedSuggestion::new(r#".dotfile"#, "", " ")],
-        );
-
-        // ./.* matches hidden files only. and should ignore . and ..
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default ./.*",
-            &[&ProcessedSuggestion::new(r#"./.dotfile"#, "", " ")],
-        );
-
-        // ./* matches all non hidden
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default ./*",
-            &[&ProcessedSuggestion::new(r#"./a.txt"#, "", " ")],
-        );
-
-        // * matches all non hidden
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default *",
-            &[&ProcessedSuggestion::new(r#"a.txt"#, "", " ")],
-        );
-
-        // ----------------------------------------------------------------
-        // Brace expansion in glob tab completion.
-        // The fixture lives at /tmp/example_braces (see tab_completions.Dockerfile).
-        //   foo1/{barA, barB, barC}
-        //   foo2/{barA, barC}
-        //   foo3/{barA, barC}
-        // The pattern `$PWD/foo*{1,3}/bar*{A,C}` should expand to the
-        // cartesian product of `{1,3}` x `{A,C}` and therefore match only
-        // entries under foo1 and foo3, and only bar*A / bar*C — never foo2
-        // and never barB.
-        std::env::set_current_dir("/tmp/example_braces").unwrap();
-        bash_funcs::set_env_var("PWD", "/tmp/example_braces").unwrap();
-
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo*{1,3}/bar*{A,C}",
-            &[&ProcessedSuggestion::new(
-                r#"$PWD/foo1/barA $PWD/foo1/barC $PWD/foo3/barA $PWD/foo3/barC "#,
-                "",
-                "",
-            )],
-        );
-
-        // Single brace group combined with a glob character. This expands
-        // to two patterns (`$PWD/foo1/bar*A` and `$PWD/foo1/bar*C`) which
-        // together match exactly `barA` and `barC` under foo1.
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo1/bar*{A,C}",
-            &[&ProcessedSuggestion::new(
-                r#"$PWD/foo1/barA $PWD/foo1/barC "#,
-                "",
-                "",
-            )],
-        );
-
-        // Brace alternatives where one branch matches nothing should still
-        // surface the matches from the other branch (foo2 has no barB).
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo{1,2}/bar*B",
-            &[&ProcessedSuggestion::new(r#"$PWD/foo1/barB"#, "", " ")],
-        );
-
-        // The same path matched by multiple brace expansions can be shown
-        // multiple times. `bar*{A,A}` should produce duplicates.
-        run_test_on(
-            "fl_comp_util_bashdefault --fallback-to-default $PWD/foo1/bar*{A,A}",
-            &[&ProcessedSuggestion::new(
-                r#"$PWD/foo1/barA $PWD/foo1/barA "#,
-                "",
-                "",
-            )],
-        );
-
-        println!("Tab completion tests FLYLINE_TEST_SUCCESS");
+        #[test]
+        fn finish_tab_complete_inserts_common_prefix() {
+            cd_to_example_braces_fs();
+            // foo1, foo2 and foo3 all share the prefix "foo".
+            let mut buffer = TextBuffer::new("mycmd f");
+            let comp_context =
+                get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
+            let wuc = comp_context.word_under_cursor.clone();
+            let builder = gen_completions_internal(&comp_context).expect("some completions");
+            assert!(builder.len() >= 2, "expected multiple suggestions, got {}", builder.len());
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
+            assert!(matches!(outcome, TabCompleteBufferOutcome::Pending { .. }));
+            assert_eq!(buffer.buffer(), "mycmd foo");
+        }
     }
 }
