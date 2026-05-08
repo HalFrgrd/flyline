@@ -890,7 +890,7 @@ impl ActiveSuggestions {
     }
 
     /// Return the flat (1-D) index of the currently-selected suggestion.
-    fn current_1d_index(&self) -> usize {
+    pub fn current_1d_index(&self) -> usize {
         self.selected_col
             .saturating_mul(self.last_num_rows_per_col)
             .saturating_add(self.selected_row)

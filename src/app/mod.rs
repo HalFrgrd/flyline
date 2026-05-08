@@ -2129,16 +2129,24 @@ impl<'a> App<'a> {
                     }
                 }
 
+                let pos_string = if active_suggestions.last_num_data_cols > 1 {
+                    format!(
+                        "({}, {})",
+                        active_suggestions.selected_col, active_suggestions.selected_row
+                    )
+                } else {
+                    format!("{}", active_suggestions.current_1d_index())
+                };
+
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(
-                            "# Pos: ({}, {}); Filtered {}/{} [{}ms]; CompType: {}",
-                            active_suggestions.selected_col,
-                            active_suggestions.selected_row,
+                            "# Pos: {}; Filtered: {}/{}; {} ({}ms)",
+                            pos_string,
                             active_suggestions.filtered_suggestions_len(),
                             active_suggestions.all_suggestions_len(),
-                            active_suggestions.load_time.as_millis(),
                             active_suggestions.comp_type.display_name(),
+                            active_suggestions.load_time.as_millis(),
                         ),
                         self.settings.colour_palette.secondary_text(),
                     ),
