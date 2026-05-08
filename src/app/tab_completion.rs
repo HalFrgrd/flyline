@@ -1236,31 +1236,32 @@ mod tab_completion_tests {
         }
 
 
-        // #[test]
-        // fn mid_word_completion_naive_bash_default() {
-        //     cd_to_example_fs();
-        //     // Cat is setup so that run_programmable_completions in test fixtures
-        //     // returns files matching the lhs of
-        //     let mut buffer = TextBuffer::new("cat ./abc/fo/baz");
-        //     for _ in 0..5 {
-        //         buffer.move_left();
-        //     }
-        //     // Cursor is now on the 'o' in 'foo'
+        #[test]
+        fn mid_word_completion_naive_bash_default() {
+            cd_to_example_fs();
+            // Cat is setup so that run_programmable_completions in test fixtures
+            // returns files matching the lhs of
+            let mut buffer = TextBuffer::new("cat ./abc/f/baz");
+            buffer.move_left();
+            buffer.move_left();
+            buffer.move_left();
+            buffer.move_left(); // cursor is now right after f
+            
 
-        //     let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
-        //     assert_eq!(
-        //         builder.processed,
-        //         &[ProcessedSuggestion::new(
-        //             "./abc/foo/",
-        //             "",
-        //             "",
-        //         )],
-        //     );
+            let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
+            assert_processed(
+                &builder.processed,
+                &[ProcessedSuggestion::new(
+                    "./abc/foo/baz",
+                    "",
+                    " ",
+                )],
+            );
 
-        //     let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
-        //     assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
-        //     assert_eq!(buffer.buffer(), "mycmd ./abc/foo/baz");
-        // }
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
+            assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
+            assert_eq!(buffer.buffer(), "cat ./abc/foo/baz ");
+        }
 
 
 
