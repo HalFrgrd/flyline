@@ -970,6 +970,7 @@ mod tab_completion_tests {
     fn get_builder_from_buffer(
         buffer: &TextBuffer,
     ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
+        crate::logging::init_for_tests_once();
         let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
         let Some(builder) = gen_completions_internal(&comp_context) else {
             return None;
@@ -990,20 +991,23 @@ mod tab_completion_tests {
 
     fn assert_completions(command: &str, expected: &[ProcessedSuggestion]) {
         let actual = run_completion(command);
+        assert_processed(&actual, expected);
+    }
+
+    fn assert_processed(actual: &[ProcessedSuggestion], expected: &[ProcessedSuggestion]) {
         assert_eq!(
             actual.len(),
             expected.len(),
-            "completion count mismatch for command {:?}: got {:?}, expected {:?}",
-            command,
+            "completion count mismatch: got {:?}, expected {:?}",
             actual,
             expected
         );
+        // Dont check the description since mtime is hard to test
         for (got, want) in actual.iter().zip(expected.iter()) {
             assert_eq!(
                 (&got.prefix, &got.s, &got.suffix),
                 (&want.prefix, &want.s, &want.suffix),
-                "for command {:?}: got {:?}, expected {:?}",
-                command,
+                "got {:?}, expected {:?}",
                 got,
                 want
             );
@@ -1068,6 +1072,34 @@ mod tab_completion_tests {
             let actual = run_completion("git diff --");
             let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
             for flag in ["--staged", "--stat", "--name-only", "--color"] {
+                assert!(names.contains(&flag), "expected {flag} in {:?}", names);
+            }
+        }
+
+        #[test]
+        fn git_diff_dashdash_lists_long_flags_mid_word() {
+            cd_to_example_fs();
+            let mut buffer = TextBuffer::new("git diff --stag");
+
+            // It doesnt matter where the cursor is because I always move it to the end
+            // This gives best results since it allows the FuzzyCommandComp and Filname (that uses mid word information)
+            // to run.
+
+            buffer.move_to_end(); // --stag|
+            buffer.move_left();   // --sta|g
+            buffer.move_left();   // --st|ag
+            let actual = run_completion_from_buffer(&buffer);
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            for flag in ["--staged"] {
+                assert!(names.contains(&flag), "expected {flag} in {:?}", names);
+            }
+
+            // If we didnt move the cursor to the end,
+            // we would get the same results as this one:
+            let buffer = TextBuffer::new("git diff --st");
+            let actual = run_completion_from_buffer(&buffer);
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            for flag in ["--staged", "--stat"] {
                 assert!(names.contains(&flag), "expected {flag} in {:?}", names);
             }
         }
@@ -1181,25 +1213,26 @@ mod tab_completion_tests {
         #[test]
         fn mid_word_completion() {
             cd_to_example_fs();
-            let mut buffer = TextBuffer::new("mycmd ./abc/fo/baz");
-            for _ in 0..5 {
-                buffer.move_left();
-            }
-            // Cursor is now on the 'o' in 'foo'
+            let mut buffer = TextBuffer::new("mycmd ./abc/f/baz");
+            buffer.move_left();
+            buffer.move_left();
+            buffer.move_left();
+            buffer.move_left(); // cursor is now right after f
+
 
             let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
-            assert_eq!(
-                builder.processed,
+            assert_processed(
+                &builder.processed,
                 &[ProcessedSuggestion::new(
-                    "./abc/foo/",
+                    "./abc/foo/baz",
                     "",
-                    "",
+                    " ",
                 )],
             );
 
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
             assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
-            assert_eq!(buffer.buffer(), "mycmd ./abc/foo/baz");
+            assert_eq!(buffer.buffer(), "mycmd ./abc/foo/baz ");
         }
 
 
