@@ -10,6 +10,7 @@ use crate::bash_funcs::{self, QuoteType};
 use crate::content_utils::{self, ansi_string_to_spans};
 use crate::globbing::PathPatternExpansion;
 use crate::iter_first_last::FirstLast;
+use crate::tab_completion_context::CompType;
 use crate::text_buffer::SubString;
 use crate::users;
 use crate::{cli::complete_flyline_args, tab_completion_context};
@@ -232,7 +233,7 @@ fn gen_completions_uncomitted(
     for comp_type in &completion_context.comp_types {
         log::debug!("Processing completion type: {:?}", comp_type);
         match comp_type {
-            tab_completion_context::CompType::FirstWord => {
+            CompType::FirstWord => {
                 log::debug!("CompType::FirstWord for: {}", word_under_cursor.as_ref());
                 let completions = tab_complete_first_word(word_under_cursor.as_ref());
                 log::debug!(
@@ -241,10 +242,10 @@ fn gen_completions_uncomitted(
                     word_under_cursor.as_ref()
                 );
                 if !completions.is_empty() {
-                    return Some(completions);
+                    return Some(completions.with_comp_type(comp_type.clone()));
                 }
             }
-            tab_completion_context::CompType::FuzzyFirstWord => {
+            CompType::FuzzyFirstWord => {
                 log::debug!(
                     "CompType::FuzzyFirstWord for: {}",
                     word_under_cursor.as_ref()
@@ -256,10 +257,10 @@ fn gen_completions_uncomitted(
                     word_under_cursor.as_ref()
                 );
                 if !completions.is_empty() {
-                    return Some(completions);
+                    return Some(completions.with_comp_type(comp_type.clone()));
                 }
             }
-            tab_completion_context::CompType::CommandComp {
+            CompType::CommandComp {
                 command_word: initial_command_word,
             } => {
                 // This isn't just for commands like `git`, `cargo`
@@ -272,11 +273,11 @@ fn gen_completions_uncomitted(
                 if let Some(builder) =
                     run_comp_spec_completion(completion_context, initial_command_word)
                 {
-                    return Some(builder);
+                    return Some(builder.with_comp_type(comp_type.clone()));
                 }
             }
 
-            tab_completion_context::CompType::FuzzyCommandComp {
+            CompType::FuzzyCommandComp {
                 command_word: initial_command_word,
             } => {
                 let original_wuc = word_under_cursor.as_ref();
@@ -343,12 +344,12 @@ fn gen_completions_uncomitted(
                         pattern
                     );
                     if !builder.is_empty() {
-                        return Some(builder);
+                        return Some(builder.with_comp_type(comp_type.clone()));
                     }
                 }
             }
 
-            tab_completion_context::CompType::EnvVariable => {
+            CompType::EnvVariable => {
                 log::debug!("CompType::EnvVariable for {}", word_under_cursor.as_ref());
                 let matching_vars =
                     bash_funcs::get_all_variables_with_prefix(word_under_cursor.as_ref());
@@ -358,12 +359,15 @@ fn gen_completions_uncomitted(
                     word_under_cursor.as_ref()
                 );
                 if !matching_vars.is_empty() {
-                    return Some(ActiveSuggestionsBuilder::from_processed(
-                        ProcessedSuggestion::from_string_vec(matching_vars, "", " "),
-                    ));
+                    return Some(
+                        ActiveSuggestionsBuilder::from_processed(
+                            ProcessedSuggestion::from_string_vec(matching_vars, "", " "),
+                        )
+                        .with_comp_type(comp_type.clone()),
+                    );
                 }
             }
-            tab_completion_context::CompType::TildeExpansion => {
+            CompType::TildeExpansion => {
                 log::debug!(
                     "CompType::TildeExpansion for {}",
                     word_under_cursor.as_ref()
@@ -375,10 +379,13 @@ fn gen_completions_uncomitted(
                     word_under_cursor.as_ref()
                 );
                 if !completions.is_empty() {
-                    return Some(ActiveSuggestionsBuilder::from_processed(completions));
+                    return Some(
+                        ActiveSuggestionsBuilder::from_processed(completions)
+                            .with_comp_type(comp_type.clone()),
+                    );
                 }
             }
-            tab_completion_context::CompType::GlobExpansion => {
+            CompType::GlobExpansion => {
                 log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
                 let (completions, comp_res_flags) =
                     tab_complete_glob_expansion(word_under_cursor.as_ref());
@@ -392,7 +399,10 @@ fn gen_completions_uncomitted(
                     [] => {}
                     [single_completion] => {
                         let processed = single_completion.clone().into_processed();
-                        return Some(ActiveSuggestionsBuilder::from_processed([processed]));
+                        return Some(
+                            ActiveSuggestionsBuilder::from_processed([processed])
+                                .with_comp_type(comp_type.clone()),
+                        );
                     }
                     _ => {
                         // Unlike other completions, if there are multiple glob completions,
@@ -426,13 +436,18 @@ fn gen_completions_uncomitted(
                                 acc
                             },
                         );
-                        return Some(ActiveSuggestionsBuilder::from_processed([
-                            ProcessedSuggestion::new(completions_as_string, "", ""),
-                        ]));
+                        return Some(
+                            ActiveSuggestionsBuilder::from_processed([ProcessedSuggestion::new(
+                                completions_as_string,
+                                "",
+                                "",
+                            )])
+                            .with_comp_type(comp_type.clone()),
+                        );
                     }
                 }
             }
-            tab_completion_context::CompType::FilenameExpansion => {
+            CompType::FilenameExpansion => {
                 log::debug!(
                     "CompType::FilenameExpansion for: {}",
                     word_under_cursor.as_ref()
@@ -449,10 +464,13 @@ fn gen_completions_uncomitted(
                     word_under_cursor.as_ref()
                 );
                 if !completions.is_empty() {
-                    return Some(ActiveSuggestionsBuilder::from_unprocessed(completions));
+                    return Some(
+                        ActiveSuggestionsBuilder::from_unprocessed(completions)
+                            .with_comp_type(comp_type.clone()),
+                    );
                 }
             }
-            tab_completion_context::CompType::FuzzyFilenameExpansion => {
+            CompType::FuzzyFilenameExpansion => {
                 log::debug!(
                     "CompType::FuzzyFilenameExpansion for: {}",
                     word_under_cursor.as_ref()
@@ -468,7 +486,8 @@ fn gen_completions_uncomitted(
                 if !completions.is_empty() {
                     return Some(
                         ActiveSuggestionsBuilder::from_unprocessed(completions)
-                            .with_auto_accept_if_solo(false),
+                            .with_auto_accept_if_solo(false)
+                            .with_comp_type(comp_type.clone()),
                     );
                 }
             }
@@ -1105,7 +1124,7 @@ mod tab_completion_tests {
         }
 
         // ------- dummy git completion fuzzy matching
-        /// This tests the [crate::tab_completion_context::CompType::FuzzyCommandComp] branch where we re-run the
+        /// This tests the [crate::CompType::FuzzyCommandComp] branch where we re-run the
         #[test]
         fn git_commit_fuzzy_command_comp() {
             cd_to_example_fs();
@@ -1246,7 +1265,7 @@ mod tab_completion_tests {
             buffer.move_left();
             buffer.move_left();
             buffer.move_left(); // cursor is now right after f
-            
+
 
             let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
             assert_processed(
@@ -1260,7 +1279,7 @@ mod tab_completion_tests {
 
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
             assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
-            assert_eq!(buffer.buffer(), "cat ./abc/foo/baz ");
+            assert_eq!(buffer.buffer(), "caasdft ./abc/foo/baz ");
         }
 
 
