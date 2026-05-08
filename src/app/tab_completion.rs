@@ -51,10 +51,7 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 enum CompSpecCompletionResult {
     /// We have suggestions to return.
     Found(ActiveSuggestionsBuilder),
-    /// No suggestions, but bash returned flags worth propagating to
-    /// subsequent completion types (e.g. quote type).
-    NoneWithFlags(bash_funcs::CompletionFlags),
-    /// No suggestions and nothing to propagate.
+    /// No suggestions.
     None,
 }
 
@@ -191,7 +188,7 @@ fn run_comp_spec_completion(
                 }));
                 CompSpecCompletionResult::Found(builder)
             }
-            Ok(comp_result) => CompSpecCompletionResult::NoneWithFlags(comp_result.flags),
+            Ok(_) => CompSpecCompletionResult::None,
             _ => CompSpecCompletionResult::None,
         }
     }
@@ -249,11 +246,6 @@ pub(crate) fn gen_completions_internal(
                 match run_comp_spec_completion(completion_context, initial_command_word) {
                     CompSpecCompletionResult::Found(builder) => {
                         return Some(builder);
-                    }
-                    CompSpecCompletionResult::NoneWithFlags(flags) => {
-                        // I am not checking if the user wants more completions (i.e. readline_default_fallback_desired)
-                        // Always try to produce secondary completions
-                        comp_res_flags = flags;
                     }
                     CompSpecCompletionResult::None => {}
                 }
@@ -320,9 +312,6 @@ pub(crate) fn gen_completions_internal(
                             .collect();
                         builder = builder.with_auto_accept_if_solo(false);
                         return Some(builder);
-                    }
-                    CompSpecCompletionResult::NoneWithFlags(flags) => {
-                        comp_res_flags = flags;
                     }
                     CompSpecCompletionResult::None => {}
                 }
