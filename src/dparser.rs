@@ -341,11 +341,27 @@ impl DParser {
             }
 
             match &token.kind {
+                // `[` is a nesting opener (paired with `]`) ONLY when it's not in
+                // command position. At command position `[` is the POSIX `test`
+                // builtin and is treated as a regular command word that does not
+                // need to be closed (e.g. `[ foo` is a complete command).
+                TokenKind::LBracket
+                    if self.current_command_range.is_some()
+                        && Self::nested_opening_satisfied(
+                            &token,
+                            nestings.last().map(|(_, k)| k),
+                            cursor_byte_pos.is_some(),
+                        ) =>
+                {
+                    self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
+                    nestings.push((idx, token.kind.clone()));
+                    command_start_stack.push(self.current_command_range.clone());
+                    self.current_command_range = None; // set for next word after this
+                }
                 TokenKind::LBrace
                 | TokenKind::Quote
                 | TokenKind::SingleQuote
                 | TokenKind::DoubleLBracket
-                | TokenKind::LBracket
                 | TokenKind::Backtick
                 | TokenKind::CmdSubst
                 | TokenKind::ArithSubst
@@ -920,6 +936,21 @@ impl DParser {
 
         if is_before_word {
             return None;
+        }
+
+        // `[` in command position is the POSIX `[ ... ]` test command — the user
+        // will type `[ expr ]` themselves, so an auto-inserted `]` is in the way.
+        // Detect this by checking whether the freshly inserted `[` parsed as an
+        // `LBracket` token annotated as a command word.
+        if c == '[' {
+            let inserted_at_command_position = tokens.iter().any(|t| {
+                t.token.byte_range().start == just_inserted_pos
+                    && matches!(t.token.kind, TokenKind::LBracket)
+                    && t.annotations.command_word.is_some()
+            });
+            if inserted_at_command_position {
+                return None;
+            }
         }
 
         // Unambiguously opening characters – always auto-close.
@@ -2011,20 +2042,85 @@ mod tests {
         assert_eq!(tokens.last().unwrap().value, "]");
     }
 
-    /// `[ ... ]` opens and closes a `LBracket`/`RBracket` pair so that
-    /// auto-close pairing works. The whole construct sits inside one
-    /// command range.
+    /// `[` is a regular non-nesting token when at command position: `[ foo`
+    /// (POSIX `[` test command) is a complete command — bash accepts the
+    /// input and runs `[`, which will then fail at runtime, but the parser
+    /// must not ask for more input. The opening `[` is annotated as the
+    /// command word.
     #[test]
-    fn test_bracket_pair_is_matched() {
-        let input = "[ -f file ]";
+    fn test_single_bracket_is_not_a_nesting_opener() {
+        let input = "[ foo";
         let mut parser = DParser::from(input);
         parser.walk_to_end();
         let tokens = parser.tokens();
 
-        // The opening `[` is matched with its `]`.
         assert_eq!(tokens[0].token.kind, TokenKind::LBracket);
+        assert_eq!(tokens[0].annotations.command_word, Some("[".to_string()));
+        assert_eq!(tokens[0].annotations.opening, None);
+        assert!(!parser.needs_more_input());
+    }
+
+    /// `[` only acts as a command word when it's at the start of a command;
+    /// when used as an argument (e.g. `echo [`) it's a regular nesting opener
+    /// that pairs with `]` (so auto-close can keep them in sync).
+    #[test]
+    fn test_single_bracket_after_command_is_nesting_opener() {
+        let input = "echo [";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        // `echo` is the command word.
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
+        // The `[` is an LBracket and is a (currently unmatched) nesting opener.
+        let lbracket = tokens
+            .iter()
+            .find(|t| matches!(t.token.kind, TokenKind::LBracket))
+            .expect("expected an LBracket token");
+        assert_eq!(lbracket.annotations.command_word, None);
+        assert_eq!(lbracket.annotations.opening, Some(OpeningState::Unmatched));
+    }
+
+    /// `echo [ x ]` — `[` after a command pairs with `]`.
+    #[test]
+    fn test_single_bracket_pair_after_command_is_matched() {
+        let input = "echo [ x ]";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        let lbracket_idx = tokens
+            .iter()
+            .position(|t| matches!(t.token.kind, TokenKind::LBracket))
+            .expect("expected an LBracket token");
+        let rbracket_idx = tokens
+            .iter()
+            .rposition(|t| matches!(t.token.kind, TokenKind::RBracket))
+            .expect("expected an RBracket token");
+        assert_eq!(
+            tokens[lbracket_idx].annotations.opening,
+            Some(OpeningState::Matched(rbracket_idx))
+        );
+        assert_eq!(
+            tokens[rbracket_idx].annotations.closing,
+            Some(ClosingAnnotation {
+                opening_idx: lbracket_idx,
+                is_auto_inserted: false
+            })
+        );
+    }
+
+    /// `[[` (DoubleLBracket) IS a nesting opener and must be matched with `]]`.
+    #[test]
+    fn test_double_bracket_is_a_nesting_opener() {
+        let input = "[[ 1 == 1 ]]";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        assert_eq!(tokens[0].token.kind, TokenKind::DoubleLBracket);
         let last_idx = tokens.len() - 1;
-        assert_eq!(tokens[last_idx].token.kind, TokenKind::RBracket);
+        assert_eq!(tokens[last_idx].token.kind, TokenKind::DoubleRBracket);
         assert_eq!(
             tokens[0].annotations.opening,
             Some(OpeningState::Matched(last_idx))
@@ -2036,5 +2132,13 @@ mod tests {
                 is_auto_inserted: false
             })
         );
+    }
+
+    /// Unclosed `[[` leaves the parser asking for more input.
+    #[test]
+    fn test_unclosed_double_bracket_needs_more_input() {
+        let mut parser = DParser::from("[[ 1 == 1");
+        parser.walk_to_end();
+        assert!(parser.needs_more_input());
     }
 }

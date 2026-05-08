@@ -298,10 +298,8 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("echo }"), true);
         assert_eq!(will_bash_accept_buffer("echo ]"), true);
 
-        // These are accepted by bash but are harder to analyse since they affect
-        // nesting levels. After flash started emitting LBracket/RBracket tokens,
-        // a lone `[` is tracked the same way as `[[`/`(`/`{` and therefore looks
-        // like an unclosed opener to flyline.
+        // These are accepted by bash but are harder to analyse since they might affect
+        // nesting levels. e.g this wont be accepted: function abc {
         // assert_eq!(will_bash_accept_buffer("echo {"), true);
         // assert_eq!(will_bash_accept_buffer("echo ["), true);
         // assert_eq!(will_bash_accept_buffer("echo [["), true);
@@ -313,10 +311,26 @@ mod tests {
     fn test_syntax_errors() {
         assert_eq!(will_bash_accept_buffer("echo ("), true);
         assert_eq!(will_bash_accept_buffer("echo )"), true);
-        // After the flash upgrade, `[` is a paired LBracket token, so `echo [(`
+        // `[` after a command word is treated as a nesting opener, so `echo [(`
         // has two unclosed openers and is reported as needing more input.
         assert_eq!(will_bash_accept_buffer("echo [("), false);
         assert_eq!(will_bash_accept_buffer("echo [()]"), true);
+    }
+
+    #[test]
+    fn test_single_bracket_test_command() {
+        // `[ foo` is a syntactically complete command (the `[` builtin will run
+        // and complain at runtime, but bash does not ask for more input).
+        // `[` must therefore not introduce a nesting that needs `]` to close.
+        assert_eq!(will_bash_accept_buffer("[ foo"), true);
+        assert_eq!(will_bash_accept_buffer("[ -f file ]"), true);
+    }
+
+    #[test]
+    fn test_double_bracket_needs_closing() {
+        // `[[ ... ]]` is a real conditional expression and must be closed.
+        assert_eq!(will_bash_accept_buffer("[[ 1 == 1"), false);
+        assert_eq!(will_bash_accept_buffer("[[ 1 == 1 ]]"), true);
     }
 
     #[test]
