@@ -290,6 +290,7 @@ pub(crate) fn gen_completions_internal(
                 match run_command_completion(&fuzzy_completion_context, initial_command_word) {
                     CommandCompletionResult::Found(mut builder) => {
                         let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+                        let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
 
                         builder.processed = builder
                             .processed
@@ -299,7 +300,7 @@ pub(crate) fn gen_completions_internal(
                                 content_utils::fuzzy_match_with_threshold(
                                     &matcher,
                                     match_text,
-                                    original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc),
+                                    pattern,
                                     content_utils::FuzzyMatchThreshold::High,
                                 )
                                 .inspect(|score| {
@@ -320,7 +321,7 @@ pub(crate) fn gen_completions_internal(
                                 content_utils::fuzzy_match_with_threshold(
                                     &matcher,
                                     match_text,
-                                    original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc),
+                                    pattern,
                                     content_utils::FuzzyMatchThreshold::High,
                                 )
                                 .inspect(|score| {
