@@ -34,6 +34,21 @@ impl CompType {
     pub fn is_glob_pattern(s: &str) -> bool {
         globbing::is_glob_pattern(s)
     }
+
+    pub fn display_name(&self) -> &str {
+        match self {
+            CompType::None => "None",
+            CompType::FirstWord => "FirstWord",
+            CompType::FuzzyFirstWord => "FuzzyFirstWord",
+            CompType::CommandComp { .. } => "CommandComp",
+            CompType::FuzzyCommandComp { .. } => "FuzzyCommandComp",
+            CompType::EnvVariable => "EnvVariable",
+            CompType::TildeExpansion => "TildeExpansion",
+            CompType::GlobExpansion => "GlobExpansion",
+            CompType::FilenameExpansion => "FilenameExpansion",
+            CompType::FuzzyFilenameExpansion => "FuzzyFilenameExpansion",
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]

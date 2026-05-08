@@ -818,6 +818,7 @@ pub struct ActiveSuggestions {
     fuzzy_matcher: ArinaeMatcher,
     /// How long it took to generate the completions.
     pub load_time: std::time::Duration,
+    pub comp_type: tab_completion_context::CompType,
 }
 
 impl ActiveSuggestions {
@@ -831,7 +832,7 @@ impl ActiveSuggestions {
             unprocessed: unprocessed_suggestions,
             common_prefix: _,
             auto_accept_if_solo: _,
-            comp_type: _,
+            comp_type,
         } = builder;
         let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
 
@@ -849,6 +850,7 @@ impl ActiveSuggestions {
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
             load_time,
+            comp_type,
         };
 
         active_sug.update_fuzzy_filtered();

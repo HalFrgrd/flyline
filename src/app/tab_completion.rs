@@ -781,6 +781,7 @@ fn tab_complete_tilde_expansion(pattern: &str) -> Vec<ProcessedSuggestion> {
 ///
 /// This is the buffer-mutation half of `finish_tab_complete` factored out so
 /// it can be exercised from unit tests without constructing a full `App`.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum TabCompleteBufferOutcome {
     /// We auto-accepted a single suggestion; the caller (the App) should
     /// switch back to `ContentMode::Normal` and discard the builder.
@@ -1257,6 +1258,41 @@ mod tab_completion_tests {
             assert_eq!(buffer.buffer(), "mycmd ./abc/foo/baz ");
         }
 
+        #[test]
+        fn mid_word_completion_multiple() {
+            cd_to_example_braces_fs();
+            let mut buffer = TextBuffer::new("mycmd ./fo/barA");
+            buffer.move_left();
+            buffer.move_left();
+            buffer.move_left();
+            buffer.move_left();
+            buffer.move_left(); // cursor is now right after f
+
+
+            let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
+            assert_eq!(builder.comp_type, CompType::FilenameExpansion);
+            assert_processed(
+                &builder.processed,
+                &[ProcessedSuggestion::new(
+                    "./foo1/barA",
+                    "",
+                    " ",
+                ),ProcessedSuggestion::new(
+                    "./foo2/barA",
+                    "",
+                    " ",
+                ),ProcessedSuggestion::new(
+                    "./foo3/barA",
+                    "",
+                    " ",
+                )],
+            );
+
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
+            log::info!("Outcome of applying tab complete: {:?}", &outcome);
+            assert!(matches!(outcome, TabCompleteBufferOutcome::Pending { ref final_wuc } if final_wuc.as_ref() == "./foo"));
+            assert_eq!(buffer.buffer(), "mycmd ./foo");
+        }
 
         // #[test]
         // fn mid_word_completion_naive_bash_default() {
