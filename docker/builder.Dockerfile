@@ -42,6 +42,7 @@ RUN cargo chef cook --release ${CARGO_FEATURES:+--features $CARGO_FEATURES} --re
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
 COPY examples ./examples
+COPY tests ./tests
 RUN cargo build --release ${CARGO_FEATURES:+--features $CARGO_FEATURES}
 
 FROM flyline-builder AS flyline-lib-tests

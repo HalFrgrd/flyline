@@ -264,7 +264,9 @@ fn gen_completions_uncomitted(
                 // https://www.reddit.com/r/bash/comments/eqwitd/programmable_completion_on_expanded_aliases_not/
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
-                if let Some(builder) = run_comp_spec_completion(completion_context, initial_command_word) {
+                if let Some(builder) =
+                    run_comp_spec_completion(completion_context, initial_command_word)
+                {
                     return Some(builder);
                 }
             }
@@ -285,50 +287,52 @@ fn gen_completions_uncomitted(
 
                 let fuzzy_completion_context = completion_context.with_wuc_replaced(&new_wuc);
 
-                if let Some(mut builder) = run_comp_spec_completion(&fuzzy_completion_context, initial_command_word) {
-                        let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
-                        let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
+                if let Some(mut builder) =
+                    run_comp_spec_completion(&fuzzy_completion_context, initial_command_word)
+                {
+                    let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+                    let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
 
-                        builder.processed = builder
-                            .processed
-                            .into_iter()
-                            .filter_map(|sug| {
-                                let match_text = &sug.s.strip_prefix(&new_wuc).unwrap_or(&sug.s);
-                                content_utils::fuzzy_match_with_threshold(
-                                    &matcher,
-                                    match_text,
-                                    pattern,
-                                    content_utils::FuzzyMatchThreshold::High,
-                                )
-                                .inspect(|score| {
-                                    log::debug!("Fuzzy match score for '{}': {}", match_text, score)
-                                })
-                                .map(|_score| sug)
+                    builder.processed = builder
+                        .processed
+                        .into_iter()
+                        .filter_map(|sug| {
+                            let match_text = &sug.s.strip_prefix(&new_wuc).unwrap_or(&sug.s);
+                            content_utils::fuzzy_match_with_threshold(
+                                &matcher,
+                                match_text,
+                                pattern,
+                                content_utils::FuzzyMatchThreshold::High,
+                            )
+                            .inspect(|score| {
+                                log::debug!("Fuzzy match score for '{}': {}", match_text, score)
                             })
-                            .collect();
+                            .map(|_score| sug)
+                        })
+                        .collect();
 
-                        builder.unprocessed = builder
-                            .unprocessed
-                            .into_iter()
-                            .filter_map(|sug| {
-                                let match_text = &sug
-                                    .match_text()
-                                    .strip_prefix(&new_wuc)
-                                    .unwrap_or(&sug.match_text());
-                                content_utils::fuzzy_match_with_threshold(
-                                    &matcher,
-                                    match_text,
-                                    pattern,
-                                    content_utils::FuzzyMatchThreshold::High,
-                                )
-                                .inspect(|score| {
-                                    log::debug!("Fuzzy match score for '{}': {}", match_text, score)
-                                })
-                                .map(|_score| sug)
+                    builder.unprocessed = builder
+                        .unprocessed
+                        .into_iter()
+                        .filter_map(|sug| {
+                            let match_text = &sug
+                                .match_text()
+                                .strip_prefix(&new_wuc)
+                                .unwrap_or(&sug.match_text());
+                            content_utils::fuzzy_match_with_threshold(
+                                &matcher,
+                                match_text,
+                                pattern,
+                                content_utils::FuzzyMatchThreshold::High,
+                            )
+                            .inspect(|score| {
+                                log::debug!("Fuzzy match score for '{}': {}", match_text, score)
                             })
-                            .collect();
-                        builder = builder.with_auto_accept_if_solo(false);
-                        return Some(builder);
+                            .map(|_score| sug)
+                        })
+                        .collect();
+                    builder = builder.with_auto_accept_if_solo(false);
+                    return Some(builder);
                 }
             }
 
@@ -916,6 +920,26 @@ mod tab_completion_tests {
 
     const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
+    /// Locate a test fixture directory by trying multiple paths:
+    /// 1. Relative path from current working directory (works in most test runners)
+    /// 2. Path relative to CARGO_MANIFEST_DIR (works in some Docker builds)
+    fn find_test_fixture_dir(subdir: &str) -> String {
+        let relative_path = format!("tests/{}", subdir);
+        if std::path::Path::new(&relative_path).exists() {
+            return relative_path;
+        }
+
+        let manifest_path = format!("{}/tests/{}", MANIFEST_DIR, subdir);
+        if std::path::Path::new(&manifest_path).exists() {
+            return manifest_path;
+        }
+
+        panic!(
+            "Could not locate test fixture directory '{}'. Tried:\n  - {}\n  - {}",
+            subdir, relative_path, manifest_path
+        );
+    }
+
     /// Run completion against `command` (cursor placed at the end of the
     /// string), drain anything still queued, then return the processed
     /// suggestions sorted by `s` for stable comparison.
@@ -953,7 +977,7 @@ mod tab_completion_tests {
     }
 
     fn cd_to_example_fs() {
-        let dir = format!("{}/tests/example_fs", MANIFEST_DIR);
+        let dir = find_test_fixture_dir("example_fs");
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
         // No need to set the `PWD` env var: the `#[cfg(test)]` bash_funcs
         // (in particular `get_envvar_value` / `expand_filename`) source
@@ -962,7 +986,7 @@ mod tab_completion_tests {
     }
 
     fn cd_to_example_braces_fs() {
-        let dir = format!("{}/tests/example_braces_fs", MANIFEST_DIR);
+        let dir = find_test_fixture_dir("example_braces_fs");
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
     }
 
