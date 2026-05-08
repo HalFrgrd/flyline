@@ -175,7 +175,10 @@ impl<'a> CompletionContext<'a> {
     }
 
     pub fn word_left_of_cursor(&self) -> &str {
-        match self.buffer.get(self.word_under_cursor.start..self.cursor_byte_pos) {
+        match self
+            .buffer
+            .get(self.word_under_cursor.start..self.cursor_byte_pos)
+        {
             Some(s) => s,
             None => "",
         }

@@ -428,15 +428,16 @@ fn gen_completions_uncomitted(
             tab_completion_context::CompType::FilenameExpansion => {
                 log::debug!(
                     "CompType::FilenameExpansion for: {}",
-                    word_under_cursor.as_ref()
+                    completion_context.word_left_of_cursor()
                 );
-                let (completions, _comp_res_flags) =
-                    tab_complete_glob_expansion(&(word_under_cursor.as_ref().to_string() + "*"));
+                let (completions, _comp_res_flags) = tab_complete_glob_expansion(
+                    &(completion_context.word_left_of_cursor().to_string() + "*"),
+                );
 
                 log::debug!(
                     "CompType::FilenameExpansion found {} completions for pattern: {}",
                     completions.len(),
-                    word_under_cursor.as_ref()
+                    completion_context.word_left_of_cursor()
                 );
                 if !completions.is_empty() {
                     return Some(ActiveSuggestionsBuilder::from_unprocessed(completions));
@@ -916,7 +917,7 @@ impl App<'_> {
 mod tab_completion_tests {
     use super::*;
     use crate::active_suggestions::ProcessedSuggestion;
-    use crate::tab_completion_context::get_completion_context;
+    use crate::tab_completion_context::{CompletionContext, get_completion_context};
     use crate::text_buffer::TextBuffer;
     use rusty_fork::rusty_fork_test;
 
@@ -946,14 +947,31 @@ mod tab_completion_tests {
     /// string), drain anything still queued, then return the processed
     /// suggestions sorted by `s` for stable comparison.
     fn run_completion(command: &str) -> Vec<ProcessedSuggestion> {
-        crate::logging::init_for_tests_once();
         let buffer = TextBuffer::new(command);
         run_completion_from_buffer(&buffer)
     }
 
-    fn run_completion_from_buffer(buffer: &TextBuffer) -> Vec<ProcessedSuggestion> {
+    fn get_builder(
+        command: &str,
+    ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
+        let buffer = TextBuffer::new(command);
+        get_builder_from_buffer(&buffer)
+    }
+
+    fn get_builder_from_buffer(
+        buffer: &TextBuffer,
+    ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
         let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
         let Some(builder) = gen_completions_internal(&comp_context) else {
+            return None;
+        };
+        Some((builder, comp_context.into_owned()))
+    }
+
+    fn run_completion_from_buffer(buffer: &TextBuffer) -> Vec<ProcessedSuggestion> {
+        crate::logging::init_for_tests_once();
+
+        let Some((builder, _)) = get_builder_from_buffer(buffer) else {
             return Vec::new();
         };
         let mut suggestions: Vec<ProcessedSuggestion> = builder.processed;
@@ -1153,22 +1171,24 @@ mod tab_completion_tests {
 
         #[test]
         fn mid_word_completion() {
-            cd_to_example_glob_fs();
+            cd_to_example_fs();
             let mut buffer = TextBuffer::new("mycmd ./abc/fo/baz");
             for _ in 0..5 {
                 buffer.move_left();
             }
             // Cursor is now on the 'o' in 'foo'
 
-            let completions = run_completion_from_buffer(&buffer);
+            let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
             assert_eq!(
-                completions,
+                builder.processed,
                 &[ProcessedSuggestion::new(
-                    "./abc/foo/baz",
+                    "./abc/foo/",
                     "",
                     "",
                 )],
             );
+
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
         }
 
 
@@ -1178,13 +1198,10 @@ mod tab_completion_tests {
         fn finish_tab_complete_auto_accepts_solo_suggestion() {
             cd_to_example_fs();
             let mut buffer = TextBuffer::new("mycmd bar.tx");
-            let comp_context =
-                get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
-            let wuc = comp_context.word_under_cursor.clone();
-            let builder = gen_completions_internal(&comp_context).expect("some completions");
+            let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
 
             assert_eq!(builder.len(), 1, "expected exactly one suggestion");
-            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
             assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
             assert_eq!(buffer.buffer(), "mycmd bar.txt ");
         }
@@ -1196,12 +1213,9 @@ mod tab_completion_tests {
             cd_to_example_braces_fs();
             // foo1, foo2 and foo3 all share the prefix "foo".
             let mut buffer = TextBuffer::new("mycmd f");
-            let comp_context =
-                get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
-            let wuc = comp_context.word_under_cursor.clone();
-            let builder = gen_completions_internal(&comp_context).expect("some completions");
+            let (builder, comp_context) = get_builder_from_buffer(&buffer).unwrap();
             assert!(builder.len() >= 2, "expected multiple suggestions, got {}", builder.len());
-            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
             assert!(matches!(outcome, TabCompleteBufferOutcome::Pending { .. }));
             assert_eq!(buffer.buffer(), "mycmd foo");
         }
