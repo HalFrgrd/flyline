@@ -298,8 +298,10 @@ mod tests {
         assert_eq!(will_bash_accept_buffer("echo }"), true);
         assert_eq!(will_bash_accept_buffer("echo ]"), true);
 
-        // These are accepted by bash but are harder to analyse since they might affect
-        // nesting levels. e.g this wont be accepted: function abc {
+        // These are accepted by bash but are harder to analyse since they affect
+        // nesting levels. After flash started emitting LBracket/RBracket tokens,
+        // a lone `[` is tracked the same way as `[[`/`(`/`{` and therefore looks
+        // like an unclosed opener to flyline.
         // assert_eq!(will_bash_accept_buffer("echo {"), true);
         // assert_eq!(will_bash_accept_buffer("echo ["), true);
         // assert_eq!(will_bash_accept_buffer("echo [["), true);
@@ -311,7 +313,10 @@ mod tests {
     fn test_syntax_errors() {
         assert_eq!(will_bash_accept_buffer("echo ("), true);
         assert_eq!(will_bash_accept_buffer("echo )"), true);
-        assert_eq!(will_bash_accept_buffer("echo [("), true);
+        // After the flash upgrade, `[` is a paired LBracket token, so `echo [(`
+        // has two unclosed openers and is reported as needing more input.
+        assert_eq!(will_bash_accept_buffer("echo [("), false);
+        assert_eq!(will_bash_accept_buffer("echo [()]"), true);
     }
 
     #[test]

@@ -294,4 +294,61 @@ mod tests {
 
         let _ = tokens;
     }
+
+    // ---- square-bracket auto-close tests (after flash upgrade) ----
+
+    #[test]
+    fn inserting_open_square_bracket_inserts_closing_and_positions_cursor_inside() {
+        let mut buffer = TextBuffer::new("echo ");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 6);
+    }
+
+    #[test]
+    fn inserting_close_square_bracket_over_auto_inserted_one_moves_cursor_without_duplicating() {
+        let mut buffer = TextBuffer::new("echo ");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 6);
+
+        handle_char_insertion(&mut buffer, &mut tokens, ']');
+        assert_eq!(buffer.buffer(), "echo []");
+        assert_eq!(buffer.cursor_byte_pos(), 7);
+    }
+
+    #[test]
+    fn backspace_on_open_square_bracket_also_removes_auto_inserted_close() {
+        let mut buffer = TextBuffer::new("echo ");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        assert_eq!(buffer.buffer(), "echo []");
+
+        delete_auto_inserted_closing_if_present(&mut buffer, &tokens);
+        buffer.delete_left();
+        let tokens =
+            dparser::DParser::parse_and_transfer_auto_inserted_flags(buffer.buffer(), &tokens);
+
+        assert_eq!(buffer.buffer(), "echo ");
+        assert_eq!(buffer.cursor_byte_pos(), 5);
+        let _ = tokens;
+    }
+
+    #[test]
+    fn nested_square_brackets_autoclose() {
+        let mut buffer = TextBuffer::new("");
+        let mut tokens = parsed(buffer.buffer());
+
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        handle_char_insertion(&mut buffer, &mut tokens, '[');
+        // Outer `[` auto-closed to `]`, then inner `[` should also auto-close.
+        assert_eq!(buffer.buffer(), "[[]]");
+        assert_eq!(buffer.cursor_byte_pos(), 2);
+    }
 }

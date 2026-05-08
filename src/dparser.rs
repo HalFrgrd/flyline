@@ -210,6 +210,7 @@ impl DParser {
             (TokenKind::DoubleRParen, TokenKind::ArithCommand) => true,
             (TokenKind::Backtick, TokenKind::Backtick) => true,
             (TokenKind::DoubleRBracket, TokenKind::DoubleLBracket) => true,
+            (TokenKind::RBracket, TokenKind::LBracket) => true,
             (TokenKind::Quote, TokenKind::Quote) => true,
             (TokenKind::SingleQuote, TokenKind::SingleQuote) => true,
             (TokenKind::Esac, TokenKind::Case) => true,
@@ -344,6 +345,7 @@ impl DParser {
                 | TokenKind::Quote
                 | TokenKind::SingleQuote
                 | TokenKind::DoubleLBracket
+                | TokenKind::LBracket
                 | TokenKind::Backtick
                 | TokenKind::CmdSubst
                 | TokenKind::ArithSubst
@@ -385,6 +387,7 @@ impl DParser {
                 | TokenKind::RBrace
                 | TokenKind::Backtick
                 | TokenKind::DoubleRBracket
+                | TokenKind::RBracket
                 | TokenKind::Esac
                 | TokenKind::Done
                 | TokenKind::Fi
@@ -495,6 +498,21 @@ impl DParser {
                         opening_idx,
                         is_auto_inserted: false,
                     });
+                }
+
+                // Redirection operators (`<`, `>`, `>>`, `<&`, `>&`, `<>`, `>|`).
+                // They never act as a command word and never start a new command;
+                // they just extend the current command range if one exists.
+                TokenKind::Less
+                | TokenKind::Great
+                | TokenKind::DGreat
+                | TokenKind::InputDup
+                | TokenKind::OutputDup
+                | TokenKind::ReadWrite
+                | TokenKind::Clobber => {
+                    if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
+                    }
                 }
 
                 // These keywords and operators introduce a new command; reset the command
@@ -1888,6 +1906,135 @@ mod tests {
         assert_eq!(
             DParser::buffer_without_auto_inserted_suffix(&[], "echo hello"),
             "echo hello",
+        );
+    }
+
+    // ---- redirection annotation tests ----
+
+    /// `foo 2>&1 bar`: `foo` is the command word, the redirection (`2`, `>&`, `1`)
+    /// and the trailing `bar` argument all sit inside that command's range, and
+    /// none of the redirect tokens become a command word of their own.
+    #[test]
+    fn test_redirect_2_and_1_does_not_break_command_word() {
+        let input = "foo 2>&1 bar";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        assert_eq!(tokens[0].token.value, "foo");
+        assert_eq!(tokens[0].annotations.command_word, Some("foo".to_string()));
+        // `2`, `>&`, `1`, `bar` should all have no command_word annotation.
+        for t in &tokens[1..] {
+            assert_eq!(t.annotations.command_word, None);
+        }
+
+        // The whole pipeline should be in one command range.
+        assert_eq!(parser.get_current_command_str(), "foo 2>&1 bar",);
+    }
+
+    /// `>&` must never act as a command word, even if no command precedes it.
+    #[test]
+    fn test_leading_redirect_op_is_not_command_word() {
+        for input in [
+            "> out cmd",
+            ">> out cmd",
+            "< in cmd",
+            ">& 2 cmd",
+            "<& 0 cmd",
+            "<> rw cmd",
+            ">| out cmd",
+        ] {
+            let tokens = DParser::parse_and_annotate(input);
+            for t in &tokens {
+                if matches!(
+                    t.token.kind,
+                    TokenKind::Less
+                        | TokenKind::Great
+                        | TokenKind::DGreat
+                        | TokenKind::InputDup
+                        | TokenKind::OutputDup
+                        | TokenKind::ReadWrite
+                        | TokenKind::Clobber
+                ) {
+                    assert!(
+                        t.annotations.command_word.is_none(),
+                        "redirect op {:?} in {input:?} should not be tagged as command_word",
+                        t.token.value
+                    );
+                }
+            }
+        }
+    }
+
+    /// In `ls | foo 2>&1 bar`, both `ls` and `foo` are command words; the
+    /// redirect tokens never are.
+    #[test]
+    fn test_redirect_after_pipe_keeps_command_word() {
+        let input = "ls | foo 2>&1 bar";
+        let tokens = DParser::parse_and_annotate(input);
+
+        let cmd_words: Vec<_> = tokens
+            .iter()
+            .filter_map(|t| t.annotations.command_word.as_deref())
+            .collect();
+        assert_eq!(cmd_words, vec!["ls", "foo"]);
+    }
+
+    /// `cat <input >output` — the redirects must not become command words and
+    /// the surrounding tokens must not be silently dropped from `cat`'s range.
+    #[test]
+    fn test_input_and_output_redirect_in_same_command() {
+        let input = "cat <input >output";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        assert_eq!(tokens[0].annotations.command_word, Some("cat".to_string()));
+        for t in &tokens[1..] {
+            assert_eq!(t.annotations.command_word, None);
+        }
+        assert_eq!(parser.get_current_command_str(), input);
+    }
+
+    // ---- [ / ] lexer-token tests (after flash upgrade) ----
+
+    /// After the flash upgrade, a bare `[` is a dedicated `LBracket` token
+    /// (no longer `Word("[")`) and `]` is a dedicated `RBracket` token. The
+    /// dparser must keep working with both.
+    #[test]
+    fn test_single_brackets_are_lbracket_rbracket() {
+        let tokens = collect_tokens_include_whitespace("[ -f x ]");
+        assert_eq!(tokens[0].kind, TokenKind::LBracket);
+        assert_eq!(tokens[0].value, "[");
+        // ` `, `-f`, ` `, `x`, ` `, `]`
+        assert_eq!(tokens.last().unwrap().kind, TokenKind::RBracket);
+        assert_eq!(tokens.last().unwrap().value, "]");
+    }
+
+    /// `[ ... ]` opens and closes a `LBracket`/`RBracket` pair so that
+    /// auto-close pairing works. The whole construct sits inside one
+    /// command range.
+    #[test]
+    fn test_bracket_pair_is_matched() {
+        let input = "[ -f file ]";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        // The opening `[` is matched with its `]`.
+        assert_eq!(tokens[0].token.kind, TokenKind::LBracket);
+        let last_idx = tokens.len() - 1;
+        assert_eq!(tokens[last_idx].token.kind, TokenKind::RBracket);
+        assert_eq!(
+            tokens[0].annotations.opening,
+            Some(OpeningState::Matched(last_idx))
+        );
+        assert_eq!(
+            tokens[last_idx].annotations.closing,
+            Some(ClosingAnnotation {
+                opening_idx: 0,
+                is_auto_inserted: false
+            })
         );
     }
 }
