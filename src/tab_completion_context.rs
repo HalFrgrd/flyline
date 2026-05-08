@@ -174,6 +174,13 @@ impl<'a> CompletionContext<'a> {
             .saturating_sub(self.context.start)
     }
 
+    pub fn word_left_of_cursor(&self) -> &str {
+        match self.buffer.get(self.word_under_cursor.start..self.cursor_byte_pos) {
+            Some(s) => s,
+            None => "",
+        }
+    }
+
     pub fn with_expanded_alias(&self, alias_def: &str) -> CompletionContext<'static> {
         let context = self.context.as_ref();
         let command_word_len = context

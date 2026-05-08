@@ -948,6 +948,10 @@ mod tab_completion_tests {
     fn run_completion(command: &str) -> Vec<ProcessedSuggestion> {
         crate::logging::init_for_tests_once();
         let buffer = TextBuffer::new(command);
+        run_completion_from_buffer(&buffer)
+    }
+
+    fn run_completion_from_buffer(buffer: &TextBuffer) -> Vec<ProcessedSuggestion> {
         let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
         let Some(builder) = gen_completions_internal(&comp_context) else {
             return Vec::new();
@@ -1145,6 +1149,28 @@ mod tab_completion_tests {
                 )],
             );
         }
+
+
+        #[test]
+        fn mid_word_completion() {
+            cd_to_example_glob_fs();
+            let mut buffer = TextBuffer::new("mycmd ./abc/fo/baz");
+            for _ in 0..5 {
+                buffer.move_left();
+            }
+            // Cursor is now on the 'o' in 'foo'
+
+            let completions = run_completion_from_buffer(&buffer);
+            assert_eq!(
+                completions,
+                &[ProcessedSuggestion::new(
+                    "./abc/foo/baz",
+                    "",
+                    "",
+                )],
+            );
+        }
+
 
         // ------- finish_tab_complete (auto-accept solo) ------------------
 
