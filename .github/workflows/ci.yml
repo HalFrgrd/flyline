@@ -26,7 +26,7 @@ jobs:
       - name: Build
         uses: docker/bake-action@v7
         with:
-          files: docker/docker-bake.hcl
+          files: docker-bake.hcl
           targets: |
             extract-integration-test-build-artifact
             extract-pre-bash-4-4-integration-test-build-artifact
@@ -74,7 +74,7 @@ jobs:
       - name: Run integration tests
         uses: docker/bake-action@v7
         with:
-          files: docker/docker-bake.hcl
+          files: docker-bake.hcl
           targets: bash-integration-test-${{ matrix.bash_version_slug }}
           set: |
             specific-bash-version-${{ matrix.bash_version_slug }}.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version_slug }}:cache
@@ -114,7 +114,7 @@ jobs:
       - name: Run integration tests
         uses: docker/bake-action@v7
         with:
-          files: docker/docker-bake.hcl
+          files: docker-bake.hcl
           targets: bash-integration-test-${{ matrix.bash_version_slug }}
           set: |
             specific-bash-version-${{ matrix.bash_version_slug }}.cache-from=type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/bash-${{ matrix.bash_version_slug }}:cache

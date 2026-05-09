@@ -25,7 +25,7 @@ jobs:
       - name: Build demo GIFs
         uses: docker/bake-action@v7
         with:
-          files: docker/docker-bake.hcl
+          files: docker-bake.hcl
           source: .
           targets: demos
           set: |

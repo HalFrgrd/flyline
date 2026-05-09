@@ -10,7 +10,7 @@ pub fn run_bake_target(target: &str) -> anyhow::Result<()> {
         "buildx",
         "bake",
         "-f",
-        "docker/docker-bake.hcl",
+        "docker-bake.hcl",
         target,
     ]);
 

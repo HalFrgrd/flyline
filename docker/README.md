@@ -2,7 +2,7 @@
 
 The goal is to allow the same builds and tests to run locally and in GitHub Actions.
 
-For instance, we can easily build the library locally targeting an old glibc version with: `docker buildx bake -f docker/docker-bake.hcl extract-release-artifact`.
+For instance, we can easily build the library locally targeting an old glibc version with: `docker buildx bake -f docker-bake.hcl extract-release-artifact`.
 
 Tab completion tests run as plain Rust library tests (no docker required):
 
