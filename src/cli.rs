@@ -338,7 +338,7 @@ enum Commands {
     ///   double-quoted-text, secondary-text, inline-suggestion, tutorial-hint,
     ///   matching-char, opening-and-closing-pair, normal-text, comment,
     ///   env-var, markdown-heading1, markdown-heading2, markdown-heading3,
-    ///   markdown-code, key-sequence-style, selected-text
+    ///   markdown-code, key-sequence-style, selected-text, bash-reserved
     ///
     /// Examples:
     ///   flyline set-style --default-theme dark
@@ -521,9 +521,11 @@ enum KeySubcommands {
     ///
     /// Available context variables: always, bufferIsEmpty, fuzzyHistorySearch,
     ///   tabCompletionWaiting, tabCompletion, tabCompletionAvailable,
-    ///   tabCompletionMultiColAvailable, tabCompletionsNoFilteredResults, tabCompletionsNoResults,
-    ///   agentModeWaiting, agentOutputSelection, agentError, inlineSuggestionAvailable,
-    ///   cursorAtEnd, cursorAtStart, promptDirSelect, textSelected, multilineBuffer.
+    ///   tabCompletionMultiColAvailable, tabCompletionNoFilteredResults,
+    ///   tabCompletionNoResults, agentModeWaiting, agentOutputSelection,
+    ///   agentModeError, inlineSuggestionAvailable, cursorAtEnd,
+    ///   cursorAtEndTrimmed, cursorAtStart, promptDirSelection, textSelected,
+    ///   multilineBuffer, bufferHasAgentModePrefix, editingBufferMode.
     ///
     /// Examples:
     ///   flyline key bind Ctrl+Enter always=submitOrNewline
@@ -605,7 +607,7 @@ enum LogSubcommands {
     #[command(name = "stream", verbatim_doc_comment)]
     Stream {
         /// Destination: a file path, `stderr`, or `terminal`.
-        #[arg(value_name = "FILEPATH|terminal")]
+        #[arg(value_name = "FILEPATH|stderr|terminal")]
         dest: String,
     },
 }
