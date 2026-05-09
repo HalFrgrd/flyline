@@ -499,7 +499,7 @@ Options:
           Possible values:
           - disabled: Never capture mouse events
           - simple:   Mouse capture is on by default; toggled when Escape is pressed
-          - smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained
+          - smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained. Also can manually toggle with Escape
 
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
           Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
