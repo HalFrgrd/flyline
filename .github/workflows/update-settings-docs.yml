@@ -26,7 +26,7 @@ jobs:
       - name: Build flyline library and extract help text
         uses: docker/bake-action@v7
         with:
-          files: docker/docker-bake.hcl
+          files: docker-bake.hcl
           targets: extract-help-text
           set: |
             *.cache-from=type=gha

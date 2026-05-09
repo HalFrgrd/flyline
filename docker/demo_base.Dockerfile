@@ -1,15 +1,12 @@
-# Base image for VHS demo GIFs
+# Base image for demo GIF generation
 
-# Use the published Charmbracelet VHS image by digest
-FROM ghcr.io/charmbracelet/vhs@sha256:9d5fc3dc0c160b0fb1d2212baff07e6bdf3fa9438c504a3237484567302fcf93 AS demo-base
+# Use a recent Ubuntu base image
+FROM ubuntu:24.04 AS demo-base
 
 # Create a non-root user for demos
 RUN useradd -m -s /bin/bash john
 
 WORKDIR /app
-
-# Copy the Flyline shared library into the container
-COPY --from=flyline-extracted-library /libflyline.so .
 
 # Give john ownership of the app directory
 RUN chown -R john:john /app
@@ -21,13 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
     fontconfig \
+    ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f -v
-
-RUN curl -fsSL https://github.com/HalFrgrd/evp/releases/download/v0.2.0/evp-0.2.0-x86_64-unknown-linux-musl.tar.gz \
-    | tar -xz --strip-components=1 -C /usr/local/bin
-
 
 USER john
 
@@ -45,7 +39,7 @@ RUN touch /home/john/.bashrc && \
     'flyline editor --auto-close-chars false' \
     'flyline editor --show-inline-history false' \
     'export PATH="/home/john/bin/:$PATH"' \
-    "flyline set-agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a bash command.\" --command 'claude --effort low --print' " \
+    "flyline set-agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a bash command.\" --command '/home/john/bin/claude --effort low --print' " \
     >> /home/john/.bashrc
 
 # Install the mock claude executable: always sleeps 3 s then emits a fixed JSON array
@@ -183,3 +177,9 @@ RUN touch /home/john/.bash_history && \
 
 COPY tapes/demo_settings.tape .
 COPY tapes/demo_setup.tape .
+
+RUN curl -fsSL https://github.com/HalFrgrd/evp/releases/download/v0.3.0/evp-0.3.0-x86_64-unknown-linux-musl.tar.gz \
+    | tar -xz --strip-components=1 -C /usr/local/bin
+
+# Copy the Flyline shared library into the container
+COPY --from=flyline-extracted-library /libflyline.so .

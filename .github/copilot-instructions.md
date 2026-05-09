@@ -17,8 +17,8 @@ src/            Rust library source (cdylib crate)
   *.rs          Individual feature modules
 tests/          Rust integration tests and shared test helpers
   common/       Shared Rust test support code
+docker-bake.hcl  Bake file defining all build and test targets
 docker/         Dockerfiles and helper scripts used by CI
-  docker-bake.hcl                Bake file defining all build and test targets
   builder.Dockerfile             Multi-stage build; produces libflyline.so and runs Docker-based lib tests
   bash_integration_test.Dockerfile  Loads the .so into various Bash versions
   specific_bash_version.Dockerfile  Builds the Bash versions used by the integration-test matrix
@@ -45,7 +45,7 @@ Bash-owned symbols.
 CI also builds the library inside Docker to target glibc 2.23 (Ubuntu 16.04), ensuring broad host compatibility:
 
 ```bash
-docker buildx bake -f docker/docker-bake.hcl extract-release-artifact
+docker buildx bake -f docker-bake.hcl extract-release-artifact
 # Produces docker/build/libflyline.so
 ```
 
@@ -66,7 +66,7 @@ check that the production code paths still compile (i.e. without the
 Don't run these unless specified.
 
 ```bash
-docker buildx bake -f docker/docker-bake.hcl bash-integration-tests
+docker buildx bake -f docker-bake.hcl bash-integration-tests
 ```
 
 Supported `DOCKER_BASH_VERSION` values: `4.4-rc1`, `4.4.18`, `5.0`, `5.1.16`, `5.2`, `5.3`.
