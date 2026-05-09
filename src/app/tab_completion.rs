@@ -729,7 +729,7 @@ fn tab_complete_fuzzy_filename(
 
     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
 
-    // glob expansion handles dequoting the pattern, so we only need to dequote
+    // glob expansion handles dequoting the pattern, so we only need to dequote the remaining fragment
     let dequoted_fragment = bash_funcs::dequoting_function_rust(&filename_fragment);
 
     let mut scored: Vec<(i64, UnprocessedSuggestion)> = all_files
