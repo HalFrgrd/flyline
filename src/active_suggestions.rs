@@ -800,7 +800,7 @@ pub struct ActiveSuggestions {
     unprocessed_suggestions: VecDeque<UnprocessedSuggestion>,
     /// Fully post-processed suggestions.  This is the only collection used by
     /// fuzzy matching, rendering, and acceptance logic.
-    pub processed_suggestions: Vec<ProcessedSuggestion>,          // TODO think of making htese private
+    pub processed_suggestions: Vec<ProcessedSuggestion>, // TODO think of making these private
     pub filtered_suggestions: Vec<FilteredItem>,
     /// 2-D position of the currently-selected suggestion within the grid.
     /// `selected_col * last_num_rows_per_col + selected_row` gives the 1-D
@@ -1238,7 +1238,6 @@ impl ActiveSuggestions {
             self.processed_suggestions.len(),
             self.unprocessed_suggestions.len()
         );
-
 
         self.filtered_suggestions = self
             .processed_suggestions

@@ -231,7 +231,8 @@ fn gen_completions_uncomitted(
             }
             CompType::FirstWord => {
                 log::debug!("CompType::FirstWord for: {}", word_under_cursor.as_ref());
-                let completions = tab_complete_first_word(word_under_cursor.as_ref(), word_under_cursor.as_ref());
+                let completions =
+                    tab_complete_first_word(word_under_cursor.as_ref(), word_under_cursor.as_ref());
                 log::debug!(
                     "CompType::FirstWord found {} completions for prefix: {}",
                     completions.len(),
@@ -392,8 +393,10 @@ fn gen_completions_uncomitted(
             }
             CompType::GlobExpansion => {
                 log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
-                let (completions, comp_res_flags) =
-                    tab_complete_glob_expansion(word_under_cursor.as_ref(), word_under_cursor.as_ref());
+                let (completions, comp_res_flags) = tab_complete_glob_expansion(
+                    word_under_cursor.as_ref(),
+                    word_under_cursor.as_ref(),
+                );
 
                 log::debug!(
                     "CompType::GlobExpansion found {} completions for pattern: {}",
@@ -461,7 +464,7 @@ fn gen_completions_uncomitted(
                     &(completion_context.word_left_of_cursor().to_string()
                         + "*"
                         + completion_context.word_right_of_cursor()),
-                        word_under_cursor.as_ref()
+                    word_under_cursor.as_ref(),
                 );
 
                 log::debug!(
@@ -542,7 +545,8 @@ fn tab_complete_first_word(command: &str, word_under_cursor: &str) -> ActiveSugg
 
     if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
         // Path to executable
-        let (files, _comp_res_flags) = tab_complete_glob_expansion(&(command.to_string() + "*"), word_under_cursor);
+        let (files, _comp_res_flags) =
+            tab_complete_glob_expansion(&(command.to_string() + "*"), word_under_cursor);
         let executable_files = filter_out_non_executables(files);
         return ActiveSuggestionsBuilder::from_unprocessed(executable_files);
     }
@@ -686,7 +690,8 @@ fn tab_complete_glob_expansion(
     log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
 
     let expanded = PathPatternExpansion::new(pattern);
-    let completions = tab_complete_with_expanded_pattern(&expanded, comp_resultflags, word_under_cursor, true);
+    let completions =
+        tab_complete_with_expanded_pattern(&expanded, comp_resultflags, word_under_cursor, true);
 
     (completions, comp_resultflags)
 }
@@ -1126,7 +1131,8 @@ mod tab_completion_tests {
         crate::logging::init_for_tests_once();
 
         let (builder, comp_context) = get_builder_from_buffer(buffer).unwrap();
-        let outcome = apply_tab_complete_to_buffer(buffer, &builder, &comp_context.word_under_cursor);
+        let outcome =
+            apply_tab_complete_to_buffer(buffer, &builder, &comp_context.word_under_cursor);
         let final_wuc = if let TabCompleteBufferOutcome::Pending { final_wuc } = outcome {
             final_wuc
         } else {
@@ -1513,6 +1519,8 @@ mod tab_completion_tests {
         fn fuzzy_matching_with_long_filenames() {
             cd_to_example_long_filenames_fs();
 
+            // Arinae fuzzy matcher stops working at a certain length 64 chars.
+            // So below that, we can expect fuzzy matching to work.
             let mut buffer = TextBuffer::new_with_cursor("mycmd ./len_61_plus_3/█");
             let active_suggestions = run_to_active_suggestions(&mut buffer);
             assert_eq!(buffer.buffer(), "mycmd ./len_61_plus_3/abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_a");
@@ -1544,8 +1552,7 @@ mod tab_completion_tests {
                 }
             ]);
 
-
-
+            // But above that length, fuzzy filtering in active suggestions should just return dummy scores
             let mut buffer = TextBuffer::new_with_cursor("mycmd ./len_65_plus_3/█");
             let active_suggestions = run_to_active_suggestions(&mut buffer);
             assert_eq!(buffer.buffer(), "mycmd ./len_65_plus_3/abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_");
