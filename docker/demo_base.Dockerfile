@@ -23,10 +23,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f -v
 
-RUN curl -fsSL https://github.com/HalFrgrd/evp/releases/download/v0.3.0/evp-0.3.0-x86_64-unknown-linux-musl.tar.gz \
-    | tar -xz --strip-components=1 -C /usr/local/bin
-
-
 USER john
 
 RUN touch /home/john/.bashrc && \
@@ -181,6 +177,9 @@ RUN touch /home/john/.bash_history && \
 
 COPY tapes/demo_settings.tape .
 COPY tapes/demo_setup.tape .
+
+RUN curl -fsSL https://github.com/HalFrgrd/evp/releases/download/v0.3.0/evp-0.3.0-x86_64-unknown-linux-musl.tar.gz \
+    | tar -xz --strip-components=1 -C /usr/local/bin
 
 # Copy the Flyline shared library into the container
 COPY --from=flyline-extracted-library /libflyline.so .
