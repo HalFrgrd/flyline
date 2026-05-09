@@ -779,11 +779,11 @@ impl ActiveSuggestionsBuilder {
 /// expensive rendering work is done on demand in [`ActiveSuggestions::into_grid`].
 ///
 /// `suggestion_idx` is an index into [`ActiveSuggestions::processed_suggestions`].
-#[derive(Debug, Clone)]
-struct FilteredItem {
-    suggestion_idx: usize,
-    score: i64,
-    matching_indices: Vec<usize>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilteredItem {
+    pub suggestion_idx: usize,
+    pub score: i64,
+    pub matching_indices: Vec<usize>,
 }
 
 pub struct ColumnInfo {
@@ -800,8 +800,8 @@ pub struct ActiveSuggestions {
     unprocessed_suggestions: VecDeque<UnprocessedSuggestion>,
     /// Fully post-processed suggestions.  This is the only collection used by
     /// fuzzy matching, rendering, and acceptance logic.
-    processed_suggestions: Vec<ProcessedSuggestion>,
-    filtered_suggestions: Vec<FilteredItem>,
+    pub processed_suggestions: Vec<ProcessedSuggestion>,          // TODO think of making htese private
+    pub filtered_suggestions: Vec<FilteredItem>,
     /// 2-D position of the currently-selected suggestion within the grid.
     /// `selected_col * last_num_rows_per_col + selected_row` gives the 1-D
     /// index into `filtered_suggestions`.
@@ -1181,8 +1181,22 @@ impl ActiveSuggestions {
             .strip_prefix(&sug.prefix)
             .unwrap_or(pattern_with_prefix);
 
+        log::debug!(
+            "Fuzzy matching suggestion {:#?} against\n pattern {:?}\n wuc: {:?}",
+            sug,
+            pattern,
+            self.word_under_cursor
+        );
+
         // Try the fuzzy matcher first
         if let Some((score, indices)) = self.fuzzy_matcher.fuzzy_indices(&sug.s, pattern) {
+            // log::debug!(
+            //     "Fuzzy match for suggestion {:?} against pattern {:?}: score={}, indices={:?}",
+            //     sug.formatted(),
+            //     pattern,
+            //     score,
+            //     indices
+            // );
             return Some(FilteredItem {
                 score,
                 suggestion_idx: idx,
@@ -1191,7 +1205,14 @@ impl ActiveSuggestions {
         }
 
         const MAX_PATTERN_LENGTH: usize = 64;
+        // I've noticed that when the pattern is very long, arinae matcher returns None.
+        // So here we force it to return a dummy match.
         if pattern.len() > MAX_PATTERN_LENGTH {
+            // log::debug!(
+            //     "Pattern {:?} is too long ({} chars), skipping fuzzy match and returning dummy match",
+            //     pattern,
+            //     pattern.len()
+            // );
             return Some(FilteredItem {
                 score: 0,
                 suggestion_idx: idx,
@@ -1224,6 +1245,7 @@ impl ActiveSuggestions {
             .iter()
             .enumerate()
             .filter_map(|(idx, sug)| self.fuzzy_match_for_processed(idx, sug))
+            // .inspect(|x| log::debug!("Fuzzy match result: idx={}, score={}, matching_indices={:?}", x.suggestion_idx, x.score, x.matching_indices))
             .collect();
 
         // Sort by score (descending - higher scores are better matches)

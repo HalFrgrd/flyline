@@ -231,7 +231,7 @@ fn gen_completions_uncomitted(
             }
             CompType::FirstWord => {
                 log::debug!("CompType::FirstWord for: {}", word_under_cursor.as_ref());
-                let completions = tab_complete_first_word(word_under_cursor.as_ref());
+                let completions = tab_complete_first_word(word_under_cursor.as_ref(), word_under_cursor.as_ref());
                 log::debug!(
                     "CompType::FirstWord found {} completions for prefix: {}",
                     completions.len(),
@@ -393,7 +393,7 @@ fn gen_completions_uncomitted(
             CompType::GlobExpansion => {
                 log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
                 let (completions, comp_res_flags) =
-                    tab_complete_glob_expansion(word_under_cursor.as_ref());
+                    tab_complete_glob_expansion(word_under_cursor.as_ref(), word_under_cursor.as_ref());
 
                 log::debug!(
                     "CompType::GlobExpansion found {} completions for pattern: {}",
@@ -461,6 +461,7 @@ fn gen_completions_uncomitted(
                     &(completion_context.word_left_of_cursor().to_string()
                         + "*"
                         + completion_context.word_right_of_cursor()),
+                        word_under_cursor.as_ref()
                 );
 
                 log::debug!(
@@ -533,7 +534,7 @@ fn filter_out_non_executables(paths: Vec<UnprocessedSuggestion>) -> Vec<Unproces
         .collect()
 }
 
-fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
+fn tab_complete_first_word(command: &str, word_under_cursor: &str) -> ActiveSuggestionsBuilder {
     log::debug!("Generating first word completions for: '{}'", command);
     if command.is_empty() {
         return ActiveSuggestionsBuilder::new();
@@ -541,7 +542,7 @@ fn tab_complete_first_word(command: &str) -> ActiveSuggestionsBuilder {
 
     if command.starts_with('.') || command.contains('/') || command.starts_with('~') {
         // Path to executable
-        let (files, _comp_res_flags) = tab_complete_glob_expansion(&(command.to_string() + "*"));
+        let (files, _comp_res_flags) = tab_complete_glob_expansion(&(command.to_string() + "*"), word_under_cursor);
         let executable_files = filter_out_non_executables(files);
         return ActiveSuggestionsBuilder::from_unprocessed(executable_files);
     }
@@ -604,6 +605,7 @@ fn tab_complete_fuzzy_first_word(command: &str) -> ActiveSuggestionsBuilder {
 fn tab_complete_with_expanded_pattern(
     expanded: &PathPatternExpansion,
     comp_resultflags: bash_funcs::CompletionFlags,
+    wuc: &str,
     should_skip_hidden: bool,
 ) -> Vec<UnprocessedSuggestion> {
     let mut results = Vec::new();
@@ -658,11 +660,7 @@ fn tab_complete_with_expanded_pattern(
                 raw_text: unexpanded,
                 full_path: Some(path),
                 flags: comp_resultflags,
-                // The glob expansion path already preserves the raw prefix in
-                // `unexpanded` via PathPatternExpansion; pass "" here so
-                // into_processed doesn't attempt a second
-                // prefix split (filename_quoting_desired is false anyway).
-                word_under_cursor: String::new(),
+                word_under_cursor: wuc.to_string(),
             });
         }
     }
@@ -673,6 +671,7 @@ fn tab_complete_with_expanded_pattern(
 
 fn tab_complete_glob_expansion(
     pattern: &str,
+    word_under_cursor: &str,
 ) -> (Vec<UnprocessedSuggestion>, bash_funcs::CompletionFlags) {
     let mut comp_resultflags = bash_funcs::CompletionFlags::default();
     // We will handle it ourselves because the prefix should not be quoted but the found filename should be.
@@ -687,7 +686,7 @@ fn tab_complete_glob_expansion(
     log::debug!("found quote type: {:?}", comp_resultflags.quote_type);
 
     let expanded = PathPatternExpansion::new(pattern);
-    let completions = tab_complete_with_expanded_pattern(&expanded, comp_resultflags, true);
+    let completions = tab_complete_with_expanded_pattern(&expanded, comp_resultflags, word_under_cursor, true);
 
     (completions, comp_resultflags)
 }
@@ -1059,7 +1058,7 @@ impl App<'_> {
 #[cfg(test)]
 mod tab_completion_tests {
     use super::*;
-    use crate::active_suggestions::ProcessedSuggestion;
+    use crate::active_suggestions::{FilteredItem, ProcessedSuggestion};
     use crate::tab_completion_context::{CompletionContext, get_completion_context};
     use crate::text_buffer::TextBuffer;
     use rusty_fork::rusty_fork_test;
@@ -1121,6 +1120,19 @@ mod tab_completion_tests {
         let mut suggestions: Vec<ProcessedSuggestion> = builder.processed;
         suggestions.sort_by(|a, b| a.s.cmp(&b.s));
         suggestions
+    }
+
+    fn run_to_active_suggestions(buffer: &mut TextBuffer) -> ActiveSuggestions {
+        crate::logging::init_for_tests_once();
+
+        let (builder, comp_context) = get_builder_from_buffer(buffer).unwrap();
+        let outcome = apply_tab_complete_to_buffer(buffer, &builder, &comp_context.word_under_cursor);
+        let final_wuc = if let TabCompleteBufferOutcome::Pending { final_wuc } = outcome {
+            final_wuc
+        } else {
+            panic!("Expected pending outcome with suggestions");
+        };
+        ActiveSuggestions::new(builder, final_wuc, std::time::Duration::from_secs(0))
     }
 
     fn assert_completions(command: &str, expected: &[ProcessedSuggestion]) {
@@ -1298,12 +1310,12 @@ mod tab_completion_tests {
             assert_completions(
                 "mycmd ./",
                 &[
-                    ProcessedSuggestion::new("./abc/", "", ""),
-                    ProcessedSuggestion::new("./bar.txt", "", " "),
-                    ProcessedSuggestion::new(r"./file\ with\ spaces.txt", "", " "),
-                    ProcessedSuggestion::new("./foo/", "", ""),
-                    ProcessedSuggestion::new(r"./many\ spaces\ here/", "", ""),
-                    ProcessedSuggestion::new("./sym_link_to_foo/", "", ""),
+                    ProcessedSuggestion::new("abc/", "./", ""),
+                    ProcessedSuggestion::new("bar.txt", "./", " "),
+                    ProcessedSuggestion::new(r"file\ with\ spaces.txt", "./", " "),
+                    ProcessedSuggestion::new("foo/", "./", ""),
+                    ProcessedSuggestion::new(r"many\ spaces\ here/", "./", ""),
+                    ProcessedSuggestion::new("sym_link_to_foo/", "./", ""),
                 ],
             );
         }
@@ -1500,138 +1512,71 @@ mod tab_completion_tests {
         #[test]
         fn fuzzy_matching_with_long_filenames() {
             cd_to_example_long_filenames_fs();
-            let load_time = std::time::Duration::from_millis(0);
 
-            // Read the directory and verify we have the expected filenames
-            let entries: Vec<String> = std::fs::read_dir(".")
-                .unwrap()
-                .filter_map(|e| e.ok())
-                .filter_map(|e| {
-                    let path = e.path();
-                    if path.is_file() {
-                        path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            // Verify we have files of the expected lengths
-            assert!(entries.iter().any(|s| s.len() == 32), "Missing 32-char filename");
-            assert!(entries.iter().any(|s| s.len() == 33), "Missing 33-char filename");
-            assert!(entries.iter().any(|s| s.len() == 64), "Missing 64-char filename");
-            assert!(entries.iter().any(|s| s.len() == 65), "Missing 65-char filename");
-            assert!(entries.iter().any(|s| s.len() == 100), "Missing 100-char filename");
-
-            // Create ProcessedSuggestions for each filename
-            let suggestions: Vec<ProcessedSuggestion> = entries
-                .iter()
-                .map(|name| ProcessedSuggestion::new(name.clone(), "", " "))
-                .collect();
-
-// Test 1: Normal pattern (within 32 char limit) - fuzzy matching works
-            let pattern_normal = "aaa";
-            let word_under_cursor_normal = SubString::from_parts(pattern_normal.to_string(), 0);
-            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
-            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_normal, load_time);
-            let filtered_count_normal = active_sugg.filtered_suggestions_len();
-
-            log::info!(
-                "Test 1 (normal pattern, 3 chars) - Pattern: 'aaa', Filtered suggestions: {}",
-                filtered_count_normal
+            let mut buffer = TextBuffer::new_with_cursor("mycmd ./len_61_plus_3/█");
+            let active_suggestions = run_to_active_suggestions(&mut buffer);
+            assert_eq!(buffer.buffer(), "mycmd ./len_61_plus_3/abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_a");
+            assert_processed(
+                &active_suggestions.processed_suggestions,
+                &[
+                    ProcessedSuggestion::new(
+                        "abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_aBAR",
+                        "./len_61_plus_3/",
+                        " ",
+                    ),
+                    ProcessedSuggestion::new(
+                        "abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_aFOO",
+                        "./len_61_plus_3/",
+                        " ",
+                    ),
+                ],
             );
-            // Should match all files since they all start with 'aaa...'
-            assert!(
-                filtered_count_normal > 0,
-                "Expected fuzzy matches for 'aaa' pattern"
-            );
+            assert_eq!(active_suggestions.filtered_suggestions, vec![
+                FilteredItem{
+                    suggestion_idx: 0,
+                    score: 2006,
+                    matching_indices: (0..=60).collect(),
+                },
+                FilteredItem{
+                    suggestion_idx: 1,
+                    score: 2006,
+                    matching_indices: (0..=60).collect(),
+                }
+            ]);
 
-// Test 2: Pattern exactly at limit (32 chars) - fuzzy matching works
-            let pattern_at_limit = "a".repeat(32);
-            let word_under_cursor_32 = SubString::from_parts(pattern_at_limit.clone(), 0);
-            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
-            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_32, load_time);
-            let filtered_count_32 = active_sugg.filtered_suggestions_len();
 
-            log::info!(
-                "Test 2 (at limit, 32 chars) - Pattern: 'a'x32, Filtered suggestions: {}",
-                filtered_count_32
-            );
-            // At the limit, fuzzy matcher should still work
-            assert!(
-                filtered_count_32 > 0,
-                "Expected fuzzy matches for 32-char pattern (at limit)"
-            );
 
-// Test 3: Pattern slightly over limit (33 chars) - returns dummy items, filtered to 0
-            let pattern_over_limit = "a".repeat(33);
-            let word_under_cursor_33 = SubString::from_parts(pattern_over_limit.clone(), 0);
-            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
-            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_33, load_time);
-            let filtered_count_33 = active_sugg.filtered_suggestions_len();
+            let mut buffer = TextBuffer::new_with_cursor("mycmd ./len_65_plus_3/█");
+            let active_suggestions = run_to_active_suggestions(&mut buffer);
+            assert_eq!(buffer.buffer(), "mycmd ./len_65_plus_3/abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_");
+            assert_processed(
+                &active_suggestions.processed_suggestions,
+                &[
+                    ProcessedSuggestion::new(
+                        "abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_BAR",
+                        "./len_65_plus_3/",
+                        " ",
+                    ),
+                    ProcessedSuggestion::new(
+                        "abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_abcd_FOO",
+                        "./len_65_plus_3/",
+                        " ",
+                    ),
+                ],
+            );
+            assert_eq!(active_suggestions.filtered_suggestions, vec![
+                FilteredItem{
+                    suggestion_idx: 0,
+                    score: 0,
+                    matching_indices: vec![],
+                },
+                FilteredItem{
+                    suggestion_idx: 1,
+                    score: 0,
+                    matching_indices: vec![],
+                }
+            ]);
 
-            log::info!(
-                "Test 3 (over limit, 33 chars) - Pattern: 'a'x33, Filtered suggestions: {}",
-                filtered_count_33
-            );
-            // Over the limit, fuzzy matcher returns None, we return score-0 dummy items,
-            // which are filtered out, so we should get 0 results
-            assert_eq!(
-                filtered_count_33, 0,
-                "Expected no matches for 33-char pattern (fuzzy matcher limit exceeded)"
-            );
-
-            // Test 4: Pattern at 64 chars (well over limit)
-            let pattern_64 = "a".repeat(64);
-            let word_under_cursor_64 = SubString::from_parts(pattern_64.clone(), 0);
-            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
-            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_64, load_time);
-            let filtered_count_64 = active_sugg.filtered_suggestions_len();
-
-            log::info!(
-                "Test 4 (64 chars) - Pattern: 'a'x64, Filtered suggestions: {}",
-                filtered_count_64
-            );
-            // Well over limit, should result in 0 matches
-            assert_eq!(
-                filtered_count_64, 0,
-                "Expected no matches for 64-char pattern (well over limit)"
-            );
-
-            // Test 5: Pattern at 100 chars
-            let pattern_100 = "a".repeat(100);
-            let word_under_cursor_100 = SubString::from_parts(pattern_100.clone(), 0);
-            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
-            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_100, load_time);
-            let filtered_count_100 = active_sugg.filtered_suggestions_len();
-
-            log::info!(
-                "Test 5 (100 chars) - Pattern: 'a'x100, Filtered suggestions: {}",
-                filtered_count_100
-            );
-            // Well over limit, should result in 0 matches
-            assert_eq!(
-                filtered_count_100, 0,
-                "Expected no matches for 100-char pattern (well over limit)"
-            );
-
-            // Test 6: Pattern longer than all files (150 chars)
-            let pattern_150 = "a".repeat(150);
-            let word_under_cursor_150 = SubString::from_parts(pattern_150.clone(), 0);
-            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
-            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_150, load_time);
-            let filtered_count_150 = active_sugg.filtered_suggestions_len();
-
-            log::info!(
-                "Test 6 (150 chars) - Pattern: 'a'x150, Filtered suggestions: {}",
-                filtered_count_150
-            );
-            // Pattern much longer than all files should result in 0 matches
-            assert_eq!(
-                filtered_count_150, 0,
-                "Expected no matches for pattern (len {}) longer than all files",
-                pattern_150.len()
-            );
         }
     }
 }
