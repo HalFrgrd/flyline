@@ -2141,12 +2141,12 @@ impl<'a> App<'a> {
                 content.write_tagged_span(&TaggedSpan::new(
                     Span::styled(
                         format!(
-                            "# Pos: {}; Filtered: {}/{}; {} ({}ms)",
+                            "# Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
                             pos_string,
                             active_suggestions.filtered_suggestions_len(),
                             active_suggestions.all_suggestions_len(),
                             active_suggestions.comp_type.display_name(),
-                            active_suggestions.load_time.as_millis(),
+                            active_suggestions.load_time.as_secs_f32() * 1000.0,
                         ),
                         self.settings.colour_palette.secondary_text(),
                     ),
