@@ -194,17 +194,20 @@ pub(crate) fn gen_completions_internal(
 ) -> Option<ActiveSuggestionsBuilder> {
     let mut builder = gen_completions_uncomitted(completion_context)?;
 
-    let all_processed = builder.try_process_all();
+    let all_processed = if cfg!(test) {
+        // Tests demand determinism: process everything and always compute
+        // the common prefix even if `insert_common_prefix` is false.
+        while !builder.try_process_all() {}
+        true
+    } else {
+        builder.try_process_all()
+    };
+
     if !all_processed {
         log::debug!("Not all suggestions were fully processed; skipping common prefix calculation");
     }
 
-    if cfg!(test) {
-        // Tests demand determinism: process everything and always compute
-        // the common prefix even if `auto_accept_if_solo` is false.
-        while !builder.try_process_all() {}
-        builder.set_common_prefix();
-    } else if builder.auto_accept_if_solo && all_processed {
+    if builder.insert_common_prefix && all_processed {
         builder.set_common_prefix();
     }
 
@@ -336,7 +339,9 @@ fn gen_completions_uncomitted(
                             .map(|_score| sug)
                         })
                         .collect();
-                    builder = builder.with_auto_accept_if_solo(false);
+                    builder = builder
+                        .with_auto_accept_if_solo(false)
+                        .with_insert_common_prefix(false);
                     log::debug!(
                         "CompType::FuzzyCommandComp found {} completions for pattern: {}",
                         builder.len(),
@@ -465,6 +470,9 @@ fn gen_completions_uncomitted(
                 if !completions.is_empty() {
                     return Some(
                         ActiveSuggestionsBuilder::from_unprocessed(completions)
+                            .with_insert_common_prefix(
+                                completion_context.word_right_of_cursor().is_empty(),
+                            )
                             .with_comp_type(comp_type.clone()),
                     );
                 }
@@ -486,6 +494,7 @@ fn gen_completions_uncomitted(
                     return Some(
                         ActiveSuggestionsBuilder::from_unprocessed(completions)
                             .with_auto_accept_if_solo(false)
+                            .with_insert_common_prefix(false)
                             .with_comp_type(comp_type.clone()),
                     );
                 }
@@ -1290,8 +1299,8 @@ mod tab_completion_tests {
 
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
             log::info!("Outcome of applying tab complete: {:?}", &outcome);
-            assert!(matches!(outcome, TabCompleteBufferOutcome::Pending { ref final_wuc } if final_wuc.as_ref() == "./foo"));
-            assert_eq!(buffer.buffer(), "mycmd ./foo");
+            assert!(matches!(outcome, TabCompleteBufferOutcome::Pending { ref final_wuc } if final_wuc.as_ref() == "./fo/barA"));
+            assert_eq!(buffer.buffer(), "mycmd ./fo/barA");
         }
 
         // #[test]

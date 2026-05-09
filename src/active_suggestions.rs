@@ -652,6 +652,7 @@ pub struct ActiveSuggestionsBuilder {
     pub processed: Vec<ProcessedSuggestion>,
     pub unprocessed: VecDeque<UnprocessedSuggestion>,
     pub auto_accept_if_solo: bool,
+    pub insert_common_prefix: bool,
     pub common_prefix: Option<String>,
     pub comp_type: tab_completion_context::CompType,
 }
@@ -664,6 +665,7 @@ impl ActiveSuggestionsBuilder {
             processed: Vec::new(),
             unprocessed: VecDeque::new(),
             auto_accept_if_solo: true,
+            insert_common_prefix: true,
             common_prefix: None,
             comp_type: tab_completion_context::CompType::default(),
         }
@@ -674,6 +676,11 @@ impl ActiveSuggestionsBuilder {
     /// single candidate survives the fuzzy scoring.
     pub fn with_auto_accept_if_solo(mut self, auto_accept_if_solo: bool) -> Self {
         self.auto_accept_if_solo = auto_accept_if_solo;
+        self
+    }
+
+    pub fn with_insert_common_prefix(mut self, insert_common_prefix: bool) -> Self {
+        self.insert_common_prefix = insert_common_prefix;
         self
     }
 
@@ -832,6 +839,7 @@ impl ActiveSuggestions {
             unprocessed: unprocessed_suggestions,
             common_prefix: _,
             auto_accept_if_solo: _,
+            insert_common_prefix: _,
             comp_type,
         } = builder;
         let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
