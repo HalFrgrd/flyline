@@ -16,7 +16,7 @@ RUN set -eux; \
 
 COPY tapes/demo_fuzzy_path_suggestions.tape .
 
-RUN faketime @1771881894 evp demo_fuzzy_path_suggestions.tape
+RUN faketime @1771881894 /home/john/bin/evp demo_fuzzy_path_suggestions.tape
 
 FROM scratch
 COPY --from=gif-builder /app/*.gif /
