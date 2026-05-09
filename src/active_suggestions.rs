@@ -1181,13 +1181,26 @@ impl ActiveSuggestions {
             .strip_prefix(&sug.prefix)
             .unwrap_or(pattern_with_prefix);
 
-        self.fuzzy_matcher
-            .fuzzy_indices(&sug.s, pattern)
-            .map(|(score, indices)| FilteredItem {
+        // Try the fuzzy matcher first
+        if let Some((score, indices)) = self.fuzzy_matcher.fuzzy_indices(&sug.s, pattern) {
+            return Some(FilteredItem {
                 score,
                 suggestion_idx: idx,
                 matching_indices: indices,
-            })
+            });
+        }
+
+        const MAX_PATTERN_LENGTH: usize = 64;
+        if pattern.len() > MAX_PATTERN_LENGTH {
+            return Some(FilteredItem {
+                score: 0,
+                suggestion_idx: idx,
+                matching_indices: Vec::new(),
+            });
+        }
+
+        // No match: filter this out
+        None
     }
 
     pub fn update_word_under_cursor(&mut self, new_word_under_cursor: &SubString) {
@@ -1205,7 +1218,7 @@ impl ActiveSuggestions {
             self.unprocessed_suggestions.len()
         );
 
-        // Score and filter processed suggestions using the stored matcher.
+
         self.filtered_suggestions = self
             .processed_suggestions
             .iter()

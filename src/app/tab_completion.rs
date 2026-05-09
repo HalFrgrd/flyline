@@ -1172,6 +1172,11 @@ mod tab_completion_tests {
         std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
     }
 
+    fn cd_to_example_long_filenames_fs() {
+        let dir = find_test_fixture_dir("example_long_filenames_fs");
+        std::env::set_current_dir(&dir).unwrap_or_else(|e| panic!("cd {dir}: {e}"));
+    }
+
     rusty_fork_test! {
         // ------- dummy git completion (clap-based, no bash symbols) -------
 
@@ -1488,6 +1493,145 @@ mod tab_completion_tests {
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
             assert!(matches!(outcome, TabCompleteBufferOutcome::Pending { .. }));
             assert_eq!(buffer.buffer(), "mycmd foo");
+        }
+
+        // ------- fuzzy matching with long filenames -----------
+
+        #[test]
+        fn fuzzy_matching_with_long_filenames() {
+            cd_to_example_long_filenames_fs();
+            let load_time = std::time::Duration::from_millis(0);
+
+            // Read the directory and verify we have the expected filenames
+            let entries: Vec<String> = std::fs::read_dir(".")
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let path = e.path();
+                    if path.is_file() {
+                        path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Verify we have files of the expected lengths
+            assert!(entries.iter().any(|s| s.len() == 32), "Missing 32-char filename");
+            assert!(entries.iter().any(|s| s.len() == 33), "Missing 33-char filename");
+            assert!(entries.iter().any(|s| s.len() == 64), "Missing 64-char filename");
+            assert!(entries.iter().any(|s| s.len() == 65), "Missing 65-char filename");
+            assert!(entries.iter().any(|s| s.len() == 100), "Missing 100-char filename");
+
+            // Create ProcessedSuggestions for each filename
+            let suggestions: Vec<ProcessedSuggestion> = entries
+                .iter()
+                .map(|name| ProcessedSuggestion::new(name.clone(), "", " "))
+                .collect();
+
+// Test 1: Normal pattern (within 32 char limit) - fuzzy matching works
+            let pattern_normal = "aaa";
+            let word_under_cursor_normal = SubString::from_parts(pattern_normal.to_string(), 0);
+            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
+            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_normal, load_time);
+            let filtered_count_normal = active_sugg.filtered_suggestions_len();
+
+            log::info!(
+                "Test 1 (normal pattern, 3 chars) - Pattern: 'aaa', Filtered suggestions: {}",
+                filtered_count_normal
+            );
+            // Should match all files since they all start with 'aaa...'
+            assert!(
+                filtered_count_normal > 0,
+                "Expected fuzzy matches for 'aaa' pattern"
+            );
+
+// Test 2: Pattern exactly at limit (32 chars) - fuzzy matching works
+            let pattern_at_limit = "a".repeat(32);
+            let word_under_cursor_32 = SubString::from_parts(pattern_at_limit.clone(), 0);
+            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
+            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_32, load_time);
+            let filtered_count_32 = active_sugg.filtered_suggestions_len();
+
+            log::info!(
+                "Test 2 (at limit, 32 chars) - Pattern: 'a'x32, Filtered suggestions: {}",
+                filtered_count_32
+            );
+            // At the limit, fuzzy matcher should still work
+            assert!(
+                filtered_count_32 > 0,
+                "Expected fuzzy matches for 32-char pattern (at limit)"
+            );
+
+// Test 3: Pattern slightly over limit (33 chars) - returns dummy items, filtered to 0
+            let pattern_over_limit = "a".repeat(33);
+            let word_under_cursor_33 = SubString::from_parts(pattern_over_limit.clone(), 0);
+            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
+            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_33, load_time);
+            let filtered_count_33 = active_sugg.filtered_suggestions_len();
+
+            log::info!(
+                "Test 3 (over limit, 33 chars) - Pattern: 'a'x33, Filtered suggestions: {}",
+                filtered_count_33
+            );
+            // Over the limit, fuzzy matcher returns None, we return score-0 dummy items,
+            // which are filtered out, so we should get 0 results
+            assert_eq!(
+                filtered_count_33, 0,
+                "Expected no matches for 33-char pattern (fuzzy matcher limit exceeded)"
+            );
+
+            // Test 4: Pattern at 64 chars (well over limit)
+            let pattern_64 = "a".repeat(64);
+            let word_under_cursor_64 = SubString::from_parts(pattern_64.clone(), 0);
+            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
+            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_64, load_time);
+            let filtered_count_64 = active_sugg.filtered_suggestions_len();
+
+            log::info!(
+                "Test 4 (64 chars) - Pattern: 'a'x64, Filtered suggestions: {}",
+                filtered_count_64
+            );
+            // Well over limit, should result in 0 matches
+            assert_eq!(
+                filtered_count_64, 0,
+                "Expected no matches for 64-char pattern (well over limit)"
+            );
+
+            // Test 5: Pattern at 100 chars
+            let pattern_100 = "a".repeat(100);
+            let word_under_cursor_100 = SubString::from_parts(pattern_100.clone(), 0);
+            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
+            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_100, load_time);
+            let filtered_count_100 = active_sugg.filtered_suggestions_len();
+
+            log::info!(
+                "Test 5 (100 chars) - Pattern: 'a'x100, Filtered suggestions: {}",
+                filtered_count_100
+            );
+            // Well over limit, should result in 0 matches
+            assert_eq!(
+                filtered_count_100, 0,
+                "Expected no matches for 100-char pattern (well over limit)"
+            );
+
+            // Test 6: Pattern longer than all files (150 chars)
+            let pattern_150 = "a".repeat(150);
+            let word_under_cursor_150 = SubString::from_parts(pattern_150.clone(), 0);
+            let builder = ActiveSuggestionsBuilder::from_processed(suggestions.clone());
+            let active_sugg = ActiveSuggestions::new(builder, word_under_cursor_150, load_time);
+            let filtered_count_150 = active_sugg.filtered_suggestions_len();
+
+            log::info!(
+                "Test 6 (150 chars) - Pattern: 'a'x150, Filtered suggestions: {}",
+                filtered_count_150
+            );
+            // Pattern much longer than all files should result in 0 matches
+            assert_eq!(
+                filtered_count_150, 0,
+                "Expected no matches for pattern (len {}) longer than all files",
+                pattern_150.len()
+            );
         }
     }
 }
