@@ -912,12 +912,8 @@ pub fn expand_filename(filename: &str) -> String {
         expanded = expanded.replace(&braced, &value).replace(&unbraced, &value);
     }
 
-    if !Path::new(&expanded).exists() {
-        panic!(
-            "[test] expand_filename: expanded path does not exist: input={:?} expanded={:?}",
-            filename, expanded
-        );
-    }
+    assert!(!expanded.contains("$"));
+    assert!(!expanded.contains("~"));
 
     expanded
 }

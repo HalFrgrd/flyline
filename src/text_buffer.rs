@@ -80,6 +80,19 @@ impl TextBuffer {
             undo_redo: SnapshotManager::new(),
         }
     }
+
+    #[cfg(test)]
+    pub fn new_with_cursor(starting_str: &str) -> Self {
+        let cursor_byte_pos = starting_str.find('█').expect("Cursor marker █ not found");
+        let input_without_cursor = starting_str.replace('█', "");
+
+        TextBuffer {
+            buf: input_without_cursor,
+            cursor_byte: cursor_byte_pos,
+            selection_byte: None,
+            undo_redo: SnapshotManager::new(),
+        }
+    }
 }
 
 ///////////////////////////////////////////////////////// text selection

@@ -448,6 +448,8 @@ pub fn get_completion_context<'a>(
 
 #[cfg(test)]
 mod tests {
+    use crate::text_buffer::TextBuffer;
+
     use super::*;
 
     fn run<'a>(input: &'a str, cursor_byte_pos: usize) -> CompletionContext<'a> {
@@ -457,8 +459,9 @@ mod tests {
     /// Parse a test string with `█` marking the cursor position.
     /// Returns (input_without_cursor, cursor_byte_pos).
     fn run_inline(input: &str) -> CompletionContext<'static> {
-        let cursor_byte_pos = input.find('█').expect("Cursor marker █ not found");
-        let input_without_cursor = input.replace('█', "");
+        let buffer = TextBuffer::new_with_cursor(input);
+        let cursor_byte_pos = buffer.cursor_byte_pos();
+        let input_without_cursor = buffer.buffer().to_string();
         let input_without_cursor: &'static str = Box::leak(input_without_cursor.into_boxed_str());
         run(input_without_cursor, cursor_byte_pos)
     }
