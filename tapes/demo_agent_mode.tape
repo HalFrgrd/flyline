@@ -16,7 +16,7 @@ Type `flyline set-agent-mode --system-prompt "Answer with a JSON array of at mos
 Enter
 Type `  --trigger-prefix "ai: " \`
 Enter
-Type `  --command 'claude --effort low --print'`
+Type `  --command '/home/john/bin/claude --effort low --print'`
 Enter
 Sleep 500ms
 
@@ -34,7 +34,7 @@ Enter
 Sleep 800ms
 Enter
 
-Type "# If you set `--trigger-prefix`, then you can launch agent mode simply with Enter:`
+Type "# If you set `--trigger-prefix`, then you can launch agent mode simply with Enter:"
 Enter
 Sleep 500ms
 Type "ai: list files older than three days"

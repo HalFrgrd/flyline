@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f -v
 
-RUN curl -fsSL https://github.com/HalFrgrd/evp/releases/download/v0.2.0/evp-0.2.0-x86_64-unknown-linux-musl.tar.gz \
+RUN curl -fsSL https://github.com/HalFrgrd/evp/releases/download/v0.3.0/evp-0.3.0-x86_64-unknown-linux-musl.tar.gz \
     | tar -xz --strip-components=1 -C /usr/local/bin
 
 
@@ -43,7 +43,7 @@ RUN touch /home/john/.bashrc && \
     'flyline editor --auto-close-chars false' \
     'flyline editor --show-inline-history false' \
     'export PATH="/home/john/bin/:$PATH"' \
-    "flyline set-agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a bash command.\" --command 'claude --effort low --print' " \
+    "flyline set-agent-mode --system-prompt \"Be concise. Answer with a JSON array of at most 3 items with objects containing: command and description. Command will be a bash command.\" --command '/home/john/bin/claude --effort low --print' " \
     >> /home/john/.bashrc
 
 # Install the mock claude executable: always sleeps 3 s then emits a fixed JSON array
