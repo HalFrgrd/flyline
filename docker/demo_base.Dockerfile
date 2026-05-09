@@ -21,8 +21,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
     fontconfig \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f -v
+
+RUN curl -fsSL https://github.com/HalFrgrd/evp/releases/download/v0.2.0/evp-0.2.0-x86_64-unknown-linux-musl.tar.gz \
+    | tar -xz --strip-components=1 -C /usr/local/bin
 
 
 USER john

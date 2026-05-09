@@ -11,7 +11,7 @@ RUN printf '%s\n' \
 
 COPY tapes/demo_fuzzy_suggestions.tape .
 
-RUN faketime @1771881894 vhs demo_fuzzy_suggestions.tape
+RUN faketime @1771881894 evp demo_fuzzy_suggestions.tape
 
 FROM scratch
 COPY --from=gif-builder /app/*.gif /

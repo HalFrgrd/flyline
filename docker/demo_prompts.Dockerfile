@@ -11,9 +11,9 @@ RUN printf '%s\n' \
 
 COPY tapes/demo_prompts*.tape .
 
-RUN faketime @1771881894 vhs demo_prompts_ps1.tape
-RUN faketime @1771881894 vhs demo_prompts_rps1.tape
-RUN faketime @1771881894 vhs demo_prompts_ps1_fill.tape
+RUN faketime @1771881894 evp demo_prompts_ps1.tape
+RUN faketime @1771881894 evp demo_prompts_rps1.tape
+RUN faketime @1771881894 evp demo_prompts_ps1_fill.tape
 
 FROM scratch
 COPY --from=gif-builder /app/*.gif /

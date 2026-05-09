@@ -16,7 +16,7 @@ RUN printf '%s\n' \
 
 COPY tapes/demo_ls_colors.tape .
 
-RUN faketime @1771881894 vhs demo_ls_colors.tape
+RUN faketime @1771881894 evp demo_ls_colors.tape
 
 FROM scratch
 COPY --from=gif-builder /app/*.gif  /
