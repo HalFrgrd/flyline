@@ -4,6 +4,11 @@ Output demo_fuzzy_path_suggestions.gif
 Source demo_settings.tape
 Source demo_setup.tape
 
+Hide
+Type "cd ~/fruits && clear"
+Enter
+Show
+
 Type "ls"
 Sleep 400ms
 Enter
