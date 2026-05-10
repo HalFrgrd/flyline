@@ -9,10 +9,10 @@ RUN printf '%s\n' \
     >> /home/john/.bashrc
 
 RUN set -eux; \
-    touch /home/john/apple.txt; \
-    touch /home/john/banana.txt; \
-    touch /home/john/orange.txt; \
-    rm -f /home/john/bin/claude /home/john/bin/cargo /home/john/bin/git /home/john/bin/crontab /home/john/bin/wget /home/john/bin/curl;
+    mkdir -p /home/john/fruits; \
+    touch /home/john/fruits/apple.txt; \
+    touch /home/john/fruits/banana.txt; \
+    touch /home/john/fruits/orange.txt;
 
 COPY tapes/demo_fuzzy_path_suggestions.tape .
 
