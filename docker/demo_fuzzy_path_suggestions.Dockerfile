@@ -12,7 +12,7 @@ RUN set -eux; \
     touch /home/john/apple.txt; \
     touch /home/john/banana.txt; \
     touch /home/john/orange.txt; \
-    rm -r /home/john/bin;
+    rm -f /home/john/bin/claude /home/john/bin/cargo /home/john/bin/git /home/john/bin/crontab /home/john/bin/wget /home/john/bin/curl;
 
 COPY tapes/demo_fuzzy_path_suggestions.tape .
 
