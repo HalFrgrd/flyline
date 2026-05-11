@@ -2149,14 +2149,15 @@ mod tests {
             .iter()
             .find(|t| t.token.kind == TokenKind::CmdSubst && t.annotations.bracket_depth == Some(0))
             .expect("outer $( not found");
-        assert_eq!(outer_open.annotations.bracket_depth, Some(0));
+        // The find predicate already asserts depth == Some(0); use the binding to avoid unused-var warning.
+        let _ = outer_open;
 
         // Find the inner $( token.
         let inner_open = tokens
             .iter()
             .find(|t| t.token.kind == TokenKind::CmdSubst && t.annotations.bracket_depth == Some(1))
             .expect("inner $( not found");
-        assert_eq!(inner_open.annotations.bracket_depth, Some(1));
+        let _ = inner_open;
     }
 
     /// Closing tokens carry the same depth as their matching opener.
