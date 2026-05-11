@@ -167,6 +167,14 @@ pub enum PaletteStyleKind {
     SelectedText,
     #[strum(message = "Syntax highlighting for bash reserved words (e.g. if, while, for)")]
     BashReserved,
+    #[strum(message = "Rainbow bracket/quote colour for nesting depth 1 (outermost)")]
+    RainbowBracket1,
+    #[strum(message = "Rainbow bracket/quote colour for nesting depth 2")]
+    RainbowBracket2,
+    #[strum(message = "Rainbow bracket/quote colour for nesting depth 3")]
+    RainbowBracket3,
+    #[strum(message = "Rainbow bracket/quote colour for nesting depth 4")]
+    RainbowBracket4,
 }
 
 /// The colour palette.  One [`Style`] per slot.
@@ -195,6 +203,7 @@ pub struct Palette {
     key_sequence_style: Style,
     selected_text: Style,
     bash_reserved: Style,
+    rainbow_brackets: [Style; 4],
 }
 
 impl Palette {
@@ -276,6 +285,12 @@ impl Palette {
         self.bash_reserved
     }
 
+    /// Return the rainbow bracket/quote style for the given nesting `depth`.
+    /// Cycles through the 4 palette slots using `depth % 4`.
+    pub fn rainbow_bracket(&self, depth: usize) -> Style {
+        self.rainbow_brackets[depth % 4]
+    }
+
     // ── Setter ────────────────────────────────────────────────────────
 
     /// Set an individual palette slot by kind.
@@ -300,6 +315,10 @@ impl Palette {
             PaletteStyleKind::KeySequenceStyle => self.key_sequence_style = style,
             PaletteStyleKind::SelectedText => self.selected_text = style,
             PaletteStyleKind::BashReserved => self.bash_reserved = style,
+            PaletteStyleKind::RainbowBracket1 => self.rainbow_brackets[0] = style,
+            PaletteStyleKind::RainbowBracket2 => self.rainbow_brackets[1] = style,
+            PaletteStyleKind::RainbowBracket3 => self.rainbow_brackets[2] = style,
+            PaletteStyleKind::RainbowBracket4 => self.rainbow_brackets[3] = style,
         }
     }
 
@@ -345,6 +364,12 @@ impl Palette {
             bash_reserved: Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
+            rainbow_brackets: [
+                Style::default().fg(Color::Rgb(255, 215, 0)),   // gold
+                Style::default().fg(Color::Rgb(255, 100, 100)), // coral
+                Style::default().fg(Color::Rgb(100, 200, 255)), // sky-blue
+                Style::default().fg(Color::Rgb(100, 230, 150)), // mint-green
+            ],
         }
     }
 
@@ -387,6 +412,12 @@ impl Palette {
             bash_reserved: Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
+            rainbow_brackets: [
+                Style::default().fg(Color::Rgb(180, 120, 0)), // dark gold
+                Style::default().fg(Color::Rgb(180, 30, 30)), // deep red
+                Style::default().fg(Color::Rgb(30, 100, 200)), // deep blue
+                Style::default().fg(Color::Rgb(30, 130, 60)), // dark green
+            ],
         }
     }
 

@@ -61,6 +61,9 @@ pub struct Annotations {
     pub closing: Option<ClosingAnnotation>,
     /// `Some(name)` = this token is the first word of a command (e.g. `git` in `git commit`).
     pub command_word: Option<String>,
+    /// Nesting depth for opening and closing delimiter tokens, used for rainbow bracket
+    /// colouring.  `0` is the outermost level.  `None` for non-delimiter tokens.
+    pub bracket_depth: Option<usize>,
 }
 
 impl Annotations {
@@ -258,8 +261,9 @@ impl DParser {
 
         // The index of the last opening nesting token and its kind
         let mut nestings: Vec<(usize, TokenKind)> = Vec::new();
-        // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings
-        let mut heredocs: VecDeque<(usize, String, bool)> = VecDeque::new();
+        // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings.
+        // Each entry is (opening_token_idx, delimiter, is_quoted, depth_at_open).
+        let mut heredocs: VecDeque<(usize, String, bool, usize)> = VecDeque::new();
 
         let mut stop_parsing_at_command_boundary = false;
 
@@ -383,7 +387,9 @@ impl DParser {
                         cursor_byte_pos.is_some(),
                     ) =>
                 {
+                    let depth = nestings.len();
                     self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
+                    self.tokens[idx].annotations.bracket_depth = Some(depth);
 
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
@@ -394,9 +400,11 @@ impl DParser {
                 }
                 TokenKind::HereDoc { delimiter, quoted }
                 | TokenKind::HereDocDash { delimiter, quoted } => {
+                    let depth = nestings.len();
                     self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
+                    self.tokens[idx].annotations.bracket_depth = Some(depth);
 
-                    heredocs.push_back((idx, delimiter.clone(), *quoted));
+                    heredocs.push_back((idx, delimiter.clone(), *quoted, depth));
                 }
                 TokenKind::RParen
                 | TokenKind::DoubleRParen
@@ -411,10 +419,12 @@ impl DParser {
                     if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
                     let (opening_idx, _kind) = nestings.pop().unwrap();
+                    let depth = nestings.len();
                     self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
                         opening_idx,
                         is_auto_inserted: false,
                     });
+                    self.tokens[idx].annotations.bracket_depth = Some(depth);
 
                     let current_command_range_contains_cursor =
                         cursor_byte_pos.is_some_and(|pos| {
@@ -499,22 +509,23 @@ impl DParser {
                     self.current_command_range = None;
                 }
                 TokenKind::Word(word)
-                    if heredocs
-                        .front()
-                        .is_some_and(|(heredoc_opening_idx, delim, _quoted)| {
+                    if heredocs.front().is_some_and(
+                        |(heredoc_opening_idx, delim, _quoted, _depth)| {
                             let word_matches = delim == word;
                             let in_a_more_recent_nesting = nestings
                                 .last()
                                 .is_some_and(|(idx, _)| *idx > *heredoc_opening_idx);
 
                             word_matches && !in_a_more_recent_nesting
-                        }) =>
+                        },
+                    ) =>
                 {
-                    let (opening_idx, _, _) = heredocs.pop_front().unwrap();
+                    let (opening_idx, _, _, depth) = heredocs.pop_front().unwrap();
                     self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
                         opening_idx,
                         is_auto_inserted: false,
                     });
+                    self.tokens[idx].annotations.bracket_depth = Some(depth);
                 }
 
                 // Redirection operators (`<`, `>`, `>>`, `<&`, `>&`, `<>`, `>|`).
@@ -573,8 +584,8 @@ impl DParser {
                             .map(|(idx, k)| (*idx, *k == TokenKind::SingleQuote));
                         let cur_heredoc_is_quoted_idx = heredocs
                             .front()
-                            .filter(|(_, _, quoted)| *quoted)
-                            .map(|(idx, _, _)| *idx);
+                            .filter(|(_, _, quoted, _)| *quoted)
+                            .map(|(idx, _, _, _)| *idx);
                         match (
                             last_nesting_should_single_quote_idx,
                             cur_heredoc_is_quoted_idx,
@@ -593,8 +604,8 @@ impl DParser {
                             .map(|(idx, k)| (*idx, *k == TokenKind::Quote));
                         let cur_heredoc_is_unquoted_idx = heredocs
                             .front()
-                            .filter(|(_, _, quoted)| !*quoted)
-                            .map(|(idx, _, _)| *idx);
+                            .filter(|(_, _, quoted, _)| !*quoted)
+                            .map(|(idx, _, _, _)| *idx);
                         match (
                             last_nesting_should_double_quote_idx,
                             cur_heredoc_is_unquoted_idx,
@@ -2121,5 +2132,73 @@ mod tests {
         let mut parser = DParser::from("[[ 1 == 1");
         parser.walk_to_end();
         assert!(parser.needs_more_input());
+    }
+
+    // ---- bracket_depth annotation tests ----
+
+    /// Outermost bracket has depth 0; a nested bracket inside it has depth 1.
+    #[test]
+    fn test_bracket_depth_nested() {
+        let input = "echo $(echo $(true))";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        // Find the outer $( token.
+        let outer_open = tokens
+            .iter()
+            .find(|t| t.token.kind == TokenKind::CmdSubst && t.annotations.bracket_depth == Some(0))
+            .expect("outer $( not found");
+        assert_eq!(outer_open.annotations.bracket_depth, Some(0));
+
+        // Find the inner $( token.
+        let inner_open = tokens
+            .iter()
+            .find(|t| t.token.kind == TokenKind::CmdSubst && t.annotations.bracket_depth == Some(1))
+            .expect("inner $( not found");
+        assert_eq!(inner_open.annotations.bracket_depth, Some(1));
+    }
+
+    /// Closing tokens carry the same depth as their matching opener.
+    #[test]
+    fn test_bracket_depth_closing_matches_opening() {
+        let input = "f() { echo \"hello\" ; }";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        // LBrace opener (depth 0) and RBrace closer (depth 0).
+        let lbrace = tokens
+            .iter()
+            .find(|t| t.token.kind == TokenKind::LBrace)
+            .expect("{ not found");
+        assert_eq!(lbrace.annotations.bracket_depth, Some(0));
+
+        let rbrace = tokens
+            .iter()
+            .find(|t| t.token.kind == TokenKind::RBrace)
+            .expect("} not found");
+        assert_eq!(rbrace.annotations.bracket_depth, Some(0));
+
+        // The inner Quote tokens (depth 1).
+        let quotes: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.token.kind == TokenKind::Quote)
+            .collect();
+        assert_eq!(quotes.len(), 2);
+        for q in &quotes {
+            assert_eq!(q.annotations.bracket_depth, Some(1));
+        }
+    }
+
+    /// Non-delimiter tokens never have a bracket_depth set.
+    #[test]
+    fn test_non_delimiter_tokens_have_no_bracket_depth() {
+        let input = "echo hello";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        for token in parser.tokens() {
+            assert_eq!(token.annotations.bracket_depth, None);
+        }
     }
 }

@@ -148,6 +148,11 @@ fn token_to_style(
         return palette.opening_and_closing_pair();
     }
 
+    // Rainbow-colour all opening and closing delimiter tokens by nesting depth.
+    if let Some(depth) = token.annotations.bracket_depth {
+        return palette.rainbow_bracket(depth);
+    }
+
     // Env var coloring has the highest priority among base colors: a token can have both
     // `is_env_var` and `is_inside_double_quotes` (e.g. `$HOME` in `"$HOME"`), and the env var
     // color should win over the double-quoted color.
@@ -712,5 +717,50 @@ mod tests {
                 .iter()
                 .all(|p| p.selection_byte_grapheme_idx.is_none())
         );
+    }
+
+    // ── rainbow bracket colouring ─────────────────────────────────────────
+
+    /// Opening and closing bracket tokens are coloured with rainbow palette
+    /// colours, cycling by nesting depth.
+    #[test]
+    fn rainbow_brackets_use_depth_based_style() {
+        // `echo $(echo $(true))` — outer $( depth 0, inner $( depth 1.
+        let input = "echo $(echo $(true))";
+        let cursor = input.len();
+        let fb = FormattedBuffer::from(input, cursor, None);
+
+        let palette = Palette::dark();
+
+        // Collect all parts that have a bracket_depth annotation.
+        let bracket_parts: Vec<&FormattedBufferPart> = fb
+            .parts
+            .iter()
+            .filter(|p| p.token.annotations.bracket_depth.is_some())
+            .collect();
+
+        assert!(!bracket_parts.is_empty(), "expected bracket parts");
+
+        for part in bracket_parts {
+            let depth = part.token.annotations.bracket_depth.unwrap();
+            let expected = palette.rainbow_bracket(depth);
+            assert_eq!(
+                part.normal_span().style,
+                expected,
+                "expected rainbow style at depth {} for token '{}'",
+                depth,
+                part.token.token.value
+            );
+        }
+    }
+
+    /// Depth cycles modulo 4: depth 4 is styled the same as depth 0.
+    #[test]
+    fn rainbow_bracket_style_cycles_modulo_4() {
+        let palette = Palette::dark();
+        assert_eq!(palette.rainbow_bracket(0), palette.rainbow_bracket(4));
+        assert_eq!(palette.rainbow_bracket(1), palette.rainbow_bracket(5));
+        assert_eq!(palette.rainbow_bracket(2), palette.rainbow_bracket(6));
+        assert_eq!(palette.rainbow_bracket(3), palette.rainbow_bracket(7));
     }
 }
