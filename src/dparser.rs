@@ -241,6 +241,32 @@ impl DParser {
         }
     }
 
+    fn reserved_token_word_value(kind: &TokenKind) -> Option<&'static str> {
+        match kind {
+            TokenKind::If => Some("if"),
+            TokenKind::Then => Some("then"),
+            TokenKind::Elif => Some("elif"),
+            TokenKind::Else => Some("else"),
+            TokenKind::Fi => Some("fi"),
+            TokenKind::Case => Some("case"),
+            TokenKind::Esac => Some("esac"),
+            TokenKind::For => Some("for"),
+            TokenKind::While => Some("while"),
+            TokenKind::Until => Some("until"),
+            TokenKind::Do => Some("do"),
+            TokenKind::Done => Some("done"),
+            TokenKind::In => Some("in"),
+            TokenKind::Select => Some("select"),
+            TokenKind::Function => Some("function"),
+            TokenKind::Break => Some("break"),
+            TokenKind::Continue => Some("continue"),
+            TokenKind::Return => Some("return"),
+            TokenKind::Export => Some("export"),
+            TokenKind::Complete => Some("complete"),
+            _ => None,
+        }
+    }
+
     pub fn walk_to_end(&mut self) {
         self.walk(None);
     }
@@ -316,6 +342,22 @@ impl DParser {
                 if idx + 1 < self.tokens.len() && self.tokens[idx + 1].token.kind.is_word() {
                     let third = self.tokens.remove(idx + 1);
                     self.tokens[idx].token.value.push_str(&third.token.value);
+                }
+            }
+
+            if let Some(word) = Self::reserved_token_word_value(&self.tokens[idx].token.kind) {
+                let previous_kind = previous_token.as_ref().map(|t| &t.token.kind);
+                let in_plain_word_context = self.current_command_range.is_some()
+                    || previous_kind.is_some_and(|kind| {
+                        matches!(kind, TokenKind::Assignment | TokenKind::Dollar)
+                    })
+                    || self
+                        .tokens
+                        .get(idx + 1)
+                        .is_some_and(|next| next.token.kind == TokenKind::Assignment);
+
+                if in_plain_word_context {
+                    self.tokens[idx].token.kind = TokenKind::Word(word.to_string());
                 }
             }
 
@@ -1875,6 +1917,82 @@ mod tests {
                 is_auto_inserted: false
             })
         );
+    }
+
+    #[test]
+    fn test_reserved_tokens_are_words_when_used_as_arguments() {
+        let input = "echo if fi done case break continue return export complete";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        assert_eq!(tokens[0].token.value, "echo");
+        assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
+
+        for word in [
+            "if", "fi", "done", "case", "break", "continue", "return", "export", "complete",
+        ] {
+            let idx = tokens.iter().position(|t| t.token.value == word).unwrap();
+            assert_eq!(tokens[idx].token.kind, TokenKind::Word(word.to_string()));
+            assert_eq!(tokens[idx].annotations.opening, None);
+            assert_eq!(tokens[idx].annotations.closing, None);
+            assert_eq!(tokens[idx].annotations.command_word, None);
+        }
+
+        assert_eq!(parser.get_current_command_str(), input);
+        assert!(!parser.needs_more_input());
+    }
+
+    #[test]
+    fn test_if_and_fi_stay_reserved_when_used_as_keywords() {
+        let input = "if true; then echo hi; fi";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        let if_idx = tokens.iter().position(|t| t.token.value == "if").unwrap();
+        let fi_idx = tokens.iter().position(|t| t.token.value == "fi").unwrap();
+
+        assert_eq!(tokens[if_idx].token.kind, TokenKind::If);
+        assert_eq!(
+            tokens[if_idx].annotations.opening,
+            Some(OpeningState::Matched(fi_idx))
+        );
+        assert_eq!(tokens[fi_idx].token.kind, TokenKind::Fi);
+        assert_eq!(
+            tokens[fi_idx].annotations.closing,
+            Some(ClosingAnnotation {
+                opening_idx: if_idx,
+                is_auto_inserted: false
+            })
+        );
+        assert!(!parser.needs_more_input());
+    }
+
+    #[test]
+    fn test_case_done_and_esac_stay_reserved_when_used_as_keywords() {
+        let input = "case x in x) echo ok ;; esac";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        let case_idx = tokens.iter().position(|t| t.token.value == "case").unwrap();
+        let esac_idx = tokens.iter().position(|t| t.token.value == "esac").unwrap();
+
+        assert_eq!(tokens[case_idx].token.kind, TokenKind::Case);
+        assert_eq!(
+            tokens[case_idx].annotations.opening,
+            Some(OpeningState::Matched(esac_idx))
+        );
+        assert_eq!(tokens[esac_idx].token.kind, TokenKind::Esac);
+        assert_eq!(
+            tokens[esac_idx].annotations.closing,
+            Some(ClosingAnnotation {
+                opening_idx: case_idx,
+                is_auto_inserted: false
+            })
+        );
+        assert!(!parser.needs_more_input());
     }
 
     // ---- buffer_without_auto_inserted_suffix tests ----

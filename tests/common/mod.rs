@@ -6,13 +6,9 @@ pub fn run_bake_target(target: &str) -> anyhow::Result<()> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
 
     let mut command = Command::new("docker");
-    command.current_dir(manifest_dir).args([
-        "buildx",
-        "bake",
-        "-f",
-        "docker-bake.hcl",
-        target,
-    ]);
+    command
+        .current_dir(manifest_dir)
+        .args(["buildx", "bake", "-f", "docker-bake.hcl", target]);
 
     if stream {
         let status = command
