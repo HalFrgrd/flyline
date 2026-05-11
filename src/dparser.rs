@@ -241,30 +241,15 @@ impl DParser {
         }
     }
 
-    fn reserved_token_word_value(kind: &TokenKind) -> Option<&'static str> {
-        match kind {
-            TokenKind::If => Some("if"),
-            TokenKind::Then => Some("then"),
-            TokenKind::Elif => Some("elif"),
-            TokenKind::Else => Some("else"),
-            TokenKind::Fi => Some("fi"),
-            TokenKind::Case => Some("case"),
-            TokenKind::Esac => Some("esac"),
-            TokenKind::For => Some("for"),
-            TokenKind::While => Some("while"),
-            TokenKind::Until => Some("until"),
-            TokenKind::Do => Some("do"),
-            TokenKind::Done => Some("done"),
-            TokenKind::In => Some("in"),
-            TokenKind::Select => Some("select"),
-            TokenKind::Function => Some("function"),
-            TokenKind::Break => Some("break"),
-            TokenKind::Continue => Some("continue"),
-            TokenKind::Return => Some("return"),
-            TokenKind::Export => Some("export"),
-            TokenKind::Complete => Some("complete"),
-            _ => None,
-        }
+    fn is_builtin_like_reserved_word(kind: &TokenKind) -> bool {
+        matches!(
+            kind,
+            TokenKind::Break
+                | TokenKind::Continue
+                | TokenKind::Return
+                | TokenKind::Export
+                | TokenKind::Complete
+        )
     }
 
     pub fn walk_to_end(&mut self) {
@@ -345,20 +330,32 @@ impl DParser {
                 }
             }
 
-            if let Some(word) = Self::reserved_token_word_value(&self.tokens[idx].token.kind) {
-                let previous_kind = previous_token.as_ref().map(|t| &t.token.kind);
-                let in_plain_word_context = self.current_command_range.is_some()
-                    || previous_kind.is_some_and(|kind| {
-                        matches!(kind, TokenKind::Assignment | TokenKind::Dollar)
-                    })
-                    || self
-                        .tokens
-                        .get(idx + 1)
-                        .is_some_and(|next| next.token.kind == TokenKind::Assignment);
+            let previous_kind = previous_token.as_ref().map(|t| &t.token.kind);
+            let in_plain_word_context = self.current_command_range.is_some()
+                || previous_kind
+                    .is_some_and(|kind| matches!(kind, TokenKind::Assignment | TokenKind::Dollar))
+                || self
+                    .tokens
+                    .get(idx + 1)
+                    .is_some_and(|next| next.token.kind == TokenKind::Assignment);
 
-                if in_plain_word_context {
-                    self.tokens[idx].token.kind = TokenKind::Word(word.to_string());
+            let should_normalize_reserved_token = match self.tokens[idx].token.kind {
+                TokenKind::If
+                | TokenKind::Case
+                | TokenKind::For
+                | TokenKind::While
+                | TokenKind::Until => in_plain_word_context,
+                TokenKind::Fi | TokenKind::Done | TokenKind::Esac => {
+                    !Self::nested_closing_satisfied(
+                        &self.tokens[idx].token,
+                        nestings.last().map(|(_, k)| k),
+                    )
                 }
+                _ => Self::is_builtin_like_reserved_word(&self.tokens[idx].token.kind),
+            };
+
+            if should_normalize_reserved_token {
+                self.tokens[idx].token.kind = TokenKind::Word(self.tokens[idx].token.value.clone());
             }
 
             // Clone the token so we can match on it while still mutating self.tokens[idx].annotation.
