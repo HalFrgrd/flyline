@@ -429,6 +429,7 @@ fn gen_completions_uncomitted(
                                     Some(QuoteType::SingleQuote) => acc.push_str("'"),
                                     _ => {}
                                 }
+                                acc.push_str(&sug.prefix);
                                 acc.push_str(&sug.s);
 
                                 if !is_last {
@@ -1351,6 +1352,19 @@ mod tab_completion_tests {
                 "mycmd $PWD/foo*{1,3}/bar*{A,C}",
                 &[ProcessedSuggestion::new(
                     "$PWD/foo1/barA $PWD/foo1/barC $PWD/foo3/barA $PWD/foo3/barC ",
+                    "",
+                    "",
+                )],
+            );
+        }
+
+        #[test]
+        fn glob_expansion_keeps_parent_path_for_each_match() {
+            cd_to_example_fs();
+            assert_completions(
+                "echo foo/*bar*",
+                &[ProcessedSuggestion::new(
+                    "foo/abcbardef foo/ghibarjkl ",
                     "",
                     "",
                 )],
