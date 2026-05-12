@@ -584,15 +584,15 @@ impl DParser {
                 TokenKind::Word(word)
                     if heredoc_body_active
                         && heredocs.front().is_some_and(
-                        |(heredoc_opening_idx, delim, _quoted, _depth)| {
-                            let word_matches = delim == word;
-                            let in_a_more_recent_nesting = nestings
-                                .last()
-                                .is_some_and(|(idx, _)| *idx > *heredoc_opening_idx);
+                            |(heredoc_opening_idx, delim, _quoted, _depth)| {
+                                let word_matches = delim == word;
+                                let in_a_more_recent_nesting = nestings
+                                    .last()
+                                    .is_some_and(|(idx, _)| *idx > *heredoc_opening_idx);
 
-                            word_matches && !in_a_more_recent_nesting
-                        },
-                    ) =>
+                                word_matches && !in_a_more_recent_nesting
+                            },
+                        ) =>
                 {
                     let (opening_idx, _, _, depth) = heredocs.pop_front().unwrap();
                     self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
@@ -2008,16 +2008,7 @@ mod tests {
         assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
 
         for word in [
-            "if",
-            "fi",
-            "done",
-            "case",
-            "in",
-            "break",
-            "continue",
-            "return",
-            "export",
-            "complete",
+            "if", "fi", "done", "case", "in", "break", "continue", "return", "export", "complete",
         ] {
             let idx = tokens.iter().position(|t| t.token.value == word).unwrap();
             assert_eq!(tokens[idx].token.kind, TokenKind::Word(word.to_string()));
