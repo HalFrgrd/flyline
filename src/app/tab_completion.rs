@@ -920,15 +920,16 @@ pub(crate) fn apply_tab_complete_to_buffer(
     builder: &ActiveSuggestionsBuilder,
     wuc_substring: &SubString,
 ) -> TabCompleteBufferOutcome {
-    if builder.len() == 1
-        && builder.auto_accept_if_solo
-        && let Some(suggestion) = builder.processed.first().cloned().or_else(|| {
-            builder
-                .unprocessed
-                .front()
-                .cloned()
-                .map(|s| s.into_processed())
-        })
+    let mut processed_builder = None;
+    if builder.len() == 1 && builder.auto_accept_if_solo {
+        let mut builder = builder.clone();
+        builder.process_all_blocking();
+        processed_builder = Some(builder);
+    }
+
+    if let Some(suggestion) = processed_builder
+        .as_ref()
+        .and_then(|builder| builder.processed.first())
     {
         log::info!(
             "Auto-accepting solo suggestion: '{:?}' for word under cursor '{:?}'",

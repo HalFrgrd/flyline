@@ -742,6 +742,12 @@ impl ActiveSuggestionsBuilder {
         true
     }
 
+    pub fn process_all_blocking(&mut self) {
+        while let Some(raw) = self.unprocessed.pop_front() {
+            self.processed.push(raw.into_processed());
+        }
+    }
+
     pub fn set_common_prefix(&mut self) {
         let mut iter = self.processed.iter().map(|s| s.formatted());
         let Some(first) = iter.next() else {
