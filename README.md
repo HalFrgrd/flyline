@@ -568,6 +568,7 @@ flyline key bind Enter tabCompletionAvailable=tabCompletionAcceptEntry  # define
 When you press `Enter`, flyline will accept the tab completion entry if `tabCompletionAvailable` is true (i.e. you are currently browsing tab completion suggestions).
 If `tabCompletionAvailable` is false, then it will try the next keybinding for `Enter` and run that action if its context expression evaluates to true.
 The `always` context variable is always true.
+For tab completion, `tabCompletionOneResult` is true when there is exactly one tab completion result.
 
 A context expression may combine multiple variables with `+`:
 ```bash

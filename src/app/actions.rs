@@ -35,6 +35,8 @@ enum ContextVar {
     TabCompletion,
     #[strum(message = "Tab completion overlay is active and has at least one candidate")]
     TabCompletionAvailable,
+    #[strum(message = "Tab completion overlay is active and has exactly one total candidate")]
+    TabCompletionOneResult,
     #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
     TabCompletionMultiColAvailable,
     #[strum(message = "Tab completion overlay is active but fuzzy filtering has no matches")]
@@ -89,6 +91,11 @@ impl ContextVar {
                 &app.content_mode,
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.filtered_suggestions_len() > 0
+            ),
+            ContextVar::TabCompletionOneResult => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.all_suggestions_len() == 1
             ),
             ContextVar::TabCompletionMultiColAvailable => matches!(
                 &app.content_mode,
@@ -1805,7 +1812,7 @@ fn capitalize_first(s: &str) -> String {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 86]> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     [
@@ -1938,6 +1945,11 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 85]> = LazyLock::new(|| {
             &[KC::Tab.into()],
             ContextVar::AgentOutputSelection.into(),
             Action::AgentOutputNextSuggestion,
+        ),
+        Binding::new(
+            &[KC::Tab.into()],
+            ContextVar::TabCompletionOneResult.into(),
+            Action::TabCompletionAcceptEntry,
         ),
         Binding::new(
             &[KC::Tab.into()],
@@ -3215,13 +3227,14 @@ mod tests {
     #[test]
     fn test_context_expr_parse_new_vars() {
         let e = ContextExpr::try_from(
-            "bufferIsEmpty+tabCompletionNoFilteredResults+tabCompletionNoResults+multilineBuffer",
+            "bufferIsEmpty+tabCompletionOneResult+tabCompletionNoFilteredResults+tabCompletionNoResults+multilineBuffer",
         )
         .unwrap();
         assert!(e.literals[0].var == ContextVar::BufferIsEmpty);
-        assert!(e.literals[1].var == ContextVar::TabCompletionNoFilteredResults);
-        assert!(e.literals[2].var == ContextVar::TabCompletionNoResults);
-        assert!(e.literals[3].var == ContextVar::MultilineBuffer);
+        assert!(e.literals[1].var == ContextVar::TabCompletionOneResult);
+        assert!(e.literals[2].var == ContextVar::TabCompletionNoFilteredResults);
+        assert!(e.literals[3].var == ContextVar::TabCompletionNoResults);
+        assert!(e.literals[4].var == ContextVar::MultilineBuffer);
     }
 
     #[test]

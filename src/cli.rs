@@ -521,11 +521,12 @@ enum KeySubcommands {
     ///
     /// Available context variables: always, bufferIsEmpty, fuzzyHistorySearch,
     ///   tabCompletionWaiting, tabCompletion, tabCompletionAvailable,
-    ///   tabCompletionMultiColAvailable, tabCompletionNoFilteredResults,
-    ///   tabCompletionNoResults, agentModeWaiting, agentOutputSelection,
-    ///   agentModeError, inlineSuggestionAvailable, cursorAtEnd,
-    ///   cursorAtEndTrimmed, cursorAtStart, promptDirSelection, textSelected,
-    ///   multilineBuffer, bufferHasAgentModePrefix, editingBufferMode.
+    ///   tabCompletionOneResult, tabCompletionMultiColAvailable,
+    ///   tabCompletionNoFilteredResults, tabCompletionNoResults,
+    ///   agentModeWaiting, agentOutputSelection, agentModeError,
+    ///   inlineSuggestionAvailable, cursorAtEnd, cursorAtEndTrimmed,
+    ///   cursorAtStart, promptDirSelection, textSelected, multilineBuffer,
+    ///   bufferHasAgentModePrefix, editingBufferMode.
     ///
     /// Examples:
     ///   flyline key bind Ctrl+Enter always=submitOrNewline
