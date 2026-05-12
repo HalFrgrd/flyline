@@ -275,6 +275,11 @@ impl DParser {
         // Heredocs are tracked separately since they close based on FIFO order, not LIFO like the other nestings.
         // Each entry is (opening_token_idx, delimiter, is_quoted, depth_at_open).
         let mut heredocs: VecDeque<(usize, String, bool, usize)> = VecDeque::new();
+        // True once we've reached the newline that starts the pending heredoc body.
+        let mut heredoc_body_active = false;
+        // Tracks whether the innermost unmatched `for`/`case` is still awaiting its `in` keyword.
+        let mut for_headers_awaiting_in: Vec<bool> = Vec::new();
+        let mut case_headers_awaiting_in: Vec<bool> = Vec::new();
 
         let mut stop_parsing_at_command_boundary = false;
 
@@ -334,6 +339,17 @@ impl DParser {
                 }
             }
 
+            if self.tokens[idx].token.kind == TokenKind::Newline && !heredoc_body_active {
+                if let Some((heredoc_opening_idx, _, _, _)) = heredocs.front() {
+                    let in_a_more_recent_nesting = nestings
+                        .last()
+                        .is_some_and(|(nesting_idx, _)| *nesting_idx > *heredoc_opening_idx);
+                    if !in_a_more_recent_nesting {
+                        heredoc_body_active = true;
+                    }
+                }
+            }
+
             let previous_kind = previous_token.as_ref().map(|t| &t.token.kind);
             let in_plain_word_context = self.current_command_range.is_some()
                 || previous_kind
@@ -342,6 +358,8 @@ impl DParser {
                     .tokens
                     .get(idx + 1)
                     .is_some_and(|next| next.token.kind == TokenKind::Assignment);
+            let in_for_header_context = for_headers_awaiting_in.last().copied().unwrap_or(false);
+            let in_case_header_context = case_headers_awaiting_in.last().copied().unwrap_or(false);
 
             let should_normalize_reserved_token = match self.tokens[idx].token.kind {
                 TokenKind::If
@@ -349,6 +367,7 @@ impl DParser {
                 | TokenKind::For
                 | TokenKind::While
                 | TokenKind::Until => in_plain_word_context,
+                TokenKind::In => !(in_for_header_context || in_case_header_context),
                 TokenKind::Fi | TokenKind::Done | TokenKind::Esac => {
                     !Self::nested_closing_satisfied(
                         &self.tokens[idx].token,
@@ -434,6 +453,11 @@ impl DParser {
                         self.current_command_range = Some(idx..=idx);
                     }
                     nestings.push((idx, token.kind.clone()));
+                    match token.kind {
+                        TokenKind::For => for_headers_awaiting_in.push(true),
+                        TokenKind::Case => case_headers_awaiting_in.push(true),
+                        _ => {}
+                    }
                     command_start_stack.push(self.current_command_range.clone());
                     self.current_command_range = None; // set for next word after this
                 }
@@ -457,7 +481,7 @@ impl DParser {
                 | TokenKind::Fi
                     if Self::nested_closing_satisfied(&token, nestings.last().map(|(_, k)| k)) =>
                 {
-                    let (opening_idx, _kind) = nestings.pop().unwrap();
+                    let (opening_idx, kind) = nestings.pop().unwrap();
                     let depth = nestings.len();
                     self.tokens[idx].annotations.closing = Some(ClosingAnnotation {
                         opening_idx,
@@ -508,6 +532,16 @@ impl DParser {
                     {
                         assignment_value_just_closed = true;
                     }
+
+                    match kind {
+                        TokenKind::For => {
+                            for_headers_awaiting_in.pop();
+                        }
+                        TokenKind::Case => {
+                            case_headers_awaiting_in.pop();
+                        }
+                        _ => {}
+                    }
                 }
                 TokenKind::Assignment => {
                     // When an assignment operator immediately follows a word (e.g. `FOO=1`),
@@ -548,7 +582,8 @@ impl DParser {
                     self.current_command_range = None;
                 }
                 TokenKind::Word(word)
-                    if heredocs.front().is_some_and(
+                    if heredoc_body_active
+                        && heredocs.front().is_some_and(
                         |(heredoc_opening_idx, delim, _quoted, _depth)| {
                             let word_matches = delim == word;
                             let in_a_more_recent_nesting = nestings
@@ -565,6 +600,23 @@ impl DParser {
                         is_auto_inserted: false,
                     });
                     self.tokens[idx].annotations.bracket_depth = Some(depth);
+                    if heredocs.is_empty() {
+                        heredoc_body_active = false;
+                    }
+                }
+                TokenKind::In => {
+                    if let Some(awaiting_in) = for_headers_awaiting_in.last_mut()
+                        && *awaiting_in
+                    {
+                        *awaiting_in = false;
+                    } else if let Some(awaiting_in) = case_headers_awaiting_in.last_mut()
+                        && *awaiting_in
+                    {
+                        *awaiting_in = false;
+                    }
+                    if let Some(range) = &mut self.current_command_range {
+                        *range = *range.start()..=idx;
+                    }
                 }
 
                 // Redirection operators (`<`, `>`, `>>`, `<&`, `>&`, `<>`, `>|`).
@@ -594,6 +646,11 @@ impl DParser {
                 | TokenKind::Then
                 | TokenKind::Elif
                 | TokenKind::Else => {
+                    if token.kind == TokenKind::Do
+                        && let Some(awaiting_in) = for_headers_awaiting_in.last_mut()
+                    {
+                        *awaiting_in = false;
+                    }
                     if stop_parsing_at_command_boundary {
                         break;
                     }
@@ -621,10 +678,14 @@ impl DParser {
                         let last_nesting_should_single_quote_idx = nestings
                             .last()
                             .map(|(idx, k)| (*idx, *k == TokenKind::SingleQuote));
-                        let cur_heredoc_is_quoted_idx = heredocs
-                            .front()
-                            .filter(|(_, _, quoted, _)| *quoted)
-                            .map(|(idx, _, _, _)| *idx);
+                        let cur_heredoc_is_quoted_idx = if heredoc_body_active {
+                            heredocs
+                                .front()
+                                .filter(|(_, _, quoted, _)| *quoted)
+                                .map(|(idx, _, _, _)| *idx)
+                        } else {
+                            None
+                        };
                         match (
                             last_nesting_should_single_quote_idx,
                             cur_heredoc_is_quoted_idx,
@@ -641,10 +702,14 @@ impl DParser {
                         let last_nesting_should_double_quote_idx = nestings
                             .last()
                             .map(|(idx, k)| (*idx, *k == TokenKind::Quote));
-                        let cur_heredoc_is_unquoted_idx = heredocs
-                            .front()
-                            .filter(|(_, _, quoted, _)| !*quoted)
-                            .map(|(idx, _, _, _)| *idx);
+                        let cur_heredoc_is_unquoted_idx = if heredoc_body_active {
+                            heredocs
+                                .front()
+                                .filter(|(_, _, quoted, _)| !*quoted)
+                                .map(|(idx, _, _, _)| *idx)
+                        } else {
+                            None
+                        };
                         match (
                             last_nesting_should_double_quote_idx,
                             cur_heredoc_is_unquoted_idx,
@@ -1872,6 +1937,11 @@ mod tests {
             Some(OpeningState::Matched(21))
         );
 
+        // `in` – reserved keyword in `for` header.
+        assert_eq!(tokens[4].token.kind, TokenKind::In);
+        assert_eq!(tokens[4].token.value, "in");
+        assert_eq!(tokens[4].annotations.command_word, None);
+
         // `do` – keyword introducing the loop body; must NOT be the command_word
         assert_eq!(tokens[11].token.kind, TokenKind::Do);
         assert_eq!(tokens[11].token.value, "do");
@@ -1929,7 +1999,7 @@ mod tests {
 
     #[test]
     fn test_reserved_tokens_are_words_when_used_as_arguments() {
-        let input = "echo if fi done case break continue return export complete";
+        let input = "echo if fi done case in break continue return export complete";
         let mut parser = DParser::from(input);
         parser.walk_to_end();
         let tokens = parser.tokens();
@@ -1938,7 +2008,16 @@ mod tests {
         assert_eq!(tokens[0].annotations.command_word, Some("echo".to_string()));
 
         for word in [
-            "if", "fi", "done", "case", "break", "continue", "return", "export", "complete",
+            "if",
+            "fi",
+            "done",
+            "case",
+            "in",
+            "break",
+            "continue",
+            "return",
+            "export",
+            "complete",
         ] {
             let idx = tokens.iter().position(|t| t.token.value == word).unwrap();
             assert_eq!(tokens[idx].token.kind, TokenKind::Word(word.to_string()));
@@ -1985,6 +2064,7 @@ mod tests {
         let tokens = parser.tokens();
 
         let case_idx = tokens.iter().position(|t| t.token.value == "case").unwrap();
+        let in_idx = tokens.iter().position(|t| t.token.value == "in").unwrap();
         let esac_idx = tokens.iter().position(|t| t.token.value == "esac").unwrap();
 
         assert_eq!(tokens[case_idx].token.kind, TokenKind::Case);
@@ -1992,6 +2072,8 @@ mod tests {
             tokens[case_idx].annotations.opening,
             Some(OpeningState::Matched(esac_idx))
         );
+        assert_eq!(tokens[in_idx].token.kind, TokenKind::In);
+        assert_eq!(tokens[in_idx].annotations.command_word, None);
         assert_eq!(tokens[esac_idx].token.kind, TokenKind::Esac);
         assert_eq!(
             tokens[esac_idx].annotations.closing,
@@ -2162,6 +2244,45 @@ mod tests {
             assert_eq!(t.annotations.command_word, None);
         }
         assert_eq!(parser.get_current_command_str(), input);
+    }
+
+    #[test]
+    fn test_heredoc_operator_before_pipe_does_not_mark_pipeline_as_body() {
+        let input = "cat <<EOF | sort";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        let pipe_idx = tokens
+            .iter()
+            .position(|t| t.token.kind == TokenKind::Pipe)
+            .unwrap();
+        let sort_idx = tokens.iter().position(|t| t.token.value == "sort").unwrap();
+
+        assert!(!tokens[pipe_idx].annotations.is_inside_double_quotes);
+        assert!(!tokens[sort_idx].annotations.is_inside_double_quotes);
+        assert!(!tokens[sort_idx].annotations.is_inside_single_quotes);
+        assert_eq!(tokens[sort_idx].annotations.closing, None);
+        assert!(parser.needs_more_input());
+    }
+
+    #[test]
+    fn test_heredoc_operator_before_pipe_with_open_quote_stays_normal_code() {
+        let input = "cat <<EOF | echo \"\nhi\"";
+        let mut parser = DParser::from(input);
+        parser.walk_to_end();
+        let tokens = parser.tokens();
+
+        let pipe_idx = tokens
+            .iter()
+            .position(|t| t.token.kind == TokenKind::Pipe)
+            .unwrap();
+        let echo_idx = tokens.iter().position(|t| t.token.value == "echo").unwrap();
+
+        assert!(!tokens[pipe_idx].annotations.is_inside_double_quotes);
+        assert!(!tokens[echo_idx].annotations.is_inside_double_quotes);
+        assert!(!tokens[echo_idx].annotations.is_inside_single_quotes);
+        assert!(parser.needs_more_input());
     }
 
     // ---- [ / ] lexer-token tests (after flash upgrade) ----
