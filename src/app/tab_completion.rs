@@ -922,7 +922,11 @@ pub(crate) fn apply_tab_complete_to_buffer(
 ) -> TabCompleteBufferOutcome {
     if builder.len() == 1
         && builder.auto_accept_if_solo
-        && let Some(suggestion) = builder.processed.iter().next()
+        && let Some(suggestion) = builder
+            .processed
+            .first()
+            .cloned()
+            .or_else(|| builder.unprocessed.front().cloned().map(|s| s.into_processed()))
     {
         log::info!(
             "Auto-accepting solo suggestion: '{:?}' for word under cursor '{:?}'",
@@ -1063,7 +1067,7 @@ impl App<'_> {
 #[cfg(test)]
 mod tab_completion_tests {
     use super::*;
-    use crate::active_suggestions::{FilteredItem, ProcessedSuggestion};
+    use crate::active_suggestions::{FilteredItem, ProcessedSuggestion, UnprocessedSuggestion};
     use crate::tab_completion_context::{CompletionContext, get_completion_context};
     use crate::text_buffer::TextBuffer;
     use rusty_fork::rusty_fork_test;
@@ -1495,6 +1499,23 @@ mod tab_completion_tests {
             assert_eq!(builder.comp_type, CompType::FilenameExpansion);
 
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &comp_context.word_under_cursor);
+            assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
+            assert_eq!(buffer.buffer(), "mycmd bar.txt ");
+        }
+
+        #[test]
+        fn finish_tab_complete_auto_accepts_solo_unprocessed_suggestion() {
+            let mut buffer = TextBuffer::new("mycmd bar.tx");
+            let wuc = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos()).word_under_cursor;
+            let builder = ActiveSuggestionsBuilder::from_unprocessed([UnprocessedSuggestion {
+                raw_text: "bar.txt".to_string(),
+                full_path: None,
+                flags: crate::bash_funcs::CompletionFlags::default(),
+                word_under_cursor: "bar.tx".to_string(),
+            }]);
+
+            let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
+
             assert!(matches!(outcome, TabCompleteBufferOutcome::SoloAccepted));
             assert_eq!(buffer.buffer(), "mycmd bar.txt ");
         }
