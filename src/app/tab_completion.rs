@@ -922,11 +922,13 @@ pub(crate) fn apply_tab_complete_to_buffer(
 ) -> TabCompleteBufferOutcome {
     if builder.len() == 1
         && builder.auto_accept_if_solo
-        && let Some(suggestion) = builder
-            .processed
-            .first()
-            .cloned()
-            .or_else(|| builder.unprocessed.front().cloned().map(|s| s.into_processed()))
+        && let Some(suggestion) = builder.processed.first().cloned().or_else(|| {
+            builder
+                .unprocessed
+                .front()
+                .cloned()
+                .map(|s| s.into_processed())
+        })
     {
         log::info!(
             "Auto-accepting solo suggestion: '{:?}' for word under cursor '{:?}'",
