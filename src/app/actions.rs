@@ -2792,17 +2792,11 @@ impl<'a> App<'a> {
             }
         }
 
-        self.last_key_debug = Some((
-            display_key_event(key),
-            matched
-                .as_ref()
-                .map(|(_, context)| context.clone())
-                .unwrap_or_else(|| "none".to_string()),
-            matched
-                .as_ref()
-                .map(|(action, _)| action.as_str().to_string())
-                .unwrap_or_else(|| "none".to_string()),
-        ));
+        let (context_debug, action_debug) = match matched.as_ref() {
+            Some((action, context)) => (context.clone(), action.as_str().to_string()),
+            None => ("none".to_string(), "none".to_string()),
+        };
+        self.last_key_debug = Some((display_key_event(key), context_debug, action_debug));
 
         if let Some((action, _)) = matched {
             log::trace!("Matched binding: {}", action.as_str());
