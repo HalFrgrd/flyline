@@ -25,6 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 USER john
 
+# Ensure build-time RUN steps (non-interactive shells) can resolve demo helper binaries.
+ENV PATH="/home/john/bin:${PATH}"
+
 RUN touch /home/john/.bashrc && \
     printf '%s\n' \
     'source /usr/share/bash-completion/bash_completion' \
