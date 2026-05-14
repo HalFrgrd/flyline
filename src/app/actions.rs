@@ -2046,6 +2046,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 86]> = LazyLock::new(|| {
             &[
                 M::CONTROL + KC::Char('c').into(),
                 M::META + KC::Char('c').into(),
+                M::SUPER + KC::Char('c').into(),
             ],
             ContextVar::TextSelected.into(),
             Action::CopySelectionOsc52,
@@ -2054,6 +2055,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 86]> = LazyLock::new(|| {
             &[
                 M::CONTROL + KC::Char('c').into(),
                 M::META + KC::Char('c').into(),
+                M::SUPER + KC::Char('c').into(),
             ],
             ContextVar::Always.into(),
             Action::Cancel,
