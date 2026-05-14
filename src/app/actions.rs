@@ -2799,6 +2799,7 @@ impl<'a> App<'a> {
                 .map(|(_, context)| context.clone())
                 .unwrap_or_else(|| "none".to_string()),
             matched
+                .as_ref()
                 .map(|(action, _)| action.as_str().to_string())
                 .unwrap_or_else(|| "none".to_string()),
         ));
