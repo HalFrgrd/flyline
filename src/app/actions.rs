@@ -35,7 +35,7 @@ enum ContextVar {
     TabCompletion,
     #[strum(message = "Tab completion overlay is active and has at least one candidate")]
     TabCompletionAvailable,
-    #[strum(message = "Tab completion overlay is active and has exactly one total candidate")]
+    #[strum(message = "Tab completion overlay is active and has exactly one filtered candidate")]
     TabCompletionOneResult,
     #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
     TabCompletionMultiColAvailable,
@@ -95,7 +95,7 @@ impl ContextVar {
             ContextVar::TabCompletionOneResult => matches!(
                 &app.content_mode,
                 ContentMode::TabCompletion(active_suggestions)
-                    if active_suggestions.all_suggestions_len() == 1
+                    if active_suggestions.filtered_suggestions_len() == 1
             ),
             ContextVar::TabCompletionMultiColAvailable => matches!(
                 &app.content_mode,
