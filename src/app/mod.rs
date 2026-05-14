@@ -1228,6 +1228,7 @@ impl<'a> App<'a> {
                             _ => unreachable!(),
                         };
                     self.finish_tab_complete(builder, wuc, load_time);
+                    self.on_possible_buffer_change();
                     return true;
                 }
                 Ok(None) => {
