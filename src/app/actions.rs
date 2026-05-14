@@ -2778,7 +2778,7 @@ impl<'a> App<'a> {
         // whose key matches.  We extract the action (Copy) before running it
         // so that running the action does not overlap with the immutable
         // borrow of `self.settings.keybindings`.
-        let mut matched: Option<Action> = None;
+        let mut matched: Option<(Action, String)> = None;
         for binding in self
             .settings
             .keybindings
@@ -2787,7 +2787,7 @@ impl<'a> App<'a> {
             .chain(DEFAULT_BINDINGS.iter())
         {
             if binding.context.evaluate(&context_values) && binding.matches(key) {
-                matched = Some(binding.action);
+                matched = Some((binding.action, binding.context.display()));
                 break;
             }
         }
@@ -2795,16 +2795,22 @@ impl<'a> App<'a> {
         self.last_key_debug = Some((
             display_key_event(key),
             matched
-                .map(|action| action.as_str().to_string())
+                .as_ref()
+                .map(|(_, context)| context.clone())
+                .unwrap_or_else(|| "none".to_string()),
+            matched
+                .map(|(action, _)| action.as_str().to_string())
                 .unwrap_or_else(|| "none".to_string()),
         ));
 
-        if let Some(action) = matched {
+        if let Some((action, _)) = matched {
             log::trace!("Matched binding: {}", action.as_str());
             action.run(self, key);
         }
 
-        if matched.is_some_and(|action| action != Action::ToggleMouse)
+        if matched
+            .as_ref()
+            .is_some_and(|(action, _)| *action != Action::ToggleMouse)
             && self.settings.mouse_mode == MouseMode::Smart
             && self.mouse_state.is_disabled()
         {

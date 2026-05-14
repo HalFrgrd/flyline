@@ -442,8 +442,8 @@ pub(crate) struct App<'a> {
     /// Timestamp of the last draw operation.
     last_draw_time: std::time::Instant,
     needs_screen_cleared: bool,
-    /// Last key event and action dispatched, rendered when key debug mode is enabled.
-    last_key_debug: Option<(String, String)>,
+    /// Last key event, context expression, and action dispatched when key debug mode is enabled.
+    last_key_debug: Option<(String, String, String)>,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     last_activity_time: std::time::Instant,
 }
@@ -1827,11 +1827,11 @@ impl<'a> App<'a> {
 
         if self.mode.is_running()
             && self.settings.key_debug
-            && let Some((key, action)) = &self.last_key_debug
+            && let Some((key, context, action)) = &self.last_key_debug
         {
             content.write_tagged_line(
                 &TaggedLine::from_line(
-                    Line::from(format!("key: {key}  action: {action}")).style(
+                    Line::from(format!("key: {key}  context: {context}  action: {action}")).style(
                         self.settings
                             .colour_palette
                             .secondary_text()
