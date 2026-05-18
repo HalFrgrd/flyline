@@ -259,7 +259,7 @@ impl FuzzyHistorySource {
 /// Guard that owns the tab-completion background thread and the result channel.
 /// Joining the thread (on drop) ensures it does not outlive the app.
 struct TabCompletionHandle {
-    receiver: std::sync::mpsc::Receiver<Option<ActiveSuggestionsBuilder>>,
+    receiver: std::sync::mpsc::Receiver<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -1216,18 +1216,17 @@ impl<'a> App<'a> {
     fn poll_tab_completion(&mut self) -> bool {
         if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
             match handle.receiver.try_recv() {
-                Ok(Some(builder)) => {
-                    // Take ownership of wuc_substring and start_time from the waiting state.
-                    let (wuc, load_time) =
+                Ok(Some((builder, elapsed))) => {
+                    // Take ownership of wuc_substring from the waiting state.
+                    let wuc =
                         match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
                             ContentMode::TabCompletionWaiting {
                                 wuc_substring,
-                                start_time,
                                 ..
-                            } => (wuc_substring, start_time.elapsed()),
+                            } => wuc_substring,
                             _ => unreachable!(),
                         };
-                    self.finish_tab_complete(builder, wuc, load_time);
+                    self.finish_tab_complete(builder, wuc, elapsed);
                     self.on_possible_buffer_change();
                     return true;
                 }

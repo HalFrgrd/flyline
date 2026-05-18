@@ -1006,21 +1006,23 @@ impl App<'_> {
 
         let wuc_substring = completion_context.word_under_cursor.clone();
 
-        let (tx, rx) = std::sync::mpsc::channel::<Option<ActiveSuggestionsBuilder>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>();
 
         let completion_context_owned = completion_context.into_owned();
 
         let start_time = std::time::Instant::now();
 
         let thread_handle = std::thread::spawn(move || {
+            let thread_start = std::time::Instant::now();
             let result = gen_completions_internal(&completion_context_owned);
+            let elapsed = thread_start.elapsed();
             if result.is_none() {
                 log::debug!(
                     "No suggestions generated for completion context: {:?}",
                     completion_context_owned
                 );
             }
-            if let Err(e) = tx.send(result) {
+            if let Err(e) = tx.send(result.map(|r| (r, elapsed))) {
                 log::warn!(
                     "Tab completion: failed to send result (receiver dropped): {:?}",
                     e
@@ -1030,8 +1032,8 @@ impl App<'_> {
 
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(Some(builder)) => {
-                self.finish_tab_complete(builder, wuc_substring, start_time.elapsed());
+            Ok(Some((builder, elapsed))) => {
+                self.finish_tab_complete(builder, wuc_substring, elapsed);
             }
             Ok(None) => {
                 // No suggestions generated.

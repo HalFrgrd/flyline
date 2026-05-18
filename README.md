@@ -365,7 +365,7 @@ When you're presented with suggestions, you can type to fuzzily search through t
 [![Fuzzy suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_suggestions.gif)](https://github.com/HalFrgrd/evp)
 
 ### Fuzzy path completion
-The last path segment will be fuzzily matched on the directory contents:
+The last path segments from the cursor to the end will be fuzzily matched on the directory contents:
 
 [![Fuzzy path suggestions demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_fuzzy_path_suggestions.gif)](https://github.com/HalFrgrd/evp)
 
@@ -377,9 +377,6 @@ For instance, if `gc` aliases to `git commit`, `gc --verbo<Tab>` will work as ex
 ### Nested command contexts
 Flyline supports tab completions inside subshell, command substitution, and process substitution expressions.
 For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's set up.
-
-### Mid-word tab completions
-When your cursor is midway through a word and you press tab (e.g. `grep --i<Tab>nvrte`), the left-hand side will be used in the programmable completion function but the suggestions will be fuzzily searched using the entire word.
 
 ### Dynamic descriptions
 If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab-delimited frame at 24fps. Try `flyline set-cursor --interpolate-easing <Tab>` for an example:
