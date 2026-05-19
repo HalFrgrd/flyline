@@ -188,3 +188,6 @@ COPY tapes/demo_setup.tape .
 
 # Copy the Flyline shared library into the container
 COPY --from=flyline-extracted-library /libflyline.so .
+
+WORKDIR /home/john
+
