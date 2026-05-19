@@ -480,7 +480,19 @@ impl DParser {
                 {
                     let depth = nestings.len();
                     self.tokens[idx].annotations.opening = Some(OpeningState::Unmatched);
-                    self.tokens[idx].annotations.bracket_depth = Some(depth);
+
+                    if matches!(
+                        token.kind,
+                        TokenKind::If
+                            | TokenKind::Case
+                            | TokenKind::For
+                            | TokenKind::While
+                            | TokenKind::Until
+                    ) {
+                        // Do not color keywords like bracket tokens
+                    } else {
+                        self.tokens[idx].annotations.bracket_depth = Some(depth);
+                    }
 
                     if self.current_command_range.is_none() {
                         self.current_command_range = Some(idx..=idx);
@@ -515,7 +527,15 @@ impl DParser {
                         opening_idx,
                         is_auto_inserted: false,
                     });
-                    self.tokens[idx].annotations.bracket_depth = Some(depth);
+
+                    if matches!(
+                        token.kind,
+                        TokenKind::Fi | TokenKind::Done | TokenKind::Esac
+                    ) {
+                        // Do not color keywords like bracket tokens
+                    } else {
+                        self.tokens[idx].annotations.bracket_depth = Some(depth);
+                    }
 
                     let current_command_range_contains_cursor =
                         cursor_byte_pos.is_some_and(|pos| {
@@ -2423,6 +2443,25 @@ mod tests {
         parser.walk_to_end();
         for token in parser.tokens() {
             assert_eq!(token.annotations.bracket_depth, None);
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_keyword_bracket_color {
+    use super::*;
+
+    #[test]
+    fn test_keywords_have_no_bracket_depth() {
+        let mut parser = DParser::from("if true; then echo hi; while true; do echo; done; fi");
+        parser.walk_to_end();
+        for token in parser.tokens() {
+            if matches!(
+                token.token.kind,
+                TokenKind::If | TokenKind::Fi | TokenKind::While | TokenKind::Done
+            ) {
+                assert_eq!(token.annotations.bracket_depth, None);
+            }
         }
     }
 }

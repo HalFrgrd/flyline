@@ -1006,7 +1006,8 @@ impl App<'_> {
 
         let wuc_substring = completion_context.word_under_cursor.clone();
 
-        let (tx, rx) = std::sync::mpsc::channel::<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>();
+        let (tx, rx) =
+            std::sync::mpsc::channel::<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>();
 
         let completion_context_owned = completion_context.into_owned();
 

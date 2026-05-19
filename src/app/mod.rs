@@ -1218,14 +1218,10 @@ impl<'a> App<'a> {
             match handle.receiver.try_recv() {
                 Ok(Some((builder, elapsed))) => {
                     // Take ownership of wuc_substring from the waiting state.
-                    let wuc =
-                        match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
-                            ContentMode::TabCompletionWaiting {
-                                wuc_substring,
-                                ..
-                            } => wuc_substring,
-                            _ => unreachable!(),
-                        };
+                    let wuc = match std::mem::replace(&mut self.content_mode, ContentMode::Normal) {
+                        ContentMode::TabCompletionWaiting { wuc_substring, .. } => wuc_substring,
+                        _ => unreachable!(),
+                    };
                     self.finish_tab_complete(builder, wuc, elapsed);
                     self.on_possible_buffer_change();
                     return true;
