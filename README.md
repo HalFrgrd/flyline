@@ -430,6 +430,7 @@ if [[ -n "${COPILOT_TERMINAL:-}" ]]; then
     RPS1=''
     flyline set-cursor --backend terminal --interpolate none
     flyline editor --show-inline-history false
+    flyline suggestions --auto-suggest false
 fi
 ``` 
 and set this in your `settings.json`:

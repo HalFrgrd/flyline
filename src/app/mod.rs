@@ -1454,6 +1454,10 @@ impl<'a> App<'a> {
             }
         }
 
+        if self.settings.auto_suggest {
+            self.start_tab_complete();
+        }
+
         let new_tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(
             self.buffer.buffer(),
             &self.dparser_tokens_cache,
@@ -2085,7 +2089,9 @@ impl<'a> App<'a> {
 
                 if active_suggestions.all_suggestions_len() > 0 {
                     let grid_start_row = content.cursor_position().row;
-                    let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
+                    let max_rows = self.settings.auto_suggest_num.max(2);
+                    let num_rows_for_suggestions =
+                        rows_left_before_end_of_screen.clamp(2, max_rows);
 
                     let mut selected_grid_row: Option<u16> = None;
 
