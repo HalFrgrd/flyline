@@ -13,7 +13,7 @@ Type "# accept an inline history suggestion with Right or End:"
 Enter
 Sleep 600ms
 
-Type "ec"
+Type "echo"
 Sleep 1500ms
 End
 Sleep 1000ms
