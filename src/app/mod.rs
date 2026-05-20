@@ -2120,25 +2120,57 @@ impl<'a> App<'a> {
 
                     let mut selected_grid_row: Option<u16> = None;
 
+                    // For auto-started suggestions, use a narrower single-column layout positioned under the cursor
+                    let grid_width = if active_suggestions.auto_started {
+                        let cursor_col = cursor_pos_maybe.map_or(0, |pos| pos.col as usize);
+                        // Allow up to 40 chars max for the suggestion, constrained by available terminal width
+                        (width as usize).saturating_sub(cursor_col).min(40)
+                    } else {
+                        width as usize
+                    };
+
                     let grid = active_suggestions.into_grid(
                         num_rows_for_suggestions as usize,
-                        width as usize,
+                        grid_width,
                         &self.settings.colour_palette,
+                        if active_suggestions.auto_started { Some(1) } else { None },
                     );
+
+                    // After grid is created, compute left padding to prevent wrapping
+                    let left_padding = if active_suggestions.auto_started {
+                        let cursor_col = cursor_pos_maybe.map_or(0, |pos| pos.col as usize);
+                        let actual_grid_width = grid.get(0).map_or(0, |col| {
+                            col.items.iter().map(|(f, _)| f.display_width).max().unwrap_or(0)
+                        });
+                        // Ensure the suggestion + padding doesn't exceed terminal width
+                        let max_padding = (width as usize).saturating_sub(actual_grid_width);
+                        cursor_col.min(max_padding)
+                    } else {
+                        0
+                    };
 
                     let num_rows = grid.get(0).map_or(0, |col| col.items.len());
 
                     for row_idx in 0..num_rows {
-                        for (is_first, _, col) in grid.iter().flag_first_last() {
+                        // Add left padding for auto-started suggestions
+                        if active_suggestions.auto_started && left_padding > 0 {
+                            content.write_tagged_span(&TaggedSpan::new(
+                                Span::raw(" ".repeat(left_padding)),
+                                Tag::TabSuggestion,
+                            ));
+                        }
+
+                        for (col_idx, col) in grid.iter().enumerate() {
                             if let Some((formatted, is_selected)) = col.items.get(row_idx) {
-                                if !is_first {
+                                if col_idx > 0 && !active_suggestions.auto_started {
                                     content.write_tagged_span(&TaggedSpan::new(
                                         Span::raw(" ".repeat(COLUMN_PADDING)),
                                         Tag::TabSuggestion,
                                     ));
                                 }
-                                let formatted_suggestion =
-                                    formatted.render(col.width, *is_selected);
+
+                                let formatted_suggestion = formatted.render(col.width, *is_selected);
+                                
                                 let tag = Tag::Suggestion(formatted.suggestion_idx);
                                 for span in formatted_suggestion {
                                     content.write_tagged_span(&TaggedSpan::new(span, tag));
@@ -2156,29 +2188,32 @@ impl<'a> App<'a> {
                     }
                 }
 
-                let pos_string = if active_suggestions.last_num_data_cols > 1 {
-                    format!(
-                        "({}, {})",
-                        active_suggestions.selected_col, active_suggestions.selected_row
-                    )
-                } else {
-                    format!("{}", active_suggestions.current_1d_index())
-                };
-
-                content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(
+                // Only show position info for user-triggered suggestions (not auto-started)
+                if !active_suggestions.auto_started {
+                    let pos_string = if active_suggestions.last_num_data_cols > 1 {
                         format!(
-                            "# Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
-                            pos_string,
-                            active_suggestions.filtered_suggestions_len(),
-                            active_suggestions.all_suggestions_len(),
-                            active_suggestions.comp_type.display_name(),
-                            active_suggestions.load_time.as_secs_f32() * 1000.0,
+                            "({}, {})",
+                            active_suggestions.selected_col, active_suggestions.selected_row
+                        )
+                    } else {
+                        format!("{}", active_suggestions.current_1d_index())
+                    };
+
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(
+                            format!(
+                                "# Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
+                                pos_string,
+                                active_suggestions.filtered_suggestions_len(),
+                                active_suggestions.all_suggestions_len(),
+                                active_suggestions.comp_type.display_name(),
+                                active_suggestions.load_time.as_secs_f32() * 1000.0,
+                            ),
+                            self.settings.colour_palette.secondary_text(),
                         ),
-                        self.settings.colour_palette.secondary_text(),
-                    ),
-                    Tag::TabSuggestion,
-                ));
+                        Tag::TabSuggestion,
+                    ));
+                }
             }
             ContentMode::TabCompletionWaiting { start_time, .. } if self.mode.is_running() => {
                 content.newline();

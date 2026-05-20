@@ -1829,8 +1829,8 @@ fn capitalize_first(s: &str) -> String {
 /// https://en.wikipedia.org/wiki/Table_of_keyboard_shortcuts#Command_line_shortcuts
 ///
 /// Meta vs Alt:
-/// On iterm2, there is a seetitng in Porfiles->Keys->Left option key.
-/// Choices are Normal or  (Set high bit (not recommended) or Esc+).
+/// On iterm2, there is a setting in Profiles->Keys->Left option key.
+/// Choices are Normal or Set high bit (not recommended) or Esc+.
 /// Set high bit gives you a warning: "You have chosen to have an option key as Meta. This is
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.

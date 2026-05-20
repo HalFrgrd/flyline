@@ -1086,6 +1086,7 @@ impl ActiveSuggestions {
         max_rows: usize,
         max_width: usize,
         palette: &Palette,
+        max_num_cols: Option<usize>,
     ) -> Vec<ColumnInfo> {
         // Try to convert another chunk of unprocessed suggestions before
         // rendering so they become available in subsequent frames.
@@ -1110,7 +1111,10 @@ impl ActiveSuggestions {
         let mut grid: Vec<ColumnInfo> = vec![];
         let mut untruncated_total_width: usize = 0;
 
-        let max_col_index = (n - 1) / max_rows;
+        let mut max_col_index = (n - 1) / max_rows;
+        if let Some(max_cols) = max_num_cols {
+            max_col_index = max_col_index.min(max_cols - 1);
+        }
         self.last_num_data_cols = max_col_index + 1;
 
         self.col_window_to_show.update_max_index(max_col_index + 1);
