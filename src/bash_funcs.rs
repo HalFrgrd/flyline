@@ -1283,8 +1283,35 @@ impl ExecutablesOnPath {
 static EXECUTABLES_ON_PATH: LazyLock<Mutex<ExecutablesOnPath>> =
     LazyLock::new(|| Mutex::new(ExecutablesOnPath::new()));
 
-pub(crate) static LS_COLORS: LazyLock<Option<LsColors>> =
-    LazyLock::new(|| get_envvar_value("LS_COLORS").map(|s| LsColors::from_string(&s)));
+pub(crate) struct LsColorsCache {
+    raw_string: Option<String>,
+    parsed: Option<LsColors>,
+}
+
+impl LsColorsCache {
+    fn new() -> Self {
+        Self {
+            raw_string: None,
+            parsed: None,
+        }
+    }
+
+    fn get(&mut self) -> Option<&LsColors> {
+        let current_raw = get_envvar_value("LS_COLORS");
+        if self.raw_string != current_raw {
+            self.raw_string = current_raw.clone();
+            self.parsed = current_raw.map(|s| LsColors::from_string(&s));
+        }
+        self.parsed.as_ref()
+    }
+}
+
+pub(crate) static LS_COLORS: LazyLock<Mutex<LsColorsCache>> =
+    LazyLock::new(|| Mutex::new(LsColorsCache::new()));
+
+pub(crate) fn style_for_path(path: &Path) -> Option<lscolors::Style> {
+    LS_COLORS.lock().unwrap().get().and_then(|ls| ls.style_for_path(path).cloned())
+}
 
 /// Get all potential first word completions (aliases, reserved words, functions, builtins, executables)
 #[cfg(not(test))]

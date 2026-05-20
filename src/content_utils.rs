@@ -749,8 +749,8 @@ pub fn fuzzy_indices_with_threshold(
 }
 
 pub fn style_for_path(path: &Path) -> Option<Style> {
-    let lscolors_style = bash_funcs::LS_COLORS.as_ref()?.style_for_path(path)?;
-    Some(lscolors_style_to_ratatui(lscolors_style))
+    let lscolors_style = bash_funcs::style_for_path(path)?;
+    Some(lscolors_style_to_ratatui(&lscolors_style))
 }
 
 /// Convert an `lscolors::Color` to a `ratatui::style::Color`.
