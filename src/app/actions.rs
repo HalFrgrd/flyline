@@ -43,6 +43,8 @@ enum ContextVar {
     TabCompletionNoFilteredResults,
     #[strum(message = "Tab completion overlay is active and has no candidates at all")]
     TabCompletionNoResults,
+    #[strum(message = "Tab completion was triggered by the user (not auto-started)")]
+    UserTriggeredSuggestions,
     #[strum(message = "Waiting for the agent mode subprocess to finish")]
     AgentModeWaiting,
     #[strum(message = "Agent mode finished and is showing a list of selectable suggestions")]
@@ -111,6 +113,11 @@ impl ContextVar {
                 &app.content_mode,
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.all_suggestions_len() == 0
+            ),
+            ContextVar::UserTriggeredSuggestions => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if !active_suggestions.auto_started
             ),
             ContextVar::AgentModeWaiting => {
                 matches!(app.content_mode, ContentMode::AgentModeWaiting { .. })
@@ -1016,6 +1023,22 @@ impl Action {
                 }
             }
             Action::EscapeToNormalMode => {
+                // Capture the word-under-cursor when dismissing tab completion, so we don't
+                // auto-suggest on the same word the user just dismissed.
+                match &app.content_mode {
+                    ContentMode::TabCompletion(active_suggestions) => {
+                        app.dismissed_tab_completion_wuc =
+                            Some(active_suggestions.word_under_cursor.s.to_string());
+                    }
+                    ContentMode::TabCompletionWaiting { wuc_substring, .. } => {
+                        app.dismissed_tab_completion_wuc = Some(wuc_substring.s.to_string());
+                    }
+                    _ => {
+                        // Not tab completion; just clear the dismissed field.
+                        app.dismissed_tab_completion_wuc = None;
+                    }
+                }
+
                 app.buffer.clear_selection();
                 app.content_mode = ContentMode::Normal;
             }

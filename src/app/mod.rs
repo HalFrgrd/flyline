@@ -433,6 +433,9 @@ pub(crate) struct App<'a> {
     /// Buffer contents at the time the user last dismissed the inline suggestion.
     /// While the buffer equals this value the suggestion is suppressed.
     dismissed_inline_suggestion_buffer: Option<String>,
+    /// Word-under-cursor at the time the user dismissed tab completion with Escape.
+    /// While the new word-under-cursor equals this value, auto-suggest is suppressed.
+    dismissed_tab_completion_wuc: Option<String>,
     mouse_state: MouseState,
     content_mode: ContentMode,
     last_contents: Option<DrawnContent>,
@@ -488,6 +491,7 @@ impl<'a> App<'a> {
             buffer_before_history_navigation: None,
             inline_history_suggestion: None,
             dismissed_inline_suggestion_buffer: None,
+            dismissed_tab_completion_wuc: None,
             mouse_state: time_it!(
                 "startup: mouse state",
                 MouseState::initialize(&settings.mouse_mode)
@@ -1455,8 +1459,20 @@ impl<'a> App<'a> {
             }
         }
 
+        // Evaluate the lazy word-under-cursor once to avoid borrow checker issues.
+        let new_wuc_s = new_wuc.s.to_string();
+
         if self.settings.auto_suggest && matches!(self.content_mode, ContentMode::Normal) {
-            self.start_tab_complete(true);
+            // Only auto-suggest if the word-under-cursor differs from the word the user
+            // just dismissed by pressing Escape. This prevents re-triggering on the same word.
+            let should_auto_suggest = match &self.dismissed_tab_completion_wuc {
+                None => true,
+                Some(dismissed_wuc) => dismissed_wuc != &new_wuc_s,
+            };
+
+            if should_auto_suggest {
+                self.start_tab_complete(true);
+            }
         }
 
         let new_tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(
@@ -1470,6 +1486,14 @@ impl<'a> App<'a> {
         self.dparser_tokens_cache = new_tokens;
 
         let history_buffer = self.buffer_for_history().to_owned();
+
+        // If the word-under-cursor has changed since the user dismissed tab completion, re-enable auto-suggest.
+        if match &self.dismissed_tab_completion_wuc {
+            None => false,
+            Some(dismissed_wuc) => dismissed_wuc != &new_wuc_s,
+        } {
+            self.dismissed_tab_completion_wuc = None;
+        }
 
         // If the buffer has changed since the user dismissed the suggestion, re-enable it.
         if self

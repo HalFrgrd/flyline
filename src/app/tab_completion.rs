@@ -192,8 +192,9 @@ fn run_flyline_compspec(
 /// expectations are deterministic.
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
+    auto_started: bool,
 ) -> Option<ActiveSuggestionsBuilder> {
-    let mut builder = gen_completions_uncomitted(completion_context)?;
+    let mut builder = gen_completions_uncomitted(completion_context, auto_started)?;
 
     let all_processed = if cfg!(test) {
         // Tests demand determinism: process everything and always compute
@@ -217,6 +218,7 @@ pub(crate) fn gen_completions_internal(
 
 fn gen_completions_uncomitted(
     completion_context: &tab_completion_context::CompletionContext,
+    auto_started: bool,
 ) -> Option<ActiveSuggestionsBuilder> {
     log::debug!("Completion context: {:#?}", completion_context);
 
@@ -410,6 +412,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::GlobExpansion => {
+                if auto_started {
+                    log::debug!("Skipping GlobExpansion because auto_started is true");
+                    continue;
+                }
                 log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
                 let (completions, comp_res_flags) = tab_complete_glob_expansion(
                     word_under_cursor.as_ref(),
@@ -475,6 +481,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::FilenameExpansion => {
+                if auto_started {
+                    log::debug!("Skipping FilenameExpansion because auto_started is true");
+                    continue;
+                }
                 log::debug!(
                     "CompType::FilenameExpansion for: {}",
                     word_under_cursor.as_ref()
@@ -502,6 +512,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::FuzzyFilenameExpansion => {
+                if auto_started {
+                    log::debug!("Skipping FuzzyFilenameExpansion because auto_started is true");
+                    continue;
+                }
                 log::debug!(
                     "CompType::FuzzyFilenameExpansion for: {}",
                     word_under_cursor.as_ref()
@@ -1066,7 +1080,7 @@ impl App<'_> {
 
         let thread_handle = std::thread::spawn(move || {
             let thread_start = std::time::Instant::now();
-            let result = gen_completions_internal(&completion_context_owned);
+            let result = gen_completions_internal(&completion_context_owned, auto_started);
             let elapsed = thread_start.elapsed();
             if result.is_none() {
                 log::debug!(
@@ -1174,7 +1188,7 @@ mod tab_completion_tests {
     ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
         crate::logging::init_for_tests_once();
         let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
-        let Some(builder) = gen_completions_internal(&comp_context) else {
+        let Some(builder) = gen_completions_internal(&comp_context, false) else {
             return None;
         };
         Some((builder, comp_context.into_owned()))
@@ -1399,7 +1413,7 @@ mod tab_completion_tests {
             let comp_context =
                 get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
             let wuc = comp_context.word_under_cursor.clone();
-            let builder = gen_completions_internal(&comp_context).expect("some completions");
+            let builder = gen_completions_internal(&comp_context, false).expect("some completions");
             assert_eq!(builder.comp_type, CompType::CommandComp { command_word: "gd".to_string() });
             assert_eq!(builder.len(), 1, "expected solo suggestion, got {:?}", builder.processed);
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
