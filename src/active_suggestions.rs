@@ -860,11 +860,10 @@ pub struct ActiveSuggestions {
     /// fuzzy matching, rendering, and acceptance logic.
     pub processed_suggestions: Vec<ProcessedSuggestion>,
     pub filtered_suggestions: Vec<FilteredItem>,
-    /// 2-D position of the currently-selected suggestion within the grid.
-    /// `selected_col * last_num_rows_per_col + selected_row` gives the 1-D
-    /// index into `filtered_suggestions`.
-    pub selected_row: usize,
-    pub selected_col: usize,
+    /// 2-D position of the currently-selected suggestion within the grid as
+    /// `(selected_col, selected_row)`. `None` means there is no active
+    /// selection (used for auto-started suggestions).
+    pub selected_coord: Option<(usize, usize)>,
     pub original_word_under_cursor: SubString,
     pub word_under_cursor: SubString,
     /// Number of suggestion rows per column as used in the last rendered
@@ -909,8 +908,7 @@ impl ActiveSuggestions {
             unprocessed_suggestions,
             processed_suggestions,
             filtered_suggestions: vec![],
-            selected_row: 0,
-            selected_col: 0,
+            selected_coord: if auto_started { None } else { Some((0, 0)) },
             original_word_under_cursor: word_under_cursor.clone(),
             word_under_cursor: word_under_cursor.clone(),
             last_num_rows_per_col: 0,
@@ -960,20 +958,23 @@ impl ActiveSuggestions {
     }
 
     /// Return the flat (1-D) index of the currently-selected suggestion.
-    pub fn current_1d_index(&self) -> usize {
-        self.selected_col
-            .saturating_mul(self.last_num_rows_per_col)
-            .saturating_add(self.selected_row)
+    pub fn current_1d_index(&self) -> Option<usize> {
+        self.selected_coord.map(|(selected_col, selected_row)| {
+            selected_col
+                .saturating_mul(self.last_num_rows_per_col)
+                .saturating_add(selected_row)
+        })
     }
 
     /// Set the selected position from a flat (1-D) suggestion index.
     pub fn set_selected_by_idx(&mut self, idx: usize) {
         if self.last_num_rows_per_col == 0 {
-            self.selected_row = idx;
-            self.selected_col = 0;
+            self.selected_coord = Some((0, idx));
         } else {
-            self.selected_col = idx / self.last_num_rows_per_col;
-            self.selected_row = idx % self.last_num_rows_per_col;
+            self.selected_coord = Some((
+                idx / self.last_num_rows_per_col,
+                idx % self.last_num_rows_per_col,
+            ));
         }
         self.clamp_selection();
     }
@@ -982,15 +983,16 @@ impl ActiveSuggestions {
     fn clamp_selection(&mut self) {
         let n = self.filtered_suggestions.len();
         if n == 0 {
-            self.selected_row = 0;
-            self.selected_col = 0;
+            self.selected_coord = None;
             return;
         }
+        let Some(current_idx) = self.current_1d_index() else {
+            return;
+        };
         // If the 2-D position points past the end of `filtered_suggestions`,
         // wrap to index 0.
-        if self.current_1d_index() >= n {
-            self.selected_row = 0;
-            self.selected_col = 0;
+        if current_idx >= n {
+            self.selected_coord = Some((0, 0));
         }
     }
 
@@ -999,13 +1001,17 @@ impl ActiveSuggestions {
         if n == 0 || self.last_num_rows_per_col == 0 {
             return;
         }
-        let next_col = self.selected_col + 1;
-        let next_idx = next_col * self.last_num_rows_per_col + self.selected_row;
+        let Some((selected_col, selected_row)) = self.selected_coord else {
+            self.selected_coord = Some((0, 0));
+            return;
+        };
+        let next_col = selected_col + 1;
+        let next_idx = next_col * self.last_num_rows_per_col + selected_row;
         if next_idx < n {
-            self.selected_col = next_col;
+            self.selected_coord = Some((next_col, selected_row));
         } else {
             // No suggestion exists at (selected_row, next_col) → wrap to col 0.
-            self.selected_col = 0;
+            self.selected_coord = Some((0, selected_row));
         }
     }
 
@@ -1014,17 +1020,25 @@ impl ActiveSuggestions {
         if n == 0 || self.last_num_rows_per_col == 0 {
             return;
         }
-        if self.selected_col > 0 {
-            self.selected_col -= 1;
+        let Some((selected_col, selected_row)) = self.selected_coord else {
+            self.selected_coord = Some((0, 0));
+            return;
+        };
+        if selected_col > 0 {
+            self.selected_coord = Some((selected_col - 1, selected_row));
         } else {
             // Wrap to the last column.
             let last_col = (n - 1) / self.last_num_rows_per_col;
-            self.selected_col = last_col;
             // If (selected_row, last_col) is beyond the last suggestion,
             // clamp the row to the last item in that column.
-            let idx = last_col * self.last_num_rows_per_col + self.selected_row;
+            let idx = last_col * self.last_num_rows_per_col + selected_row;
             if idx >= n {
-                self.selected_row = n - 1 - last_col * self.last_num_rows_per_col;
+                self.selected_coord = Some((
+                    last_col,
+                    n - 1 - last_col * self.last_num_rows_per_col,
+                ));
+            } else {
+                self.selected_coord = Some((last_col, selected_row));
             }
         }
     }
@@ -1034,22 +1048,24 @@ impl ActiveSuggestions {
         if n == 0 || self.last_num_rows_per_col == 0 {
             return;
         }
-        let next_row = self.selected_row + 1;
-        let next_idx = self.selected_col * self.last_num_rows_per_col + next_row;
+        let Some((selected_col, selected_row)) = self.selected_coord else {
+            self.selected_coord = Some((0, 0));
+            return;
+        };
+        let next_row = selected_row + 1;
+        let next_idx = selected_col * self.last_num_rows_per_col + next_row;
         if next_row < self.last_num_rows_per_col && next_idx < n {
             // Normal case: move down within the same column.
-            self.selected_row = next_row;
+            self.selected_coord = Some((selected_col, next_row));
         } else {
             // At the bottom of this column: move to the top of the next column.
-            let next_col = self.selected_col + 1;
+            let next_col = selected_col + 1;
             let next_col_start = next_col * self.last_num_rows_per_col;
             if next_col_start < n {
-                self.selected_col = next_col;
-                self.selected_row = 0;
+                self.selected_coord = Some((next_col, 0));
             } else {
                 // Wrap to the very first suggestion.
-                self.selected_col = 0;
-                self.selected_row = 0;
+                self.selected_coord = Some((0, 0));
             }
         }
     }
@@ -1059,23 +1075,25 @@ impl ActiveSuggestions {
         if n == 0 || self.last_num_rows_per_col == 0 {
             return;
         }
-        if self.selected_row > 0 {
+        let Some((selected_col, selected_row)) = self.selected_coord else {
+            self.selected_coord = Some((0, 0));
+            return;
+        };
+        if selected_row > 0 {
             // Normal case: move up within the same column.
-            self.selected_row -= 1;
-        } else if self.selected_col > 0 {
+            self.selected_coord = Some((selected_col, selected_row - 1));
+        } else if selected_col > 0 {
             // At the top of this column: move to the bottom of the previous column.
-            let prev_col = self.selected_col - 1;
+            let prev_col = selected_col - 1;
             let col_start = prev_col * self.last_num_rows_per_col;
             let col_end = (col_start + self.last_num_rows_per_col).min(n);
-            self.selected_col = prev_col;
-            self.selected_row = col_end - col_start - 1;
+            self.selected_coord = Some((prev_col, col_end - col_start - 1));
         } else {
             // At the top of column 0: wrap to the last populated row of the last column.
             let last_col = (n - 1) / self.last_num_rows_per_col;
             let col_start = last_col * self.last_num_rows_per_col;
             let col_end = (col_start + self.last_num_rows_per_col).min(n);
-            self.selected_col = last_col;
-            self.selected_row = col_end - col_start - 1;
+            self.selected_coord = Some((last_col, col_end - col_start - 1));
         }
     }
 
@@ -1096,6 +1114,7 @@ impl ActiveSuggestions {
         }
 
         let selected_1d = self.current_1d_index();
+        let selected_col = self.selected_coord.map(|(c, _)| c).unwrap_or(0);
         let n = self.filtered_suggestions.len();
         if n == 0 || max_rows == 0 {
             self.last_num_data_cols = 0;
@@ -1113,6 +1132,10 @@ impl ActiveSuggestions {
 
         let mut max_col_index = (n - 1) / max_rows;
         if let Some(max_cols) = max_num_cols {
+            if max_cols == 0 {
+                self.last_num_data_cols = 0;
+                return vec![];
+            }
             max_col_index = max_col_index.min(max_cols - 1);
         }
         self.last_num_data_cols = max_col_index + 1;
@@ -1120,7 +1143,7 @@ impl ActiveSuggestions {
         self.col_window_to_show.update_max_index(max_col_index + 1);
         self.col_window_to_show
             .update_window_size(self.last_num_visible_cols.max(1));
-        self.col_window_to_show.move_index_to(self.selected_col);
+        self.col_window_to_show.move_index_to(selected_col);
 
         // First round: try and fit as many columns as possible with their full untruncated width.
         for col_idx in self.col_window_to_show.get_window_range().start..=max_col_index {
@@ -1139,7 +1162,7 @@ impl ActiveSuggestions {
                         palette,
                         frame_index,
                     );
-                    let is_selected_entry = filtered_idx == selected_1d;
+                    let is_selected_entry = selected_1d == Some(filtered_idx);
 
                     (formatted, is_selected_entry)
                 })
@@ -1160,9 +1183,9 @@ impl ActiveSuggestions {
                 global_col_idx: col_idx,
                 items: col_items,
                 width: untruncated_col_width,
-                is_selected_col: col_idx == self.selected_col,
+                is_selected_col: col_idx == selected_col,
             });
-            if untruncated_total_width > max_width && col_idx >= self.selected_col {
+            if untruncated_total_width > max_width && col_idx >= selected_col {
                 break;
             }
         }
@@ -1177,12 +1200,12 @@ impl ActiveSuggestions {
             // 3) columns to the right of selected, moving outward
             .sorted_by_key(|col_info| {
                 let col_idx = col_info.global_col_idx;
-                if col_idx == self.selected_col {
+                if col_idx == selected_col {
                     (0usize, 0usize)
-                } else if col_idx < self.selected_col {
-                    (1usize, self.selected_col - col_idx)
+                } else if col_idx < selected_col {
+                    (1usize, selected_col - col_idx)
                 } else {
-                    (2usize, col_idx - self.selected_col)
+                    (2usize, col_idx - selected_col)
                 }
             })
             .enumerate()
@@ -1299,16 +1322,35 @@ impl ActiveSuggestions {
             .sort_by(|a, b| b.score.cmp(&a.score));
 
         // Reset selected position if needed
-        if self.current_1d_index() >= self.filtered_suggestions.len()
-            && !self.filtered_suggestions.is_empty()
+        if self.filtered_suggestions.is_empty() {
+            self.selected_coord = None;
+            return;
+        }
+
+        if self.current_1d_index().is_none() {
+            if !self.auto_started {
+                self.selected_coord = Some((0, 0));
+            }
+            return;
+        }
+
+        if self
+            .current_1d_index()
+            .is_some_and(|idx| idx >= self.filtered_suggestions.len())
         {
-            self.selected_row = 0;
-            self.selected_col = 0;
+            self.selected_coord = if self.auto_started {
+                None
+            } else {
+                Some((0, 0))
+            };
         }
     }
 
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
-        let selected_idx = self.current_1d_index();
+        let Some(selected_idx) = self.current_1d_index() else {
+            log::warn!("No selected suggestion to accept");
+            return;
+        };
 
         let Some(filtered_item) = self.filtered_suggestions.get(selected_idx) else {
             log::warn!("No suggestion at selected index {}", selected_idx);

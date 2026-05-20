@@ -2140,7 +2140,7 @@ impl<'a> App<'a> {
                     let left_padding = if active_suggestions.auto_started {
                         let cursor_col = cursor_pos_maybe.map_or(0, |pos| pos.col as usize);
                         let actual_grid_width = grid.get(0).map_or(0, |col| {
-                            col.items.iter().map(|(f, _)| f.display_width).max().unwrap_or(0)
+                            col.items.iter().map(|(f, _)| f.display_width).max().unwrap_or(0).min(grid_width)
                         });
                         // Ensure the suggestion + padding doesn't exceed terminal width
                         let max_padding = (width as usize).saturating_sub(actual_grid_width);
@@ -2191,12 +2191,17 @@ impl<'a> App<'a> {
                 // Only show position info for user-triggered suggestions (not auto-started)
                 if !active_suggestions.auto_started {
                     let pos_string = if active_suggestions.last_num_data_cols > 1 {
-                        format!(
-                            "({}, {})",
-                            active_suggestions.selected_col, active_suggestions.selected_row
-                        )
+                        match active_suggestions.selected_coord {
+                            Some((selected_col, selected_row)) => {
+                                format!("({}, {})", selected_col, selected_row)
+                            }
+                            None => "(none)".to_string(),
+                        }
                     } else {
-                        format!("{}", active_suggestions.current_1d_index())
+                        active_suggestions
+                            .current_1d_index()
+                            .map(|idx| idx.to_string())
+                            .unwrap_or_else(|| "none".to_string())
                     };
 
                     content.write_tagged_span(&TaggedSpan::new(

@@ -1196,7 +1196,7 @@ impl Flyline {
                                 );
                             }
                             log::info!("Suggestion row limit set to {}", num);
-                            self.settings.auto_suggest_num = num;
+                            self.settings.num_suggestion_rows = num;
                         }
                     }
                     Some(Commands::CompSpecSynthesis {

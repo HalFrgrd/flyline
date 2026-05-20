@@ -35,6 +35,8 @@ enum ContextVar {
     TabCompletion,
     #[strum(message = "Tab completion overlay is active and has at least one candidate")]
     TabCompletionAvailable,
+    #[strum(message = "Tab completion overlay has at least one candidate and a selected entry")]
+    TabCompletionEntrySelected,
     #[strum(message = "Tab completion overlay is active and has exactly one filtered candidate")]
     TabCompletionOneResult,
     #[strum(message = "Tab completion overlay is showing more than one column of candidates")]
@@ -93,6 +95,12 @@ impl ContextVar {
                 &app.content_mode,
                 ContentMode::TabCompletion(active_suggestions)
                     if active_suggestions.filtered_suggestions_len() > 0
+            ),
+            ContextVar::TabCompletionEntrySelected => matches!(
+                &app.content_mode,
+                ContentMode::TabCompletion(active_suggestions)
+                    if active_suggestions.filtered_suggestions_len() > 0
+                        && active_suggestions.selected_coord.is_some()
             ),
             ContextVar::TabCompletionOneResult => matches!(
                 &app.content_mode,
@@ -1914,7 +1922,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 86]> = LazyLock::new(|| {
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],
-            ContextVar::TabCompletionAvailable.into(),
+            ContextVar::TabCompletionEntrySelected.into(),
             Action::TabCompletionAcceptEntry,
         ),
         Binding::new(
@@ -2160,8 +2168,6 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 86]> = LazyLock::new(|| {
             ContextVar::Always.into(),
             Action::DeleteRight,
         ),
-        // PromptCwdEdit Home/End/Alt+Left/Ctrl+Left/Alt+Right/Ctrl+Right must appear before
-        // the corresponding Default/InlineHistoryAcceptable bindings.
         Binding::new(
             &expand_variations![KC::Home.into()],
             ContextVar::PromptDirSelection.into(),
@@ -2257,7 +2263,7 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 86]> = LazyLock::new(|| {
             &expand_variations![KC::Right.into(), KC::End.into()],
             (ContextVar::InlineSuggestionAvailable
                 + ContextVar::CursorAtEnd
-                + !ContextVar::TabCompletion)
+                + !ContextVar::TabCompletionMultiColAvailable)
                 .into(),
             Action::InlineSuggestionAccept,
         ),
@@ -3253,14 +3259,15 @@ mod tests {
     #[test]
     fn test_context_expr_parse_new_vars() {
         let e = ContextExpr::try_from(
-            "bufferIsEmpty+tabCompletionOneResult+tabCompletionNoFilteredResults+tabCompletionNoResults+multilineBuffer",
+            "bufferIsEmpty+tabCompletionEntrySelected+tabCompletionOneResult+tabCompletionNoFilteredResults+tabCompletionNoResults+multilineBuffer",
         )
         .unwrap();
         assert!(e.literals[0].var == ContextVar::BufferIsEmpty);
-        assert!(e.literals[1].var == ContextVar::TabCompletionOneResult);
-        assert!(e.literals[2].var == ContextVar::TabCompletionNoFilteredResults);
-        assert!(e.literals[3].var == ContextVar::TabCompletionNoResults);
-        assert!(e.literals[4].var == ContextVar::MultilineBuffer);
+        assert!(e.literals[1].var == ContextVar::TabCompletionEntrySelected);
+        assert!(e.literals[2].var == ContextVar::TabCompletionOneResult);
+        assert!(e.literals[3].var == ContextVar::TabCompletionNoFilteredResults);
+        assert!(e.literals[4].var == ContextVar::TabCompletionNoResults);
+        assert!(e.literals[5].var == ContextVar::MultilineBuffer);
     }
 
     #[test]
