@@ -616,7 +616,7 @@ impl Action {
                 );
                 if no_suggestions {
                     app.content_mode = ContentMode::Normal;
-                    app.start_tab_complete();
+                    app.start_tab_complete(false);
                 } else if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode
                 {
                     active_suggestions.on_tab(false);
@@ -700,7 +700,7 @@ impl Action {
             Action::InsertNewline => {
                 app.buffer.insert_newline();
             }
-            Action::RunTabCompletion => app.start_tab_complete(),
+            Action::RunTabCompletion => app.start_tab_complete(false),
             Action::ToggleMouse => {
                 if matches!(
                     app.settings.mouse_mode,

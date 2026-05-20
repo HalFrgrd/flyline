@@ -222,7 +222,7 @@ fn gen_completions_uncomitted(
 
     let word_under_cursor = &completion_context.word_under_cursor;
 
-    for comp_type in &completion_context.comp_types {
+    for comp_type in &completion_context.comp_types() {
         log::debug!("Processing completion type: {:?}", comp_type);
         match comp_type {
             CompType::None => {
@@ -1021,31 +1021,31 @@ pub(crate) fn apply_tab_complete_to_buffer(
 impl App<'_> {
     /// Apply the results of tab completion generation (Phase 2 & 3: common
     /// prefix insertion and handing suggestions to the UI).
-    pub(crate) fn finish_tab_complete(
+    pub fn finish_tab_complete(
         &mut self,
         builder: ActiveSuggestionsBuilder,
         wuc_substring: SubString,
         load_time: std::time::Duration,
+        auto_started: bool,
     ) {
-        if self.settings.auto_suggest {
-            let suggestions = ActiveSuggestions::new(builder, wuc_substring, load_time);
+        if auto_started {
+            let suggestions = ActiveSuggestions::new(builder, wuc_substring, load_time, auto_started);
             self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
         } else {
-
             let outcome = apply_tab_complete_to_buffer(&mut self.buffer, &builder, &wuc_substring);
             match outcome {
                 TabCompleteBufferOutcome::SoloAccepted => {
                     self.content_mode = ContentMode::Normal;
                 }
                 TabCompleteBufferOutcome::Pending { final_wuc } => {
-                    let suggestions = ActiveSuggestions::new(builder, final_wuc, load_time);
+                    let suggestions = ActiveSuggestions::new(builder, final_wuc, load_time, auto_started);
                     self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
                 }
             }
         }
     }
 
-    pub fn start_tab_complete(&mut self) {
+    pub fn start_tab_complete(&mut self, auto_started: bool) {
         // Phase 1: compute the completion context and generate suggestions.
         // We store word_under_cursor as an owned SubString so we can use it
         // after the immutable-borrow block ends.
@@ -1085,7 +1085,7 @@ impl App<'_> {
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(Some((builder, elapsed))) => {
-                self.finish_tab_complete(builder, wuc_substring, elapsed);
+                self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
             }
             Ok(None) => {
                 // No suggestions generated.
@@ -1093,6 +1093,7 @@ impl App<'_> {
                     ActiveSuggestionsBuilder::new(),
                     wuc_substring,
                     start_time.elapsed(),
+                    auto_started,
                 );
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -1104,6 +1105,7 @@ impl App<'_> {
                     },
                     wuc_substring,
                     start_time,
+                    auto_started,
                 };
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -1200,7 +1202,7 @@ mod tab_completion_tests {
         } else {
             panic!("Expected pending outcome with suggestions");
         };
-        ActiveSuggestions::new(builder, final_wuc, std::time::Duration::from_secs(0))
+        ActiveSuggestions::new(builder, final_wuc, std::time::Duration::from_secs(0), false)
     }
 
     fn assert_completions(command: &str, expected: &[ProcessedSuggestion]) {

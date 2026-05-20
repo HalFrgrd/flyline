@@ -884,6 +884,8 @@ pub struct ActiveSuggestions {
     /// How long it took to generate the completions.
     pub load_time: std::time::Duration,
     pub comp_type: tab_completion_context::CompType,
+    /// Whether this tab completion was auto-initiated.
+    pub auto_started: bool,
 }
 
 impl ActiveSuggestions {
@@ -891,6 +893,7 @@ impl ActiveSuggestions {
         builder: ActiveSuggestionsBuilder,
         word_under_cursor: SubString,
         load_time: std::time::Duration,
+        auto_started: bool,
     ) -> Self {
         let ActiveSuggestionsBuilder {
             processed: processed_suggestions,
@@ -917,6 +920,7 @@ impl ActiveSuggestions {
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
             load_time,
             comp_type,
+            auto_started,
         };
 
         active_sug.update_fuzzy_filtered();

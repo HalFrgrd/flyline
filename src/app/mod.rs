@@ -291,6 +291,7 @@ enum ContentMode {
         handle: TabCompletionHandle,
         wuc_substring: SubString,
         start_time: std::time::Instant,
+        auto_started: bool,
     },
     /// AI command is running as a child process.  The child is polled each
     /// event-loop iteration with `try_wait`; on drop it is killed and reaped.
@@ -1214,7 +1215,7 @@ impl<'a> App<'a> {
 
     /// Poll the tab-completion background thread; returns `true` if a redraw is needed.
     fn poll_tab_completion(&mut self) -> bool {
-        if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
+        if let ContentMode::TabCompletionWaiting { ref handle, auto_started, .. } = self.content_mode {
             match handle.receiver.try_recv() {
                 Ok(Some((builder, elapsed))) => {
                     // Take ownership of wuc_substring from the waiting state.
@@ -1222,7 +1223,7 @@ impl<'a> App<'a> {
                         ContentMode::TabCompletionWaiting { wuc_substring, .. } => wuc_substring,
                         _ => unreachable!(),
                     };
-                    self.finish_tab_complete(builder, wuc, elapsed);
+                    self.finish_tab_complete(builder, wuc, elapsed, auto_started);
                     self.on_possible_buffer_change();
                     return true;
                 }
@@ -1454,8 +1455,8 @@ impl<'a> App<'a> {
             }
         }
 
-        if self.settings.auto_suggest {
-            self.start_tab_complete();
+        if self.settings.auto_suggest && matches!(self.content_mode, ContentMode::Normal) {
+            self.start_tab_complete(true);
         }
 
         let new_tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(
@@ -2089,7 +2090,7 @@ impl<'a> App<'a> {
 
                 if active_suggestions.all_suggestions_len() > 0 {
                     let grid_start_row = content.cursor_position().row;
-                    let max_rows = self.settings.auto_suggest_num.max(2);
+                    let max_rows = self.settings.num_suggestion_rows.max(2);
                     let num_rows_for_suggestions =
                         rows_left_before_end_of_screen.clamp(2, max_rows);
 
