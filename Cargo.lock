@@ -597,6 +597,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "flycomp"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "clap_complete",
+ "log",
+]
+
+[[package]]
 name = "flyline"
 version = "1.0.0"
 dependencies = [
@@ -609,6 +619,7 @@ dependencies = [
  "ctor",
  "easing-function",
  "flash",
+ "flycomp",
  "glob",
  "itertools",
  "libc",

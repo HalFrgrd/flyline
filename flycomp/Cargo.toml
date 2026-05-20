@@ -1,0 +1,18 @@
+[package]
+name = "flycomp"
+version = "1.0.0"
+edition = "2024"
+
+[lib]
+name = "flycomp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "flycomp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+clap = { version = "4.6.1", features = ["derive"] }
+clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
+log = "0.4"

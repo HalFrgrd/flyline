@@ -13,7 +13,6 @@ mod bash_funcs;
 mod bash_symbols;
 mod cli;
 mod command_acceptance;
-mod comp_spec_synthesis;
 mod content_builder;
 mod content_utils;
 mod cursor;

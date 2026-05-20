@@ -608,8 +608,8 @@ pub fn parse_help_generic(help: &str) -> Command {
 /// This is used when building a dynamic [`clap::Command`] structure at runtime,
 /// because clap 4.x's builder methods (`.long()`, `.about()`, `.help()`,
 /// `.value_name()`) require `&'static str` references.  The leak is intentional
-/// and acceptable because `to_clap_command` is only called from the one-shot
-/// `comp-spec-synthesis` subcommand.
+/// and acceptable because `to_clap_command` is only called in short-lived
+/// completion synthesis runs.
 fn leak_string(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
@@ -648,10 +648,7 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
 
         if let Some(long) = &long_bare {
             if !used_long_flags.insert(long.clone()) {
-                log::debug!(
-                    "comp-spec-synthesis: dropping duplicate long flag '--{}'",
-                    long
-                );
+                log::debug!("flycomp: dropping duplicate long flag '--{}'", long);
                 continue;
             }
         }
@@ -688,7 +685,7 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
                     clap_arg = clap_arg.short(c);
                 } else {
                     log::debug!(
-                        "comp-spec-synthesis: dropping duplicate short flag '-{}' for arg {:?}",
+                        "flycomp: dropping duplicate short flag '-{}' for arg {:?}",
                         c,
                         id
                     );
@@ -797,11 +794,7 @@ where
             Ok(s) if !s.trim().is_empty() => s,
             Ok(_) => continue,
             Err(e) => {
-                log::debug!(
-                    "comp-spec-synthesis: skipping '{}': {}",
-                    path_strs.join(" "),
-                    e
-                );
+                log::debug!("flycomp: skipping '{}': {}", path_strs.join(" "), e);
                 continue;
             }
         };
@@ -866,6 +859,29 @@ pub(crate) fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Resul
     } else {
         stdout
     })
+}
+
+/// Run `command_path --help`, synthesize its completion model, and render a
+/// shell completion script.
+pub fn generate_completion_script(
+    command_path: &str,
+    shell: clap_complete::Shell,
+) -> anyhow::Result<String> {
+    let parsed_cmd = synthesize_completion(command_path, |args| run_help(command_path, args))?;
+    let cmd_name = std::path::Path::new(command_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(command_path)
+        .to_string();
+
+    let mut clap_cmd = to_clap_command(&parsed_cmd);
+    let mut output = Vec::new();
+    clap_complete::generate(shell, &mut clap_cmd, &cmd_name, &mut output);
+
+    let script = std::str::from_utf8(&output)
+        .map_err(|e| anyhow::anyhow!("failed to encode completion script: {}", e))?
+        .to_string();
+    Ok(script)
 }
 
 #[cfg(test)]

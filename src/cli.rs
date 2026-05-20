@@ -1,15 +1,17 @@
 use clap::{CommandFactory, Parser, Subcommand, error::ErrorKind};
-use clap_complete::{ArgValueCompleter, CompletionCandidate, Shell, generate};
+use clap_complete::{ArgValueCompleter, CompletionCandidate};
 use libc::c_int;
 use strum::VariantArray;
 
 use crate::{
     Flyline,
     app::actions::{self},
-    bash_funcs, bash_symbols, comp_spec_synthesis, content_utils,
+    bash_funcs, bash_symbols, content_utils,
     cursor::{self, CursorStyleConfig},
     dparser, logging, palette, settings, tutorial,
 };
+
+use flycomp::generate_completion_script;
 
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
@@ -1154,34 +1156,12 @@ impl Flyline {
                         }
                     }
                     Some(Commands::CompSpecSynthesis { command }) => {
-                        match comp_spec_synthesis::synthesize_completion(&command, |args| {
-                            let prev_sigchld =
-                                unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-                            let ret = comp_spec_synthesis::run_help(&command, args);
-                            unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
-                            ret
-                        }) {
-                            Ok(parsed_cmd) => {
-                                let cmd_name = std::path::Path::new(&command)
-                                    .file_name()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or(&command)
-                                    .to_string();
-                                let mut clap_cmd =
-                                    comp_spec_synthesis::to_clap_command(&parsed_cmd);
-                                let mut output = Vec::new();
-                                generate(Shell::Bash, &mut clap_cmd, &cmd_name, &mut output);
-                                match std::str::from_utf8(&output) {
-                                    Ok(s) => print!("{}", s),
-                                    Err(e) => {
-                                        log::error!(
-                                            "flyline comp-spec-synthesis: failed to encode output: {}",
-                                            e
-                                        );
-                                        return bash_symbols::BuiltinExitCode::Usage as c_int;
-                                    }
-                                }
-                            }
+                        let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
+                        let result = generate_completion_script(&command, clap_complete::Shell::Bash);
+                        unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
+
+                        match result {
+                            Ok(script) => print!("{}", script),
                             Err(e) => {
                                 return_usage_error!("flyline comp-spec-synthesis: {}", e);
                             }
