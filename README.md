@@ -582,3 +582,9 @@ flyline key remap Ctrl Alt       # With the above command, Alt and Ctrl are effe
 ```
 
 Tab completions exist for both key sequences and context/action arguments to make it easier to write keybindings.
+
+# Licensing
+
+This project is multi-licensed:
+* **Source Code:** The original source code in this repository is licensed under the [MIT License](LICENSE-MIT). You are free to modify and reuse the source logic under those terms.
+* **Precompiled Binaries & Combined Works:** Because this built-in dynamically loads into and links with symbols from GNU Bash (which is licensed under the GPLv3), any distributed compiled binaries or combined works are governed by the [GNU General Public License v3](LICENSE-GPLv3).
