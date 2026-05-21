@@ -11,7 +11,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// A single command-line argument / flag.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Arg {
     /// Long flag name, e.g. `--verbose`.
     pub long: Option<String>,
@@ -26,7 +26,7 @@ pub struct Arg {
 }
 
 /// A parsed command (or sub-command).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Command {
     /// Name of the command, if known.
     pub name: Option<String>,
@@ -842,7 +842,7 @@ fn find_subcommand_mut<'a>(root: &'a mut Command, path: &[String]) -> Option<&'a
 ///
 /// Many tools print their help to *stderr* rather than *stdout*; this function
 /// returns whichever stream is non-empty (preferring stdout).
-pub(crate) fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Result<String> {
+pub fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Result<String> {
     let output = std::process::Command::new(command_path)
         .args(extra_args)
         .arg("--help")
