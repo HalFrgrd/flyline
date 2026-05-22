@@ -604,6 +604,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "log",
+ "regex",
  "serde",
  "serde_json",
 ]

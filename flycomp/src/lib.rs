@@ -1,10 +1,12 @@
 #![allow(unused)]
+//pub mod man;
 
 //! Parse a `--help` string into a [`Command`] structure.
 //!
 //! The entry point is [`parse_help`].  It tries to identify which help format
 //! the text comes from (clap, Python argparse, or an unknown generic format)
 //! and dispatches to the appropriate sub-parser.
+pub mod man;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Public data structures
@@ -756,16 +758,49 @@ pub fn synthesize_completion<F>(command_path: &str, help_runner: F) -> anyhow::R
 where
     F: Fn(&[&str]) -> anyhow::Result<String>,
 {
-    // ── top-level help ───────────────────────────────────────────────────────
-    let top_help = help_runner(&[])?;
-    let mut root = parse_help(&top_help);
-
     // Always use the basename of the supplied path as the canonical name.
     let cmd_name = std::path::Path::new(command_path)
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(command_path)
         .to_string();
+
+    // ── Check manpage first ───────────────────────────────────────────────────
+    if std::env::var("FLYCOMP_TEST_DISABLE_MAN").is_err() {
+        if let Ok(man_w_output) = std::process::Command::new("man")
+            .arg("-w")
+            .arg(&cmd_name)
+            .output()
+        {
+            if man_w_output.status.success() {
+                let man_path = String::from_utf8_lossy(&man_w_output.stdout).trim().to_string();
+
+                // Read and decode manpage
+                let man_content = if man_path.ends_with(".gz") {
+                    if let Ok(zcat_out) = std::process::Command::new("zcat").arg(&man_path).output() {
+                        Some(String::from_utf8_lossy(&zcat_out.stdout).to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    std::fs::read_to_string(&man_path).ok()
+                };
+
+                if let Some(content) = man_content {
+                    if let Some(man_cmd) = man::parse_manpage(&cmd_name, &content) {
+                        if !man_cmd.args.is_empty() {
+                            return Ok(man_cmd);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── top-level help ───────────────────────────────────────────────────────
+    let top_help = help_runner(&[])?;
+    let mut root = parse_help(&top_help);
+
     root.name = Some(cmd_name);
 
     // ── iterative subcommand exploration ─────────────────────────────────────
