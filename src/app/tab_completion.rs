@@ -373,6 +373,24 @@ fn gen_completions_uncomitted(
                     );
                 }
             }
+            CompType::HostnameExpansion => {
+                log::debug!(
+                    "CompType::HostnameExpansion for {}",
+                    word_under_cursor.as_ref()
+                );
+                let completions = tab_complete_hostname_expansion(word_under_cursor.as_ref());
+                log::debug!(
+                    "CompType::HostnameExpansion found {} completions for pattern: {}",
+                    completions.len(),
+                    word_under_cursor.as_ref()
+                );
+                if !completions.is_empty() {
+                    return Some(
+                        ActiveSuggestionsBuilder::from_processed(completions)
+                            .with_comp_type(comp_type.clone()),
+                    );
+                }
+            }
             CompType::TildeExpansion => {
                 log::debug!(
                     "CompType::TildeExpansion for {}",
@@ -868,6 +886,33 @@ fn fuzzy_glob_recursive(
     out
 }
 
+fn tab_complete_hostname_expansion(pattern: &str) -> Vec<ProcessedSuggestion> {
+    let at_idx = if let Some(idx) = pattern.rfind('@') {
+        idx
+    } else {
+        return vec![];
+    };
+
+    let user_pattern = &pattern[at_idx + 1..];
+    let prefix = &pattern[..=at_idx];
+
+    let mut suggestions = Vec::new();
+
+    for hostname in crate::hostnames::get_all_hostnames() {
+        if hostname.starts_with(user_pattern) {
+            suggestions.push(ProcessedSuggestion::new(
+                format!("{}{}", prefix, hostname),
+                "",
+                "",
+            ));
+        }
+    }
+
+    suggestions.sort_by(|a, b| a.s.cmp(&b.s));
+    suggestions.dedup_by(|a, b| a.s == b.s);
+    suggestions
+}
+
 fn tab_complete_tilde_expansion(pattern: &str) -> Vec<ProcessedSuggestion> {
     let user_pattern = if let Some(stripped) = pattern.strip_prefix('~') {
         stripped
@@ -1208,6 +1253,13 @@ mod tab_completion_tests {
 
     rusty_fork_test! {
         // ------- dummy git completion (clap-based, no bash symbols) -------
+
+        #[test]
+        fn hostname_completion() {
+            let actual = run_completion("ssh us@localho");
+            let names: Vec<&str> = actual.iter().map(|s| s.s.as_str()).collect();
+            assert_eq!(names, vec!["us@localhost"]);
+        }
 
         #[test]
         fn git_top_level_subcommand_a_completes_to_add() {

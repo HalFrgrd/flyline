@@ -30,6 +30,7 @@ mod shell_integration;
 mod snake_animation;
 mod stateful_sliding_window;
 mod tab_completion_context;
+pub mod hostnames;
 mod table;
 mod text_buffer;
 mod tutorial;

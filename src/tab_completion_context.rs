@@ -25,6 +25,7 @@ pub enum CompType {
     },
     EnvVariable,            // the env variable under the cursor, with the leading $
     TildeExpansion,         // the tilde under the cursor, e.g. "~us|erna"
+    HostnameExpansion,      // the hostname under the cursor, e.g. "user@ho|st"
     GlobExpansion,          // the glob pattern under the cursor, e.g. "*.rs|t"
     FilenameExpansion,      // the filename under the cursor, e.g. "fi|le.txt"
     FuzzyFilenameExpansion, // fuzzy-match files in the parent directory when FilenameExpansion finds nothing
@@ -44,6 +45,7 @@ impl CompType {
             CompType::FuzzyCommandComp { .. } => "FuzzyCommandComp",
             CompType::EnvVariable => "EnvVariable",
             CompType::TildeExpansion => "TildeExpansion",
+            CompType::HostnameExpansion => "HostnameExpansion",
             CompType::GlobExpansion => "GlobExpansion",
             CompType::FilenameExpansion => "FilenameExpansion",
             CompType::FuzzyFilenameExpansion => "FuzzyFilenameExpansion",
@@ -149,6 +151,8 @@ impl<'a> CompletionContext<'a> {
             comp_types.push(CompType::EnvVariable);
         } else if wuc.starts_with('~') && !wuc.contains("/") {
             comp_types.push(CompType::TildeExpansion);
+        } else if wuc.contains('@') && !wuc.contains("/") {
+            comp_types.push(CompType::HostnameExpansion);
         } else if CompType::is_glob_pattern(wuc) {
             comp_types.push(CompType::GlobExpansion);
         } else {
@@ -1548,6 +1552,22 @@ mod tests {
                     command_word: "cd".to_string()
                 },
                 CompType::FuzzyFilenameExpansion
+            ]
+        );
+    }
+
+    #[test]
+    fn test_hostname_completion() {
+        let ctx = run_inline("ssh user@hostn█");
+
+        assert_eq!(ctx.word_under_cursor.as_ref(), "user@hostn");
+        assert_eq!(
+            ctx.comp_types,
+            vec![
+                CompType::CommandComp {
+                    command_word: "ssh".to_string()
+                },
+                CompType::HostnameExpansion
             ]
         );
     }
