@@ -144,6 +144,10 @@ fn indent_of(line: &str) -> usize {
     line.chars().take_while(|c| *c == ' ' || *c == '\t').count()
 }
 
+/// Strip `prefix` from `s` using ASCII case-insensitive matching.
+///
+/// Returns the remainder of `s` when `s` begins with `prefix`
+/// (ignoring ASCII case), otherwise returns `None`.
 fn strip_prefix_ignore_ascii_case<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
     if s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix) {
         Some(&s[prefix.len()..])
@@ -1032,6 +1036,8 @@ mod tests {
         cmd.args.iter().find(|a| a.long.as_deref() == Some(long))
     }
 
+    /// Assert that a long option exists and its description contains text,
+    /// matching case-insensitively.
     fn assert_arg_description_contains(cmd: &Command, long: &str, expected_substring: &str) {
         let desc = arg_by_long(cmd, long).and_then(|a| a.description.as_deref());
         assert!(desc.is_some());
@@ -2385,6 +2391,8 @@ Options:
         assert!(long_names(remote_set_url).contains(&"--delete"));
     }
 
+    /// Run `command --help`, parse the output, and return `None` if the
+    /// command is unavailable in the environment.
     fn parse_system_command_help(command: &str) -> Option<Command> {
         let help = run_help(command, &[]).ok()?;
         Some(parse_help(&help))
