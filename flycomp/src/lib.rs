@@ -109,7 +109,10 @@ pub fn parse_help(help: &str) -> Command {
         HelpFormat::Generic => parse_help_generic(help),
     };
 
-    if matches!(format, HelpFormat::Clap) && parsed.args.is_empty() && parsed.subcommands.is_empty()
+    if matches!(format, HelpFormat::Clap)
+        && parsed.args.is_empty()
+        && parsed.subcommands.is_empty()
+        && parsed.description.is_none()
     {
         let generic_parsed = parse_help_generic(help);
         if !generic_parsed.args.is_empty()
@@ -150,6 +153,20 @@ fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>, Option<Str
         if piece.starts_with("--") {
             let piece = piece.trim_end_matches(',');
 
+            if piece.contains('|') {
+                for candidate in piece.split('|') {
+                    let candidate = candidate.trim();
+                    if candidate.starts_with("--") {
+                        long = Some(candidate.to_string());
+                    } else if let Some(short_candidate) = candidate.strip_prefix('-') {
+                        if short_candidate.chars().count() == 1 {
+                            short = Some(format!("-{short_candidate}"));
+                        }
+                    }
+                }
+                continue;
+            }
+
             if let Some((flag, val)) = piece.split_once("[=") {
                 long = Some(flag.to_string());
                 value_type = Some(
@@ -160,30 +177,30 @@ fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>, Option<Str
             } else if let Some((flag, val)) = piece.split_once('=') {
                 long = Some(flag.trim_end_matches('[').to_string());
                 value_type = Some(val.trim_matches(|c| c == '<' || c == '>').to_string());
-            } else if piece.contains('|') {
-                if let Some(flag) = piece
-                    .split('|')
-                    .find(|candidate| candidate.trim_start().starts_with("--"))
-                {
-                    long = Some(flag.trim().to_string());
-                }
             } else {
                 long = Some(piece.trim_end_matches('[').to_string());
             }
         } else if let Some(short_candidate) = piece.strip_prefix('-') {
-            if piece.starts_with("--") {
+            let short_candidate = short_candidate.trim_end_matches(',');
+            if short_candidate.contains('|') {
+                for candidate in short_candidate.split('|') {
+                    if let Some(long_candidate) = candidate.strip_prefix("--") {
+                        long = Some(format!("--{long_candidate}"));
+                    } else if candidate.chars().count() == 1 {
+                        short = Some(format!("-{candidate}"));
+                    }
+                }
                 continue;
             }
-            let short_candidate = short_candidate.trim_end_matches(',');
             // Only treat single-character forms like `-v` as clap short flags.
             // Multi-character forms such as `-wk`, `-wK`, or `-U[dlexhi]` are
             // command-specific syntax, not plain one-letter short options.
             if short_candidate.chars().count() == 1 {
                 short = Some(format!("-{short_candidate}"));
-            } else if let Some(first_char) = short_candidate.chars().next() {
-                let rest = short_candidate[first_char.len_utf8()..].trim();
+            } else if let Some(first) = short_candidate.chars().next() {
+                let rest = short_candidate[first.len_utf8()..].trim();
                 if rest.starts_with('[') || rest.starts_with('<') || rest.starts_with('=') {
-                    short = Some(format!("-{first_char}"));
+                    short = Some(format!("-{first}"));
                     if value_type.is_none() {
                         let cleaned = rest
                             .trim_start_matches(['=', '[', '<'])
