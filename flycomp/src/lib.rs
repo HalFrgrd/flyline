@@ -55,14 +55,18 @@ enum HelpFormat {
 }
 
 fn detect_format(help: &str) -> HelpFormat {
+    let help_lower = help.to_ascii_lowercase();
     // clap outputs a "Usage:" line (capital U) and uses long option descriptions
     // indented underneath the flag, separated by an empty line.
-    let has_usage = help.contains("Usage:");
-    let has_commands_section = help.contains("\nCommands:\n") || help.contains("\nSubcommands:\n");
+    let has_usage = help_lower.contains("usage:");
+    let has_commands_section = help_lower.contains("\ncommands:\n")
+        || help_lower.contains("\nsubcommands:\n")
+        || help_lower.contains("\navailable commands:\n");
     // argparse always prints "usage:" (lowercase) and "optional arguments:" or
     // "options:" sections.
-    let has_positional = help.contains("positional arguments:");
-    let has_optional = help.contains("optional arguments:") || help.contains("options:");
+    let has_positional = help_lower.contains("positional arguments:");
+    let has_optional =
+        help_lower.contains("optional arguments:") || help_lower.contains("options:");
 
     if has_positional || (has_optional && !has_commands_section) {
         // Pure argparse output never has a "Commands:" section.
@@ -81,10 +85,11 @@ fn extract_author(help: &str) -> Option<String> {
             continue;
         }
 
-        if trimmed.starts_with("Written by ")
-            || trimmed.starts_with("Report bugs to")
-            || trimmed.starts_with("Report any translation bugs to")
-            || trimmed.starts_with("E-mail bug reports to")
+        let trimmed_lower = trimmed.to_ascii_lowercase();
+        if trimmed_lower.starts_with("written by ")
+            || trimmed_lower.starts_with("report bugs to")
+            || trimmed_lower.starts_with("report any translation bugs to")
+            || trimmed_lower.starts_with("e-mail bug reports to")
         {
             return Some(trimmed.to_string());
         }
@@ -137,6 +142,14 @@ pub fn parse_help(help: &str) -> Command {
 /// Leading-space count for a line (tabs count as 1).
 fn indent_of(line: &str) -> usize {
     line.chars().take_while(|c| *c == ' ' || *c == '\t').count()
+}
+
+fn strip_prefix_ignore_ascii_case<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
+    if s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix) {
+        Some(&s[prefix.len()..])
+    } else {
+        None
+    }
 }
 
 /// Try to parse a flag token like `-v`, `--verbose`, or `--output <FILE>`.
@@ -291,12 +304,14 @@ pub fn parse_help_clap(help: &str) -> Command {
 
     // Extract name from "Usage:" line; handles both "Usage: name ..." (clap/commander)
     // and "Usage:\n  name ..." (cobra/docopt) styles.
-    if let Some(usage_pos) = lines
-        .iter()
-        .position(|l| l.trim_start().starts_with("Usage:"))
-    {
+    if let Some(usage_pos) = lines.iter().position(|l| {
+        strip_prefix_ignore_ascii_case(l.trim_start_matches(|c: char| c.is_whitespace()), "usage:")
+            .is_some()
+    }) {
         let after = lines[usage_pos].trim_start_matches(|c: char| c.is_whitespace());
-        let after = after.strip_prefix("Usage:").unwrap_or(after).trim();
+        let after = strip_prefix_ignore_ascii_case(after, "usage:")
+            .unwrap_or(after)
+            .trim();
         if let Some(name_part) = after.split_whitespace().next() {
             // Standard "Usage: name ..." form.
             cmd.name = Some(name_part.to_string());
@@ -317,7 +332,13 @@ pub fn parse_help_clap(help: &str) -> Command {
     // First non-empty line before "Usage:" is the description.
     let usage_pos = lines
         .iter()
-        .position(|l| l.trim_start().starts_with("Usage:"))
+        .position(|l| {
+            strip_prefix_ignore_ascii_case(
+                l.trim_start_matches(|c: char| c.is_whitespace()),
+                "usage:",
+            )
+            .is_some()
+        })
         .unwrap_or(0);
     for line in &lines[..usage_pos] {
         let t = line.trim();
@@ -331,9 +352,13 @@ pub fn parse_help_clap(help: &str) -> Command {
     let mut i = 0;
     while i < lines.len() {
         let trimmed = lines[i].trim();
+        let trimmed_lower = trimmed.to_ascii_lowercase();
 
         // ── Commands / Subcommands section ──────────────────────────────────
-        if trimmed == "Commands:" || trimmed == "Subcommands:" || trimmed == "Available Commands:" {
+        if trimmed_lower == "commands:"
+            || trimmed_lower == "subcommands:"
+            || trimmed_lower == "available commands:"
+        {
             i += 1;
             while i < lines.len() {
                 let line = lines[i];
@@ -363,12 +388,12 @@ pub fn parse_help_clap(help: &str) -> Command {
         }
 
         // ── Options / Arguments / Flags section ────────────────────────────
-        if trimmed == "Options:"
-            || trimmed == "Arguments:"
-            || trimmed == "Flags:"
-            || trimmed == "Global Flags:"
-            || trimmed == "Global Options:"
-            || trimmed == "Options are:"
+        if trimmed_lower == "options:"
+            || trimmed_lower == "arguments:"
+            || trimmed_lower == "flags:"
+            || trimmed_lower == "global flags:"
+            || trimmed_lower == "global options:"
+            || trimmed_lower == "options are:"
         {
             i += 1;
             while i < lines.len() {
@@ -509,11 +534,12 @@ pub fn parse_help_argparse(help: &str) -> Command {
     let mut i = 0;
     while i < lines.len() {
         let trimmed = lines[i].trim();
+        let trimmed_lower = trimmed.to_ascii_lowercase();
 
-        let is_args_section = trimmed == "positional arguments:"
-            || trimmed == "optional arguments:"
-            || trimmed == "options:"
-            || trimmed.starts_with("named arguments:");
+        let is_args_section = trimmed_lower == "positional arguments:"
+            || trimmed_lower == "optional arguments:"
+            || trimmed_lower == "options:"
+            || trimmed_lower.starts_with("named arguments:");
 
         if is_args_section {
             i += 1;
@@ -1004,6 +1030,13 @@ mod tests {
     /// Looks up an arg by its long name.
     fn arg_by_long<'a>(cmd: &'a Command, long: &str) -> Option<&'a Arg> {
         cmd.args.iter().find(|a| a.long.as_deref() == Some(long))
+    }
+
+    fn assert_arg_description_contains(cmd: &Command, long: &str, expected_substring: &str) {
+        let desc = arg_by_long(cmd, long).and_then(|a| a.description.as_deref());
+        assert!(desc.is_some());
+        let desc_lower = desc.unwrap_or_default().to_ascii_lowercase();
+        assert!(desc_lower.contains(&expected_substring.to_ascii_lowercase()));
     }
 
     /// Looks up a subcommand by name.
@@ -2380,6 +2413,7 @@ Options:
             arg_by_long(&cmd, "--color").and_then(|a| a.value_type.as_deref()),
             Some("WHEN")
         );
+        assert_arg_description_contains(&cmd, "--color", "color the output");
         assert!(cmd.author.is_some());
     }
 
@@ -2406,6 +2440,7 @@ Options:
             arg_by_long(&cmd, "--target-directory").and_then(|a| a.value_type.as_deref()),
             Some("DIRECTORY")
         );
+        assert_arg_description_contains(&cmd, "--target-directory", "copy all source arguments");
         assert!(cmd.author.is_some());
     }
 
@@ -2431,6 +2466,11 @@ Options:
         assert_eq!(
             arg_by_long(&cmd, "--update").and_then(|a| a.value_type.as_deref()),
             Some("UPDATE")
+        );
+        assert_arg_description_contains(
+            &cmd,
+            "--update",
+            "control which existing files are updated",
         );
         assert!(cmd.author.is_some());
     }
@@ -2462,6 +2502,7 @@ Options:
             arg_by_long(&cmd, "--max-count").and_then(|a| a.value_type.as_deref()),
             Some("NUM")
         );
+        assert_arg_description_contains(&cmd, "--max-count", "stop after");
         assert!(cmd.author.is_some());
     }
 
@@ -2488,6 +2529,7 @@ Options:
             arg_by_long(&cmd, "--in-place").and_then(|a| a.value_type.as_deref()),
             Some("SUFFIX")
         );
+        assert_arg_description_contains(&cmd, "--in-place", "edit files in place");
         assert!(cmd.author.is_some());
     }
 
@@ -2506,6 +2548,7 @@ Options:
         let longs = long_names(&cmd);
         assert!(longs.contains(&"--help"));
         assert!(longs.contains(&"--version"));
+        assert_arg_description_contains(&cmd, "--help", "display this help");
     }
 
     #[test]
@@ -2531,6 +2574,7 @@ Options:
             arg_by_long(&cmd, "--listed-incremental").and_then(|a| a.value_type.as_deref()),
             Some("FILE")
         );
+        assert_arg_description_contains(&cmd, "--listed-incremental", "incremental backup");
     }
 
     #[test]
@@ -2556,6 +2600,7 @@ Options:
             arg_by_long(&cmd, "--suffix").and_then(|a| a.value_type.as_deref()),
             Some("SUF")
         );
+        assert_arg_description_contains(&cmd, "--suffix", "use suffix");
         assert!(cmd.author.is_some());
     }
 
@@ -2582,6 +2627,7 @@ Options:
             arg_by_long(&cmd, "--key").and_then(|a| a.value_type.as_deref()),
             Some("KEYDEF")
         );
+        assert_arg_description_contains(&cmd, "--key", "sort via a key");
         assert!(cmd.author.is_some());
     }
 
@@ -2608,6 +2654,7 @@ Options:
             arg_by_long(&cmd, "--lines").and_then(|a| a.value_type.as_deref()),
             Some("[-]NUM")
         );
+        assert_arg_description_contains(&cmd, "--lines", "print the first num lines");
         assert!(cmd.author.is_some());
     }
 
@@ -2634,6 +2681,7 @@ Options:
             arg_by_long(&cmd, "--skip-fields").and_then(|a| a.value_type.as_deref()),
             Some("N")
         );
+        assert_arg_description_contains(&cmd, "--skip-fields", "avoid comparing the first");
         assert!(cmd.author.is_some());
     }
 
