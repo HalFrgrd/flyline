@@ -1,5 +1,4 @@
 #![allow(unused)]
-//pub mod man;
 
 //! Parse a `--help` string into a [`Command`] structure.
 //!
@@ -7,6 +6,15 @@
 //! the text comes from (clap, Python argparse, or an unknown generic format)
 //! and dispatches to the appropriate sub-parser.
 pub mod man;
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum SynthesisStrategy {
+    #[default]
+    ManPageThenRunHelp,
+    ManPage,
+    RunHelp,
+}
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Public data structures
@@ -754,53 +762,20 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
 /// `help_runner` is called with the subcommand path (e.g. `&["remote", "add"]`)
 /// and must return the corresponding `--help` output.  For the top-level
 /// command the slice is empty (`&[]`).
-pub fn synthesize_completion<F>(command_path: &str, help_runner: F) -> anyhow::Result<Command>
+pub fn synthesize_completion<F>(command_path: &str, help_runner: F, strategy: SynthesisStrategy) -> anyhow::Result<Command>
 where
     F: Fn(&[&str]) -> anyhow::Result<String>,
 {
+    // ── top-level help ───────────────────────────────────────────────────────
+    let top_help = help_runner(&[])?;
+    let mut root = parse_help(&top_help);
+
     // Always use the basename of the supplied path as the canonical name.
     let cmd_name = std::path::Path::new(command_path)
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(command_path)
         .to_string();
-
-    // ── Check manpage first ───────────────────────────────────────────────────
-    if std::env::var("FLYCOMP_TEST_DISABLE_MAN").is_err() {
-        if let Ok(man_w_output) = std::process::Command::new("man")
-            .arg("-w")
-            .arg(&cmd_name)
-            .output()
-        {
-            if man_w_output.status.success() {
-                let man_path = String::from_utf8_lossy(&man_w_output.stdout).trim().to_string();
-
-                // Read and decode manpage
-                let man_content = if man_path.ends_with(".gz") {
-                    if let Ok(zcat_out) = std::process::Command::new("zcat").arg(&man_path).output() {
-                        Some(String::from_utf8_lossy(&zcat_out.stdout).to_string())
-                    } else {
-                        None
-                    }
-                } else {
-                    std::fs::read_to_string(&man_path).ok()
-                };
-
-                if let Some(content) = man_content {
-                    if let Some(man_cmd) = man::parse_manpage(&cmd_name, &content) {
-                        if !man_cmd.args.is_empty() {
-                            return Ok(man_cmd);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // ── top-level help ───────────────────────────────────────────────────────
-    let top_help = help_runner(&[])?;
-    let mut root = parse_help(&top_help);
-
     root.name = Some(cmd_name);
 
     // ── iterative subcommand exploration ─────────────────────────────────────
@@ -901,8 +876,9 @@ pub fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Result<Strin
 pub fn generate_completion_script(
     command_path: &str,
     shell: clap_complete::Shell,
+    strategy: SynthesisStrategy,
 ) -> anyhow::Result<String> {
-    let parsed_cmd = synthesize_completion(command_path, |args| run_help(command_path, args))?;
+    let parsed_cmd = synthesize_completion(command_path, |args| run_help(command_path, args), SynthesisStrategy::default())?;
     let cmd_name = std::path::Path::new(command_path)
         .file_name()
         .and_then(|s| s.to_str())
@@ -2132,7 +2108,7 @@ Options:
             };
             Ok(text.to_string())
         };
-        let top = synthesize_completion("git", help_runner).unwrap();
+        let top = synthesize_completion("git", help_runner, SynthesisStrategy::default()).unwrap();
 
         assert!(subcommand_names(&top).contains(&"log"));
         assert!(subcommand_names(&top).contains(&"commit"));
@@ -2273,7 +2249,7 @@ Options:
             };
             Ok(text.to_string())
         };
-        let top = synthesize_completion("git", help_runner).unwrap();
+        let top = synthesize_completion("git", help_runner, SynthesisStrategy::default()).unwrap();
 
         let remote =
             subcommand_by_name(&top, "remote").expect("remote subcommand should be present");

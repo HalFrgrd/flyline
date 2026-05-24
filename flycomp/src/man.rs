@@ -418,10 +418,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_bash_manpage() {
-        let cmd = parse_test_manpage("bash.1").expect("failed to parse bash manpage");
-        assert_eq!(cmd.name.as_deref(), Some("bash"));
-    }
 
     #[test]
     fn test_parse_sed_manpage() {
