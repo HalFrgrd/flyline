@@ -109,7 +109,8 @@ pub fn parse_help(help: &str) -> Command {
         HelpFormat::Generic => parse_help_generic(help),
     };
 
-    if matches!(format, HelpFormat::Clap) && parsed.args.is_empty() && parsed.subcommands.is_empty() {
+    if matches!(format, HelpFormat::Clap) && parsed.args.is_empty() && parsed.subcommands.is_empty()
+    {
         let generic_parsed = parse_help_generic(help);
         if !generic_parsed.args.is_empty()
             || !generic_parsed.subcommands.is_empty()
