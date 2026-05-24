@@ -74,6 +74,25 @@ fn detect_format(help: &str) -> HelpFormat {
     }
 }
 
+fn extract_author(help: &str) -> Option<String> {
+    for line in help.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed.starts_with("Written by ")
+            || trimmed.starts_with("Report bugs to")
+            || trimmed.starts_with("Report any translation bugs to")
+            || trimmed.starts_with("E-mail bug reports to")
+        {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    None
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Public entry point
 // ──────────────────────────────────────────────────────────────────────────────
@@ -83,11 +102,28 @@ fn detect_format(help: &str) -> HelpFormat {
 /// The function auto-detects whether the string was produced by *clap*,
 /// Python *argparse*, or an unknown tool, and dispatches accordingly.
 pub fn parse_help(help: &str) -> Command {
-    match detect_format(help) {
+    let format = detect_format(help);
+    let mut parsed = match format {
         HelpFormat::Clap => parse_help_clap(help),
         HelpFormat::Argparse => parse_help_argparse(help),
         HelpFormat::Generic => parse_help_generic(help),
+    };
+
+    if matches!(format, HelpFormat::Clap) && parsed.args.is_empty() && parsed.subcommands.is_empty() {
+        let generic_parsed = parse_help_generic(help);
+        if !generic_parsed.args.is_empty()
+            || !generic_parsed.subcommands.is_empty()
+            || generic_parsed.description.is_some()
+        {
+            parsed = generic_parsed;
+        }
     }
+
+    if parsed.author.is_none() {
+        parsed.author = extract_author(help);
+    }
+
+    parsed
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -111,20 +147,51 @@ fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>, Option<Str
     let pieces: Vec<&str> = token.split_whitespace().collect();
     for piece in &pieces {
         if piece.starts_with("--") {
-            // May be "--flag" or "--flag=<VAL>"
-            if let Some((flag, val)) = piece.split_once('=') {
-                long = Some(flag.trim_end_matches(',').to_string());
+            let piece = piece.trim_end_matches(',');
+
+            if let Some((flag, val)) = piece.split_once("[=") {
+                long = Some(flag.to_string());
+                value_type = Some(
+                    val.trim_end_matches(']')
+                        .trim_matches(|c| c == '<' || c == '>')
+                        .to_string(),
+                );
+            } else if let Some((flag, val)) = piece.split_once('=') {
+                long = Some(flag.trim_end_matches('[').to_string());
                 value_type = Some(val.trim_matches(|c| c == '<' || c == '>').to_string());
+            } else if piece.contains('|') {
+                if let Some(flag) = piece
+                    .split('|')
+                    .find(|candidate| candidate.trim_start().starts_with("--"))
+                {
+                    long = Some(flag.trim().to_string());
+                }
             } else {
-                long = Some(piece.trim_end_matches(',').to_string());
+                long = Some(piece.trim_end_matches('[').to_string());
             }
         } else if let Some(short_candidate) = piece.strip_prefix('-') {
+            if piece.starts_with("--") {
+                continue;
+            }
             let short_candidate = short_candidate.trim_end_matches(',');
             // Only treat single-character forms like `-v` as clap short flags.
             // Multi-character forms such as `-wk`, `-wK`, or `-U[dlexhi]` are
             // command-specific syntax, not plain one-letter short options.
             if short_candidate.chars().count() == 1 {
                 short = Some(format!("-{short_candidate}"));
+            } else if let Some(first_char) = short_candidate.chars().next() {
+                let rest = short_candidate[first_char.len_utf8()..].trim();
+                if rest.starts_with('[') || rest.starts_with('<') || rest.starts_with('=') {
+                    short = Some(format!("-{first_char}"));
+                    if value_type.is_none() {
+                        let cleaned = rest
+                            .trim_start_matches(['=', '[', '<'])
+                            .trim_end_matches([']', '>']);
+                        if !cleaned.is_empty() {
+                            value_type = Some(cleaned.to_string());
+                        }
+                    }
+                }
             }
         } else if piece.starts_with('<') || piece.starts_with('[') {
             // Meta-variable — only capture the first one found so that description
@@ -342,6 +409,10 @@ pub fn parse_help_clap(help: &str) -> Command {
                     None
                 };
 
+                if short.is_none() && long.is_none() {
+                    continue;
+                }
+
                 cmd.args.push(Arg {
                     short,
                     long,
@@ -483,6 +554,10 @@ pub fn parse_help_argparse(help: &str) -> Command {
                 } else {
                     None
                 };
+
+                if short.is_none() && long.is_none() {
+                    continue;
+                }
 
                 cmd.args.push(Arg {
                     short,
@@ -2257,6 +2332,291 @@ Options:
             .expect("remote set-url subcommand should be present");
         assert!(long_names(remote_set_url).contains(&"--push"));
         assert!(long_names(remote_set_url).contains(&"--delete"));
+    }
+
+    fn parse_system_command_help(command: &str) -> Option<Command> {
+        let help = run_help(command, &[]).ok()?;
+        Some(parse_help(&help))
+    }
+
+    #[test]
+    fn test_system_ls_help_generic() {
+        let Some(cmd) = parse_system_command_help("ls") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("ls"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("List information about the FILEs (the current directory by default).")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--all"));
+        assert!(longs.contains(&"--color"));
+        assert!(longs.contains(&"--block-size"));
+        assert!(shorts.contains(&"-a"));
+        assert!(shorts.contains(&"-h"));
+        assert_eq!(
+            arg_by_long(&cmd, "--color").and_then(|a| a.value_type.as_deref()),
+            Some("WHEN")
+        );
+        assert!(cmd.author.is_some());
+    }
+
+    #[test]
+    fn test_system_cp_help_generic() {
+        let Some(cmd) = parse_system_command_help("cp") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("cp"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("Copy SOURCE to DEST, or multiple SOURCE(s) to DIRECTORY.")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--recursive"));
+        assert!(longs.contains(&"--backup"));
+        assert!(longs.contains(&"--target-directory"));
+        assert!(shorts.contains(&"-R"));
+        assert!(shorts.contains(&"-t"));
+        assert_eq!(
+            arg_by_long(&cmd, "--target-directory").and_then(|a| a.value_type.as_deref()),
+            Some("DIRECTORY")
+        );
+        assert!(cmd.author.is_some());
+    }
+
+    #[test]
+    fn test_system_mv_help_generic() {
+        let Some(cmd) = parse_system_command_help("mv") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("mv"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("Rename SOURCE to DEST, or move SOURCE(s) to DIRECTORY.")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--backup"));
+        assert!(longs.contains(&"--target-directory"));
+        assert!(longs.contains(&"--update"));
+        assert!(shorts.contains(&"-b"));
+        assert!(shorts.contains(&"-t"));
+        assert_eq!(
+            arg_by_long(&cmd, "--update").and_then(|a| a.value_type.as_deref()),
+            Some("UPDATE")
+        );
+        assert!(cmd.author.is_some());
+    }
+
+    #[test]
+    fn test_system_grep_help_generic() {
+        let Some(cmd) = parse_system_command_help("grep") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("grep"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("Search for PATTERNS in each FILE.")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--regexp"));
+        assert!(longs.contains(&"--max-count"));
+        assert!(longs.contains(&"--color"));
+        assert!(shorts.contains(&"-e"));
+        assert!(shorts.contains(&"-m"));
+        assert_eq!(
+            arg_by_long(&cmd, "--regexp").and_then(|a| a.value_type.as_deref()),
+            Some("PATTERNS")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--max-count").and_then(|a| a.value_type.as_deref()),
+            Some("NUM")
+        );
+        assert!(cmd.author.is_some());
+    }
+
+    #[test]
+    fn test_system_sed_help_generic() {
+        let Some(cmd) = parse_system_command_help("sed") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("sed"));
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--expression"));
+        assert!(longs.contains(&"--in-place"));
+        assert!(longs.contains(&"--line-length"));
+        assert!(shorts.contains(&"-e"));
+        assert!(shorts.contains(&"-i"));
+        assert_eq!(
+            arg_by_long(&cmd, "--expression").and_then(|a| a.value_type.as_deref()),
+            Some("script")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--in-place").and_then(|a| a.value_type.as_deref()),
+            Some("SUFFIX")
+        );
+        assert!(cmd.author.is_some());
+    }
+
+    #[test]
+    fn test_system_find_help_generic() {
+        let Some(cmd) = parse_system_command_help("find") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("find"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("Default path is the current directory; default expression is -print.")
+        );
+
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--help"));
+        assert!(longs.contains(&"--version"));
+    }
+
+    #[test]
+    fn test_system_tar_help_generic() {
+        let Some(cmd) = parse_system_command_help("tar") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("tar"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("GNU 'tar' saves many files together into a single tape or disk archive, and")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--create"));
+        assert!(longs.contains(&"--extract"));
+        assert!(longs.contains(&"--listed-incremental"));
+        assert!(shorts.contains(&"-c"));
+        assert!(shorts.contains(&"-x"));
+        assert_eq!(
+            arg_by_long(&cmd, "--listed-incremental").and_then(|a| a.value_type.as_deref()),
+            Some("FILE")
+        );
+    }
+
+    #[test]
+    fn test_system_gzip_help_generic() {
+        let Some(cmd) = parse_system_command_help("gzip") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("gzip"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("Compress or uncompress FILEs (by default, compress FILES in-place).")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--stdout"));
+        assert!(longs.contains(&"--suffix"));
+        assert!(longs.contains(&"--best"));
+        assert!(shorts.contains(&"-c"));
+        assert!(shorts.contains(&"-9"));
+        assert_eq!(
+            arg_by_long(&cmd, "--suffix").and_then(|a| a.value_type.as_deref()),
+            Some("SUF")
+        );
+        assert!(cmd.author.is_some());
+    }
+
+    #[test]
+    fn test_system_sort_help_generic() {
+        let Some(cmd) = parse_system_command_help("sort") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("sort"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("Write sorted concatenation of all FILE(s) to standard output.")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--key"));
+        assert!(longs.contains(&"--sort"));
+        assert!(longs.contains(&"--files0-from"));
+        assert!(shorts.contains(&"-k"));
+        assert!(shorts.contains(&"-m"));
+        assert_eq!(
+            arg_by_long(&cmd, "--key").and_then(|a| a.value_type.as_deref()),
+            Some("KEYDEF")
+        );
+        assert!(cmd.author.is_some());
+    }
+
+    #[test]
+    fn test_system_head_help_generic() {
+        let Some(cmd) = parse_system_command_help("head") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("head"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("Print the first 10 lines of each FILE to standard output.")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--bytes"));
+        assert!(longs.contains(&"--lines"));
+        assert!(longs.contains(&"--zero-terminated"));
+        assert!(shorts.contains(&"-c"));
+        assert!(shorts.contains(&"-n"));
+        assert_eq!(
+            arg_by_long(&cmd, "--lines").and_then(|a| a.value_type.as_deref()),
+            Some("[-]NUM")
+        );
+        assert!(cmd.author.is_some());
+    }
+
+    #[test]
+    fn test_system_uniq_help_generic() {
+        let Some(cmd) = parse_system_command_help("uniq") else {
+            return;
+        };
+
+        assert_eq!(cmd.name.as_deref(), Some("uniq"));
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some("Filter adjacent matching lines from INPUT (or standard input),")
+        );
+
+        let longs = long_names(&cmd);
+        let shorts = short_names(&cmd);
+        assert!(longs.contains(&"--count"));
+        assert!(longs.contains(&"--all-repeated"));
+        assert!(longs.contains(&"--skip-fields"));
+        assert!(shorts.contains(&"-c"));
+        assert!(shorts.contains(&"-f"));
+        assert_eq!(
+            arg_by_long(&cmd, "--skip-fields").and_then(|a| a.value_type.as_deref()),
+            Some("N")
+        );
+        assert!(cmd.author.is_some());
     }
 
     // ── readelf --help ────────────────────────────────────────────────────────
