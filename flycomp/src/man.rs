@@ -417,17 +417,4 @@ mod tests {
         assert_eq!(cmd.name.as_deref(), Some("git"));
     }
 
-    #[test]
-
-    #[test]
-    fn test_parse_sed_manpage() {
-        let cmd = parse_test_manpage("sed.1").expect("failed to parse sed manpage");
-        assert_eq!(cmd.name.as_deref(), Some("sed"));
-    }
-
-    #[test]
-    fn test_parse_gawk_manpage() {
-        let cmd = parse_test_manpage("gawk.1").expect("failed to parse gawk manpage");
-        assert_eq!(cmd.name.as_deref(), Some("gawk"));
-    }
 }

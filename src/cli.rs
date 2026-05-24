@@ -1157,7 +1157,7 @@ impl Flyline {
                     }
                     Some(Commands::CompSpecSynthesis { command }) => {
                         let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-                        let result = generate_completion_script(&command, clap_complete::Shell::Bash);
+                        let result = generate_completion_script(&command, clap_complete::Shell::Bash, flycomp::SynthesisStrategy::default());
                         unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 
                         match result {
