@@ -48,9 +48,11 @@ fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
     if matches!(args.output, OutputFormat::Json) {
-        let parsed_cmd = flycomp::synthesize_completion(&args.command, |extra_args| {
-            flycomp::run_help(&args.command, extra_args)
-        }, args.strategy.clone().into())?;
+        let parsed_cmd = flycomp::synthesize_completion(
+            &args.command,
+            |extra_args| flycomp::run_help(&args.command, extra_args),
+            args.strategy.clone().into(),
+        )?;
         let json = serde_json::to_string_pretty(&parsed_cmd)?;
         println!("{}", json);
     } else {
@@ -62,7 +64,8 @@ fn main() -> anyhow::Result<()> {
             OutputFormat::Zsh => clap_complete::Shell::Zsh,
             OutputFormat::Json => unreachable!(),
         };
-        let script = flycomp::generate_completion_script(&args.command, shell, args.strategy.into())?;
+        let script =
+            flycomp::generate_completion_script(&args.command, shell, args.strategy.into())?;
         print!("{}", script);
     }
 

@@ -1,10 +1,10 @@
-#![allow(unused)]
-
 //! Parse a `--help` string into a [`Command`] structure.
 //!
 //! The entry point is [`parse_help`].  It tries to identify which help format
 //! the text comes from (clap, Python argparse, or an unknown generic format)
 //! and dispatches to the appropriate sub-parser.
+use anyhow::Context;
+
 pub mod man;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -14,7 +14,6 @@ pub enum SynthesisStrategy {
     ManPage,
     RunHelp,
 }
-
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Public data structures
@@ -762,7 +761,107 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
 /// `help_runner` is called with the subcommand path (e.g. `&["remote", "add"]`)
 /// and must return the corresponding `--help` output.  For the top-level
 /// command the slice is empty (`&[]`).
-pub fn synthesize_completion<F>(command_path: &str, help_runner: F, strategy: SynthesisStrategy) -> anyhow::Result<Command>
+pub fn synthesize_completion<F>(
+    command_path: &str,
+    help_runner: F,
+    strategy: SynthesisStrategy,
+) -> anyhow::Result<Command>
+where
+    F: Fn(&[&str]) -> anyhow::Result<String>,
+{
+    synthesize_completion_with(command_path, &help_runner, &load_manpage_command, strategy)
+}
+
+fn synthesize_completion_with<F, G>(
+    command_path: &str,
+    help_runner: &F,
+    manpage_loader: &G,
+    strategy: SynthesisStrategy,
+) -> anyhow::Result<Command>
+where
+    F: Fn(&[&str]) -> anyhow::Result<String>,
+    G: Fn(&str) -> anyhow::Result<Command>,
+{
+    match strategy {
+        SynthesisStrategy::RunHelp => synthesize_from_help(command_path, help_runner),
+        SynthesisStrategy::ManPage => manpage_loader(command_path),
+        SynthesisStrategy::ManPageThenRunHelp => match manpage_loader(command_path) {
+            Ok(command) => Ok(command),
+            Err(error) => {
+                log::debug!(
+                    "flycomp: falling back to --help for '{}': {}",
+                    command_path,
+                    error
+                );
+                synthesize_from_help(command_path, help_runner)
+            }
+        },
+    }
+}
+
+fn command_name(command_path: &str) -> String {
+    std::path::Path::new(command_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(command_path)
+        .to_string()
+}
+
+fn load_manpage_command(command_path: &str) -> anyhow::Result<Command> {
+    let cmd_name = command_name(command_path);
+    let manpage_path = locate_manpage(&cmd_name)?;
+    let manpage_content = read_manpage_source(&manpage_path)?;
+
+    man::parse_manpage(&cmd_name, &manpage_content)
+        .ok_or_else(|| anyhow::anyhow!("failed to parse man page for '{}'", cmd_name))
+}
+
+fn locate_manpage(command_name: &str) -> anyhow::Result<String> {
+    let output = std::process::Command::new("man")
+        .args(["-w", command_name])
+        .output()
+        .map_err(|e| anyhow::anyhow!("failed to locate man page for '{}': {}", command_name, e))?;
+
+    if !output.status.success() {
+        anyhow::bail!("man page not found for '{}'", command_name);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let path = stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("man page path missing for '{}'", command_name))?;
+
+    Ok(path.to_string())
+}
+
+fn read_manpage_source(manpage_path: &str) -> anyhow::Result<String> {
+    if manpage_path.ends_with(".gz") {
+        let output = std::process::Command::new("gzip")
+            .args(["-cd", manpage_path])
+            .output()
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to read compressed man page '{}': {}",
+                    manpage_path,
+                    e
+                )
+            })?;
+
+        if !output.status.success() {
+            anyhow::bail!("failed to decompress man page '{}'", manpage_path);
+        }
+
+        String::from_utf8(output.stdout)
+            .with_context(|| format!("man page '{}' is not valid UTF-8", manpage_path))
+    } else {
+        std::fs::read_to_string(manpage_path)
+            .with_context(|| format!("failed to read man page '{}'", manpage_path))
+    }
+}
+
+fn synthesize_from_help<F>(command_path: &str, help_runner: &F) -> anyhow::Result<Command>
 where
     F: Fn(&[&str]) -> anyhow::Result<String>,
 {
@@ -771,11 +870,7 @@ where
     let mut root = parse_help(&top_help);
 
     // Always use the basename of the supplied path as the canonical name.
-    let cmd_name = std::path::Path::new(command_path)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(command_path)
-        .to_string();
+    let cmd_name = command_name(command_path);
     root.name = Some(cmd_name);
 
     // ── iterative subcommand exploration ─────────────────────────────────────
@@ -878,12 +973,9 @@ pub fn generate_completion_script(
     shell: clap_complete::Shell,
     strategy: SynthesisStrategy,
 ) -> anyhow::Result<String> {
-    let parsed_cmd = synthesize_completion(command_path, |args| run_help(command_path, args), SynthesisStrategy::default())?;
-    let cmd_name = std::path::Path::new(command_path)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(command_path)
-        .to_string();
+    let parsed_cmd =
+        synthesize_completion(command_path, |args| run_help(command_path, args), strategy)?;
+    let cmd_name = command_name(command_path);
 
     let mut clap_cmd = to_clap_command(&parsed_cmd);
     let mut output = Vec::new();
@@ -898,6 +990,7 @@ pub fn generate_completion_script(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -2108,7 +2201,7 @@ Options:
             };
             Ok(text.to_string())
         };
-        let top = synthesize_completion("git", help_runner, SynthesisStrategy::default()).unwrap();
+        let top = synthesize_completion("git", help_runner, SynthesisStrategy::RunHelp).unwrap();
 
         assert!(subcommand_names(&top).contains(&"log"));
         assert!(subcommand_names(&top).contains(&"commit"));
@@ -2127,6 +2220,132 @@ Options:
         let diff_sub = subcommand_by_name(&top, "diff").expect("diff subcommand should exist");
         assert!(long_names(diff_sub).contains(&"--cached"));
         assert!(long_names(diff_sub).contains(&"--stat"));
+    }
+
+    const SIMPLE_MANPAGE: &str = r#".TH GIT-ADD 1
+.SH OPTIONS
+.TP
+.B \-p
+Interactively choose hunks.
+.TP
+.BI \-\^-intent-to-add
+Record intent-to-add without content.
+"#;
+
+    #[test]
+    fn test_synthesize_completion_run_help_strategy_uses_help_runner_only() {
+        let help_calls = Cell::new(0);
+        let manpage_calls = Cell::new(0);
+        let help_runner = |args: &[&str]| -> anyhow::Result<String> {
+            help_calls.set(help_calls.get() + 1);
+            let text = match args {
+                [] => GIT_DIFF_HELP,
+                _ => "",
+            };
+            Ok(text.to_string())
+        };
+        let manpage_loader = |_: &str| -> anyhow::Result<Command> {
+            manpage_calls.set(manpage_calls.get() + 1);
+            anyhow::bail!("manpage loader should not be used")
+        };
+
+        let cmd = synthesize_completion_with(
+            "git-add",
+            &help_runner,
+            &manpage_loader,
+            SynthesisStrategy::RunHelp,
+        )
+        .unwrap();
+
+        assert!(long_names(&cmd).contains(&"--patch"));
+        assert_eq!(help_calls.get(), 1);
+        assert_eq!(manpage_calls.get(), 0);
+    }
+
+    #[test]
+    fn test_synthesize_completion_man_page_strategy_uses_manpage_only() {
+        let help_calls = Cell::new(0);
+        let manpage_calls = Cell::new(0);
+        let help_runner = |_: &[&str]| -> anyhow::Result<String> {
+            help_calls.set(help_calls.get() + 1);
+            anyhow::bail!("help runner should not be used")
+        };
+        let manpage_loader = |command_path: &str| -> anyhow::Result<Command> {
+            manpage_calls.set(manpage_calls.get() + 1);
+            assert_eq!(command_path, "git-add");
+            Ok(man::parse_manpage("git-add", SIMPLE_MANPAGE).unwrap())
+        };
+
+        let cmd = synthesize_completion_with(
+            "git-add",
+            &help_runner,
+            &manpage_loader,
+            SynthesisStrategy::ManPage,
+        )
+        .unwrap();
+
+        assert_eq!(cmd.name.as_deref(), Some("git-add"));
+        assert!(short_names(&cmd).contains(&"-p"));
+        assert!(long_names(&cmd).contains(&"--intent-to-add"));
+        assert_eq!(help_calls.get(), 0);
+        assert_eq!(manpage_calls.get(), 1);
+    }
+
+    #[test]
+    fn test_synthesize_completion_man_page_then_run_help_falls_back() {
+        let help_calls = Cell::new(0);
+        let manpage_calls = Cell::new(0);
+        let help_runner = |args: &[&str]| -> anyhow::Result<String> {
+            help_calls.set(help_calls.get() + 1);
+            let text = match args {
+                [] => GIT_DIFF_HELP,
+                _ => "",
+            };
+            Ok(text.to_string())
+        };
+        let manpage_loader = |_: &str| -> anyhow::Result<Command> {
+            manpage_calls.set(manpage_calls.get() + 1);
+            anyhow::bail!("missing man page")
+        };
+
+        let cmd = synthesize_completion_with(
+            "git-add",
+            &help_runner,
+            &manpage_loader,
+            SynthesisStrategy::ManPageThenRunHelp,
+        )
+        .unwrap();
+
+        assert!(long_names(&cmd).contains(&"--patch"));
+        assert_eq!(help_calls.get(), 1);
+        assert_eq!(manpage_calls.get(), 1);
+    }
+
+    #[test]
+    fn test_synthesize_completion_man_page_then_run_help_prefers_manpage() {
+        let help_calls = Cell::new(0);
+        let manpage_calls = Cell::new(0);
+        let help_runner = |_: &[&str]| -> anyhow::Result<String> {
+            help_calls.set(help_calls.get() + 1);
+            Ok(GIT_DIFF_HELP.to_string())
+        };
+        let manpage_loader = |_: &str| -> anyhow::Result<Command> {
+            manpage_calls.set(manpage_calls.get() + 1);
+            Ok(man::parse_manpage("git-add", SIMPLE_MANPAGE).unwrap())
+        };
+
+        let cmd = synthesize_completion_with(
+            "git-add",
+            &help_runner,
+            &manpage_loader,
+            SynthesisStrategy::ManPageThenRunHelp,
+        )
+        .unwrap();
+
+        assert!(long_names(&cmd).contains(&"--intent-to-add"));
+        assert!(!long_names(&cmd).contains(&"--patch"));
+        assert_eq!(help_calls.get(), 0);
+        assert_eq!(manpage_calls.get(), 1);
     }
 
     // ── find_subcommand_mut ───────────────────────────────────────────────────
@@ -2249,7 +2468,7 @@ Options:
             };
             Ok(text.to_string())
         };
-        let top = synthesize_completion("git", help_runner, SynthesisStrategy::default()).unwrap();
+        let top = synthesize_completion("git", help_runner, SynthesisStrategy::RunHelp).unwrap();
 
         let remote =
             subcommand_by_name(&top, "remote").expect("remote subcommand should be present");
