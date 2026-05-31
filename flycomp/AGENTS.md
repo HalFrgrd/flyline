@@ -21,6 +21,9 @@ cargo test -p flycomp
 
 # Run / Generate Completions
 cargo run -p flycomp -- <command> [options]
+
+# Format the codebase after making changes
+cargo fmt
 ```
 
 ## Guidelines

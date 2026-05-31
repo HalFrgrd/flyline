@@ -1161,6 +1161,7 @@ impl Flyline {
                             &command,
                             clap_complete::Shell::Bash,
                             flycomp::SynthesisStrategy::default(),
+                            true,
                         );
                         unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 

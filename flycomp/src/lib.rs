@@ -377,8 +377,49 @@ fn find_subcommand_mut<'a>(root: &'a mut Command, path: &[String]) -> Option<&'a
 ///
 /// Many tools print their help to *stderr* rather than *stdout*; this function
 /// returns whichever stream is non-empty (preferring stdout).
-pub fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Result<String> {
-    let mut child = std::process::Command::new(command_path)
+pub fn run_help(command_path: &str, extra_args: &[&str], sandbox: bool) -> anyhow::Result<String> {
+    let use_sandbox = sandbox && {
+        // Test if bwrap exists in PATH by trying to spawn it with --version
+        match std::process::Command::new("bwrap")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(mut child) => {
+                let _ = child.wait();
+                true
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                log::warn!(
+                    "bubblewrap (bwrap) not found in PATH; running completion check unsandboxed."
+                );
+                false
+            }
+            Err(_) => false,
+        }
+    };
+
+    let mut child = if use_sandbox {
+        let mut cmd = std::process::Command::new("bwrap");
+        cmd.args([
+            "--ro-bind",
+            "/",
+            "/",
+            "--dev",
+            "/dev",
+            "--proc",
+            "/proc",
+            "--unshare-all",
+            "--",
+            command_path,
+        ]);
+        cmd
+    } else {
+        std::process::Command::new(command_path)
+    };
+
+    let mut child = child
         .args(extra_args)
         .arg("--help")
         .env("PAGER", "cat")
@@ -456,9 +497,13 @@ pub fn generate_completion_script(
     command_path: &str,
     shell: clap_complete::Shell,
     strategy: SynthesisStrategy,
+    sandbox: bool,
 ) -> anyhow::Result<String> {
-    let parsed_cmd =
-        synthesize_completion(command_path, |args| run_help(command_path, args), strategy)?;
+    let parsed_cmd = synthesize_completion(
+        command_path,
+        |args| run_help(command_path, args, sandbox),
+        strategy,
+    )?;
     let cmd_name = command_basename(command_path);
 
     let mut clap_cmd = to_clap_command(&parsed_cmd);

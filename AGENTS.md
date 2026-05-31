@@ -22,9 +22,18 @@ enable -f target/debug/libflyline.so flyline
 # Unload the plugin and restore default readline
 enable -d flyline
 
-# Run all workspace unit and integration tests
-cargo test
+# Run unit tests only (avoids slow different-bash-version integration tests)
+cargo test --lib
+
+# To run flycomp unit tests specifically
+cargo test -p flycomp
+
+# Format the codebase after making changes
+cargo fmt
 ```
+
+> [!TIP]
+> Avoid running the full `cargo test` suite locally. The integration tests (`tests/docker_integration_tests.rs`) spawn Docker containers testing multiple versions of Bash, which is extremely slow. Prefer running `cargo test --lib` or testing specific packages.
 
 ## Guidelines
 1. **Safety & Stability**: `flyline` runs inside the active shell process. Avoid unwinding panics across the C FFI boundary; wrap entry points in `catch_unwind_safe` to prevent shell crashes.

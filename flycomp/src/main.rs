@@ -42,6 +42,9 @@ struct CliArgs {
     /// Parsing strategy.
     #[arg(long, value_enum, default_value_t = Strategy::default())]
     strategy: Strategy,
+    /// Run execution unsandboxed (bypass bubblewrap/bwrap sandboxing).
+    #[arg(long)]
+    no_sandbox: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -50,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     if matches!(args.output, OutputFormat::Json) {
         let parsed_cmd = flycomp::synthesize_completion(
             &args.command,
-            |extra_args| flycomp::run_help(&args.command, extra_args),
+            |extra_args| flycomp::run_help(&args.command, extra_args, !args.no_sandbox),
             args.strategy.clone().into(),
         )?;
         let json = serde_json::to_string_pretty(&parsed_cmd)?;
@@ -64,8 +67,12 @@ fn main() -> anyhow::Result<()> {
             OutputFormat::Zsh => clap_complete::Shell::Zsh,
             OutputFormat::Json => unreachable!(),
         };
-        let script =
-            flycomp::generate_completion_script(&args.command, shell, args.strategy.into())?;
+        let script = flycomp::generate_completion_script(
+            &args.command,
+            shell,
+            args.strategy.into(),
+            !args.no_sandbox,
+        )?;
         print!("{}", script);
     }
 
