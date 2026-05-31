@@ -378,14 +378,68 @@ fn find_subcommand_mut<'a>(root: &'a mut Command, path: &[String]) -> Option<&'a
 /// Many tools print their help to *stderr* rather than *stdout*; this function
 /// returns whichever stream is non-empty (preferring stdout).
 pub fn run_help(command_path: &str, extra_args: &[&str]) -> anyhow::Result<String> {
-    let output = std::process::Command::new(command_path)
+    let mut child = std::process::Command::new(command_path)
         .args(extra_args)
         .arg("--help")
-        .output()
-        .map_err(|e| anyhow::anyhow!("failed to run '{}': {}", command_path, e))?;
+        .env("PAGER", "cat")
+        .env("MANPAGER", "cat")
+        .env("SYSTEMD_PAGER", "cat")
+        .env("GIT_PAGER", "cat")
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to spawn '{}': {}", command_path, e))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let mut stdout_handle = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("failed to capture stdout"))?;
+    let mut stderr_handle = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("failed to capture stderr"))?;
+
+    let stdout_thread = std::thread::spawn(move || {
+        let mut out = String::new();
+        let _ = std::io::Read::read_to_string(&mut stdout_handle, &mut out);
+        out
+    });
+
+    let stderr_thread = std::thread::spawn(move || {
+        let mut err = String::new();
+        let _ = std::io::Read::read_to_string(&mut stderr_handle, &mut err);
+        err
+    });
+
+    let timeout = std::time::Duration::from_millis(1500); // 1.5 seconds timeout
+    let start = std::time::Instant::now();
+    let mut exited = false;
+
+    while start.elapsed() < timeout {
+        if let Some(_status) = child
+            .try_wait()
+            .map_err(|e| anyhow::anyhow!("failed to wait: {}", e))?
+        {
+            exited = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    if !exited {
+        let _ = child.kill();
+        let _ = child.wait();
+        anyhow::bail!("command '{}' timed out", command_path);
+    }
+
+    let stdout = stdout_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("stdout thread panicked"))?;
+    let stderr = stderr_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("stderr thread panicked"))?;
 
     // Some tools (e.g. git) write help to stdout when `--help` is passed as a
     // flag, but others write to stderr.  Prefer stdout when it has content.

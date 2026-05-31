@@ -68,7 +68,8 @@ static ALL_HOSTNAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
                 let mut fields = line.split_whitespace();
                 if let Some(host_field) = fields.next() {
                     for hostname in host_field.split(',') {
-                        if !hostname.is_empty() && !hostname.starts_with('|') { // skip hashed hosts
+                        if !hostname.is_empty() && !hostname.starts_with('|') {
+                            // skip hashed hosts
                             add_hostname(hostname.to_string());
                         }
                     }
