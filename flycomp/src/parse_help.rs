@@ -17,8 +17,14 @@ fn detect_format(help: &str) -> HelpFormat {
     let has_commands_section = help.contains("\nCommands:\n") || help.contains("\nSubcommands:\n");
     // argparse always prints "usage:" (lowercase) and "optional arguments:" or
     // "options:" sections.
-    let has_positional = help.contains("positional arguments:");
-    let has_optional = help.contains("optional arguments:") || help.contains("options:");
+    let has_positional = help.lines().any(|l| {
+        let t = l.trim();
+        t == "positional arguments:" || t == "arguments:"
+    });
+    let has_optional = help.lines().any(|l| {
+        let t = l.trim();
+        t == "optional arguments:" || t == "options:" || t.starts_with("named arguments:")
+    });
 
     if has_positional || (has_optional && !has_commands_section) {
         // Pure argparse output never has a "Commands:" section.
@@ -72,7 +78,9 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
             // Only treat single-character forms like `-v` as clap short flags.
             // Multi-character forms such as `-wk`, `-wK`, or `-U[dlexhi]` are
             // command-specific syntax, not plain one-letter short options.
-            if short_candidate.chars().count() == 1 {
+            // We also allow forms ending with '#' (like `-T#` or `-b#`).
+            let count = short_candidate.chars().count();
+            if count == 1 || (count == 2 && short_candidate.ends_with('#')) {
                 short = Some(format!("-{short_candidate}"));
             }
         } else if piece.starts_with('<') || piece.starts_with('[') {
@@ -87,6 +95,20 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
                         .to_string(),
                 );
             }
+        } else if value_type.is_none()
+            && !piece.is_empty()
+            && (piece.chars().all(|c| {
+                c.is_uppercase()
+                    || c == '_'
+                    || c == '-'
+                    || c == '#'
+                    || c == '|'
+                    || c == '{'
+                    || c == '}'
+            }))
+        {
+            let clean = piece.trim_end_matches(',');
+            value_type = Some(clean.to_string());
         }
     }
     (short, long, value_type)
@@ -156,8 +178,17 @@ pub fn parse_help_clap(help: &str) -> Command {
     for line in &lines[..usage_pos] {
         let t = line.trim();
         if !t.is_empty() {
-            cmd.description = Some(t.to_string());
-            break;
+            let is_header = t.starts_with("***")
+                || t.contains(" version ")
+                || t.contains(" v1.")
+                || t.contains(" v2.")
+                || t.contains(" v0.")
+                || t.contains("by ")
+                || t.contains("Copyright");
+            if !is_header {
+                cmd.description = Some(t.to_string());
+                break;
+            }
         }
     }
 
@@ -192,13 +223,18 @@ pub fn parse_help_clap(help: &str) -> Command {
             continue;
         }
 
-        if trimmed == "Options:"
-            || trimmed == "Arguments:"
-            || trimmed == "Flags:"
-            || trimmed == "Global Flags:"
-            || trimmed == "Global Options:"
-            || trimmed == "Options are:"
-        {
+        let is_options_section = trimmed.ends_with(':') && {
+            let lower = trimmed.to_lowercase();
+            lower.contains("options")
+                || lower.contains("flags")
+                || lower.contains("arguments")
+                || lower.contains("args")
+                || lower.contains("builder")
+                || lower.contains("parameters")
+                || lower.contains("settings")
+        };
+
+        if is_options_section {
             i += 1;
             while i < lines.len() {
                 let line = lines[i];
@@ -1604,6 +1640,232 @@ Report bugs to <https://sourceware.org/bugzilla/>
         assert_eq!(
             value_type.as_deref(),
             Some("[default|locale|escape|hex|highlight|invalid]")
+        );
+    }
+    #[test]
+    fn test_zstd_help() {
+        const HELP: &str = r#"*** Zstandard CLI (64-bit) v1.5.5, by Yann Collet ***
+
+Compress or decompress the INPUT file(s); reads from STDIN if INPUT is `-` or not provided.
+
+Usage: zstd [OPTIONS...] [INPUT... | -] [-o OUTPUT]
+
+Options:
+  -o OUTPUT                     Write output to a single file, OUTPUT.
+  -k, --keep                    Preserve INPUT file(s). [Default]
+  --rm                          Remove INPUT file(s) after successful (de)compression.
+  -#                            Desired compression level, where `#` is a number between 1 and 19;
+                                lower numbers provide faster compression, higher numbers yield
+                                better compression ratios. [Default: 3]
+
+  -d, --decompress              Perform decompression.
+  -D DICT                       Use DICT as the dictionary for compression or decompression.
+
+  -f, --force                   Disable input and output checks. Allows overwriting existing files,
+                                receiving input from the console, printing output to STDOUT, and
+                                operating on links, block devices, etc. Unrecognized formats will be
+                                passed-through through as-is.
+
+  -h                            Display short usage and exit.
+  -H, --help                    Display full help and exit.
+  -V, --version                 Display the program version and exit.
+
+Advanced options:
+  -c, --stdout                  Write to STDOUT (even if it is a console) and keep the INPUT file(s).
+
+  -v, --verbose                 Enable verbose output; pass multiple times to increase verbosity.
+  -q, --quiet                   Suppress warnings; pass twice to suppress errors.
+  --trace LOG                   Log tracing information to LOG.
+
+  --[no-]progress               Forcibly show/hide the progress counter. NOTE: Any (de)compressed
+                                output to terminal will mix with progress counter text.
+
+  -r                            Operate recursively on directories.
+  --filelist LIST               Read a list of files to operate on from LIST.
+  --output-dir-flat DIR         Store processed files in DIR.
+  --output-dir-mirror DIR       Store processed files in DIR, respecting original directory structure.
+  --[no-]asyncio                Use asynchronous IO. [Default: Enabled]
+
+  --[no-]check                  Add XXH64 integrity checksums during compression. [Default: Add, Validate]
+                                If `-d` is present, ignore/validate checksums during decompression.
+
+  --                            Treat remaining arguments after `--` as files.
+
+Advanced compression options:
+  --ultra                       Enable levels beyond 19, up to 22; requires more memory.
+  --fast[=#]                    Use to very fast compression levels. [Default: 1]
+  --adapt                       Dynamically adapt compression level to I/O conditions.
+  --long[=#]                    Enable long distance matching with window log #. [Default: 27]
+  --patch-from=REF              Use REF as the reference point for Zstandard's diff engine.
+
+  -T#                           Spawn # compression threads. [Default: 1; pass 0 for core count.]
+  --single-thread               Share a single thread for I/O and compression (slightly different than `-T1`).
+  --auto-threads={physical|logical}
+                                Use physical/logical cores when using `-T0`. [Default: Physical]
+
+  -B#                           Set job size to #. [Default: 0 (automatic)]
+  --rsyncable                   Compress using a rsync-friendly method (`-B` sets block size).
+
+  --exclude-compressed          Only compress files that are not already compressed.
+
+  --stream-size=#               Specify size of streaming input from STDIN.
+  --size-hint=#                 Optimize compression parameters for streaming input of approximately size #.
+  --target-compressed-block-size=#
+                                Generate compressed blocks of approximately # size.
+
+  --no-dictID                   Don't write `dictID` into the header (dictionary compression only).
+  --[no-]compress-literals      Force (un)compressed literals.
+  --[no-]row-match-finder       Explicitly enable/disable the fast, row-based matchfinder for
+                                the 'greedy', 'lazy', and 'lazy2' strategies.
+
+  --format=zstd                 Compress files to the `.zst` format. [Default]
+  --mmap-dict                   Memory-map dictionary file rather than mallocing and loading all at once  --format=gzip                 Compress files to the `.gz` format.
+  --format=xz                   Compress files to the `.xz` format.
+  --format=lzma                 Compress files to the `.lzma` format.
+  --format=lz4                 Compress files to the `.lz4` format.
+
+Advanced decompression options:
+  -l                            Print information about Zstandard-compressed files.
+  --test                        Test compressed file integrity.
+  -M#                           Set the memory usage limit to # megabytes.
+  --[no-]sparse                 Enable sparse mode. [Default: Enabled for files, disabled for STDOUT.]
+  --[no-]pass-through           Pass through uncompressed files as-is. [Default: Disabled]
+
+Dictionary builder:
+  --train                       Create a dictionary from a training set of files.
+
+  --train-cover[=k=#,d=#,steps=#,split=#,shrink[=#]]
+                                Use the cover algorithm (with optional arguments).
+  --train-fastcover[=k=#,d=#,f=#,steps=#,split=#,accel=#,shrink[=#]]
+                                Use the fast cover algorithm (with optional arguments).
+
+  --train-legacy[=s=#]          Use the legacy algorithm with selectivity #. [Default: 9]
+  -o NAME                       Use NAME as dictionary name. [Default: dictionary]
+  --maxdict=#                   Limit dictionary to specified size #. [Default: 112640]
+  --dictID=#                    Force dictionary ID to #. [Default: Random]
+
+Benchmark options:
+  -b#                           Perform benchmarking with compression level #. [Default: 3]
+  -e#                           Test all compression levels up to #; starting level is `-b#`. [Default: 1]
+  -i#                           Set the minimum evaluation to time # seconds. [Default: 3]
+  -B#                           Cut file into independent chunks of size #. [Default: No chunking]
+  -S                            Output one benchmark result per input file. [Default: Consolidated result]
+  --priority=rt                 Set process priority to real-time.
+"#;
+        let cmd = parse_help(HELP);
+
+        // Check overall commands info
+        assert_eq!(
+            cmd.description.as_deref(),
+            Some(
+                "Compress or decompress the INPUT file(s); reads from STDIN if INPUT is `-` or not provided."
+            )
+        );
+
+        let args = &cmd.args;
+
+        // Assertions on various options to ensure correct parsing
+        let o_arg = args
+            .iter()
+            .find(|a| a.short.as_deref() == Some("-o") && a.value_type.as_deref() == Some("OUTPUT"))
+            .unwrap();
+        assert!(
+            o_arg
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Write output to a single file")
+        );
+
+        let keep_arg = args
+            .iter()
+            .find(|a| a.long.as_deref() == Some("--keep"))
+            .unwrap();
+        assert_eq!(keep_arg.short.as_deref(), Some("-k"));
+        assert!(
+            keep_arg
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Preserve INPUT file(s)")
+        );
+
+        let rm_arg = args
+            .iter()
+            .find(|a| a.long.as_deref() == Some("--rm"))
+            .unwrap();
+        assert!(
+            rm_arg
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Remove INPUT file(s) after successful")
+        );
+
+        let level_arg = args
+            .iter()
+            .find(|a| a.short.as_deref() == Some("-#") || a.long.as_deref() == Some("-#"))
+            .unwrap();
+        assert!(
+            level_arg
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Desired compression level")
+        );
+
+        let dict_arg = args
+            .iter()
+            .find(|a| a.short.as_deref() == Some("-D"))
+            .unwrap();
+        assert_eq!(dict_arg.value_type.as_deref(), Some("DICT"));
+
+        let trace_arg = args
+            .iter()
+            .find(|a| a.long.as_deref() == Some("--trace"))
+            .unwrap();
+        assert_eq!(trace_arg.value_type.as_deref(), Some("LOG"));
+
+        let format_arg = args
+            .iter()
+            .find(|a| a.long.as_deref() == Some("--format"))
+            .unwrap();
+        assert_eq!(format_arg.value_type.as_deref(), Some("zstd"));
+
+        let test_arg = args
+            .iter()
+            .find(|a| a.long.as_deref() == Some("--test"))
+            .unwrap();
+        assert!(
+            test_arg
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Test compressed file integrity")
+        );
+
+        let train_arg = args
+            .iter()
+            .find(|a| a.long.as_deref() == Some("--train"))
+            .unwrap();
+        assert!(
+            train_arg
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Create a dictionary from a training set")
+        );
+
+        let threads_arg = args
+            .iter()
+            .find(|a| a.short.as_deref() == Some("-T#"))
+            .unwrap();
+        assert!(
+            threads_arg
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Spawn # compression threads")
         );
     }
 }

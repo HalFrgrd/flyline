@@ -267,9 +267,19 @@ fn locate_manpage(command_name: &str) -> anyhow::Result<String> {
 }
 
 fn read_manpage_source(manpage_path: &str) -> anyhow::Result<String> {
-    if manpage_path.ends_with(".gz") {
-        let output = std::process::Command::new("gzip")
-            .args(["-cd", manpage_path])
+    let decomp_cmd = if manpage_path.ends_with(".gz") {
+        Some(("gzip", vec!["-cd", manpage_path]))
+    } else if manpage_path.ends_with(".zst") {
+        Some(("zstd", vec!["-cd", manpage_path]))
+    } else if manpage_path.ends_with(".xz") {
+        Some(("xz", vec!["-cd", manpage_path]))
+    } else {
+        None
+    };
+
+    if let Some((cmd, args)) = decomp_cmd {
+        let output = std::process::Command::new(cmd)
+            .args(args)
             .output()
             .map_err(|e| {
                 anyhow::anyhow!(
@@ -743,5 +753,69 @@ Options:
         // A path that doesn't exist should return None.
         let path = vec!["nonexistent".to_string()];
         assert!(find_subcommand_mut(&mut root, &path).is_none());
+    }
+
+    #[test]
+    fn test_read_manpage_source_compressed() {
+        use std::process::Command;
+        // Create a temporary directory in target
+        let temp_dir = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join("test_temp");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let base_path = temp_dir.join("test_manpage");
+        let content = ".TH TEST 1\n.SH NAME\ntest - a test tool";
+        std::fs::write(&base_path, content).unwrap();
+
+        // Compress with gzip
+        let gz_path = temp_dir.join("test_manpage.gz");
+        let _ = Command::new("gzip")
+            .args(["-c"])
+            .stdout(std::fs::File::create(&gz_path).unwrap())
+            .stdin(std::fs::File::open(&base_path).unwrap())
+            .status();
+
+        // Compress with zstd if zstd is available
+        let zst_path = temp_dir.join("test_manpage.zst");
+        let zstd_ok = Command::new("zstd")
+            .args(["-c", "-q"])
+            .stdout(std::fs::File::create(&zst_path).unwrap())
+            .stdin(std::fs::File::open(&base_path).unwrap())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        // Compress with xz if xz is available
+        let xz_path = temp_dir.join("test_manpage.xz");
+        let xz_ok = Command::new("xz")
+            .args(["-c", "-q"])
+            .stdout(std::fs::File::create(&xz_path).unwrap())
+            .stdin(std::fs::File::open(&base_path).unwrap())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        // Test read_manpage_source for gz
+        if gz_path.exists() {
+            let res = read_manpage_source(gz_path.to_str().unwrap()).unwrap();
+            assert_eq!(res, content);
+        }
+
+        // Test read_manpage_source for zst
+        if zstd_ok && zst_path.exists() {
+            let res = read_manpage_source(zst_path.to_str().unwrap()).unwrap();
+            assert_eq!(res, content);
+        }
+
+        // Test read_manpage_source for xz
+        if xz_ok && xz_path.exists() {
+            let res = read_manpage_source(xz_path.to_str().unwrap()).unwrap();
+            assert_eq!(res, content);
+        }
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

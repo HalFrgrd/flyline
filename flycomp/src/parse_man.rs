@@ -272,7 +272,7 @@ fn find_value_type(remainder: &str) -> (Option<String>, Option<String>) {
 
 fn parse_alias(alias: &str) -> Option<ParsedOption> {
     let alias = alias.trim();
-    let caps = Regex::new(r"^(?P<option>--?[A-Za-z0-9][A-Za-z0-9_-]*)(?P<rest>.*)$")
+    let caps = Regex::new(r"^(?P<option>--?[A-Za-z0-9#][A-Za-z0-9_-]*)(?P<rest>.*)$")
         .unwrap()
         .captures(alias)?;
     let option = caps.name("option").unwrap().as_str();
@@ -498,6 +498,75 @@ fn parse_type1_blocks(cmd: &mut Command, section: &str) -> bool {
     found
 }
 
+fn split_option_and_desc(line: &str) -> (String, Option<String>) {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("\\f") {
+        return (line.to_string(), None);
+    }
+
+    let mut in_format = false;
+    let mut chars = trimmed.char_indices().peekable();
+    let mut split_idx = None;
+    let mut saw_format = false;
+
+    while let Some(&(i, c)) = chars.peek() {
+        if trimmed[i..].starts_with("\\f") {
+            saw_format = true;
+            let rest = &trimmed[i + 2..];
+            if rest.starts_with('R')
+                || rest.starts_with('P')
+                || rest.starts_with("(R")
+                || rest.starts_with("[R]")
+                || rest.starts_with("(P")
+                || rest.starts_with("[P]")
+            {
+                in_format = false;
+            } else {
+                in_format = true;
+            }
+            chars.next();
+            chars.next();
+            if let Some(&(_, next_c)) = chars.peek() {
+                if next_c == '(' {
+                    chars.next();
+                    chars.next();
+                    chars.next();
+                } else if next_c == '[' {
+                    while let Some(&(_, inside_c)) = chars.peek() {
+                        chars.next();
+                        if inside_c == ']' {
+                            break;
+                        }
+                    }
+                } else {
+                    chars.next();
+                }
+            }
+            continue;
+        }
+
+        if !in_format && saw_format && c.is_alphanumeric() {
+            split_idx = Some(i);
+            break;
+        }
+
+        chars.next();
+    }
+
+    if let Some(idx) = split_idx {
+        let opt = trimmed[..idx].trim().to_string();
+        let desc = trimmed[idx..].trim().to_string();
+        let opt_cleaned = if opt.ends_with(':') {
+            opt[..opt.len() - 1].trim().to_string()
+        } else {
+            opt
+        };
+        (opt_cleaned, Some(desc))
+    } else {
+        (line.to_string(), None)
+    }
+}
+
 fn parse_tagged_blocks(cmd: &mut Command, section: &str) -> bool {
     let mut found = false;
     let no_ix = Regex::new(r"(?m)^\.IX.*\n?")
@@ -523,10 +592,47 @@ fn parse_tagged_blocks(cmd: &mut Command, section: &str) -> bool {
             continue;
         }
 
+        let mut opt_desc_first_line: Option<String> = None;
+        let mut option_from_next_line = false;
+
         let mut option_name = if is_ip {
-            trailing_digits
+            let ip_val = trailing_digits
                 .replace(trimmed.trim_start_matches(".IP").trim(), "")
-                .into_owned()
+                .into_owned();
+            let cleaned_ip = clean_option_source(&ip_val, cmd.name.as_deref().unwrap_or(""));
+            if cleaned_ip.starts_with('-') {
+                ip_val
+            } else {
+                option_from_next_line = true;
+                let mut option_line = String::new();
+                while let Some(next) = lines.peek() {
+                    let next_trimmed = next.trim();
+                    if next_trimmed.is_empty() {
+                        lines.next();
+                        continue;
+                    }
+                    option_line = (*next).to_string();
+                    lines.next();
+                    break;
+                }
+                while let Some(next) = lines.peek() {
+                    let next_trimmed = next.trim();
+                    if next_trimmed.is_empty()
+                        || !next_trimmed.starts_with('.')
+                        || structural_macro.is_match(next_trimmed)
+                    {
+                        break;
+                    }
+                    option_line.push(' ');
+                    option_line.push_str(next_trimmed);
+                    lines.next();
+                }
+                let (opt, desc) = split_option_and_desc(&option_line);
+                if let Some(d) = desc {
+                    opt_desc_first_line = Some(d);
+                }
+                opt
+            }
         } else {
             let mut option_line = String::new();
             while let Some(next) = lines.peek() {
@@ -554,7 +660,7 @@ fn parse_tagged_blocks(cmd: &mut Command, section: &str) -> bool {
             option_line
         };
 
-        if is_ip {
+        if is_ip && !option_from_next_line {
             while let Some(next) = lines.peek() {
                 let next_trimmed = next.trim();
                 if next_trimmed.is_empty() || pd_macro.is_match(next_trimmed) {
@@ -576,6 +682,9 @@ fn parse_tagged_blocks(cmd: &mut Command, section: &str) -> bool {
         }
 
         let mut desc_lines = Vec::new();
+        if let Some(first) = opt_desc_first_line {
+            desc_lines.push(first);
+        }
         while let Some(next) = lines.peek() {
             let next_trimmed = next.trim();
             if next_trimmed.is_empty() || pd_macro.is_match(next_trimmed) {
@@ -1985,5 +2094,54 @@ None documented.
             assert_eq!(arg.value_type.as_deref(), item.value_type);
             assert!(normalize_desc(arg.description.as_deref()).contains(item.description_contains));
         }
+    }
+
+    #[test]
+    fn parses_real_zstd_fixture() {
+        let cmd = parse_test_manpage("zstd.1");
+        println!("PARSED ARGS: {:#?}", cmd.args);
+
+        // Assertions on the parsed command structure and options
+        let keep_item = ExpectedArg {
+            short: Some("-k"),
+            long: Some("--keep"),
+            value_type: None,
+            num_args: None,
+            description_contains: "keep source file(s)",
+        };
+        let keep_arg = find_arg(&cmd, &keep_item);
+        assert_eq!(keep_arg.short.as_deref(), Some("-k"));
+        assert_eq!(keep_arg.long.as_deref(), Some("--keep"));
+        assert!(normalize_desc(keep_arg.description.as_deref()).contains("keep source file(s)"));
+
+        let rm_item = ExpectedArg {
+            short: None,
+            long: Some("--rm"),
+            value_type: None,
+            num_args: None,
+            description_contains: "remove source file(s)",
+        };
+        let rm_arg = find_arg(&cmd, &rm_item);
+        assert_eq!(rm_arg.long.as_deref(), Some("--rm"));
+
+        let decompress_item = ExpectedArg {
+            short: Some("-d"),
+            long: Some("--decompress"),
+            value_type: None,
+            num_args: None,
+            description_contains: "Decompress",
+        };
+        let decompress_arg = find_arg(&cmd, &decompress_item);
+        assert_eq!(decompress_arg.short.as_deref(), Some("-d"));
+
+        let ultra_item = ExpectedArg {
+            short: None,
+            long: Some("--ultra"),
+            value_type: None,
+            num_args: None,
+            description_contains: "unlocks high compression levels",
+        };
+        let ultra_arg = find_arg(&cmd, &ultra_item);
+        assert_eq!(ultra_arg.long.as_deref(), Some("--ultra"));
     }
 }
