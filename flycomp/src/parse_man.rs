@@ -348,6 +348,18 @@ fn parse_option_declaration(option_text: &str, cmd_name: &str) -> Vec<ParsedOpti
     parsed
 }
 
+fn looks_like_option_block(option_text: &str, cmd_name: &str) -> bool {
+    let Some(first_line) = option_text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with(".PD"))
+    else {
+        return false;
+    };
+
+    !parse_option_declaration(first_line, cmd_name).is_empty()
+}
+
 fn merge_arg(existing: &mut Arg, incoming: ParsedOption, description: &str) {
     if existing.short.is_none() {
         existing.short = incoming.short;
@@ -470,6 +482,7 @@ fn top_level_sections(content: &str) -> Vec<&str> {
 fn parse_type1_blocks(cmd: &mut Command, section: &str) -> bool {
     let mut found = false;
     let re = Regex::new(r"(?ms)\.PP(.*?)\.RE").unwrap();
+    let cmd_name = cmd.name.clone().unwrap_or_default();
 
     for caps in re.captures_iter(section) {
         let mut data = caps.get(1).unwrap().as_str().to_string();
@@ -477,7 +490,7 @@ fn parse_type1_blocks(cmd: &mut Command, section: &str) -> bool {
             data = data[idx + 3..].to_string();
         }
         let parts: Vec<&str> = data.splitn(2, ".RS 4").collect();
-        if parts.len() == 2 {
+        if parts.len() == 2 && looks_like_option_block(parts[0], &cmd_name) {
             found |= add_option(cmd, parts[0], parts[1]);
         }
     }
@@ -495,6 +508,9 @@ fn parse_tagged_blocks(cmd: &mut Command, section: &str) -> bool {
     let trailing_digits = Regex::new(r"\d+$").unwrap();
     let structural_macro =
         Regex::new(r"^\.(?:TP|TQ|IP|SH|Sh|SS|Ss|UNINDENT|UN|PP|Pp|RS|RE|sp)\b").unwrap();
+    let conditional_structural_macro =
+        Regex::new(r"^\.(?:ie|el)\b.*\.(?:TP|TQ|IP|HP|SH|Sh|SS|Ss|UNINDENT|UN|PP|Pp|RS|RE|sp)\b")
+            .unwrap();
     let pd_macro = Regex::new(r"^\.PD(?:\s+\d+)?$").unwrap();
     let mut lines = no_ix.lines().peekable();
 
@@ -569,6 +585,9 @@ fn parse_tagged_blocks(cmd: &mut Command, section: &str) -> bool {
             if is_hp && (next_trimmed == ".IP" || next_trimmed.starts_with(".IP ")) {
                 lines.next();
                 continue;
+            }
+            if conditional_structural_macro.is_match(next_trimmed) {
+                break;
             }
             if next_trimmed.starts_with(".TP")
                 || next_trimmed.starts_with(".TQ")
@@ -1826,6 +1845,11 @@ None documented.
     fn parses_real_wget_fixture() {
         let cmd = parse_test_manpage("wget.1");
         assert_expected_subcommands(&cmd, &[]);
+        assert!(
+            cmd.args
+                .iter()
+                .all(|arg| arg.long.as_deref() != Some("--no-"))
+        );
         assert_contains_expected_args(
             &cmd,
             &[
@@ -1834,28 +1858,35 @@ None documented.
                     long: Some("--version"),
                     value_type: None,
                     num_args: None,
-                    description_contains: "Netscape 4. x",
+                    description_contains: "Display the version of Wget",
                 },
                 ExpectedArg {
                     short: Some("-b"),
                     long: Some("--background"),
                     value_type: None,
                     num_args: None,
-                    description_contains: "Netscape 4. x",
+                    description_contains: "Go to background immediately after startup",
                 },
                 ExpectedArg {
                     short: Some("-o"),
                     long: Some("--output-file"),
                     value_type: Some("logfile"),
                     num_args: Some("1"),
-                    description_contains: "Netscape 4. x",
+                    description_contains: "Log all messages to logfile",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--report-speed"),
                     value_type: Some("type"),
                     num_args: Some("1"),
-                    description_contains: "Netscape 4. x",
+                    description_contains: "Output bandwidth as type",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--load-cookies"),
+                    value_type: Some("file"),
+                    num_args: Some("1"),
+                    description_contains: "Load cookies from file before the first HTTP retrieval",
                 },
             ],
         );
