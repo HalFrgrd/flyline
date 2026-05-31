@@ -3,3 +3,4 @@ target/
 *.gif
 *.svg
 docker_build/
+**/.antigravitycli/
