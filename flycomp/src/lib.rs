@@ -246,6 +246,7 @@ where
     }
 }
 
+// TODO: we should have kept track of the command name insteaf of parsing it from the file name.
 fn command_name(command_path: &str) -> String {
     std::path::Path::new(command_path)
         .file_name()

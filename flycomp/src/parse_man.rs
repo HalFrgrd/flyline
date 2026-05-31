@@ -30,7 +30,10 @@ fn replace_special_escapes(data: &str) -> String {
         .replace(r"\e", "\\")
         .replace(r"\-", "-")
         .replace(r"\&", "")
+        .replace(r"\,", "")
+        .replace(r"\/", "")
         .replace(r"\^", "")
+        .replace(r"\c", "")
         .replace(r"\ ", " ")
         .replace(r"\~", " ")
         .replace(r"\:", "")
@@ -55,14 +58,19 @@ fn strip_line_comment(line: &str) -> Option<String> {
 }
 
 fn trim_known_inline_macros(line: &str) -> String {
-    let mut line = line.trim().to_string();
-    if line.starts_with('.') {
-        line = line[1..].to_string();
-    }
+    let trimmed = line.trim();
+    let mut line = trimmed.to_string();
 
-    let macro_re = Regex::new(r"^[A-Za-z]{1,3}\s+").unwrap();
-    while macro_re.is_match(&line) {
-        line = macro_re.replace(&line, "").into_owned();
+    if let Some(stripped) = trimmed.strip_prefix('.') {
+        line = stripped.to_string();
+
+        let macro_re = Regex::new(
+            r"^(?:[A-Z][A-Za-z]?|rb|Nm|Fl|Ar|Pa|Ev|Dv|Cm|Ic|No|Sq|Dq|Pq|Em|Sy|Li|Tn|Ns|Op|Oo|Oc|Xo|Xc|Xr)\s+",
+        )
+        .unwrap();
+        while macro_re.is_match(&line) {
+            line = macro_re.replace(&line, "").into_owned();
+        }
     }
 
     if line.ends_with(" ,") || line.ends_with(" .") {
@@ -193,6 +201,7 @@ fn unquote(data: &str) -> String {
 fn clean_option_source(data: &str, cmd_name: &str) -> String {
     normalize_text(data, cmd_name)
         .replace('\n', ", ")
+        .replace('"', "")
         .replace(" [ ", "[")
         .replace(" ]", "]")
         .replace(" ,", ",")
@@ -252,6 +261,9 @@ fn find_value_type(remainder: &str) -> (Option<String>, Option<String>) {
         .next()
         .and_then(normalize_value_token);
     if let Some(value) = candidate {
+        if value.chars().all(|ch| ch.is_ascii_digit()) {
+            return (None, None);
+        }
         return (Some(value), Some("1".to_string()));
     }
 
@@ -432,6 +444,29 @@ fn extract_section<'a>(content: &'a str, names: &[&str]) -> Option<&'a str> {
     start.map(|section_start| &content[section_start..])
 }
 
+fn top_level_sections(content: &str) -> Vec<&str> {
+    let mut sections = Vec::new();
+    let mut current_start = None;
+    let mut offset = 0;
+
+    for line in content.split_inclusive('\n') {
+        let line_start = offset;
+        offset += line.len();
+
+        if section_title(line).is_some() {
+            if let Some(section_start) = current_start.replace(line_start) {
+                sections.push(&content[section_start..line_start]);
+            }
+        }
+    }
+
+    if let Some(section_start) = current_start {
+        sections.push(&content[section_start..]);
+    }
+
+    sections
+}
+
 fn parse_type1_blocks(cmd: &mut Command, section: &str) -> bool {
     let mut found = false;
     let re = Regex::new(r"(?ms)\.PP(.*?)\.RE").unwrap();
@@ -458,17 +493,21 @@ fn parse_tagged_blocks(cmd: &mut Command, section: &str) -> bool {
         .into_owned();
 
     let trailing_digits = Regex::new(r"\d+$").unwrap();
+    let structural_macro =
+        Regex::new(r"^\.(?:TP|TQ|IP|SH|Sh|SS|Ss|UNINDENT|UN|PP|Pp|RS|RE|sp)\b").unwrap();
+    let pd_macro = Regex::new(r"^\.PD(?:\s+\d+)?$").unwrap();
     let mut lines = no_ix.lines().peekable();
 
     while let Some(line) = lines.next() {
         let trimmed = line.trim();
         let is_tp = trimmed.starts_with(".TP") || trimmed.starts_with(".TQ");
+        let is_hp = trimmed.starts_with(".HP");
         let is_ip = trimmed.starts_with(".IP ");
-        if !is_tp && !is_ip {
+        if !is_tp && !is_ip && !is_hp {
             continue;
         }
 
-        let option_name = if is_ip {
+        let mut option_name = if is_ip {
             trailing_digits
                 .replace(trimmed.trim_start_matches(".IP").trim(), "")
                 .into_owned()
@@ -484,15 +523,57 @@ fn parse_tagged_blocks(cmd: &mut Command, section: &str) -> bool {
                 lines.next();
                 break;
             }
+            while let Some(next) = lines.peek() {
+                let next_trimmed = next.trim();
+                if next_trimmed.is_empty()
+                    || !next_trimmed.starts_with('.')
+                    || structural_macro.is_match(next_trimmed)
+                {
+                    break;
+                }
+                option_line.push(' ');
+                option_line.push_str(next_trimmed);
+                lines.next();
+            }
             option_line
         };
+
+        if is_ip {
+            while let Some(next) = lines.peek() {
+                let next_trimmed = next.trim();
+                if next_trimmed.is_empty() || pd_macro.is_match(next_trimmed) {
+                    lines.next();
+                    continue;
+                }
+                if next_trimmed.starts_with(".IP ") {
+                    option_name.push_str(", ");
+                    option_name.push_str(
+                        &trailing_digits
+                            .replace(next_trimmed.trim_start_matches(".IP").trim(), "")
+                            .into_owned(),
+                    );
+                    lines.next();
+                    continue;
+                }
+                break;
+            }
+        }
 
         let mut desc_lines = Vec::new();
         while let Some(next) = lines.peek() {
             let next_trimmed = next.trim();
+            if next_trimmed.is_empty() || pd_macro.is_match(next_trimmed) {
+                lines.next();
+                continue;
+            }
+            if is_hp && (next_trimmed == ".IP" || next_trimmed.starts_with(".IP ")) {
+                lines.next();
+                continue;
+            }
             if next_trimmed.starts_with(".TP")
                 || next_trimmed.starts_with(".TQ")
                 || next_trimmed.starts_with(".IP ")
+                || next_trimmed.starts_with(".HP")
                 || next_trimmed.starts_with(".SH")
                 || next_trimmed.starts_with(".Sh")
                 || next_trimmed.starts_with(".SS")
@@ -742,6 +823,96 @@ fn parse_darwin_sections(cmd: &mut Command, content: &str) -> bool {
     found
 }
 
+fn parse_subcommand_name(cmd_name: &str, token: &str) -> Option<String> {
+    let normalized = normalize_whitespace(&strip_groff_wrappers(token));
+    let caps = Regex::new(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9+._-]*)\((?P<section>\d+)\)$")
+        .unwrap()
+        .captures(&normalized)?;
+    let name = caps.name("name").unwrap().as_str();
+    let prefix = format!("{cmd_name}-");
+    let stripped = name.strip_prefix(&prefix)?;
+
+    if stripped.is_empty() {
+        return None;
+    }
+
+    Some(stripped.to_string())
+}
+
+fn add_subcommand(cmd: &mut Command, name: &str, description: &str) -> bool {
+    let description = clean_sentence(&normalize_text(
+        description,
+        cmd.name.as_deref().unwrap_or(""),
+    ));
+
+    if let Some(existing) = cmd
+        .subcommands
+        .iter_mut()
+        .find(|subcommand| subcommand.name.as_deref() == Some(name))
+    {
+        if existing
+            .description
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
+            && !description.is_empty()
+        {
+            existing.description = Some(description);
+        }
+        return false;
+    }
+
+    cmd.subcommands.push(Command {
+        name: Some(name.to_string()),
+        description: if description.is_empty() {
+            None
+        } else {
+            Some(description)
+        },
+        args: Vec::new(),
+        subcommands: Vec::new(),
+        author: None,
+    });
+    true
+}
+
+fn extract_subcommand_candidates(section: &str, cmd_name: &str) -> Vec<(String, String)> {
+    let re = Regex::new(r"(?ms)\.PP\s*(.*?)\.RS 4\s*(.*?)\.RE").unwrap();
+    let mut candidates = Vec::new();
+
+    for caps in re.captures_iter(section) {
+        let raw_name = caps.get(1).unwrap().as_str();
+        let raw_description = caps.get(2).unwrap().as_str();
+        let Some(name) = parse_subcommand_name(cmd_name, raw_name) else {
+            continue;
+        };
+        candidates.push((name, raw_description.to_string()));
+    }
+
+    candidates
+}
+
+fn parse_subcommands(cmd: &mut Command, content: &str) -> bool {
+    let Some(cmd_name) = cmd.name.clone() else {
+        return false;
+    };
+
+    let mut found = false;
+
+    for section in top_level_sections(content) {
+        let candidates = extract_subcommand_candidates(section, &cmd_name);
+        if candidates.len() < 3 {
+            continue;
+        }
+
+        for (name, description) in candidates {
+            found |= add_subcommand(cmd, &name, &description);
+        }
+    }
+
+    found
+}
+
 pub fn parse_manpage(cmd_name: &str, content: &str) -> Option<Command> {
     let mut cmd = Command {
         name: Some(cmd_name.to_string()),
@@ -750,6 +921,8 @@ pub fn parse_manpage(cmd_name: &str, content: &str) -> Option<Command> {
         subcommands: Vec::new(),
         author: None,
     };
+
+    parse_subcommands(&mut cmd, content);
 
     let parsers: [fn(&mut Command, &str) -> bool; 7] = [
         parse_scdoc,
@@ -858,6 +1031,33 @@ None documented.
         normalize_whitespace(desc.unwrap_or(""))
     }
 
+    fn assert_expected_subcommands(cmd: &Command, expected: &[(&str, &str)]) {
+        assert_eq!(cmd.subcommands.len(), expected.len());
+        for (name, description_contains) in expected {
+            let subcommand = cmd
+                .subcommands
+                .iter()
+                .find(|subcommand| subcommand.name.as_deref() == Some(*name))
+                .unwrap();
+            let description = normalize_desc(subcommand.description.as_deref());
+            assert!(!description.is_empty());
+            assert!(description.contains(description_contains));
+        }
+    }
+
+    fn assert_contains_subcommands(cmd: &Command, expected: &[(&str, &str)]) {
+        for (name, description_contains) in expected {
+            let subcommand = cmd
+                .subcommands
+                .iter()
+                .find(|subcommand| subcommand.name.as_deref() == Some(*name))
+                .unwrap();
+            let description = normalize_desc(subcommand.description.as_deref());
+            assert!(!description.is_empty());
+            assert!(description.contains(description_contains));
+        }
+    }
+
     fn find_arg<'a>(cmd: &'a Command, expected: &ExpectedArg<'_>) -> &'a Arg {
         cmd.args
             .iter()
@@ -875,6 +1075,19 @@ None documented.
 
     fn assert_expected_args(cmd: &Command, expected: &[ExpectedArg<'_>]) {
         assert_eq!(cmd.args.len(), expected.len());
+        for expected_arg in expected {
+            let arg = find_arg(cmd, expected_arg);
+            assert_eq!(arg.short.as_deref(), expected_arg.short);
+            assert_eq!(arg.long.as_deref(), expected_arg.long);
+            assert_eq!(arg.value_type.as_deref(), expected_arg.value_type);
+            assert_eq!(arg.num_args.as_deref(), expected_arg.num_args);
+            let description = normalize_desc(arg.description.as_deref());
+            assert!(!description.is_empty());
+            assert!(description.contains(expected_arg.description_contains));
+        }
+    }
+
+    fn assert_contains_expected_args(cmd: &Command, expected: &[ExpectedArg<'_>]) {
         for expected_arg in expected {
             let arg = find_arg(cmd, expected_arg);
             assert_eq!(arg.short.as_deref(), expected_arg.short);
@@ -1007,6 +1220,21 @@ None documented.
     #[test]
     fn parses_real_git_options_with_values_and_descriptions() {
         let cmd = parse_test_manpage("git.1");
+        assert!(cmd.subcommands.len() >= 9);
+        assert_contains_subcommands(
+            &cmd,
+            &[
+                ("add", "file contents to the index"),
+                ("commit", "Record changes to the repository"),
+                ("diff", "Show changes between commits"),
+                ("fetch", "Download objects and refs"),
+                ("init", "Create an empty Git repository"),
+                ("log", "Show commit logs"),
+                ("pull", "Fetch from and integrate"),
+                ("push", "Update remote refs"),
+                ("status", "Show the working tree status"),
+            ],
+        );
         let expected = [
             ExpectedArg {
                 short: Some("-v"),
@@ -1049,8 +1277,594 @@ None documented.
     }
 
     #[test]
+    fn parses_real_cat_fixture() {
+        let cmd = parse_test_manpage("cat.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-A"),
+                    long: Some("--show-all"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "equivalent to -vET",
+                },
+                ExpectedArg {
+                    short: Some("-b"),
+                    long: Some("--number-nonblank"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "number nonempty output lines",
+                },
+                ExpectedArg {
+                    short: Some("-u"),
+                    long: None,
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "(ignored)",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--help"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "display this help and exit",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_chmod_fixture() {
+        let cmd = parse_test_manpage("chmod.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-c"),
+                    long: Some("--changes"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "report only when a change is made",
+                },
+                ExpectedArg {
+                    short: Some("-v"),
+                    long: Some("--verbose"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "diagnostic for every file processed",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--reference"),
+                    value_type: Some("RFILE"),
+                    num_args: Some("1"),
+                    description_contains: "use RFILE's mode",
+                },
+                ExpectedArg {
+                    short: Some("-R"),
+                    long: Some("--recursive"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "change files and directories recursively",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_chown_fixture() {
+        let cmd = parse_test_manpage("chown.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-c"),
+                    long: Some("--changes"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "report only when a change is made",
+                },
+                ExpectedArg {
+                    short: Some("-h"),
+                    long: Some("--no-dereference"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "affect symbolic links instead of any referenced file",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--from"),
+                    value_type: Some("CURRENT_OWNER:CURRENT_GROUP"),
+                    num_args: Some("1"),
+                    description_contains: "only if its current owner and/or group match",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--reference"),
+                    value_type: Some("RFILE"),
+                    num_args: Some("1"),
+                    description_contains: "use RFILE's owner and group",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_cp_fixture() {
+        let cmd = parse_test_manpage("cp.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-a"),
+                    long: Some("--archive"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "same as -dR --preserve=all",
+                },
+                ExpectedArg {
+                    short: Some("-b"),
+                    long: None,
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "does not accept an argument",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--attributes-only"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "don't copy the file data",
+                },
+                ExpectedArg {
+                    short: Some("-S"),
+                    long: Some("--suffix"),
+                    value_type: Some("SUFFIX"),
+                    num_args: Some("1"),
+                    description_contains: "override the usual backup suffix",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_curl_fixture() {
+        let cmd = parse_test_manpage("curl.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-g"),
+                    long: Some("--globoff"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "URL globbing parser",
+                },
+                ExpectedArg {
+                    short: Some("-o"),
+                    long: Some("--output"),
+                    value_type: Some("<file>"),
+                    num_args: Some("1"),
+                    description_contains: "Write output to <file>",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--abstract-unix-socket"),
+                    value_type: Some("<path>"),
+                    num_args: Some("1"),
+                    description_contains: "Connect through an abstract Unix domain socket",
+                },
+                ExpectedArg {
+                    short: Some("-s"),
+                    long: Some("--silent"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "Silent or quiet mode",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_gawk_fixture() {
+        let cmd = parse_test_manpage("gawk.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-f"),
+                    long: Some("--file"),
+                    value_type: Some("program-file"),
+                    num_args: Some("1"),
+                    description_contains: "program source from the file",
+                },
+                ExpectedArg {
+                    short: Some("-F"),
+                    long: Some("--field-separator"),
+                    value_type: Some("fs"),
+                    num_args: Some("1"),
+                    description_contains: "input field separator",
+                },
+                ExpectedArg {
+                    short: Some("-b"),
+                    long: Some("--characters-as-bytes"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "single-byte characters",
+                },
+                ExpectedArg {
+                    short: Some("-c"),
+                    long: Some("--traditional"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "compatibility mode",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_grep_fixture() {
+        let cmd = parse_test_manpage("grep.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-E"),
+                    long: Some("--extended-regexp"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "extended regular expressions",
+                },
+                ExpectedArg {
+                    short: Some("-i"),
+                    long: Some("--ignore-case"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "Ignore case distinctions",
+                },
+                ExpectedArg {
+                    short: Some("-f"),
+                    long: Some("--file"),
+                    value_type: Some("FILE"),
+                    num_args: Some("1"),
+                    description_contains: "Obtain patterns from FILE",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--no-ignore-case"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "Do not ignore case distinctions",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_ls_fixture() {
+        let cmd = parse_test_manpage("ls.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-a"),
+                    long: Some("--all"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "do not ignore entries starting with",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--author"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "print the author of each file",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--block-size"),
+                    value_type: Some("SIZE"),
+                    num_args: Some("1"),
+                    description_contains: "scale sizes by SIZE",
+                },
+                ExpectedArg {
+                    short: Some("-d"),
+                    long: Some("--directory"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "list directories themselves",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_mkdir_fixture() {
+        let cmd = parse_test_manpage("mkdir.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-m"),
+                    long: Some("--mode"),
+                    value_type: Some("MODE"),
+                    num_args: Some("1"),
+                    description_contains: "set file mode",
+                },
+                ExpectedArg {
+                    short: Some("-p"),
+                    long: Some("--parents"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "make parent directories as needed",
+                },
+                ExpectedArg {
+                    short: Some("-v"),
+                    long: Some("--verbose"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "message for each created directory",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--help"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "display this help and exit",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_mv_fixture() {
+        let cmd = parse_test_manpage("mv.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-b"),
+                    long: None,
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "does not accept an argument",
+                },
+                ExpectedArg {
+                    short: Some("-f"),
+                    long: Some("--force"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "do not prompt before overwriting",
+                },
+                ExpectedArg {
+                    short: Some("-S"),
+                    long: Some("--suffix"),
+                    value_type: Some("SUFFIX"),
+                    num_args: Some("1"),
+                    description_contains: "override the usual backup suffix",
+                },
+                ExpectedArg {
+                    short: Some("-t"),
+                    long: Some("--target-directory"),
+                    value_type: Some("DIRECTORY"),
+                    num_args: Some("1"),
+                    description_contains: "move all SOURCE arguments into DIRECTORY",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_ping_fixture() {
+        let cmd = parse_test_manpage("ping.8");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-4"),
+                    long: None,
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "Use IPv4 only",
+                },
+                ExpectedArg {
+                    short: Some("-6"),
+                    long: None,
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "Use IPv6 only",
+                },
+                ExpectedArg {
+                    short: Some("-a"),
+                    long: None,
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "Audible ping",
+                },
+                ExpectedArg {
+                    short: Some("-c"),
+                    long: None,
+                    value_type: Some("count"),
+                    num_args: Some("1"),
+                    description_contains: "Stop after sending count",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_rm_fixture() {
+        let cmd = parse_test_manpage("rm.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-f"),
+                    long: Some("--force"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "ignore nonexistent files and arguments",
+                },
+                ExpectedArg {
+                    short: Some("-i"),
+                    long: None,
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "prompt before every removal",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--interactive"),
+                    value_type: Some("WHEN"),
+                    num_args: Some("?"),
+                    description_contains: "prompt according to WHEN",
+                },
+                ExpectedArg {
+                    short: Some("-R"),
+                    long: Some("--recursive"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "remove directories and their contents recursively",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_sed_fixture() {
+        let cmd = parse_test_manpage("sed.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-n"),
+                    long: Some("--quiet"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "suppress automatic printing of pattern space",
+                },
+                ExpectedArg {
+                    short: Some("-e"),
+                    long: Some("--expression"),
+                    value_type: Some("script"),
+                    num_args: Some("1"),
+                    description_contains: "add the script to the commands",
+                },
+                ExpectedArg {
+                    short: Some("-i"),
+                    long: Some("--in-place"),
+                    value_type: Some("SUFFIX"),
+                    num_args: Some("?"),
+                    description_contains: "edit files in place",
+                },
+                ExpectedArg {
+                    short: Some("-u"),
+                    long: Some("--unbuffered"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "load minimal amounts of data",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_tar_fixture() {
+        let cmd = parse_test_manpage("tar.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-a"),
+                    long: Some("--auto-compress"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "compression program",
+                },
+                ExpectedArg {
+                    short: Some("-f"),
+                    long: Some("--file"),
+                    value_type: Some("ARCHIVE"),
+                    num_args: Some("1"),
+                    description_contains: "archive file or device ARCHIVE",
+                },
+                ExpectedArg {
+                    short: Some("-v"),
+                    long: Some("--verbose"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "files processed",
+                },
+                ExpectedArg {
+                    short: Some("-V"),
+                    long: Some("--label"),
+                    value_type: Some("TEXT"),
+                    num_args: Some("1"),
+                    description_contains: "volume name TEXT",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_wget_fixture() {
+        let cmd = parse_test_manpage("wget.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    short: Some("-V"),
+                    long: Some("--version"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "Netscape 4. x",
+                },
+                ExpectedArg {
+                    short: Some("-b"),
+                    long: Some("--background"),
+                    value_type: None,
+                    num_args: None,
+                    description_contains: "Netscape 4. x",
+                },
+                ExpectedArg {
+                    short: Some("-o"),
+                    long: Some("--output-file"),
+                    value_type: Some("logfile"),
+                    num_args: Some("1"),
+                    description_contains: "Netscape 4. x",
+                },
+                ExpectedArg {
+                    short: None,
+                    long: Some("--report-speed"),
+                    value_type: Some("type"),
+                    num_args: Some("1"),
+                    description_contains: "Netscape 4. x",
+                },
+            ],
+        );
+    }
+
+    #[test]
     fn parses_real_find_options_with_descriptions() {
         let cmd = parse_test_manpage("find.1");
+        assert_expected_subcommands(&cmd, &[]);
         for item in [
             ExpectedArg {
                 short: Some("-P"),
@@ -1083,6 +1897,7 @@ None documented.
     #[test]
     fn parses_real_ssh_options_with_values_and_descriptions() {
         let cmd = parse_test_manpage("ssh.1");
+        assert_expected_subcommands(&cmd, &[]);
         for item in [
             ExpectedArg {
                 short: Some("-4"),
@@ -1116,6 +1931,7 @@ None documented.
     #[test]
     fn parses_real_sudo_options_with_short_long_pairs() {
         let cmd = parse_test_manpage("sudo.8");
+        assert_expected_subcommands(&cmd, &[]);
         for item in [
             ExpectedArg {
                 short: Some("-A"),
