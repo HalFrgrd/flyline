@@ -1545,7 +1545,7 @@ mod tests {
 
         assert_eq!(ctx.word_under_cursor.as_ref(), "user@hostn");
         assert_eq!(
-            ctx.comp_types,
+            ctx.comp_types(),
             vec![
                 CompType::CommandComp {
                     command_word: "ssh".to_string()
