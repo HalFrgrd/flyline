@@ -80,7 +80,11 @@ jobs:
       - name: Build archive
         shell: bash
         run: |
-          tar czf "$ARCHIVE.tar.gz" -C "target/${{ matrix.target }}/release" ${{ matrix.lib }}
+          version="${{ needs.create-release.outputs.version }}"
+          version_no_v="${version#v}"
+          lib_versioned="${{ matrix.lib }}.$version_no_v"
+          cp "target/${{ matrix.target }}/release/${{ matrix.lib }}" "target/${{ matrix.target }}/release/$lib_versioned"
+          tar czf "$ARCHIVE.tar.gz" -C "target/${{ matrix.target }}/release" "$lib_versioned"
           shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
           echo "ASSET=$ARCHIVE.tar.gz" >> $GITHUB_ENV
           echo "ASSET_SUM=$ARCHIVE.tar.gz.sha256" >> $GITHUB_ENV

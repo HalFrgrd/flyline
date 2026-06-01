@@ -276,6 +276,21 @@ Please check https://github.com/${REPO}/releases for available assets."
 
     tar xzf "${TMP_DIR}/${ARCHIVE}" -C "$INSTALL_DIR"
 
+    VERSION_NO_V="${VERSION#v}"
+    LIB_VERSIONED="${LIB_NAME}.${VERSION_NO_V}"
+
+    if [ -f "${INSTALL_DIR}/${LIB_VERSIONED}" ]; then
+        say "Creating symlink ${LIB_NAME} -> ${LIB_VERSIONED}..."
+        rm -f "${INSTALL_DIR}/${LIB_NAME}"
+        (cd "$INSTALL_DIR" && ln -s "$LIB_VERSIONED" "$LIB_NAME")
+    else
+        if [ -f "${INSTALL_DIR}/${LIB_NAME}" ]; then
+            warn "Expected to find versioned library ${LIB_VERSIONED}, but found ${LIB_NAME} instead."
+        else
+            err "Failed to find the installed library file in ${INSTALL_DIR}."
+        fi
+    fi
+
     LIB_PATH="${INSTALL_DIR}/${LIB_NAME}"
     say "Installed: ${LIB_PATH}"
 
