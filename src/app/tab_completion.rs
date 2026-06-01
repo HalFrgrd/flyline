@@ -1043,6 +1043,10 @@ impl App<'_> {
         auto_started: bool,
     ) {
         if auto_started {
+            if builder.is_empty() {
+                self.content_mode = ContentMode::Normal;
+                return;
+            }
             let suggestions =
                 ActiveSuggestions::new(builder, wuc_substring, load_time, auto_started);
             self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));

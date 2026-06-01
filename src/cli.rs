@@ -1186,7 +1186,7 @@ impl Flyline {
                         num_suggestion_rows,
                     }) => {
                         if let Some(enabled) = auto_suggest {
-                            log::info!("Auto-suggest set to {}", enabled);
+                            log::info!("Auto tab-completion suggestions set to {}", enabled);
                             self.settings.auto_suggest = enabled;
                         }
                         if let Some(num) = num_suggestion_rows {
