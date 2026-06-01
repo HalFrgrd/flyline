@@ -773,12 +773,15 @@ impl Contents {
             };
 
             let vertical =
-                pipe(Directions::TOP | Directions::BOTTOM, PipeStyle::Single).unwrap_or('│');
-            let box_join = pipe(
-                Directions::TOP | Directions::LEFT | Directions::RIGHT,
-                PipeStyle::Single,
-            )
-            .unwrap_or('┴');
+                pipe(Directions::TOP | Directions::BOTTOM, PipeStyle::Single).unwrap_or(' ');
+            let box_join_dirs = if connector_col == box_left {
+                Directions::TOP | Directions::RIGHT | Directions::BOTTOM
+            } else if connector_col == box_right {
+                Directions::TOP | Directions::LEFT | Directions::BOTTOM
+            } else {
+                Directions::TOP | Directions::LEFT | Directions::RIGHT
+            };
+            let box_join = pipe(box_join_dirs, PipeStyle::Single).unwrap_or(' ');
 
             for row in cursor_pos.row.saturating_add(1)..area.y {
                 self.move_cursor_to(row, connector_col);

@@ -2127,13 +2127,21 @@ impl<'a> App<'a> {
                     let num_rows_for_suggestions =
                         rows_left_before_end_of_screen.clamp(2, max_rows);
 
+                    let popup_anchor_col = if active_suggestions.auto_started {
+                        cursor_pos_maybe
+                            .map_or(0, |pos| pos.col as usize)
+                            .min((width as usize).saturating_sub(1))
+                    } else {
+                        0
+                    };
+
                     let mut selected_grid_row: Option<u16> = None;
 
                     // For auto-started suggestions, use a narrower single-column layout positioned under the cursor
                     let grid_width = if active_suggestions.auto_started {
-                        let cursor_col = cursor_pos_maybe.map_or(0, |pos| pos.col as usize);
-                        // Allow up to 40 chars max for the suggestion, constrained by available terminal width
-                        (width as usize).saturating_sub(cursor_col).min(40)
+                        // Reserve one column on each side for the popup border.
+                        // The popup itself may shift left later if the cursor is near the right edge.
+                        (width as usize).saturating_sub(2).max(1).min(40)
                     } else {
                         width as usize
                     };
@@ -2160,10 +2168,11 @@ impl<'a> App<'a> {
 
                     // After grid is created, compute left padding to prevent wrapping
                     let left_padding = if active_suggestions.auto_started {
-                        let cursor_col = cursor_pos_maybe.map_or(0, |pos| pos.col as usize);
-                        // Ensure the suggestion + padding doesn't exceed terminal width
-                        let max_padding = (width as usize).saturating_sub(actual_grid_width);
-                        cursor_col.min(max_padding)
+                        // Keep one column free on each side for the popup border when possible.
+                        let min_padding = usize::from(width > 2);
+                        let max_padding =
+                            (width as usize).saturating_sub(actual_grid_width.saturating_add(1));
+                        popup_anchor_col.clamp(min_padding, max_padding)
                     } else {
                         0
                     };
