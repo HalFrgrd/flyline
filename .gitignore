@@ -4,3 +4,4 @@ target/
 *.svg
 docker_build/
 **/.antigravitycli/
+.vscode/

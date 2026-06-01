@@ -148,11 +148,6 @@ fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<CrosstermEve
         return Err(Error::new(ErrorKind::UnexpectedEof, reason));
     }
 
-    log::trace!(
-        "Polling for terminal event with timeout of {:?}...",
-        timeout
-    );
-
     if event::poll(timeout)? {
         event::read().map(Some)
     } else {
@@ -291,6 +286,7 @@ enum ContentMode {
         handle: TabCompletionHandle,
         wuc_substring: SubString,
         start_time: std::time::Instant,
+        auto_started: bool,
     },
     /// AI command is running as a child process.  The child is polled each
     /// event-loop iteration with `try_wait`; on drop it is killed and reaped.
@@ -432,6 +428,9 @@ pub(crate) struct App<'a> {
     /// Buffer contents at the time the user last dismissed the inline suggestion.
     /// While the buffer equals this value the suggestion is suppressed.
     dismissed_inline_suggestion_buffer: Option<String>,
+    /// Word-under-cursor at the time the user dismissed tab completion with Escape.
+    /// While the new word-under-cursor equals this value, auto-suggest is suppressed.
+    dismissed_tab_completion_wuc: Option<String>,
     mouse_state: MouseState,
     content_mode: ContentMode,
     last_contents: Option<DrawnContent>,
@@ -487,6 +486,7 @@ impl<'a> App<'a> {
             buffer_before_history_navigation: None,
             inline_history_suggestion: None,
             dismissed_inline_suggestion_buffer: None,
+            dismissed_tab_completion_wuc: None,
             mouse_state: time_it!(
                 "startup: mouse state",
                 MouseState::initialize(&settings.mouse_mode)
@@ -1214,7 +1214,12 @@ impl<'a> App<'a> {
 
     /// Poll the tab-completion background thread; returns `true` if a redraw is needed.
     fn poll_tab_completion(&mut self) -> bool {
-        if let ContentMode::TabCompletionWaiting { ref handle, .. } = self.content_mode {
+        if let ContentMode::TabCompletionWaiting {
+            ref handle,
+            auto_started,
+            ..
+        } = self.content_mode
+        {
             match handle.receiver.try_recv() {
                 Ok(Some((builder, elapsed))) => {
                     // Take ownership of wuc_substring from the waiting state.
@@ -1222,7 +1227,7 @@ impl<'a> App<'a> {
                         ContentMode::TabCompletionWaiting { wuc_substring, .. } => wuc_substring,
                         _ => unreachable!(),
                     };
-                    self.finish_tab_complete(builder, wuc, elapsed);
+                    self.finish_tab_complete(builder, wuc, elapsed, auto_started);
                     self.on_possible_buffer_change();
                     return true;
                 }
@@ -1454,6 +1459,22 @@ impl<'a> App<'a> {
             }
         }
 
+        // Evaluate the lazy word-under-cursor once to avoid borrow checker issues.
+        let new_wuc_s = new_wuc.s.to_string();
+
+        if self.settings.auto_suggest && matches!(self.content_mode, ContentMode::Normal) {
+            // Only auto-suggest if the word-under-cursor differs from the word the user
+            // just dismissed by pressing Escape. This prevents re-triggering on the same word.
+            let should_auto_suggest = match &self.dismissed_tab_completion_wuc {
+                None => true,
+                Some(dismissed_wuc) => dismissed_wuc != &new_wuc_s,
+            };
+
+            if should_auto_suggest {
+                self.start_tab_complete(true);
+            }
+        }
+
         let new_tokens = dparser::DParser::parse_and_transfer_auto_inserted_flags(
             self.buffer.buffer(),
             &self.dparser_tokens_cache,
@@ -1465,6 +1486,14 @@ impl<'a> App<'a> {
         self.dparser_tokens_cache = new_tokens;
 
         let history_buffer = self.buffer_for_history().to_owned();
+
+        // If the word-under-cursor has changed since the user dismissed tab completion, re-enable auto-suggest.
+        if match &self.dismissed_tab_completion_wuc {
+            None => false,
+            Some(dismissed_wuc) => dismissed_wuc != &new_wuc_s,
+        } {
+            self.dismissed_tab_completion_wuc = None;
+        }
 
         // If the buffer has changed since the user dismissed the suggestion, re-enable it.
         if self
@@ -2084,30 +2113,104 @@ impl<'a> App<'a> {
                 content.newline();
 
                 if active_suggestions.all_suggestions_len() > 0 {
+                    if active_suggestions.auto_started {
+                        content.newline();
+                    }
+
                     let grid_start_row = content.cursor_position().row;
-                    let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, 15);
+                    let max_rows = self.settings.num_suggestion_rows.max(2);
+                    let num_rows_for_suggestions =
+                        rows_left_before_end_of_screen.clamp(2, max_rows);
+
+                    let popup_anchor_col = if active_suggestions.auto_started {
+                        cursor_pos_maybe
+                            .map_or(0, |pos| pos.col as usize)
+                            .min((width as usize).saturating_sub(1))
+                    } else {
+                        0
+                    };
 
                     let mut selected_grid_row: Option<u16> = None;
 
+                    // For auto-started suggestions, use a narrower single-column layout positioned under the cursor
+                    let grid_width = if active_suggestions.auto_started {
+                        // Reserve one column on each side for the popup border.
+                        // The popup itself may shift left later if the cursor is near the right edge.
+                        (width as usize).saturating_sub(2).max(1).min(40)
+                    } else {
+                        width as usize
+                    };
+
                     let grid = active_suggestions.into_grid(
                         num_rows_for_suggestions as usize,
-                        width as usize,
+                        grid_width,
                         &self.settings.colour_palette,
+                        if active_suggestions.auto_started {
+                            Some(1)
+                        } else {
+                            None
+                        },
                     );
+
+                    let actual_grid_width = grid.get(0).map_or(0, |col| {
+                        col.items
+                            .iter()
+                            .map(|(formatted, _)| formatted.display_width)
+                            .max()
+                            .unwrap_or(0)
+                            .min(grid_width)
+                    });
+
+                    // After grid is created, compute left padding to prevent wrapping
+                    let left_padding = if active_suggestions.auto_started {
+                        // Keep one column free on each side for the popup border when possible.
+                        let min_padding = usize::from(width > 2);
+                        let max_padding =
+                            (width as usize).saturating_sub(actual_grid_width.saturating_add(1));
+                        popup_anchor_col.clamp(min_padding, max_padding)
+                    } else {
+                        0
+                    };
 
                     let num_rows = grid.get(0).map_or(0, |col| col.items.len());
 
+                    let auto_started_box_area = if active_suggestions.auto_started && num_rows > 0 {
+                        let x = left_padding.saturating_sub(1) as u16;
+                        let y = grid_start_row.saturating_sub(1);
+                        let right =
+                            (left_padding + actual_grid_width + 1).min(width as usize) as u16;
+                        let box_width = right.saturating_sub(x).max(2);
+                        Some(Rect {
+                            x,
+                            y,
+                            width: box_width,
+                            height: num_rows as u16 + 2,
+                        })
+                    } else {
+                        None
+                    };
+
                     for row_idx in 0..num_rows {
-                        for (is_first, _, col) in grid.iter().flag_first_last() {
+                        // Add left padding for auto-started suggestions
+                        if active_suggestions.auto_started && left_padding > 0 {
+                            content.write_tagged_span(&TaggedSpan::new(
+                                Span::raw(" ".repeat(left_padding)),
+                                Tag::TabSuggestion,
+                            ));
+                        }
+
+                        for (col_idx, col) in grid.iter().enumerate() {
                             if let Some((formatted, is_selected)) = col.items.get(row_idx) {
-                                if !is_first {
+                                if col_idx > 0 && !active_suggestions.auto_started {
                                     content.write_tagged_span(&TaggedSpan::new(
                                         Span::raw(" ".repeat(COLUMN_PADDING)),
                                         Tag::TabSuggestion,
                                     ));
                                 }
+
                                 let formatted_suggestion =
                                     formatted.render(col.width, *is_selected);
+
                                 let tag = Tag::Suggestion(formatted.suggestion_idx);
                                 for span in formatted_suggestion {
                                     content.write_tagged_span(&TaggedSpan::new(span, tag));
@@ -2123,31 +2226,49 @@ impl<'a> App<'a> {
                     if let Some(sel_row) = selected_grid_row {
                         content.set_focus_row(grid_start_row + sel_row);
                     }
+
+                    if let Some(area) = auto_started_box_area {
+                        content.render_border(
+                            area,
+                            Tag::TabSuggestion,
+                            self.settings.colour_palette.secondary_text(),
+                            false,
+                            cursor_pos_maybe,
+                        );
+                    }
                 }
 
-                let pos_string = if active_suggestions.last_num_data_cols > 1 {
-                    format!(
-                        "({}, {})",
-                        active_suggestions.selected_col, active_suggestions.selected_row
-                    )
-                } else {
-                    format!("{}", active_suggestions.current_1d_index())
-                };
+                // Only show position info for user-triggered suggestions (not auto-started)
+                if !active_suggestions.auto_started {
+                    let pos_string = if active_suggestions.last_num_data_cols > 1 {
+                        match active_suggestions.selected_coord {
+                            Some((selected_col, selected_row)) => {
+                                format!("({}, {})", selected_col, selected_row)
+                            }
+                            None => "(none)".to_string(),
+                        }
+                    } else {
+                        active_suggestions
+                            .current_1d_index()
+                            .map(|idx| idx.to_string())
+                            .unwrap_or_else(|| "none".to_string())
+                    };
 
-                content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(
-                        format!(
-                            "# Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
-                            pos_string,
-                            active_suggestions.filtered_suggestions_len(),
-                            active_suggestions.all_suggestions_len(),
-                            active_suggestions.comp_type.display_name(),
-                            active_suggestions.load_time.as_secs_f32() * 1000.0,
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(
+                            format!(
+                                "# Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
+                                pos_string,
+                                active_suggestions.filtered_suggestions_len(),
+                                active_suggestions.all_suggestions_len(),
+                                active_suggestions.comp_type.display_name(),
+                                active_suggestions.load_time.as_secs_f32() * 1000.0,
+                            ),
+                            self.settings.colour_palette.secondary_text(),
                         ),
-                        self.settings.colour_palette.secondary_text(),
-                    ),
-                    Tag::TabSuggestion,
-                ));
+                        Tag::TabSuggestion,
+                    ));
+                }
             }
             ContentMode::TabCompletionWaiting { start_time, .. } if self.mode.is_running() => {
                 content.newline();

@@ -175,6 +175,10 @@ pub struct Settings {
     pub show_animations: bool,
     /// Whether to show inline history suggestions.
     pub show_inline_history: bool,
+    /// Whether to auto-start tab completion suggestions as you type.
+    pub auto_suggest: bool,
+    /// Maximum number of suggestion rows to render for tab-completion lists.
+    pub num_suggestion_rows: u16,
     /// Whether to automatically close opening characters (e.g., parentheses, brackets, quotes).
     pub auto_close_chars: bool,
     /// Whether mouse clicks and drags on the command buffer change the cursor
@@ -232,6 +236,8 @@ impl Default for Settings {
             run_tutorial: false,
             tutorial_step: TutorialStep::default(),
             show_animations: true,
+            auto_suggest: true,
+            num_suggestion_rows: 15,
             show_inline_history: true,
             auto_close_chars: true,
             select_with_mouse: true,

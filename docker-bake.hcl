@@ -200,6 +200,11 @@ target "demo-tab-completion-easing-extracted-gif" {
     dockerfile = "docker/demo_tab_completion_easing.Dockerfile"
 }
 
+target "demo-auto-tab-completion-extracted-gif" {
+    inherits = ["_demo-base"]
+    dockerfile = "docker/demo_auto_tab_completion.Dockerfile"
+}
+
 group "demos" {
     targets = [
         "demo-overview-extracted-gif",
@@ -211,7 +216,8 @@ group "demos" {
         "demo-ls-colors-extracted-gif",
         "demo-fuzzy-history-extracted-gif",
         "demo-inline-history-extracted-gif",
-        "demo-tab-completion-easing-extracted-gif"
+        "demo-tab-completion-easing-extracted-gif",
+        "demo-auto-tab-completion-extracted-gif"
     ]
 }
 

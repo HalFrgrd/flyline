@@ -493,6 +493,21 @@ enum Commands {
         #[arg(long = "select-with-mouse", default_missing_value = "true", num_args = 0..=1)]
         select_with_mouse: Option<bool>,
     },
+    /// Configure suggestion behavior.
+    ///
+    /// Examples:
+    ///   flyline suggestions --auto-suggest false
+    ///   flyline suggestions --num-suggestion-rows 10
+    ///   flyline suggestions --auto-suggest true --num-suggestion-rows 12
+    #[command(name = "suggestions", verbatim_doc_comment)]
+    Suggestions {
+        /// Enable or disable auto-suggest (auto-started tab completion suggestions).
+        #[arg(long = "auto-suggest", default_missing_value = "true", num_args = 0..=1)]
+        auto_suggest: Option<bool>,
+        /// Maximum number of suggestion rows to render for tab-completion lists.
+        #[arg(long = "num-suggestion-rows", value_name = "NUM")]
+        num_suggestion_rows: Option<u16>,
+    },
     /// Run a command with --help, parse the output, and print a completion
     /// script (or JSON parse tree) to stdout.
     ///
@@ -1164,6 +1179,24 @@ impl Flyline {
                         if let Some(enabled) = select_with_mouse {
                             log::info!("Select with mouse set to {}", enabled);
                             self.settings.select_with_mouse = enabled;
+                        }
+                    }
+                    Some(Commands::Suggestions {
+                        auto_suggest,
+                        num_suggestion_rows,
+                    }) => {
+                        if let Some(enabled) = auto_suggest {
+                            log::info!("Auto tab-completion suggestions set to {}", enabled);
+                            self.settings.auto_suggest = enabled;
+                        }
+                        if let Some(num) = num_suggestion_rows {
+                            if num == 0 {
+                                return_usage_error!(
+                                    "flyline suggestions: --num-suggestion-rows must be greater than 0"
+                                );
+                            }
+                            log::info!("Suggestion row limit set to {}", num);
+                            self.settings.num_suggestion_rows = num;
                         }
                     }
                     Some(Commands::CompSpecSynthesis {

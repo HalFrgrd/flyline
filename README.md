@@ -359,6 +359,13 @@ I'd recommend [setting up a mouse mode widget](#mouse-mode-widget) to know when 
 Flyline extends Bash's tab completion feature in many ways.
 Note that you will need to have [set up completions in normal Bash first](https://github.com/scop/bash-completion).
 
+
+### Intellisense style auto suggestions
+Flyline can automatically start tab completion suggestions as you type. This demo shows auto-started suggestions, confirming a suggestion, dismissing with Escape, and submitting the command.
+
+[![Auto tab completion demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_auto_tab_completion.gif)](https://github.com/HalFrgrd/evp)
+
+
 ### Fuzzy tab completion search
 When you're presented with suggestions, you can type to fuzzily search through the list:
 
@@ -382,6 +389,7 @@ For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's s
 If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab-delimited frame at 24fps. Try `flyline set-cursor --interpolate-easing <Tab>` for an example:
 
 [![Tab completion easing demo](https://github.com/HalFrgrd/flyline/releases/download/assets/demo_tab_completion_easing.gif)](https://github.com/HalFrgrd/evp)
+
 
 ANSI styling is supported in descriptions: any ANSI colour/style escape codes embedded in the tab-separated description text will be rendered as ratatui styled spans.
 
@@ -430,6 +438,7 @@ if [[ -n "${COPILOT_TERMINAL:-}" ]]; then
     RPS1=''
     flyline set-cursor --backend terminal --interpolate none
     flyline editor --show-inline-history false
+    flyline suggestions --auto-suggest false
 fi
 ``` 
 and set this in your `settings.json`:

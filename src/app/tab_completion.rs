@@ -192,8 +192,9 @@ fn run_flyline_compspec(
 /// expectations are deterministic.
 pub(crate) fn gen_completions_internal(
     completion_context: &tab_completion_context::CompletionContext,
+    auto_started: bool,
 ) -> Option<ActiveSuggestionsBuilder> {
-    let mut builder = gen_completions_uncomitted(completion_context)?;
+    let mut builder = gen_completions_uncomitted(completion_context, auto_started)?;
 
     let all_processed = if cfg!(test) {
         // Tests demand determinism: process everything and always compute
@@ -217,12 +218,13 @@ pub(crate) fn gen_completions_internal(
 
 fn gen_completions_uncomitted(
     completion_context: &tab_completion_context::CompletionContext,
+    auto_started: bool,
 ) -> Option<ActiveSuggestionsBuilder> {
     log::debug!("Completion context: {:#?}", completion_context);
 
     let word_under_cursor = &completion_context.word_under_cursor;
 
-    for comp_type in &completion_context.comp_types {
+    for comp_type in &completion_context.comp_types() {
         log::debug!("Processing completion type: {:?}", comp_type);
         match comp_type {
             CompType::None => {
@@ -410,6 +412,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::GlobExpansion => {
+                if auto_started {
+                    log::debug!("Skipping GlobExpansion because auto_started is true");
+                    continue;
+                }
                 log::debug!("CompType::GlobExpansion for {}", word_under_cursor.as_ref());
                 let (completions, comp_res_flags) = tab_complete_glob_expansion(
                     word_under_cursor.as_ref(),
@@ -475,6 +481,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::FilenameExpansion => {
+                if auto_started {
+                    log::debug!("Skipping FilenameExpansion because auto_started is true");
+                    continue;
+                }
                 log::debug!(
                     "CompType::FilenameExpansion for: {}",
                     word_under_cursor.as_ref()
@@ -502,6 +512,10 @@ fn gen_completions_uncomitted(
                 }
             }
             CompType::FuzzyFilenameExpansion => {
+                if auto_started {
+                    log::debug!("Skipping FuzzyFilenameExpansion because auto_started is true");
+                    continue;
+                }
                 log::debug!(
                     "CompType::FuzzyFilenameExpansion for: {}",
                     word_under_cursor.as_ref()
@@ -1021,25 +1035,37 @@ pub(crate) fn apply_tab_complete_to_buffer(
 impl App<'_> {
     /// Apply the results of tab completion generation (Phase 2 & 3: common
     /// prefix insertion and handing suggestions to the UI).
-    pub(crate) fn finish_tab_complete(
+    pub fn finish_tab_complete(
         &mut self,
         builder: ActiveSuggestionsBuilder,
         wuc_substring: SubString,
         load_time: std::time::Duration,
+        auto_started: bool,
     ) {
-        let outcome = apply_tab_complete_to_buffer(&mut self.buffer, &builder, &wuc_substring);
-        match outcome {
-            TabCompleteBufferOutcome::SoloAccepted => {
+        if auto_started {
+            if builder.is_empty() {
                 self.content_mode = ContentMode::Normal;
+                return;
             }
-            TabCompleteBufferOutcome::Pending { final_wuc } => {
-                let suggestions = ActiveSuggestions::new(builder, final_wuc, load_time);
-                self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
+            let suggestions =
+                ActiveSuggestions::new(builder, wuc_substring, load_time, auto_started);
+            self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
+        } else {
+            let outcome = apply_tab_complete_to_buffer(&mut self.buffer, &builder, &wuc_substring);
+            match outcome {
+                TabCompleteBufferOutcome::SoloAccepted => {
+                    self.content_mode = ContentMode::Normal;
+                }
+                TabCompleteBufferOutcome::Pending { final_wuc } => {
+                    let suggestions =
+                        ActiveSuggestions::new(builder, final_wuc, load_time, auto_started);
+                    self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
+                }
             }
         }
     }
 
-    pub fn start_tab_complete(&mut self) {
+    pub fn start_tab_complete(&mut self, auto_started: bool) {
         // Phase 1: compute the completion context and generate suggestions.
         // We store word_under_cursor as an owned SubString so we can use it
         // after the immutable-borrow block ends.
@@ -1060,7 +1086,7 @@ impl App<'_> {
 
         let thread_handle = std::thread::spawn(move || {
             let thread_start = std::time::Instant::now();
-            let result = gen_completions_internal(&completion_context_owned);
+            let result = gen_completions_internal(&completion_context_owned, auto_started);
             let elapsed = thread_start.elapsed();
             if result.is_none() {
                 log::debug!(
@@ -1079,7 +1105,7 @@ impl App<'_> {
         // Block for up to 100ms waiting for the thread to finish.
         match rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(Some((builder, elapsed))) => {
-                self.finish_tab_complete(builder, wuc_substring, elapsed);
+                self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
             }
             Ok(None) => {
                 // No suggestions generated.
@@ -1087,6 +1113,7 @@ impl App<'_> {
                     ActiveSuggestionsBuilder::new(),
                     wuc_substring,
                     start_time.elapsed(),
+                    auto_started,
                 );
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -1098,6 +1125,7 @@ impl App<'_> {
                     },
                     wuc_substring,
                     start_time,
+                    auto_started,
                 };
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -1166,7 +1194,7 @@ mod tab_completion_tests {
     ) -> Option<(ActiveSuggestionsBuilder, CompletionContext<'static>)> {
         crate::logging::init_for_tests_once();
         let comp_context = get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
-        let Some(builder) = gen_completions_internal(&comp_context) else {
+        let Some(builder) = gen_completions_internal(&comp_context, false) else {
             return None;
         };
         Some((builder, comp_context.into_owned()))
@@ -1194,7 +1222,7 @@ mod tab_completion_tests {
         } else {
             panic!("Expected pending outcome with suggestions");
         };
-        ActiveSuggestions::new(builder, final_wuc, std::time::Duration::from_secs(0))
+        ActiveSuggestions::new(builder, final_wuc, std::time::Duration::from_secs(0), false)
     }
 
     fn assert_completions(command: &str, expected: &[ProcessedSuggestion]) {
@@ -1391,7 +1419,7 @@ mod tab_completion_tests {
             let comp_context =
                 get_completion_context(buffer.buffer(), buffer.cursor_byte_pos());
             let wuc = comp_context.word_under_cursor.clone();
-            let builder = gen_completions_internal(&comp_context).expect("some completions");
+            let builder = gen_completions_internal(&comp_context, false).expect("some completions");
             assert_eq!(builder.comp_type, CompType::CommandComp { command_word: "gd".to_string() });
             assert_eq!(builder.len(), 1, "expected solo suggestion, got {:?}", builder.processed);
             let outcome = apply_tab_complete_to_buffer(&mut buffer, &builder, &wuc);
