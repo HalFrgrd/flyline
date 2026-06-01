@@ -1043,7 +1043,8 @@ impl App<'_> {
         auto_started: bool,
     ) {
         if auto_started {
-            let suggestions = ActiveSuggestions::new(builder, wuc_substring, load_time, auto_started);
+            let suggestions =
+                ActiveSuggestions::new(builder, wuc_substring, load_time, auto_started);
             self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
         } else {
             let outcome = apply_tab_complete_to_buffer(&mut self.buffer, &builder, &wuc_substring);
@@ -1052,7 +1053,8 @@ impl App<'_> {
                     self.content_mode = ContentMode::Normal;
                 }
                 TabCompleteBufferOutcome::Pending { final_wuc } => {
-                    let suggestions = ActiveSuggestions::new(builder, final_wuc, load_time, auto_started);
+                    let suggestions =
+                        ActiveSuggestions::new(builder, final_wuc, load_time, auto_started);
                     self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
                 }
             }

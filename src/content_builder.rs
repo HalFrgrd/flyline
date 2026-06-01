@@ -9,6 +9,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::palette::{ButtonState, Palette};
+use crate::unicode_helpers::{Directions, PipeStyle, pipe};
 
 /// Describes how [`Tag`]s are applied to the graphemes of a [`TaggedSpan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -716,6 +717,85 @@ impl Contents {
                 self.write_tagged_span(&TaggedSpan::new(label_span, tag));
             }
         }
+    }
+
+    pub fn render_border(
+        &mut self,
+        area: Rect,
+        tag: Tag,
+        style: ratatui::style::Style,
+        is_selected: bool,
+        connector_from: Option<Coord>,
+    ) {
+        if area.width < 2 || area.height < 2 {
+            return;
+        }
+
+        let saved_cursor_pos = self.cursor_pos;
+
+        for _ in self.buf.len()..area.bottom() as usize {
+            self.increase_buf_single_row();
+        }
+
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                let is_border = y == area.top()
+                    || y == area.bottom() - 1
+                    || x == area.left()
+                    || x == area.right() - 1;
+                if !is_border {
+                    continue;
+                }
+
+                if let Some(row) = self.buf.get_mut(y as usize)
+                    && let Some(tagged_cell) = row.get_mut(x as usize)
+                {
+                    let ch = Self::get_char(x, y, area, is_selected);
+                    tagged_cell.cell.reset();
+                    tagged_cell
+                        .cell
+                        .set_symbol(&ch.to_string())
+                        .set_style(style);
+                    tagged_cell.tag = tag;
+                }
+            }
+        }
+
+        if let Some(cursor_pos) = connector_from
+            && cursor_pos.row < area.y
+        {
+            let box_left = area.x;
+            let box_right = area.right().saturating_sub(1);
+            let connector_col = if cursor_pos.col >= box_left && cursor_pos.col <= box_right {
+                cursor_pos.col
+            } else {
+                (box_left + 1).min(box_right.saturating_sub(1))
+            };
+
+            let vertical =
+                pipe(Directions::TOP | Directions::BOTTOM, PipeStyle::Single).unwrap_or('│');
+            let box_join = pipe(
+                Directions::TOP | Directions::LEFT | Directions::RIGHT,
+                PipeStyle::Single,
+            )
+            .unwrap_or('┴');
+
+            for row in cursor_pos.row.saturating_add(1)..area.y {
+                self.move_cursor_to(row, connector_col);
+                self.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(vertical.to_string(), style),
+                    tag,
+                ));
+            }
+
+            self.move_cursor_to(area.y, connector_col);
+            self.write_tagged_span(&TaggedSpan::new(
+                Span::styled(box_join.to_string(), style),
+                tag,
+            ));
+        }
+
+        self.cursor_pos = saved_cursor_pos;
     }
 
     pub fn tag_rect(&mut self, area: Rect, tag: Tag) {

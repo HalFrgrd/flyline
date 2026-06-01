@@ -1033,10 +1033,8 @@ impl ActiveSuggestions {
             // clamp the row to the last item in that column.
             let idx = last_col * self.last_num_rows_per_col + selected_row;
             if idx >= n {
-                self.selected_coord = Some((
-                    last_col,
-                    n - 1 - last_col * self.last_num_rows_per_col,
-                ));
+                self.selected_coord =
+                    Some((last_col, n - 1 - last_col * self.last_num_rows_per_col));
             } else {
                 self.selected_coord = Some((last_col, selected_row));
             }

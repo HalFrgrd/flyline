@@ -1219,7 +1219,12 @@ impl<'a> App<'a> {
 
     /// Poll the tab-completion background thread; returns `true` if a redraw is needed.
     fn poll_tab_completion(&mut self) -> bool {
-        if let ContentMode::TabCompletionWaiting { ref handle, auto_started, .. } = self.content_mode {
+        if let ContentMode::TabCompletionWaiting {
+            ref handle,
+            auto_started,
+            ..
+        } = self.content_mode
+        {
             match handle.receiver.try_recv() {
                 Ok(Some((builder, elapsed))) => {
                     // Take ownership of wuc_substring from the waiting state.
@@ -2113,6 +2118,10 @@ impl<'a> App<'a> {
                 content.newline();
 
                 if active_suggestions.all_suggestions_len() > 0 {
+                    if active_suggestions.auto_started {
+                        content.newline();
+                    }
+
                     let grid_start_row = content.cursor_position().row;
                     let max_rows = self.settings.num_suggestion_rows.max(2);
                     let num_rows_for_suggestions =
@@ -2133,15 +2142,25 @@ impl<'a> App<'a> {
                         num_rows_for_suggestions as usize,
                         grid_width,
                         &self.settings.colour_palette,
-                        if active_suggestions.auto_started { Some(1) } else { None },
+                        if active_suggestions.auto_started {
+                            Some(1)
+                        } else {
+                            None
+                        },
                     );
+
+                    let actual_grid_width = grid.get(0).map_or(0, |col| {
+                        col.items
+                            .iter()
+                            .map(|(formatted, _)| formatted.display_width)
+                            .max()
+                            .unwrap_or(0)
+                            .min(grid_width)
+                    });
 
                     // After grid is created, compute left padding to prevent wrapping
                     let left_padding = if active_suggestions.auto_started {
                         let cursor_col = cursor_pos_maybe.map_or(0, |pos| pos.col as usize);
-                        let actual_grid_width = grid.get(0).map_or(0, |col| {
-                            col.items.iter().map(|(f, _)| f.display_width).max().unwrap_or(0).min(grid_width)
-                        });
                         // Ensure the suggestion + padding doesn't exceed terminal width
                         let max_padding = (width as usize).saturating_sub(actual_grid_width);
                         cursor_col.min(max_padding)
@@ -2150,6 +2169,22 @@ impl<'a> App<'a> {
                     };
 
                     let num_rows = grid.get(0).map_or(0, |col| col.items.len());
+
+                    let auto_started_box_area = if active_suggestions.auto_started && num_rows > 0 {
+                        let x = left_padding.saturating_sub(1) as u16;
+                        let y = grid_start_row.saturating_sub(1);
+                        let right =
+                            (left_padding + actual_grid_width + 1).min(width as usize) as u16;
+                        let box_width = right.saturating_sub(x).max(2);
+                        Some(Rect {
+                            x,
+                            y,
+                            width: box_width,
+                            height: num_rows as u16 + 2,
+                        })
+                    } else {
+                        None
+                    };
 
                     for row_idx in 0..num_rows {
                         // Add left padding for auto-started suggestions
@@ -2169,8 +2204,9 @@ impl<'a> App<'a> {
                                     ));
                                 }
 
-                                let formatted_suggestion = formatted.render(col.width, *is_selected);
-                                
+                                let formatted_suggestion =
+                                    formatted.render(col.width, *is_selected);
+
                                 let tag = Tag::Suggestion(formatted.suggestion_idx);
                                 for span in formatted_suggestion {
                                     content.write_tagged_span(&TaggedSpan::new(span, tag));
@@ -2185,6 +2221,16 @@ impl<'a> App<'a> {
 
                     if let Some(sel_row) = selected_grid_row {
                         content.set_focus_row(grid_start_row + sel_row);
+                    }
+
+                    if let Some(area) = auto_started_box_area {
+                        content.render_border(
+                            area,
+                            Tag::TabSuggestion,
+                            self.settings.colour_palette.secondary_text(),
+                            false,
+                            cursor_pos_maybe,
+                        );
                     }
                 }
 
