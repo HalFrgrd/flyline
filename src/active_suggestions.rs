@@ -403,6 +403,51 @@ mod description_tests {
         // frame_at is stable for any index
         assert_eq!(sug.description.frame_at(99), Some(vec![Span::raw("hello")]));
     }
+
+    #[test]
+    fn test_into_processed_nospace_for_equals_flags() {
+        // Case 1: Option ends with = and some_dont_end_in_equal_sign is true
+        let mut flags_with_flag = crate::bash_funcs::CompletionFlags::default();
+        flags_with_flag.some_dont_end_in_equal_sign = true;
+
+        let sug1 = UnprocessedSuggestion {
+            raw_text: "--long-opt=".to_string(),
+            full_path: None,
+            flags: flags_with_flag,
+            word_under_cursor: "".to_string(),
+        }
+        .into_processed();
+
+        assert_eq!(sug1.s, "--long-opt=");
+        assert_eq!(sug1.suffix, ""); // should be empty (no space)
+
+        // Case 2: Option ends with = but some_dont_end_in_equal_sign is false
+        let mut flags_no_flag = crate::bash_funcs::CompletionFlags::default();
+        flags_no_flag.some_dont_end_in_equal_sign = false;
+
+        let sug2 = UnprocessedSuggestion {
+            raw_text: "--long-opt=".to_string(),
+            full_path: None,
+            flags: flags_no_flag,
+            word_under_cursor: "".to_string(),
+        }
+        .into_processed();
+
+        assert_eq!(sug2.s, "--long-opt=");
+        assert_eq!(sug2.suffix, " "); // should have a space because flag is false
+
+        // Case 3: Option does not end with = but some_dont_end_in_equal_sign is true
+        let sug3 = UnprocessedSuggestion {
+            raw_text: "--foo".to_string(),
+            full_path: None,
+            flags: flags_with_flag,
+            word_under_cursor: "".to_string(),
+        }
+        .into_processed();
+
+        assert_eq!(sug3.s, "--foo");
+        assert_eq!(sug3.suffix, " "); // should still have a space
+    }
 }
 
 impl ProcessedSuggestion {
@@ -535,6 +580,13 @@ impl UnprocessedSuggestion {
             // If we put a space after a filename that is quoted, bash thinks we want a filename ending in a space.
             None
         } else if comp_result_flags.no_suffix_desired {
+            None
+        } else if comp_result_flags.some_dont_end_in_equal_sign && sug.ends_with('=') {
+            // Bash completion specs are run many times normally.
+            // So when bash completion spec returns just one value like `--long-opt=`,
+            // it sets nospace=true. But since in flyline, we might only run the completion spec once,
+            // and get multiple values like `--long-opt=` and `--lolly` (without =), we can't fully rely
+            // on nospace=true to decide whether to add a space after `--long-opt=`.
             None
         } else if comp_result_flags.suffix_character == ' ' {
             if sug.ends_with(" ") { None } else { Some(' ') }

@@ -479,10 +479,16 @@ pub struct CompletionFlags {
     pub bash_default_fallback_desired: bool,
     pub nosort_desired: bool,
     // pub full_quote: bool,
+    pub some_dont_end_in_equal_sign: bool,
 }
 
 impl CompletionFlags {
-    pub fn from(quote_type: Option<QuoteType>, foundcs: c_int, append_char: i32) -> Self {
+    pub fn from(
+        quote_type: Option<QuoteType>,
+        foundcs: c_int,
+        append_char: i32,
+        some_dont_end_in_equal_sign: bool,
+    ) -> Self {
         Self {
             quote_type,
             readline_default_fallback_desired: foundcs & (CompspecOption::Default as c_int) != 0,
@@ -498,7 +504,15 @@ impl CompletionFlags {
             nosort_desired: foundcs & (CompspecOption::NoSort as c_int) != 0,
             #[cfg(feature = "pre_bash_4_4")]
             nosort_desired: false,
+            some_dont_end_in_equal_sign,
         }
+    }
+
+    pub fn from_alt(word_under_cursor: &str, completions: &[String]) -> Self {
+        let mut flags = Self::default();
+        flags.quote_type = find_quote_type(word_under_cursor);
+        flags.some_dont_end_in_equal_sign = completions.iter().any(|s| !s.ends_with('='));
+        flags
     }
 }
 
@@ -513,6 +527,7 @@ impl Default for CompletionFlags {
             suffix_character: ' ',
             bash_default_fallback_desired: false,
             nosort_desired: false,
+            some_dont_end_in_equal_sign: false,
         }
     }
 }
@@ -633,9 +648,15 @@ impl ProgrammableCompleteReturn {
         foundcs: c_int,
         append_char: i32,
     ) -> Self {
+        let some_dont_end_in_equal_sign = completions.iter().any(|s| !s.ends_with('='));
         Self::new(
             completions,
-            CompletionFlags::from(quote_type, foundcs, append_char),
+            CompletionFlags::from(
+                quote_type,
+                foundcs,
+                append_char,
+                some_dont_end_in_equal_sign,
+            ),
         )
     }
 }
@@ -795,8 +816,7 @@ pub fn run_programmable_completions(
             .into_iter()
             .map(|c| c.get_value().to_string_lossy().to_string())
             .collect();
-        let mut flags = CompletionFlags::default();
-        flags.quote_type = find_quote_type(word_under_cursor);
+        let flags = CompletionFlags::from_alt(word_under_cursor, &completions);
         Ok(ProgrammableCompleteReturn::new(completions, flags))
     } else if command_word == "docker" {
         let completions = if word_under_cursor.starts_with('p') {
@@ -817,8 +837,7 @@ pub fn run_programmable_completions(
             .into_iter()
             .filter(|s| s.starts_with(word_under_cursor))
             .collect();
-        let mut flags = CompletionFlags::default();
-        flags.quote_type = find_quote_type(word_under_cursor);
+        let flags = CompletionFlags::from_alt(word_under_cursor, &filtered);
         Ok(ProgrammableCompleteReturn::new(filtered, flags))
     } else if command_word == "cat" {
         // do a naive filessytem glob.
@@ -863,8 +882,7 @@ pub fn run_programmable_completions(
         completions.sort();
         completions.dedup();
 
-        let mut flags = CompletionFlags::default();
-        flags.quote_type = find_quote_type(word_under_cursor);
+        let flags = CompletionFlags::from_alt(word_under_cursor, &completions);
         Ok(ProgrammableCompleteReturn::new(completions, flags))
     } else {
         Ok(ProgrammableCompleteReturn::new(
