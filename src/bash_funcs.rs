@@ -508,6 +508,7 @@ impl CompletionFlags {
         }
     }
 
+    #[cfg(test)]
     pub fn from_alt(word_under_cursor: &str, completions: &[String]) -> Self {
         let mut flags = Self::default();
         flags.quote_type = find_quote_type(word_under_cursor);

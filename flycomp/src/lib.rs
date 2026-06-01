@@ -10,12 +10,37 @@ pub mod parse_man;
 
 pub use parse_help::{parse_help, parse_help_argparse, parse_help_clap, parse_help_generic};
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, clap::ValueEnum)]
+#[value(rename_all = "kebab-case")]
 pub enum SynthesisStrategy {
     #[default]
     ManPageThenRunHelp,
     ManPage,
     RunHelp,
+}
+
+#[derive(Clone, Debug, clap::ValueEnum)]
+#[value(rename_all = "lower")]
+pub enum OutputFormat {
+    Bash,
+    Elvish,
+    Fish,
+    Powershell,
+    Zsh,
+    Json,
+}
+
+impl OutputFormat {
+    fn shell(self) -> Option<clap_complete::Shell> {
+        match self {
+            OutputFormat::Bash => Some(clap_complete::Shell::Bash),
+            OutputFormat::Elvish => Some(clap_complete::Shell::Elvish),
+            OutputFormat::Fish => Some(clap_complete::Shell::Fish),
+            OutputFormat::Powershell => Some(clap_complete::Shell::PowerShell),
+            OutputFormat::Zsh => Some(clap_complete::Shell::Zsh),
+            OutputFormat::Json => None,
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -568,6 +593,26 @@ pub fn generate_completion_script(
         .map_err(|e| anyhow::anyhow!("failed to encode completion script: {}", e))?
         .to_string();
     Ok(script)
+}
+
+/// Generate completion output for a command as either a shell script or JSON.
+pub fn generate_completion_output(
+    command_path: &str,
+    output: OutputFormat,
+    strategy: SynthesisStrategy,
+    sandbox: bool,
+) -> anyhow::Result<String> {
+    if matches!(output, OutputFormat::Json) {
+        let parsed_cmd = synthesize_completion(
+            command_path,
+            |extra_args| run_help(command_path, extra_args, sandbox),
+            strategy,
+        )?;
+        serde_json::to_string_pretty(&parsed_cmd).map_err(Into::into)
+    } else {
+        let shell = output.shell().expect("non-JSON output has shell mapping");
+        generate_completion_script(command_path, shell, strategy, sandbox)
+    }
 }
 
 #[cfg(test)]

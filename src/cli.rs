@@ -11,7 +11,7 @@ use crate::{
     dparser, logging, palette, settings, tutorial,
 };
 
-use flycomp::generate_completion_script;
+use flycomp::generate_completion_output;
 
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
@@ -493,21 +493,32 @@ enum Commands {
         #[arg(long = "select-with-mouse", default_missing_value = "true", num_args = 0..=1)]
         select_with_mouse: Option<bool>,
     },
-    /// Run a command with --help, parse the output, and print a Bash completion
-    /// script to stdout.
+    /// Run a command with --help, parse the output, and print a completion
+    /// script (or JSON parse tree) to stdout.
     ///
-    /// Pass the name or path of the command to synthesise Bash tab-completions
-    /// for that tool on the fly.  Subcommands are automatically discovered by
+    /// Pass the name or path of the command to synthesise shell completions
+    /// for that tool on the fly. Subcommands are automatically discovered by
     /// running `COMMAND SUBCOMMAND --help` for each subcommand listed in the
     /// top-level help output.
     ///
     /// Examples:
     ///   flyline comp-spec-synthesis git
+    ///   flyline comp-spec-synthesis git --output zsh
+    ///   flyline comp-spec-synthesis git --output json --strategy run-help
     ///   flyline comp-spec-synthesis /usr/local/bin/mytool
     #[command(name = "comp-spec-synthesis", verbatim_doc_comment)]
     CompSpecSynthesis {
         /// Name or path of the command to synthesise completions for.
         command: String,
+        /// Output format (defaults to bash).
+        #[arg(long, value_enum, default_value_t = flycomp::OutputFormat::Bash)]
+        output: flycomp::OutputFormat,
+        /// Parsing strategy.
+        #[arg(long, value_enum, default_value_t = flycomp::SynthesisStrategy::default())]
+        strategy: flycomp::SynthesisStrategy,
+        /// Run execution unsandboxed (bypass bubblewrap/bwrap sandboxing).
+        #[arg(long)]
+        no_sandbox: bool,
     },
 }
 
@@ -1155,18 +1166,21 @@ impl Flyline {
                             self.settings.select_with_mouse = enabled;
                         }
                     }
-                    Some(Commands::CompSpecSynthesis { command }) => {
+                    Some(Commands::CompSpecSynthesis {
+                        command,
+                        output,
+                        strategy,
+                        no_sandbox,
+                    }) => {
                         let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-                        let result = generate_completion_script(
-                            &command,
-                            clap_complete::Shell::Bash,
-                            flycomp::SynthesisStrategy::default(),
-                            true,
-                        );
+
+                        let result =
+                            generate_completion_output(&command, output, strategy, !no_sandbox);
+
                         unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 
                         match result {
-                            Ok(script) => print!("{}", script),
+                            Ok(output_text) => print!("{}", output_text),
                             Err(e) => {
                                 return_usage_error!("flyline comp-spec-synthesis: {}", e);
                             }
