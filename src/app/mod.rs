@@ -148,11 +148,6 @@ fn poll_terminal_event(timeout: Duration) -> std::io::Result<Option<CrosstermEve
         return Err(Error::new(ErrorKind::UnexpectedEof, reason));
     }
 
-    log::trace!(
-        "Polling for terminal event with timeout of {:?}...",
-        timeout
-    );
-
     if event::poll(timeout)? {
         event::read().map(Some)
     } else {

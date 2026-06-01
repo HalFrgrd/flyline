@@ -140,8 +140,10 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
     let name = cmd.name.clone().unwrap_or_else(|| "unknown".to_string());
     let mut clap_cmd = clap::Command::new(name)
         // The parsed args already include `--help`/`--version` when present, so
-        // disable clap's auto-generated flags to avoid duplicate-name panics.
+        // disable clap's auto-generated help/version surfaces to avoid
+        // duplicate-name panics when the parsed help already includes them.
         .disable_help_flag(true)
+        .disable_help_subcommand(true)
         .disable_version_flag(true);
 
     if let Some(desc) = &cmd.description {

@@ -1345,7 +1345,11 @@ impl ActiveSuggestions {
     }
 
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
-        let Some(selected_idx) = self.current_1d_index() else {
+        let selected_idx = if let Some(selected_idx) = self.current_1d_index() {
+            selected_idx
+        } else if self.filtered_suggestions.len() == 1 {
+            0
+        } else {
             log::warn!("No selected suggestion to accept");
             return;
         };
