@@ -268,10 +268,9 @@ impl<'a> CompletionContext<'a> {
     /// length delta if it was at or after the end of the old wuc — otherwise
     /// the cursor is placed at the end of the new wuc.
     ///
-    /// `comp_types` is intentionally not recomputed here; callers are expected to
-    /// use this for short-lived rewrites (e.g. running bash completion
-    /// against a broader prefix) where the original comp-type pipeline still
-    /// applies.
+    /// Note: completion types are derived from the current `context` / `word_under_cursor`
+    /// (see [`CompletionContext::comp_types`]); replacing the WUC will therefore affect
+    /// which completion pipeline is selected.
     pub fn with_wuc_replaced(&self, new_wuc: &str) -> CompletionContext<'static> {
         let context = self.context.as_ref();
         let wuc_start_in_context = self

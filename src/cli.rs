@@ -501,7 +501,7 @@ enum Commands {
     ///   flyline suggestions --auto-suggest true --num-suggestion-rows 12
     #[command(name = "suggestions", verbatim_doc_comment)]
     Suggestions {
-        /// Enable or disable auto-suggest (inline history suggestions).
+        /// Enable or disable auto-suggest (auto-started tab completion suggestions).
         #[arg(long = "auto-suggest", default_missing_value = "true", num_args = 0..=1)]
         auto_suggest: Option<bool>,
         /// Maximum number of suggestion rows to render for tab-completion lists.

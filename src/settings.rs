@@ -175,7 +175,7 @@ pub struct Settings {
     pub show_animations: bool,
     /// Whether to show inline history suggestions.
     pub show_inline_history: bool,
-    /// Whether to show inline history suggestions (auto-suggest).
+    /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
     /// Maximum number of suggestion rows to render for tab-completion lists.
     pub num_suggestion_rows: u16,
