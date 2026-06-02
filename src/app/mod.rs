@@ -2723,4 +2723,80 @@ mod tests {
         // Index is "1 100       ", command prefix is "echo \"", then "…", then spaces
         assert_eq!(row1, "1 100       echo \"…      ");
     }
+
+    #[test]
+    fn test_render_history_entry_multiline_selected_truncation() {
+        let palette = Palette::default();
+        let mut content = Contents::new(20);
+
+        let entries = vec![HistoryEntry::new(
+            None,
+            0,
+            "line1\nline2\nline3\nline4\nline5".to_string(),
+        )];
+
+        let formatted_entry = HistoryEntryFormatted::new(0, 100, vec![]);
+
+        // Selected, so max_display_rows = 4
+        App::render_history_entry(
+            &mut content,
+            &formatted_entry,
+            &entries,
+            0,  // entry_idx
+            0,  // fuzzy_search_index (same -> selected)
+            1,  // num_digits_for_index
+            3,  // num_digits_for_score
+            12, // header_prefix_width
+            8,  // available_cols
+            &palette,
+        );
+
+        // Expect 4 rows (plus initial newline) => height = 5
+        assert_eq!(content.height(), 5);
+
+        let row1: String = content.buf[1].iter().map(|c| c.cell.symbol()).collect();
+        assert_eq!(row1, "1 100      ▐line1   ");
+
+        let row2: String = content.buf[2].iter().map(|c| c.cell.symbol()).collect();
+        assert_eq!(row2, "        2/5▐line2   ");
+
+        let row3: String = content.buf[3].iter().map(|c| c.cell.symbol()).collect();
+        assert_eq!(row3, "        3/5▐line3   ");
+
+        let row4: String = content.buf[4].iter().map(|c| c.cell.symbol()).collect();
+        // Since it's truncated at row 4, we expect an ellipsis
+        assert_eq!(row4, "        4/5▐line4…  ");
+    }
+
+    #[test]
+    fn test_render_history_entry_multiwidth_character_truncation() {
+        let palette = Palette::default();
+        let mut content = Contents::new(19);
+
+        // "abcde🚀\nnext" has an emoji (🚀 is 2-columns wide) right at the boundary.
+        let entries = vec![HistoryEntry::new(None, 0, "abcde🚀\nnext".to_string())];
+
+        let formatted_entry = HistoryEntryFormatted::new(0, 100, vec![]);
+
+        // Unselected, so max_display_rows = 1.
+        App::render_history_entry(
+            &mut content,
+            &formatted_entry,
+            &entries,
+            0,  // entry_idx
+            1,  // fuzzy_search_index (different -> unselected)
+            1,  // num_digits_for_index
+            3,  // num_digits_for_score
+            12, // header_prefix_width
+            7,  // available_cols: 19 - 12 = 7
+            &palette,
+        );
+
+        // We expect it to write 1 line (plus initial newline) => height = 2
+        assert_eq!(content.height(), 2);
+
+        let row1: String = content.buf[1].iter().map(|c| c.cell.symbol()).collect();
+        // Index is "1 100       ", command text is "abcde", emoji is cleared and replaced by "…", followed by a blank space (cleared second cell of emoji)
+        assert_eq!(row1, "1 100       abcde… ");
+    }
 }
