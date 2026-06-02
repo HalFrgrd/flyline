@@ -283,7 +283,12 @@ impl Contents {
     ) -> bool {
         let graph_w = graph.symbol.width() as u16;
         let (left, right, bottom) = if let Some(area) = area {
-            (area.left(), area.right(), area.bottom())
+            let left = area.left().min(self.width);
+            let right = area.right().min(self.width);
+            if left >= right {
+                return false;
+            }
+            (left, right, area.bottom())
         } else {
             (0, self.width, u16::MAX)
         };
@@ -1144,7 +1149,6 @@ impl MatrixAnimState {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     use super::*;
     use ratatui::style::{Color, Style};
@@ -1318,5 +1322,26 @@ mod tests {
         assert_eq!(contents.buf[0][5].cell.symbol(), "…");
         assert_eq!(contents.buf[0][6].cell.symbol(), " ");
         assert_eq!(contents.buf[0][6].tag, Tag::Blank);
+    }
+
+    #[test]
+    fn test_area_bounds_cropping_and_zero_width() {
+        let mut contents = Contents::new(10);
+        let span = TaggedSpan::new(Span::raw("abc"), Tag::Normal);
+
+        // 1. Zero-width rect: should fail immediately and write nothing
+        let zero_width_area = Rect::new(2, 0, 0, 5);
+        assert!(!contents.write_tagged_span_area(&span, zero_width_area));
+
+        // 2. Out-of-bounds rect (left >= right after cropping): should fail immediately
+        let oob_area = Rect::new(15, 0, 5, 5);
+        assert!(!contents.write_tagged_span_area(&span, oob_area));
+
+        // 3. Partially out-of-bounds rect: should crop and write successfully within cropped width
+        let partial_area = Rect::new(8, 0, 5, 2); // bottom is 2
+        assert!(contents.write_tagged_span_area(&span, partial_area));
+        assert_eq!(contents.buf[0][8].cell.symbol(), "a");
+        assert_eq!(contents.buf[0][9].cell.symbol(), "b");
+        assert_eq!(contents.buf[1][8].cell.symbol(), "c");
     }
 }
