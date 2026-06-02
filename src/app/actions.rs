@@ -402,6 +402,10 @@ pub enum Action {
     TabCompletionMoveLeft,
     #[strum(message = "Move right in tab completion suggestions")]
     TabCompletionMoveRight,
+    #[strum(message = "Move one page up / one column left in tab completion suggestions")]
+    TabCompletionMovePageUp,
+    #[strum(message = "Move one page down / one column right in tab completion suggestions")]
+    TabCompletionMovePageDown,
     #[strum(message = "Accept the currently selected suggestion")]
     TabCompletionAcceptEntry,
     #[strum(message = "Move to the previous tab completion suggestion")]
@@ -611,6 +615,16 @@ impl Action {
             Action::TabCompletionMoveRight => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.on_right_arrow();
+                }
+            }
+            Action::TabCompletionMovePageUp => {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                    active_suggestions.on_page_up();
+                }
+            }
+            Action::TabCompletionMovePageDown => {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                    active_suggestions.on_page_down();
                 }
             }
             Action::TabCompletionAcceptEntry => {
@@ -1843,7 +1857,7 @@ fn capitalize_first(s: &str) -> String {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 87]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 89]> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     [
@@ -1881,6 +1895,16 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 87]> = LazyLock::new(|| {
             &[KC::Right.into()],
             ContextVar::TabCompletionMultiColAvailable.into(),
             Action::TabCompletionMoveRight,
+        ),
+        Binding::new(
+            &[KC::PageUp.into()],
+            ContextVar::TabCompletionAvailable.into(),
+            Action::TabCompletionMovePageUp,
+        ),
+        Binding::new(
+            &[KC::PageDown.into()],
+            ContextVar::TabCompletionAvailable.into(),
+            Action::TabCompletionMovePageDown,
         ),
         Binding::new(
             &[KC::Up.into()],

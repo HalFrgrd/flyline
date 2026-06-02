@@ -1171,6 +1171,51 @@ impl ActiveSuggestions {
         }
     }
 
+    pub fn on_page_up(&mut self) {
+        if self.auto_started {
+            // Move selection up by one page
+            let n = self.filtered_suggestions.len();
+            if n == 0 {
+                return;
+            }
+            let current_idx = self.current_1d_index().unwrap_or(0);
+            let page_size = self.row_window_to_show.window_size();
+            let next_idx = current_idx.saturating_sub(page_size);
+            self.set_selected_by_idx(next_idx);
+        } else {
+            // Move selection one column to the left
+            self.on_left_arrow();
+        }
+    }
+
+    pub fn on_page_down(&mut self) {
+        if self.auto_started {
+            // Move selection down by one page
+            let n = self.filtered_suggestions.len();
+            if n == 0 {
+                return;
+            }
+            let current_idx = self.current_1d_index().unwrap_or(0);
+            let page_size = self.row_window_to_show.window_size();
+            let next_idx = (current_idx + page_size).min(n.saturating_sub(1));
+            self.set_selected_by_idx(next_idx);
+        } else {
+            // Move selection one column to the right
+            self.on_right_arrow();
+        }
+    }
+
+    pub fn set_selected_by_scrollbar_pos(&mut self, relative_pos: f64) {
+        let n = self.filtered_suggestions.len();
+        if n == 0 {
+            return;
+        }
+
+        let target_idx = (relative_pos * (n as f64)).floor() as usize;
+        let target_idx = target_idx.min(n.saturating_sub(1));
+        self.set_selected_by_idx(target_idx);
+    }
+
     /// Return the portion of the suggestions grid that fits within the given
     /// terminal width, starting from column `col_offset`.
     pub fn into_grid(

@@ -51,6 +51,26 @@ impl CompType {
             CompType::FuzzyFilenameExpansion => "FuzzyFilenameExpansion",
         }
     }
+
+    pub fn description(&self) -> Cow<'static, str> {
+        match self {
+            CompType::None => Cow::Borrowed("No completion available."),
+            CompType::FirstWord => Cow::Borrowed("Completing the command name (executables in PATH, aliases, or shell builtins)."),
+            CompType::FuzzyFirstWord => Cow::Borrowed("Fuzzy-matching the command name against available executables and aliases."),
+            CompType::CommandComp { command_word } => {
+                Cow::Owned(format!("Programmable completion for the '{}' command.", command_word))
+            }
+            CompType::FuzzyCommandComp { command_word } => {
+                Cow::Owned(format!("Fuzzy programmable completion for the '{}' command.", command_word))
+            }
+            CompType::EnvVariable => Cow::Borrowed("Completing an environment variable name."),
+            CompType::TildeExpansion => Cow::Borrowed("Expanding '~username' to the user's home directory."),
+            CompType::HostnameExpansion => Cow::Borrowed("Completing a hostname (usually from /etc/hosts)."),
+            CompType::GlobExpansion => Cow::Borrowed("Expanding a shell glob pattern (e.g., *.rs)."),
+            CompType::FilenameExpansion => Cow::Borrowed("Completing a file or directory path."),
+            CompType::FuzzyFilenameExpansion => Cow::Borrowed("Fuzzy-matching a file or directory path in the current directory."),
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]

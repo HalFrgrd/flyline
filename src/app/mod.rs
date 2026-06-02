@@ -811,8 +811,18 @@ impl<'a> App<'a> {
             Some((tag @ Tag::Ps1PromptCwdWidget(_), _)) => {
                 self.last_mouse_over_cell = Some(tag);
             }
+            Some((tag @ Tag::TabCompletionSource, true)) => {
+                self.last_mouse_over_cell = Some(tag);
+                if let ContentMode::TabCompletion(ref active_suggestions) = self.content_mode {
+                    self.tooltip = Some(active_suggestions.comp_type.description().into_owned());
+                }
+            }
+            Some((tag @ Tag::TabCompletionScrollBar { .. }, true)) => {
+                self.last_mouse_over_cell = Some(tag);
+            }
             _ => {
                 self.last_mouse_over_cell = None;
+                self.tooltip = None;
             }
         }
 
@@ -1009,6 +1019,20 @@ impl<'a> App<'a> {
                     }
                 }
             }
+            Some(Tag::TabCompletionScrollBar { start_y, height }) => {
+                if matches!(
+                    mouse.kind,
+                    MouseEventKind::Down(event::MouseButton::Left) | MouseEventKind::Drag(_)
+                ) {
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                        let relative_y = mouse.row as f64 - start_y as f64;
+                        let relative_pos =
+                            (relative_y / (height.saturating_sub(1)).max(1) as f64).clamp(0.0, 1.0);
+                        active_suggestions.set_selected_by_scrollbar_pos(relative_pos);
+                        update_buffer = true;
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -1016,7 +1040,8 @@ impl<'a> App<'a> {
             self.on_possible_buffer_change();
             true
         } else {
-            false
+            // Return true for move events to ensure redraw for tooltips and highlights
+            matches!(mouse.kind, MouseEventKind::Moved)
         }
     }
 

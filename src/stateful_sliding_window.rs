@@ -72,6 +72,10 @@ impl StatefulSlidingWindow {
         self.fix_window();
     }
 
+    pub fn window_size(&self) -> usize {
+        self.window_size
+    }
+
     pub fn get_window_range(&self) -> std::ops::Range<usize> {
         self.start_index..((self.start_index + self.window_size).min(self.max_index))
     }

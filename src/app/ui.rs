@@ -65,6 +65,8 @@ impl DrawnContent {
                     | Tag::PromptCopyBufferWidget
                     | Tag::Clipboard(_)
                     | Tag::Ps1PromptCwdWidget(_)
+                    | Tag::TabCompletionSource
+                    | Tag::TabCompletionScrollBar { .. }
             )
         }) {
             return direct_contact.map(|cell| (cell.tag, true));
@@ -1080,16 +1082,26 @@ impl<'a> App<'a> {
         content.write_tagged_span(&TaggedSpan::new(
             Span::styled(
                 format!(
-                    "# Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
+                    "# Pos: {}; Filtered: {}/{}; ",
                     pos_string,
                     active_suggestions.filtered_suggestions_len(),
                     active_suggestions.all_suggestions_len(),
+                ),
+                settings.colour_palette.secondary_text(),
+            ),
+            Tag::TabSuggestion,
+        ));
+
+        content.write_tagged_span(&TaggedSpan::new(
+            Span::styled(
+                format!(
+                    "{} ({:.1}ms)",
                     active_suggestions.comp_type.display_name(),
                     active_suggestions.load_time.as_secs_f32() * 1000.0,
                 ),
                 settings.colour_palette.secondary_text(),
             ),
-            Tag::TabSuggestion,
+            Tag::TabCompletionSource,
         ));
     }
 
@@ -1193,10 +1205,14 @@ impl<'a> App<'a> {
             .map(|idx| idx.to_string())
             .unwrap_or_else(|| "-".to_string());
 
-        let status_str = format!(
-            " Pos: {}/{}; {} ({:.1}ms) ",
+        let status_prefix = format!(
+            " Pos: {}/{}; ",
             pos_string,
             active_suggestions.filtered_suggestions_len(),
+        );
+
+        let source_str = format!(
+            "{} ({:.1}ms) ",
             active_suggestions.comp_type.display_name(),
             active_suggestions.load_time.as_secs_f32() * 1000.0,
         );
@@ -1207,8 +1223,19 @@ impl<'a> App<'a> {
             settings.colour_palette.secondary_text(),
             false,
             cursor_pos_maybe,
-            Some(&status_str),
+            None,
         );
+
+        let status_y = box_area.bottom() - 1;
+        content.move_cursor_to(status_y, x + 2);
+        content.write_tagged_span(&TaggedSpan::new(
+            Span::styled(status_prefix, settings.colour_palette.secondary_text()),
+            Tag::TabSuggestion,
+        ));
+        content.write_tagged_span(&TaggedSpan::new(
+            Span::styled(source_str, settings.colour_palette.secondary_text()),
+            Tag::TabCompletionSource,
+        ));
 
         let selected_1d = active_suggestions.current_1d_index();
         let window_range = active_suggestions.row_window_to_show.get_window_range();
@@ -1238,7 +1265,10 @@ impl<'a> App<'a> {
             num_rows_visible,
             window_range.start,
             settings.colour_palette.secondary_text(),
-            Tag::TabSuggestion,
+            Tag::TabCompletionScrollBar {
+                start_y: y + 1,
+                height: num_rows_visible as u16,
+            },
         );
 
         if let Some(sel_row) = selected_grid_row {

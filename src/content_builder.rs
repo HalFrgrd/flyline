@@ -184,6 +184,8 @@ pub enum Tag {
     HistoryResult(usize),
     Tooltip,
     AiResult(usize),
+    TabCompletionSource,
+    TabCompletionScrollBar { start_y: u16, height: u16 },
     TutorialPrev,
     TutorialNext,
     Tutorial,
