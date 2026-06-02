@@ -405,6 +405,7 @@ impl Contents {
     }
 
     /// Write a tagged line at the current cursor position, but only within the given `area`.
+    #[allow(unused)]
     pub fn write_tagged_line_area(&mut self, line: &TaggedLine, area: Rect) -> bool {
         for tagged_span in &line.spans {
             if !self.write_span_internal(tagged_span, true, Some(area)) {

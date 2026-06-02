@@ -5,7 +5,8 @@ use clap::Parser;
 #[command(about = "Generate shell completions from COMMAND --help output")]
 struct CliArgs {
     /// Command name or path to synthesize completions for.
-    command: String,
+    #[arg(required_unless_present = "version")]
+    command: Option<String>,
     /// Output format (defaults to bash).
     #[arg(long, value_enum, default_value_t = flycomp::OutputFormat::Bash)]
     output: flycomp::OutputFormat,
@@ -21,6 +22,9 @@ struct CliArgs {
     /// Log level to output to stderr (off, error, warn, info, debug, trace).
     #[arg(long, default_value = "error")]
     log_level: String,
+    /// Show version information
+    #[arg(long)]
+    version: bool,
 }
 
 struct SimpleLogger;
@@ -42,6 +46,21 @@ static LOGGER: SimpleLogger = SimpleLogger;
 fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
+    if args.version {
+        println!(
+            "flycomp version {} ({}) git:{} built:{}",
+            env!("CARGO_PKG_VERSION"),
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            env!("GIT_HASH"),
+            env!("BUILD_TIME"),
+        );
+        return Ok(());
+    }
+
     let log_level = match args.log_level.to_lowercase().as_str() {
         "off" => log::LevelFilter::Off,
         "error" => log::LevelFilter::Error,
@@ -57,8 +76,9 @@ fn main() -> anyhow::Result<()> {
         log::set_max_level(log_level);
     }
 
+    let command_str = args.command.as_deref().unwrap_or("");
     let output = flycomp::generate_completion_output(
-        &args.command,
+        command_str,
         args.output,
         args.strategy,
         !args.no_sandbox,

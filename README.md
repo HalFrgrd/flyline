@@ -397,7 +397,7 @@ Descriptions for files are the time since last modified.
 
 ### Automatically complete based on `--help`
 Coming soon: Automatically generate a completion spec for commands without one.
-For now, you can manually generate a Bash completion script with `flyline comp-spec-synthesis your_command`.
+For now, you can manually generate a Bash completion script using the standalone `flycomp` tool: `flycomp your_command`.
 
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
@@ -479,8 +479,6 @@ Commands:
   log                   Logging commands: dump, configure level, or stream logs.
   run-tutorial          Run the interactive tutorial for first-time users.
   editor                Configure the inline editor.
-  comp-spec-synthesis   Run a command with --help, parse the output, and print a Bash completion
-                        script to stdout.
   help                  Print this message or the help of the given subcommand(s)
 
 Options:

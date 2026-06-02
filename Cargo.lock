@@ -601,6 +601,7 @@ name = "flycomp"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "clap_complete",
  "log",
@@ -622,7 +623,6 @@ dependencies = [
  "ctor",
  "easing-function",
  "flash",
- "flycomp",
  "glob",
  "itertools",
  "libc",

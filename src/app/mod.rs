@@ -1473,4 +1473,3 @@ pub fn signal_to_str(sig: libc::c_int) -> &'static str {
         _ => "Unknown signal",
     }
 }
-

@@ -11,8 +11,6 @@ use crate::{
     dparser, logging, palette, settings, tutorial,
 };
 
-use flycomp::generate_completion_output;
-
 fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
         .header(
@@ -507,39 +505,6 @@ enum Commands {
         /// Maximum number of suggestion rows to render for tab-completion lists.
         #[arg(long = "num-suggestion-rows", value_name = "NUM")]
         num_suggestion_rows: Option<u16>,
-    },
-    /// Run a command with --help, parse the output, and print a completion
-    /// script (or JSON parse tree) to stdout.
-    ///
-    /// Pass the name or path of the command to synthesise shell completions
-    /// for that tool on the fly. Subcommands are automatically discovered by
-    /// running `COMMAND SUBCOMMAND --help` for each subcommand listed in the
-    /// top-level help output.
-    ///
-    /// Examples:
-    ///   flyline comp-spec-synthesis git
-    ///   flyline comp-spec-synthesis git --output zsh
-    ///   flyline comp-spec-synthesis git --output json --strategy run-help
-    ///   flyline comp-spec-synthesis /usr/local/bin/mytool
-    #[command(name = "comp-spec-synthesis", verbatim_doc_comment)]
-    CompSpecSynthesis {
-        /// Name or path of the command to synthesise completions for.
-        command: String,
-        /// Output format (defaults to bash).
-        #[arg(long, value_enum, default_value_t = flycomp::OutputFormat::Bash)]
-        output: flycomp::OutputFormat,
-        /// Parsing strategy.
-        #[arg(long, value_enum, default_value_t = flycomp::SynthesisStrategy::default())]
-        strategy: flycomp::SynthesisStrategy,
-        /// Run execution unsandboxed (bypass bubblewrap/bwrap sandboxing).
-        #[arg(long)]
-        no_sandbox: bool,
-        /// Timeout in milliseconds for running commands.
-        #[arg(long, default_value_t = 15000)]
-        timeout_ms: u64,
-        /// Log level to output to stderr (off, error, warn, info, debug, trace).
-        #[arg(long, default_value = "error")]
-        log_level: String,
     },
 }
 
@@ -1203,46 +1168,6 @@ impl Flyline {
                             }
                             log::info!("Suggestion row limit set to {}", num);
                             self.settings.num_suggestion_rows = num;
-                        }
-                    }
-                    Some(Commands::CompSpecSynthesis {
-                        command,
-                        output,
-                        strategy,
-                        no_sandbox,
-                        timeout_ms,
-                        log_level,
-                    }) => {
-                        let prev_sigchld = unsafe { libc::signal(libc::SIGCHLD, libc::SIG_DFL) };
-
-                        let parsed_level = match log_level.to_lowercase().as_str() {
-                            "off" => Some(log::LevelFilter::Off),
-                            "error" => Some(log::LevelFilter::Error),
-                            "warn" => Some(log::LevelFilter::Warn),
-                            "info" => Some(log::LevelFilter::Info),
-                            "debug" => Some(log::LevelFilter::Debug),
-                            "trace" => Some(log::LevelFilter::Trace),
-                            _ => None,
-                        };
-                        if let Some(level) = parsed_level {
-                            log::set_max_level(level);
-                        }
-
-                        let result = generate_completion_output(
-                            &command,
-                            output,
-                            strategy,
-                            !no_sandbox,
-                            timeout_ms,
-                        );
-
-                        unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
-
-                        match result {
-                            Ok(output_text) => print!("{}", output_text),
-                            Err(e) => {
-                                return_usage_error!("flyline comp-spec-synthesis: {}", e);
-                            }
                         }
                     }
                     Some(Commands::Time { format }) => {
