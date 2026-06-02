@@ -37,8 +37,6 @@ use std::cell::LazyCell;
 use std::io::{Error, ErrorKind, IsTerminal};
 use std::time::Duration;
 use std::vec;
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 /// After this duration of inactivity the frame rate drops to 0.2 fps and the
 /// cursor is rendered in the unfocused (dim, non-animated) state.
@@ -1605,7 +1603,6 @@ impl<'a> App<'a> {
 
         let start_row = content.cursor_position().row as usize;
         let mut current_display_row = 0;
-        let mut logical_line_starts: Vec<(usize, usize)> = Vec::new();
         let mut truncated = false;
         let mut last_content_end_col = header_prefix_width;
 
@@ -1617,7 +1614,6 @@ impl<'a> App<'a> {
 
             content.newline();
             let row_y = content.cursor_position().row as usize;
-            logical_line_starts.push((row_y, logical_idx));
 
             content.set_cursor_col(header_prefix_width as u16);
 
@@ -1650,56 +1646,53 @@ impl<'a> App<'a> {
             let logical_line_rows = end_row - row_y + 1;
             current_display_row += logical_line_rows;
 
+            // Write prefixes for this logical line's rows (row_y..=end_row)
+            for r in row_y..=end_row {
+                let is_first_row_of_logical = r == row_y;
+
+                content.move_cursor_to(r as u16, 0);
+
+                if r == start_row + 1 {
+                    let prefix_spans = vec![
+                        Span::styled(
+                            format!("{:>num_digits_for_index$} ", entry.index + 1),
+                            palette.secondary_text(),
+                        ),
+                        Span::styled(
+                            format!("{:>num_digits_for_score$} ", formatted_entry.score),
+                            palette.secondary_text(),
+                        ),
+                        Span::styled(timeago_str.clone(), palette.secondary_text()),
+                        indicator_span(),
+                    ];
+                    for prefix_span in prefix_spans {
+                        content.write_tagged_span(&TaggedSpan::new(prefix_span, tag));
+                    }
+                } else {
+                    let indent_prefix = if is_first_row_of_logical {
+                        let line_num_str = format!("{}/{}", logical_idx + 1, formatted_text.len());
+                        format!("{:>width$}", line_num_str, width = header_prefix_width - 1)
+                    } else {
+                        " ".repeat(header_prefix_width - 1)
+                    };
+
+                    content.write_tagged_span(&TaggedSpan::new(
+                        Span::styled(indent_prefix, palette.secondary_text()),
+                        tag,
+                    ));
+                    content.write_tagged_span(&TaggedSpan::new(indicator_span(), tag));
+                }
+            }
+
+            // Restore cursor to the end of the written content to allow newline() to proceed correctly
+            content.move_cursor_to(end_row as u16, content.width);
+
             if truncated {
                 break;
             }
         }
 
         let end_row = content.cursor_position().row as usize;
-
-        // Retroactive Prefix Pass
-        for r in (start_row + 1)..=end_row {
-            let (logical_start_row, logical_idx) = logical_line_starts
-                .iter()
-                .filter(|&&(start_row_y, _)| start_row_y <= r)
-                .last()
-                .unwrap();
-
-            let is_first_row_of_logical = r == *logical_start_row;
-
-            content.move_cursor_to(r as u16, 0);
-
-            if r == start_row + 1 {
-                let prefix_spans = vec![
-                    Span::styled(
-                        format!("{:>num_digits_for_index$} ", entry.index + 1),
-                        palette.secondary_text(),
-                    ),
-                    Span::styled(
-                        format!("{:>num_digits_for_score$} ", formatted_entry.score),
-                        palette.secondary_text(),
-                    ),
-                    Span::styled(timeago_str.clone(), palette.secondary_text()),
-                    indicator_span(),
-                ];
-                for prefix_span in prefix_spans {
-                    content.write_tagged_span(&TaggedSpan::new(prefix_span, tag));
-                }
-            } else {
-                let indent_prefix = if is_first_row_of_logical {
-                    let line_num_str = format!("{}/{}", logical_idx + 1, formatted_text.len());
-                    format!("{:>width$}", line_num_str, width = header_prefix_width - 1)
-                } else {
-                    " ".repeat(header_prefix_width - 1)
-                };
-
-                content.write_tagged_span(&TaggedSpan::new(
-                    Span::styled(indent_prefix, palette.secondary_text()),
-                    tag,
-                ));
-                content.write_tagged_span(&TaggedSpan::new(indicator_span(), tag));
-            }
-        }
 
         // Retroactive Ellipsis Pass
         if truncated {
