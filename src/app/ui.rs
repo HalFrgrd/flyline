@@ -1147,7 +1147,8 @@ impl<'a> App<'a> {
             .processed_suggestions
             .first()
             .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .saturating_sub(1);
 
         let popup_anchor_col = if let Some(pos) = cursor_pos_maybe {
             let cursor_col = pos.col as usize;
