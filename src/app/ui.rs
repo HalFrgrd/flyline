@@ -1147,8 +1147,7 @@ impl<'a> App<'a> {
             .processed_suggestions
             .first()
             .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
-            .unwrap_or(0)
-            .saturating_sub(1);
+            .unwrap_or(0);
 
         let popup_anchor_col = if let Some(pos) = cursor_pos_maybe {
             let cursor_col = pos.col as usize;
@@ -1158,12 +1157,12 @@ impl<'a> App<'a> {
                 let w = unicode_width::UnicodeWidthStr::width(left_part);
                 if cursor_col >= w {
                     let anchor = cursor_col - w;
-                    anchor.saturating_add(prefix_width)
+                    anchor.saturating_add(prefix_width).saturating_sub(1)
                 } else {
                     0 // wrapped
                 }
             } else {
-                cursor_col.saturating_add(prefix_width)
+                cursor_col.saturating_add(prefix_width).saturating_sub(1)
             }
         } else {
             0
