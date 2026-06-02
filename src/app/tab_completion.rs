@@ -1047,6 +1047,20 @@ impl App<'_> {
                 self.content_mode = ContentMode::Normal;
                 return;
             }
+            let total_len = builder.processed.len() + builder.unprocessed.len();
+            if total_len == 1 {
+                let matches_exact = if let Some(processed) = builder.processed.first() {
+                    processed.s == wuc_substring.s
+                } else if let Some(unprocessed) = builder.unprocessed.front() {
+                    unprocessed.match_text() == wuc_substring.s
+                } else {
+                    false
+                };
+                if matches_exact {
+                    self.content_mode = ContentMode::Normal;
+                    return;
+                }
+            }
             let suggestions =
                 ActiveSuggestions::new(builder, wuc_substring, load_time, auto_started);
             self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));

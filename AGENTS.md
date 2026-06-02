@@ -36,7 +36,7 @@ cargo fmt
 > Avoid running the full `cargo test` suite locally. The integration tests (`tests/docker_integration_tests.rs`) spawn Docker containers testing multiple versions of Bash, which is extremely slow. Prefer running `cargo test --lib` or testing specific packages.
 
 ## Guidelines
-1. **Safety & Stability**: `flyline` runs inside the active shell process. Avoid unwinding panics across the C FFI boundary; wrap entry points in `catch_unwind_safe` to prevent shell crashes.
+1. **Safety & Stability**: `flyline` runs inside the active shell process. Avoid unwinding panics across the C FFI boundary; wrap entry points in `catch_unwind_safe` to prevent shell crashes. Never create an `App` instance in library unit tests, as `App` depends on global FFI symbols (like `history_list` or `current_readline_prompt`) that are only resolved dynamically when loaded inside Bash, causing linker failures in library test targets.
 2. **Terminal Rendering**: Uses `ratatui` to draw suggestions, widgets, and tooltips. Ensure components handle narrow or resizing terminal viewports gracefully.
 3. **Interactive UI via Tagged Cells**: To map terminal mouse coordinates to actions, `flyline` uses `TaggedCell` ([src/content_builder.rs](src/content_builder.rs#L193)) in its rendering buffer `Contents` ([src/content_builder.rs](src/content_builder.rs#L214)).
    * Each cell associates a `ratatui::buffer::Cell` with a `Tag` enum (e.g., `Tag::Command`, `Tag::Suggestion`, `Tag::TutorialNext`).

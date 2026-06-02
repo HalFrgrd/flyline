@@ -5,6 +5,15 @@ mod tab_completion;
 mod ui;
 pub(crate) use ui::DrawnContent;
 
+#[derive(Debug, Clone)]
+pub struct LastKeyPress {
+    pub key: KeyEvent,
+    pub display: String,
+    pub context: String,
+    pub action: String,
+    pub sequence_number: u64,
+}
+
 use crate::active_suggestions::{ActiveSuggestions, ActiveSuggestionsBuilder, COLUMN_PADDING};
 use crate::agent_mode::{AiOutputSelection, parse_ai_output};
 use crate::app::actions::Action;
@@ -24,7 +33,7 @@ use crate::{bash_funcs, dparser};
 use crate::{bash_symbols, command_acceptance};
 use crate::{shell_integration, tab_completion_context};
 use crossterm::event::{
-    self, Event as CrosstermEvent, KeyCode, KeyModifiers, MouseEvent, MouseEventKind,
+    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
 };
 use flash::lexer::TokenKind;
 use itertools::Itertools;
@@ -338,8 +347,10 @@ pub(crate) struct App<'a> {
     /// Timestamp of the last draw operation.
     pub(super) last_draw_time: std::time::Instant,
     pub(super) needs_screen_cleared: bool,
-    /// Last key event, context expression, and action dispatched when key debug mode is enabled.
-    pub(super) last_key_debug: Option<(String, String, String)>,
+    /// Last key event, context expression, and action dispatched.
+    pub(super) last_key: Option<LastKeyPress>,
+    /// Last processed key event sequence number for triggers.
+    pub(super) last_processed_key_sequence: u64,
     /// Timestamp of the last keypress or mouse event; used for idle-based matrix animation.
     pub(super) last_activity_time: std::time::Instant,
 }
@@ -395,7 +406,8 @@ impl<'a> App<'a> {
             settings,
             last_draw_time: std::time::Instant::now(),
             needs_screen_cleared: false,
-            last_key_debug: None,
+            last_key: None,
+            last_processed_key_sequence: 0,
             last_activity_time: std::time::Instant::now(),
         }
     }
@@ -1296,6 +1308,41 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self) {
+        let last_char_is_trigger = if let Some(last_key) = &self.last_key {
+            let is_fresh = last_key.sequence_number > self.last_processed_key_sequence;
+            if is_fresh {
+                if let KeyCode::Char(c) = last_key.key.code {
+                    (c == '/' || c == '-')
+                        && !last_key
+                            .key
+                            .modifiers
+                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if let Some(last_key) = &self.last_key {
+            self.last_processed_key_sequence = last_key.sequence_number;
+        }
+
+        if last_char_is_trigger
+            && matches!(
+                self.content_mode,
+                ContentMode::Normal
+                    | ContentMode::TabCompletionWaiting { .. }
+                    | ContentMode::TabCompletion(_)
+            )
+        {
+            self.content_mode = ContentMode::Normal;
+            self.dismissed_tab_completion_wuc = None;
+        }
+
         // Exit PromptCwdEdit mode if the cursor has moved away from position 0,
         // which happens when a buffer-modifying normal action fires (e.g. insert_char).
         if matches!(self.content_mode, ContentMode::PromptDirSelect(_))

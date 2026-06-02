@@ -686,7 +686,7 @@ impl Contents {
         }
     }
 
-    fn get_char(x: u16, y: u16, area: Rect, is_selected: bool) -> char {
+    fn get_char_for_box(x: u16, y: u16, area: Rect, is_selected: bool) -> char {
         let char = match (x, y) {
             (x, y) if x == area.left() && y == area.top() => '╭',
             (x, y) if x == area.right() - 1 && y == area.top() => '╮',
@@ -779,7 +779,7 @@ impl Contents {
                 if let Some(row) = self.buf.get_mut(y as usize)
                     && let Some(tagged_cell) = row.get_mut(x as usize)
                 {
-                    let char = Self::get_char(x, y, area, is_selected);
+                    let char = Self::get_char_for_box(x, y, area, is_selected);
 
                     let style = if matches!(state, ButtonState::Normal) {
                         ratatui::style::Style::default()
@@ -820,6 +820,7 @@ impl Contents {
         style: ratatui::style::Style,
         is_selected: bool,
         connector_from: Option<Coord>,
+        status_str: Option<&str>,
     ) {
         if area.width < 2 || area.height < 2 {
             return;
@@ -844,7 +845,7 @@ impl Contents {
                 if let Some(row) = self.buf.get_mut(y as usize)
                     && let Some(tagged_cell) = row.get_mut(x as usize)
                 {
-                    let ch = Self::get_char(x, y, area, is_selected);
+                    let ch = Self::get_char_for_box(x, y, area, is_selected);
                     tagged_cell.cell.reset();
                     tagged_cell
                         .cell
@@ -853,6 +854,25 @@ impl Contents {
                     tagged_cell.tag = tag;
                 }
             }
+        }
+
+        if let Some(status) = status_str {
+            let max_status_width = area.width.saturating_sub(2) as usize;
+            let rect_for_status = Rect {
+                x: area.left() + 2,
+                y: area.bottom() - 1,
+                width: max_status_width as u16,
+                height: 1,
+            };
+            self.cursor_pos = Coord {
+                col: rect_for_status.x,
+                row: rect_for_status.y,
+            };
+            self.write_span_internal(
+                &TaggedSpan::new(Span::styled(status, style), tag),
+                true,
+                Some(rect_for_status),
+            );
         }
 
         if let Some(cursor_pos) = connector_from

@@ -405,11 +405,15 @@ impl<'a> App<'a> {
 
         if self.mode.is_running()
             && self.settings.key_debug
-            && let Some((key, context, action)) = &self.last_key_debug
+            && let Some(last_key) = &self.last_key
         {
             content.write_tagged_line(
                 &TaggedLine::from_line(
-                    Line::from(format!("key: {key}  context: {context}  action: {action}")).style(
+                    Line::from(format!(
+                        "key: {}  context: {}  action: {}",
+                        last_key.display, last_key.context, last_key.action
+                    ))
+                    .style(
                         self.settings
                             .colour_palette
                             .secondary_text()
@@ -671,6 +675,8 @@ impl<'a> App<'a> {
                         width,
                         rows_left_before_end_of_screen,
                         cursor_pos_maybe,
+                        self.buffer.buffer(),
+                        self.buffer.cursor_byte_pos(),
                     );
                 } else {
                     Self::render_user_suggestions(
@@ -1062,13 +1068,13 @@ impl<'a> App<'a> {
                 Some((selected_col, selected_row)) => {
                     format!("({}, {})", selected_col, selected_row)
                 }
-                None => "(none)".to_string(),
+                None => "(-)".to_string(),
             }
         } else {
             active_suggestions
                 .current_1d_index()
                 .map(|idx| idx.to_string())
-                .unwrap_or_else(|| "none".to_string())
+                .unwrap_or_else(|| "-".to_string())
         };
 
         content.write_tagged_span(&TaggedSpan::new(
@@ -1094,6 +1100,8 @@ impl<'a> App<'a> {
         width: u16,
         rows_left_before_end_of_screen: u16,
         cursor_pos_maybe: Option<Coord>,
+        buffer: &str,
+        cursor_byte_pos: usize,
     ) {
         content.newline();
 
@@ -1135,9 +1143,31 @@ impl<'a> App<'a> {
         let inner_width = max_item_width.min(max_inner_width).max(40);
         let box_width = inner_width + 2;
 
-        let popup_anchor_col = cursor_pos_maybe
-            .map_or(0, |pos| pos.col as usize)
-            .min(term_width.saturating_sub(1));
+        let prefix_width = active_suggestions
+            .processed_suggestions
+            .first()
+            .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
+            .unwrap_or(0);
+
+        let popup_anchor_col = if let Some(pos) = cursor_pos_maybe {
+            let cursor_col = pos.col as usize;
+            let wuc_start = active_suggestions.word_under_cursor.start;
+            if wuc_start <= cursor_byte_pos {
+                let left_part = &buffer[wuc_start..cursor_byte_pos];
+                let w = unicode_width::UnicodeWidthStr::width(left_part);
+                if cursor_col >= w {
+                    let anchor = cursor_col - w;
+                    anchor.saturating_add(prefix_width)
+                } else {
+                    0 // wrapped
+                }
+            } else {
+                cursor_col.saturating_add(prefix_width)
+            }
+        } else {
+            0
+        };
+        let popup_anchor_col = popup_anchor_col.min(term_width.saturating_sub(1));
         let max_x = term_width.saturating_sub(box_width);
         let x = popup_anchor_col.min(max_x) as u16;
         let y = grid_start_row;
@@ -1146,17 +1176,30 @@ impl<'a> App<'a> {
             x,
             y,
             width: box_width as u16,
-            height: (num_rows_visible + 3) as u16,
+            height: (num_rows_visible + 2) as u16,
         };
 
         let full_inner_area = Rect {
             x: x + 1,
             y: y + 1,
             width: inner_width as u16,
-            height: (num_rows_visible + 1) as u16,
+            height: num_rows_visible as u16,
         };
 
         content.fill_rect(full_inner_area, " ", Style::default(), Tag::TabSuggestion);
+
+        let pos_string = active_suggestions
+            .current_1d_index()
+            .map(|idx| idx.to_string())
+            .unwrap_or_else(|| "-".to_string());
+
+        let status_str = format!(
+            " Pos: {}/{}; {} ({:.1}ms) ",
+            pos_string,
+            active_suggestions.filtered_suggestions_len(),
+            active_suggestions.comp_type.display_name(),
+            active_suggestions.load_time.as_secs_f32() * 1000.0,
+        );
 
         content.render_border(
             box_area,
@@ -1164,6 +1207,7 @@ impl<'a> App<'a> {
             settings.colour_palette.secondary_text(),
             false,
             cursor_pos_maybe,
+            Some(&status_str),
         );
 
         let selected_1d = active_suggestions.current_1d_index();
@@ -1196,27 +1240,6 @@ impl<'a> App<'a> {
             settings.colour_palette.secondary_text(),
             Tag::TabSuggestion,
         );
-
-        let pos_string = active_suggestions
-            .current_1d_index()
-            .map(|idx| idx.to_string())
-            .unwrap_or_else(|| "none".to_string());
-
-        let status_str = format!(
-            "Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
-            pos_string,
-            active_suggestions.filtered_suggestions_len(),
-            active_suggestions.all_suggestions_len(),
-            active_suggestions.comp_type.display_name(),
-            active_suggestions.load_time.as_secs_f32() * 1000.0,
-        );
-
-        let status_span = TaggedSpan::new(
-            Span::styled(status_str, settings.colour_palette.secondary_text()),
-            Tag::TabSuggestion,
-        );
-        content.move_cursor_to(y + num_rows_visible as u16 + 1, x + 1);
-        content.write_tagged_span_area(&status_span, full_inner_area);
 
         if let Some(sel_row) = selected_grid_row {
             content.set_focus_row(y + 1 + sel_row);
