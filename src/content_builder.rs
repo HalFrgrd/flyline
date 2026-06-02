@@ -274,40 +274,70 @@ impl Contents {
         self.buf.len() as u16
     }
 
-    pub fn move_to_next_insertion_point(&mut self, graph: &StyledGrapheme, overwrite: bool) {
+    pub fn move_to_next_insertion_point(
+        &mut self,
+        graph: &StyledGrapheme,
+        overwrite: bool,
+        area: Option<Rect>,
+    ) -> bool {
         let graph_w = graph.symbol.width() as u16;
+        let (left, right, bottom) = if let Some(area) = area {
+            (area.left(), area.right(), area.bottom())
+        } else {
+            (0, self.width, u16::MAX)
+        };
+
         const MAX_ITERATIONS: usize = 1000; // safety to prevent infinite loops
         let mut iterations = 0;
         loop {
             if iterations >= MAX_ITERATIONS {
-                break;
+                return false;
             }
             iterations += 1;
 
             if self.cursor_pos.row >= self.buf.len() as u16 {
+                if self.cursor_pos.row >= bottom {
+                    return false;
+                }
                 self.increase_buf_single_row();
-            } else if self.cursor_pos.col as usize + graph_w as usize > self.width as usize {
-                // log::debug!("Wrapping line for grapheme of width {}", graph_w);
+            }
+
+            if self.cursor_pos.col < left {
+                self.cursor_pos.col = left;
+            }
+
+            if self.cursor_pos.col + graph_w > right {
+                if self.cursor_pos.row + 1 >= bottom {
+                    return false;
+                }
                 self.cursor_pos.row += 1;
-                self.cursor_pos.col = 0;
-            } else if !overwrite
-                && self.buf[self.cursor_pos.row as usize][(self.cursor_pos.col as usize)
-                    ..(self.cursor_pos.col as usize + graph_w as usize)]
-                    .iter()
-                    .all(|cell| cell.tag == Tag::Blank)
-            {
-                break;
-            } else if overwrite {
-                break;
+                self.cursor_pos.col = left;
+                continue;
+            }
+
+            if !overwrite {
+                let row = &self.buf[self.cursor_pos.row as usize];
+                let cells = &row[self.cursor_pos.col as usize..(self.cursor_pos.col + graph_w) as usize];
+                if cells.iter().all(|cell| cell.tag == Tag::Blank) {
+                    return true;
+                } else {
+                    self.cursor_pos.col += 1;
+                    continue;
+                }
             } else {
-                self.cursor_pos.col += 1;
+                return true;
             }
         }
     }
 
     /// Write a single tagged span at the current cursor position.
     /// Will automatically wrap to the next line if necessary.
-    fn write_span_internal(&mut self, tagged_span: &TaggedSpan, overwrite: bool) {
+    fn write_span_internal(
+        &mut self,
+        tagged_span: &TaggedSpan,
+        overwrite: bool,
+        area: Option<Rect>,
+    ) -> bool {
         if let SpanTag::Constant(Tag::Clipboard(cb_type)) = &tagged_span.tag {
             self.setup_clipboard(*cb_type, tagged_span.span.content.to_string());
         }
@@ -320,19 +350,13 @@ impl Contents {
                 continue;
             }
 
-            self.move_to_next_insertion_point(&graph, overwrite);
-
-            let next_graph_x = self.cursor_pos.col + graph_w;
-            if next_graph_x > self.width {
-                // cold_path();
-                // If the grapheme is still too wide after wrapping, skip it
-                // We probably start at cursor_pos_x=0 here, so very unlikely to happen
-                continue;
+            if !self.move_to_next_insertion_point(&graph, overwrite, area) {
+                return false;
             }
 
+            let next_graph_x = self.cursor_pos.col + graph_w;
             let tag = tagged_span.tag.get(i);
-            self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
-                .update(&graph, tag);
+            self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].update(&graph, tag);
             self.cursor_pos.col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
             while self.cursor_pos.col < next_graph_x {
@@ -343,27 +367,47 @@ impl Contents {
                 self.cursor_pos.col += 1;
             }
         }
+        true
     }
 
     /// Write a tagged span at the current cursor position, skipping cells that are already filled.
-    pub fn write_tagged_span_dont_overwrite(&mut self, tagged_span: &TaggedSpan) {
-        self.write_span_internal(tagged_span, false);
+    pub fn write_tagged_span_dont_overwrite(&mut self, tagged_span: &TaggedSpan) -> bool {
+        self.write_span_internal(tagged_span, false, None)
     }
 
     /// Write a tagged span at the current cursor position, overwriting any existing content.
-    pub fn write_tagged_span(&mut self, tagged_span: &TaggedSpan) {
-        self.write_span_internal(tagged_span, true);
+    pub fn write_tagged_span(&mut self, tagged_span: &TaggedSpan) -> bool {
+        self.write_span_internal(tagged_span, true, None)
+    }
+
+    /// Write a tagged span at the current cursor position, overwriting any existing content,
+    /// but only within the given `area`.
+    pub fn write_tagged_span_area(&mut self, tagged_span: &TaggedSpan, area: Rect) -> bool {
+        self.write_span_internal(tagged_span, true, Some(area))
     }
 
     /// Write a tagged line at the current cursor position.
     /// If `insert_new_line` is true, moves to the next line after writing.
-    pub fn write_tagged_line(&mut self, line: &TaggedLine, insert_new_line: bool) {
+    pub fn write_tagged_line(&mut self, line: &TaggedLine, insert_new_line: bool) -> bool {
         for tagged_span in &line.spans {
-            self.write_tagged_span(tagged_span);
+            if !self.write_tagged_span(tagged_span) {
+                return false;
+            }
         }
         if insert_new_line {
             self.newline();
         }
+        true
+    }
+
+    /// Write a tagged line at the current cursor position, but only within the given `area`.
+    pub fn write_tagged_line_area(&mut self, line: &TaggedLine, area: Rect) -> bool {
+        for tagged_span in &line.spans {
+            if !self.write_span_internal(tagged_span, true, Some(area)) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Write a tagged line left-aligned, fill the gap, then write another tagged line
@@ -963,5 +1007,130 @@ impl MatrixAnimState {
                 *tendril = Some((0, HashMap::new()));
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::{Color, Style};
+
+    #[test]
+    fn test_basic_write() {
+        let mut contents = Contents::new(10);
+        let span = TaggedSpan::new(Span::styled("hello", Style::default().fg(Color::Red)), Tag::Normal);
+        contents.write_tagged_span(&span);
+
+        assert_eq!(contents.cursor_position(), Coord::new(0, 5));
+        assert_eq!(contents.buf[0][0].tag, Tag::Normal);
+        assert_eq!(contents.buf[0][0].cell.symbol(), "h");
+        assert_eq!(contents.buf[0][0].cell.style().fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn test_wrapping() {
+        let mut contents = Contents::new(5);
+        let span = TaggedSpan::new(Span::raw("hello world"), Tag::Normal);
+        contents.write_tagged_span(&span);
+
+        assert_eq!(contents.height(), 3);
+        assert_eq!(contents.cursor_position(), Coord::new(2, 1));
+
+        let row0: String = contents.buf[0].iter().map(|c| c.cell.symbol()).collect();
+        let row1: String = contents.buf[1].iter().map(|c| c.cell.symbol()).collect();
+        let row2: String = contents.buf[2].iter().map(|c| c.cell.symbol()).collect();
+
+        assert_eq!(row0, "hello");
+        assert_eq!(row1, " worl");
+        assert_eq!(row2, "d    ");
+    }
+
+    #[test]
+    fn test_dont_overwrite() {
+        let mut contents = Contents::new(10);
+        contents.write_tagged_span(&TaggedSpan::new(Span::raw("hello"), Tag::Normal));
+        contents.move_cursor_to(0, 0);
+
+        // Should skip "hello" and write "world" after it
+        contents.write_tagged_span_dont_overwrite(&TaggedSpan::new(Span::raw("world"), Tag::Command(0)));
+
+        assert_eq!(contents.buf[0][0].tag, Tag::Normal);
+        assert_eq!(contents.buf[0][5].tag, Tag::Command(0));
+    }
+
+    #[test]
+    fn test_multi_width_grapheme() {
+        let mut contents = Contents::new(5);
+        // "🌟" is width 2
+        let span = TaggedSpan::new(Span::raw("🌟🌟🌟"), Tag::Normal);
+        contents.write_tagged_span(&span);
+
+        // Row 0: "🌟🌟" (width 4), then "🌟" (width 2) doesn't fit (4+2 > 5)
+        // Row 1: "🌟"
+        assert_eq!(contents.cursor_position(), Coord::new(1, 2));
+
+        assert_eq!(contents.buf[0][0].cell.symbol(), "🌟");
+        assert_eq!(contents.buf[0][1].cell.symbol(), " "); // second cell of 🌟 (after reset())
+        assert_eq!(contents.buf[0][2].cell.symbol(), "🌟");
+        assert_eq!(contents.buf[0][3].cell.symbol(), " ");
+        assert_eq!(contents.buf[0][4].cell.symbol(), " "); // empty since next 🌟 didn't fit
+
+        assert_eq!(contents.buf[1][0].cell.symbol(), "🌟");
+        assert_eq!(contents.buf[1][1].cell.symbol(), " ");
+    }
+
+    #[test]
+    fn test_write_area_wrapping() {
+        let mut contents = Contents::new(20);
+        let area = Rect { x: 5, y: 0, width: 10, height: 2 };
+        let span = TaggedSpan::new(Span::raw("this is a long span that should wrap"), Tag::Normal);
+
+        contents.move_cursor_to(0, 5);
+        let completed = contents.write_tagged_span_area(&span, area);
+
+        assert!(!completed); // Should be truncated
+        assert_eq!(contents.height(), 2);
+
+        // Row 0: "this is a " (10 chars at col 5-14)
+        // Row 1: "long span " (10 chars at col 5-14)
+        let row0: String = contents.buf[0].iter().map(|c| c.cell.symbol()).collect();
+        let row1: String = contents.buf[1].iter().map(|c| c.cell.symbol()).collect();
+
+        assert_eq!(&row0[5..15], "this is a ");
+        assert_eq!(&row1[5..15], "long span ");
+        assert_eq!(contents.cursor_position().row, 1);
+    }
+
+    #[test]
+    fn test_write_area_truncation() {
+        let mut contents = Contents::new(20);
+        let area = Rect { x: 0, y: 0, width: 5, height: 1 };
+        let span = TaggedSpan::new(Span::raw("hello world"), Tag::Normal);
+
+        let completed = contents.write_tagged_span_area(&span, area);
+        assert!(!completed);
+        assert_eq!(contents.cursor_position(), Coord::new(0, 5));
+
+        let row0: String = contents.buf[0].iter().map(|c| c.cell.symbol()).collect();
+        assert_eq!(&row0[..5], "hello");
+        assert_eq!(&row0[5..6], " "); // should be blank
+    }
+
+    #[test]
+    fn test_write_area_single_row_wrap() {
+        let mut contents = Contents::new(20);
+        let area = Rect { x: 5, y: 0, width: 5, height: 1 };
+        let span = TaggedSpan::new(Span::raw("1234567"), Tag::Normal);
+
+        contents.move_cursor_to(0, 5);
+        let completed = contents.write_tagged_span_area(&span, area);
+
+        assert!(!completed); // Should truncate at col 10
+        assert_eq!(contents.cursor_position(), Coord::new(0, 10));
+
+        let row0: String = contents.buf[0].iter().map(|c| c.cell.symbol()).collect();
+        assert_eq!(&row0[5..10], "12345");
+        assert_eq!(&row0[10..11], " ");
     }
 }

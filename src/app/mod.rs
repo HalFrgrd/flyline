@@ -37,8 +37,6 @@ use std::cell::LazyCell;
 use std::io::{Error, ErrorKind, IsTerminal};
 use std::time::Duration;
 use std::vec;
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 /// After this duration of inactivity the frame rate drops to 0.2 fps and the
 /// cursor is rendered in the unfocused (dim, non-animated) state.
@@ -1560,7 +1558,8 @@ impl<'a> App<'a> {
     /// Returns one `Line` per terminal row. The first line combines the
     /// header prefix (index / score / timeago / indicator) with the first
     /// command row; subsequent lines carry the continuation prefix.
-    fn get_lines_for_history_entry(
+    fn render_history_entry(
+        content: &mut Contents,
         formatted_entry: &HistoryEntryFormatted,
         entries: &[HistoryEntry],
         entry_idx: usize,
@@ -1570,8 +1569,9 @@ impl<'a> App<'a> {
         header_prefix_width: usize,
         available_cols: u16,
         palette: &Palette,
-    ) -> Vec<Line<'static>> {
+    ) {
         let is_selected = fuzzy_search_index == entry_idx;
+        let tag = Tag::HistoryResult(entry_idx);
 
         let entry = &entries[formatted_entry.entry_index];
         let timeago_str = entry
@@ -1593,29 +1593,36 @@ impl<'a> App<'a> {
         };
 
         let formatted_text = formatted_entry.command_spans(entries, palette);
-
-        let total_logical_lines = formatted_text.len();
-        let mut all_display_rows: Vec<(bool, usize, Line<'static>)> = vec![];
-        for (logical_idx, logical_line) in formatted_text.iter().enumerate() {
-            let terminal_rows = split_line_to_terminal_rows(logical_line, available_cols);
-            for (sub_idx, terminal_row) in terminal_rows.into_iter().enumerate() {
-                all_display_rows.push((sub_idx == 0, logical_idx, terminal_row));
-            }
-        }
-
-        let total_display_rows = all_display_rows.len();
         let max_display_rows = if is_selected { 4 } else { 1 };
-        let has_more = total_display_rows > max_display_rows;
-        let rows_to_show = total_display_rows.min(max_display_rows);
 
-        let mut result: Vec<Line<'static>> = Vec::with_capacity(rows_to_show);
-
-        for (display_idx, (is_start_of_logical, logical_idx, display_line)) in all_display_rows
-            .into_iter()
-            .take(max_display_rows)
+        let mut current_display_row = 0;
+        let mut spans_iter = formatted_text
+            .iter()
             .enumerate()
-        {
-            let mut row_spans: Vec<Span<'static>> = if display_idx == 0 {
+            .flat_map(|(logical_idx, line)| {
+                line.spans
+                    .iter()
+                    .enumerate()
+                    .map(move |(span_idx, span)| (logical_idx, span_idx, span.clone()))
+            })
+            .peekable();
+
+        let ellipsis_style = if is_selected {
+            Palette::convert_to_highlighted(palette.secondary_text())
+        } else {
+            palette.secondary_text()
+        };
+
+        while let Some(&(logical_idx, span_idx, _)) = spans_iter.peek() {
+            if current_display_row >= max_display_rows {
+                break;
+            }
+
+            content.newline();
+            let row_y = content.cursor_position().row;
+
+            // Write prefix
+            let prefix_spans = if current_display_row == 0 {
                 vec![
                     Span::styled(
                         format!("{:>num_digits_for_index$} ", entry.index + 1),
@@ -1629,8 +1636,8 @@ impl<'a> App<'a> {
                     indicator_span(),
                 ]
             } else {
-                let indent_prefix = if is_start_of_logical {
-                    let line_num_str = format!("{}/{}", logical_idx + 1, total_logical_lines);
+                let indent_prefix = if span_idx == 0 {
+                    let line_num_str = format!("{}/{}", logical_idx + 1, formatted_text.len());
                     format!("{:>width$}", line_num_str, width = header_prefix_width - 1)
                 } else {
                     " ".repeat(header_prefix_width - 1)
@@ -1641,66 +1648,65 @@ impl<'a> App<'a> {
                 ]
             };
 
-            let cmd_display_width: usize = display_line
-                .spans
-                .iter()
-                .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
-                .sum();
-
-            let mut cmd_spans: Vec<Span<'static>> = display_line
-                .spans
-                .into_iter()
-                .map(|span| {
-                    if is_selected {
-                        Span::styled(span.content, Palette::convert_to_highlighted(span.style))
-                    } else {
-                        span
-                    }
-                })
-                .collect();
-
-            // Append ellipsis on the last displayed row when more content exists.
-            // If the command row fills available_cols, trim the last grapheme to
-            // make space; otherwise just append.
-            if display_idx + 1 == rows_to_show && has_more {
-                let ellipsis_style = if is_selected {
-                    Palette::convert_to_highlighted(palette.secondary_text())
-                } else {
-                    palette.secondary_text()
-                };
-                if cmd_display_width >= available_cols as usize {
-                    'trim: loop {
-                        match cmd_spans.last_mut() {
-                            None => break 'trim,
-                            Some(last) => {
-                                let s = last.content.as_ref();
-                                match s.grapheme_indices(true).next_back() {
-                                    None => {
-                                        cmd_spans.pop();
-                                    }
-                                    Some((byte_idx, _)) => {
-                                        let trimmed = s[..byte_idx].to_string();
-                                        let style = last.style;
-                                        if trimmed.is_empty() {
-                                            cmd_spans.pop();
-                                        } else {
-                                            *last = Span::styled(trimmed, style);
-                                        }
-                                        break 'trim;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                cmd_spans.push(Span::styled("…", ellipsis_style));
+            for span in prefix_spans {
+                content.write_tagged_span(&TaggedSpan::new(span, tag));
             }
 
-            row_spans.extend(cmd_spans);
-            result.push(Line::from(row_spans));
-        }
+            // Write command content within a single-row bounding box
+            let area = Rect {
+                x: header_prefix_width as u16,
+                y: row_y,
+                width: available_cols,
+                height: 1,
+            };
 
-        result
+            while let Some((curr_logical_idx, _, _)) = spans_iter.peek() {
+                if *curr_logical_idx != logical_idx {
+                    break;
+                }
+                let (_, _, mut span) = spans_iter.next().unwrap();
+                if is_selected {
+                    span.style = Palette::convert_to_highlighted(span.style);
+                }
+
+                let completed = content.write_tagged_span_area(&TaggedSpan::new(span, tag), area);
+
+                if !completed {
+                    // Truncated this row. Check if we have more rows to use.
+                    if current_display_row + 1 >= max_display_rows && spans_iter.peek().is_some() {
+                        // This was the last allowed row and there's more content.
+                        if content.cursor_position().col >= area.right() {
+                            content.set_cursor_col(area.right().saturating_sub(1));
+                        }
+                        content.write_tagged_span_area(
+                            &TaggedSpan::new(Span::styled("…", ellipsis_style), tag),
+                            area,
+                        );
+                        content.fill_line(tag);
+                        return;
+                    }
+                    // We wrapped within the logical line, so we need to continue on the next terminal row.
+                    break;
+                }
+            }
+
+            // If we broke out because we reached the end of the logical line,
+            // we should also check if we need an ellipsis because there are more logical lines.
+            if current_display_row + 1 >= max_display_rows && spans_iter.peek().is_some() {
+                if content.cursor_position().col >= area.right() {
+                    content.set_cursor_col(area.right().saturating_sub(1));
+                }
+                content.write_tagged_span_area(
+                    &TaggedSpan::new(Span::styled("…", ellipsis_style), tag),
+                    area,
+                );
+                content.fill_line(tag);
+                return;
+            }
+
+            content.fill_line(tag);
+            current_display_row += 1;
+        }
     }
 
     fn create_content(&mut self, width: u16, viewport_top: u16, terminal_height: u16) -> Contents {
@@ -1991,7 +1997,7 @@ impl<'a> App<'a> {
                     // reflects the actual cell the cursor grapheme will land
                     // on. This mirrors the skip done inside write_span_internal.
                     if let Some(g) = sub_span.styled_graphemes(sub_span.style).next() {
-                        content.move_to_next_insertion_point(&g, false);
+                        content.move_to_next_insertion_point(&g, false, None);
                     }
                     cursor_pos_maybe = Some(content.cursor_position());
                 }
@@ -2011,7 +2017,7 @@ impl<'a> App<'a> {
         }
         if self.formatted_buffer_cache.draw_cursor_at_end {
             let space = StyledGrapheme::new(" ", Style::default());
-            content.move_to_next_insertion_point(&space, false);
+            content.move_to_next_insertion_point(&space, false, None);
             cursor_pos_maybe = Some(content.cursor_position());
         }
 
@@ -2320,9 +2326,11 @@ impl<'a> App<'a> {
                     let entry_idx = formatted_entry.idx_in_cache.unwrap_or(0);
                     let is_selected = fuzzy_search_index == entry_idx;
                     if is_selected {
-                        content.set_focus_row(content.cursor_position().row);
+                        content.set_focus_row(content.cursor_position().row + 1);
                     }
-                    for line in Self::get_lines_for_history_entry(
+
+                    Self::render_history_entry(
+                        &mut content,
                         formatted_entry,
                         entries,
                         entry_idx,
@@ -2332,18 +2340,12 @@ impl<'a> App<'a> {
                         header_prefix_width,
                         available_cols,
                         &self.settings.colour_palette,
-                    ) {
-                        content.newline();
-                        content.write_tagged_line(
-                            &TaggedLine::from_line(line, Tag::HistoryResult(entry_idx)),
-                            false,
-                        );
-                        content.fill_line(Tag::HistoryResult(entry_idx));
-                        if content.cursor_position().row.saturating_sub(starting_row)
-                            >= num_rows_for_results
-                        {
-                            break 'outer;
-                        }
+                    );
+
+                    if content.cursor_position().row.saturating_sub(starting_row)
+                        >= num_rows_for_results
+                    {
+                        break 'outer;
                     }
                 }
                 content.newline();
