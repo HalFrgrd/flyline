@@ -707,19 +707,37 @@ fn fuzzy_pattern_score_threshold(pattern_len: usize, threshold: FuzzyMatchThresh
     match threshold {
         FuzzyMatchThreshold::Medium => match pattern_len {
             0..1 => 0,
-            1..3 => 10,
+            1..2 => 2,
+            2..3 => 10,
             3..5 => 25,
             5..9 => 35,
             _ => 45,
         },
         FuzzyMatchThreshold::High => match pattern_len {
             0..1 => 0,
-            1..3 => 20,
+            1..2 => 2,
+            2..3 => 20,
             3..5 => 50,
             5..9 => 70,
             _ => 90,
         },
     }
+}
+
+fn verify_all_alphanumeric_chars_in_haystack(pattern: &str, haystack: &str) -> bool {
+    let haystack_chars: Vec<char> = haystack
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect();
+
+    for p_char in pattern.chars().filter(|c| c.is_alphanumeric()) {
+        let p_lower = p_char.to_lowercase().next().unwrap_or(p_char);
+        if !haystack_chars.contains(&p_lower) {
+            return false;
+        }
+    }
+    true
 }
 
 pub fn fuzzy_match_with_threshold(
@@ -733,6 +751,13 @@ pub fn fuzzy_match_with_threshold(
     matcher
         .fuzzy_match(candidate, pattern)
         .filter(|&score| score >= score_threshold)
+        .filter(|_| {
+            if matches!(threshold, FuzzyMatchThreshold::High) {
+                verify_all_alphanumeric_chars_in_haystack(pattern, candidate)
+            } else {
+                true
+            }
+        })
 }
 
 pub fn fuzzy_indices_with_threshold(
@@ -746,6 +771,13 @@ pub fn fuzzy_indices_with_threshold(
     matcher
         .fuzzy_indices(candidate, pattern)
         .filter(|&(score, _)| score >= score_threshold)
+        .filter(|_| {
+            if matches!(threshold, FuzzyMatchThreshold::High) {
+                verify_all_alphanumeric_chars_in_haystack(pattern, candidate)
+            } else {
+                true
+            }
+        })
 }
 
 pub fn style_for_path(path: &Path) -> Option<Style> {
@@ -886,4 +918,56 @@ pub(crate) fn span_to_ansi(span: &Span) -> String {
     let start = style_to_ansi(span.style);
     let reset = "\x1b[0m";
     format!("{}{}{}", start, span.content, reset)
+}
+
+#[cfg(test)]
+mod fuzzy_tests {
+    use super::*;
+    use skim::fuzzy_matcher::arinae::ArinaeMatcher;
+
+    #[test]
+    fn test_verify_all_alphanumeric_chars_in_haystack() {
+        assert!(verify_all_alphanumeric_chars_in_haystack("momit", "ommit"));
+        assert!(verify_all_alphanumeric_chars_in_haystack(
+            "foo",
+            "barfoobaz"
+        ));
+        assert!(verify_all_alphanumeric_chars_in_haystack("mommit", "ommit"));
+        assert!(!verify_all_alphanumeric_chars_in_haystack("fao", "foo"));
+        assert!(!verify_all_alphanumeric_chars_in_haystack("foobar", "foo"));
+        // Symbols ignored
+        assert!(verify_all_alphanumeric_chars_in_haystack(
+            "foo-bar", "foobar"
+        ));
+        assert!(verify_all_alphanumeric_chars_in_haystack("foo", "f.o.o"));
+    }
+
+    #[test]
+    fn test_fuzzy_match_with_threshold_high() {
+        let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
+
+        // High threshold requires all alphanumeric characters to be present
+        assert!(
+            fuzzy_match_with_threshold(&matcher, "commit", "cmomit", FuzzyMatchThreshold::High)
+                .is_some()
+        );
+        assert!(
+            fuzzy_match_with_threshold(&matcher, "commit", "com", FuzzyMatchThreshold::High)
+                .is_some()
+        );
+        assert!(
+            fuzzy_match_with_threshold(&matcher, "commit", "commit", FuzzyMatchThreshold::High)
+                .is_some()
+        );
+
+        // Missing alphanumeric character in candidate should be filtered out
+        assert!(
+            fuzzy_match_with_threshold(&matcher, "commit", "commita", FuzzyMatchThreshold::High)
+                .is_none()
+        );
+        assert!(
+            fuzzy_match_with_threshold(&matcher, "commit", "cxt", FuzzyMatchThreshold::High)
+                .is_none()
+        );
+    }
 }

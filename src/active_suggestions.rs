@@ -8,7 +8,6 @@ use crate::text_buffer::{SubString, TextBuffer};
 use crate::{bash_funcs, tab_completion_context};
 use itertools::Itertools;
 use ratatui::prelude::*;
-use skim::fuzzy_matcher::FuzzyMatcher;
 use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -1388,7 +1387,12 @@ impl ActiveSuggestions {
             .unwrap_or(pattern_with_prefix);
 
         // Try the fuzzy matcher first
-        if let Some((score, indices)) = self.fuzzy_matcher.fuzzy_indices(&sug.s, pattern) {
+        if let Some((score, indices)) = crate::content_utils::fuzzy_indices_with_threshold(
+            &self.fuzzy_matcher,
+            &sug.s,
+            pattern,
+            crate::content_utils::FuzzyMatchThreshold::High,
+        ) {
             return Some(FilteredItem {
                 score,
                 suggestion_idx: idx,
