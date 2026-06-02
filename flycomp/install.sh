@@ -64,32 +64,6 @@ detect_arch() {
     esac
 }
 
-detect_libc() {
-    shell_exe="/proc/$$/exe"
-    if [ ! -e "$shell_exe" ]; then
-        shell_exe="$(command -v sh || true)"
-    fi
-    if [ -n "$shell_exe" ] && command -v readelf >/dev/null 2>&1; then
-        interp="$(readelf -l "$shell_exe" 2>/dev/null | grep 'interpreter' | grep -o '\[.*\]' | tr -d '[]')" || true
-        case "$interp" in
-            *musl*) echo "musl"; return ;;
-            *) echo "gnu"; return ;;
-        esac
-    fi
-
-    if ldd --version 2>&1 | grep -qi musl; then
-        echo "musl"
-        return
-    fi
-
-    if ls /lib/ld-musl-* >/dev/null 2>&1; then
-        echo "musl"
-        return
-    fi
-
-    echo "gnu"
-}
-
 # ---------------------------------------------------------------------------
 # GitHub releases API
 # ---------------------------------------------------------------------------
@@ -130,8 +104,7 @@ main() {
         TARGET="${ARCH}-apple-darwin"
         BIN_NAME="flycomp"
     else
-        LIBC="$(detect_libc)"
-        TARGET="${ARCH}-unknown-linux-${LIBC}"
+        TARGET="${ARCH}-unknown-linux-musl"
         BIN_NAME="flycomp"
     fi
 

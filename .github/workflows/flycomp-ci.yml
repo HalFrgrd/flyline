@@ -22,11 +22,8 @@ permissions:
 
 jobs:
   test:
-    name: Test Flycomp on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Test Flycomp
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust toolchain

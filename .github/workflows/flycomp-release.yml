@@ -44,9 +44,7 @@ jobs:
       matrix:
         include:
           # Linux (via cross)
-          - { target: x86_64-unknown-linux-gnu,   os: ubuntu-latest, build_tool: cross, bin: flycomp }
           - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest, build_tool: cross, bin: flycomp }
-          - { target: aarch64-unknown-linux-gnu,  os: ubuntu-latest, build_tool: cross, bin: flycomp }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-latest, build_tool: cross, bin: flycomp }
           # macOS (native cargo)
           - { target: x86_64-apple-darwin,        os: macos-latest,  build_tool: cargo, bin: flycomp }
