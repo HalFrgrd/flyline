@@ -1228,8 +1228,13 @@ impl Flyline {
                             log::set_max_level(level);
                         }
 
-                        let result =
-                            generate_completion_output(&command, output, strategy, !no_sandbox, timeout_ms);
+                        let result = generate_completion_output(
+                            &command,
+                            output,
+                            strategy,
+                            !no_sandbox,
+                            timeout_ms,
+                        );
 
                         unsafe { libc::signal(libc::SIGCHLD, prev_sigchld) };
 

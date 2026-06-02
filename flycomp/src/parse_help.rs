@@ -203,7 +203,8 @@ pub fn parse_help_clap(help: &str) -> Command {
         let is_commands_section = trimmed == "Commands:"
             || trimmed == "Subcommands:"
             || trimmed == "Available Commands:"
-            || (lower.contains("commands") && (trimmed.ends_with(':') || lower.contains("commands are")));
+            || (lower.contains("commands")
+                && (trimmed.ends_with(':') || lower.contains("commands are")));
 
         if is_commands_section {
             i += 1;
@@ -224,7 +225,8 @@ pub fn parse_help_clap(help: &str) -> Command {
                     let mut name_iter = sub_names_part.split(',').map(|s| s.trim().to_string());
                     if let Some(first_name) = name_iter.next() {
                         if !first_name.is_empty() {
-                            let aliases: Vec<String> = name_iter.filter(|s| !s.is_empty()).collect();
+                            let aliases: Vec<String> =
+                                name_iter.filter(|s| !s.is_empty()).collect();
                             cmd.subcommands.push(Command {
                                 name: Some(first_name),
                                 aliases,
@@ -822,11 +824,17 @@ See 'cargo help <command>' for more information on a specific command.
 
         let build_sub = subcommand_by_name(&cmd, "build").unwrap();
         assert_eq!(build_sub.aliases, vec!["b".to_string()]);
-        assert_eq!(build_sub.description.as_deref(), Some("Compile the current package"));
+        assert_eq!(
+            build_sub.description.as_deref(),
+            Some("Compile the current package")
+        );
 
         let check_sub = subcommand_by_name(&cmd, "check").unwrap();
         assert_eq!(check_sub.aliases, vec!["c".to_string()]);
-        assert_eq!(check_sub.description.as_deref(), Some("Analyze the current package and report errors, but don't build object files"));
+        assert_eq!(
+            check_sub.description.as_deref(),
+            Some("Analyze the current package and report errors, but don't build object files")
+        );
     }
 
     const PYTHON_HELP: &str = r#"usage: python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...

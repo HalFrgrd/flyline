@@ -464,7 +464,12 @@ fn find_subcommand_mut<'a>(root: &'a mut Command, path: &[String]) -> Option<&'a
 ///
 /// Many tools print their help to *stderr* rather than *stdout*; this function
 /// returns whichever stream is non-empty (preferring stdout).
-pub fn run_help(command_path: &str, extra_args: &[&str], sandbox: bool, timeout_ms: u64) -> anyhow::Result<String> {
+pub fn run_help(
+    command_path: &str,
+    extra_args: &[&str],
+    sandbox: bool,
+    timeout_ms: u64,
+) -> anyhow::Result<String> {
     let use_sandbox = sandbox && {
         // Test if bwrap exists in PATH by trying to spawn it with --version
         match std::process::Command::new("bwrap")
