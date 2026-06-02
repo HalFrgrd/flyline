@@ -188,6 +188,7 @@ pub enum Tag {
     TutorialNext,
     Tutorial,
     Clipboard(ClipboardTypes),
+    MultiWidthContinuation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -317,7 +318,8 @@ impl Contents {
 
             if !overwrite {
                 let row = &self.buf[self.cursor_pos.row as usize];
-                let cells = &row[self.cursor_pos.col as usize..(self.cursor_pos.col + graph_w) as usize];
+                let cells =
+                    &row[self.cursor_pos.col as usize..(self.cursor_pos.col + graph_w) as usize];
                 if cells.iter().all(|cell| cell.tag == Tag::Blank) {
                     return true;
                 } else {
@@ -356,14 +358,16 @@ impl Contents {
 
             let next_graph_x = self.cursor_pos.col + graph_w;
             let tag = tagged_span.tag.get(i);
-            self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].update(&graph, tag);
+            self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
+                .update(&graph, tag);
             self.cursor_pos.col += 1;
             // Reset following cells if multi-width (they would be hidden by the grapheme),
             while self.cursor_pos.col < next_graph_x {
                 self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize]
                     .cell
                     .reset();
-                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag = tag;
+                self.buf[self.cursor_pos.row as usize][self.cursor_pos.col as usize].tag =
+                    Tag::MultiWidthContinuation;
                 self.cursor_pos.col += 1;
             }
         }
@@ -518,6 +522,52 @@ impl Contents {
     pub fn move_cursor_to(&mut self, row: u16, col: u16) {
         self.cursor_pos.row = row.min(self.buf.len().saturating_sub(1) as u16);
         self.cursor_pos.col = col.min(self.width);
+    }
+
+    /// Clears any multi-width grapheme that spans across `col` on the given `row`,
+    /// and writes the specified `symbol` with `style` and `tag` at the start of that grapheme or at `col`.
+    pub fn overwrite_with_char(
+        &mut self,
+        row: usize,
+        col: usize,
+        symbol: &str,
+        style: ratatui::style::Style,
+        tag: Tag,
+    ) {
+        if row >= self.buf.len() {
+            return;
+        }
+        let width = self.width as usize;
+        if col >= width {
+            return;
+        }
+
+        // Find the start of the multi-width grapheme if we are on a continuation cell
+        let mut start_col = col;
+        if self.buf[row][start_col].tag == Tag::MultiWidthContinuation {
+            while start_col > 0 && self.buf[row][start_col].tag == Tag::MultiWidthContinuation {
+                start_col -= 1;
+            }
+        }
+
+        // Find the end of the multi-width grapheme
+        let mut end_col = start_col;
+        while end_col + 1 < width && self.buf[row][end_col + 1].tag == Tag::MultiWidthContinuation {
+            end_col += 1;
+        }
+
+        // Clear all cells spanning this grapheme
+        for c in start_col..=end_col {
+            self.buf[row][c].cell.reset();
+            self.buf[row][c].tag = Tag::Blank;
+        }
+
+        // Set cursor to start_col and write the character using write_span_internal
+        let old_cursor = self.cursor_pos;
+        self.cursor_pos = Coord::new(row as u16, start_col as u16);
+        let span = TaggedSpan::new(Span::styled(symbol.to_string(), style), tag);
+        self.write_span_internal(&span, true, None);
+        self.cursor_pos = old_cursor;
     }
 
     /// Move to the next line (carriage return + line feed)
@@ -1019,7 +1069,10 @@ mod tests {
     #[test]
     fn test_basic_write() {
         let mut contents = Contents::new(10);
-        let span = TaggedSpan::new(Span::styled("hello", Style::default().fg(Color::Red)), Tag::Normal);
+        let span = TaggedSpan::new(
+            Span::styled("hello", Style::default().fg(Color::Red)),
+            Tag::Normal,
+        );
         contents.write_tagged_span(&span);
 
         assert_eq!(contents.cursor_position(), Coord::new(0, 5));
@@ -1053,7 +1106,10 @@ mod tests {
         contents.move_cursor_to(0, 0);
 
         // Should skip "hello" and write "world" after it
-        contents.write_tagged_span_dont_overwrite(&TaggedSpan::new(Span::raw("world"), Tag::Command(0)));
+        contents.write_tagged_span_dont_overwrite(&TaggedSpan::new(
+            Span::raw("world"),
+            Tag::Command(0),
+        ));
 
         assert_eq!(contents.buf[0][0].tag, Tag::Normal);
         assert_eq!(contents.buf[0][5].tag, Tag::Command(0));
@@ -1083,8 +1139,16 @@ mod tests {
     #[test]
     fn test_write_area_wrapping() {
         let mut contents = Contents::new(20);
-        let area = Rect { x: 5, y: 0, width: 10, height: 2 };
-        let span = TaggedSpan::new(Span::raw("this is a long span that should wrap"), Tag::Normal);
+        let area = Rect {
+            x: 5,
+            y: 0,
+            width: 10,
+            height: 2,
+        };
+        let span = TaggedSpan::new(
+            Span::raw("this is a long span that should wrap"),
+            Tag::Normal,
+        );
 
         contents.move_cursor_to(0, 5);
         let completed = contents.write_tagged_span_area(&span, area);
@@ -1105,7 +1169,12 @@ mod tests {
     #[test]
     fn test_write_area_truncation() {
         let mut contents = Contents::new(20);
-        let area = Rect { x: 0, y: 0, width: 5, height: 1 };
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 5,
+            height: 1,
+        };
         let span = TaggedSpan::new(Span::raw("hello world"), Tag::Normal);
 
         let completed = contents.write_tagged_span_area(&span, area);
@@ -1120,7 +1189,12 @@ mod tests {
     #[test]
     fn test_write_area_single_row_wrap() {
         let mut contents = Contents::new(20);
-        let area = Rect { x: 5, y: 0, width: 5, height: 1 };
+        let area = Rect {
+            x: 5,
+            y: 0,
+            width: 5,
+            height: 1,
+        };
         let span = TaggedSpan::new(Span::raw("1234567"), Tag::Normal);
 
         contents.move_cursor_to(0, 5);
@@ -1132,5 +1206,34 @@ mod tests {
         let row0: String = contents.buf[0].iter().map(|c| c.cell.symbol()).collect();
         assert_eq!(&row0[5..10], "12345");
         assert_eq!(&row0[10..11], " ");
+    }
+
+    #[test]
+    fn test_overwrite_with_char() {
+        use ratatui::style::Style;
+        let mut contents = Contents::new(10);
+
+        let span1 = TaggedSpan::new(Span::raw("hello"), Tag::Normal);
+        contents.write_tagged_span(&span1);
+
+        let span2 = TaggedSpan::new(Span::raw("🌟"), Tag::Normal);
+        contents.write_tagged_span(&span2);
+
+        // Check buffer state
+        assert_eq!(contents.buf[0][0].cell.symbol(), "h");
+        assert_eq!(contents.buf[0][5].cell.symbol(), "🌟");
+        assert_eq!(contents.buf[0][5].tag, Tag::Normal);
+        assert_eq!(contents.buf[0][6].cell.symbol(), " ");
+        assert_eq!(contents.buf[0][6].tag, Tag::MultiWidthContinuation);
+
+        // Overwrite a normal character
+        contents.overwrite_with_char(0, 4, "…", Style::default(), Tag::Normal);
+        assert_eq!(contents.buf[0][4].cell.symbol(), "…");
+
+        // Overwrite the multi-width continuation cell
+        contents.overwrite_with_char(0, 6, "…", Style::default(), Tag::Normal);
+        assert_eq!(contents.buf[0][5].cell.symbol(), "…");
+        assert_eq!(contents.buf[0][6].cell.symbol(), " ");
+        assert_eq!(contents.buf[0][6].tag, Tag::Blank);
     }
 }

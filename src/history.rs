@@ -21,7 +21,7 @@ pub struct HistoryEntry {
 }
 
 impl HistoryEntry {
-    fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
+    pub(crate) fn new(timestamp: Option<u64>, index: usize, command: String) -> Self {
         HistoryEntry {
             timestamp,
             index,
@@ -494,7 +494,7 @@ impl std::cmp::PartialOrd for HistoryEntryFormatted {
 }
 
 impl HistoryEntryFormatted {
-    fn new(entry_index: usize, score: i64, match_indices: Vec<usize>) -> Self {
+    pub(crate) fn new(entry_index: usize, score: i64, match_indices: Vec<usize>) -> Self {
         HistoryEntryFormatted {
             entry_index,
             score,
