@@ -1308,15 +1308,23 @@ impl<'a> App<'a> {
     }
 
     fn on_possible_buffer_change(&mut self) {
+        let new_wuc = LazyCell::new(|| {
+            let buffer: &str = self.buffer.buffer();
+            tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos())
+                .word_under_cursor
+        });
+
         let last_char_is_trigger = if let Some(last_key) = &self.last_key {
             let is_fresh = last_key.sequence_number > self.last_processed_key_sequence;
             if is_fresh {
                 if let KeyCode::Char(c) = last_key.key.code {
-                    (c == '/' || c == '-')
-                        && !last_key
-                            .key
-                            .modifiers
-                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                    let mods_satisfied = !last_key
+                        .key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+
+                    (c == '/' || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-')))
+                        && mods_satisfied
                 } else {
                     false
                 }
@@ -1350,12 +1358,6 @@ impl<'a> App<'a> {
         {
             self.content_mode = ContentMode::Normal;
         }
-
-        let new_wuc = LazyCell::new(|| {
-            let buffer: &str = self.buffer.buffer();
-            tab_completion_context::get_completion_context(buffer, self.buffer.cursor_byte_pos())
-                .word_under_cursor
-        });
 
         // Cancel a pending tab-completion background thread when the word under
         // cursor has changed in a way that invalidates the in-flight completion.

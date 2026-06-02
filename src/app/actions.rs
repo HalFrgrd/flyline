@@ -1843,7 +1843,7 @@ fn capitalize_first(s: &str) -> String {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 86]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 87]> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     [
@@ -1859,7 +1859,12 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 86]> = LazyLock::new(|| {
         ),
         Binding::new(
             &[KC::Up.into()],
-            ContextVar::TabCompletionAvailable.into(),
+            !ContextVar::UserTriggeredSuggestions + ContextVar::TabCompletionEntrySelected,
+            Action::TabCompletionMoveUp,
+        ),
+        Binding::new(
+            &[KC::Up.into()],
+            ContextVar::UserTriggeredSuggestions.into(),
             Action::TabCompletionMoveUp,
         ),
         Binding::new(
