@@ -911,6 +911,69 @@ impl Contents {
         }
     }
 
+    pub fn fill_rect(&mut self, area: Rect, symbol: &str, style: ratatui::style::Style, tag: Tag) {
+        for _ in self.buf.len()..area.bottom() as usize {
+            self.increase_buf_single_row();
+        }
+
+        for y in area.top()..area.bottom() {
+            if let Some(row) = self.buf.get_mut(y as usize) {
+                for x in area.left()..area.right() {
+                    if let Some(tagged_cell) = row.get_mut(x as usize) {
+                        tagged_cell.cell.reset();
+                        tagged_cell.cell.set_symbol(symbol).set_style(style);
+                        tagged_cell.tag = tag;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn draw_vertical_scrollbar(
+        &mut self,
+        x: u16,
+        y_start: u16,
+        length: u16,
+        total: usize,
+        visible: usize,
+        start: usize,
+        style: ratatui::style::Style,
+        tag: Tag,
+    ) {
+        if length == 0 || total == 0 || visible >= total {
+            return;
+        }
+
+        let l = length as f64;
+        let t = total as f64;
+        let v = visible as f64;
+        let s = start as f64;
+
+        // Size of the thumb (at least 1 cell)
+        let thumb_size = ((v / t) * l).round().max(1.0) as usize;
+        // Position of the thumb
+        let max_start = t - v;
+        let thumb_pos = if max_start > 0.0 {
+            ((s / max_start) * (l - thumb_size as f64)).round() as usize
+        } else {
+            0
+        };
+
+        for i in 0..length as usize {
+            let row_y = y_start + i as u16;
+            let is_thumb = i >= thumb_pos && i < thumb_pos + thumb_size;
+            let symbol = if is_thumb { "█" } else { "░" };
+
+            if let Some(row) = self.buf.get_mut(row_y as usize)
+                && let Some(tagged_cell) = row.get_mut(x as usize)
+            {
+                tagged_cell.cell.reset();
+                tagged_cell.cell.set_symbol(symbol).set_style(style);
+                tagged_cell.tag = tag;
+            }
+        }
+    }
+
     pub fn delete_rows(&mut self, start_row: u16, end_row: u16) {
         // safely delete rows from start_row to end_row (exclusive), shifting up the rows below
         if start_row >= end_row || start_row >= self.height() {

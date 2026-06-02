@@ -1,4 +1,5 @@
 use super::*;
+use crate::content_builder::Coord;
 use crate::content_utils::{
     gaussian_wave_animated, split_line_to_terminal_rows, ts_to_timeago_string_5chars,
 };
@@ -662,164 +663,24 @@ impl<'a> App<'a> {
 
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
-                content.newline();
-
-                if active_suggestions.all_suggestions_len() > 0 {
-                    if active_suggestions.auto_started {
-                        content.newline();
-                    }
-
-                    let grid_start_row = content.cursor_position().row;
-                    let max_rows = self.settings.num_suggestion_rows.max(2);
-                    let num_rows_for_suggestions =
-                        rows_left_before_end_of_screen.clamp(2, max_rows);
-
-                    let popup_anchor_col = if active_suggestions.auto_started {
-                        cursor_pos_maybe
-                            .map_or(0, |pos| pos.col as usize)
-                            .min((width as usize).saturating_sub(1))
-                    } else {
-                        0
-                    };
-
-                    let mut selected_grid_row: Option<u16> = None;
-
-                    // For auto-started suggestions, use a narrower single-column layout positioned under the cursor
-                    let grid_width = if active_suggestions.auto_started {
-                        // Reserve one column on each side for the popup border.
-                        // The popup itself may shift left later if the cursor is near the right edge.
-                        (width as usize).saturating_sub(2).max(1).min(40)
-                    } else {
-                        width as usize
-                    };
-
-                    let grid = active_suggestions.into_grid(
-                        num_rows_for_suggestions as usize,
-                        grid_width,
-                        &self.settings.colour_palette,
-                        if active_suggestions.auto_started {
-                            Some(1)
-                        } else {
-                            None
-                        },
+                if active_suggestions.auto_started {
+                    Self::render_auto_suggestions(
+                        &self.settings,
+                        active_suggestions,
+                        &mut content,
+                        width,
+                        rows_left_before_end_of_screen,
+                        cursor_pos_maybe,
                     );
-
-                    let actual_grid_width = grid.get(0).map_or(0, |col| {
-                        col.items
-                            .iter()
-                            .map(|(formatted, _)| formatted.display_width)
-                            .max()
-                            .unwrap_or(0)
-                            .min(grid_width)
-                    });
-
-                    // After grid is created, compute left padding to prevent wrapping
-                    let left_padding = if active_suggestions.auto_started {
-                        // Keep one column free on each side for the popup border when possible.
-                        let min_padding = usize::from(width > 2);
-                        let max_padding =
-                            (width as usize).saturating_sub(actual_grid_width.saturating_add(1));
-                        popup_anchor_col.clamp(min_padding, max_padding)
-                    } else {
-                        0
-                    };
-
-                    let num_rows = grid.get(0).map_or(0, |col| col.items.len());
-
-                    let auto_started_box_area = if active_suggestions.auto_started && num_rows > 0 {
-                        let x = left_padding.saturating_sub(1) as u16;
-                        let y = grid_start_row.saturating_sub(1);
-                        let right =
-                            (left_padding + actual_grid_width + 1).min(width as usize) as u16;
-                        let box_width = right.saturating_sub(x).max(2);
-                        Some(Rect {
-                            x,
-                            y,
-                            width: box_width,
-                            height: num_rows as u16 + 2,
-                        })
-                    } else {
-                        None
-                    };
-
-                    for row_idx in 0..num_rows {
-                        // Add left padding for auto-started suggestions
-                        if active_suggestions.auto_started && left_padding > 0 {
-                            content.write_tagged_span(&TaggedSpan::new(
-                                Span::raw(" ".repeat(left_padding)),
-                                Tag::TabSuggestion,
-                            ));
-                        }
-
-                        for (col_idx, col) in grid.iter().enumerate() {
-                            if let Some((formatted, is_selected)) = col.items.get(row_idx) {
-                                if col_idx > 0 && !active_suggestions.auto_started {
-                                    content.write_tagged_span(&TaggedSpan::new(
-                                        Span::raw(" ".repeat(COLUMN_PADDING)),
-                                        Tag::TabSuggestion,
-                                    ));
-                                }
-
-                                let formatted_suggestion =
-                                    formatted.render(col.width, *is_selected);
-
-                                let tag = Tag::Suggestion(formatted.suggestion_idx);
-                                for span in formatted_suggestion {
-                                    content.write_tagged_span(&TaggedSpan::new(span, tag));
-                                }
-                                if *is_selected && selected_grid_row.is_none() {
-                                    selected_grid_row = Some(row_idx as u16);
-                                }
-                            }
-                        }
-                        content.newline();
-                    }
-
-                    if let Some(sel_row) = selected_grid_row {
-                        content.set_focus_row(grid_start_row + sel_row);
-                    }
-
-                    if let Some(area) = auto_started_box_area {
-                        content.render_border(
-                            area,
-                            Tag::TabSuggestion,
-                            self.settings.colour_palette.secondary_text(),
-                            false,
-                            cursor_pos_maybe,
-                        );
-                    }
-                }
-
-                // Only show position info for user-triggered suggestions (not auto-started)
-                if !active_suggestions.auto_started {
-                    let pos_string = if active_suggestions.last_num_data_cols > 1 {
-                        match active_suggestions.selected_coord {
-                            Some((selected_col, selected_row)) => {
-                                format!("({}, {})", selected_col, selected_row)
-                            }
-                            None => "(none)".to_string(),
-                        }
-                    } else {
-                        active_suggestions
-                            .current_1d_index()
-                            .map(|idx| idx.to_string())
-                            .unwrap_or_else(|| "none".to_string())
-                    };
-
-                    content.write_tagged_span(&TaggedSpan::new(
-                        Span::styled(
-                            format!(
-                                "# Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
-                                pos_string,
-                                active_suggestions.filtered_suggestions_len(),
-                                active_suggestions.all_suggestions_len(),
-                                active_suggestions.comp_type.display_name(),
-                                active_suggestions.load_time.as_secs_f32() * 1000.0,
-                            ),
-                            self.settings.colour_palette.secondary_text(),
-                        ),
-                        Tag::TabSuggestion,
-                    ));
+                } else {
+                    Self::render_user_suggestions(
+                        &self.settings,
+                        active_suggestions,
+                        &mut content,
+                        width,
+                        rows_left_before_end_of_screen,
+                        cursor_pos_maybe,
+                    );
                 }
             }
             ContentMode::TabCompletionWaiting { start_time, .. } if self.mode.is_running() => {
@@ -1138,6 +999,231 @@ impl<'a> App<'a> {
         }
 
         self.last_contents = Some(drawn_content);
+    }
+
+    fn render_user_suggestions(
+        settings: &Settings,
+        active_suggestions: &mut ActiveSuggestions,
+        content: &mut Contents,
+        width: u16,
+        rows_left_before_end_of_screen: u16,
+        _cursor_pos_maybe: Option<Coord>,
+    ) {
+        content.newline();
+
+        if active_suggestions.all_suggestions_len() > 0 {
+            let grid_start_row = content.cursor_position().row;
+            let max_rows = settings.num_suggestion_rows.max(2);
+            let num_rows_for_suggestions = rows_left_before_end_of_screen.clamp(2, max_rows);
+
+            let mut selected_grid_row: Option<u16> = None;
+            let grid_width = width as usize;
+
+            let grid = active_suggestions.into_grid(
+                num_rows_for_suggestions as usize,
+                grid_width,
+                &settings.colour_palette,
+                None,
+            );
+
+            let num_rows = grid.get(0).map_or(0, |col| col.items.len());
+
+            for row_idx in 0..num_rows {
+                for (col_idx, col) in grid.iter().enumerate() {
+                    if let Some((formatted, is_selected)) = col.items.get(row_idx) {
+                        if col_idx > 0 {
+                            content.write_tagged_span(&TaggedSpan::new(
+                                Span::raw(" ".repeat(COLUMN_PADDING)),
+                                Tag::TabSuggestion,
+                            ));
+                        }
+
+                        let formatted_suggestion = formatted.render(col.width, *is_selected);
+
+                        let tag = Tag::Suggestion(formatted.suggestion_idx);
+                        for span in formatted_suggestion {
+                            content.write_tagged_span(&TaggedSpan::new(span, tag));
+                        }
+                        if *is_selected && selected_grid_row.is_none() {
+                            selected_grid_row = Some(row_idx as u16);
+                        }
+                    }
+                }
+                content.newline();
+            }
+
+            if let Some(sel_row) = selected_grid_row {
+                content.set_focus_row(grid_start_row + sel_row);
+            }
+        }
+
+        let pos_string = if active_suggestions.last_num_data_cols > 1 {
+            match active_suggestions.selected_coord {
+                Some((selected_col, selected_row)) => {
+                    format!("({}, {})", selected_col, selected_row)
+                }
+                None => "(none)".to_string(),
+            }
+        } else {
+            active_suggestions
+                .current_1d_index()
+                .map(|idx| idx.to_string())
+                .unwrap_or_else(|| "none".to_string())
+        };
+
+        content.write_tagged_span(&TaggedSpan::new(
+            Span::styled(
+                format!(
+                    "# Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
+                    pos_string,
+                    active_suggestions.filtered_suggestions_len(),
+                    active_suggestions.all_suggestions_len(),
+                    active_suggestions.comp_type.display_name(),
+                    active_suggestions.load_time.as_secs_f32() * 1000.0,
+                ),
+                settings.colour_palette.secondary_text(),
+            ),
+            Tag::TabSuggestion,
+        ));
+    }
+
+    fn render_auto_suggestions(
+        settings: &Settings,
+        active_suggestions: &mut ActiveSuggestions,
+        content: &mut Contents,
+        width: u16,
+        rows_left_before_end_of_screen: u16,
+        cursor_pos_maybe: Option<Coord>,
+    ) {
+        content.newline();
+
+        if active_suggestions.all_suggestions_len() == 0 {
+            return;
+        }
+
+        let grid_start_row = content.cursor_position().row;
+        let max_rows = settings.num_suggestion_rows.max(2);
+
+        let target_sug_height = max_rows.saturating_sub(3).max(2);
+        let mut num_rows_visible = (rows_left_before_end_of_screen as usize)
+            .saturating_sub(3)
+            .clamp(2, target_sug_height as usize)
+            .min(active_suggestions.filtered_suggestions_len());
+
+        num_rows_visible = num_rows_visible.max(1);
+
+        let items = active_suggestions.into_list(num_rows_visible, &settings.colour_palette);
+        let num_rows_visible = items.len();
+        if num_rows_visible == 0 {
+            return;
+        }
+
+        let term_width = width as usize;
+        const MIN_BOX_WIDTH: usize = 70;
+        let max_box_width = if term_width >= MIN_BOX_WIDTH {
+            (term_width * 40 / 100).max(MIN_BOX_WIDTH)
+        } else {
+            term_width
+        };
+        let max_inner_width = max_box_width.saturating_sub(2).max(1);
+
+        let max_item_width = items
+            .iter()
+            .map(|item| item.display_width)
+            .max()
+            .unwrap_or(0);
+        let inner_width = max_item_width.min(max_inner_width).max(40);
+        let box_width = inner_width + 2;
+
+        let popup_anchor_col = cursor_pos_maybe
+            .map_or(0, |pos| pos.col as usize)
+            .min(term_width.saturating_sub(1));
+        let max_x = term_width.saturating_sub(box_width);
+        let x = popup_anchor_col.min(max_x) as u16;
+        let y = grid_start_row;
+
+        let box_area = Rect {
+            x,
+            y,
+            width: box_width as u16,
+            height: (num_rows_visible + 3) as u16,
+        };
+
+        let full_inner_area = Rect {
+            x: x + 1,
+            y: y + 1,
+            width: inner_width as u16,
+            height: (num_rows_visible + 1) as u16,
+        };
+
+        content.fill_rect(full_inner_area, " ", Style::default(), Tag::TabSuggestion);
+
+        content.render_border(
+            box_area,
+            Tag::TabSuggestion,
+            settings.colour_palette.secondary_text(),
+            false,
+            cursor_pos_maybe,
+        );
+
+        let selected_1d = active_suggestions.current_1d_index();
+        let window_range = active_suggestions.row_window_to_show.get_window_range();
+        let mut selected_grid_row: Option<u16> = None;
+
+        for (i, item) in items.iter().enumerate() {
+            let item_row = y + 1 + i as u16;
+            content.move_cursor_to(item_row, x + 1);
+
+            let is_selected = selected_1d == Some(window_range.start + i);
+            if is_selected {
+                selected_grid_row = Some(i as u16);
+            }
+            let spans = item.render(inner_width, is_selected);
+            let tag = Tag::Suggestion(item.suggestion_idx);
+
+            for span in spans {
+                content.write_tagged_span_area(&TaggedSpan::new(span, tag), full_inner_area);
+            }
+        }
+
+        content.draw_vertical_scrollbar(
+            x + box_width as u16 - 1,
+            y + 1,
+            num_rows_visible as u16,
+            active_suggestions.filtered_suggestions_len(),
+            num_rows_visible,
+            window_range.start,
+            settings.colour_palette.secondary_text(),
+            Tag::TabSuggestion,
+        );
+
+        let pos_string = active_suggestions
+            .current_1d_index()
+            .map(|idx| idx.to_string())
+            .unwrap_or_else(|| "none".to_string());
+
+        let status_str = format!(
+            "Pos: {}; Filtered: {}/{}; {} ({:.1}ms)",
+            pos_string,
+            active_suggestions.filtered_suggestions_len(),
+            active_suggestions.all_suggestions_len(),
+            active_suggestions.comp_type.display_name(),
+            active_suggestions.load_time.as_secs_f32() * 1000.0,
+        );
+
+        let status_span = TaggedSpan::new(
+            Span::styled(status_str, settings.colour_palette.secondary_text()),
+            Tag::TabSuggestion,
+        );
+        content.move_cursor_to(y + num_rows_visible as u16 + 1, x + 1);
+        content.write_tagged_span_area(&status_span, full_inner_area);
+
+        if let Some(sel_row) = selected_grid_row {
+            content.set_focus_row(y + 1 + sel_row);
+        }
+
+        content.move_cursor_to(y + num_rows_visible as u16 + 2, 0);
+        content.newline();
     }
 }
 

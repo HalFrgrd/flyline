@@ -448,6 +448,81 @@ mod description_tests {
         assert_eq!(sug3.s, "--foo");
         assert_eq!(sug3.suffix, " "); // should still have a space
     }
+
+    #[test]
+    fn test_into_list_windowing() {
+        let palette = crate::palette::Palette::default();
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("sug1", "", ""),
+                ProcessedSuggestion::new("sug2", "", ""),
+                ProcessedSuggestion::new("sug3", "", ""),
+                ProcessedSuggestion::new("sug4", "", ""),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+        };
+        let mut active = ActiveSuggestions::new(
+            builder,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            true, // auto_started
+        );
+
+        // Grid width/rows logic, let's call into_list with max_rows = 2
+        let list1 = active.into_list(2, &palette);
+        assert_eq!(list1.len(), 2);
+        assert_eq!(
+            list1[0]
+                .spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>(),
+            "sug1"
+        );
+        assert_eq!(
+            list1[1]
+                .spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>(),
+            "sug2"
+        );
+
+        // Now change selected coordinate and test sliding window movement
+        active.selected_coord = Some((0, 2)); // select index 2 ("sug3")
+        let list2 = active.into_list(2, &palette);
+        assert_eq!(list2.len(), 2);
+        assert_eq!(
+            list2[0]
+                .spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>(),
+            "sug2"
+        );
+        assert_eq!(
+            list2[1]
+                .spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>(),
+            "sug3"
+        );
+
+        // Test arrow key movement on list
+        active.on_down_arrow(); // should move from index 2 to index 3
+        assert_eq!(active.selected_coord, Some((0, 3)));
+        active.on_down_arrow(); // should wrap from 3 to 0
+        assert_eq!(active.selected_coord, Some((0, 0)));
+        active.on_up_arrow(); // should wrap from 0 to 3
+        assert_eq!(active.selected_coord, Some((0, 3)));
+        active.on_up_arrow(); // should move from 3 to 2
+        assert_eq!(active.selected_coord, Some((0, 2)));
+    }
 }
 
 impl ProcessedSuggestion {
@@ -879,6 +954,7 @@ pub struct ActiveSuggestions {
     /// is too narrow to show them all simultaneously.
     pub last_num_data_cols: usize,
     col_window_to_show: StatefulSlidingWindow,
+    pub(crate) row_window_to_show: StatefulSlidingWindow,
     fuzzy_matcher: ArinaeMatcher,
     /// How long it took to generate the completions.
     pub load_time: std::time::Duration,
@@ -915,6 +991,7 @@ impl ActiveSuggestions {
             last_num_visible_cols: 0,
             last_num_data_cols: 0,
             col_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
+            row_window_to_show: StatefulSlidingWindow::new(0, 1, sug_len, Some(1)),
             fuzzy_matcher: ArinaeMatcher::new(skim::CaseMatching::Smart, true),
             load_time,
             comp_type,
@@ -1246,6 +1323,48 @@ impl ActiveSuggestions {
 
         self.last_num_rows_per_col = max_rows;
         final_grid
+    }
+
+    pub fn into_list(&mut self, max_rows: usize, palette: &Palette) -> Vec<SuggestionFormatted> {
+        let newly_processed = self.process_chunk();
+        if !newly_processed.is_empty() {
+            self.update_fuzzy_filtered();
+        }
+
+        let selected_row = self.selected_coord.map(|(_, r)| r).unwrap_or(0);
+        let n = self.filtered_suggestions.len();
+        if n == 0 || max_rows == 0 {
+            return vec![];
+        }
+
+        self.last_num_data_cols = 1;
+        self.last_num_visible_cols = 1;
+        self.last_num_rows_per_col = n.max(1);
+
+        let frame_index: usize = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| (d.as_millis() / (1000 / ANIMATION_FRAME_FPS as u128)) as usize)
+            .unwrap_or(0);
+
+        self.row_window_to_show.update_max_index(n);
+        self.row_window_to_show.update_window_size(max_rows);
+        self.row_window_to_show.move_index_to(selected_row);
+
+        let window_range = self.row_window_to_show.get_window_range();
+
+        window_range
+            .map(|filtered_idx| {
+                let fi = &self.filtered_suggestions[filtered_idx];
+                let suggestion = &self.processed_suggestions[fi.suggestion_idx];
+                SuggestionFormatted::new(
+                    suggestion,
+                    fi.suggestion_idx,
+                    fi.matching_indices.clone(),
+                    palette,
+                    frame_index,
+                )
+            })
+            .collect()
     }
 
     /// Number of suggestions currently shown (after fuzzy filtering).
