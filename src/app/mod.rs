@@ -714,6 +714,10 @@ impl<'a> App<'a> {
     fn on_mouse(&mut self, mouse: MouseEvent) -> bool {
         log::trace!("Mouse event: {:?}", mouse);
 
+        let old_mouse_button_down = self.mouse_state.is_left_button_down();
+        let old_mouse_over_cell = self.last_mouse_over_cell;
+        let old_tooltip = self.tooltip.clone();
+
         // Track whether the left mouse button is currently being held down so
         // interactive cells (clipboard cells, buttons) can render a "depressed"
         // state while the user is pressing on them.
@@ -1036,12 +1040,15 @@ impl<'a> App<'a> {
             _ => {}
         }
 
+        let something_changed = self.last_mouse_over_cell != old_mouse_over_cell
+            || self.tooltip != old_tooltip
+            || self.mouse_state.is_left_button_down() != old_mouse_button_down;
+
         if update_buffer {
             self.on_possible_buffer_change();
             true
         } else {
-            // Return true for move events to ensure redraw for tooltips and highlights
-            matches!(mouse.kind, MouseEventKind::Moved)
+            something_changed
         }
     }
 
