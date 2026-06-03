@@ -1114,6 +1114,9 @@ impl App<'_> {
             (fds[0], fds[1])
         };
 
+        // Since the fork doesnt live for long, the main process should have the caches warm
+        crate::bash_funcs::warm_completion_caches();
+
         let pid = unsafe { libc::fork() };
 
         if pid == 0 {

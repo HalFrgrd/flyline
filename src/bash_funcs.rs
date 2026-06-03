@@ -321,6 +321,8 @@ pub fn get_all_aliases() -> Vec<String> {
 }
 
 pub fn get_all_reserved_words() -> Vec<String> {
+    log::info!("Getting cached reserved words");
+
     vec![
         "if", "then", "else", "elif", "fi", "case", "esac", "for", "select", "while", "until",
         "do", "done", "in", "function", "time", "{", "}", "!", "[[", "]]", "coproc",
@@ -1430,6 +1432,20 @@ pub fn get_possible_command_words() -> impl Iterator<Item = String> {
 pub fn get_possible_command_words() -> impl Iterator<Item = String> {
     get_all_reserved_words().into_iter()
 }
+
+#[cfg(not(test))]
+pub fn warm_completion_caches() {
+    let _ = get_cached_aliases();
+    let _ = get_cached_reserved_words();
+    let _ = get_cached_shell_functions();
+    let _ = get_cached_builtins();
+    if let Ok(mut exe_guard) = EXECUTABLES_ON_PATH.lock() {
+        exe_guard.update_cache();
+    }
+}
+
+#[cfg(test)]
+pub fn warm_completion_caches() {}
 
 #[cfg(not(test))]
 pub fn read_terminating_signal() -> c_int {
