@@ -479,6 +479,7 @@ Commands:
   log                   Logging commands: dump, configure level, or stream logs.
   run-tutorial          Run the interactive tutorial for first-time users.
   editor                Configure the inline editor.
+  suggestions           Configure suggestion behavior.
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
