@@ -600,7 +600,7 @@ fn analyze_candidate(s: &str) -> Option<(&str, &str, usize)> {
 /// So here I convert those to the format "suggestion<TAB>description" so that
 /// flyline can show the description in a separate column.
 fn detect_and_convert_inline_descriptions(completions: &mut Vec<String>, flags: &CompletionFlags) {
-    if flags.filename_completion_desired {
+    if flags.filename_completion_desired || completions.iter().any(|s| s.contains('\t')) {
         return;
     }
 
@@ -1635,6 +1635,16 @@ mod tests {
         let mut comps = vec!["my file      description".to_string()];
         detect_and_convert_inline_descriptions(&mut comps, &flags);
         assert_eq!(comps[0], "my file      description");
+
+        // 9. One completion already contains a tab character.
+        // Should NOT convert any of them.
+        let mut comps = vec![
+            "port\tList port mappings".to_string(),
+            "ps      List containers".to_string(),
+        ];
+        detect_and_convert_inline_descriptions(&mut comps, &flags);
+        assert_eq!(comps[0], "port\tList port mappings");
+        assert_eq!(comps[1], "ps      List containers");
     }
 }
 
