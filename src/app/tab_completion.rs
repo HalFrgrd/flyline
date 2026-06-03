@@ -1126,6 +1126,7 @@ impl App<'_> {
                 let dev_null =
                     libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
                 if dev_null >= 0 {
+                    // Close these incase the tab completion generation tries to use them
                     libc::dup2(dev_null, libc::STDIN_FILENO);
                     libc::dup2(dev_null, libc::STDOUT_FILENO);
                     libc::dup2(dev_null, libc::STDERR_FILENO);
