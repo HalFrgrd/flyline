@@ -277,6 +277,7 @@ impl Drop for TabCompletionHandle {
                 libc::kill(pid, libc::SIGKILL);
                 let mut status = 0;
                 libc::waitpid(pid, &mut status, 0);
+                log::info!("Tab completion process (pid {}) reaped", pid);
             }
         }
     }

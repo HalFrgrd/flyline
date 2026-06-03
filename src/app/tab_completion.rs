@@ -1080,9 +1080,11 @@ impl App<'_> {
         }
     }
     pub fn start_tab_complete(&mut self, auto_started: bool) {
-        // This will stop the current process
-        if let ContentMode::TabCompletionWaiting { .. } = self.content_mode {
-            self.content_mode = ContentMode::Normal;
+        // Stop the current tab completion process if one is running by dropping its handle
+        if let ContentMode::TabCompletionWaiting { handle, .. } =
+            std::mem::replace(&mut self.content_mode, ContentMode::Normal)
+        {
+            drop(handle);
         }
 
         // Phase 1: compute the completion context and generate suggestions.
@@ -1118,6 +1120,14 @@ impl App<'_> {
             // Child process
             unsafe {
                 libc::close(read_fd);
+                let dev_null =
+                    libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
+                if dev_null >= 0 {
+                    libc::dup2(dev_null, libc::STDIN_FILENO);
+                    libc::dup2(dev_null, libc::STDOUT_FILENO);
+                    libc::dup2(dev_null, libc::STDERR_FILENO);
+                    libc::close(dev_null);
+                }
             }
             let thread_start = std::time::Instant::now();
             let result = gen_completions_internal(&completion_context_owned, auto_started);
@@ -1138,6 +1148,8 @@ impl App<'_> {
                 }
             }
 
+            log::info!("Child process completed");
+
             // Use _exit to avoid running atexit handlers in the child process.
             unsafe {
                 libc::_exit(0);
@@ -1148,6 +1160,7 @@ impl App<'_> {
                 libc::close(write_fd);
             }
 
+            // Using a thread here makes it easier to handle polling here and in the main app loop.
             std::thread::spawn(move || {
                 let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
                 let mut len_buf = [0u8; 8];
