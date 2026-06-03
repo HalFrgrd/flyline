@@ -470,6 +470,19 @@ pub fn run_help(
     sandbox: bool,
     timeout_ms: u64,
 ) -> anyhow::Result<String> {
+    let mut actual_command = command_path.to_string();
+
+    // If command_path is a simple name (no path separators), check CWD.
+    if !command_path.contains(std::path::MAIN_SEPARATOR) {
+        let cwd_path = std::env::current_dir()?.join(command_path);
+        if cwd_path.exists() {
+            use is_executable::IsExecutable;
+            if cwd_path.is_executable() {
+                actual_command = format!(".{}{}", std::path::MAIN_SEPARATOR, command_path);
+            }
+        }
+    }
+
     let use_sandbox = sandbox && {
         // Test if bwrap exists in PATH by trying to spawn it with --version
         match std::process::Command::new("bwrap")
@@ -504,11 +517,11 @@ pub fn run_help(
             "/proc",
             "--unshare-all",
             "--",
-            command_path,
+            &actual_command,
         ]);
         cmd
     } else {
-        std::process::Command::new(command_path)
+        std::process::Command::new(&actual_command)
     };
 
     let mut child = child
@@ -523,7 +536,13 @@ pub fn run_help(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| anyhow::anyhow!("failed to spawn '{}': {}", command_path, e))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                anyhow::anyhow!("command '{}' not found in PATH or CWD", actual_command)
+            } else {
+                anyhow::anyhow!("failed to spawn '{}': {}", actual_command, e)
+            }
+        })?;
 
     let mut stdout_handle = child
         .stdout
@@ -907,6 +926,39 @@ Options:
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_run_help_in_cwd() {
+        use std::io::Write;
+        let temp_dir = std::env::current_dir().unwrap().join("target").join("test_run_help_cwd");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let cmd_path = temp_dir.join("dummy_cmd");
+
+        let script = "#!/bin/sh\necho \"Usage: dummy_cmd [OPTIONS]\n\nOptions:\n  --foo  bar\"";
+        {
+            let mut f = std::fs::File::create(&cmd_path).unwrap();
+            f.write_all(script.as_bytes()).unwrap();
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&cmd_path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&cmd_path, perms).unwrap();
+        }
+
+        let old_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        let res = run_help("dummy_cmd", &[], false, 5000);
+
+        std::env::set_current_dir(old_cwd).unwrap();
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        let output = res.expect("run_help should succeed");
+        assert!(output.contains("--foo"));
     }
 
     #[test]
