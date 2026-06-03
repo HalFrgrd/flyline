@@ -2714,16 +2714,13 @@ pub fn print_bindings_table(
         description: String,
     }
 
-    let binding_to_row = |binding: &Binding, is_user: bool| -> Row {
-        let mut keys = binding
+    let binding_to_row = |binding: &Binding| -> Row {
+        let keys = binding
             .key_events
             .iter()
             .map(|k| k.display_with_remapping(remappings))
             .collect::<Vec<_>>()
             .join(", ");
-        if is_user {
-            keys = format!("User keybinding: {}", keys);
-        }
         Row {
             keys,
             context: binding.context.display(),
@@ -2732,19 +2729,17 @@ pub fn print_bindings_table(
         }
     };
 
-    // Collect rows lowest-to-highest priority:
-    //   1. DEFAULT_BINDINGS in reverse (last entry = lowest default priority)
-    //   2. user_bindings in reverse (last entry = lowest user priority; all user
-    //      bindings have higher priority than all defaults)
-    let mut rows: Vec<Row> = Vec::new();
+    let mut default_rows: Vec<Row> = Vec::new();
     for binding in DEFAULT_BINDINGS.iter().rev() {
         if filter_event.is_none_or(|ev| binding.matches(ev)) {
-            rows.push(binding_to_row(binding, false));
+            default_rows.push(binding_to_row(binding));
         }
     }
+
+    let mut user_rows: Vec<Row> = Vec::new();
     for binding in user_bindings.iter() {
         if filter_event.is_none_or(|ev| binding.matches(ev)) {
-            rows.push(binding_to_row(binding, true));
+            user_rows.push(binding_to_row(binding));
         }
     }
 
@@ -2757,30 +2752,38 @@ pub fn print_bindings_table(
         Constraint::Fill(2), // Action
         Constraint::Fill(3), // Description
     ];
-
-    // Build the TableAccum for the bindings.
-    let mut accum = TableAccum::default();
-    accum.header_cells = vec![
-        "Key(s)".to_string(),
-        "Context".to_string(),
-        "Action".to_string(),
-        "Description".to_string(),
-    ];
-    for row in &rows {
-        accum.body_rows.push(vec![
-            row.keys.clone(),
-            row.context.clone(),
-            row.action_name.clone(),
-            row.description.clone(),
-        ]);
-    }
-
-    // Render and print the table, converting each ratatui Line to plain text.
     let options = TableOptions { row_dividers: true };
-    for line in render_table_constrained(&accum, &constraints, term_width, &options) {
-        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        println!("{}", text);
-    }
+
+    let render_rows = |title: &str, rows: &[Row]| {
+        if rows.is_empty() {
+            return;
+        }
+        println!("{}:", title);
+        let mut accum = TableAccum::default();
+        accum.header_cells = vec![
+            "Key(s)".to_string(),
+            "Context".to_string(),
+            "Action".to_string(),
+            "Description".to_string(),
+        ];
+        for row in rows {
+            accum.body_rows.push(vec![
+                row.keys.clone(),
+                row.context.clone(),
+                row.action_name.clone(),
+                row.description.clone(),
+            ]);
+        }
+
+        for line in render_table_constrained(&accum, &constraints, term_width, &options) {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            println!("{}", text);
+        }
+        println!();
+    };
+
+    render_rows("Default Keybindings", &default_rows);
+    render_rows("User Keybindings", &user_rows);
 
     // Print remappings table after keybindings.
     if !remappings.is_empty() {
