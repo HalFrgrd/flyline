@@ -1141,9 +1141,7 @@ impl<'a> App<'a> {
         let term_width = width as usize;
 
         let min_box_width = 22.min(term_width);
-        let max_box_width = (term_width * 40 / 100)
-            .max(70)
-            .min(term_width);
+        let max_box_width = (term_width * 40 / 100).max(70).min(term_width);
 
         let max_item_width = active_suggestions.max_filtered_width();
 
@@ -1164,12 +1162,16 @@ impl<'a> App<'a> {
                 let w = unicode_width::UnicodeWidthStr::width(left_part);
                 if cursor_col >= w {
                     let anchor = cursor_col - w;
-                    anchor.saturating_add(suggestion_prefix_width).saturating_sub(1)
+                    anchor
+                        .saturating_add(suggestion_prefix_width)
+                        .saturating_sub(1)
                 } else {
                     0 // wrapped
                 }
             } else {
-                cursor_col.saturating_add(suggestion_prefix_width).saturating_sub(1)
+                cursor_col
+                    .saturating_add(suggestion_prefix_width)
+                    .saturating_sub(1)
             }
         } else {
             0
