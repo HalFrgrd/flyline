@@ -631,6 +631,12 @@ fn detect_and_convert_inline_descriptions(completions: &mut Vec<String>, flags: 
     if detected {
         for s in completions.iter_mut() {
             if let Some((value, description, _)) = analyze_candidate(s) {
+                let description =
+                    if let Some(stripped) = description.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+                        stripped
+                    } else {
+                        description
+                    };
                 *s = format!("{}\t{}", value, description);
             }
         }
@@ -1645,6 +1651,15 @@ mod tests {
         detect_and_convert_inline_descriptions(&mut comps, &flags);
         assert_eq!(comps[0], "port\tList port mappings");
         assert_eq!(comps[1], "ps      List containers");
+
+        // 10. Descriptions wrapped in parentheses should be stripped.
+        let mut comps = vec![
+            "port      (List port mappings)".to_string(),
+            "ps        (List containers)".to_string(),
+        ];
+        detect_and_convert_inline_descriptions(&mut comps, &flags);
+        assert_eq!(comps[0], "port\tList port mappings");
+        assert_eq!(comps[1], "ps\tList containers");
     }
 }
 

@@ -295,41 +295,6 @@ mod description_tests {
     }
 
     #[test]
-    fn test_split_completion_description_strips_parentheses() {
-        // Single frame with parentheses
-        let (text, frames) = UnprocessedSuggestion::split_completion_description("cmd\t(desc)");
-        assert_eq!(text, "cmd");
-        assert_eq!(frames, vec!["desc".to_string()]);
-
-        // Multiple frames with parentheses
-        let (text, frames) =
-            UnprocessedSuggestion::split_completion_description("cmd\t(frame1)\t(frame2)");
-        assert_eq!(text, "cmd");
-        assert_eq!(frames, vec!["frame1".to_string(), "frame2".to_string()]);
-
-        // Frame without parentheses
-        let (text, frames) = UnprocessedSuggestion::split_completion_description("cmd\tno parens");
-        assert_eq!(text, "cmd");
-        assert_eq!(frames, vec!["no parens".to_string()]);
-
-        // Frame with only leading parenthesis
-        let (text, frames) = UnprocessedSuggestion::split_completion_description("cmd\t(no end");
-        assert_eq!(text, "cmd");
-        assert_eq!(frames, vec!["(no end".to_string()]);
-
-        // Frame with only trailing parenthesis
-        let (text, frames) = UnprocessedSuggestion::split_completion_description("cmd\tno start)");
-        assert_eq!(text, "cmd");
-        assert_eq!(frames, vec!["no start)".to_string()]);
-
-        // Parentheses inside the frame
-        let (text, frames) =
-            UnprocessedSuggestion::split_completion_description("cmd\t(frame (inside))");
-        assert_eq!(text, "cmd");
-        assert_eq!(frames, vec!["frame (inside)".to_string()]);
-    }
-
-    #[test]
     fn raw_match_text_no_tab_unchanged() {
         let item = UnprocessedSuggestion {
             raw_text: "git-commit".to_string(),
@@ -648,17 +613,7 @@ impl UnprocessedSuggestion {
         match raw.split_once('\t') {
             None => (raw, vec![]),
             Some((text, rest)) => {
-                let frames: Vec<String> = rest
-                    .split('\t')
-                    .map(|s| {
-                        if let Some(stripped) = s.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
-                        {
-                            stripped.to_owned()
-                        } else {
-                            s.to_owned()
-                        }
-                    })
-                    .collect();
+                let frames: Vec<String> = rest.split('\t').map(|s| s.to_owned()).collect();
                 (text, frames)
             }
         }
