@@ -20,17 +20,97 @@ use unicode_width::UnicodeWidthStr;
 pub(crate) const COLUMN_PADDING: usize = 2;
 
 /// Describes what to display alongside a suggestion as a visual suffix.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SuggestionDescription {
     /// Pre-processed spans for a single static description.  An empty vec
     /// means no description is shown.
-    Static(Vec<Span<'static>>),
+    Static(#[serde(with = "span_vec_serde")] Vec<Span<'static>>),
     /// A multi-frame animated description.  Frames are cycled at ANIMATION_FRAME_FPS fps.
     /// Each frame is a pre-processed sequence of styled spans.
-    Animation(Vec<Vec<Span<'static>>>),
+    Animation(#[serde(with = "span_vec_vec_serde")] Vec<Vec<Span<'static>>>),
     /// Last-modification time of the associated file (Unix timestamp).
     /// Rendered as a right-aligned, ≤5-character "time ago" string.
     LastMTime(u64),
+}
+
+mod span_vec_serde {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct SpanOwned {
+        content: String,
+        style: Style,
+    }
+
+    pub fn serialize<S>(spans: &Vec<Span<'static>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let owned: Vec<SpanOwned> = spans
+            .iter()
+            .map(|s| SpanOwned {
+                content: s.content.to_string(),
+                style: s.style,
+            })
+            .collect();
+        owned.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Span<'static>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let owned = Vec::<SpanOwned>::deserialize(deserializer)?;
+        Ok(owned
+            .into_iter()
+            .map(|s| Span::styled(s.content, s.style))
+            .collect())
+    }
+}
+
+mod span_vec_vec_serde {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct SpanOwned {
+        content: String,
+        style: Style,
+    }
+
+    pub fn serialize<S>(v: &Vec<Vec<Span<'static>>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let owned: Vec<Vec<SpanOwned>> = v
+            .iter()
+            .map(|vec| {
+                vec.iter()
+                    .map(|s| SpanOwned {
+                        content: s.content.to_string(),
+                        style: s.style,
+                    })
+                    .collect()
+            })
+            .collect();
+        owned.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Vec<Span<'static>>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let owned = Vec::<Vec<SpanOwned>>::deserialize(deserializer)?;
+        Ok(owned
+            .into_iter()
+            .map(|vec| {
+                vec.into_iter()
+                    .map(|s| Span::styled(s.content, s.style))
+                    .collect()
+            })
+            .collect())
+    }
 }
 
 pub const ANIMATION_FRAME_FPS: u64 = 24;
@@ -64,7 +144,7 @@ impl SuggestionDescription {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProcessedSuggestion {
     pub s: String,
     pub prefix: String,
@@ -591,7 +671,7 @@ impl Ord for ProcessedSuggestion {
 /// The expensive filesystem calls (`is_dir`, `style_for_path`,
 /// `fully_expand_path`) only happen when this is converted to a
 /// [`ProcessedSuggestion`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct UnprocessedSuggestion {
     pub raw_text: String,
     pub full_path: Option<PathBuf>,
@@ -773,7 +853,7 @@ const CHUNK_PROCESSING_TIMEOUT: std::time::Duration = std::time::Duration::from_
 /// [`ActiveSuggestions::try_accept`] will silently accept the candidate when
 /// there is only one of them (set to `false` for fuzzy filename matching, where
 /// the user generally wants to see and confirm the match).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ActiveSuggestionsBuilder {
     pub processed: Vec<ProcessedSuggestion>,
     pub unprocessed: VecDeque<UnprocessedSuggestion>,

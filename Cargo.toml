@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
 clap_complete = { version = "4.6.3", features = ["unstable-dynamic"] }
-ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default", "unstable-rendered-line-info"] }
+ratatui = { git = "https://github.com/Marlinski/ratatui.git", rev = "fd8e0f024847af467129e0a166390d7e291c1b2e", features = ["default", "unstable-rendered-line-info", "serde"] }
 # default flags include "windows" which just causes bloat
 # "use-dev-tty" is needed to avoid crossterm's event loop from spinning on closed stdin.
 # See https://github.com/crossterm-rs/crossterm/blob/fce58c879a748f3159216f68833100aa16141ab0/src/event/source/unix/mio.rs#L97-L104

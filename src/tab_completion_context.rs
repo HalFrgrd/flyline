@@ -7,7 +7,7 @@ use crate::{
     text_buffer::SubString,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum CompType {
     #[default]
     None,

@@ -152,6 +152,9 @@ name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "block-buffer"
@@ -298,6 +301,7 @@ dependencies = [
  "itoa",
  "rustversion",
  "ryu",
+ "serde",
  "static_assertions",
 ]
 
@@ -350,6 +354,7 @@ dependencies = [
  "mio",
  "parking_lot",
  "rustix",
+ "serde",
  "signal-hook",
  "signal-hook-mio",
  "winapi",
@@ -1068,6 +1073,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "numtoa"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6aa2c4e539b869820a2b82e1aef6ff40aa85e65decdd5185e83fb4b1249cd00f"
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1367,8 +1378,10 @@ dependencies = [
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-macros",
+ "ratatui-termion",
  "ratatui-termwiz",
  "ratatui-widgets",
+ "serde",
 ]
 
 [[package]]
@@ -1383,6 +1396,7 @@ dependencies = [
  "itertools",
  "kasuari",
  "lru",
+ "serde",
  "strum 0.27.2",
  "thiserror 2.0.18",
  "unicode-segmentation",
@@ -1410,6 +1424,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratatui-termion"
+version = "0.1.0-beta.0"
+source = "git+https://github.com/Marlinski/ratatui.git?rev=fd8e0f024847af467129e0a166390d7e291c1b2e#fd8e0f024847af467129e0a166390d7e291c1b2e"
+dependencies = [
+ "instability",
+ "ratatui-core",
+ "termion",
+]
+
+[[package]]
 name = "ratatui-termwiz"
 version = "0.1.0-beta.0"
 source = "git+https://github.com/Marlinski/ratatui.git?rev=fd8e0f024847af467129e0a166390d7e291c1b2e#fd8e0f024847af467129e0a166390d7e291c1b2e"
@@ -1430,6 +1454,7 @@ dependencies = [
  "itertools",
  "line-clipping",
  "ratatui-core",
+ "serde",
  "strum 0.27.2",
  "time",
  "unicode-segmentation",
@@ -1754,6 +1779,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "termion"
+version = "4.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f44138a9ae08f0f502f24104d82517ef4da7330c35acd638f1f29d3cd5475ecb"
+dependencies = [
+ "libc",
+ "numtoa",
+ "serde",
+]
+
+[[package]]
 name = "termios"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1787,6 +1823,7 @@ dependencies = [
  "pest",
  "pest_derive",
  "phf 0.11.3",
+ "serde",
  "sha2",
  "signal-hook",
  "siphasher",
@@ -1942,6 +1979,7 @@ dependencies = [
  "atomic",
  "getrandom 0.3.4",
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 
@@ -2090,6 +2128,7 @@ checksum = "692daff6d93d94e29e4114544ef6d5c942a7ed998b37abdc19b17136ea428eb7"
 dependencies = [
  "getrandom 0.3.4",
  "mac_address",
+ "serde",
  "sha2",
  "thiserror 1.0.69",
  "uuid",
@@ -2104,6 +2143,7 @@ dependencies = [
  "csscolorparser",
  "deltae",
  "lazy_static",
+ "serde",
  "wezterm-dynamic",
 ]
 

@@ -465,7 +465,7 @@ pub enum CompspecOption {
     PlusDirs = 1 << 6,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompletionFlags {
     pub quote_type: Option<QuoteType>,
 
@@ -1070,7 +1070,7 @@ pub fn fully_expand_path(p: &str) -> String {
 }
 
 // QuoteType can be  in the middle  of a word (i.e.  backslash)
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub enum QuoteType {
     SingleQuote,
     DoubleQuote,

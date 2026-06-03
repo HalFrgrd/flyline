@@ -2015,7 +2015,7 @@ mod test_undo_redo {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SubString {
     pub s: String,    // contents expected to be found between start and end
     pub start: usize, // byte index in the original buffer
