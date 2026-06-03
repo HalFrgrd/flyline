@@ -1139,19 +1139,18 @@ impl<'a> App<'a> {
         }
 
         let term_width = width as usize;
-        const MIN_BOX_WIDTH: usize = 70;
-        let max_box_width = if term_width >= MIN_BOX_WIDTH {
-            (term_width * 40 / 100).max(MIN_BOX_WIDTH)
-        } else {
-            term_width
-        };
-        let max_inner_width = max_box_width.saturating_sub(2).max(1);
+
+        let min_box_width = 22.min(term_width);
+        let max_box_width = (term_width * 40 / 100)
+            .max(70)
+            .min(term_width);
 
         let max_item_width = active_suggestions.max_filtered_width();
-        let inner_width = max_item_width.min(max_inner_width).max(40);
-        let box_width = inner_width + 2;
 
-        let prefix_width = active_suggestions
+        let box_width = (max_item_width + 2).clamp(min_box_width, max_box_width);
+        let inner_width = box_width.saturating_sub(2).max(1);
+
+        let suggestion_prefix_width = active_suggestions
             .processed_suggestions
             .first()
             .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
@@ -1165,12 +1164,12 @@ impl<'a> App<'a> {
                 let w = unicode_width::UnicodeWidthStr::width(left_part);
                 if cursor_col >= w {
                     let anchor = cursor_col - w;
-                    anchor.saturating_add(prefix_width).saturating_sub(1)
+                    anchor.saturating_add(suggestion_prefix_width).saturating_sub(1)
                 } else {
                     0 // wrapped
                 }
             } else {
-                cursor_col.saturating_add(prefix_width).saturating_sub(1)
+                cursor_col.saturating_add(suggestion_prefix_width).saturating_sub(1)
             }
         } else {
             0
@@ -1208,8 +1207,8 @@ impl<'a> App<'a> {
         );
 
         let source_str = format!(
-            "{} ({:.1}ms) ",
-            active_suggestions.comp_type.display_name(),
+            "{:.1}ms",
+            // active_suggestions.comp_type.display_name(),
             active_suggestions.load_time.as_secs_f32() * 1000.0,
         );
 
