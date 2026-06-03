@@ -1217,25 +1217,25 @@ impl<'a> App<'a> {
             active_suggestions.load_time.as_secs_f32() * 1000.0,
         );
 
+        let status_line = TaggedLine::from(vec![
+            TaggedSpan::new(
+                Span::styled(status_prefix, settings.colour_palette.secondary_text()),
+                Tag::TabSuggestion,
+            ),
+            TaggedSpan::new(
+                Span::styled(source_str, settings.colour_palette.secondary_text()),
+                Tag::TabCompletionSource,
+            ),
+        ]);
+
         content.render_border(
             box_area,
             Tag::TabSuggestion,
             settings.colour_palette.secondary_text(),
             false,
             cursor_pos_maybe,
-            None,
+            Some(status_line),
         );
-
-        let status_y = box_area.bottom() - 1;
-        content.move_cursor_to(status_y, x + 2);
-        content.write_tagged_span(&TaggedSpan::new(
-            Span::styled(status_prefix, settings.colour_palette.secondary_text()),
-            Tag::TabSuggestion,
-        ));
-        content.write_tagged_span(&TaggedSpan::new(
-            Span::styled(source_str, settings.colour_palette.secondary_text()),
-            Tag::TabCompletionSource,
-        ));
 
         let selected_1d = active_suggestions.current_1d_index();
         let window_range = active_suggestions.row_window_to_show.get_window_range();
