@@ -60,6 +60,8 @@ pub struct Arg {
     pub value_type: Option<String>,
     /// Number of values accepted (e.g. `*`, `+`, `?`, or a count like `"1"`).
     pub num_args: Option<String>,
+    /// Possible values for the option.
+    pub possible_values: Option<Vec<String>>,
 }
 
 /// A parsed command (or sub-command).
@@ -121,6 +123,117 @@ impl Command {
             sub.expand_no_options();
         }
     }
+
+    pub fn populate_possible_values(&mut self) {
+        for arg in &mut self.args {
+            if arg.possible_values.is_none() {
+                arg.possible_values =
+                    parse_possible_values(arg.value_type.as_deref(), arg.description.as_deref());
+            }
+        }
+        for sub in &mut self.subcommands {
+            sub.populate_possible_values();
+        }
+    }
+}
+
+pub fn parse_possible_values(
+    value_type: Option<&str>,
+    description: Option<&str>,
+) -> Option<Vec<String>> {
+    // 1. Try to parse from value_type (e.g. {info,debug} or info|debug)
+    if let Some(vt) = value_type {
+        let clean_type = vt.trim_matches(|c| c == '[' || c == ']' || c == '<' || c == '>');
+        if clean_type.starts_with('{') && clean_type.ends_with('}') {
+            let inner = &clean_type[1..clean_type.len() - 1];
+            let parts: Vec<String> = inner
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !parts.is_empty() {
+                return Some(parts);
+            }
+        } else if clean_type.contains('|') {
+            let parts: Vec<String> = clean_type
+                .split('|')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if parts.len() > 1
+                && parts.iter().all(|s| {
+                    s.chars()
+                        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                })
+            {
+                return Some(parts);
+            }
+        }
+    }
+
+    // 2. Try to parse from description
+    if let Some(desc) = description {
+        // regex to find the prefix
+        let re_prefix = regex::Regex::new(
+            r"(?i)\b(?:possible\s+values|choices|allowed\s+values|valid\s+values|one\s+of|accepts)\s*(?:=|:|\bare\b)\s*|\bmust\s+be\s+(?:either\s+|one\s+of\s+)?(?:=|:)?\s*"
+        ).unwrap();
+
+        if let Some(mat) = re_prefix.find(desc) {
+            let mut remaining = &desc[mat.end()..];
+
+            // If it starts with a bracket or brace, extract the inner content
+            if remaining.starts_with('[') {
+                if let Some(end_idx) = remaining.find(']') {
+                    remaining = &remaining[1..end_idx];
+                }
+            } else if remaining.starts_with('{') {
+                if let Some(end_idx) = remaining.find('}') {
+                    remaining = &remaining[1..end_idx];
+                }
+            } else {
+                // Otherwise, take up to the next clause boundary: a period (if followed by space/end), a semicolon,
+                // or a bracket, or maybe parenthesis.
+                let boundary_re = regex::Regex::new(r"(?:\.(?:\s|$)|\;|\]|\))").unwrap();
+                if let Some(mat_boundary) = boundary_re.find(remaining) {
+                    remaining = &remaining[..mat_boundary.start()];
+                }
+            }
+
+            let mut remaining_str = remaining.trim();
+            if let Some(stripped) = remaining_str.strip_prefix("either ") {
+                remaining_str = stripped.trim();
+            }
+            if let Some(stripped) = remaining_str.strip_prefix("the following:") {
+                remaining_str = stripped.trim();
+            }
+
+            // Split the remaining string into tokens.
+            let token_sep =
+                regex::Regex::new(r"\s*(?:,\s*(?:or|and)?|\b(?:or|and)\b|\||/)\s*").unwrap();
+            let raw_tokens: Vec<&str> = token_sep.split(remaining_str).collect();
+
+            let mut values = Vec::new();
+            for token in raw_tokens {
+                let clean = token
+                    .trim()
+                    .trim_matches(|c| c == '\'' || c == '"' || c == '`');
+                let clean = clean.trim();
+                if !clean.is_empty()
+                    && clean
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                {
+                    values.push(clean.to_string());
+                }
+            }
+
+            if !values.is_empty() {
+                return Some(values);
+            }
+        }
+    }
+
+    None
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -241,6 +354,12 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
                     }
                 }
             };
+        }
+
+        if let Some(possible_values) = &arg.possible_values {
+            clap_arg = clap_arg.value_parser(clap::builder::PossibleValuesParser::new(
+                possible_values.clone(),
+            ));
         }
 
         clap_cmd = clap_cmd.arg(clap_arg);
@@ -648,6 +767,7 @@ mod tests {
                     description: Some("Enable verbose output.".to_string()),
                     value_type: None,
                     num_args: None,
+                    ..Default::default()
                 },
                 Arg {
                     long: Some("--output".to_string()),
@@ -655,6 +775,7 @@ mod tests {
                     description: Some("Output file.".to_string()),
                     value_type: Some("<PATH>".to_string()),
                     num_args: None,
+                    ..Default::default()
                 },
             ],
             subcommands: vec![Command {
@@ -728,6 +849,7 @@ Options:
                     description: Some("DWARF debug dump selector.".to_string()),
                     value_type: None,
                     num_args: None,
+                    ..Default::default()
                 },
                 Arg {
                     long: Some("--debug-dump".to_string()),
@@ -735,6 +857,7 @@ Options:
                     description: Some("DWARF debug dump mode.".to_string()),
                     value_type: Some("links".to_string()),
                     num_args: None,
+                    ..Default::default()
                 },
             ],
             ..Command::default()
@@ -766,6 +889,7 @@ Options:
                     description: Some("DWARF debug dump selector.".to_string()),
                     value_type: Some("a/".to_string()),
                     num_args: None,
+                    ..Default::default()
                 },
                 Arg {
                     long: Some("--debug-dump".to_string()),
@@ -773,6 +897,7 @@ Options:
                     description: Some("DWARF debug dump links mode.".to_string()),
                     value_type: Some("links".to_string()),
                     num_args: None,
+                    ..Default::default()
                 },
             ],
             ..Command::default()
@@ -822,6 +947,7 @@ Options:
             description: Some("Be verbose".to_string()),
             value_type: None,
             num_args: None,
+            ..Default::default()
         });
 
         // Verify through the tree.
@@ -924,5 +1050,102 @@ Options:
         let sub = clap_cmd.find_subcommand("build").unwrap();
         let visible_aliases: Vec<&str> = sub.get_visible_aliases().collect();
         assert_eq!(visible_aliases, vec!["b"]);
+    }
+
+    #[test]
+    fn test_parse_possible_values_extraction() {
+        // Test parsing from value_type
+        assert_eq!(
+            parse_possible_values(Some("{info,debug,trace}"), None),
+            Some(vec![
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+        assert_eq!(
+            parse_possible_values(Some("info|debug|trace"), None),
+            Some(vec![
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+        assert_eq!(
+            parse_possible_values(Some("[info|debug|trace]"), None),
+            Some(vec![
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+
+        // Test parsing from description
+        assert_eq!(
+            parse_possible_values(
+                None,
+                Some("Set the logging level [possible values: error, warn, info, debug, trace]")
+            ),
+            Some(vec![
+                "error".to_string(),
+                "warn".to_string(),
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+        assert_eq!(
+            parse_possible_values(None, Some("Choices: info, debug, trace")),
+            Some(vec![
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+        assert_eq!(
+            parse_possible_values(
+                None,
+                Some("allowed values are 'info', 'debug', or 'trace'.")
+            ),
+            Some(vec![
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+        assert_eq!(
+            parse_possible_values(None, Some("must be either info or debug")),
+            Some(vec!["info".to_string(), "debug".to_string()])
+        );
+        assert_eq!(
+            parse_possible_values(None, Some("valid values: info/debug/trace")),
+            Some(vec![
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+        assert_eq!(
+            parse_possible_values(None, Some("one of: info, debug, trace")),
+            Some(vec![
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+        assert_eq!(
+            parse_possible_values(None, Some("accepts: \"info\", \"debug\", \"trace\"")),
+            Some(vec![
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+
+        // Test none when no matches or junk
+        assert_eq!(
+            parse_possible_values(None, Some("This option can be specified multiple times.")),
+            None
+        );
     }
 }

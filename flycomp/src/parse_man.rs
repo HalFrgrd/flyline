@@ -416,6 +416,7 @@ fn add_option(cmd: &mut Command, option_text: &str, description: &str) -> bool {
                 },
                 value_type: parsed.value_type,
                 num_args: parsed.num_args,
+                ..Default::default()
             });
             added = true;
         }
@@ -1078,6 +1079,7 @@ pub fn parse_manpage(cmd_name: &str, content: &str) -> Option<Command> {
     } else {
         // Expand bracketed negation flags (like --[no-]color) into both variants
         cmd.expand_no_options();
+        cmd.populate_possible_values();
         Some(cmd)
     }
 }

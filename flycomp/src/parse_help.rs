@@ -48,6 +48,7 @@ pub fn parse_help(help: &str) -> Command {
     };
     // Expand bracketed negation flags (like --[no-]color) into both variants
     cmd.expand_no_options();
+    cmd.populate_possible_values();
     cmd
 }
 
@@ -129,8 +130,26 @@ fn collect_continuation<'a>(
     while i < lines.len() {
         let line = lines[i];
         if line.trim().is_empty() {
-            // blank line ends the block
-            break;
+            let mut next_is_continuation = false;
+            let mut j = i + 1;
+            while j < lines.len() {
+                let next_line = lines[j];
+                if next_line.trim().is_empty() {
+                    j += 1;
+                    continue;
+                }
+                let ind = indent_of(next_line);
+                if ind > base_indent && !next_line.trim().starts_with('-') {
+                    next_is_continuation = true;
+                }
+                break;
+            }
+            if next_is_continuation {
+                i = j;
+                continue;
+            } else {
+                break;
+            }
         }
         let ind = indent_of(line);
         if ind <= base_indent {
@@ -307,6 +326,7 @@ pub fn parse_help_clap(help: &str) -> Command {
                     description,
                     value_type,
                     num_args,
+                    ..Default::default()
                 });
             }
             continue;
@@ -420,6 +440,7 @@ pub fn parse_help_argparse(help: &str) -> Command {
                     description,
                     value_type,
                     num_args,
+                    ..Default::default()
                 });
             }
             continue;
@@ -504,6 +525,7 @@ pub fn parse_help_generic(help: &str) -> Command {
                 description,
                 value_type,
                 num_args,
+                ..Default::default()
             });
             continue;
         }
@@ -671,6 +693,33 @@ Read more at https://github.com/HalFrgrd/flyline
                 .and_then(|a| a.description.as_deref())
                 .unwrap_or("")
                 .contains("logging level")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--log-level").and_then(|a| a.possible_values.clone()),
+            Some(vec![
+                "error".to_string(),
+                "warn".to_string(),
+                "info".to_string(),
+                "debug".to_string(),
+                "trace".to_string()
+            ])
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--show-animations").and_then(|a| a.possible_values.clone()),
+            Some(vec!["true".to_string(), "false".to_string()])
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--show-inline-history").and_then(|a| a.possible_values.clone()),
+            Some(vec!["true".to_string(), "false".to_string()])
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--auto-close-chars").and_then(|a| a.possible_values.clone()),
+            Some(vec!["true".to_string(), "false".to_string()])
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--enable-extended-key-codes")
+                .and_then(|a| a.possible_values.clone()),
+            Some(vec!["true".to_string(), "false".to_string()])
         );
     }
 
