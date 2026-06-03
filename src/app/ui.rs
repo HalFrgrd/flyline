@@ -1143,7 +1143,8 @@ impl<'a> App<'a> {
         let min_box_width = 22.min(term_width);
         let max_box_width = (term_width * 40 / 100).max(70).min(term_width);
 
-        let max_item_width = active_suggestions.max_filtered_width();
+        // let max_item_width = active_suggestions.max_filtered_width();
+        let max_item_width = active_suggestions.max_width();
 
         let box_width = (max_item_width + 2).clamp(min_box_width, max_box_width);
         let inner_width = box_width.saturating_sub(2).max(1);

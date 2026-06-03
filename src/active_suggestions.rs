@@ -1532,6 +1532,14 @@ impl ActiveSuggestions {
             .unwrap_or(0)
     }
 
+    pub fn max_width(&self) -> usize {
+        self.processed_suggestions
+            .iter()
+            .map(|sug| sug.display_width())
+            .max()
+            .unwrap_or(0)
+    }
+
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
         let selected_idx = if let Some(selected_idx) = self.current_1d_index() {
             selected_idx
