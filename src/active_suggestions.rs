@@ -1524,6 +1524,7 @@ impl ActiveSuggestions {
         }
     }
 
+    #[allow(dead_code)]
     pub fn max_filtered_width(&self) -> usize {
         self.filtered_suggestions
             .iter()
