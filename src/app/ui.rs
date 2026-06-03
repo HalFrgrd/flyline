@@ -1147,11 +1147,7 @@ impl<'a> App<'a> {
         };
         let max_inner_width = max_box_width.saturating_sub(2).max(1);
 
-        let max_item_width = items
-            .iter()
-            .map(|item| item.display_width)
-            .max()
-            .unwrap_or(0);
+        let max_item_width = active_suggestions.max_filtered_width();
         let inner_width = max_item_width.min(max_inner_width).max(40);
         let box_width = inner_width + 2;
 

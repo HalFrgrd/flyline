@@ -95,7 +95,7 @@ pub struct SuggestionFormatted {
 
 impl SuggestionFormatted {
     /// Width of the separator between the suggestion text and its description.
-    const DESCRIPTION_SEPARATOR: &'static str = "  ";
+    pub(crate) const DESCRIPTION_SEPARATOR: &'static str = "  ";
 
     /// Minimum number of terminal columns that must be available for a
     /// description to be shown at all. When the suggestion column has to be
@@ -553,6 +553,18 @@ impl ProcessedSuggestion {
 
     pub fn formatted(&self) -> String {
         format!("{}{}{}", self.prefix, self.s, self.suffix)
+    }
+
+    pub fn display_width(&self) -> usize {
+        let main_width = self.s.width();
+        let max_description_frame_width = self.description.max_width();
+        if max_description_frame_width > 0 {
+            main_width
+                + SuggestionFormatted::DESCRIPTION_SEPARATOR.len()
+                + max_description_frame_width
+        } else {
+            main_width
+        }
     }
 
     pub fn from_string_vec(
@@ -1510,6 +1522,14 @@ impl ActiveSuggestions {
                 Some((0, 0))
             };
         }
+    }
+
+    pub fn max_filtered_width(&self) -> usize {
+        self.filtered_suggestions
+            .iter()
+            .map(|fi| self.processed_suggestions[fi.suggestion_idx].display_width())
+            .max()
+            .unwrap_or(0)
     }
 
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
