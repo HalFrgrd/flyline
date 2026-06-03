@@ -1079,8 +1079,6 @@ impl App<'_> {
             }
         }
     }
-
-    #[cfg(unix)]
     pub fn start_tab_complete(&mut self, auto_started: bool) {
         // This will stop the current process
         if let ContentMode::TabCompletionWaiting { .. } = self.content_mode {
@@ -1166,11 +1164,6 @@ impl App<'_> {
                         let _ = tx.send(None);
                     }
                 }
-
-                unsafe {
-                    let mut status = 0;
-                    libc::waitpid(pid, &mut status, 0);
-                }
             });
 
             // Block for up to 100ms waiting for the process to finish.
@@ -1209,71 +1202,6 @@ impl App<'_> {
             unsafe {
                 libc::close(read_fd);
                 libc::close(write_fd);
-            }
-        }
-    }
-
-    #[cfg(not(unix))]
-    pub fn start_tab_complete(&mut self, auto_started: bool) {
-        // Fallback to original thread-based logic for non-Unix
-        if let ContentMode::TabCompletionWaiting { .. } = self.content_mode {
-            self.content_mode = ContentMode::Normal;
-        }
-
-        let completion_context = tab_completion_context::get_completion_context(
-            self.buffer.buffer(),
-            self.buffer.cursor_byte_pos(),
-        );
-
-        let wuc_substring = completion_context.word_under_cursor.clone();
-
-        let (tx, rx) =
-            std::sync::mpsc::channel::<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>();
-
-        let completion_context_owned = completion_context.into_owned();
-
-        let start_time = std::time::Instant::now();
-
-        let thread_handle = std::thread::spawn(move || {
-            let thread_start = std::time::Instant::now();
-            let result = gen_completions_internal(&completion_context_owned, auto_started);
-            let elapsed = thread_start.elapsed();
-            if let Err(e) = tx.send(result.map(|r| (r, elapsed))) {
-                log::debug!(
-                    "Tab completion: failed to send result (receiver dropped): {:?}",
-                    e
-                );
-            }
-        });
-
-        // Block for up to 100ms waiting for the thread to finish.
-        match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(Some((builder, elapsed))) => {
-                self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
-            }
-            Ok(None) => {
-                // No suggestions generated.
-                self.finish_tab_complete(
-                    ActiveSuggestionsBuilder::new(),
-                    wuc_substring,
-                    start_time.elapsed(),
-                    auto_started,
-                );
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // Thread hasn't finished yet; enter waiting mode.
-                self.content_mode = ContentMode::TabCompletionWaiting {
-                    handle: TabCompletionHandle {
-                        receiver: rx,
-                        thread: Some(thread_handle),
-                    },
-                    wuc_substring,
-                    start_time,
-                    auto_started,
-                };
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                log::warn!("Tab completion thread disconnected unexpectedly");
             }
         }
     }

@@ -261,10 +261,7 @@ impl FuzzyHistorySource {
 /// Killing the process (on drop) ensures it does not outlive the app.
 pub(crate) struct TabCompletionHandle {
     receiver: std::sync::mpsc::Receiver<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>,
-    #[cfg(unix)]
     pid: Option<libc::pid_t>,
-    #[cfg(not(unix))]
-    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for TabCompletionHandle {
@@ -275,19 +272,12 @@ impl std::fmt::Debug for TabCompletionHandle {
 
 impl Drop for TabCompletionHandle {
     fn drop(&mut self) {
-        #[cfg(unix)]
         if let Some(pid) = self.pid.take() {
             unsafe {
                 libc::kill(pid, libc::SIGKILL);
                 let mut status = 0;
                 libc::waitpid(pid, &mut status, 0);
             }
-        }
-        #[cfg(not(unix))]
-        if let Some(handle) = self.thread.take() {
-            // No easy way to cancel a thread on non-Unix without pthread_cancel
-            // Just let it finish or wait for it.
-            let _ = handle.join();
         }
     }
 }
