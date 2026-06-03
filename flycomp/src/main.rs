@@ -77,14 +77,20 @@ fn main() -> anyhow::Result<()> {
     }
 
     let command_str = args.command.as_deref().unwrap_or("");
-    let output = flycomp::generate_completion_output(
+    match flycomp::generate_completion_output(
         command_str,
         args.output,
         args.strategy,
         !args.no_sandbox,
         args.timeout_ms,
-    )?;
-    print!("{}", output);
-
-    Ok(())
+    ) {
+        Ok(output) => {
+            print!("{}", output);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Error: {:#}", e);
+            std::process::exit(1);
+        }
+    }
 }

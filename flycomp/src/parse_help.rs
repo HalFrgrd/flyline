@@ -71,10 +71,14 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
         if piece.starts_with("--") {
             // May be "--flag" or "--flag=<VAL>"
             if let Some((flag, val)) = piece.split_once('=') {
-                long = Some(flag.trim_end_matches(',').to_string());
+                long = Some(flag.trim_end_matches(',').trim_end_matches('.').to_string());
                 value_type = Some(val.trim_matches(|c| c == '<' || c == '>').to_string());
             } else {
-                long = Some(piece.trim_end_matches(',').to_string());
+                let mut l = piece.trim_end_matches(',').to_string();
+                while l.ends_with('.') {
+                    l.pop();
+                }
+                long = Some(l);
             }
         } else if let Some(short_candidate) = piece.strip_prefix('-') {
             let short_candidate = short_candidate.trim_end_matches(',');
@@ -227,12 +231,14 @@ pub fn parse_help_clap(help: &str) -> Command {
                         if !first_name.is_empty() {
                             let aliases: Vec<String> =
                                 name_iter.filter(|s| !s.is_empty()).collect();
-                            cmd.subcommands.push(Command {
-                                name: Some(first_name),
-                                aliases,
-                                description: sub_desc,
-                                ..Command::default()
-                            });
+                            if first_name != "..." {
+                                cmd.subcommands.push(Command {
+                                    name: Some(first_name),
+                                    aliases,
+                                    description: sub_desc,
+                                    ..Command::default()
+                                });
+                            }
                         }
                     }
                 }
@@ -1927,5 +1933,39 @@ Options:
             args.iter()
                 .any(|a| a.long.as_deref() == Some("--nonocolor"))
         );
+    }
+
+    #[test]
+    fn test_cargo_help_with_ellipsis() {
+        const HELP: &str = r#"Rust's package manager
+
+Usage: cargo [+toolchain] [OPTIONS] [COMMAND]
+
+Options:
+  -v, --verbose...               Use verbose output
+  -h, --help                     Print help
+
+Commands:
+    build, b    Compile the current package
+    check, c    Analyze the current package
+    ...         See all commands with --list
+"#;
+        let cmd = parse_help(HELP);
+        assert_eq!(cmd.name.as_deref(), Some("cargo"));
+
+        // Check flags: --verbose... should become --verbose
+        let verbose = cmd
+            .args
+            .iter()
+            .find(|a| a.short.as_deref() == Some("-v"))
+            .expect("verbose flag found");
+        assert_eq!(verbose.long.as_deref(), Some("--verbose"));
+
+        // Check subcommands: ... should be skipped
+        let subs = subcommand_names(&cmd);
+        assert!(subs.contains(&"build"));
+        assert!(subs.contains(&"check"));
+        assert!(!subs.contains(&"..."));
+        assert_eq!(subs.len(), 2);
     }
 }

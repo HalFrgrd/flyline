@@ -604,6 +604,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "is_executable",
  "log",
  "regex",
  "serde",
