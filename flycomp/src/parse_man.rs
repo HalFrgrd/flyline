@@ -5,7 +5,7 @@ use regex::Regex;
 struct ParsedOption {
     short: Option<String>,
     long: Option<String>,
-    value_type: Option<String>,
+    value_name: Option<String>,
     num_args: Option<String>,
 }
 
@@ -234,7 +234,7 @@ fn normalize_value_token(token: &str) -> Option<String> {
     Some(token.to_string())
 }
 
-fn find_value_type(remainder: &str) -> (Option<String>, Option<String>) {
+fn find_value_name(remainder: &str) -> (Option<String>, Option<String>) {
     let remainder = remainder.trim();
     if remainder.is_empty() {
         return (None, None);
@@ -282,11 +282,11 @@ fn parse_alias(alias: &str) -> Option<ParsedOption> {
     }
 
     let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
-    let (value_type, num_args) = find_value_type(rest);
+    let (value_name, num_args) = find_value_name(rest);
     let mut parsed = ParsedOption {
         short: None,
         long: None,
-        value_type,
+        value_name,
         num_args,
     };
 
@@ -317,11 +317,11 @@ fn parse_option_declaration(option_text: &str, cmd_name: &str) -> Vec<ParsedOpti
             (Some(existing), None, Some(_)) if existing.long.is_none() => {
                 let mut merged = existing.clone();
                 merged.long = current.long.clone();
-                if current.value_type.is_some() {
-                    merged.value_type = current.value_type.clone();
+                if current.value_name.is_some() {
+                    merged.value_name = current.value_name.clone();
                     merged.num_args = current.num_args.clone();
-                } else if merged.value_type.is_none() {
-                    merged.value_type = current.value_type.clone();
+                } else if merged.value_name.is_none() {
+                    merged.value_name = current.value_name.clone();
                     merged.num_args = current.num_args.clone();
                 }
                 parsed.push(merged);
@@ -368,8 +368,8 @@ fn merge_arg(existing: &mut Arg, incoming: ParsedOption, description: &str) {
     if existing.long.is_none() {
         existing.long = incoming.long;
     }
-    if existing.value_type.is_none() {
-        existing.value_type = incoming.value_type;
+    if existing.value_name.is_none() {
+        existing.value_name = incoming.value_name;
     }
     if existing.num_args.is_none() {
         existing.num_args = incoming.num_args;
@@ -414,7 +414,7 @@ fn add_option(cmd: &mut Command, option_text: &str, description: &str) -> bool {
                 } else {
                     Some(description.clone())
                 },
-                value_type: parsed.value_type,
+                value_name: parsed.value_name,
                 num_args: parsed.num_args,
                 ..Default::default()
             });
@@ -1079,7 +1079,7 @@ pub fn parse_manpage(cmd_name: &str, content: &str) -> Option<Command> {
     } else {
         // Expand bracketed negation flags (like --[no-]color) into both variants
         cmd.expand_no_options();
-        cmd.populate_possible_values();
+        cmd.populate_value_enum();
         Some(cmd)
     }
 }
@@ -1155,8 +1155,9 @@ None documented.
     struct ExpectedArg<'a> {
         short: Option<&'a str>,
         long: Option<&'a str>,
-        value_type: Option<&'a str>,
+        value_name: Option<&'a str>,
         num_args: Option<&'a str>,
+        value_hint: crate::ValueHint,
         description_contains: &'a str,
     }
 
@@ -1218,8 +1219,9 @@ None documented.
             let arg = find_arg(cmd, expected_arg);
             assert_eq!(arg.short.as_deref(), expected_arg.short);
             assert_eq!(arg.long.as_deref(), expected_arg.long);
-            assert_eq!(arg.value_type.as_deref(), expected_arg.value_type);
+            assert_eq!(arg.value_name.as_deref(), expected_arg.value_name);
             assert_eq!(arg.num_args.as_deref(), expected_arg.num_args);
+            assert_eq!(arg.value_hint, expected_arg.value_hint);
             let description = normalize_desc(arg.description.as_deref());
             assert!(!description.is_empty());
             assert!(description.contains(expected_arg.description_contains));
@@ -1231,8 +1233,9 @@ None documented.
             let arg = find_arg(cmd, expected_arg);
             assert_eq!(arg.short.as_deref(), expected_arg.short);
             assert_eq!(arg.long.as_deref(), expected_arg.long);
-            assert_eq!(arg.value_type.as_deref(), expected_arg.value_type);
+            assert_eq!(arg.value_name.as_deref(), expected_arg.value_name);
             assert_eq!(arg.num_args.as_deref(), expected_arg.num_args);
+            assert_eq!(arg.value_hint, expected_arg.value_hint);
             let description = normalize_desc(arg.description.as_deref());
             assert!(!description.is_empty());
             assert!(description.contains(expected_arg.description_contains));
@@ -1248,22 +1251,25 @@ None documented.
                 ExpectedArg {
                     short: Some("-a"),
                     long: Some("--all"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Show hidden files",
                 },
                 ExpectedArg {
                     short: Some("-o"),
                     long: Some("--output"),
-                    value_type: Some("file"),
+                    value_name: Some("file"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "chosen file path",
                 },
                 ExpectedArg {
                     short: Some("-d"),
                     long: Some("--debug"),
-                    value_type: Some("debug-file"),
+                    value_name: Some("debug-file"),
                     num_args: Some("?"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "optionally write traces",
                 },
             ],
@@ -1279,22 +1285,25 @@ None documented.
                 ExpectedArg {
                     short: Some("-n"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Number output lines",
                 },
                 ExpectedArg {
                     short: Some("-f"),
                     long: None,
-                    value_type: Some("input-file"),
+                    value_name: Some("input-file"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "instead of stdin",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--format"),
-                    value_type: Some("json"),
+                    value_name: Some("json"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "requested json format",
                 },
             ],
@@ -1310,22 +1319,25 @@ None documented.
                 ExpectedArg {
                     short: Some("-a"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "agent forwarding",
                 },
                 ExpectedArg {
                     short: Some("-b"),
                     long: None,
-                    value_type: Some("bind_address"),
+                    value_name: Some("bind_address"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "before opening the remote session",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--verbose"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "verbose logs",
                 },
             ],
@@ -1341,15 +1353,17 @@ None documented.
                 ExpectedArg {
                     short: Some("-q"),
                     long: Some("--quiet"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Suppress normal output",
                 },
                 ExpectedArg {
                     short: Some("-p"),
                     long: Some("--path"),
-                    value_type: Some("PATH"),
+                    value_name: Some("PATH"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::AnyPath,
                     description_contains: "Read files from PATH",
                 },
             ],
@@ -1378,29 +1392,33 @@ None documented.
             ExpectedArg {
                 short: Some("-v"),
                 long: Some("--version"),
-                value_type: None,
+                value_name: None,
                 num_args: None,
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "Prints the Git suite version",
             },
             ExpectedArg {
                 short: Some("-C"),
                 long: None,
-                value_type: Some("<path>"),
+                value_name: Some("<path>"),
                 num_args: Some("1"),
+                value_hint: crate::ValueHint::AnyPath,
                 description_contains: "instead of the current working directory",
             },
             ExpectedArg {
                 short: Some("-c"),
                 long: None,
-                value_type: Some("<name>=<value>"),
+                value_name: Some("<name>=<value>"),
                 num_args: Some("1"),
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "override values from configuration files",
             },
             ExpectedArg {
                 short: None,
                 long: Some("--config-env"),
-                value_type: Some("<name>=<envvar>"),
+                value_name: Some("<name>=<envvar>"),
                 num_args: Some("1"),
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "retrieve the value",
             },
         ];
@@ -1409,7 +1427,7 @@ None documented.
             let arg = find_arg(&cmd, &item);
             assert_eq!(arg.short.as_deref(), item.short);
             assert_eq!(arg.long.as_deref(), item.long);
-            assert_eq!(arg.value_type.as_deref(), item.value_type);
+            assert_eq!(arg.value_name.as_deref(), item.value_name);
             assert_eq!(arg.num_args.as_deref(), item.num_args);
             assert!(normalize_desc(arg.description.as_deref()).contains(item.description_contains));
         }
@@ -1425,29 +1443,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-A"),
                     long: Some("--show-all"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "equivalent to -vET",
                 },
                 ExpectedArg {
                     short: Some("-b"),
                     long: Some("--number-nonblank"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "number nonempty output lines",
                 },
                 ExpectedArg {
                     short: Some("-u"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "(ignored)",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--help"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "display this help and exit",
                 },
             ],
@@ -1464,29 +1486,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-c"),
                     long: Some("--changes"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "report only when a change is made",
                 },
                 ExpectedArg {
                     short: Some("-v"),
                     long: Some("--verbose"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "diagnostic for every file processed",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--reference"),
-                    value_type: Some("RFILE"),
+                    value_name: Some("RFILE"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "use RFILE's mode",
                 },
                 ExpectedArg {
                     short: Some("-R"),
                     long: Some("--recursive"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "change files and directories recursively",
                 },
             ],
@@ -1503,29 +1529,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-c"),
                     long: Some("--changes"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "report only when a change is made",
                 },
                 ExpectedArg {
                     short: Some("-h"),
                     long: Some("--no-dereference"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "affect symbolic links instead of any referenced file",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--from"),
-                    value_type: Some("CURRENT_OWNER:CURRENT_GROUP"),
+                    value_name: Some("CURRENT_OWNER:CURRENT_GROUP"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "only if its current owner and/or group match",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--reference"),
-                    value_type: Some("RFILE"),
+                    value_name: Some("RFILE"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "use RFILE's owner and group",
                 },
             ],
@@ -1542,29 +1572,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-a"),
                     long: Some("--archive"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "same as -dR --preserve=all",
                 },
                 ExpectedArg {
                     short: Some("-b"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "does not accept an argument",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--attributes-only"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "don't copy the file data",
                 },
                 ExpectedArg {
                     short: Some("-S"),
                     long: Some("--suffix"),
-                    value_type: Some("SUFFIX"),
+                    value_name: Some("SUFFIX"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "override the usual backup suffix",
                 },
             ],
@@ -1581,29 +1615,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-g"),
                     long: Some("--globoff"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "URL globbing parser",
                 },
                 ExpectedArg {
                     short: Some("-o"),
                     long: Some("--output"),
-                    value_type: Some("<file>"),
+                    value_name: Some("<file>"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "Write output to <file>",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--abstract-unix-socket"),
-                    value_type: Some("<path>"),
+                    value_name: Some("<path>"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::AnyPath,
                     description_contains: "Connect through an abstract Unix domain socket",
                 },
                 ExpectedArg {
                     short: Some("-s"),
                     long: Some("--silent"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Silent or quiet mode",
                 },
             ],
@@ -1620,29 +1658,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-f"),
                     long: Some("--file"),
-                    value_type: Some("program-file"),
+                    value_name: Some("program-file"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "program source from the file",
                 },
                 ExpectedArg {
                     short: Some("-F"),
                     long: Some("--field-separator"),
-                    value_type: Some("fs"),
+                    value_name: Some("fs"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "input field separator",
                 },
                 ExpectedArg {
                     short: Some("-b"),
                     long: Some("--characters-as-bytes"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "single-byte characters",
                 },
                 ExpectedArg {
                     short: Some("-c"),
                     long: Some("--traditional"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "compatibility mode",
                 },
             ],
@@ -1659,29 +1701,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-E"),
                     long: Some("--extended-regexp"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "extended regular expressions",
                 },
                 ExpectedArg {
                     short: Some("-i"),
                     long: Some("--ignore-case"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Ignore case distinctions",
                 },
                 ExpectedArg {
                     short: Some("-f"),
                     long: Some("--file"),
-                    value_type: Some("FILE"),
+                    value_name: Some("FILE"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "Obtain patterns from FILE",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--no-ignore-case"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Do not ignore case distinctions",
                 },
             ],
@@ -1698,29 +1744,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-a"),
                     long: Some("--all"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "do not ignore entries starting with",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--author"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "print the author of each file",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--block-size"),
-                    value_type: Some("SIZE"),
+                    value_name: Some("SIZE"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "scale sizes by SIZE",
                 },
                 ExpectedArg {
                     short: Some("-d"),
                     long: Some("--directory"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "list directories themselves",
                 },
             ],
@@ -1737,29 +1787,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-m"),
                     long: Some("--mode"),
-                    value_type: Some("MODE"),
+                    value_name: Some("MODE"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "set file mode",
                 },
                 ExpectedArg {
                     short: Some("-p"),
                     long: Some("--parents"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "make parent directories as needed",
                 },
                 ExpectedArg {
                     short: Some("-v"),
                     long: Some("--verbose"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "message for each created directory",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--help"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "display this help and exit",
                 },
             ],
@@ -1776,29 +1830,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-b"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "does not accept an argument",
                 },
                 ExpectedArg {
                     short: Some("-f"),
                     long: Some("--force"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "do not prompt before overwriting",
                 },
                 ExpectedArg {
                     short: Some("-S"),
                     long: Some("--suffix"),
-                    value_type: Some("SUFFIX"),
+                    value_name: Some("SUFFIX"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "override the usual backup suffix",
                 },
                 ExpectedArg {
                     short: Some("-t"),
                     long: Some("--target-directory"),
-                    value_type: Some("DIRECTORY"),
+                    value_name: Some("DIRECTORY"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::DirPath,
                     description_contains: "move all SOURCE arguments into DIRECTORY",
                 },
             ],
@@ -1815,29 +1873,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-4"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Use IPv4 only",
                 },
                 ExpectedArg {
                     short: Some("-6"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Use IPv6 only",
                 },
                 ExpectedArg {
                     short: Some("-a"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Audible ping",
                 },
                 ExpectedArg {
                     short: Some("-c"),
                     long: None,
-                    value_type: Some("count"),
+                    value_name: Some("count"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Stop after sending count",
                 },
             ],
@@ -1854,29 +1916,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-f"),
                     long: Some("--force"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "ignore nonexistent files and arguments",
                 },
                 ExpectedArg {
                     short: Some("-i"),
                     long: None,
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "prompt before every removal",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--interactive"),
-                    value_type: Some("WHEN"),
+                    value_name: Some("WHEN"),
                     num_args: Some("?"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "prompt according to WHEN",
                 },
                 ExpectedArg {
                     short: Some("-R"),
                     long: Some("--recursive"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "remove directories and their contents recursively",
                 },
             ],
@@ -1893,29 +1959,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-n"),
                     long: Some("--quiet"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "suppress automatic printing of pattern space",
                 },
                 ExpectedArg {
                     short: Some("-e"),
                     long: Some("--expression"),
-                    value_type: Some("script"),
+                    value_name: Some("script"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "add the script to the commands",
                 },
                 ExpectedArg {
                     short: Some("-i"),
                     long: Some("--in-place"),
-                    value_type: Some("SUFFIX"),
+                    value_name: Some("SUFFIX"),
                     num_args: Some("?"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "edit files in place",
                 },
                 ExpectedArg {
                     short: Some("-u"),
                     long: Some("--unbuffered"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "load minimal amounts of data",
                 },
             ],
@@ -1932,29 +2002,33 @@ None documented.
                 ExpectedArg {
                     short: Some("-a"),
                     long: Some("--auto-compress"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "compression program",
                 },
                 ExpectedArg {
                     short: Some("-f"),
                     long: Some("--file"),
-                    value_type: Some("ARCHIVE"),
+                    value_name: Some("ARCHIVE"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "archive file or device ARCHIVE",
                 },
                 ExpectedArg {
                     short: Some("-v"),
                     long: Some("--verbose"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "files processed",
                 },
                 ExpectedArg {
                     short: Some("-V"),
                     long: Some("--label"),
-                    value_type: Some("TEXT"),
+                    value_name: Some("TEXT"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "volume name TEXT",
                 },
             ],
@@ -1976,36 +2050,41 @@ None documented.
                 ExpectedArg {
                     short: Some("-V"),
                     long: Some("--version"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Display the version of Wget",
                 },
                 ExpectedArg {
                     short: Some("-b"),
                     long: Some("--background"),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Go to background immediately after startup",
                 },
                 ExpectedArg {
                     short: Some("-o"),
                     long: Some("--output-file"),
-                    value_type: Some("logfile"),
+                    value_name: Some("logfile"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "Log all messages to logfile",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--report-speed"),
-                    value_type: Some("type"),
+                    value_name: Some("type"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::Unknown,
                     description_contains: "Output bandwidth as type",
                 },
                 ExpectedArg {
                     short: None,
                     long: Some("--load-cookies"),
-                    value_type: Some("file"),
+                    value_name: Some("file"),
                     num_args: Some("1"),
+                    value_hint: crate::ValueHint::FilePath,
                     description_contains: "Load cookies from file before the first HTTP retrieval",
                 },
             ],
@@ -2020,22 +2099,25 @@ None documented.
             ExpectedArg {
                 short: Some("-P"),
                 long: None,
-                value_type: None,
+                value_name: None,
                 num_args: None,
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "Never follow symbolic links",
             },
             ExpectedArg {
                 short: Some("-L"),
                 long: None,
-                value_type: None,
+                value_name: None,
                 num_args: None,
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "Follow symbolic links",
             },
             ExpectedArg {
                 short: Some("-H"),
                 long: None,
-                value_type: None,
+                value_name: None,
                 num_args: None,
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "except while processing the command line arguments",
             },
         ] {
@@ -2053,28 +2135,31 @@ None documented.
             ExpectedArg {
                 short: Some("-4"),
                 long: None,
-                value_type: None,
+                value_name: None,
                 num_args: None,
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "IPv4 addresses only",
             },
             ExpectedArg {
                 short: Some("-B"),
                 long: None,
-                value_type: Some("bind_interface"),
+                value_name: Some("bind_interface"),
                 num_args: Some("1"),
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "Bind to the address",
             },
             ExpectedArg {
                 short: Some("-b"),
                 long: None,
-                value_type: Some("bind_address"),
+                value_name: Some("bind_address"),
                 num_args: Some("1"),
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "source address",
             },
         ] {
             let arg = find_arg(&cmd, &item);
             assert_eq!(arg.short.as_deref(), item.short);
-            assert_eq!(arg.value_type.as_deref(), item.value_type);
+            assert_eq!(arg.value_name.as_deref(), item.value_name);
             assert!(normalize_desc(arg.description.as_deref()).contains(item.description_contains));
         }
     }
@@ -2087,22 +2172,24 @@ None documented.
             ExpectedArg {
                 short: Some("-A"),
                 long: Some("--askpass"),
-                value_type: None,
+                value_name: None,
                 num_args: None,
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "requires a password",
             },
             ExpectedArg {
                 short: Some("-a"),
                 long: Some("--auth-type"),
-                value_type: Some("type"),
+                value_name: Some("type"),
                 num_args: Some("1"),
+                value_hint: crate::ValueHint::Unknown,
                 description_contains: "authentication",
             },
         ] {
             let arg = find_arg(&cmd, &item);
             assert_eq!(arg.short.as_deref(), item.short);
             assert_eq!(arg.long.as_deref(), item.long);
-            assert_eq!(arg.value_type.as_deref(), item.value_type);
+            assert_eq!(arg.value_name.as_deref(), item.value_name);
             assert!(normalize_desc(arg.description.as_deref()).contains(item.description_contains));
         }
     }
@@ -2116,8 +2203,9 @@ None documented.
         let keep_item = ExpectedArg {
             short: Some("-k"),
             long: Some("--keep"),
-            value_type: None,
+            value_name: None,
             num_args: None,
+            value_hint: crate::ValueHint::Unknown,
             description_contains: "keep source file(s)",
         };
         let keep_arg = find_arg(&cmd, &keep_item);
@@ -2128,8 +2216,9 @@ None documented.
         let rm_item = ExpectedArg {
             short: None,
             long: Some("--rm"),
-            value_type: None,
+            value_name: None,
             num_args: None,
+            value_hint: crate::ValueHint::Unknown,
             description_contains: "remove source file(s)",
         };
         let rm_arg = find_arg(&cmd, &rm_item);
@@ -2138,8 +2227,9 @@ None documented.
         let decompress_item = ExpectedArg {
             short: Some("-d"),
             long: Some("--decompress"),
-            value_type: None,
+            value_name: None,
             num_args: None,
+            value_hint: crate::ValueHint::Unknown,
             description_contains: "Decompress",
         };
         let decompress_arg = find_arg(&cmd, &decompress_item);
@@ -2148,8 +2238,9 @@ None documented.
         let ultra_item = ExpectedArg {
             short: None,
             long: Some("--ultra"),
-            value_type: None,
+            value_name: None,
             num_args: None,
+            value_hint: crate::ValueHint::Unknown,
             description_contains: "unlocks high compression levels",
         };
         let ultra_arg = find_arg(&cmd, &ultra_item);

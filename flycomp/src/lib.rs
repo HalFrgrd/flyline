@@ -50,6 +50,46 @@ impl OutputFormat {
 // Public data structures
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// Hints for what kind of value an argument expects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ValueHint {
+    #[default]
+    Unknown,
+    Other,
+    AnyPath,
+    FilePath,
+    DirPath,
+    ExecutablePath,
+    CommandName,
+    CommandString,
+    CommandWithArguments,
+    Username,
+    Hostname,
+    Url,
+    EmailAddress,
+}
+
+impl From<ValueHint> for clap::ValueHint {
+    fn from(hint: ValueHint) -> Self {
+        match hint {
+            ValueHint::Unknown => clap::ValueHint::Unknown,
+            ValueHint::Other => clap::ValueHint::Other,
+            ValueHint::AnyPath => clap::ValueHint::AnyPath,
+            ValueHint::FilePath => clap::ValueHint::FilePath,
+            ValueHint::DirPath => clap::ValueHint::DirPath,
+            ValueHint::ExecutablePath => clap::ValueHint::ExecutablePath,
+            ValueHint::CommandName => clap::ValueHint::CommandName,
+            ValueHint::CommandString => clap::ValueHint::CommandString,
+            ValueHint::CommandWithArguments => clap::ValueHint::CommandWithArguments,
+            ValueHint::Username => clap::ValueHint::Username,
+            ValueHint::Hostname => clap::ValueHint::Hostname,
+            ValueHint::Url => clap::ValueHint::Url,
+            ValueHint::EmailAddress => clap::ValueHint::EmailAddress,
+        }
+    }
+}
+
 /// A single command-line argument / flag.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Arg {
@@ -60,11 +100,14 @@ pub struct Arg {
     /// Human-readable description.
     pub description: Option<String>,
     /// Meta-variable / value type hint (e.g. `<PATH>`, `<N>`).
-    pub value_type: Option<String>,
+    pub value_name: Option<String>,
     /// Number of values accepted (e.g. `*`, `+`, `?`, or a count like `"1"`).
     pub num_args: Option<String>,
     /// Possible values for the option.
-    pub possible_values: Option<Vec<String>>,
+    pub value_enum: Option<Vec<String>>,
+    /// Hint for what kind of value the argument expects.
+    #[serde(default)]
+    pub value_hint: ValueHint,
 }
 
 /// A parsed command (or sub-command).
@@ -161,25 +204,88 @@ impl Command {
         }
     }
 
-    pub fn populate_possible_values(&mut self) {
+    pub fn populate_value_enum(&mut self) {
         for arg in &mut self.args {
-            if arg.possible_values.is_none() {
-                arg.possible_values =
-                    parse_possible_values(arg.value_type.as_deref(), arg.description.as_deref());
+            if arg.value_enum.is_none() {
+                arg.value_enum =
+                    parse_value_enum(arg.value_name.as_deref(), arg.description.as_deref());
+            }
+            if arg.value_hint == ValueHint::Unknown {
+                arg.value_hint =
+                    infer_value_hint(arg.value_name.as_deref(), arg.description.as_deref());
             }
         }
         for sub in &mut self.subcommands {
-            sub.populate_possible_values();
+            sub.populate_value_enum();
         }
     }
 }
 
-pub fn parse_possible_values(
-    value_type: Option<&str>,
+pub fn infer_value_hint(value_name: Option<&str>, description: Option<&str>) -> ValueHint {
+    if let Some(vn) = value_name {
+        let vn_clean = vn
+            .trim_matches(|c| c == '<' || c == '>' || c == '[' || c == ']')
+            .to_uppercase();
+
+        match vn_clean.as_str() {
+            "PATH" | "PATHNAME" => return ValueHint::AnyPath,
+            "FILE" | "RFILE" | "FILENAME" | "LOG" => return ValueHint::FilePath,
+            "DIR" | "DIRECTORY" | "FOLDER" => return ValueHint::DirPath,
+            "BIN" | "EXE" | "EXECUTABLE" => return ValueHint::ExecutablePath,
+            "CMD" | "COMMAND" => return ValueHint::CommandName,
+            "USER" | "USERNAME" | "LOGIN" => return ValueHint::Username,
+            "HOST" | "HOSTNAME" => return ValueHint::Hostname,
+            "URL" | "URI" => return ValueHint::Url,
+            "EMAIL" => return ValueHint::EmailAddress,
+            _ => {}
+        }
+
+        if vn_clean.contains("FILE") {
+            return ValueHint::FilePath;
+        }
+        if vn_clean.contains("DIR") || vn_clean.contains("DIRECTORY") {
+            return ValueHint::DirPath;
+        }
+        if vn_clean.contains("PATH") {
+            return ValueHint::AnyPath;
+        }
+        if vn_clean.contains("URL") || vn_clean.contains("URI") {
+            return ValueHint::Url;
+        }
+    }
+
+    if let Some(desc) = description {
+        let d = desc.to_lowercase();
+        if d.contains("file path")
+            || d.contains("path to a file")
+            || d.contains("path to the file")
+            || d.contains("config file")
+            || d.contains("configuration file")
+        {
+            return ValueHint::FilePath;
+        }
+        if d.contains("directory path")
+            || d.contains("path to a directory")
+            || d.contains("path to the directory")
+            || d.contains("path to a folder")
+            || d.contains("path to the folder")
+        {
+            return ValueHint::DirPath;
+        }
+        if d.contains("path to") || d.contains("path of") {
+            return ValueHint::AnyPath;
+        }
+    }
+
+    ValueHint::Unknown
+}
+
+pub fn parse_value_enum(
+    value_name: Option<&str>,
     description: Option<&str>,
 ) -> Option<Vec<String>> {
-    // 1. Try to parse from value_type (e.g. {info,debug} or info|debug)
-    if let Some(vt) = value_type {
+    // 1. Try to parse from value_name (e.g. {info,debug} or info|debug)
+    if let Some(vt) = value_name {
         let clean_type = vt.trim_matches(|c| c == '[' || c == ']' || c == '<' || c == '>');
         if clean_type.starts_with('{') && clean_type.ends_with('}') {
             let inner = &clean_type[1..clean_type.len() - 1];
@@ -376,7 +482,7 @@ pub fn parse_possible_values(
 /// Argument names are derived from the long flag (stripping the leading `--`),
 /// falling back to the short flag (stripping `-`), and finally `"arg"` for
 /// purely positional arguments. Short and long flags are attached when present.
-/// `value_type` is used as the `value_name` meta-variable and also implies
+/// `value_name` is used as the `value_name` meta-variable and also implies
 /// `num_args(1)` unless `num_args` overrides it explicitly.
 ///
 /// This uses clap's `string` feature to dynamically allocate and assign owned
@@ -460,9 +566,9 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
             clap_arg = clap_arg.help(desc.clone());
         }
 
-        if let Some(value_type) = &arg.value_type {
+        if let Some(value_name) = &arg.value_name {
             // Strip surrounding angle-brackets if present (e.g. `<PATH>` → `PATH`).
-            let meta = value_type
+            let meta = value_name
                 .trim_matches(|c| c == '<' || c == '>')
                 .to_string();
             clap_arg = clap_arg.value_name(meta);
@@ -486,10 +592,14 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
             };
         }
 
-        if let Some(possible_values) = &arg.possible_values {
+        if let Some(value_enum) = &arg.value_enum {
             clap_arg = clap_arg.value_parser(clap::builder::PossibleValuesParser::new(
-                possible_values.clone(),
+                value_enum.clone(),
             ));
+        }
+
+        if arg.value_hint != ValueHint::Unknown {
+            clap_arg = clap_arg.value_hint(clap::ValueHint::from(arg.value_hint));
         }
 
         clap_cmd = clap_cmd.arg(clap_arg);
@@ -952,7 +1062,7 @@ mod tests {
 
     #[test]
     fn test_to_clap_command_basic() {
-        let cmd = Command {
+        let mut cmd = Command {
             name: Some("mytool".to_string()),
             description: Some("A test tool.".to_string()),
             args: vec![
@@ -960,7 +1070,7 @@ mod tests {
                     long: Some("--verbose".to_string()),
                     short: Some("-v".to_string()),
                     description: Some("Enable verbose output.".to_string()),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
                     ..Default::default()
                 },
@@ -968,7 +1078,7 @@ mod tests {
                     long: Some("--output".to_string()),
                     short: None,
                     description: Some("Output file.".to_string()),
-                    value_type: Some("<PATH>".to_string()),
+                    value_name: Some("<PATH>".to_string()),
                     num_args: None,
                     ..Default::default()
                 },
@@ -980,24 +1090,24 @@ mod tests {
             }],
             ..Command::default()
         };
+        cmd.populate_value_enum();
 
         let clap_cmd = to_clap_command(&cmd);
 
         assert_eq!(clap_cmd.get_name(), "mytool");
 
-        // Check args are present.
-        let arg_ids: Vec<&str> = clap_cmd
+        // Check args are present and have correct hints.
+        let verbose_arg = clap_cmd
             .get_arguments()
-            .map(|a| a.get_id().as_str())
-            .collect();
-        assert!(
-            arg_ids.contains(&"verbose"),
-            "verbose arg missing: {arg_ids:?}"
-        );
-        assert!(
-            arg_ids.contains(&"output"),
-            "output arg missing: {arg_ids:?}"
-        );
+            .find(|a| a.get_id() == "verbose")
+            .expect("verbose arg missing");
+        assert_eq!(verbose_arg.get_value_hint(), clap::ValueHint::Unknown);
+
+        let output_arg = clap_cmd
+            .get_arguments()
+            .find(|a| a.get_id() == "output")
+            .expect("output arg missing");
+        assert_eq!(output_arg.get_value_hint(), clap::ValueHint::AnyPath);
 
         // Check subcommand is present.
         let sub_names: Vec<&str> = clap_cmd.get_subcommands().map(|s| s.get_name()).collect();
@@ -1042,7 +1152,7 @@ Options:
                     long: Some("--debug-dump[a/".to_string()),
                     short: Some("-w".to_string()),
                     description: Some("DWARF debug dump selector.".to_string()),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
                     ..Default::default()
                 },
@@ -1050,7 +1160,7 @@ Options:
                     long: Some("--debug-dump".to_string()),
                     short: Some("-w".to_string()),
                     description: Some("DWARF debug dump mode.".to_string()),
-                    value_type: Some("links".to_string()),
+                    value_name: Some("links".to_string()),
                     num_args: None,
                     ..Default::default()
                 },
@@ -1082,7 +1192,7 @@ Options:
                     long: Some("--debug-dump".to_string()),
                     short: Some("-w".to_string()),
                     description: Some("DWARF debug dump selector.".to_string()),
-                    value_type: Some("a/".to_string()),
+                    value_name: Some("a/".to_string()),
                     num_args: None,
                     ..Default::default()
                 },
@@ -1090,7 +1200,7 @@ Options:
                     long: Some("--debug-dump".to_string()),
                     short: None,
                     description: Some("DWARF debug dump links mode.".to_string()),
-                    value_type: Some("links".to_string()),
+                    value_name: Some("links".to_string()),
                     num_args: None,
                     ..Default::default()
                 },
@@ -1140,7 +1250,7 @@ Options:
             long: Some("--verbose".to_string()),
             short: Some("-v".to_string()),
             description: Some("Be verbose".to_string()),
-            value_type: None,
+            value_name: None,
             num_args: None,
             ..Default::default()
         });
@@ -1320,10 +1430,10 @@ Options:
     }
 
     #[test]
-    fn test_parse_possible_values_extraction() {
-        // Test parsing from value_type
+    fn test_parse_value_enum_extraction() {
+        // Test parsing from value_name
         assert_eq!(
-            parse_possible_values(Some("{info,debug,trace}"), None),
+            parse_value_enum(Some("{info,debug,trace}"), None),
             Some(vec![
                 "info".to_string(),
                 "debug".to_string(),
@@ -1331,7 +1441,7 @@ Options:
             ])
         );
         assert_eq!(
-            parse_possible_values(Some("info|debug|trace"), None),
+            parse_value_enum(Some("info|debug|trace"), None),
             Some(vec![
                 "info".to_string(),
                 "debug".to_string(),
@@ -1339,7 +1449,7 @@ Options:
             ])
         );
         assert_eq!(
-            parse_possible_values(Some("[info|debug|trace]"), None),
+            parse_value_enum(Some("[info|debug|trace]"), None),
             Some(vec![
                 "info".to_string(),
                 "debug".to_string(),
@@ -1349,7 +1459,7 @@ Options:
 
         // Test parsing from description
         assert_eq!(
-            parse_possible_values(
+            parse_value_enum(
                 None,
                 Some("Set the logging level [possible values: error, warn, info, debug, trace]")
             ),
@@ -1362,7 +1472,7 @@ Options:
             ])
         );
         assert_eq!(
-            parse_possible_values(None, Some("Choices: info, debug, trace")),
+            parse_value_enum(None, Some("Choices: info, debug, trace")),
             Some(vec![
                 "info".to_string(),
                 "debug".to_string(),
@@ -1370,7 +1480,7 @@ Options:
             ])
         );
         assert_eq!(
-            parse_possible_values(
+            parse_value_enum(
                 None,
                 Some("allowed values are 'info', 'debug', or 'trace'.")
             ),
@@ -1381,11 +1491,11 @@ Options:
             ])
         );
         assert_eq!(
-            parse_possible_values(None, Some("must be either info or debug")),
+            parse_value_enum(None, Some("must be either info or debug")),
             Some(vec!["info".to_string(), "debug".to_string()])
         );
         assert_eq!(
-            parse_possible_values(None, Some("valid values: info/debug/trace")),
+            parse_value_enum(None, Some("valid values: info/debug/trace")),
             Some(vec![
                 "info".to_string(),
                 "debug".to_string(),
@@ -1393,7 +1503,7 @@ Options:
             ])
         );
         assert_eq!(
-            parse_possible_values(None, Some("one of: info, debug, trace")),
+            parse_value_enum(None, Some("one of: info, debug, trace")),
             Some(vec![
                 "info".to_string(),
                 "debug".to_string(),
@@ -1401,7 +1511,7 @@ Options:
             ])
         );
         assert_eq!(
-            parse_possible_values(None, Some("accepts: \"info\", \"debug\", \"trace\"")),
+            parse_value_enum(None, Some("accepts: \"info\", \"debug\", \"trace\"")),
             Some(vec![
                 "info".to_string(),
                 "debug".to_string(),
@@ -1411,16 +1521,16 @@ Options:
 
         // Test none when no matches or junk
         assert_eq!(
-            parse_possible_values(None, Some("This option can be specified multiple times.")),
+            parse_value_enum(None, Some("This option can be specified multiple times.")),
             None
         );
     }
 
     #[test]
-    fn test_parse_possible_values_heuristic_default() {
+    fn test_parse_value_enum_heuristic_default() {
         // Test: list + default: x
         assert_eq!(
-            parse_possible_values(None, Some("mode: fast, slow, or medium. default: fast")),
+            parse_value_enum(None, Some("mode: fast, slow, or medium. default: fast")),
             Some(vec![
                 "fast".to_string(),
                 "slow".to_string(),
@@ -1430,7 +1540,7 @@ Options:
 
         // Test: list + default is x
         assert_eq!(
-            parse_possible_values(None, Some("color: red|green|blue (default is green)")),
+            parse_value_enum(None, Some("color: red|green|blue (default is green)")),
             Some(vec![
                 "red".to_string(),
                 "green".to_string(),
@@ -1440,7 +1550,7 @@ Options:
 
         // Test: list + [default: x]
         assert_eq!(
-            parse_possible_values(None, Some("type: apple/banana/cherry [default: banana]")),
+            parse_value_enum(None, Some("type: apple/banana/cherry [default: banana]")),
             Some(vec![
                 "apple".to_string(),
                 "banana".to_string(),
@@ -1450,25 +1560,25 @@ Options:
 
         // Test: list + (default: x)
         assert_eq!(
-            parse_possible_values(None, Some("strategy: eager, lazy (default: eager)")),
+            parse_value_enum(None, Some("strategy: eager, lazy (default: eager)")),
             Some(vec!["eager".to_string(), "lazy".to_string()])
         );
 
         // Test: default value NOT in the list (should return None)
         assert_eq!(
-            parse_possible_values(None, Some("mode: fast, slow. default: medium")),
+            parse_value_enum(None, Some("mode: fast, slow. default: medium")),
             None
         );
 
         // Test: default value with no obvious list (should return None)
         assert_eq!(
-            parse_possible_values(None, Some("Set the timeout in seconds. default: 30")),
+            parse_value_enum(None, Some("Set the timeout in seconds. default: 30")),
             None
         );
 
         // Test: multiple lists, default matches one
         assert_eq!(
-            parse_possible_values(
+            parse_value_enum(
                 None,
                 Some("format: json, xml, yaml. output: file, stdout. default: xml")
             ),
@@ -1481,7 +1591,7 @@ Options:
 
         // Test: list with 'and' conjunction
         assert_eq!(
-            parse_possible_values(None, Some("choose from red, green and blue. default: red")),
+            parse_value_enum(None, Some("choose from red, green and blue. default: red")),
             Some(vec![
                 "red".to_string(),
                 "green".to_string(),
@@ -1491,25 +1601,25 @@ Options:
 
         // Test: quoted values in list and default
         assert_eq!(
-            parse_possible_values(None, Some("modes: 'active', 'inactive'. default is 'active'")),
+            parse_value_enum(None, Some("modes: 'active', 'inactive'. default is 'active'")),
             Some(vec!["active".to_string(), "inactive".to_string()])
         );
 
         // Test: values with dashes and underscores
         assert_eq!(
-            parse_possible_values(None, Some("use: my-value, other_value. default: other_value")),
+            parse_value_enum(None, Some("use: my-value, other_value. default: other_value")),
             Some(vec!["my-value".to_string(), "other_value".to_string()])
         );
 
         // Test: default at the beginning
         assert_eq!(
-            parse_possible_values(None, Some("default: fast. choices are fast, slow.")),
+            parse_value_enum(None, Some("default: fast. choices are fast, slow.")),
             Some(vec!["fast".to_string(), "slow".to_string()])
         );
 
         // Test: list in parentheses
         assert_eq!(
-            parse_possible_values(None, Some("the mode (fast, slow, medium). default: slow")),
+            parse_value_enum(None, Some("the mode (fast, slow, medium). default: slow")),
             Some(vec![
                 "fast".to_string(),
                 "slow".to_string(),
@@ -1519,13 +1629,13 @@ Options:
 
         // Test: default is x, where x is in the list with other text
         assert_eq!(
-            parse_possible_values(None, Some("Available options are: first, second, third. The default is second.")),
+            parse_value_enum(None, Some("Available options are: first, second, third. The default is second.")),
             Some(vec!["first".to_string(), "second".to_string(), "third".to_string()])
         );
 
         // Test: multiple potential lists, should pick the one containing default
         assert_eq!(
-            parse_possible_values(None, Some("birds: eagle, hawk. fish: shark, trout. default: shark")),
+            parse_value_enum(None, Some("birds: eagle, hawk. fish: shark, trout. default: shark")),
             Some(vec!["shark".to_string(), "trout".to_string()])
         );
     }
