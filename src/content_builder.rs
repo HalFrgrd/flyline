@@ -187,6 +187,7 @@ pub enum Tag {
     TabCompletionScrollBar {
         cell_height: usize,
         max_cell_height: usize,
+        y_start: u16,
     },
     TutorialPrev,
     TutorialNext,
@@ -997,6 +998,7 @@ impl Contents {
                 tagged_cell.tag = Tag::TabCompletionScrollBar {
                     cell_height: i,
                     max_cell_height: length.saturating_sub(1) as usize,
+                    y_start,
                 };
             }
         }

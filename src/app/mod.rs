@@ -41,7 +41,6 @@ use ratatui::prelude::*;
 use ratatui::text::StyledGrapheme;
 use ratatui::{TerminalOptions, Viewport};
 use std::boxed::Box;
-use std::cell::LazyCell;
 use std::io::{Error, ErrorKind, IsTerminal};
 use std::time::Duration;
 use std::vec;
@@ -343,7 +342,6 @@ pub(crate) struct App<'a> {
     pub(super) mouse_state: MouseState,
     pub(super) content_mode: ContentMode,
     pub(super) last_contents: Option<DrawnContent>,
-    pub(super) last_mouse_over_cell: Option<Tag>,
     pub(super) tooltip: Option<String>,
     pub(super) settings: &'a mut Settings,
     /// Terminal row (absolute) where the inline viewport starts; used by smart mouse mode.
@@ -404,7 +402,6 @@ impl<'a> App<'a> {
             ),
             content_mode: ContentMode::Normal,
             last_contents: None,
-            last_mouse_over_cell: None,
             tooltip: None,
             settings,
             last_draw_time: std::time::Instant::now(),
@@ -697,7 +694,7 @@ impl<'a> App<'a> {
     fn toggle_mouse_state(&mut self) {
         self.mouse_state.toggle();
         if !self.mouse_state.is_enabled() {
-            self.last_mouse_over_cell = None;
+            self.mouse_state.last_mouse_over_cell = None;
         }
     }
 
@@ -705,7 +702,7 @@ impl<'a> App<'a> {
     /// based on whether the mouse is hovering it and whether the left mouse
     /// button is currently held down.
     fn button_state_for(&self, tag: Tag) -> ButtonState {
-        if self.last_mouse_over_cell != Some(tag) {
+        if self.mouse_state.last_mouse_over_cell != Some(tag) {
             ButtonState::Normal
         } else if self.mouse_state.is_left_button_down() {
             ButtonState::Depressed
@@ -720,12 +717,20 @@ impl<'a> App<'a> {
         // Track whether the left mouse button is currently being held down so
         // interactive cells (clipboard cells, buttons) can render a "depressed"
         // state while the user is pressing on them.
+        let clicked_tag = self
+            .last_contents
+            .as_ref()
+            .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
+            .map(|(tag, _)| tag);
+
         match mouse.kind {
             MouseEventKind::Down(event::MouseButton::Left) => {
                 self.mouse_state.set_left_button_down();
+                self.mouse_state.drag_start_tag = clicked_tag;
             }
             MouseEventKind::Up(event::MouseButton::Left) => {
                 self.mouse_state.set_left_button_up();
+                self.mouse_state.drag_start_tag = None;
             }
             _ => {}
         }
@@ -739,7 +744,7 @@ impl<'a> App<'a> {
                 | MouseEventKind::ScrollRight => {
                     log::debug!("Disabling mouse capture due to scroll event in smart mode");
                     self.mouse_state.disable();
-                    self.last_mouse_over_cell = None;
+                    self.mouse_state.last_mouse_over_cell = None;
                     return false;
                 }
                 _ => {}
@@ -758,8 +763,41 @@ impl<'a> App<'a> {
                     );
                     self.mouse_state.disable();
                 }
-                self.last_mouse_over_cell = None;
+                self.mouse_state.last_mouse_over_cell = None;
                 return false;
+            }
+        }
+
+        let mut update_buffer = false;
+        if let Some(Tag::TabCompletionScrollBar {
+            max_cell_height,
+            y_start,
+            ..
+        }) = self.mouse_state.drag_start_tag
+        {
+            if matches!(
+                mouse.kind,
+                MouseEventKind::Down(event::MouseButton::Left)
+                    | MouseEventKind::Drag(event::MouseButton::Left)
+            ) {
+                if let Some(ref drawn) = self.last_contents {
+                    let min_row = drawn.content_row_to_term_em_row(y_start);
+                    let max_row = min_row + max_cell_height as u16;
+
+                    let cell_height = if mouse.row < min_row {
+                        0
+                    } else if mouse.row > max_row {
+                        max_cell_height
+                    } else {
+                        (mouse.row - min_row) as usize
+                    };
+
+                    if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+                        active_suggestions
+                            .set_selected_by_scrollbar_pos(cell_height, max_cell_height);
+                        update_buffer = true;
+                    }
+                }
             }
         }
 
@@ -771,14 +809,14 @@ impl<'a> App<'a> {
             .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
         {
             Some((tag @ Tag::Suggestion(idx), true)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     log::debug!("Setting selected by idx: {}", idx);
                     active_suggestions.set_selected_by_idx(idx);
                 }
             }
             Some((tag @ Tag::HistoryResult(idx), true)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
                 if let ContentMode::FuzzyHistorySearch(ref source) = self.content_mode {
                     let source = source.clone();
                     self.select_fuzzy_history_manager_mut(&source)
@@ -786,14 +824,14 @@ impl<'a> App<'a> {
                 }
             }
             Some((tag @ Tag::AiResult(idx), true)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
                 if let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode {
                     selection.set_selected_by_idx(idx);
                 }
             }
             Some((tag @ Tag::Command(byte_pos), direct)) => {
                 cursor_directly_on_cell = direct;
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
                 if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
                     && let Some(tooltip) = part.tooltip.as_ref()
                 {
@@ -801,33 +839,31 @@ impl<'a> App<'a> {
                 }
             }
             Some((tag @ Tag::TutorialPrev, true)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
             }
             Some((tag @ Tag::TutorialNext, true)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
             }
             Some((tag @ Tag::Clipboard(_), true)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
             }
             Some((tag @ Tag::PromptCopyBufferWidget, true)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
             }
             Some((tag @ Tag::Ps1PromptCwdWidget(_), _)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
             }
             Some((tag @ Tag::TabCompletionScrollBar { .. }, _)) => {
-                self.last_mouse_over_cell = Some(tag);
+                self.mouse_state.last_mouse_over_cell = Some(tag);
             }
             _ => {
-                self.last_mouse_over_cell = None;
+                self.mouse_state.last_mouse_over_cell = None;
                 self.tooltip = None;
             }
         }
 
-        let mut update_buffer = false;
-
         if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
-            match self.last_mouse_over_cell {
+            match self.mouse_state.last_mouse_over_cell {
                 Some(Tag::Ps1PromptCwdWidget(_)) | Some(Tag::PromptCopyBufferWidget) => {}
                 _ => {
                     self.content_mode = ContentMode::Normal;
@@ -835,7 +871,7 @@ impl<'a> App<'a> {
             }
         }
 
-        match self.last_mouse_over_cell {
+        match self.mouse_state.last_mouse_over_cell {
             Some(Tag::Suggestion(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
                     && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
@@ -1013,25 +1049,6 @@ impl<'a> App<'a> {
                     let text = self.buffer.buffer().to_string();
                     if self.copy_to_clipboard(text.as_bytes()) {
                         log::info!("Copied current buffer to clipboard via copy-buffer widget");
-                        update_buffer = true;
-                    }
-                }
-            }
-            Some(Tag::TabCompletionScrollBar {
-                cell_height,
-                max_cell_height,
-            }) => {
-                if matches!(
-                    mouse.kind,
-                    MouseEventKind::Down(event::MouseButton::Left) | MouseEventKind::Drag(_)
-                ) {
-                    if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
-                        let relative_pos = if max_cell_height == 0 {
-                            0.0
-                        } else {
-                            (cell_height as f64 + 0.5) / (max_cell_height as f64 + 1.0)
-                        };
-                        active_suggestions.set_selected_by_scrollbar_pos(relative_pos);
                         update_buffer = true;
                     }
                 }

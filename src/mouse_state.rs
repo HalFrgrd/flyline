@@ -1,3 +1,4 @@
+use crate::content_builder::Tag;
 use crate::settings::MouseMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,6 +16,8 @@ pub struct MouseState {
     /// True while the left mouse button is currently being held down.
     /// Set on `MouseEventKind::Down(Left)` and cleared on `MouseEventKind::Up(Left)`.
     left_button_down: bool,
+    pub last_mouse_over_cell: Option<Tag>,
+    pub drag_start_tag: Option<Tag>,
 }
 
 impl MouseState {
@@ -41,6 +44,8 @@ impl MouseState {
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
             left_button_down: false,
+            last_mouse_over_cell: None,
+            drag_start_tag: None,
         }
     }
 
