@@ -1159,28 +1159,17 @@ impl<'a> App<'a> {
             .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
             .unwrap_or(0);
 
-        let popup_anchor_col = if let Some(pos) = cursor_pos_maybe {
-            let cursor_col = pos.col as usize;
-            let wuc_start = active_suggestions.word_under_cursor.start;
-            if wuc_start <= cursor_byte_pos {
-                let left_part = &buffer[wuc_start..cursor_byte_pos];
-                let w = unicode_width::UnicodeWidthStr::width(left_part);
-                if cursor_col >= w {
-                    let anchor = cursor_col - w;
-                    anchor
-                        .saturating_add(suggestion_prefix_width)
-                        .saturating_sub(1)
-                } else {
-                    0 // wrapped
-                }
-            } else {
-                cursor_col
-                    .saturating_add(suggestion_prefix_width)
-                    .saturating_sub(1)
-            }
-        } else {
-            0
-        };
+        let popup_anchor_col = cursor_pos_maybe
+            .map(|pos| {
+                auto_suggestions_popup_anchor_col(
+                    pos.col as usize,
+                    &active_suggestions.word_under_cursor,
+                    suggestion_prefix_width,
+                    buffer,
+                    cursor_byte_pos,
+                )
+            })
+            .unwrap_or(0);
         let popup_anchor_col = popup_anchor_col.min(term_width.saturating_sub(1));
         let max_x = term_width.saturating_sub(box_width);
         let x = popup_anchor_col.min(max_x) as u16;
@@ -1277,12 +1266,51 @@ impl<'a> App<'a> {
     }
 }
 
+fn auto_suggestions_popup_anchor_col(
+    cursor_col: usize,
+    word_under_cursor: &crate::text_buffer::SubString,
+    suggestion_prefix_width: usize,
+    buffer: &str,
+    cursor_byte_pos: usize,
+) -> usize {
+    if word_under_cursor.as_ref().is_empty() {
+        return cursor_col.saturating_sub(1);
+    }
+
+    let wuc_start = word_under_cursor.start;
+    if wuc_start <= cursor_byte_pos {
+        let left_part = &buffer[wuc_start..cursor_byte_pos];
+        let w = unicode_width::UnicodeWidthStr::width(left_part);
+        if cursor_col >= w {
+            let anchor = cursor_col - w;
+            anchor
+                .saturating_add(suggestion_prefix_width)
+                .saturating_sub(1)
+        } else {
+            0
+        }
+    } else {
+        cursor_col
+            .saturating_add(suggestion_prefix_width)
+            .saturating_sub(1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::content_builder::Contents;
     use crate::history::{HistoryEntry, HistoryEntryFormatted};
     use crate::palette::Palette;
+    use crate::text_buffer::SubString;
+
+    #[test]
+    fn test_auto_suggestions_popup_anchor_col_uses_cursor_col_for_empty_wuc() {
+        let anchor =
+            auto_suggestions_popup_anchor_col(9, &SubString::from_parts("", 4), 3, "echo test", 4);
+
+        assert_eq!(anchor, 9);
+    }
 
     #[test]
     fn test_render_history_entry_wrapping_and_ellipsis() {
