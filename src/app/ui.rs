@@ -486,7 +486,8 @@ impl<'a> App<'a> {
 
         // Apply hover/depress styling to whichever CWD segment the mouse is over.
         if self.mode.is_running()
-            && let Some(Tag::Ps1PromptCwdWidget(hovered_idx)) = self.last_mouse_over_cell
+            && let Some(Tag::Ps1PromptCwdWidget(hovered_idx)) =
+                self.mouse_state.last_mouse_over_cell
         {
             let cwd_state = self.button_state_for(Tag::Ps1PromptCwdWidget(hovered_idx));
             if !matches!(cwd_state, ButtonState::Normal) {

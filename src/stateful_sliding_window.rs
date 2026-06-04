@@ -88,6 +88,22 @@ impl StatefulSlidingWindow {
         self.index_of_interest = self.start_index + visual_index;
         self.fix_window();
     }
+
+    pub fn force_window_and_index(&mut self, new_start: usize, new_index: usize) {
+        self.start_index = new_start;
+        self.index_of_interest = new_index;
+        if self.start_index + self.window_size > self.max_index {
+            self.start_index = self.max_index.saturating_sub(self.window_size);
+        }
+        if self.index_of_interest < self.start_index {
+            self.index_of_interest = self.start_index;
+        } else if self.index_of_interest >= self.start_index + self.window_size {
+            self.index_of_interest = (self.start_index + self.window_size).saturating_sub(1);
+        }
+        if self.index_of_interest >= self.max_index {
+            self.index_of_interest = self.max_index.saturating_sub(1);
+        }
+    }
 }
 
 #[cfg(test)]
