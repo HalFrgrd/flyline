@@ -1025,7 +1025,7 @@ impl<'a> App<'a> {
                     MouseEventKind::Down(_) | MouseEventKind::Drag(_)
                 ) {
                     self.content_mode = ContentMode::PromptDirSelect(idx);
-                    update_buffer = true;
+                    return true;
                 }
             }
             Some(Tag::Clipboard(clipboard_type)) => {
