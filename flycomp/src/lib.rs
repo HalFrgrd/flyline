@@ -4,14 +4,17 @@
 //! the text comes from (clap, Python argparse, or an unknown generic format)
 //! and dispatches to the appropriate sub-parser.
 use anyhow::Context;
+use chrono::{SecondsFormat, Utc};
+use strum::IntoStaticStr;
 
 mod parse_help;
 pub mod parse_man;
 
 pub use parse_help::{parse_help, parse_help_argparse, parse_help_clap, parse_help_generic};
 
-#[derive(Clone, Debug, PartialEq, Eq, Default, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, clap::ValueEnum, IntoStaticStr)]
 #[value(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum SynthesisStrategy {
     #[default]
     ManPageThenRunHelp,
@@ -79,6 +82,40 @@ pub struct Command {
     pub args: Vec<Arg>,
     /// Recognised sub-commands.
     pub subcommands: Vec<Command>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, IntoStaticStr)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+enum SynthesisMethod {
+    ManPage,
+    RunHelp,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SynthesisOutcome {
+    command: Command,
+    strategy_used: SynthesisMethod,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct JsonMetadata {
+    flycomp_version: &'static str,
+    git_hash: &'static str,
+    build_time: &'static str,
+    generated_at: String,
+    output_format: &'static str,
+    requested_strategy: &'static str,
+    strategy_used: &'static str,
+    sandboxed: bool,
+    timeout_ms: u64,
+    command_path: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct JsonCompletionOutput {
+    metadata: JsonMetadata,
+    command: Command,
 }
 
 impl Command {
@@ -397,32 +434,71 @@ pub fn synthesize_completion<F>(
 where
     F: Fn(&[&str]) -> anyhow::Result<String>,
 {
-    synthesize_completion_with(command_path, &help_runner, strategy)
+    Ok(synthesize_completion_with(command_path, &help_runner, strategy)?.command)
 }
 
 fn synthesize_completion_with<F>(
     command_path: &str,
     help_runner: &F,
     strategy: SynthesisStrategy,
-) -> anyhow::Result<Command>
+) -> anyhow::Result<SynthesisOutcome>
 where
     F: Fn(&[&str]) -> anyhow::Result<String>,
 {
     match strategy {
-        SynthesisStrategy::RunHelp => synthesize_from_help(command_path, help_runner),
-        SynthesisStrategy::ManPage => load_manpage_command(command_path),
+        SynthesisStrategy::RunHelp => Ok(SynthesisOutcome {
+            command: synthesize_from_help(command_path, help_runner)?,
+            strategy_used: SynthesisMethod::RunHelp,
+        }),
+        SynthesisStrategy::ManPage => Ok(SynthesisOutcome {
+            command: load_manpage_command(command_path)?,
+            strategy_used: SynthesisMethod::ManPage,
+        }),
         SynthesisStrategy::ManPageThenRunHelp => match load_manpage_command(command_path) {
-            Ok(command) => Ok(command),
+            Ok(command) => Ok(SynthesisOutcome {
+                command,
+                strategy_used: SynthesisMethod::ManPage,
+            }),
             Err(error) => {
                 log::debug!(
                     "flycomp: falling back to --help for '{}': {}",
                     command_path,
                     error
                 );
-                synthesize_from_help(command_path, help_runner)
+                Ok(SynthesisOutcome {
+                    command: synthesize_from_help(command_path, help_runner)?,
+                    strategy_used: SynthesisMethod::RunHelp,
+                })
             }
         },
     }
+}
+
+fn render_json_output(
+    command_path: &str,
+    requested_strategy: SynthesisStrategy,
+    strategy_used: SynthesisMethod,
+    sandboxed: bool,
+    timeout_ms: u64,
+    command: Command,
+) -> anyhow::Result<String> {
+    let payload = JsonCompletionOutput {
+        metadata: JsonMetadata {
+            flycomp_version: env!("CARGO_PKG_VERSION"),
+            git_hash: env!("GIT_HASH"),
+            build_time: env!("BUILD_TIME"),
+            generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+            output_format: "json",
+            requested_strategy: requested_strategy.into(),
+            strategy_used: strategy_used.into(),
+            sandboxed,
+            timeout_ms,
+            command_path: command_path.to_string(),
+        },
+        command,
+    };
+
+    serde_json::to_string_pretty(&payload).map_err(Into::into)
 }
 
 fn command_basename(command_path: &str) -> String {
@@ -756,12 +832,19 @@ pub fn generate_completion_output(
     timeout_ms: u64,
 ) -> anyhow::Result<String> {
     if matches!(output, OutputFormat::Json) {
-        let parsed_cmd = synthesize_completion(
+        let outcome = synthesize_completion_with(
             command_path,
-            |extra_args| run_help(command_path, extra_args, sandbox, timeout_ms),
+            &|extra_args| run_help(command_path, extra_args, sandbox, timeout_ms),
             strategy,
         )?;
-        serde_json::to_string_pretty(&parsed_cmd).map_err(Into::into)
+        render_json_output(
+            command_path,
+            strategy,
+            outcome.strategy_used,
+            sandbox,
+            timeout_ms,
+            outcome.command,
+        )
     } else {
         let shell = output.shell().expect("non-JSON output has shell mapping");
         generate_completion_script(command_path, shell, strategy, sandbox, timeout_ms)
@@ -1105,6 +1188,39 @@ Options:
         let sub = clap_cmd.find_subcommand("build").unwrap();
         let visible_aliases: Vec<&str> = sub.get_visible_aliases().collect();
         assert_eq!(visible_aliases, vec!["b"]);
+    }
+
+    #[test]
+    fn test_render_json_output_includes_metadata() {
+        let json = render_json_output(
+            "cargo",
+            SynthesisStrategy::ManPageThenRunHelp,
+            SynthesisMethod::RunHelp,
+            true,
+            15000,
+            Command {
+                name: Some("cargo".to_string()),
+                description: Some("Rust package manager".to_string()),
+                ..Command::default()
+            },
+        )
+        .unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["metadata"]["flycomp_version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(value["metadata"]["git_hash"], env!("GIT_HASH"));
+        assert_eq!(value["metadata"]["build_time"], env!("BUILD_TIME"));
+        assert_eq!(value["metadata"]["output_format"], "json");
+        assert_eq!(
+            value["metadata"]["requested_strategy"],
+            "man-page-then-run-help"
+        );
+        assert_eq!(value["metadata"]["strategy_used"], "run-help");
+        assert_eq!(value["metadata"]["sandboxed"], true);
+        assert_eq!(value["metadata"]["timeout_ms"], 15000);
+        assert_eq!(value["metadata"]["command_path"], "cargo");
+        assert_eq!(value["command"]["name"], "cargo");
+        assert!(value["metadata"]["generated_at"].as_str().is_some());
     }
 
     #[test]
