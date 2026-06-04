@@ -9,12 +9,16 @@ concurrency:
   group: generate-demos
   cancel-in-progress: true
 
+# Upgraded permissions to allow GitHub Actions to deploy to Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   generate-demos:
     name: Generate demo assets
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout master branch
         uses: actions/checkout@v6
@@ -32,9 +36,19 @@ jobs:
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
-      - name: Upload demo assets to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Step 1: Stage the demo files into a dedicated deployment directory
+      - name: Stage assets for Pages
         run: |
-          gh release create assets --title "assets" --notes "Demo assets storage" 2>/dev/null || true
-          gh release upload assets *.svg --clobber
+          mkdir -p public-pages
+          cp *.svg public-pages/
+
+      # Step 2: Bundle and upload the folder to GitHub's Pages infrastructure
+      - name: Upload demo assets to Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'public-pages'
+
+      # Step 3: Trigger the live, zero-commit web deployment
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
