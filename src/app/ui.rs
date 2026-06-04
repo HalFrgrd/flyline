@@ -1277,7 +1277,7 @@ fn auto_suggestions_popup_anchor_col(
     cursor_byte_pos: usize,
 ) -> usize {
     if word_under_cursor.as_ref().is_empty() {
-        return cursor_col.saturating_sub(1);
+        return cursor_col;
     }
 
     let wuc_start = word_under_cursor.start;
@@ -1286,16 +1286,12 @@ fn auto_suggestions_popup_anchor_col(
         let w = unicode_width::UnicodeWidthStr::width(left_part);
         if cursor_col >= w {
             let anchor = cursor_col - w;
-            anchor
-                .saturating_add(suggestion_prefix_width)
-                .saturating_sub(1)
+            anchor.saturating_add(suggestion_prefix_width)
         } else {
             0
         }
     } else {
-        cursor_col
-            .saturating_add(suggestion_prefix_width)
-            .saturating_sub(1)
+        cursor_col.saturating_add(suggestion_prefix_width)
     }
 }
 
