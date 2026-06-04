@@ -1170,7 +1170,7 @@ impl<'a> App<'a> {
         let min_box_width = (unicode_width::UnicodeWidthStr::width(status_prefix.as_str())
             + unicode_width::UnicodeWidthStr::width(source_str.as_str())
             + 4)
-            .min(term_width);
+        .min(term_width);
         let max_box_width = (term_width * 40 / 100).max(70).min(term_width);
 
         // let max_item_width = active_suggestions.max_filtered_width();

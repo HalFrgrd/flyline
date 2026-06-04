@@ -1120,8 +1120,8 @@ impl TextBuffer {
     /// fine-grained word to the left (stopping at punctuation or path-segment
     /// boundaries, with slash-only mode when the word under the cursor
     /// contains `/` or `\`).
-    fn fine_grained_word_left_pos(&self) -> usize {
-        let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, self.cursor_byte) {
+    fn fine_grained_word_left_pos_from(&self, cursor_byte: usize) -> usize {
+        let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, cursor_byte) {
             Self::less_strict_class_slash_only
         } else {
             Self::less_strict_class
@@ -1130,7 +1130,7 @@ impl TextBuffer {
             .buf
             .char_indices()
             .rev()
-            .skip_while(|(i, _)| *i >= self.cursor_byte);
+            .skip_while(|(i, _)| *i >= cursor_byte);
         match iter.next() {
             Some((first_i, first_c)) => {
                 let class = class_fn(first_c);
@@ -1151,13 +1151,17 @@ impl TextBuffer {
         }
     }
 
+    fn fine_grained_word_left_pos(&self) -> usize {
+        self.fine_grained_word_left_pos_from(self.cursor_byte)
+    }
+
     /// Computes the target cursor byte position when moving/deleting one
     /// fine-grained word to the right (stopping at punctuation or path-segment
     /// boundaries, with slash-only mode when the word under the cursor
     /// contains `/` or `\`).
-    fn fine_grained_word_right_pos(&self) -> usize {
+    fn fine_grained_word_right_pos_from(&self, cursor_byte: usize) -> usize {
         let end = self.buf.len();
-        let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, self.cursor_byte) {
+        let class_fn: fn(char) -> u8 = if Self::has_slash_in_word(&self.buf, cursor_byte) {
             Self::less_strict_class_slash_only
         } else {
             Self::less_strict_class
@@ -1165,7 +1169,7 @@ impl TextBuffer {
         let mut iter = self
             .buf
             .char_indices()
-            .skip_while(|(i, _)| *i < self.cursor_byte);
+            .skip_while(|(i, _)| *i < cursor_byte);
         match iter.next() {
             Some((_, first_c)) => {
                 let class = class_fn(first_c);
@@ -1174,6 +1178,10 @@ impl TextBuffer {
             }
             None => end,
         }
+    }
+
+    fn fine_grained_word_right_pos(&self) -> usize {
+        self.fine_grained_word_right_pos_from(self.cursor_byte)
     }
 
     pub fn delete_one_word_left(&mut self, delim: WordDelim) {
@@ -1197,7 +1205,7 @@ impl TextBuffer {
         } else if delim == WordDelim::WhiteSpace {
             self.move_one_word_left_pos(WordDelim::WhiteSpace)
         } else {
-            self.fine_grained_word_left_pos()
+            self.fine_grained_word_left_pos_from(after_ws_skip)
         };
 
         assert!(new_cursor <= old_cursor_col);
@@ -1232,7 +1240,7 @@ impl TextBuffer {
                 .next()
                 .map_or(end, |(i, _)| i)
         } else {
-            self.fine_grained_word_right_pos()
+            self.fine_grained_word_right_pos_from(after_ws_skip)
         };
 
         assert!(end_cursor >= self.cursor_byte);
@@ -1468,6 +1476,17 @@ mod test_editing_advanced {
     }
 
     #[test]
+    fn delete_one_word_left_less_strict_single_space_also_deletes_word_part() {
+        let mut tb = TextBuffer::new("foo bar");
+        tb.move_end_of_line();
+        tb.delete_one_word_left(WordDelim::FineGrained);
+        assert_eq!(tb.buffer(), "foo ");
+
+        tb.delete_one_word_left(WordDelim::FineGrained);
+        assert_eq!(tb.buffer(), "");
+    }
+
+    #[test]
     fn delete_one_word_right() {
         let mut tb = TextBuffer::new("cargo test abc::def::ghi   /etc/asd");
         tb.move_start_of_line();
@@ -1519,11 +1538,7 @@ mod test_editing_advanced {
         tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), " test abc::def::ghi   /etc/asd");
         tb.delete_right_one_word(WordDelim::FineGrained);
-        assert_eq!(tb.buffer(), "test abc::def::ghi   /etc/asd");
-        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), " abc::def::ghi   /etc/asd");
-        tb.delete_right_one_word(WordDelim::FineGrained);
-        assert_eq!(tb.buffer(), "abc::def::ghi   /etc/asd");
         tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "::def::ghi   /etc/asd");
         tb.delete_right_one_word(WordDelim::FineGrained);
@@ -1544,6 +1559,14 @@ mod test_editing_advanced {
         assert_eq!(tb.buffer(), "asd");
         tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "");
+    }
+
+    #[test]
+    fn delete_one_word_right_less_strict_single_space_also_deletes_word_part() {
+        let mut tb = TextBuffer::new("foo bar");
+        tb.cursor_byte = "foo".len();
+        tb.delete_right_one_word(WordDelim::FineGrained);
+        assert_eq!(tb.buffer(), "foo");
     }
 
     #[test]
@@ -1573,10 +1596,9 @@ mod test_editing_advanced {
         tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), " ./foo_bar/baz.jeb");
         tb.delete_right_one_word(WordDelim::FineGrained);
-        assert_eq!(tb.buffer(), "./foo_bar/baz.jeb");
-        // Now the word starts with "./" which contains a slash; slash-only mode.
-        tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "/foo_bar/baz.jeb");
+        // After consuming the single leading space and '.', the remaining word
+        // starts with '/' so slash-only mode applies.
         tb.delete_right_one_word(WordDelim::FineGrained);
         assert_eq!(tb.buffer(), "foo_bar/baz.jeb");
         tb.delete_right_one_word(WordDelim::FineGrained);
