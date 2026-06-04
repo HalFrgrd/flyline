@@ -58,13 +58,13 @@ fn indent_of(line: &str) -> usize {
 }
 
 /// Try to parse a flag token like `-v`, `--verbose`, or `--output <FILE>`.
-/// Returns `(short, long, value_type)`.
+/// Returns `(short, long, value_name)`.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>, Option<String>) {
     // Split on commas / whitespace to handle "-v, --verbose <FILE>"
     let mut short = None;
     let mut long = None;
-    let mut value_type = None;
+    let mut value_name = None;
 
     // Tokenise: split on ", " first, then whitespace
     let pieces: Vec<&str> = token.split_whitespace().collect();
@@ -73,7 +73,7 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
             // May be "--flag" or "--flag=<VAL>"
             if let Some((flag, val)) = piece.split_once('=') {
                 long = Some(flag.trim_end_matches(',').trim_end_matches('.').to_string());
-                value_type = Some(val.trim_matches(|c| c == '<' || c == '>').to_string());
+                value_name = Some(val.trim_matches(|c| c == '<' || c == '>').to_string());
             } else {
                 let mut l = piece.trim_end_matches(',').to_string();
                 while l.ends_with('.') {
@@ -96,14 +96,14 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
             // text like `[default: 10]` does not overwrite an already-parsed hint.
             // Subsequent bracketed tokens (e.g. `[boolean]`, `[default: …]`) are
             // intentionally ignored once a value-type has been established.
-            if value_type.is_none() {
-                value_type = Some(
+            if value_name.is_none() {
+                value_name = Some(
                     piece
                         .trim_matches(|c| c == '<' || c == '>' || c == '[' || c == ']')
                         .to_string(),
                 );
             }
-        } else if value_type.is_none()
+        } else if value_name.is_none()
             && !piece.is_empty()
             && (piece.chars().all(|c| {
                 c.is_uppercase()
@@ -116,10 +116,10 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
             }))
         {
             let clean = piece.trim_end_matches(',');
-            value_type = Some(clean.to_string());
+            value_name = Some(clean.to_string());
         }
     }
-    (short, long, value_type)
+    (short, long, value_name)
 }
 
 /// Collect continuation lines: lines whose indent > `base_indent` (or blank).
@@ -300,7 +300,7 @@ pub fn parse_help_clap(help: &str) -> Command {
                     .find("  ")
                     .map(|pos| &flag_part[..pos])
                     .unwrap_or(flag_part);
-                let (short, long, value_type) = parse_flag_tokens(token_part);
+                let (short, long, value_name) = parse_flag_tokens(token_part);
 
                 let inline_desc: Option<String> = flag_part.find("  ").and_then(|pos| {
                     let d = flag_part[pos..].trim();
@@ -320,7 +320,7 @@ pub fn parse_help_clap(help: &str) -> Command {
                     (None, _) => None,
                 };
 
-                let num_args = if value_type.is_some() {
+                let num_args = if value_name.is_some() {
                     Some("1".to_string())
                 } else {
                     None
@@ -330,7 +330,7 @@ pub fn parse_help_clap(help: &str) -> Command {
                     short,
                     long,
                     description,
-                    value_type,
+                    value_name,
                     num_args,
                     ..Default::default()
                 });
@@ -402,7 +402,7 @@ pub fn parse_help_argparse(help: &str) -> Command {
                 let flag_indent = indent_of(line);
                 let flag_part = line.trim();
 
-                let (short, long, value_type) = if flag_part.starts_with('-') {
+                let (short, long, value_name) = if flag_part.starts_with('-') {
                     let token_part = flag_part
                         .find("  ")
                         .map(|pos| &flag_part[..pos])
@@ -434,7 +434,7 @@ pub fn parse_help_argparse(help: &str) -> Command {
                     (None, _) => None,
                 };
 
-                let num_args = if value_type.is_some() {
+                let num_args = if value_name.is_some() {
                     Some("1".to_string())
                 } else {
                     None
@@ -444,7 +444,7 @@ pub fn parse_help_argparse(help: &str) -> Command {
                     short,
                     long,
                     description,
-                    value_type,
+                    value_name,
                     num_args,
                     ..Default::default()
                 });
@@ -496,7 +496,7 @@ pub fn parse_help_generic(help: &str) -> Command {
                 .find("  ")
                 .map(|pos| &flag_part[..pos])
                 .unwrap_or(flag_part);
-            let (short, long, value_type) = parse_flag_tokens(token_part);
+            let (short, long, value_name) = parse_flag_tokens(token_part);
 
             let inline_desc: Option<String> = if let Some(pos) = flag_part.find("  ") {
                 let d = flag_part[pos..].trim();
@@ -519,7 +519,7 @@ pub fn parse_help_generic(help: &str) -> Command {
                 (None, _) => None,
             };
 
-            let num_args = if value_type.is_some() {
+            let num_args = if value_name.is_some() {
                 Some("1".to_string())
             } else {
                 None
@@ -529,7 +529,7 @@ pub fn parse_help_generic(help: &str) -> Command {
                 short,
                 long,
                 description,
-                value_type,
+                value_name,
                 num_args,
                 ..Default::default()
             });
@@ -545,7 +545,7 @@ pub fn parse_help_generic(help: &str) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{SynthesisStrategy, synthesize_completion};
+    use crate::{SynthesisStrategy, ValueHint, synthesize_completion};
 
     fn long_names(cmd: &Command) -> Vec<&str> {
         cmd.args.iter().filter_map(|a| a.long.as_deref()).collect()
@@ -678,16 +678,28 @@ Read more at https://github.com/HalFrgrd/flyline
         assert!(shorts.contains(&"-h"));
 
         assert_eq!(
-            arg_by_long(&cmd, "--log-level").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--log-level").and_then(|a| a.value_name.as_deref()),
             Some("LEVEL")
         );
         assert_eq!(
-            arg_by_long(&cmd, "--set-frame-rate").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--log-level").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--set-frame-rate").and_then(|a| a.value_name.as_deref()),
             Some("FPS")
         );
         assert_eq!(
-            arg_by_long(&cmd, "--set-mouse-mode").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--set-frame-rate").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--set-mouse-mode").and_then(|a| a.value_name.as_deref()),
             Some("MODE")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--set-mouse-mode").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
         );
 
         assert_eq!(
@@ -701,7 +713,7 @@ Read more at https://github.com/HalFrgrd/flyline
                 .contains("logging level")
         );
         assert_eq!(
-            arg_by_long(&cmd, "--log-level").and_then(|a| a.possible_values.clone()),
+            arg_by_long(&cmd, "--log-level").and_then(|a| a.value_enum.clone()),
             Some(vec![
                 "error".to_string(),
                 "warn".to_string(),
@@ -711,20 +723,19 @@ Read more at https://github.com/HalFrgrd/flyline
             ])
         );
         assert_eq!(
-            arg_by_long(&cmd, "--show-animations").and_then(|a| a.possible_values.clone()),
+            arg_by_long(&cmd, "--show-animations").and_then(|a| a.value_enum.clone()),
             Some(vec!["true".to_string(), "false".to_string()])
         );
         assert_eq!(
-            arg_by_long(&cmd, "--show-inline-history").and_then(|a| a.possible_values.clone()),
+            arg_by_long(&cmd, "--show-inline-history").and_then(|a| a.value_enum.clone()),
             Some(vec!["true".to_string(), "false".to_string()])
         );
         assert_eq!(
-            arg_by_long(&cmd, "--auto-close-chars").and_then(|a| a.possible_values.clone()),
+            arg_by_long(&cmd, "--auto-close-chars").and_then(|a| a.value_enum.clone()),
             Some(vec!["true".to_string(), "false".to_string()])
         );
         assert_eq!(
-            arg_by_long(&cmd, "--enable-extended-key-codes")
-                .and_then(|a| a.possible_values.clone()),
+            arg_by_long(&cmd, "--enable-extended-key-codes").and_then(|a| a.value_enum.clone()),
             Some(vec!["true".to_string(), "false".to_string()])
         );
     }
@@ -781,12 +792,20 @@ Options:
         assert!(shorts.contains(&"-h"));
 
         assert_eq!(
-            arg_by_long(&cmd, "--name").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--name").and_then(|a| a.value_name.as_deref()),
             Some("NAME")
         );
         assert_eq!(
-            arg_by_long(&cmd, "--fps").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--name").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--fps").and_then(|a| a.value_name.as_deref()),
             Some("FPS")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--fps").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
         );
 
         assert!(
@@ -864,12 +883,20 @@ See 'cargo help <command>' for more information on a specific command.
         assert!(shorts.contains(&"-h"));
 
         assert_eq!(
-            arg_by_long(&cmd, "--explain").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--explain").and_then(|a| a.value_name.as_deref()),
             Some("CODE")
         );
         assert_eq!(
-            arg_by_long(&cmd, "--color").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--explain").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--color").and_then(|a| a.value_name.as_deref()),
             Some("WHEN")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--color").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
         );
 
         let subs = subcommand_names(&cmd);
@@ -1281,8 +1308,12 @@ Options:
         assert!(shorts.contains(&"-h"));
 
         assert_eq!(
-            arg_by_long(&cmd, "--speed").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--speed").and_then(|a| a.value_name.as_deref()),
             Some("kn")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--speed").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
         );
     }
 
@@ -1397,16 +1428,28 @@ Options:
         assert!(longs.contains(&"--no-patch"));
 
         assert_eq!(
-            arg_by_long(&cmd, "--max-count").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--max-count").and_then(|a| a.value_name.as_deref()),
             Some("n")
         );
         assert_eq!(
-            arg_by_long(&cmd, "--since").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--max-count").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--since").and_then(|a| a.value_name.as_deref()),
             Some("date")
         );
         assert_eq!(
-            arg_by_long(&cmd, "--author").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--since").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--author").and_then(|a| a.value_name.as_deref()),
             Some("pattern")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--author").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
         );
 
         assert!(
@@ -1469,12 +1512,20 @@ Options:
         assert!(longs.contains(&"--signoff"));
 
         assert_eq!(
-            arg_by_long(&cmd, "--message").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--message").and_then(|a| a.value_name.as_deref()),
             Some("message")
         );
         assert_eq!(
-            arg_by_long(&cmd, "--file").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--message").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--file").and_then(|a| a.value_name.as_deref()),
             Some("file")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--file").map(|a| a.value_hint),
+            Some(ValueHint::FilePath)
         );
     }
 
@@ -1622,8 +1673,12 @@ Options:
         assert!(long_names(remote_add).contains(&"--fetch"));
         assert!(short_names(remote_add).contains(&"-f"));
         assert_eq!(
-            arg_by_long(remote_add, "--track").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(remote_add, "--track").and_then(|a| a.value_name.as_deref()),
             Some("branch")
+        );
+        assert_eq!(
+            arg_by_long(remote_add, "--track").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
         );
 
         let remote_set_url = subcommand_by_name(remote, "set-url")
@@ -1713,24 +1768,28 @@ Report bugs to <https://sourceware.org/bugzilla/>
         assert!(longs.contains(&"--hex-dump"));
 
         assert_eq!(
-            arg_by_long(&cmd, "--hex-dump").and_then(|a| a.value_type.as_deref()),
+            arg_by_long(&cmd, "--hex-dump").and_then(|a| a.value_name.as_deref()),
             Some("number|name")
+        );
+        assert_eq!(
+            arg_by_long(&cmd, "--hex-dump").map(|a| a.value_hint),
+            Some(ValueHint::Unknown)
         );
     }
 
     #[test]
     fn test_parse_flag_tokens_ignores_multi_character_short_forms() {
-        let (short, long, value_type) = parse_flag_tokens("-wk --debug-dump=links");
+        let (short, long, value_name) = parse_flag_tokens("-wk --debug-dump=links");
         assert_eq!(short, None);
         assert_eq!(long.as_deref(), Some("--debug-dump"));
-        assert_eq!(value_type.as_deref(), Some("links"));
+        assert_eq!(value_name.as_deref(), Some("links"));
 
-        let (short, long, value_type) =
+        let (short, long, value_name) =
             parse_flag_tokens("-U[dlexhi] --unicode=[default|locale|escape|hex|highlight|invalid]");
         assert_eq!(short, None);
         assert_eq!(long.as_deref(), Some("--unicode"));
         assert_eq!(
-            value_type.as_deref(),
+            value_name.as_deref(),
             Some("[default|locale|escape|hex|highlight|invalid]")
         );
     }
@@ -1859,7 +1918,7 @@ Benchmark options:
         // Assertions on various options to ensure correct parsing
         let o_arg = args
             .iter()
-            .find(|a| a.short.as_deref() == Some("-o") && a.value_type.as_deref() == Some("OUTPUT"))
+            .find(|a| a.short.as_deref() == Some("-o") && a.value_name.as_deref() == Some("OUTPUT"))
             .unwrap();
         assert!(
             o_arg
@@ -1910,19 +1969,22 @@ Benchmark options:
             .iter()
             .find(|a| a.short.as_deref() == Some("-D"))
             .unwrap();
-        assert_eq!(dict_arg.value_type.as_deref(), Some("DICT"));
+        assert_eq!(dict_arg.value_name.as_deref(), Some("DICT"));
+        assert_eq!(dict_arg.value_hint, ValueHint::FilePath);
 
         let trace_arg = args
             .iter()
             .find(|a| a.long.as_deref() == Some("--trace"))
             .unwrap();
-        assert_eq!(trace_arg.value_type.as_deref(), Some("LOG"));
+        assert_eq!(trace_arg.value_name.as_deref(), Some("LOG"));
+        assert_eq!(trace_arg.value_hint, ValueHint::FilePath);
 
         let format_arg = args
             .iter()
             .find(|a| a.long.as_deref() == Some("--format"))
             .unwrap();
-        assert_eq!(format_arg.value_type.as_deref(), Some("zstd"));
+        assert_eq!(format_arg.value_name.as_deref(), Some("zstd"));
+        assert_eq!(format_arg.value_hint, ValueHint::Unknown);
 
         let test_arg = args
             .iter()

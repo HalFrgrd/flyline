@@ -5,7 +5,7 @@ use regex::Regex;
 struct ParsedOption {
     short: Option<String>,
     long: Option<String>,
-    value_type: Option<String>,
+    value_name: Option<String>,
     num_args: Option<String>,
 }
 
@@ -282,11 +282,11 @@ fn parse_alias(alias: &str) -> Option<ParsedOption> {
     }
 
     let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
-    let (value_type, num_args) = find_value_type(rest);
+    let (value_name, num_args) = find_value_type(rest);
     let mut parsed = ParsedOption {
         short: None,
         long: None,
-        value_type,
+        value_name,
         num_args,
     };
 
@@ -317,11 +317,11 @@ fn parse_option_declaration(option_text: &str, cmd_name: &str) -> Vec<ParsedOpti
             (Some(existing), None, Some(_)) if existing.long.is_none() => {
                 let mut merged = existing.clone();
                 merged.long = current.long.clone();
-                if current.value_type.is_some() {
-                    merged.value_type = current.value_type.clone();
+                if current.value_name.is_some() {
+                    merged.value_name = current.value_name.clone();
                     merged.num_args = current.num_args.clone();
-                } else if merged.value_type.is_none() {
-                    merged.value_type = current.value_type.clone();
+                } else if merged.value_name.is_none() {
+                    merged.value_name = current.value_name.clone();
                     merged.num_args = current.num_args.clone();
                 }
                 parsed.push(merged);
@@ -368,8 +368,8 @@ fn merge_arg(existing: &mut Arg, incoming: ParsedOption, description: &str) {
     if existing.long.is_none() {
         existing.long = incoming.long;
     }
-    if existing.value_type.is_none() {
-        existing.value_type = incoming.value_type;
+    if existing.value_name.is_none() {
+        existing.value_name = incoming.value_name;
     }
     if existing.num_args.is_none() {
         existing.num_args = incoming.num_args;
@@ -414,7 +414,7 @@ fn add_option(cmd: &mut Command, option_text: &str, description: &str) -> bool {
                 } else {
                     Some(description.clone())
                 },
-                value_type: parsed.value_type,
+                value_name: parsed.value_name,
                 num_args: parsed.num_args,
                 ..Default::default()
             });
@@ -1218,8 +1218,15 @@ None documented.
             let arg = find_arg(cmd, expected_arg);
             assert_eq!(arg.short.as_deref(), expected_arg.short);
             assert_eq!(arg.long.as_deref(), expected_arg.long);
-            assert_eq!(arg.value_type.as_deref(), expected_arg.value_type);
+            assert_eq!(arg.value_name.as_deref(), expected_arg.value_type);
             assert_eq!(arg.num_args.as_deref(), expected_arg.num_args);
+            assert_eq!(
+                arg.value_hint,
+                crate::extract_value_hint(arg.value_name.as_deref(), arg.description.as_deref()),
+                "ValueHint mismatch for arg {:?} / {:?}",
+                arg.short,
+                arg.long
+            );
             let description = normalize_desc(arg.description.as_deref());
             assert!(!description.is_empty());
             assert!(description.contains(expected_arg.description_contains));
@@ -1231,8 +1238,15 @@ None documented.
             let arg = find_arg(cmd, expected_arg);
             assert_eq!(arg.short.as_deref(), expected_arg.short);
             assert_eq!(arg.long.as_deref(), expected_arg.long);
-            assert_eq!(arg.value_type.as_deref(), expected_arg.value_type);
+            assert_eq!(arg.value_name.as_deref(), expected_arg.value_type);
             assert_eq!(arg.num_args.as_deref(), expected_arg.num_args);
+            assert_eq!(
+                arg.value_hint,
+                crate::extract_value_hint(arg.value_name.as_deref(), arg.description.as_deref()),
+                "ValueHint mismatch for arg {:?} / {:?}",
+                arg.short,
+                arg.long
+            );
             let description = normalize_desc(arg.description.as_deref());
             assert!(!description.is_empty());
             assert!(description.contains(expected_arg.description_contains));
@@ -1409,8 +1423,15 @@ None documented.
             let arg = find_arg(&cmd, &item);
             assert_eq!(arg.short.as_deref(), item.short);
             assert_eq!(arg.long.as_deref(), item.long);
-            assert_eq!(arg.value_type.as_deref(), item.value_type);
+            assert_eq!(arg.value_name.as_deref(), item.value_type);
             assert_eq!(arg.num_args.as_deref(), item.num_args);
+            assert_eq!(
+                arg.value_hint,
+                crate::extract_value_hint(arg.value_name.as_deref(), arg.description.as_deref()),
+                "ValueHint mismatch for arg {:?} / {:?}",
+                arg.short,
+                arg.long
+            );
             assert!(normalize_desc(arg.description.as_deref()).contains(item.description_contains));
         }
     }
@@ -2074,7 +2095,14 @@ None documented.
         ] {
             let arg = find_arg(&cmd, &item);
             assert_eq!(arg.short.as_deref(), item.short);
-            assert_eq!(arg.value_type.as_deref(), item.value_type);
+            assert_eq!(arg.value_name.as_deref(), item.value_type);
+            assert_eq!(
+                arg.value_hint,
+                crate::extract_value_hint(arg.value_name.as_deref(), arg.description.as_deref()),
+                "ValueHint mismatch for arg {:?} / {:?}",
+                arg.short,
+                arg.long
+            );
             assert!(normalize_desc(arg.description.as_deref()).contains(item.description_contains));
         }
     }
@@ -2102,7 +2130,14 @@ None documented.
             let arg = find_arg(&cmd, &item);
             assert_eq!(arg.short.as_deref(), item.short);
             assert_eq!(arg.long.as_deref(), item.long);
-            assert_eq!(arg.value_type.as_deref(), item.value_type);
+            assert_eq!(arg.value_name.as_deref(), item.value_type);
+            assert_eq!(
+                arg.value_hint,
+                crate::extract_value_hint(arg.value_name.as_deref(), arg.description.as_deref()),
+                "ValueHint mismatch for arg {:?} / {:?}",
+                arg.short,
+                arg.long
+            );
             assert!(normalize_desc(arg.description.as_deref()).contains(item.description_contains));
         }
     }

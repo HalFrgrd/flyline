@@ -50,6 +50,25 @@ impl OutputFormat {
 // Public data structures
 // ──────────────────────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum ValueHint {
+    #[default]
+    Unknown,
+    Other,
+    AnyPath,
+    FilePath,
+    DirPath,
+    ExecutablePath,
+    CommandName,
+    CommandString,
+    CommandWithArguments,
+    Username,
+    Hostname,
+    Url,
+    EmailAddress,
+}
+
 /// A single command-line argument / flag.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Arg {
@@ -59,12 +78,14 @@ pub struct Arg {
     pub short: Option<String>,
     /// Human-readable description.
     pub description: Option<String>,
-    /// Meta-variable / value type hint (e.g. `<PATH>`, `<N>`).
-    pub value_type: Option<String>,
+    /// Meta-variable / value name hint (e.g. `<PATH>`, `<N>`).
+    pub value_name: Option<String>,
     /// Number of values accepted (e.g. `*`, `+`, `?`, or a count like `"1"`).
     pub num_args: Option<String>,
     /// Possible values for the option.
-    pub possible_values: Option<Vec<String>>,
+    pub value_enum: Option<Vec<String>>,
+    /// Completion hint for the option value.
+    pub value_hint: ValueHint,
 }
 
 /// A parsed command (or sub-command).
@@ -163,9 +184,13 @@ impl Command {
 
     pub fn populate_possible_values(&mut self) {
         for arg in &mut self.args {
-            if arg.possible_values.is_none() {
-                arg.possible_values =
-                    parse_possible_values(arg.value_type.as_deref(), arg.description.as_deref());
+            if arg.value_enum.is_none() {
+                arg.value_enum =
+                    parse_possible_values(arg.value_name.as_deref(), arg.description.as_deref());
+            }
+            if arg.value_hint == ValueHint::Unknown {
+                arg.value_hint =
+                    extract_value_hint(arg.value_name.as_deref(), arg.description.as_deref());
             }
         }
         for sub in &mut self.subcommands {
@@ -174,12 +199,150 @@ impl Command {
     }
 }
 
+pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -> ValueHint {
+    let name_lower = value_name.map(|s| s.to_lowercase());
+    let desc_lower = description.map(|s| s.to_lowercase());
+
+    // Helper to check if name contains a substring
+    let name_contains = |substring: &str| {
+        if let Some(ref name) = name_lower {
+            name.contains(substring)
+        } else {
+            false
+        }
+    };
+
+    // Helper to check if desc contains a substring
+    let desc_contains = |substring: &str| {
+        if let Some(ref desc) = desc_lower {
+            desc.contains(substring)
+        } else {
+            false
+        }
+    };
+
+    // 1. Check value_name first (high precision)
+    if name_contains("url") || name_contains("uri") {
+        return ValueHint::Url;
+    }
+    if name_contains("email") {
+        return ValueHint::EmailAddress;
+    }
+    if name_contains("hostname") || name_contains("host") || name_contains("domain") {
+        return ValueHint::Hostname;
+    }
+    if name_contains("username") || name_contains("user_name") || name_contains("user-name") {
+        return ValueHint::Username;
+    }
+    if name_contains("command") || name_contains("cmd") {
+        if name_contains("line") || name_contains("string") {
+            return ValueHint::CommandString;
+        }
+        return ValueHint::CommandName;
+    }
+    if name_contains("dir") || name_contains("directory") || name_contains("folder") {
+        return ValueHint::DirPath;
+    }
+    // Dict, Log, and File are FilePaths
+    if name_contains("file")
+        || name_contains("filename")
+        || name_contains("filepath")
+        || name_contains("dict")
+        || name_contains("dictionary")
+        || name_contains("log")
+    {
+        // Exclude "level" to avoid "log-level" or "log_level" matching file
+        if !name_contains("level") {
+            return ValueHint::FilePath;
+        }
+    }
+    if name_contains("path") {
+        return ValueHint::AnyPath;
+    }
+
+    // 2. Check description (lower precision, needs more specific phrases)
+    if desc_contains("http://")
+        || desc_contains("https://")
+        || desc_contains("url")
+        || desc_contains("uri")
+    {
+        return ValueHint::Url;
+    }
+    if desc_contains("email") || desc_contains("e-mail") {
+        return ValueHint::EmailAddress;
+    }
+    if desc_contains("hostname") || desc_contains("host name") || desc_contains("domain name") {
+        return ValueHint::Hostname;
+    }
+    if desc_contains("username") || desc_contains("user name") || desc_contains("login name") {
+        return ValueHint::Username;
+    }
+    if desc_contains("command line") || desc_contains("command-line") {
+        return ValueHint::CommandString;
+    }
+    if desc_contains("command name") || desc_contains("cmd name") {
+        return ValueHint::CommandName;
+    }
+
+    // Paths/Directories/Files in description
+    if desc_contains("directory path")
+        || desc_contains("folder path")
+        || desc_contains("path to directory")
+        || desc_contains("path to folder")
+    {
+        return ValueHint::DirPath;
+    }
+    if desc_contains("file path")
+        || desc_contains("path to file")
+        || desc_contains("filename")
+        || desc_contains("file name")
+        || desc_contains("dictionary file")
+        || desc_contains("log file")
+    {
+        return ValueHint::FilePath;
+    }
+    if desc_contains("path to the chosen file") || desc_contains("write traces to") {
+        return ValueHint::FilePath;
+    }
+    if desc_contains("path to") {
+        return ValueHint::AnyPath;
+    }
+
+    // Specific heuristics:
+    // If the name is "output" or "input" or "filelist" or "list" or "destination" or "source", and description mentions "file"
+    if let Some(ref name) = name_lower {
+        if name == "output"
+            || name == "input"
+            || name == "filelist"
+            || name == "list"
+            || name == "destination"
+            || name == "source"
+            || name == "rfile"
+            || name == "debug-file"
+        {
+            if desc_contains("file")
+                || desc_contains("path")
+                || desc_contains("output")
+                || desc_contains("write")
+                || desc_contains("read")
+            {
+                return ValueHint::FilePath;
+            }
+        }
+        if name == "dir" || name == "directory" || name == "folder" || name == "path" {
+            return ValueHint::DirPath;
+        }
+    }
+
+    ValueHint::Unknown
+}
+
 pub fn parse_possible_values(
-    value_type: Option<&str>,
+    value_name: Option<&str>,
     description: Option<&str>,
 ) -> Option<Vec<String>> {
-    // 1. Try to parse from value_type (e.g. {info,debug} or info|debug)
-    if let Some(vt) = value_type {
+    // 1. Try to parse from value_name (e.g. {info,debug} or info|debug)
+    if let Some(vt) = value_name {
         let clean_type = vt.trim_matches(|c| c == '[' || c == ']' || c == '<' || c == '>');
         if clean_type.starts_with('{') && clean_type.ends_with('}') {
             let inner = &clean_type[1..clean_type.len() - 1];
@@ -273,15 +436,15 @@ pub fn parse_possible_values(
     // 3. Heuristic: if we find a list and a mention of "default: x" where x is in that list.
     if let Some(desc) = description {
         let re_default = regex::Regex::new(
-            r#"(?i)[(\[]?\bdefault\s*(?::|is)\s*['"`]?([a-zA-Z0-9\-_]+)['"`]?[)\]]?"#
+            r#"(?i)[(\[]?\bdefault\s*(?::|is)\s*['"`]?([a-zA-Z0-9\-_]+)['"`]?[)\]]?"#,
         )
         .unwrap();
 
         for caps in re_default.captures_iter(desc) {
             let default_val = caps.get(1).unwrap().as_str();
 
-            let segments: Vec<&str> =
-                desc.split(|c| c == '.' || c == ';' || c == '(' || c == ')' || c == '[' || c == ']')
+            let segments: Vec<&str> = desc
+                .split(|c| c == '.' || c == ';' || c == '(' || c == ')' || c == '[' || c == ']')
                 .collect();
 
             // Also split by "default" itself if it's not already a separator
@@ -460,13 +623,13 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
             clap_arg = clap_arg.help(desc.clone());
         }
 
-        if let Some(value_type) = &arg.value_type {
+        if let Some(value_name) = &arg.value_name {
             // Strip surrounding angle-brackets if present (e.g. `<PATH>` → `PATH`).
-            let meta = value_type
+            let meta = value_name
                 .trim_matches(|c| c == '<' || c == '>')
                 .to_string();
             clap_arg = clap_arg.value_name(meta);
-            // A value type implies the flag accepts exactly one value by default;
+            // A value name implies the flag accepts exactly one value by default;
             // this may be overridden below by an explicit `num_args`.
             clap_arg = clap_arg.num_args(1);
         }
@@ -486,10 +649,28 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
             };
         }
 
-        if let Some(possible_values) = &arg.possible_values {
-            clap_arg = clap_arg.value_parser(clap::builder::PossibleValuesParser::new(
-                possible_values.clone(),
-            ));
+        if let Some(value_enum) = &arg.value_enum {
+            clap_arg =
+                clap_arg.value_parser(clap::builder::PossibleValuesParser::new(value_enum.clone()));
+        }
+
+        if arg.value_hint != ValueHint::Unknown {
+            let clap_hint = match arg.value_hint {
+                ValueHint::Unknown => clap::ValueHint::Unknown,
+                ValueHint::Other => clap::ValueHint::Other,
+                ValueHint::AnyPath => clap::ValueHint::AnyPath,
+                ValueHint::FilePath => clap::ValueHint::FilePath,
+                ValueHint::DirPath => clap::ValueHint::DirPath,
+                ValueHint::ExecutablePath => clap::ValueHint::ExecutablePath,
+                ValueHint::CommandName => clap::ValueHint::CommandName,
+                ValueHint::CommandString => clap::ValueHint::CommandString,
+                ValueHint::CommandWithArguments => clap::ValueHint::CommandWithArguments,
+                ValueHint::Username => clap::ValueHint::Username,
+                ValueHint::Hostname => clap::ValueHint::Hostname,
+                ValueHint::Url => clap::ValueHint::Url,
+                ValueHint::EmailAddress => clap::ValueHint::EmailAddress,
+            };
+            clap_arg = clap_arg.value_hint(clap_hint);
         }
 
         clap_cmd = clap_cmd.arg(clap_arg);
@@ -960,7 +1141,7 @@ mod tests {
                     long: Some("--verbose".to_string()),
                     short: Some("-v".to_string()),
                     description: Some("Enable verbose output.".to_string()),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
                     ..Default::default()
                 },
@@ -968,7 +1149,7 @@ mod tests {
                     long: Some("--output".to_string()),
                     short: None,
                     description: Some("Output file.".to_string()),
-                    value_type: Some("<PATH>".to_string()),
+                    value_name: Some("<PATH>".to_string()),
                     num_args: None,
                     ..Default::default()
                 },
@@ -1042,7 +1223,7 @@ Options:
                     long: Some("--debug-dump[a/".to_string()),
                     short: Some("-w".to_string()),
                     description: Some("DWARF debug dump selector.".to_string()),
-                    value_type: None,
+                    value_name: None,
                     num_args: None,
                     ..Default::default()
                 },
@@ -1050,7 +1231,7 @@ Options:
                     long: Some("--debug-dump".to_string()),
                     short: Some("-w".to_string()),
                     description: Some("DWARF debug dump mode.".to_string()),
-                    value_type: Some("links".to_string()),
+                    value_name: Some("links".to_string()),
                     num_args: None,
                     ..Default::default()
                 },
@@ -1082,7 +1263,7 @@ Options:
                     long: Some("--debug-dump".to_string()),
                     short: Some("-w".to_string()),
                     description: Some("DWARF debug dump selector.".to_string()),
-                    value_type: Some("a/".to_string()),
+                    value_name: Some("a/".to_string()),
                     num_args: None,
                     ..Default::default()
                 },
@@ -1090,7 +1271,7 @@ Options:
                     long: Some("--debug-dump".to_string()),
                     short: None,
                     description: Some("DWARF debug dump links mode.".to_string()),
-                    value_type: Some("links".to_string()),
+                    value_name: Some("links".to_string()),
                     num_args: None,
                     ..Default::default()
                 },
@@ -1140,7 +1321,7 @@ Options:
             long: Some("--verbose".to_string()),
             short: Some("-v".to_string()),
             description: Some("Be verbose".to_string()),
-            value_type: None,
+            value_name: None,
             num_args: None,
             ..Default::default()
         });
@@ -1321,7 +1502,7 @@ Options:
 
     #[test]
     fn test_parse_possible_values_extraction() {
-        // Test parsing from value_type
+        // Test parsing from value_name
         assert_eq!(
             parse_possible_values(Some("{info,debug,trace}"), None),
             Some(vec![
@@ -1491,13 +1672,19 @@ Options:
 
         // Test: quoted values in list and default
         assert_eq!(
-            parse_possible_values(None, Some("modes: 'active', 'inactive'. default is 'active'")),
+            parse_possible_values(
+                None,
+                Some("modes: 'active', 'inactive'. default is 'active'")
+            ),
             Some(vec!["active".to_string(), "inactive".to_string()])
         );
 
         // Test: values with dashes and underscores
         assert_eq!(
-            parse_possible_values(None, Some("use: my-value, other_value. default: other_value")),
+            parse_possible_values(
+                None,
+                Some("use: my-value, other_value. default: other_value")
+            ),
             Some(vec!["my-value".to_string(), "other_value".to_string()])
         );
 
@@ -1519,13 +1706,23 @@ Options:
 
         // Test: default is x, where x is in the list with other text
         assert_eq!(
-            parse_possible_values(None, Some("Available options are: first, second, third. The default is second.")),
-            Some(vec!["first".to_string(), "second".to_string(), "third".to_string()])
+            parse_possible_values(
+                None,
+                Some("Available options are: first, second, third. The default is second.")
+            ),
+            Some(vec![
+                "first".to_string(),
+                "second".to_string(),
+                "third".to_string()
+            ])
         );
 
         // Test: multiple potential lists, should pick the one containing default
         assert_eq!(
-            parse_possible_values(None, Some("birds: eagle, hawk. fish: shark, trout. default: shark")),
+            parse_possible_values(
+                None,
+                Some("birds: eagle, hawk. fish: shark, trout. default: shark")
+            ),
             Some(vec!["shark".to_string(), "trout".to_string()])
         );
     }
