@@ -597,6 +597,21 @@ fn analyze_candidate(s: &str) -> Option<(&str, &str, usize)> {
     None
 }
 
+fn should_infer_filename_completion(completions: &[String], flags: &CompletionFlags) -> bool {
+    const FILENAME_INFERENCE_LIMIT: usize = 5000;
+
+    if flags.filename_completion_desired
+        || completions.is_empty()
+        || completions.len() >= FILENAME_INFERENCE_LIMIT
+    {
+        return false;
+    }
+
+    completions.iter().all(|completion| {
+        !completion.contains('\t') && Path::new(&fully_expand_path(completion)).exists()
+    })
+}
+
 /// Some completion scripts like gh or docker put descriptions inline with
 /// the suggestion when there are multiple suggestions.
 /// So here I convert those to the format "suggestion<TAB>description" so that
@@ -648,7 +663,10 @@ fn detect_and_convert_inline_descriptions(completions: &mut Vec<String>, flags: 
 }
 
 impl ProgrammableCompleteReturn {
-    pub fn new(mut completions: Vec<String>, flags: CompletionFlags) -> Self {
+    pub fn new(mut completions: Vec<String>, mut flags: CompletionFlags) -> Self {
+        if should_infer_filename_completion(&completions, &flags) {
+            flags.filename_completion_desired = true;
+        }
         detect_and_convert_inline_descriptions(&mut completions, &flags);
         Self { completions, flags }
     }
@@ -853,6 +871,8 @@ pub fn run_programmable_completions(
     } else if command_word == "cat" {
         // do a naive filessytem glob.
         // bash sometimes does this if nothing is returned by the prog comp spec.
+        // Intentionally leave filename_completion_desired unset so tests can
+        // exercise filename inference in ProgrammableCompleteReturn::new.
 
         // Split word_under_cursor at the final '/'.
         // lhs keeps the trailing slash so completions can be reassembled in the

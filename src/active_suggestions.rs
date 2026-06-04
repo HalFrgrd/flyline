@@ -740,7 +740,9 @@ impl UnprocessedSuggestion {
         }
 
         let suffix_char = if path_to_use.as_ref().is_some_and(|p| p.is_dir()) {
-            sug = format!("{}/", sug);
+            if !sug.ends_with('/') {
+                sug.push('/');
+            }
             None
         } else if comp_result_flags.quote_type.is_some_and(|q| {
             q == bash_funcs::QuoteType::SingleQuote || q == bash_funcs::QuoteType::DoubleQuote

@@ -1207,7 +1207,10 @@ Options:
         .unwrap();
 
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(value["metadata"]["flycomp_version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            value["metadata"]["flycomp_version"],
+            env!("CARGO_PKG_VERSION")
+        );
         assert_eq!(value["metadata"]["git_hash"], env!("GIT_HASH"));
         assert_eq!(value["metadata"]["build_time"], env!("BUILD_TIME"));
         assert_eq!(value["metadata"]["output_format"], "json");

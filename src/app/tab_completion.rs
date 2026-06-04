@@ -1537,6 +1537,26 @@ mod tab_completion_tests {
         }
 
         #[test]
+        fn programmable_completion_infers_filename_mode_in_example_fs() {
+            cd_to_example_fs();
+
+            let (builder, _) = get_builder("cat ./").unwrap();
+
+            assert_eq!(builder.comp_type, CompType::CommandComp { command_word: "cat".to_string() });
+            assert_processed(
+                &builder.processed,
+                &[
+                    ProcessedSuggestion::new("abc/", "./", ""),
+                    ProcessedSuggestion::new("bar.txt", "./", " "),
+                    ProcessedSuggestion::new(r"file\ with\ spaces.txt", "./", " "),
+                    ProcessedSuggestion::new("foo/", "./", ""),
+                    ProcessedSuggestion::new(r"many\ spaces\ here/", "./", ""),
+                    ProcessedSuggestion::new("sym_link_to_foo/", "./", ""),
+                ],
+            );
+        }
+
+        #[test]
         fn glob_expansion_with_glob_chars_in_dir_components() {
             cd_to_example_fs();
             assert_completions(
@@ -1675,8 +1695,8 @@ mod tab_completion_tests {
             assert_processed(
                 &builder.processed,
                 &[ProcessedSuggestion::new(
-                    "./abc/foo/baz",
-                    "",
+                    "baz",
+                    "./abc/foo/",
                     " ",
                 )],
             );
