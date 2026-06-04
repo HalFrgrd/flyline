@@ -233,6 +233,99 @@ pub fn parse_possible_values(
         }
     }
 
+    // 3. Heuristic: if we find a list and a mention of "default: x" where x is in that list.
+    if let Some(desc) = description {
+        let re_default = regex::Regex::new(
+            r#"(?i)[(\[]?\bdefault\s*(?::|is)\s*['"`]?([a-zA-Z0-9\-_]+)['"`]?[)\]]?"#
+        )
+        .unwrap();
+
+        for caps in re_default.captures_iter(desc) {
+            let default_val = caps.get(1).unwrap().as_str();
+
+            let segments: Vec<&str> =
+                desc.split(|c| c == '.' || c == ';' || c == '(' || c == ')' || c == '[' || c == ']')
+                .collect();
+
+            // Also split by "default" itself if it's not already a separator
+            let mut all_clauses = Vec::new();
+            for s in segments {
+                let re_default_sep = regex::Regex::new(r"(?i)\bdefault\s*(?::|is)\b").unwrap();
+                for part in re_default_sep.split(s) {
+                    all_clauses.push(part);
+                }
+            }
+
+            for mut clause in all_clauses {
+                clause = clause.trim();
+                if clause.is_empty() {
+                    continue;
+                }
+
+                // Strip common prefixes followed by a colon (e.g. "mode: ")
+                if let Some(pos) = clause.find(':') {
+                    let prefix = &clause[..pos];
+                    if prefix.split_whitespace().count() <= 3 {
+                        clause = clause[pos + 1..].trim();
+                    }
+                }
+
+                // Remove "default:" label to avoid interfering with list parsing.
+                let re_default_label = regex::Regex::new(r"(?i)\bdefault\s*(?::|is)\s*").unwrap();
+                let clause_cleaned = re_default_label.replace_all(clause, " ");
+                clause = clause_cleaned.trim();
+                if clause.is_empty() {
+                    continue;
+                }
+
+                let token_sep =
+                    regex::Regex::new(r"\s*(?:,\s*(?:or|and)?|\b(?:or|and)\b|\||/)\s*").unwrap();
+                let raw_tokens: Vec<&str> = token_sep.split(clause).collect();
+
+                if raw_tokens.len() >= 2 {
+                    let mut values = Vec::new();
+                    for (idx, token) in raw_tokens.iter().enumerate() {
+                        let mut clean = token
+                            .trim()
+                            .trim_matches(|c| c == '\'' || c == '"' || c == '`' || c == ',')
+                            .trim();
+
+                        if idx == 0 {
+                            if let Some(last) = clean.split_whitespace().last() {
+                                clean = last;
+                            }
+                        } else if idx == raw_tokens.len() - 1 {
+                            if let Some(first) = clean.split_whitespace().next() {
+                                clean = first;
+                            }
+                        }
+
+                        if !clean.is_empty()
+                            && clean
+                                .chars()
+                                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                        {
+                            if idx > 0 && idx < raw_tokens.len() - 1 {
+                                if token.trim().contains(char::is_whitespace) {
+                                    values.clear();
+                                    break;
+                                }
+                            }
+                            values.push(clean.to_string());
+                        } else {
+                            values.clear();
+                            break;
+                        }
+                    }
+
+                    if values.len() >= 2 && values.iter().any(|v| v == default_val) {
+                        return Some(values);
+                    }
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -1201,6 +1294,120 @@ Options:
         assert_eq!(
             parse_possible_values(None, Some("This option can be specified multiple times.")),
             None
+        );
+    }
+
+    #[test]
+    fn test_parse_possible_values_heuristic_default() {
+        // Test: list + default: x
+        assert_eq!(
+            parse_possible_values(None, Some("mode: fast, slow, or medium. default: fast")),
+            Some(vec![
+                "fast".to_string(),
+                "slow".to_string(),
+                "medium".to_string()
+            ])
+        );
+
+        // Test: list + default is x
+        assert_eq!(
+            parse_possible_values(None, Some("color: red|green|blue (default is green)")),
+            Some(vec![
+                "red".to_string(),
+                "green".to_string(),
+                "blue".to_string()
+            ])
+        );
+
+        // Test: list + [default: x]
+        assert_eq!(
+            parse_possible_values(None, Some("type: apple/banana/cherry [default: banana]")),
+            Some(vec![
+                "apple".to_string(),
+                "banana".to_string(),
+                "cherry".to_string()
+            ])
+        );
+
+        // Test: list + (default: x)
+        assert_eq!(
+            parse_possible_values(None, Some("strategy: eager, lazy (default: eager)")),
+            Some(vec!["eager".to_string(), "lazy".to_string()])
+        );
+
+        // Test: default value NOT in the list (should return None)
+        assert_eq!(
+            parse_possible_values(None, Some("mode: fast, slow. default: medium")),
+            None
+        );
+
+        // Test: default value with no obvious list (should return None)
+        assert_eq!(
+            parse_possible_values(None, Some("Set the timeout in seconds. default: 30")),
+            None
+        );
+
+        // Test: multiple lists, default matches one
+        assert_eq!(
+            parse_possible_values(
+                None,
+                Some("format: json, xml, yaml. output: file, stdout. default: xml")
+            ),
+            Some(vec![
+                "json".to_string(),
+                "xml".to_string(),
+                "yaml".to_string()
+            ])
+        );
+
+        // Test: list with 'and' conjunction
+        assert_eq!(
+            parse_possible_values(None, Some("choose from red, green and blue. default: red")),
+            Some(vec![
+                "red".to_string(),
+                "green".to_string(),
+                "blue".to_string()
+            ])
+        );
+
+        // Test: quoted values in list and default
+        assert_eq!(
+            parse_possible_values(None, Some("modes: 'active', 'inactive'. default is 'active'")),
+            Some(vec!["active".to_string(), "inactive".to_string()])
+        );
+
+        // Test: values with dashes and underscores
+        assert_eq!(
+            parse_possible_values(None, Some("use: my-value, other_value. default: other_value")),
+            Some(vec!["my-value".to_string(), "other_value".to_string()])
+        );
+
+        // Test: default at the beginning
+        assert_eq!(
+            parse_possible_values(None, Some("default: fast. choices are fast, slow.")),
+            Some(vec!["fast".to_string(), "slow".to_string()])
+        );
+
+        // Test: list in parentheses
+        assert_eq!(
+            parse_possible_values(None, Some("the mode (fast, slow, medium). default: slow")),
+            Some(vec![
+                "fast".to_string(),
+                "slow".to_string(),
+                "medium".to_string()
+            ])
+        );
+
+        // Test: default is x, where x is in the list with other text
+        assert_eq!(
+            parse_possible_values(None, Some("Available options are: first, second, third. The default is second.")),
+            Some(vec!["first".to_string(), "second".to_string(), "third".to_string()])
+        );
+
+        // Test: multiple potential lists, should pick the one containing default
+        assert_eq!(
+            parse_possible_values(None, Some("birds: eagle, hawk. fish: shark, trout. default: shark")),
+            Some(vec!["shark".to_string(), "trout".to_string()])
         );
     }
 }
