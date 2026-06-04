@@ -1144,7 +1144,33 @@ impl<'a> App<'a> {
 
         let term_width = width as usize;
 
-        let min_box_width = 22.min(term_width);
+        let suggestion_prefix_width = active_suggestions
+            .processed_suggestions
+            .first()
+            .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
+            .unwrap_or(0);
+
+        let pos_string = active_suggestions
+            .current_1d_index()
+            .map(|idx| idx.to_string())
+            .unwrap_or_else(|| "-".to_string());
+
+        let status_prefix = format!(
+            " Pos: {}/{}; ",
+            pos_string,
+            active_suggestions.filtered_suggestions_len(),
+        );
+
+        let source_str = format!(
+            "{:.1}ms",
+            // active_suggestions.comp_type.display_name(),
+            active_suggestions.load_time.as_secs_f32() * 1000.0,
+        );
+
+        let min_box_width = (unicode_width::UnicodeWidthStr::width(status_prefix.as_str())
+            + unicode_width::UnicodeWidthStr::width(source_str.as_str())
+            + 4)
+            .min(term_width);
         let max_box_width = (term_width * 40 / 100).max(70).min(term_width);
 
         // let max_item_width = active_suggestions.max_filtered_width();
@@ -1152,12 +1178,6 @@ impl<'a> App<'a> {
 
         let box_width = (max_item_width + 2).clamp(min_box_width, max_box_width);
         let inner_width = box_width.saturating_sub(2).max(1);
-
-        let suggestion_prefix_width = active_suggestions
-            .processed_suggestions
-            .first()
-            .map(|sug| unicode_width::UnicodeWidthStr::width(sug.prefix.as_str()))
-            .unwrap_or(0);
 
         let popup_anchor_col = cursor_pos_maybe
             .map(|pos| {
@@ -1190,23 +1210,6 @@ impl<'a> App<'a> {
         };
 
         content.fill_rect(full_inner_area, " ", Style::default(), Tag::TabSuggestion);
-
-        let pos_string = active_suggestions
-            .current_1d_index()
-            .map(|idx| idx.to_string())
-            .unwrap_or_else(|| "-".to_string());
-
-        let status_prefix = format!(
-            " Pos: {}/{}; ",
-            pos_string,
-            active_suggestions.filtered_suggestions_len(),
-        );
-
-        let source_str = format!(
-            "{:.1}ms",
-            // active_suggestions.comp_type.display_name(),
-            active_suggestions.load_time.as_secs_f32() * 1000.0,
-        );
 
         let status_line = TaggedLine::from(vec![
             TaggedSpan::new(
