@@ -24,3 +24,6 @@ usage: git commit [-a | --interactive | --patch] [-s] [-v] [--amend]
     --branch              Show branch information
     --squash <commit>     Use autosquash formatted message to squash specified commit
     --fixup <commit>      Use autosquash formatted message to fixup specified commit
+    --env-var <var>       Environment variable to use
+    --iface <interface>   Bind network interface
+    --service <unit>      Start systemd unit service

@@ -1794,6 +1794,56 @@ mod tests {
                     },
                     description_contains: "Amend previous commit",
                 },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--squash".to_string()),
+                        value_name: Some("commit".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::GitRevision,
+                        ..Default::default()
+                    },
+                    description_contains: "squash specified commit",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--fixup".to_string()),
+                        value_name: Some("commit".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::GitRevision,
+                        ..Default::default()
+                    },
+                    description_contains: "fixup specified commit",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--env-var".to_string()),
+                        value_name: Some("var".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::EnvVar,
+                        ..Default::default()
+                    },
+                    description_contains: "Environment variable to use",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--iface".to_string()),
+                        value_name: Some("interface".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::NetworkInterface,
+                        ..Default::default()
+                    },
+                    description_contains: "Bind network interface",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--service".to_string()),
+                        value_name: Some("unit".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::SystemdUnit,
+                        ..Default::default()
+                    },
+                    description_contains: "Start systemd unit service",
+                },
             ],
         );
     }
@@ -1884,56 +1934,18 @@ mod tests {
         assert!(long_names(diff_sub).contains(&"--stat"));
     }
 
-    const GIT_REMOTE_HELP: &str = r#"Usage: git remote [OPTIONS] <COMMAND>
-
-Commands:
-  add      Add a remote
-  set-url  Changes URLs for the remote
-  remove   Remove a remote
-  rename   Rename a remote
-
-Options:
-  -v, --verbose    Be verbose
-  -h, --help       Print help
-"#;
-
-    const GIT_REMOTE_ADD_HELP: &str = r#"usage: git remote add <name> <url>
-
-    -f, --fetch        Fetch after adding the remote
-    -t, --track <branch>
-                       Track given branch
-    --tags             Import all tags
-    --no-tags          Do not import tags
-"#;
-
-    const GIT_REMOTE_SET_URL_HELP: &str = r#"usage: git remote set-url [--push] <name> <new-url>
-
-    --push             Manipulate push URLs
-    --add              Add URL to list
-    --delete           Delete URL
-"#;
-
-    const GIT_WITH_REMOTE_HELP: &str = r#"Usage: git [OPTIONS] <COMMAND>
-
-Commands:
-  clone   Clone a repository into a new directory
-  remote  Manage set of tracked repositories
-
-Options:
-  -h, --help  Print help
-"#;
-
     #[test]
     fn test_nested_subcommand_synthesis_simulation() {
         let help_runner = |args: &[&str]| -> anyhow::Result<String> {
-            let text = match args {
-                [] => GIT_WITH_REMOTE_HELP,
-                ["remote"] => GIT_REMOTE_HELP,
-                ["remote", "add"] => GIT_REMOTE_ADD_HELP,
-                ["remote", "set-url"] => GIT_REMOTE_SET_URL_HELP,
-                _ => "",
-            };
-            Ok(text.to_string())
+            let mut path_parts = vec!["git"];
+            path_parts.extend(args);
+            let path_str = path_parts.join("/");
+            let file_path = format!("../tests/help_texts/{}/help.txt", path_str);
+            if std::path::Path::new(&file_path).exists() {
+                Ok(std::fs::read_to_string(file_path)?)
+            } else {
+                Ok("".to_string())
+            }
         };
         let top = synthesize_completion("git", help_runner, SynthesisStrategy::RunHelp).unwrap();
 

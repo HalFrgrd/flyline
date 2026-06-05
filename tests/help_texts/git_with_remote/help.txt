@@ -1,8 +1,0 @@
-Usage: git [OPTIONS] <COMMAND>
-
-Commands:
-  clone   Clone a repository into a new directory
-  remote  Manage set of tracked repositories
-
-Options:
-  -h, --help  Print help

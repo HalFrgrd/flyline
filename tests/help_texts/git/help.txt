@@ -21,6 +21,7 @@ Commands:
   fetch     Download objects and refs from another repository
   pull      Fetch from and integrate with another repository or a local branch
   push      Update remote refs along with associated objects
+  remote    Manage set of tracked repositories
   tag       Create, list, delete or verify a tag object signed with GPG
 
 Options:
