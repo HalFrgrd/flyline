@@ -244,6 +244,9 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
         }
         return ValueHint::CommandName;
     }
+    if name_contains("executable") || name_contains("binary") {
+        return ValueHint::ExecutablePath;
+    }
     if name_contains("dir") || name_contains("directory") || name_contains("folder") {
         return ValueHint::DirPath;
     }
@@ -279,13 +282,24 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
         || desc_contains("https://")
         || desc_contains("url")
         || desc_contains("uri")
+        || desc_contains("endpoint")
     {
         return ValueHint::Url;
     }
     if desc_contains("email") || desc_contains("e-mail") {
         return ValueHint::EmailAddress;
     }
-    if desc_contains("hostname") || desc_contains("host name") || desc_contains("domain name") {
+    if desc_contains("hostname")
+        || desc_contains("host name")
+        || desc_contains("domain name")
+        || desc_contains("ip address")
+        || desc_contains("ipv4")
+        || desc_contains("ipv6")
+        || desc_contains("dns name")
+        || desc_contains("target host")
+        || desc_contains("remote host")
+        || desc_contains("server address")
+    {
         return ValueHint::Hostname;
     }
     if desc_contains("username") || desc_contains("user name") || desc_contains("login name") {
@@ -296,6 +310,14 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
     }
     if desc_contains("command name") || desc_contains("cmd name") {
         return ValueHint::CommandName;
+    }
+    if desc_contains("path to executable")
+        || desc_contains("path to binary")
+        || desc_contains("path to command")
+        || desc_contains("executable file")
+        || desc_contains("binary file")
+    {
+        return ValueHint::ExecutablePath;
     }
 
     // Paths/Directories/Files in description
@@ -334,6 +356,9 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
             || name == "rfile"
             || name == "debug-file"
         {
+            if desc_contains("directory") || desc_contains("folder") || desc_contains("dir") {
+                return ValueHint::DirPath;
+            }
             if desc_contains("file")
                 || desc_contains("path")
                 || desc_contains("output")
@@ -1881,5 +1906,26 @@ Options:
             ),
             Some(vec!["shark".to_string(), "trout".to_string()])
         );
+    }
+
+    #[test]
+    fn test_extract_value_hint() {
+        // Test URL
+        assert_eq!(extract_value_hint(Some("url"), None), ValueHint::Url);
+        assert_eq!(extract_value_hint(None, Some("the API endpoint")), ValueHint::Url);
+
+        // Test Hostname
+        assert_eq!(extract_value_hint(Some("host"), None), ValueHint::Hostname);
+        assert_eq!(extract_value_hint(None, Some("bind to the server ip address")), ValueHint::Hostname);
+        assert_eq!(extract_value_hint(None, Some("target host remote name")), ValueHint::Hostname);
+
+        // Test ExecutablePath
+        assert_eq!(extract_value_hint(Some("executable"), None), ValueHint::ExecutablePath);
+        assert_eq!(extract_value_hint(None, Some("path to executable command")), ValueHint::ExecutablePath);
+        assert_eq!(extract_value_hint(None, Some("path to binary")), ValueHint::ExecutablePath);
+
+        // Test DirPath vs FilePath in output/input specific heuristic
+        assert_eq!(extract_value_hint(Some("output"), Some("write output to directory")), ValueHint::DirPath);
+        assert_eq!(extract_value_hint(Some("output"), Some("write output to file")), ValueHint::FilePath);
     }
 }
