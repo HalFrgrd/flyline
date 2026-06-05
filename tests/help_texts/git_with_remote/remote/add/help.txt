@@ -1,0 +1,7 @@
+usage: git remote add <name> <url>
+
+    -f, --fetch        Fetch after adding the remote
+    -t, --track <branch>
+                       Track given branch
+    --tags             Import all tags
+    --no-tags          Do not import tags

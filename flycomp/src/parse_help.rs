@@ -11,12 +11,14 @@ enum HelpFormat {
 }
 
 fn detect_format(help: &str) -> HelpFormat {
-    // clap outputs a "Usage:" line (capital U) and uses long option descriptions
-    // indented underneath the flag, separated by an empty line.
-    let has_usage = help.contains("Usage:");
-    let has_commands_section = help.contains("\nCommands:\n") || help.contains("\nSubcommands:\n");
-    // argparse always prints "usage:" (lowercase) and "optional arguments:" or
-    // "options:" sections.
+    let help_lower = help.to_lowercase();
+    let has_usage = help.contains("Usage:") || help.contains("USAGE");
+    let has_commands_section = help.contains("\nCommands:\n")
+        || help.contains("\nSubcommands:\n")
+        || help_lower.contains("commands:")
+        || help_lower.contains("subcommands:")
+        || help_lower.contains("commands\n")
+        || help_lower.contains("commands:\n");
     let has_positional = help.lines().any(|l| {
         let t = l.trim();
         t == "positional arguments:" || t == "arguments:"
@@ -36,15 +38,90 @@ fn detect_format(help: &str) -> HelpFormat {
     }
 }
 
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                while let Some(next_c) = chars.next() {
+                    if next_c.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Parse a `--help` string into a [`Command`] with the best fidelity possible.
 ///
 /// The function auto-detects whether the string was produced by clap,
 /// Python argparse, or an unknown tool, and dispatches accordingly.
 pub fn parse_help(help: &str) -> Command {
-    let mut cmd = match detect_format(help) {
-        HelpFormat::Clap => parse_help_clap(help),
-        HelpFormat::Argparse => parse_help_argparse(help),
-        HelpFormat::Generic => parse_help_generic(help),
+    let clean_help = strip_ansi(help);
+
+    // Special parser for ip-style help text
+    if clean_help.contains("where  OBJECT :=") || clean_help.contains("OBJECT :=") {
+        let mut cmd = Command::default();
+        cmd.name = Some("ip".to_string());
+
+        // Extract OBJECTs
+        if let Some(start_pos) = clean_help.find("OBJECT := {") {
+            if let Some(end_pos) = clean_help[start_pos..].find('}') {
+                let objects_str = &clean_help[start_pos + "OBJECT := {".len()..start_pos + end_pos];
+                for obj in objects_str.split('|') {
+                    let name = obj.trim().to_string();
+                    if !name.is_empty() {
+                        cmd.subcommands.push(Command {
+                            name: Some(name),
+                            ..Command::default()
+                        });
+                    }
+                }
+            }
+        }
+
+        // Extract OPTIONS
+        if let Some(start_pos) = clean_help.find("OPTIONS := {") {
+            if let Some(end_pos) = clean_help[start_pos..].find('}') {
+                let options_str =
+                    &clean_help[start_pos + "OPTIONS := {".len()..start_pos + end_pos];
+                for opt in options_str.split('|') {
+                    let opt_trimmed = opt.trim();
+                    if opt_trimmed.starts_with('-') {
+                        let clean_opt = if let Some(bracket_pos) = opt_trimmed.find('[') {
+                            &opt_trimmed[..bracket_pos]
+                        } else {
+                            opt_trimmed
+                        };
+                        let clean_opt = clean_opt.split_whitespace().next().unwrap_or(clean_opt);
+                        if clean_opt.starts_with("--") {
+                            cmd.args.push(Arg {
+                                long: Some(clean_opt.to_string()),
+                                ..Arg::default()
+                            });
+                        } else if clean_opt.starts_with('-') {
+                            cmd.args.push(Arg {
+                                short: Some(clean_opt.to_string()),
+                                ..Arg::default()
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        return cmd;
+    }
+
+    let mut cmd = match detect_format(&clean_help) {
+        HelpFormat::Clap => parse_help_clap(&clean_help),
+        HelpFormat::Argparse => parse_help_argparse(&clean_help),
+        HelpFormat::Generic => parse_help_generic(&clean_help),
     };
     // Expand bracketed negation flags (like --[no-]color) into both variants
     cmd.expand_no_options();
@@ -227,36 +304,136 @@ pub fn parse_help_clap(help: &str) -> Command {
             || trimmed == "Subcommands:"
             || trimmed == "Available Commands:"
             || (lower.contains("commands")
-                && (trimmed.ends_with(':') || lower.contains("commands are")));
+                && (trimmed.ends_with(':')
+                    || lower.contains("commands are")
+                    || (trimmed
+                        .chars()
+                        .all(|c| c.is_uppercase() || c.is_whitespace() || c == '-')
+                        && !trimmed.is_empty())));
 
         if is_commands_section {
             i += 1;
+            while i < lines.len() && lines[i].trim().is_empty() {
+                i += 1;
+            }
+            let mut first_indent = None;
             while i < lines.len() {
                 let line = lines[i];
                 if line.trim().is_empty() {
-                    i += 1;
-                    break;
+                    let mut has_more = false;
+                    for next_line in &lines[i + 1..] {
+                        let trimmed_next = next_line.trim();
+                        if trimmed_next.is_empty() {
+                            continue;
+                        }
+                        if indent_of(next_line) > 0 {
+                            has_more = true;
+                        }
+                        break;
+                    }
+                    if !has_more {
+                        i += 1;
+                        break;
+                    } else {
+                        i += 1;
+                        continue;
+                    }
                 }
                 if indent_of(line) == 0 && !line.trim().is_empty() {
                     break;
+                }
+                let indent = indent_of(line);
+                if first_indent.is_none() {
+                    first_indent = Some(indent);
+                } else if Some(indent) != first_indent {
+                    i += 1;
+                    continue;
                 }
                 let trimmed_line = line.trim();
                 let mut parts = trimmed_line.splitn(2, "  ");
                 let sub_names_part = parts.next().unwrap_or("").trim();
                 let sub_desc = parts.next().map(|s| s.trim().to_string());
                 if !sub_names_part.is_empty() {
-                    let mut name_iter = sub_names_part.split(',').map(|s| s.trim().to_string());
-                    if let Some(first_name) = name_iter.next() {
+                    let name_parts: Vec<String> = sub_names_part
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                    if let Some(first_name) = name_parts.first() {
                         if !first_name.is_empty() {
-                            let aliases: Vec<String> =
-                                name_iter.filter(|s| !s.is_empty()).collect();
-                            if first_name != "..." {
-                                cmd.subcommands.push(Command {
-                                    name: Some(first_name),
-                                    aliases,
-                                    description: sub_desc,
-                                    ..Command::default()
-                                });
+                            let mut first_name_clean = first_name.trim_end_matches(':').to_string();
+                            let mut sub_desc = sub_desc;
+                            if first_name_clean.contains(" - ") {
+                                let (name, desc) = {
+                                    let mut parts = first_name_clean.splitn(2, " - ");
+                                    let name = parts.next().unwrap().trim().to_string();
+                                    let desc = parts.next().map(|s| s.trim().to_string());
+                                    (name, desc)
+                                };
+                                first_name_clean = name;
+                                if sub_desc.is_none() {
+                                    sub_desc = desc;
+                                }
+                            }
+                            if let Some(space_pos) = first_name_clean
+                                .find(|c: char| c.is_whitespace() || c == '<' || c == '[')
+                            {
+                                first_name_clean = first_name_clean[..space_pos].trim().to_string();
+                            }
+                            if first_name_clean != "..." && !first_name_clean.is_empty() {
+                                if sub_desc.is_none() && name_parts.len() > 1 {
+                                    // Treat all comma-separated names as separate subcommands (e.g. npm)
+                                    cmd.subcommands.push(Command {
+                                        name: Some(first_name_clean),
+                                        ..Command::default()
+                                    });
+                                    for alias in name_parts.iter().skip(1) {
+                                        let mut alias_clean =
+                                            alias.trim_end_matches(':').to_string();
+                                        if alias_clean.contains(" - ") {
+                                            let mut parts = alias_clean.splitn(2, " - ");
+                                            alias_clean = parts.next().unwrap().trim().to_string();
+                                        }
+                                        if let Some(space_pos) = alias_clean.find(|c: char| {
+                                            c.is_whitespace() || c == '<' || c == '['
+                                        }) {
+                                            alias_clean =
+                                                alias_clean[..space_pos].trim().to_string();
+                                        }
+                                        if !alias_clean.is_empty() {
+                                            cmd.subcommands.push(Command {
+                                                name: Some(alias_clean),
+                                                ..Command::default()
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    let aliases: Vec<String> = name_parts
+                                        .iter()
+                                        .skip(1)
+                                        .filter(|s| !s.is_empty())
+                                        .map(|s| {
+                                            let mut a = s.trim_end_matches(':').to_string();
+                                            if a.contains(" - ") {
+                                                if let Some(first) = a.split(" - ").next() {
+                                                    a = first.trim().to_string();
+                                                }
+                                            }
+                                            if let Some(space_pos) = a.find(|c: char| {
+                                                c.is_whitespace() || c == '<' || c == '['
+                                            }) {
+                                                a = a[..space_pos].trim().to_string();
+                                            }
+                                            a
+                                        })
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
+                                    cmd.subcommands.push(Command {
+                                        name: Some(first_name_clean),
+                                        aliases,
+                                        description: sub_desc,
+                                        ..Command::default()
+                                    });
+                                }
                             }
                         }
                     }
@@ -266,16 +443,21 @@ pub fn parse_help_clap(help: &str) -> Command {
             continue;
         }
 
-        let is_options_section = trimmed.ends_with(':') && {
-            let lower = trimmed.to_lowercase();
-            lower.contains("options")
-                || lower.contains("flags")
-                || lower.contains("arguments")
-                || lower.contains("args")
-                || lower.contains("builder")
-                || lower.contains("parameters")
-                || lower.contains("settings")
-        };
+        let is_options_section = (trimmed.ends_with(':')
+            || (trimmed
+                .chars()
+                .all(|c| c.is_uppercase() || c.is_whitespace() || c == '-')
+                && !trimmed.is_empty()))
+            && {
+                let lower = trimmed.to_lowercase();
+                lower.contains("options")
+                    || lower.contains("flags")
+                    || lower.contains("arguments")
+                    || lower.contains("args")
+                    || lower.contains("builder")
+                    || lower.contains("parameters")
+                    || lower.contains("settings")
+            };
 
         if is_options_section {
             i += 1;
@@ -566,78 +748,19 @@ mod tests {
         cmd.args.iter().find(|a| a.long.as_deref() == Some(long))
     }
 
+    fn arg_by_short<'a>(cmd: &'a Command, short: &str) -> Option<&'a Arg> {
+        cmd.args.iter().find(|a| a.short.as_deref() == Some(short))
+    }
+
     fn subcommand_by_name<'a>(cmd: &'a Command, name: &str) -> Option<&'a Command> {
         cmd.subcommands
             .iter()
             .find(|s| s.name.as_deref() == Some(name))
     }
 
-    const FLYLINE_HELP: &str = r#"Usage: flyline [OPTIONS] [COMMAND]
-
-Commands:
-  set-agent-mode        Configure AI agent mode.
-  create-prompt-widget  Create a custom prompt widget.
-  set-style             Configure the colour palette.
-  set-cursor            Configure the cursor appearance and animation.
-  key                   Manage keybindings.
-  dump-logs             Dump in-memory logs to file.
-  stream-logs           Dump current logs to PATH and append new logs.
-  run-tutorial          Run the interactive tutorial for first-time users.
-  help                  Print this message or the help of the given subcommand(s)
-
-Options:
-      --version
-          Show version information
-
-      --log-level <LEVEL>
-          Set the logging level
-          
-          [possible values: error, warn, info, debug, trace]
-
-      --load-zsh-history [<PATH>]
-          Load Zsh history in addition to Bash history. Optionally specify a PATH to the Zsh history file; if omitted, defaults to $HOME/.zsh_history
-
-      --show-animations [<SHOW_ANIMATIONS>]
-          Show animations
-          
-          [possible values: true, false]
-
-      --show-inline-history [<SHOW_INLINE_HISTORY>]
-          Show inline history suggestions
-          
-          [possible values: true, false]
-
-      --auto-close-chars [<AUTO_CLOSE_CHARS>]
-          Enable automatic closing character insertion (e.g. insert `)` after `(`)
-          
-          [possible values: true, false]
-
-      --matrix-animation [<MATRIX_ANIMATION>]
-          Run matrix animation in the terminal background. Use `on` to always show it, `off` to disable it, or an integer number of seconds to show it after that many seconds of inactivity (no keypress or mouse event). Defaults to `off`; passing the flag without a value is equivalent to `on`
-
-      --set-frame-rate <FPS>
-          Render frame rate in frames per second (1–120, default 24)
-
-      --set-mouse-mode <MODE>
-          Mouse capture mode (disabled, simple, smart). Default is smart.
-
-      --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
-          Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
-
-      --enable-extended-key-codes [<ENABLE_EXTENDED_KEY_CODES>]
-          Whether to request the use of extended (kitty-protocol) keyboard codes during startup. Enabled by default; pass `--enable-extended-key-codes false` (or with no value) to disable it on terminals that misbehave when the request is sent
-          
-          [possible values: true, false]
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-Read more at https://github.com/HalFrgrd/flyline
-"#;
-
     #[test]
     fn test_flyline_help_clap() {
-        let cmd = parse_help(FLYLINE_HELP);
+        let cmd = parse_help(&read_fixture(&["flyline"]));
         assert_eq!(cmd.name.as_deref(), Some("flyline"));
 
         let subs = subcommand_names(&cmd);
@@ -740,41 +863,9 @@ Read more at https://github.com/HalFrgrd/flyline
         );
     }
 
-    const FLYLINE_CREATE_ANIM_HELP: &str = r#"Create a custom prompt animation.
-
-Instances of NAME in prompt strings (PS1, RPS1, PS1_FILL) are replaced
-with the current animation frame on every render.  Frames may include
-ANSI colour sequences written as `\e` (e.g. `\e[33m`).
-
-Examples:
-  flyline create-anim --name "MY_ANIMATION" --fps 10  ⣾ ⣷ ⣯ ⣟ ⡿ ⢿ ⣻ ⣽
-  flyline create-anim --name "john" --ping-pong --fps 5  '\e[33m\u' '\e[31m\u' '\e[35m\u' '\e[36m\u'
-
-Usage: flyline create-anim [OPTIONS] --name <NAME> [FRAMES]...
-
-Arguments:
-  [FRAMES]...
-          One or more animation frames (positional).  Use `\e` for the ESC character
-
-Options:
-      --name <NAME>
-          Name to embed in prompt strings as the animation placeholder
-
-      --fps <FPS>
-          Playback speed in frames per second (default: 10)
-          
-          [default: 10]
-
-      --ping-pong
-          Reverse direction at each end instead of wrapping (ping-pong / bounce mode)
-
-  -h, --help
-          Print help (see a summary with '-h')
-"#;
-
     #[test]
     fn test_flyline_create_anim_help_clap() {
-        let cmd = parse_help(FLYLINE_CREATE_ANIM_HELP);
+        let cmd = parse_help(&read_fixture(&["flyline", "create-anim"]));
         assert_eq!(cmd.name.as_deref(), Some("flyline"));
         assert!(
             cmd.description
@@ -828,46 +919,9 @@ Options:
         );
     }
 
-    const CARGO_HELP: &str = r#"Rust's package manager
-
-Usage: cargo [+toolchain] [OPTIONS] [COMMAND]
-       cargo [+toolchain] [OPTIONS] -Zscript [ARGS]...
-
-Options:
-  -V, --version              Print version info and exit
-      --list                 List installed commands
-      --explain <CODE>       Run `rustc --explain CODE`
-  -v, --verbose              Use verbose output (-vv very verbose/build.rs output)
-  -q, --quiet                Do not print cargo log messages
-      --color <WHEN>         Coloring: auto, always, never
-  -C <DIRECTORY>             Change to DIRECTORY before doing anything (nightly-only)
-      --frozen               Require Cargo.lock and cache are up to date
-      --locked               Require Cargo.lock is up to date
-      --offline              Run without accessing the network
-      --config <KEY=VALUE>   Override a configuration value
-  -Z <FLAG>                  Unstable (nightly-only) flags to Cargo, see 'cargo -Z help' for details
-  -h, --help                 Print help
-
-Some common cargo commands are (see all commands with --list):
-    build, b    Compile the current package
-    check, c    Analyze the current package and report errors, but don't build object files
-    clean       Remove the generated artifacts
-    doc, d      Build this package's and its dependencies' documentation
-    run, r      Run a binary or example of the local package
-    test, t     Run the tests
-    bench       Run the benchmarks
-    update      Update dependencies listed in Cargo.lock
-    search      Search registry for crates
-    publish     Publish this package to the registry
-    add         Add dependencies to a manifest file
-    remove      Remove dependencies from a manifest file
-
-See 'cargo help <command>' for more information on a specific command.
-"#;
-
     #[test]
     fn test_cargo_help_clap() {
-        let cmd = parse_help(CARGO_HELP);
+        let cmd = parse_help(&read_fixture(&["cargo"]));
         assert_eq!(cmd.name.as_deref(), Some("cargo"));
 
         let longs = long_names(&cmd);
@@ -919,51 +973,9 @@ See 'cargo help <command>' for more information on a specific command.
         );
     }
 
-    const PYTHON_HELP: &str = r#"usage: python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
-Options and arguments (and corresponding environment variables):
--b     : issue warnings about str(bytes_instance), str(bytearray_instance)
-         and comparing bytes/bytearray with str. (-bb: issue errors)
--B     : don't write .pyc files on import; also PYTHONDONTWRITEBYTECODE=x
--c cmd : program passed in as string (terminates option list)
--d     : debug output from parser; also PYTHONDEBUG=x
--E     : ignore PYTHON* environment variables (such as PYTHONPATH)
--h     : print this help message and exit (also --help)
--i     : inspect interactively after running script; forces a prompt even
-         if stdin does not appear to be a terminal; also PYTHONINSPECT=x
--I     : isolate Python from the user's environment (implies -E and -s)
--m mod : run library module as a script (terminates option list)
--O     : remove assert and __debug__-dependent statements; add .opt-1 before
-         .pyc extension; also PYTHONOPTIMIZE=x
--OO    : do -O changes and also discard docstrings; add .opt-2 before
-         .pyc extension
--q     : don't print version and copyright messages on interactive startup
--s     : don't add user site directory to sys.path; also PYTHONNOUSERSITE=x
--S     : don't imply 'import site' on initialization
--u     : force the stdout and stderr streams to be unbuffered;
-         this option has no effect on stdin; also PYTHONASYNCIOGENIGNORE=x
--v     : verbose (trace import statements); also PYTHONVERBOSE=x;
-         can be supplied multiple times to increase verbosity
--V     : print the Python version number and exit (also --version)
-         --version :  print just the version number to stdout and exit
--W arg : warning control; arg is action:message:category:module:lineno
-         also PYTHONWARNINGS=x
--x     : skip first line of source, allowing use of non-Unix forms of #!cmd
--X opt : set implementation-specific option
---check-hash-based-pycs always|default|never:
-    control how Python invalidates hash-based .pyc files
-file   : program read from script file
--      : program read from stdin (default; interactive mode if a tty)
-arg ...: arguments passed to program in sys.argv[1:]
-
-Other environment variables:
-PYTHONSTARTUP: file executed on interactive startup (no default)
-PYTHONPATH   : ':'-separated list of directories prefixed to the
-               default module search path.  The result is sys.path.
-"#;
-
     #[test]
     fn test_python_help_generic() {
-        let cmd = parse_help(PYTHON_HELP);
+        let cmd = parse_help(&read_fixture(&["python"]));
         assert_eq!(cmd.name.as_deref(), Some("python3"));
 
         let shorts = short_names(&cmd);
@@ -982,21 +994,9 @@ PYTHONPATH   : ':'-separated list of directories prefixed to the
         );
     }
 
-    const ARGPARSE_EXAMPLE: &str = r#"usage: prog.py [-h] [--foo FOO] bar
-
-A sample argparse program.
-
-positional arguments:
-  bar          the bar argument
-
-optional arguments:
-  -h, --help   show this help message and exit
-  --foo FOO    the foo value
-"#;
-
     #[test]
     fn test_argparse_example() {
-        let cmd = parse_help(ARGPARSE_EXAMPLE);
+        let cmd = parse_help(&read_fixture(&["argparse_example"]));
         assert_eq!(cmd.name.as_deref(), Some("prog.py"));
         assert!(
             cmd.description
@@ -1026,24 +1026,9 @@ optional arguments:
         );
     }
 
-    const ARGPARSE_SUBPARSERS: &str = r#"usage: myapp [-h] {init,run,stop} ...
-
-My Application
-
-positional arguments:
-  {init,run,stop}
-    init           Initialize the project
-    run            Run the application
-    stop           Stop the application
-
-optional arguments:
-  -h, --help       show this help message and exit
-  --verbose        Enable verbose output
-"#;
-
     #[test]
     fn test_argparse_subparsers() {
-        let cmd = parse_help(ARGPARSE_SUBPARSERS);
+        let cmd = parse_help(&read_fixture(&["argparse_subparsers"]));
         assert_eq!(cmd.name.as_deref(), Some("myapp"));
         assert!(cmd.description.as_deref().unwrap_or("").contains("My"));
 
@@ -1061,24 +1046,9 @@ optional arguments:
         );
     }
 
-    const CLICK_HELP: &str = r#"Usage: cli [OPTIONS] COMMAND [ARGS]...
-
-  A simple CLI built with Click.
-
-Options:
-  --name TEXT      The person to greet.
-  --count INTEGER  Number of greetings.  [default: 1]
-  -v, --verbose    Enable verbose output.
-  --help           Show this message and exit.
-
-Commands:
-  hello    Greet someone.
-  goodbye  Say goodbye.
-"#;
-
     #[test]
     fn test_click_help() {
-        let cmd = parse_help(CLICK_HELP);
+        let cmd = parse_help(&read_fixture(&["click"]));
         assert_eq!(cmd.name.as_deref(), Some("cli"));
 
         let subs = subcommand_names(&cmd);
@@ -1102,21 +1072,9 @@ Commands:
         assert!(shorts.contains(&"-v"));
     }
 
-    const ARGH_HELP: &str = r#"usage: myapp [-h] [--verbose] name
-
-A program using argh.
-
-positional arguments:
-  name         the name argument
-
-optional arguments:
-  -h, --help   show this help message and exit
-  --verbose    enable verbose output
-"#;
-
     #[test]
     fn test_argh_help() {
-        let cmd = parse_help(ARGH_HELP);
+        let cmd = parse_help(&read_fixture(&["argh"]));
         assert_eq!(cmd.name.as_deref(), Some("myapp"));
         assert!(cmd.description.as_deref().unwrap_or("").contains("argh"));
 
@@ -1141,22 +1099,9 @@ optional arguments:
         );
     }
 
-    const YARGS_HELP: &str = r#"my-cli [options]
-
-Commands:
-  serve  Start the development server
-  build  Build the project for production
-  test   Run the test suite
-
-Options:
-      --help     Show help                 [boolean]
-      --version  Show version number       [boolean]
-  -p, --port     Port to listen on         [number]
-"#;
-
     #[test]
     fn test_yargs_help() {
-        let cmd = parse_help(YARGS_HELP);
+        let cmd = parse_help(&read_fixture(&["yargs"]));
         let subs = subcommand_names(&cmd);
         assert!(subs.contains(&"serve"));
         assert!(subs.contains(&"build"));
@@ -1183,21 +1128,9 @@ Options:
         assert!(shorts.contains(&"-p"));
     }
 
-    const COMMANDER_HELP: &str = r#"Usage: program [options] [command]
-
-Options:
-  -V, --version  output the version number
-  -h, --help     display help for command
-
-Commands:
-  start          Start the server
-  stop           Stop the server
-  status         Show the server status
-"#;
-
     #[test]
     fn test_commander_help() {
-        let cmd = parse_help(COMMANDER_HELP);
+        let cmd = parse_help(&read_fixture(&["commander"]));
         assert_eq!(cmd.name.as_deref(), Some("program"));
 
         let subs = subcommand_names(&cmd);
@@ -1221,31 +1154,9 @@ Commands:
         assert!(shorts.contains(&"-h"));
     }
 
-    const COBRA_HELP: &str = r#"A brief description of your application.
-
-Usage:
-  myapp [command]
-
-Available Commands:
-  completion  Generate the autocompletion script for the specified shell
-  help        Help about any command
-  serve       Start the server
-  version     Print the version number
-
-Flags:
-  -h, --help     help for myapp
-  -t, --toggle   Help message for toggle
-
-Global Flags:
-      --config string      config file (default "$HOME/.myapp.yaml")
-      --log-level string   Log level (default "info")
-
-Use "myapp [command] --help" for more information about a command.
-"#;
-
     #[test]
     fn test_cobra_help() {
-        let cmd = parse_help(COBRA_HELP);
+        let cmd = parse_help(&read_fixture(&["cobra"]));
         assert_eq!(cmd.name.as_deref(), Some("myapp"));
         assert!(
             cmd.description
@@ -1278,24 +1189,9 @@ Use "myapp [command] --help" for more information about a command.
         assert!(shorts.contains(&"-t"));
     }
 
-    const DOCOPT_HELP: &str = r#"Usage:
-  naval_fate ship <name> move <x> <y> [--speed=<kn>]
-  naval_fate ship shoot <x> <y>
-  naval_fate mine (set|remove) <x> <y> [--moored|--drifting]
-  naval_fate (-h | --help)
-  naval_fate --version
-
-Options:
-  -h --help     Show this screen.
-  --version     Show version.
-  --speed=<kn>  Speed in knots [default: 10].
-  --moored      Moored (anchored) mine.
-  --drifting    Drifting mine.
-"#;
-
     #[test]
     fn test_docopt_help() {
-        let cmd = parse_help(DOCOPT_HELP);
+        let cmd = parse_help(&read_fixture(&["docopt"]));
         assert_eq!(cmd.name.as_deref(), Some("naval_fate"));
 
         let longs = long_names(&cmd);
@@ -1317,41 +1213,9 @@ Options:
         );
     }
 
-    const GIT_HELP: &str = r#"usage: git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]
-           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
-           [--no-replace-objects] [--bare] [--git-dir=<path>] [--work-tree=<path>]
-           <command> [<args>]
-
-Usage: git [OPTIONS] <COMMAND>
-
-Commands:
-  clone     Clone a repository into a new directory
-  init      Create an empty Git repository or reinitialize an existing one
-  add       Add file contents to the index
-  rm        Remove files from the working tree and from the index
-  diff      Show changes between commits, commit and working tree, etc
-  log       Show the commit logs
-  status    Show the working tree status
-  branch    List, create, or delete branches
-  commit    Record changes to the repository
-  merge     Join two or more development histories together
-  rebase    Reapply commits on top of another base tip
-  reset     Reset current HEAD to the specified state
-  fetch     Download objects and refs from another repository
-  pull      Fetch from and integrate with another repository or a local branch
-  push      Update remote refs along with associated objects
-  tag       Create, list, delete or verify a tag object signed with GPG
-
-Options:
-  -C <path>                Run as if git was started in <path>
-  -c <name>=<value>        Pass a configuration parameter to the command
-  -v, --version            Print the Git suite version
-  -h, --help               Print help
-"#;
-
     #[test]
     fn test_git_help() {
-        let cmd = parse_help(GIT_HELP);
+        let cmd = parse_help(&read_fixture(&["git"]));
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
         let subs = subcommand_names(&cmd);
@@ -1374,37 +1238,9 @@ Options:
         );
     }
 
-    const GIT_LOG_HELP: &str = r#"usage: git log [<options>] [<revision-range>] [[--] <path>...]
-
-    -q, --quiet           Suppress diff output
-    -v, --verbose         Be more verbose
-    -n, --max-count <n>   Limit the number of commits to output
-    --skip <n>            Skip number commits before starting to show output
-    --since <date>        Show commits more recent than a specific date
-    --after <date>        Show commits more recent than a specific date (alias)
-    --until <date>        Show commits older than a specific date
-    --before <date>       Show commits older than a specific date (alias)
-    --author <pattern>    Limit output to commits with matching author
-    --committer <pattern> Limit output to commits with matching committer
-    --grep <pattern>      Limit commit output to ones matching the pattern
-    --all-match           Limit output to commits matching all grep patterns
-    -i, --regexp-ignore-case
-                          Case insensitive match
-    --oneline             Show one commit per line with abbreviated hash
-    --no-walk             Only show given commits, not their parents
-    --graph               Show the commit graph as ASCII art
-    --decorate            Decorate refs
-    --first-parent        Follow only the first parent commit upon merges
-    -p, --patch           Show patch
-    -s, --no-patch        Suppress diff output
-    --stat                Generate a diffstat
-    --format <format>     Pretty-print in given format
-    --abbrev-commit       Show only a partial commit hash prefix
-"#;
-
     #[test]
     fn test_git_log_help() {
-        let cmd = parse_help(GIT_LOG_HELP);
+        let cmd = parse_help(&read_fixture(&["git", "log"]));
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
         let shorts = short_names(&cmd);
@@ -1460,37 +1296,9 @@ Options:
         );
     }
 
-    const GIT_COMMIT_HELP: &str = r#"usage: git commit [-a | --interactive | --patch] [-s] [-v] [--amend]
-   [--author=<author>] [--date=<date>] [-m <msg>] [--no-verify]
-
-    -q, --quiet           Suppress summary after successful commit
-    -v, --verbose         Show diff in commit message template
-    -F, --file <file>     Read message from file
-    --author <author>     Override author for commit
-    --date <date>         Override date for commit
-    -m, --message <message>
-                          Commit message
-    -s, --signoff         Add a Signed-off-by trailer
-    -e, --edit            Force edit of commit
-    --cleanup <mode>      How to strip spaces and #comments from message
-    --no-verify           Bypass pre-commit and commit-msg hooks
-    --allow-empty         Allow recording an empty commit
-    --allow-empty-message
-                          Allow recording a commit with an empty message
-    --amend               Amend previous commit
-    -a, --all             Commit all changed files
-    -i, --include         Add specified files to index for commit
-    -o, --only            Commit only specified files
-    --dry-run             Show what would be committed
-    --short               Show status concisely
-    --branch              Show branch information
-    --squash <commit>     Use autosquash formatted message to squash specified commit
-    --fixup <commit>      Use autosquash formatted message to fixup specified commit
-"#;
-
     #[test]
     fn test_git_commit_help() {
-        let cmd = parse_help(GIT_COMMIT_HELP);
+        let cmd = parse_help(&read_fixture(&["git", "commit"]));
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
         let shorts = short_names(&cmd);
@@ -1529,36 +1337,9 @@ Options:
         );
     }
 
-    const GIT_DIFF_HELP: &str = r#"usage: git diff [<options>] [<commit>] [--] [<path>...]
-   or: git diff [<options>] --cached [<commit>] [--] [<path>...]
-   or: git diff [<options>] <commit>...<commit> [--] [<path>...]
-
-    -p, --patch           Show patch
-    -s, --no-patch        Suppress diff output
-    --raw                 Generate the diff in raw format
-    --minimal             Produce the smallest possible diff
-    --patience            Use the patience diff algorithm
-    --histogram           Use the histogram diff algorithm
-    --diff-algorithm <algorithm>
-                          Choose a diff algorithm
-    --stat                Generate a diffstat
-    --compact-summary     Generate a compact summary in diffstat
-    --numstat             Generate a diffstat in machine-readable form
-    --shortstat           Output only the last line of --stat format
-    --name-only           Show only names of changed files
-    --name-status         Show only names and status of changed files
-    --color <when>        Show colored diff (always, never, auto)
-    --no-color            Turn off colored diff
-    --word-diff <mode>    Show a word diff using the given mode
-    -U, --unified <n>     Generate diffs with <n> lines of context
-    --cached              View the changes staged for the next commit
-    -W, --function-context
-                          Show whole surrounding functions of changes
-"#;
-
     #[test]
     fn test_git_diff_help() {
-        let cmd = parse_help(GIT_DIFF_HELP);
+        let cmd = parse_help(&read_fixture(&["git", "diff"]));
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
         let shorts = short_names(&cmd);
@@ -1582,13 +1363,13 @@ Options:
     fn test_subcommand_synthesis_overlay() {
         let help_runner = |args: &[&str]| -> anyhow::Result<String> {
             let text = match args {
-                [] => GIT_HELP,
-                ["log"] => GIT_LOG_HELP,
-                ["commit"] => GIT_COMMIT_HELP,
-                ["diff"] => GIT_DIFF_HELP,
-                _ => "",
+                [] => read_fixture(&["git"]),
+                ["log"] => read_fixture(&["git", "log"]),
+                ["commit"] => read_fixture(&["git", "commit"]),
+                ["diff"] => read_fixture(&["git", "diff"]),
+                _ => "".to_string(),
             };
-            Ok(text.to_string())
+            Ok(text)
         };
         let top = synthesize_completion("git", help_runner, SynthesisStrategy::RunHelp).unwrap();
 
@@ -2078,5 +1859,374 @@ Commands:
         assert!(subs.contains(&"check"));
         assert!(!subs.contains(&"..."));
         assert_eq!(subs.len(), 2);
+    }
+
+    fn parse_test_help(name: &str) -> Command {
+        let content = std::fs::read_to_string(format!("../tests/help_texts/{}/help.txt", name)).unwrap();
+        parse_help(&content)
+    }
+
+    fn read_fixture(path: &[&str]) -> String {
+        let path_str = path.join("/");
+        std::fs::read_to_string(format!("../tests/help_texts/{}/help.txt", path_str)).unwrap()
+    }
+
+    #[test]
+    fn test_ip_help() {
+        let cmd = parse_test_help("ip");
+        let subs = subcommand_names(&cmd);
+        let expected_subs = vec![
+            "address",
+            "addrlabel",
+            "amt",
+            "fou",
+            "help",
+            "ila",
+            "ioam",
+            "l2tp",
+            "link",
+            "macsec",
+            "maddress",
+            "monitor",
+            "mptcp",
+            "mroute",
+            "mrule",
+            "neighbor",
+            "neighbour",
+            "netconf",
+            "netns",
+            "nexthop",
+            "ntable",
+            "ntbl",
+            "route",
+            "rule",
+            "sr",
+            "tap",
+            "tcpmetrics",
+            "token",
+            "tunnel",
+            "tuntap",
+            "vrf",
+            "xfrm",
+        ];
+        for sub in expected_subs {
+            assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
+        }
+
+        let version = arg_by_short(&cmd, "-V").unwrap();
+        assert_eq!(version.long.as_deref(), None);
+
+        let stats = arg_by_short(&cmd, "-s").unwrap();
+        assert_eq!(stats.long.as_deref(), None);
+
+        let details = arg_by_short(&cmd, "-d").unwrap();
+        assert_eq!(details.long.as_deref(), None);
+
+        let resolve = arg_by_short(&cmd, "-r").unwrap();
+        assert_eq!(resolve.long.as_deref(), None);
+
+        let pretty = arg_by_short(&cmd, "-p").unwrap();
+        assert_eq!(pretty.long.as_deref(), None);
+    }
+
+    #[test]
+    fn test_docker_help() {
+        let cmd = parse_test_help("docker");
+        let subs = subcommand_names(&cmd);
+        let expected_subs = vec![
+            "run", "exec", "ps", "build", "images", "pull", "push", "rm", "rmi", "logs",
+        ];
+        for sub in expected_subs {
+            assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
+        }
+
+        let config = arg_by_long(&cmd, "--config").unwrap();
+        assert_eq!(config.short.as_deref(), None);
+        assert_eq!(config.value_hint, ValueHint::Unknown);
+
+        let context = arg_by_long(&cmd, "--context").unwrap();
+        assert_eq!(context.short.as_deref(), Some("-c"));
+
+        let debug = arg_by_long(&cmd, "--debug").unwrap();
+        assert_eq!(debug.short.as_deref(), Some("-D"));
+
+        let host = arg_by_long(&cmd, "--host").unwrap();
+        assert_eq!(host.short.as_deref(), Some("-H"));
+        assert_eq!(host.value_hint, ValueHint::Unknown);
+
+        let log_level = arg_by_long(&cmd, "--log-level").unwrap();
+        assert_eq!(log_level.short.as_deref(), Some("-l"));
+
+        let tls = arg_by_long(&cmd, "--tls").unwrap();
+        assert_eq!(tls.value_hint, ValueHint::Unknown);
+
+        let tlscacert = arg_by_long(&cmd, "--tlscacert").unwrap();
+        assert_eq!(tlscacert.value_hint, ValueHint::Unknown);
+
+        let tlscert = arg_by_long(&cmd, "--tlscert").unwrap();
+        assert_eq!(tlscert.value_hint, ValueHint::AnyPath);
+
+        let tlskey = arg_by_long(&cmd, "--tlskey").unwrap();
+        assert_eq!(tlskey.value_hint, ValueHint::AnyPath);
+
+        let tlsverify = arg_by_long(&cmd, "--tlsverify").unwrap();
+        assert_eq!(tlsverify.value_hint, ValueHint::Unknown);
+
+        let version = arg_by_long(&cmd, "--version").unwrap();
+        assert_eq!(version.short.as_deref(), Some("-v"));
+    }
+
+    #[test]
+    fn test_npm_help() {
+        let cmd = parse_test_help("npm");
+        let subs = subcommand_names(&cmd);
+        let expected_subs = vec![
+            "access",
+            "adduser",
+            "audit",
+            "bugs",
+            "cache",
+            "ci",
+            "completion",
+            "config",
+            "dedupe",
+            "deprecate",
+            "diff",
+            "dist-tag",
+            "docs",
+            "doctor",
+            "edit",
+            "exec",
+            "explain",
+            "explore",
+            "find-dupes",
+            "fund",
+            "get",
+            "help",
+            "hook",
+            "init",
+            "install",
+            "install-ci-test",
+            "install-test",
+            "link",
+            "ll",
+            "login",
+            "logout",
+            "ls",
+            "org",
+            "outdated",
+            "owner",
+            "pack",
+            "ping",
+            "pkg",
+            "prefix",
+            "profile",
+            "prune",
+            "publish",
+            "query",
+            "rebuild",
+            "repo",
+            "restart",
+            "root",
+            "run-script",
+            "search",
+            "set",
+            "shrinkwrap",
+            "star",
+            "stars",
+            "start",
+            "stop",
+            "team",
+            "test",
+            "token",
+            "uninstall",
+            "unpublish",
+            "unstar",
+            "update",
+            "version",
+            "view",
+            "whoami",
+        ];
+        for sub in expected_subs {
+            assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
+        }
+    }
+
+    #[test]
+    fn test_systemctl_help() {
+        let cmd = parse_test_help("systemctl");
+        let subs = subcommand_names(&cmd);
+        let expected_subs = vec![
+            "list-units",
+            "start",
+            "stop",
+            "status",
+            "enable",
+            "disable",
+            "daemon-reload",
+            "restart",
+            "reload",
+            "is-active",
+        ];
+        for sub in expected_subs {
+            assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
+        }
+
+        let host = arg_by_long(&cmd, "--host").unwrap();
+        assert_eq!(host.short.as_deref(), Some("-H"));
+        assert_eq!(host.value_hint, ValueHint::Hostname);
+
+        let machine = arg_by_long(&cmd, "--machine").unwrap();
+        assert_eq!(machine.short.as_deref(), Some("-M"));
+
+        let property = arg_by_long(&cmd, "--property").unwrap();
+        assert_eq!(property.short.as_deref(), Some("-p"));
+
+        let all = arg_by_long(&cmd, "--all").unwrap();
+        assert_eq!(all.short.as_deref(), Some("-a"));
+
+        let full = arg_by_long(&cmd, "--full").unwrap();
+        assert_eq!(full.short.as_deref(), Some("-l"));
+
+        let recursive = arg_by_long(&cmd, "--recursive").unwrap();
+        assert_eq!(recursive.short.as_deref(), Some("-r"));
+
+        let root = arg_by_long(&cmd, "--root").unwrap();
+        assert_eq!(root.value_hint, ValueHint::AnyPath);
+
+        let lines = arg_by_long(&cmd, "--lines").unwrap();
+        assert_eq!(lines.short.as_deref(), Some("-n"));
+    }
+
+    #[test]
+    fn test_apt_help() {
+        let cmd = parse_test_help("apt");
+        let subs = subcommand_names(&cmd);
+        let expected_subs = vec![
+            "list",
+            "search",
+            "show",
+            "install",
+            "reinstall",
+            "remove",
+            "autoremove",
+            "update",
+            "upgrade",
+            "full-upgrade",
+            "edit-sources",
+            "satisfy",
+        ];
+        for sub in expected_subs {
+            assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
+        }
+    }
+
+    #[test]
+    fn test_pip_help() {
+        let cmd = parse_test_help("pip");
+        let subs = subcommand_names(&cmd);
+        let expected_subs = vec![
+            "install",
+            "uninstall",
+            "list",
+            "show",
+            "config",
+            "download",
+            "freeze",
+            "check",
+            "search",
+            "cache",
+        ];
+        for sub in expected_subs {
+            assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
+        }
+
+        let verbose = arg_by_long(&cmd, "--verbose").unwrap();
+        assert_eq!(verbose.short.as_deref(), Some("-v"));
+
+        let version = arg_by_long(&cmd, "--version").unwrap();
+        assert_eq!(version.short.as_deref(), Some("-V"));
+
+        let quiet = arg_by_long(&cmd, "--quiet").unwrap();
+        assert_eq!(quiet.short.as_deref(), Some("-q"));
+
+        let log = arg_by_long(&cmd, "--log").unwrap();
+        assert_eq!(log.value_hint, ValueHint::AnyPath);
+
+        let proxy = arg_by_long(&cmd, "--proxy").unwrap();
+        assert_eq!(proxy.value_hint, ValueHint::Unknown);
+
+        let trusted_host = arg_by_long(&cmd, "--trusted-host").unwrap();
+        assert_eq!(trusted_host.value_hint, ValueHint::Hostname);
+
+        let cert = arg_by_long(&cmd, "--cert").unwrap();
+        assert_eq!(cert.value_hint, ValueHint::AnyPath);
+
+        let cache_dir = arg_by_long(&cmd, "--cache-dir").unwrap();
+        assert_eq!(cache_dir.value_hint, ValueHint::DirPath);
+    }
+
+    #[test]
+    fn test_go_help() {
+        let cmd = parse_test_help("go");
+        let subs = subcommand_names(&cmd);
+        let expected_subs = vec![
+            "build", "run", "test", "fmt", "get", "version", "clean", "doc", "env", "fix",
+            "generate", "install", "list", "mod", "work", "tool", "vet",
+        ];
+        for sub in expected_subs {
+            assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
+        }
+    }
+
+    #[test]
+    fn test_gh_help() {
+        let cmd = parse_test_help("gh");
+        let subs = subcommand_names(&cmd);
+        let expected_subs = vec![
+            "auth",
+            "pr",
+            "repo",
+            "issue",
+            "run",
+            "gist",
+            "alias",
+            "api",
+            "completion",
+            "config",
+        ];
+        for sub in expected_subs {
+            assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
+        }
+
+        assert!(long_names(&cmd).contains(&"--help"));
+        assert!(long_names(&cmd).contains(&"--version"));
+    }
+
+    #[test]
+    fn test_curl_help() {
+        let cmd = parse_test_help("curl");
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--data"));
+        assert!(longs.contains(&"--fail"));
+        assert!(longs.contains(&"--output"));
+        assert!(longs.contains(&"--user"));
+
+        let output_arg = arg_by_long(&cmd, "--output").unwrap();
+        assert_eq!(output_arg.short.as_deref(), Some("-o"));
+        assert_eq!(output_arg.value_hint, ValueHint::FilePath);
+    }
+
+    #[test]
+    fn test_tar_help() {
+        let cmd = parse_test_help("tar");
+        let longs = long_names(&cmd);
+        assert!(longs.contains(&"--create"));
+        assert!(longs.contains(&"--extract"));
+        assert!(longs.contains(&"--list"));
+        assert!(longs.contains(&"--file"));
+
+        let file_arg = arg_by_long(&cmd, "--file").unwrap();
+        assert_eq!(file_arg.short.as_deref(), Some("-f"));
     }
 }

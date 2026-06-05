@@ -1,0 +1,5 @@
+Usage: mytool [OPTIONS]
+
+Options:
+  --[no-]color             Enable or disable color output.
+  --[no]nocolor            Enable or disable nocolor option.
