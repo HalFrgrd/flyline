@@ -67,6 +67,11 @@ pub enum ValueHint {
     Hostname,
     Url,
     EmailAddress,
+    EnvVar,
+    NetworkInterface,
+    GitBranch,
+    GitRevision,
+    SystemdUnit,
 }
 
 /// A single command-line argument / flag.
@@ -250,6 +255,21 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
     if name_contains("dir") || name_contains("directory") || name_contains("folder") {
         return ValueHint::DirPath;
     }
+    if name_contains("env-var") || name_contains("envvar") || name_contains("env_var") {
+        return ValueHint::EnvVar;
+    }
+    if name_contains("interface") || name_contains("iface") {
+        return ValueHint::NetworkInterface;
+    }
+    if name_contains("branch") {
+        return ValueHint::GitBranch;
+    }
+    if name_contains("revision") || name_contains("commit") {
+        return ValueHint::GitRevision;
+    }
+    if name_contains("service") || name_contains("unit") {
+        return ValueHint::SystemdUnit;
+    }
     // Dict, Log, Archive, and File are FilePaths
     if name_contains("file")
         || name_contains("filename")
@@ -319,6 +339,24 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
     {
         return ValueHint::ExecutablePath;
     }
+    if desc_contains("environment variable")
+        || desc_contains("env variable")
+        || desc_contains("env-var")
+    {
+        return ValueHint::EnvVar;
+    }
+    if desc_contains("network interface") {
+        return ValueHint::NetworkInterface;
+    }
+    if desc_contains("git branch") {
+        return ValueHint::GitBranch;
+    }
+    if desc_contains("git revision") || desc_contains("git commit") {
+        return ValueHint::GitRevision;
+    }
+    if desc_contains("systemd service") || desc_contains("systemd unit") {
+        return ValueHint::SystemdUnit;
+    }
 
     // Paths/Directories/Files in description
     if desc_contains("directory path")
@@ -376,13 +414,62 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
     ValueHint::Unknown
 }
 
+fn parse_bulleted_list_values(desc: &str) -> Option<Vec<String>> {
+    let mut values = Vec::new();
+
+    // Pattern 1: Bullet + value + separator (like ':' or ' - ' or 2+ spaces)
+    let re_bullet_sep =
+        regex::Regex::new(r"(?:^|\s)[-*+o•]\s+([a-zA-Z0-9_-]+)(?:\s*:\s+|\s+-\s+|[ \t]{2,})")
+            .unwrap();
+    for caps in re_bullet_sep.captures_iter(desc) {
+        let val = caps.get(1).unwrap().as_str().to_string();
+        if !values.contains(&val) {
+            values.push(val);
+        }
+    }
+
+    if !values.is_empty() {
+        return Some(values);
+    }
+
+    // Pattern 2: Pure bullet + word lines anywhere in the description
+    let re_bullet_pure = regex::Regex::new(r"^\s*[-*+o•]\s+([a-zA-Z0-9_-]+)\s*$").unwrap();
+    let mut pure_vals = Vec::new();
+    for line in desc.lines() {
+        if let Some(caps) = re_bullet_pure.captures(line) {
+            let val = caps.get(1).unwrap().as_str().to_string();
+            if !pure_vals.contains(&val) {
+                pure_vals.push(val);
+            }
+        }
+    }
+
+    if pure_vals.len() >= 2 {
+        return Some(pure_vals);
+    }
+
+    None
+}
+
 pub fn parse_possible_values(
     value_name: Option<&str>,
     description: Option<&str>,
 ) -> Option<Vec<String>> {
-    // 1. Try to parse from value_name (e.g. {info,debug} or info|debug)
+    // 1. Try to parse from value_name (e.g. {info,debug} or info|debug or 0..5)
     if let Some(vt) = value_name {
         let clean_type = vt.trim_matches(|c| c == '[' || c == ']' || c == '<' || c == '>');
+
+        // Try range syntax like 0..5 or 1-5
+        let range_re = regex::Regex::new(r"^(\d+)(?:\.\.|-)(\d+)$").unwrap();
+        if let Some(caps) = range_re.captures(clean_type) {
+            let start: usize = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
+            let end: usize = caps.get(2).unwrap().as_str().parse().unwrap_or(0);
+            if start < end && end - start <= 20 {
+                let range_values: Vec<String> = (start..=end).map(|val| val.to_string()).collect();
+                return Some(range_values);
+            }
+        }
+
         if clean_type.starts_with('{') && clean_type.ends_with('}') {
             let inner = &clean_type[1..clean_type.len() - 1];
             let parts: Vec<String> = inner
@@ -412,9 +499,12 @@ pub fn parse_possible_values(
 
     // 2. Try to parse from description
     if let Some(desc) = description {
+        if let Some(list_vals) = parse_bulleted_list_values(desc) {
+            return Some(list_vals);
+        }
         // regex to find the prefix
         let re_prefix = regex::Regex::new(
-            r"(?i)\b(?:possible\s+values|choices|allowed\s+values|valid\s+values|one\s+of|accepts)\s*(?:=|:|\bare\b)\s*|\bmust\s+be\s+(?:either\s+|one\s+of\s+)?(?:=|:)?\s*"
+            r"(?i)\b(?:possible\s+values|choices|allowed\s+values|valid\s+values|one\s+of|accepts|can\s+be|selected\s+from)\s*(?:=|:|\bare\b)?\s*|\bmust\s+be\s+(?:either\s+|one\s+of\s+)?(?:=|:)?\s*"
         ).unwrap();
 
         if let Some(mat) = re_prefix.find(desc) {
@@ -708,6 +798,11 @@ pub fn to_clap_command(cmd: &Command) -> clap::Command {
                 ValueHint::Hostname => clap::ValueHint::Hostname,
                 ValueHint::Url => clap::ValueHint::Url,
                 ValueHint::EmailAddress => clap::ValueHint::EmailAddress,
+                ValueHint::EnvVar
+                | ValueHint::NetworkInterface
+                | ValueHint::GitBranch
+                | ValueHint::GitRevision
+                | ValueHint::SystemdUnit => clap::ValueHint::Other,
             };
             clap_arg = clap_arg.value_hint(clap_hint);
         }
@@ -1748,6 +1843,25 @@ Options:
                 "trace".to_string()
             ])
         );
+        assert_eq!(
+            parse_possible_values(Some("0..5"), None),
+            Some(vec![
+                "0".to_string(),
+                "1".to_string(),
+                "2".to_string(),
+                "3".to_string(),
+                "4".to_string(),
+                "5".to_string()
+            ])
+        );
+        assert_eq!(
+            parse_possible_values(Some("<1-3>"), None),
+            Some(vec!["1".to_string(), "2".to_string(), "3".to_string()])
+        );
+        assert_eq!(
+            parse_possible_values(Some("0..100"), None), // too large, should be None
+            None
+        );
 
         // Test parsing from description
         assert_eq!(
@@ -1809,6 +1923,34 @@ Options:
                 "debug".to_string(),
                 "trace".to_string()
             ])
+        );
+        assert_eq!(
+            parse_possible_values(None, Some("can be either fast or slow")),
+            Some(vec!["fast".to_string(), "slow".to_string()])
+        );
+        assert_eq!(
+            parse_possible_values(None, Some("selected from: apple, banana")),
+            Some(vec!["apple".to_string(), "banana".to_string()])
+        );
+
+        // Test bulleted list parsing
+        assert_eq!(
+            parse_possible_values(
+                None,
+                Some("Supported formats:\n  - json: JSON format\n  - yaml: YAML format")
+            ),
+            Some(vec!["json".to_string(), "yaml".to_string()])
+        );
+        assert_eq!(
+            parse_possible_values(
+                None,
+                Some("Supported formats: - json: JSON format - yaml: YAML format")
+            ),
+            Some(vec!["json".to_string(), "yaml".to_string()])
+        );
+        assert_eq!(
+            parse_possible_values(None, Some("Modes:\n  * fast\n  * slow")),
+            Some(vec!["fast".to_string(), "slow".to_string()])
         );
 
         // Test none when no matches or junk
@@ -1990,6 +2132,43 @@ Options:
         assert_eq!(
             extract_value_hint(Some("output"), Some("write output to file")),
             ValueHint::FilePath
+        );
+
+        // Test EnvVar
+        assert_eq!(extract_value_hint(Some("env-var"), None), ValueHint::EnvVar);
+        assert_eq!(
+            extract_value_hint(None, Some("read from environment variable")),
+            ValueHint::EnvVar
+        );
+
+        // Test NetworkInterface
+        assert_eq!(
+            extract_value_hint(Some("iface"), None),
+            ValueHint::NetworkInterface
+        );
+        assert_eq!(
+            extract_value_hint(None, Some("bind network interface")),
+            ValueHint::NetworkInterface
+        );
+
+        // Test GitBranch / GitRevision
+        assert_eq!(
+            extract_value_hint(Some("branch"), None),
+            ValueHint::GitBranch
+        );
+        assert_eq!(
+            extract_value_hint(None, Some("git commit hash")),
+            ValueHint::GitRevision
+        );
+
+        // Test SystemdUnit
+        assert_eq!(
+            extract_value_hint(Some("service"), None),
+            ValueHint::SystemdUnit
+        );
+        assert_eq!(
+            extract_value_hint(None, Some("systemd unit service")),
+            ValueHint::SystemdUnit
         );
     }
 

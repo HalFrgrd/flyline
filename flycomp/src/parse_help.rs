@@ -424,12 +424,37 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
     (short, long, value_name)
 }
 
+fn detect_description_column(lines: &[&str]) -> Option<usize> {
+    use std::collections::HashMap;
+    let mut counts = HashMap::new();
+    for line in lines {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('-') {
+            if let Some(pos) = line.find("  ") {
+                let mut desc_start = pos;
+                let chars: Vec<char> = line.chars().collect();
+                while desc_start < chars.len() && chars[desc_start].is_whitespace() {
+                    desc_start += 1;
+                }
+                if desc_start < chars.len() {
+                    *counts.entry(desc_start).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    counts
+        .into_iter()
+        .max_by_key(|&(_, count)| count)
+        .map(|(col, _)| col)
+}
+
 /// Collect continuation lines: lines whose indent > `base_indent` (or blank).
 /// Returns the combined description string.
 fn collect_continuation<'a>(
     lines: &'a [&'a str],
     start: usize,
     base_indent: usize,
+    desc_col: Option<usize>,
 ) -> (String, usize) {
     let mut desc_parts = Vec::new();
     let mut i = start;
@@ -445,7 +470,12 @@ fn collect_continuation<'a>(
                     continue;
                 }
                 let ind = indent_of(next_line);
-                if ind > base_indent && !next_line.trim().starts_with('-') {
+                let is_aligned = if let Some(col) = desc_col {
+                    ind >= col.saturating_sub(2) && ind > base_indent
+                } else {
+                    ind > base_indent
+                };
+                if is_aligned && !next_line.trim().starts_with('-') {
                     next_is_continuation = true;
                 }
                 break;
@@ -458,7 +488,12 @@ fn collect_continuation<'a>(
             }
         }
         let ind = indent_of(line);
-        if ind <= base_indent {
+        let is_aligned = if let Some(col) = desc_col {
+            ind >= col.saturating_sub(2) && ind > base_indent
+        } else {
+            ind > base_indent
+        };
+        if !is_aligned {
             break;
         }
         // A deeper-indented line that starts with `-` is another flag entry,
@@ -476,6 +511,7 @@ fn collect_continuation<'a>(
 /// Parse clap-style `--help` output.
 pub fn parse_help_clap(help: &str) -> Command {
     let lines: Vec<&str> = help.lines().collect();
+    let desc_col = detect_description_column(&lines);
     let mut cmd = Command::default();
 
     if let Some(usage_pos) = lines
@@ -706,7 +742,8 @@ pub fn parse_help_clap(help: &str) -> Command {
                 let (token_part, inline_desc) = split_option_line(flag_part);
                 let (short, long, value_name) = parse_flag_tokens(token_part);
 
-                let (cont_desc, next_i) = collect_continuation(&lines, i + 1, flag_indent);
+                let (cont_desc, next_i) =
+                    collect_continuation(&lines, i + 1, flag_indent, desc_col);
                 i = next_i;
 
                 let description = match (inline_desc, cont_desc.as_str()) {
@@ -743,6 +780,7 @@ pub fn parse_help_clap(help: &str) -> Command {
 /// Parse Python argparse-style `--help` output.
 pub fn parse_help_argparse(help: &str) -> Command {
     let lines: Vec<&str> = help.lines().collect();
+    let desc_col = detect_description_column(&lines);
     let mut cmd = Command::default();
 
     if let Some(usage_line) = lines
@@ -806,7 +844,8 @@ pub fn parse_help_argparse(help: &str) -> Command {
                     (None, Some(name_token.to_string()), None)
                 };
 
-                let (cont_desc, next_i) = collect_continuation(&lines, i + 1, flag_indent);
+                let (cont_desc, next_i) =
+                    collect_continuation(&lines, i + 1, flag_indent, desc_col);
                 i = next_i;
 
                 let description = match (inline_desc, cont_desc.as_str()) {
@@ -843,6 +882,7 @@ pub fn parse_help_argparse(help: &str) -> Command {
 /// Fallback parser for unrecognised help formats.
 pub fn parse_help_generic(help: &str) -> Command {
     let lines: Vec<&str> = help.lines().collect();
+    let desc_col = detect_description_column(&lines);
     let mut cmd = Command::default();
 
     for line in &lines {
@@ -877,7 +917,7 @@ pub fn parse_help_generic(help: &str) -> Command {
             let (token_part, inline_desc) = split_option_line(flag_part);
             let (short, long, value_name) = parse_flag_tokens(token_part);
 
-            let (cont_desc, next_i) = collect_continuation(&lines, i + 1, flag_indent);
+            let (cont_desc, next_i) = collect_continuation(&lines, i + 1, flag_indent, desc_col);
             i = next_i;
 
             let description = match (inline_desc, cont_desc.as_str()) {
@@ -1911,7 +1951,7 @@ Options:
         );
         assert_eq!(
             arg_by_long(remote_add, "--track").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
+            Some(ValueHint::GitBranch)
         );
 
         let remote_set_url = subcommand_by_name(remote, "set-url")
