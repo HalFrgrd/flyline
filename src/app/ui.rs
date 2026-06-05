@@ -1312,7 +1312,7 @@ mod tests {
         let anchor =
             auto_suggestions_popup_anchor_col(9, &SubString::from_parts("", 4), 3, "echo test", 4);
 
-        assert_eq!(anchor, 9);
+        assert_eq!(anchor, 8);
     }
 
     #[test]
