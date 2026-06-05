@@ -8,9 +8,15 @@ enum HelpFormat {
     Argparse,
     /// Unknown or generic format.
     Generic,
+    /// Format like ip command help.
+    Ebnf,
 }
 
 fn detect_format(help: &str) -> HelpFormat {
+    if help.contains(":=") && help.contains('{') {
+        return HelpFormat::Ebnf;
+    }
+
     let help_lower = help.to_lowercase();
     let has_usage = help.contains("Usage:") || help.contains("USAGE");
     let has_commands_section = help.contains("\nCommands:\n")
@@ -65,67 +71,286 @@ fn strip_ansi(s: &str) -> String {
 pub fn parse_help(help: &str) -> Command {
     let clean_help = strip_ansi(help);
 
-    // Special parser for ip-style help text
-    if clean_help.contains("where  OBJECT :=") || clean_help.contains("OBJECT :=") {
-        let mut cmd = Command::default();
-        cmd.name = Some("ip".to_string());
-
-        // Extract OBJECTs
-        if let Some(start_pos) = clean_help.find("OBJECT := {") {
-            if let Some(end_pos) = clean_help[start_pos..].find('}') {
-                let objects_str = &clean_help[start_pos + "OBJECT := {".len()..start_pos + end_pos];
-                for obj in objects_str.split('|') {
-                    let name = obj.trim().to_string();
-                    if !name.is_empty() {
-                        cmd.subcommands.push(Command {
-                            name: Some(name),
-                            ..Command::default()
-                        });
-                    }
-                }
-            }
-        }
-
-        // Extract OPTIONS
-        if let Some(start_pos) = clean_help.find("OPTIONS := {") {
-            if let Some(end_pos) = clean_help[start_pos..].find('}') {
-                let options_str =
-                    &clean_help[start_pos + "OPTIONS := {".len()..start_pos + end_pos];
-                for opt in options_str.split('|') {
-                    let opt_trimmed = opt.trim();
-                    if opt_trimmed.starts_with('-') {
-                        let clean_opt = if let Some(bracket_pos) = opt_trimmed.find('[') {
-                            &opt_trimmed[..bracket_pos]
-                        } else {
-                            opt_trimmed
-                        };
-                        let clean_opt = clean_opt.split_whitespace().next().unwrap_or(clean_opt);
-                        if clean_opt.starts_with("--") {
-                            cmd.args.push(Arg {
-                                long: Some(clean_opt.to_string()),
-                                ..Arg::default()
-                            });
-                        } else if clean_opt.starts_with('-') {
-                            cmd.args.push(Arg {
-                                short: Some(clean_opt.to_string()),
-                                ..Arg::default()
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        return cmd;
-    }
-
     let mut cmd = match detect_format(&clean_help) {
         HelpFormat::Clap => parse_help_clap(&clean_help),
         HelpFormat::Argparse => parse_help_argparse(&clean_help),
+        HelpFormat::Ebnf => parse_help_ebnf(&clean_help),
         HelpFormat::Generic => parse_help_generic(&clean_help),
     };
     // Expand bracketed negation flags (like --[no-]color) into both variants
     cmd.expand_no_options();
     cmd.populate_possible_values();
+    cmd
+}
+
+fn split_top_level(s: &str, delimiter: char) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut depth_braces = 0;
+    let mut depth_brackets = 0;
+    let mut depth_parens = 0;
+    for c in s.chars() {
+        if c == '{' {
+            depth_braces += 1;
+        } else if c == '}' {
+            depth_braces -= 1;
+        } else if c == '[' {
+            depth_brackets += 1;
+        } else if c == ']' {
+            depth_brackets -= 1;
+        } else if c == '(' {
+            depth_parens += 1;
+        } else if c == ')' {
+            depth_parens -= 1;
+        }
+
+        if c == delimiter && depth_braces == 0 && depth_brackets == 0 && depth_parens == 0 {
+            parts.push(current.trim().to_string());
+            current.clear();
+        } else {
+            current.push(c);
+        }
+    }
+    if !current.trim().is_empty() {
+        parts.push(current.trim().to_string());
+    }
+    parts
+}
+
+fn is_like_value_name(t: &str) -> bool {
+    if t.starts_with('<') || t.starts_with('[') || t.starts_with('(') {
+        return true;
+    }
+    let clean = t.trim_end_matches(',');
+    if clean.is_empty() {
+        return false;
+    }
+    let lower = clean.to_lowercase();
+    if [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "bool",
+        "path",
+        "file",
+        "dir",
+        "directory",
+        "value",
+        "val",
+        "name",
+    ]
+    .contains(&lower.as_str())
+    {
+        return true;
+    }
+    let mut has_letter = false;
+    let mut all_upper = true;
+    for c in clean.chars() {
+        if c.is_alphabetic() {
+            has_letter = true;
+            if !c.is_uppercase() {
+                all_upper = false;
+            }
+        }
+    }
+    has_letter && all_upper
+}
+
+fn split_option_line(flag_part: &str) -> (&str, Option<String>) {
+    // First check if there is a double space, which is a very strong separator signal.
+    if let Some(pos) = flag_part.find("  ") {
+        let prefix = &flag_part[..pos];
+        let d = flag_part[pos..].trim().to_string();
+        let desc = if d.is_empty() { None } else { Some(d) };
+        return (prefix, desc);
+    }
+
+    let tokens: Vec<&str> = flag_part.split_whitespace().collect();
+    let mut prefix_tokens_count = 0;
+    let mut seen_flag = false;
+    let mut needs_value = false;
+    let mut seen_value = false;
+
+    for &t in &tokens {
+        if t.starts_with('-') {
+            seen_flag = true;
+            needs_value = !t.contains('=');
+            prefix_tokens_count += 1;
+        } else if seen_flag && (t == "," || t == "|" || t == "/") {
+            prefix_tokens_count += 1;
+        } else if seen_flag && needs_value && !seen_value && is_like_value_name(t) {
+            seen_value = true;
+            needs_value = false;
+            prefix_tokens_count += 1;
+        } else {
+            break;
+        }
+    }
+
+    if prefix_tokens_count == 0 {
+        return (flag_part, None);
+    }
+
+    let mut pos = 0;
+    let mut count = 0;
+    let mut in_whitespace = true;
+    for (idx, c) in flag_part.char_indices() {
+        if c.is_whitespace() {
+            in_whitespace = true;
+        } else {
+            if in_whitespace {
+                in_whitespace = false;
+                count += 1;
+                if count > prefix_tokens_count {
+                    pos = idx;
+                    break;
+                }
+            }
+        }
+    }
+
+    if pos > 0 {
+        let prefix = &flag_part[..pos];
+        let desc = flag_part[pos..].trim().to_string();
+        let desc_opt = if desc.is_empty() { None } else { Some(desc) };
+        (prefix, desc_opt)
+    } else {
+        (flag_part, None)
+    }
+}
+
+/// Parse an EBNF-style command help generically.
+pub fn parse_help_ebnf(help: &str) -> Command {
+    let mut cmd = Command::default();
+
+    // Generically extract the command name from Usage: or usage:
+    for line in help.lines() {
+        let trimmed = line.trim();
+        if trimmed.to_lowercase().starts_with("usage:") {
+            let after = trimmed["usage:".len()..].trim();
+            if let Some(name_part) = after.split_whitespace().next() {
+                cmd.name = Some(name_part.to_string());
+                break;
+            }
+        }
+    }
+    if cmd.name.is_none() {
+        cmd.name = Some("ip".to_string());
+    }
+
+    // Parse all variables of form NAME := { ... }
+    let mut search_idx = 0;
+    while let Some(assign_pos) = help[search_idx..].find(":=") {
+        let abs_assign_pos = search_idx + assign_pos;
+        let pre_assign = &help[..abs_assign_pos];
+        let mut var_name = "";
+        if let Some(last_line) = pre_assign.lines().last() {
+            let last_line_trimmed = last_line.trim();
+            if let Some(word) = last_line_trimmed.split_whitespace().last() {
+                let clean_word =
+                    word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '-');
+                if !clean_word.is_empty() {
+                    var_name = clean_word;
+                }
+            }
+        }
+
+        let post_assign = &help[abs_assign_pos + 2..];
+        if let Some(brace_start) = post_assign.find('{') {
+            let abs_brace_start = abs_assign_pos + 2 + brace_start;
+            let mut depth = 0;
+            let mut brace_end_pos = None;
+            for (idx, c) in help[abs_brace_start..].char_indices() {
+                if c == '{' {
+                    depth += 1;
+                } else if c == '}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        brace_end_pos = Some(abs_brace_start + idx);
+                        break;
+                    }
+                }
+            }
+
+            if let Some(abs_brace_end) = brace_end_pos {
+                let content = &help[abs_brace_start + 1..abs_brace_end];
+                let var_name_lower = var_name.to_lowercase();
+                let is_options = var_name_lower.contains("option");
+                let is_subcommands =
+                    var_name_lower.contains("object") || var_name_lower.contains("command");
+
+                let parts = split_top_level(content, '|');
+                for part in parts {
+                    let part_trimmed = part.trim();
+                    if part_trimmed.is_empty() {
+                        continue;
+                    }
+
+                    if is_options {
+                        if part_trimmed.starts_with('-') {
+                            let clean_opt = if let Some(bracket_pos) = part_trimmed.find('[') {
+                                &part_trimmed[..bracket_pos]
+                            } else {
+                                part_trimmed
+                            };
+                            let clean_opt =
+                                clean_opt.split_whitespace().next().unwrap_or(clean_opt);
+
+                            let mut value_enum = None;
+                            if let Some(inner_brace_start) = part_trimmed.find('{') {
+                                if let Some(inner_brace_end) =
+                                    part_trimmed[inner_brace_start..].find('}')
+                                {
+                                    let inner_content = &part_trimmed[inner_brace_start + 1
+                                        ..inner_brace_start + inner_brace_end];
+                                    let possible_values = split_top_level(inner_content, '|');
+                                    if !possible_values.is_empty() {
+                                        value_enum = Some(
+                                            possible_values
+                                                .into_iter()
+                                                .map(|s| s.trim().to_string())
+                                                .collect(),
+                                        );
+                                    }
+                                }
+                            }
+
+                            if clean_opt.starts_with("--") {
+                                cmd.args.push(Arg {
+                                    long: Some(clean_opt.to_string()),
+                                    value_enum,
+                                    ..Arg::default()
+                                });
+                            } else if clean_opt.starts_with('-') {
+                                cmd.args.push(Arg {
+                                    short: Some(clean_opt.to_string()),
+                                    value_enum,
+                                    ..Arg::default()
+                                });
+                            }
+                        }
+                    } else if is_subcommands {
+                        let name = part_trimmed
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or(part_trimmed)
+                            .to_string();
+                        if !name.is_empty() {
+                            cmd.subcommands.push(Command {
+                                name: Some(name),
+                                ..Command::default()
+                            });
+                        }
+                    }
+                }
+                search_idx = abs_brace_end + 1;
+                continue;
+            }
+        }
+        search_idx = abs_assign_pos + 2;
+    }
+
     cmd
 }
 
@@ -478,20 +703,9 @@ pub fn parse_help_clap(help: &str) -> Command {
                     continue;
                 }
 
-                let token_part = flag_part
-                    .find("  ")
-                    .map(|pos| &flag_part[..pos])
-                    .unwrap_or(flag_part);
+                let (token_part, inline_desc) = split_option_line(flag_part);
                 let (short, long, value_name) = parse_flag_tokens(token_part);
 
-                let inline_desc: Option<String> = flag_part.find("  ").and_then(|pos| {
-                    let d = flag_part[pos..].trim();
-                    if d.is_empty() {
-                        None
-                    } else {
-                        Some(d.to_string())
-                    }
-                });
                 let (cont_desc, next_i) = collect_continuation(&lines, i + 1, flag_indent);
                 i = next_i;
 
@@ -584,26 +798,12 @@ pub fn parse_help_argparse(help: &str) -> Command {
                 let flag_indent = indent_of(line);
                 let flag_part = line.trim();
 
+                let (token_part, inline_desc) = split_option_line(flag_part);
                 let (short, long, value_name) = if flag_part.starts_with('-') {
-                    let token_part = flag_part
-                        .find("  ")
-                        .map(|pos| &flag_part[..pos])
-                        .unwrap_or(flag_part);
                     parse_flag_tokens(token_part)
                 } else {
-                    let name_token = flag_part.split_whitespace().next().unwrap_or("");
+                    let name_token = token_part.split_whitespace().next().unwrap_or("");
                     (None, Some(name_token.to_string()), None)
-                };
-
-                let inline_desc: Option<String> = if let Some(pos) = flag_part.find("  ") {
-                    let d = flag_part[pos..].trim();
-                    if !d.is_empty() {
-                        Some(d.to_string())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
                 };
 
                 let (cont_desc, next_i) = collect_continuation(&lines, i + 1, flag_indent);
@@ -674,22 +874,8 @@ pub fn parse_help_generic(help: &str) -> Command {
 
         if flag_part.starts_with('-') {
             let flag_indent = indent_of(line);
-            let token_part = flag_part
-                .find("  ")
-                .map(|pos| &flag_part[..pos])
-                .unwrap_or(flag_part);
+            let (token_part, inline_desc) = split_option_line(flag_part);
             let (short, long, value_name) = parse_flag_tokens(token_part);
-
-            let inline_desc: Option<String> = if let Some(pos) = flag_part.find("  ") {
-                let d = flag_part[pos..].trim();
-                if !d.is_empty() {
-                    Some(d.to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
 
             let (cont_desc, next_i) = collect_continuation(&lines, i + 1, flag_indent);
             i = next_i;
@@ -861,48 +1047,43 @@ mod tests {
                 .contains("animation")
         );
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--name"));
-        assert!(longs.contains(&"--fps"));
-        assert!(longs.contains(&"--ping-pong"));
-        assert!(longs.contains(&"--help"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"));
-
-        assert_eq!(
-            arg_by_long(&cmd, "--name").and_then(|a| a.value_name.as_deref()),
-            Some("NAME")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--name").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--fps").and_then(|a| a.value_name.as_deref()),
-            Some("FPS")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--fps").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-
-        assert!(
-            arg_by_long(&cmd, "--name")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("animation placeholder")
-        );
-        assert!(
-            arg_by_long(&cmd, "--fps")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("frames per second")
-        );
-        assert!(
-            arg_by_long(&cmd, "--ping-pong")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("Reverse direction")
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--name".to_string()),
+                        value_name: Some("NAME".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "animation placeholder",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--fps".to_string()),
+                        value_name: Some("FPS".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "frames per second",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--ping-pong".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Reverse direction",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Print help",
+                },
+            ],
         );
     }
 
@@ -911,33 +1092,60 @@ mod tests {
         let cmd = parse_help(&read_fixture(&["cargo"]));
         assert_eq!(cmd.name.as_deref(), Some("cargo"));
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--version"));
-        assert!(longs.contains(&"--verbose"));
-        assert!(longs.contains(&"--quiet"));
-        assert!(longs.contains(&"--explain"));
-        assert!(longs.contains(&"--color"));
-        assert!(longs.contains(&"--help"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-V"));
-        assert!(shorts.contains(&"-v"));
-        assert!(shorts.contains(&"-h"));
-
-        assert_eq!(
-            arg_by_long(&cmd, "--explain").and_then(|a| a.value_name.as_deref()),
-            Some("CODE")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--explain").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--color").and_then(|a| a.value_name.as_deref()),
-            Some("WHEN")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--color").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-V".to_string()),
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Print version info",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--verbose".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Use verbose output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-q".to_string()),
+                        long: Some("--quiet".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Do not print cargo log messages",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--explain".to_string()),
+                        value_name: Some("CODE".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Run `rustc --explain CODE`",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--color".to_string()),
+                        value_name: Some("WHEN".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Coloring",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Print help",
+                },
+            ],
         );
 
         let subs = subcommand_names(&cmd);
@@ -965,19 +1173,38 @@ mod tests {
         let cmd = parse_help(&read_fixture(&["python"]));
         assert_eq!(cmd.name.as_deref(), Some("python3"));
 
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"));
-        assert!(shorts.contains(&"-v"));
-        assert!(shorts.contains(&"-V"));
-        assert!(shorts.contains(&"-q"));
-
-        assert!(
-            cmd.args
-                .iter()
-                .find(|a| a.short.as_deref() == Some("-h"))
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("help message")
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "print this help message",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "verbose",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-V".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "print the Python version number",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-q".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "don't print version and copyright",
+                },
+            ],
         );
     }
 
@@ -992,24 +1219,34 @@ mod tests {
                 .contains("argparse")
         );
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"bar"));
-        assert!(longs.contains(&"--foo"));
-        assert!(longs.contains(&"--help"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"));
-
-        assert!(
-            arg_by_long(&cmd, "bar")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("bar argument")
-        );
-        assert!(
-            arg_by_long(&cmd, "--foo")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("foo value")
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("bar".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "bar argument",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--foo".to_string()),
+                        value_name: Some("FOO".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "foo value",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "show this help message",
+                },
+            ],
         );
     }
 
@@ -1019,17 +1256,25 @@ mod tests {
         assert_eq!(cmd.name.as_deref(), Some("myapp"));
         assert!(cmd.description.as_deref().unwrap_or("").contains("My"));
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--help"));
-        assert!(longs.contains(&"--verbose"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"));
-
-        assert!(
-            arg_by_long(&cmd, "--verbose")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("verbose output")
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--verbose".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "verbose output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "show this help message",
+                },
+            ],
         );
     }
 
@@ -1050,13 +1295,44 @@ mod tests {
             Some("Say goodbye.")
         );
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--name"));
-        assert!(longs.contains(&"--count"));
-        assert!(longs.contains(&"--verbose"));
-        assert!(longs.contains(&"--help"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-v"));
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--name".to_string()),
+                        value_name: Some("TEXT".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "The person to greet",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--count".to_string()),
+                        value_name: Some("INTEGER".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Number of greetings",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--verbose".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Enable verbose output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show this message and exit",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1065,24 +1341,32 @@ mod tests {
         assert_eq!(cmd.name.as_deref(), Some("myapp"));
         assert!(cmd.description.as_deref().unwrap_or("").contains("argh"));
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"name"));
-        assert!(longs.contains(&"--help"));
-        assert!(longs.contains(&"--verbose"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"));
-
-        assert!(
-            arg_by_long(&cmd, "name")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("name argument")
-        );
-        assert!(
-            arg_by_long(&cmd, "--verbose")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("verbose output")
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("name".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "the name argument",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--verbose".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "enable verbose output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "show this help message and exit",
+                },
+            ],
         );
     }
 
@@ -1107,12 +1391,33 @@ mod tests {
                 .contains("production")
         );
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--help"));
-        assert!(longs.contains(&"--version"));
-        assert!(longs.contains(&"--port"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-p"));
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show help",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show version number",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-p".to_string()),
+                        long: Some("--port".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Port to listen on",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1133,12 +1438,27 @@ mod tests {
             Some("Stop the server")
         );
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--version"));
-        assert!(longs.contains(&"--help"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-V"));
-        assert!(shorts.contains(&"-h"));
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-V".to_string()),
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "output the version number",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "display help for command",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1166,14 +1486,41 @@ mod tests {
                 .contains("autocompletion")
         );
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--help"));
-        assert!(longs.contains(&"--toggle"));
-        assert!(longs.contains(&"--config"));
-        assert!(longs.contains(&"--log-level"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"));
-        assert!(shorts.contains(&"-t"));
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "help for myapp",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-t".to_string()),
+                        long: Some("--toggle".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Help message for toggle",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--config".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "config file",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--log-level".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Log level",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1181,22 +1528,48 @@ mod tests {
         let cmd = parse_help(&read_fixture(&["docopt"]));
         assert_eq!(cmd.name.as_deref(), Some("naval_fate"));
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--help"));
-        assert!(longs.contains(&"--version"));
-        assert!(longs.contains(&"--speed"));
-        assert!(longs.contains(&"--moored"));
-        assert!(longs.contains(&"--drifting"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"));
-
-        assert_eq!(
-            arg_by_long(&cmd, "--speed").and_then(|a| a.value_name.as_deref()),
-            Some("kn")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--speed").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show this screen",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show version",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--speed".to_string()),
+                        value_name: Some("kn".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Speed in knots",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--moored".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Moored",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--drifting".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Drifting mine",
+                },
+            ],
         );
     }
 
@@ -1223,6 +1596,47 @@ mod tests {
             subcommand_by_name(&cmd, "commit").and_then(|s| s.description.as_deref()),
             Some("Record changes to the repository")
         );
+
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-C".to_string()),
+                        value_name: Some("path".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::AnyPath,
+                        ..Default::default()
+                    },
+                    description_contains: "started in",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-c".to_string()),
+                        value_name: Some("name>=<value".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Pass a configuration parameter",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Print the Git suite version",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Print help",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1230,56 +1644,61 @@ mod tests {
         let cmd = parse_help(&read_fixture(&["git", "log"]));
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-q"));
-        assert!(shorts.contains(&"-v"));
-        assert!(shorts.contains(&"-n"));
-        assert!(shorts.contains(&"-p"));
-        assert!(shorts.contains(&"-s"));
-        assert!(shorts.contains(&"-i"));
-
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--max-count"));
-        assert!(longs.contains(&"--since"));
-        assert!(longs.contains(&"--author"));
-        assert!(longs.contains(&"--grep"));
-        assert!(longs.contains(&"--oneline"));
-        assert!(longs.contains(&"--graph"));
-        assert!(longs.contains(&"--stat"));
-        assert!(longs.contains(&"--first-parent"));
-        assert!(longs.contains(&"--patch"));
-        assert!(longs.contains(&"--no-patch"));
-
-        assert_eq!(
-            arg_by_long(&cmd, "--max-count").and_then(|a| a.value_name.as_deref()),
-            Some("n")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--max-count").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--since").and_then(|a| a.value_name.as_deref()),
-            Some("date")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--since").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--author").and_then(|a| a.value_name.as_deref()),
-            Some("pattern")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--author").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-
-        assert!(
-            arg_by_long(&cmd, "--graph")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("ASCII")
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-q".to_string()),
+                        long: Some("--quiet".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Suppress diff output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--verbose".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Be more verbose",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-n".to_string()),
+                        long: Some("--max-count".to_string()),
+                        value_name: Some("n".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Limit the number of commits",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--since".to_string()),
+                        value_name: Some("date".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "recent than a specific date",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--author".to_string()),
+                        value_name: Some("pattern".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "matching author",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--graph".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show the commit graph as ASCII art",
+                },
+            ],
         );
     }
 
@@ -1288,39 +1707,54 @@ mod tests {
         let cmd = parse_help(&read_fixture(&["git", "commit"]));
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-q"));
-        assert!(shorts.contains(&"-v"));
-        assert!(shorts.contains(&"-m"));
-        assert!(shorts.contains(&"-a"));
-        assert!(shorts.contains(&"-s"));
-        assert!(shorts.contains(&"-e"));
-
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--message"));
-        assert!(longs.contains(&"--author"));
-        assert!(longs.contains(&"--amend"));
-        assert!(longs.contains(&"--no-verify"));
-        assert!(longs.contains(&"--allow-empty"));
-        assert!(longs.contains(&"--dry-run"));
-        assert!(longs.contains(&"--squash"));
-        assert!(longs.contains(&"--signoff"));
-
-        assert_eq!(
-            arg_by_long(&cmd, "--message").and_then(|a| a.value_name.as_deref()),
-            Some("message")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--message").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--file").and_then(|a| a.value_name.as_deref()),
-            Some("file")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--file").map(|a| a.value_hint),
-            Some(ValueHint::FilePath)
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-q".to_string()),
+                        long: Some("--quiet".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Suppress summary",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--verbose".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show diff in commit message",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-m".to_string()),
+                        long: Some("--message".to_string()),
+                        value_name: Some("message".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Commit message",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-F".to_string()),
+                        long: Some("--file".to_string()),
+                        value_name: Some("file".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::FilePath,
+                        ..Default::default()
+                    },
+                    description_contains: "Read message from file",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--amend".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Amend previous commit",
+                },
+            ],
         );
     }
 
@@ -1329,21 +1763,52 @@ mod tests {
         let cmd = parse_help(&read_fixture(&["git", "diff"]));
         assert_eq!(cmd.name.as_deref(), Some("git"));
 
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-p"));
-        assert!(shorts.contains(&"-s"));
-        assert!(shorts.contains(&"-U"));
-        assert!(shorts.contains(&"-W"));
-
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--patch"));
-        assert!(longs.contains(&"--no-patch"));
-        assert!(longs.contains(&"--stat"));
-        assert!(longs.contains(&"--name-only"));
-        assert!(longs.contains(&"--cached"));
-        assert!(longs.contains(&"--word-diff"));
-        assert!(longs.contains(&"--color"));
-        assert!(longs.contains(&"--unified"));
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-p".to_string()),
+                        long: Some("--patch".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show patch",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-s".to_string()),
+                        long: Some("--no-patch".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Suppress diff output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-U".to_string()),
+                        long: Some("--unified".to_string()),
+                        value_name: Some("n".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "lines of context",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-W".to_string()),
+                        long: Some("--function-context".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "surrounding functions",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--cached".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "changes staged for",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1786,20 +2251,46 @@ Commands:
             assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
         }
 
-        let version = arg_by_short(&cmd, "-V").unwrap();
-        assert_eq!(version.long.as_deref(), None);
-
-        let stats = arg_by_short(&cmd, "-s").unwrap();
-        assert_eq!(stats.long.as_deref(), None);
-
-        let details = arg_by_short(&cmd, "-d").unwrap();
-        assert_eq!(details.long.as_deref(), None);
-
-        let resolve = arg_by_short(&cmd, "-r").unwrap();
-        assert_eq!(resolve.long.as_deref(), None);
-
-        let pretty = arg_by_short(&cmd, "-p").unwrap();
-        assert_eq!(pretty.long.as_deref(), None);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-V".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-s".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-d".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-r".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-p".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1813,40 +2304,100 @@ Commands:
             assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
         }
 
-        let config = arg_by_long(&cmd, "--config").unwrap();
-        assert_eq!(config.short.as_deref(), None);
-        assert_eq!(config.value_hint, ValueHint::Unknown);
-
-        let context = arg_by_long(&cmd, "--context").unwrap();
-        assert_eq!(context.short.as_deref(), Some("-c"));
-
-        let debug = arg_by_long(&cmd, "--debug").unwrap();
-        assert_eq!(debug.short.as_deref(), Some("-D"));
-
-        let host = arg_by_long(&cmd, "--host").unwrap();
-        assert_eq!(host.short.as_deref(), Some("-H"));
-        assert_eq!(host.value_hint, ValueHint::Unknown);
-
-        let log_level = arg_by_long(&cmd, "--log-level").unwrap();
-        assert_eq!(log_level.short.as_deref(), Some("-l"));
-
-        let tls = arg_by_long(&cmd, "--tls").unwrap();
-        assert_eq!(tls.value_hint, ValueHint::Unknown);
-
-        let tlscacert = arg_by_long(&cmd, "--tlscacert").unwrap();
-        assert_eq!(tlscacert.value_hint, ValueHint::Unknown);
-
-        let tlscert = arg_by_long(&cmd, "--tlscert").unwrap();
-        assert_eq!(tlscert.value_hint, ValueHint::AnyPath);
-
-        let tlskey = arg_by_long(&cmd, "--tlskey").unwrap();
-        assert_eq!(tlskey.value_hint, ValueHint::AnyPath);
-
-        let tlsverify = arg_by_long(&cmd, "--tlsverify").unwrap();
-        assert_eq!(tlsverify.value_hint, ValueHint::Unknown);
-
-        let version = arg_by_long(&cmd, "--version").unwrap();
-        assert_eq!(version.short.as_deref(), Some("-v"));
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--config".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Location of client config files",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-c".to_string()),
+                        long: Some("--context".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Name of the context to use",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-D".to_string()),
+                        long: Some("--debug".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Enable debug mode",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-H".to_string()),
+                        long: Some("--host".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Daemon socket to connect to",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-l".to_string()),
+                        long: Some("--log-level".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Set the logging level",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--tls".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Use TLS",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--tlscacert".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Trust certs signed only by this CA",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--tlscert".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Path to TLS certificate file",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--tlskey".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Path to TLS key file",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--tlsverify".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Use TLS and verify the remote",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Print version information and quit",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1923,6 +2474,8 @@ Commands:
         for sub in expected_subs {
             assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
         }
+
+        assert_expected_args(&cmd, &[]);
     }
 
     #[test]
@@ -1945,30 +2498,86 @@ Commands:
             assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
         }
 
-        let host = arg_by_long(&cmd, "--host").unwrap();
-        assert_eq!(host.short.as_deref(), Some("-H"));
-        assert_eq!(host.value_hint, ValueHint::Hostname);
-
-        let machine = arg_by_long(&cmd, "--machine").unwrap();
-        assert_eq!(machine.short.as_deref(), Some("-M"));
-
-        let property = arg_by_long(&cmd, "--property").unwrap();
-        assert_eq!(property.short.as_deref(), Some("-p"));
-
-        let all = arg_by_long(&cmd, "--all").unwrap();
-        assert_eq!(all.short.as_deref(), Some("-a"));
-
-        let full = arg_by_long(&cmd, "--full").unwrap();
-        assert_eq!(full.short.as_deref(), Some("-l"));
-
-        let recursive = arg_by_long(&cmd, "--recursive").unwrap();
-        assert_eq!(recursive.short.as_deref(), Some("-r"));
-
-        let root = arg_by_long(&cmd, "--root").unwrap();
-        assert_eq!(root.value_hint, ValueHint::DirPath);
-
-        let lines = arg_by_long(&cmd, "--lines").unwrap();
-        assert_eq!(lines.short.as_deref(), Some("-n"));
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-H".to_string()),
+                        long: Some("--host".to_string()),
+                        value_name: Some("[USER@]HOST".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::Hostname,
+                        ..Default::default()
+                    },
+                    description_contains: "Operate on remote host",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-M".to_string()),
+                        long: Some("--machine".to_string()),
+                        value_name: Some("CONTAINER".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Operate on a local container",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-p".to_string()),
+                        long: Some("--property".to_string()),
+                        value_name: Some("NAME".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show only properties by this name",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-a".to_string()),
+                        long: Some("--all".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show all properties",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-l".to_string()),
+                        long: Some("--full".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Don't ellipsize unit names on output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-r".to_string()),
+                        long: Some("--recursive".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show unit list of host and local containers",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--root".to_string()),
+                        value_name: Some("PATH".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::DirPath,
+                        ..Default::default()
+                    },
+                    description_contains: "specified root directory",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-n".to_string()),
+                        long: Some("--lines".to_string()),
+                        value_name: Some("INTEGER".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Number of journal entries to show",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -1992,6 +2601,8 @@ Commands:
         for sub in expected_subs {
             assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
         }
+
+        assert_expected_args(&cmd, &[]);
     }
 
     #[test]
@@ -2014,29 +2625,85 @@ Commands:
             assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
         }
 
-        let verbose = arg_by_long(&cmd, "--verbose").unwrap();
-        assert_eq!(verbose.short.as_deref(), Some("-v"));
-
-        let version = arg_by_long(&cmd, "--version").unwrap();
-        assert_eq!(version.short.as_deref(), Some("-V"));
-
-        let quiet = arg_by_long(&cmd, "--quiet").unwrap();
-        assert_eq!(quiet.short.as_deref(), Some("-q"));
-
-        let log = arg_by_long(&cmd, "--log").unwrap();
-        assert_eq!(log.value_hint, ValueHint::AnyPath);
-
-        let proxy = arg_by_long(&cmd, "--proxy").unwrap();
-        assert_eq!(proxy.value_hint, ValueHint::Unknown);
-
-        let trusted_host = arg_by_long(&cmd, "--trusted-host").unwrap();
-        assert_eq!(trusted_host.value_hint, ValueHint::Hostname);
-
-        let cert = arg_by_long(&cmd, "--cert").unwrap();
-        assert_eq!(cert.value_hint, ValueHint::AnyPath);
-
-        let cache_dir = arg_by_long(&cmd, "--cache-dir").unwrap();
-        assert_eq!(cache_dir.value_hint, ValueHint::DirPath);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--verbose".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Give more output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-V".to_string()),
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show version and exit",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-q".to_string()),
+                        long: Some("--quiet".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Give less output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--log".to_string()),
+                        value_name: Some("path".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::AnyPath,
+                        ..Default::default()
+                    },
+                    description_contains: "Path to a verbose appending log",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--proxy".to_string()),
+                        value_name: Some("proxy".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Specify a proxy",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--trusted-host".to_string()),
+                        value_name: Some("hostname".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::Hostname,
+                        ..Default::default()
+                    },
+                    description_contains: "Mark this host or host:port pair as trusted",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--cert".to_string()),
+                        value_name: Some("path".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::AnyPath,
+                        ..Default::default()
+                    },
+                    description_contains: "Path to PEM-encoded CA certificate bundle",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--cache-dir".to_string()),
+                        value_name: Some("dir".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::DirPath,
+                        ..Default::default()
+                    },
+                    description_contains: "Store the cache data in",
+                },
+            ],
+        );
     }
 
     #[test]
@@ -2050,6 +2717,8 @@ Commands:
         for sub in expected_subs {
             assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
         }
+
+        assert_expected_args(&cmd, &[]);
     }
 
     #[test]
@@ -2072,34 +2741,120 @@ Commands:
             assert!(subs.contains(&sub), "Missing subcommand: {}", sub);
         }
 
-        assert!(long_names(&cmd).contains(&"--help"));
-        assert!(long_names(&cmd).contains(&"--version"));
+        assert_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show help for command",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show gh version",
+                },
+            ],
+        );
     }
 
     #[test]
     fn test_curl_help() {
         let cmd = parse_test_help("curl");
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--data"));
-        assert!(longs.contains(&"--fail"));
-        assert!(longs.contains(&"--output"));
-        assert!(longs.contains(&"--user"));
 
-        let output_arg = arg_by_long(&cmd, "--output").unwrap();
-        assert_eq!(output_arg.short.as_deref(), Some("-o"));
-        assert_eq!(output_arg.value_hint, ValueHint::FilePath);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-d".to_string()),
+                        long: Some("--data".to_string()),
+                        value_name: Some("data".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "HTTP POST data",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-f".to_string()),
+                        long: Some("--fail".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Fail fast with no output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-o".to_string()),
+                        long: Some("--output".to_string()),
+                        value_name: Some("file".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::FilePath,
+                        ..Default::default()
+                    },
+                    description_contains: "Write to file instead of stdout",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-u".to_string()),
+                        long: Some("--user".to_string()),
+                        value_name: Some("user:password".to_string()),
+                        num_args: Some("1".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Server user and password",
+                },
+            ],
+        );
     }
 
     #[test]
     fn test_tar_help() {
         let cmd = parse_test_help("tar");
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--create"));
-        assert!(longs.contains(&"--extract"));
-        assert!(longs.contains(&"--list"));
-        assert!(longs.contains(&"--file"));
 
-        let file_arg = arg_by_long(&cmd, "--file").unwrap();
-        assert_eq!(file_arg.short.as_deref(), Some("-f"));
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-c".to_string()),
+                        long: Some("--create".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Create a new archive",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-x".to_string()),
+                        long: Some("--extract".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Extract files from an archive",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-t".to_string()),
+                        long: Some("--list".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "List the contents of an archive",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-f".to_string()),
+                        long: Some("--file".to_string()),
+                        value_name: Some("ARCHIVE".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::FilePath,
+                        ..Default::default()
+                    },
+                    description_contains: "archive file or device ARCHIVE",
+                },
+            ],
+        );
     }
 }

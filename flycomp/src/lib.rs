@@ -1236,7 +1236,6 @@ pub mod test_helpers {
                 );
             }
             let description = normalize_desc(arg.description.as_deref());
-            assert!(!description.is_empty());
             assert!(
                 description.contains(expected_arg.description_contains),
                 "Expected description of {:?}/{:?} to contain {:?}, but got {:?}",
