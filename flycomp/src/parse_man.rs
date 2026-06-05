@@ -1181,6 +1181,7 @@ None documented.
                         long: Some("--output".to_string()),
                         value_name: Some("file".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "chosen file path",
@@ -1191,6 +1192,7 @@ None documented.
                         long: Some("--debug".to_string()),
                         value_name: Some("debug-file".to_string()),
                         num_args: Some("?".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "optionally write traces",
@@ -1221,6 +1223,7 @@ None documented.
                         long: None,
                         value_name: Some("input-file".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "instead of stdin",
@@ -1261,6 +1264,7 @@ None documented.
                         long: None,
                         value_name: Some("bind_address".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::Hostname,
                         ..Default::default()
                     },
                     description_contains: "before opening the remote session",
@@ -1301,6 +1305,7 @@ None documented.
                         long: Some("--path".to_string()),
                         value_name: Some("PATH".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::AnyPath,
                         ..Default::default()
                     },
                     description_contains: "Read files from PATH",
@@ -1344,6 +1349,7 @@ None documented.
                     long: None,
                     value_name: Some("<path>".to_string()),
                     num_args: Some("1".to_string()),
+                    value_hint: crate::ValueHint::DirPath,
                     ..Default::default()
                 },
                 description_contains: "instead of the current working directory",
@@ -1457,6 +1463,7 @@ None documented.
                         long: Some("--reference".to_string()),
                         value_name: Some("RFILE".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "use RFILE's mode",
@@ -1518,6 +1525,7 @@ None documented.
                         long: Some("--reference".to_string()),
                         value_name: Some("RFILE".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "use RFILE's owner and group",
@@ -1590,6 +1598,7 @@ None documented.
                         long: Some("--file".to_string()),
                         value_name: Some("program-file".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "program source from the file",
@@ -1661,6 +1670,7 @@ None documented.
                         long: Some("--file".to_string()),
                         value_name: Some("FILE".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "Obtain patterns from FILE",
@@ -1824,6 +1834,7 @@ None documented.
                         long: Some("--target-directory".to_string()),
                         value_name: Some("DIRECTORY".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::DirPath,
                         ..Default::default()
                     },
                     description_contains: "move all SOURCE arguments into DIRECTORY",
@@ -2023,6 +2034,7 @@ None documented.
                         long: Some("--output-file".to_string()),
                         value_name: Some("logfile".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "Log all messages to logfile",
@@ -2043,6 +2055,7 @@ None documented.
                         long: Some("--load-cookies".to_string()),
                         value_name: Some("file".to_string()),
                         num_args: Some("1".to_string()),
+                        value_hint: crate::ValueHint::FilePath,
                         ..Default::default()
                     },
                     description_contains: "Load cookies from file before the first HTTP retrieval",
@@ -2124,6 +2137,7 @@ None documented.
                     long: None,
                     value_name: Some("bind_address".to_string()),
                     num_args: Some("1".to_string()),
+                    value_hint: crate::ValueHint::Hostname,
                     ..Default::default()
                 },
                 description_contains: "source address",
@@ -3168,7 +3182,7 @@ Use asynchronous IO.
                         value_name: Some("ARCHIVE".to_string()),
                         num_args: Some("1".to_string()),
                         value_enum: None,
-                        value_hint: crate::ValueHint::Unknown,
+                        value_hint: crate::ValueHint::FilePath,
                         description: None,
                     },
                     description_contains: "archive file or device ARCHIVE",

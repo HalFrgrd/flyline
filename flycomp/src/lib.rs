@@ -228,7 +228,11 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
     if name_contains("email") {
         return ValueHint::EmailAddress;
     }
-    if name_contains("hostname") || name_contains("host") || name_contains("domain") {
+    if name_contains("hostname")
+        || name_contains("host")
+        || name_contains("domain")
+        || name_contains("address")
+    {
         return ValueHint::Hostname;
     }
     if name_contains("username") || name_contains("user_name") || name_contains("user-name") {
@@ -243,13 +247,14 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
     if name_contains("dir") || name_contains("directory") || name_contains("folder") {
         return ValueHint::DirPath;
     }
-    // Dict, Log, and File are FilePaths
+    // Dict, Log, Archive, and File are FilePaths
     if name_contains("file")
         || name_contains("filename")
         || name_contains("filepath")
         || name_contains("dict")
         || name_contains("dictionary")
         || name_contains("log")
+        || name_contains("archive")
     {
         // Exclude "level" to avoid "log-level" or "log_level" matching file
         if !name_contains("level") {
@@ -257,6 +262,15 @@ pub fn extract_value_hint(value_name: Option<&str>, description: Option<&str>) -
         }
     }
     if name_contains("path") {
+        if desc_contains("directory") || desc_contains("folder") {
+            return ValueHint::DirPath;
+        }
+        if desc_contains("file") && !desc_contains("files") {
+            return ValueHint::FilePath;
+        }
+        return ValueHint::AnyPath;
+    }
+    if name_contains("unix:") || name_contains("socket") {
         return ValueHint::AnyPath;
     }
 

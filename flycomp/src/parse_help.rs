@@ -1455,93 +1455,106 @@ Options:
         assert!(long_names(remote_set_url).contains(&"--delete"));
     }
 
-    const READELF_HELP: &str = r#"Usage: readelf <option(s)> elf-file(s)
- Display information about the contents of ELF format files
- Options are:
-  -a --all               Equivalent to: -h -l -S -s -r -d -V -A -I
-  -h --file-header       Display the ELF file header
-  -l --program-headers   Display the program headers
-     --segments          An alias for --program-headers
-  -S --section-headers   Display the sections' header
-     --sections          An alias for --section-headers
-  -g --section-groups    Display the section groups
-  -t --section-details   Display the section details
-  -e --headers           Equivalent to: -h -l -S
-  -s --syms              Display the symbol table
-     --symbols           An alias for --syms
-     --dyn-syms          Display the dynamic symbol table
-     --lto-syms          Display LTO symbol tables
-     --sym-base=[0|8|10|16] 
-                         Force base for symbol sizes.  The options are 
-                         mixed (the default), octal, decimal, hexadecimal.
-  -C --demangle[=STYLE]  Decode mangled/processed symbol names
-                           STYLE can be "none", "auto", "gnu-v3", "java",
-                           "gnat", "dlang", "rust"
-     --no-demangle       Do not demangle low-level symbol names.  (default)
-     --recurse-limit     Enable a demangling recursion limit.  (default)
-     --no-recurse-limit  Disable a demangling recursion limit
-  -n --notes             Display the contents of note sections (if present)
-  -r --relocs            Display the relocations (if present)
-  -u --unwind            Display the unwind info (if present)
-  -d --dynamic           Display the dynamic section (if present)
-  -V --version-info      Display the version sections (if present)
-  -A --arch-specific     Display architecture specific information (if any)
-  -c --archive-index     Display the symbol/file index in an archive
-  -D --use-dynamic       Use the dynamic section info when displaying symbols
-  -L --lint|--enable-checks
-                         Display warning messages for possible problems
-  -x --hex-dump=<number|name>
-                         Dump the contents of section <number|name> as bytes
-  -p --string-dump=<number|name>
-                         Dump the contents of section <number|name> as strings
-  -R --relocated-dump=<number|name>
-                         Dump the relocated contents of section <number|name>
-  -z --decompress        Decompress section before dumping it
-  -I --histogram         Display histogram of bucket list lengths
-  -W --wide              Allow output width to exceed 80 characters
-  -T --silent-truncation If a symbol name is truncated, do not add [...] suffix
-  -H --help              Display this information
-  -v --version           Display the version number of readelf
-Report bugs to <https://sourceware.org/bugzilla/>
-"#;
-
     #[test]
     fn test_readelf_help() {
-        let cmd = parse_help(READELF_HELP);
+        let cmd = parse_test_help("readelf");
         assert_eq!(cmd.name.as_deref(), Some("readelf"));
 
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-a"));
-        assert!(shorts.contains(&"-h"));
-        assert!(shorts.contains(&"-l"));
-        assert!(shorts.contains(&"-S"));
-        assert!(shorts.contains(&"-r"));
-        assert!(shorts.contains(&"-d"));
-        assert!(shorts.contains(&"-n"));
-        assert!(shorts.contains(&"-W"));
-        assert!(shorts.contains(&"-H"));
-        assert!(shorts.contains(&"-v"));
-
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--all"));
-        assert!(longs.contains(&"--file-header"));
-        assert!(longs.contains(&"--program-headers"));
-        assert!(longs.contains(&"--section-headers"));
-        assert!(longs.contains(&"--relocs"));
-        assert!(longs.contains(&"--dynamic"));
-        assert!(longs.contains(&"--notes"));
-        assert!(longs.contains(&"--wide"));
-        assert!(longs.contains(&"--help"));
-        assert!(longs.contains(&"--version"));
-        assert!(longs.contains(&"--hex-dump"));
-
-        assert_eq!(
-            arg_by_long(&cmd, "--hex-dump").and_then(|a| a.value_name.as_deref()),
-            Some("number|name")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--hex-dump").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-a".to_string()),
+                        long: Some("--all".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Equivalent to",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--file-header".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Display the ELF file header",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-l".to_string()),
+                        long: Some("--program-headers".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Display the program headers",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-S".to_string()),
+                        long: Some("--section-headers".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Display the sections' header",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-r".to_string()),
+                        long: Some("--relocs".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Display the relocations",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-d".to_string()),
+                        long: Some("--dynamic".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Display the dynamic section",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-n".to_string()),
+                        long: Some("--notes".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Display the contents of note sections",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-W".to_string()),
+                        long: Some("--wide".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Allow output width to exceed",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-H".to_string()),
+                        long: Some("--help".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Display this information",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Display the version number",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-x".to_string()),
+                        long: Some("--hex-dump".to_string()),
+                        value_name: Some("number|name".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Dump the contents of section",
+                },
+            ],
         );
     }
 
@@ -1563,115 +1576,7 @@ Report bugs to <https://sourceware.org/bugzilla/>
     }
     #[test]
     fn test_zstd_help() {
-        const HELP: &str = r#"*** Zstandard CLI (64-bit) v1.5.5, by Yann Collet ***
-
-Compress or decompress the INPUT file(s); reads from STDIN if INPUT is `-` or not provided.
-
-Usage: zstd [OPTIONS...] [INPUT... | -] [-o OUTPUT]
-
-Options:
-  -o OUTPUT                     Write output to a single file, OUTPUT.
-  -k, --keep                    Preserve INPUT file(s). [Default]
-  --rm                          Remove INPUT file(s) after successful (de)compression.
-  -#                            Desired compression level, where `#` is a number between 1 and 19;
-                                lower numbers provide faster compression, higher numbers yield
-                                better compression ratios. [Default: 3]
-
-  -d, --decompress              Perform decompression.
-  -D DICT                       Use DICT as the dictionary for compression or decompression.
-
-  -f, --force                   Disable input and output checks. Allows overwriting existing files,
-                                receiving input from the console, printing output to STDOUT, and
-                                operating on links, block devices, etc. Unrecognized formats will be
-                                passed-through through as-is.
-
-  -h                            Display short usage and exit.
-  -H, --help                    Display full help and exit.
-  -V, --version                 Display the program version and exit.
-
-Advanced options:
-  -c, --stdout                  Write to STDOUT (even if it is a console) and keep the INPUT file(s).
-
-  -v, --verbose                 Enable verbose output; pass multiple times to increase verbosity.
-  -q, --quiet                   Suppress warnings; pass twice to suppress errors.
-  --trace LOG                   Log tracing information to LOG.
-
-  --[no-]progress               Forcibly show/hide the progress counter. NOTE: Any (de)compressed
-                                output to terminal will mix with progress counter text.
-
-  -r                            Operate recursively on directories.
-  --filelist LIST               Read a list of files to operate on from LIST.
-  --output-dir-flat DIR         Store processed files in DIR.
-  --output-dir-mirror DIR       Store processed files in DIR, respecting original directory structure.
-  --[no-]asyncio                Use asynchronous IO. [Default: Enabled]
-
-  --[no-]check                  Add XXH64 integrity checksums during compression. [Default: Add, Validate]
-                                If `-d` is present, ignore/validate checksums during decompression.
-
-  --                            Treat remaining arguments after `--` as files.
-
-Advanced compression options:
-  --ultra                       Enable levels beyond 19, up to 22; requires more memory.
-  --fast[=#]                    Use to very fast compression levels. [Default: 1]
-  --adapt                       Dynamically adapt compression level to I/O conditions.
-  --long[=#]                    Enable long distance matching with window log #. [Default: 27]
-  --patch-from=REF              Use REF as the reference point for Zstandard's diff engine.
-
-  -T#                           Spawn # compression threads. [Default: 1; pass 0 for core count.]
-  --single-thread               Share a single thread for I/O and compression (slightly different than `-T1`).
-  --auto-threads={physical|logical}
-                                Use physical/logical cores when using `-T0`. [Default: Physical]
-
-  -B#                           Set job size to #. [Default: 0 (automatic)]
-  --rsyncable                   Compress using a rsync-friendly method (`-B` sets block size).
-
-  --exclude-compressed          Only compress files that are not already compressed.
-
-  --stream-size=#               Specify size of streaming input from STDIN.
-  --size-hint=#                 Optimize compression parameters for streaming input of approximately size #.
-  --target-compressed-block-size=#
-                                Generate compressed blocks of approximately # size.
-
-  --no-dictID                   Don't write `dictID` into the header (dictionary compression only).
-  --[no-]compress-literals      Force (un)compressed literals.
-  --[no-]row-match-finder       Explicitly enable/disable the fast, row-based matchfinder for
-                                the 'greedy', 'lazy', and 'lazy2' strategies.
-
-  --format=zstd                 Compress files to the `.zst` format. [Default]
-  --mmap-dict                   Memory-map dictionary file rather than mallocing and loading all at once  --format=gzip                 Compress files to the `.gz` format.
-  --format=xz                   Compress files to the `.xz` format.
-  --format=lzma                 Compress files to the `.lzma` format.
-  --format=lz4                 Compress files to the `.lz4` format.
-
-Advanced decompression options:
-  -l                            Print information about Zstandard-compressed files.
-  --test                        Test compressed file integrity.
-  -M#                           Set the memory usage limit to # megabytes.
-  --[no-]sparse                 Enable sparse mode. [Default: Enabled for files, disabled for STDOUT.]
-  --[no-]pass-through           Pass through uncompressed files as-is. [Default: Disabled]
-
-Dictionary builder:
-  --train                       Create a dictionary from a training set of files.
-
-  --train-cover[=k=#,d=#,steps=#,split=#,shrink[=#]]
-                                Use the cover algorithm (with optional arguments).
-  --train-fastcover[=k=#,d=#,f=#,steps=#,split=#,accel=#,shrink[=#]]
-                                Use the fast cover algorithm (with optional arguments).
-
-  --train-legacy[=s=#]          Use the legacy algorithm with selectivity #. [Default: 9]
-  -o NAME                       Use NAME as dictionary name. [Default: dictionary]
-  --maxdict=#                   Limit dictionary to specified size #. [Default: 112640]
-  --dictID=#                    Force dictionary ID to #. [Default: Random]
-
-Benchmark options:
-  -b#                           Perform benchmarking with compression level #. [Default: 3]
-  -e#                           Test all compression levels up to #; starting level is `-b#`. [Default: 1]
-  -i#                           Set the minimum evaluation to time # seconds. [Default: 3]
-  -B#                           Cut file into independent chunks of size #. [Default: No chunking]
-  -S                            Output one benchmark result per input file. [Default: Consolidated result]
-  --priority=rt                 Set process priority to real-time.
-"#;
-        let cmd = parse_help(HELP);
+        let cmd = parse_test_help("zstd");
 
         // Check overall commands info
         assert_eq!(
@@ -1681,113 +1586,93 @@ Benchmark options:
             )
         );
 
-        let args = &cmd.args;
-
-        // Assertions on various options to ensure correct parsing
-        let o_arg = args
-            .iter()
-            .find(|a| a.short.as_deref() == Some("-o") && a.value_name.as_deref() == Some("OUTPUT"))
-            .unwrap();
-        assert!(
-            o_arg
-                .description
-                .as_ref()
-                .unwrap()
-                .contains("Write output to a single file")
-        );
-
-        let keep_arg = args
-            .iter()
-            .find(|a| a.long.as_deref() == Some("--keep"))
-            .unwrap();
-        assert_eq!(keep_arg.short.as_deref(), Some("-k"));
-        assert!(
-            keep_arg
-                .description
-                .as_ref()
-                .unwrap()
-                .contains("Preserve INPUT file(s)")
-        );
-
-        let rm_arg = args
-            .iter()
-            .find(|a| a.long.as_deref() == Some("--rm"))
-            .unwrap();
-        assert!(
-            rm_arg
-                .description
-                .as_ref()
-                .unwrap()
-                .contains("Remove INPUT file(s) after successful")
-        );
-
-        let level_arg = args
-            .iter()
-            .find(|a| a.short.as_deref() == Some("-#") || a.long.as_deref() == Some("-#"))
-            .unwrap();
-        assert!(
-            level_arg
-                .description
-                .as_ref()
-                .unwrap()
-                .contains("Desired compression level")
-        );
-
-        let dict_arg = args
-            .iter()
-            .find(|a| a.short.as_deref() == Some("-D"))
-            .unwrap();
-        assert_eq!(dict_arg.value_name.as_deref(), Some("DICT"));
-        assert_eq!(dict_arg.value_hint, ValueHint::FilePath);
-
-        let trace_arg = args
-            .iter()
-            .find(|a| a.long.as_deref() == Some("--trace"))
-            .unwrap();
-        assert_eq!(trace_arg.value_name.as_deref(), Some("LOG"));
-        assert_eq!(trace_arg.value_hint, ValueHint::FilePath);
-
-        let format_arg = args
-            .iter()
-            .find(|a| a.long.as_deref() == Some("--format"))
-            .unwrap();
-        assert_eq!(format_arg.value_name.as_deref(), Some("zstd"));
-        assert_eq!(format_arg.value_hint, ValueHint::Unknown);
-
-        let test_arg = args
-            .iter()
-            .find(|a| a.long.as_deref() == Some("--test"))
-            .unwrap();
-        assert!(
-            test_arg
-                .description
-                .as_ref()
-                .unwrap()
-                .contains("Test compressed file integrity")
-        );
-
-        let train_arg = args
-            .iter()
-            .find(|a| a.long.as_deref() == Some("--train"))
-            .unwrap();
-        assert!(
-            train_arg
-                .description
-                .as_ref()
-                .unwrap()
-                .contains("Create a dictionary from a training set")
-        );
-
-        let threads_arg = args
-            .iter()
-            .find(|a| a.short.as_deref() == Some("-T#"))
-            .unwrap();
-        assert!(
-            threads_arg
-                .description
-                .as_ref()
-                .unwrap()
-                .contains("Spawn # compression threads")
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-o".to_string()),
+                        value_name: Some("OUTPUT".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::FilePath,
+                        ..Default::default()
+                    },
+                    description_contains: "Write output to a single file",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-k".to_string()),
+                        long: Some("--keep".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Preserve INPUT file(s)",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--rm".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Remove INPUT file(s) after successful",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-#".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Desired compression level",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-D".to_string()),
+                        value_name: Some("DICT".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::FilePath,
+                        ..Default::default()
+                    },
+                    description_contains: "Use DICT as the dictionary",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--trace".to_string()),
+                        value_name: Some("LOG".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::FilePath,
+                        ..Default::default()
+                    },
+                    description_contains: "Log tracing information to LOG",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--format".to_string()),
+                        value_name: Some("zstd".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_hint: ValueHint::Unknown,
+                        ..Default::default()
+                    },
+                    description_contains: "Compress files to the",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--test".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Test compressed file integrity",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--train".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Create a dictionary from a training set",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-T#".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Spawn # compression threads",
+                },
+            ],
         );
     }
 
@@ -2080,7 +1965,7 @@ Commands:
         assert_eq!(recursive.short.as_deref(), Some("-r"));
 
         let root = arg_by_long(&cmd, "--root").unwrap();
-        assert_eq!(root.value_hint, ValueHint::AnyPath);
+        assert_eq!(root.value_hint, ValueHint::DirPath);
 
         let lines = arg_by_long(&cmd, "--lines").unwrap();
         assert_eq!(lines.short.as_deref(), Some("-n"));
