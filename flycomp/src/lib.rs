@@ -1126,6 +1126,149 @@ pub fn generate_completion_output(
 }
 
 #[cfg(test)]
+pub mod test_helpers {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    pub struct ExpectedArg<'a> {
+        pub arg: Arg,
+        pub description_contains: &'a str,
+    }
+
+    pub fn normalize_desc(desc: Option<&str>) -> String {
+        desc.unwrap_or("")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    pub fn find_arg<'a>(cmd: &'a Command, expected: &ExpectedArg<'_>) -> &'a Arg {
+        cmd.args
+            .iter()
+            .find(|arg| arg.short == expected.arg.short && arg.long == expected.arg.long)
+            .or_else(|| {
+                cmd.args.iter().find(|arg| {
+                    (expected.arg.short.is_some() && arg.short == expected.arg.short)
+                        || (expected.arg.long.is_some() && arg.long == expected.arg.long)
+                })
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "Could not find argument matching expected: short={:?}, long={:?}",
+                    expected.arg.short, expected.arg.long
+                );
+            })
+    }
+
+    pub fn assert_expected_args(cmd: &Command, expected: &[ExpectedArg<'_>]) {
+        assert_eq!(
+            cmd.args.len(),
+            expected.len(),
+            "Number of arguments mismatch: expected {}, got {}. Args in cmd: {:#?}",
+            expected.len(),
+            cmd.args.len(),
+            cmd.args
+        );
+        assert_contains_expected_args(cmd, expected);
+    }
+
+    pub fn assert_contains_expected_args(cmd: &Command, expected: &[ExpectedArg<'_>]) {
+        for expected_arg in expected {
+            let arg = find_arg(cmd, expected_arg);
+            assert_eq!(
+                arg.short, expected_arg.arg.short,
+                "short mismatch for arg {:?}",
+                expected_arg.arg
+            );
+            assert_eq!(
+                arg.long, expected_arg.arg.long,
+                "long mismatch for arg {:?}",
+                expected_arg.arg
+            );
+            assert_eq!(
+                arg.value_name, expected_arg.arg.value_name,
+                "value_name mismatch for arg {:?}",
+                expected_arg.arg
+            );
+            assert_eq!(
+                arg.num_args, expected_arg.arg.num_args,
+                "num_args mismatch for arg {:?}",
+                expected_arg.arg
+            );
+            if expected_arg.arg.value_hint != ValueHint::Unknown {
+                assert_eq!(
+                    arg.value_hint, expected_arg.arg.value_hint,
+                    "value_hint mismatch for arg {:?}",
+                    expected_arg.arg
+                );
+            } else {
+                assert_eq!(
+                    arg.value_hint,
+                    crate::extract_value_hint(
+                        arg.value_name.as_deref(),
+                        arg.description.as_deref()
+                    ),
+                    "ValueHint mismatch for arg {:?} / {:?}",
+                    arg.short,
+                    arg.long
+                );
+            }
+            if let Some(expected_enum) = &expected_arg.arg.value_enum {
+                assert_eq!(
+                    arg.value_enum.as_ref(),
+                    Some(expected_enum),
+                    "value_enum mismatch for arg {:?}",
+                    expected_arg.arg
+                );
+            }
+            let description = normalize_desc(arg.description.as_deref());
+            assert!(!description.is_empty());
+            assert!(
+                description.contains(expected_arg.description_contains),
+                "Expected description of {:?}/{:?} to contain {:?}, but got {:?}",
+                expected_arg.arg.short,
+                expected_arg.arg.long,
+                expected_arg.description_contains,
+                description
+            );
+        }
+    }
+
+    pub fn assert_expected_subcommands(cmd: &Command, expected: &[(&str, &str)]) {
+        assert_eq!(
+            cmd.subcommands.len(),
+            expected.len(),
+            "Number of subcommands mismatch: expected {}, got {}. Subcommands: {:#?}",
+            expected.len(),
+            cmd.subcommands.len(),
+            cmd.subcommands
+        );
+        assert_contains_subcommands(cmd, expected);
+    }
+
+    pub fn assert_contains_subcommands(cmd: &Command, expected: &[(&str, &str)]) {
+        for (name, description_contains) in expected {
+            let subcommand = cmd
+                .subcommands
+                .iter()
+                .find(|subcommand| subcommand.name.as_deref() == Some(*name))
+                .unwrap_or_else(|| {
+                    panic!("Could not find subcommand matching: {:?}", name);
+                });
+            let description = normalize_desc(subcommand.description.as_deref());
+            assert!(!description.is_empty());
+            assert!(
+                description.contains(description_contains),
+                "Expected subcommand {:?} description to contain {:?}, but got {:?}",
+                name,
+                description_contains,
+                description
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

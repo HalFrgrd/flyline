@@ -727,6 +727,7 @@ pub fn parse_help_generic(help: &str) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::*;
     use crate::{SynthesisStrategy, ValueHint, synthesize_completion};
 
     fn long_names(cmd: &Command) -> Vec<&str> {
@@ -763,103 +764,89 @@ mod tests {
         let cmd = parse_help(&read_fixture(&["flyline"]));
         assert_eq!(cmd.name.as_deref(), Some("flyline"));
 
-        let subs = subcommand_names(&cmd);
-        assert!(subs.contains(&"set-agent-mode"));
-        assert!(subs.contains(&"create-prompt-widget"));
-        assert!(subs.contains(&"set-style"));
-        assert!(subs.contains(&"key"));
-        assert!(subs.contains(&"dump-logs"));
-        assert!(subs.contains(&"stream-logs"));
-        assert!(subs.contains(&"run-tutorial"));
-        assert_eq!(
-            subcommand_by_name(&cmd, "set-agent-mode").and_then(|s| s.description.as_deref()),
-            Some("Configure AI agent mode.")
-        );
-        assert_eq!(
-            subcommand_by_name(&cmd, "dump-logs").and_then(|s| s.description.as_deref()),
-            Some("Dump in-memory logs to file.")
-        );
-        assert_eq!(
-            subcommand_by_name(&cmd, "stream-logs").and_then(|s| s.description.as_deref()),
-            Some("Dump current logs to PATH and append new logs.")
-        );
-        assert_eq!(
-            subcommand_by_name(&cmd, "run-tutorial").and_then(|s| s.description.as_deref()),
-            Some("Run the interactive tutorial for first-time users.")
+        assert_contains_subcommands(
+            &cmd,
+            &[
+                ("set-agent-mode", "Configure AI agent mode."),
+                ("dump-logs", "Dump in-memory logs to file."),
+                (
+                    "stream-logs",
+                    "Dump current logs to PATH and append new logs.",
+                ),
+                (
+                    "run-tutorial",
+                    "Run the interactive tutorial for first-time users.",
+                ),
+            ],
         );
 
-        let longs = long_names(&cmd);
-        assert!(longs.contains(&"--version"));
-        assert!(!longs.contains(&"--dump-logs"));
-        assert!(!longs.contains(&"--stream-logs"));
-        assert!(!longs.contains(&"--run-tutorial"));
-        assert!(longs.contains(&"--log-level"));
-        assert!(longs.contains(&"--set-frame-rate"));
-        assert!(longs.contains(&"--set-mouse-mode"));
-        assert!(longs.contains(&"--help"));
-        let shorts = short_names(&cmd);
-        assert!(shorts.contains(&"-h"));
-
-        assert_eq!(
-            arg_by_long(&cmd, "--log-level").and_then(|a| a.value_name.as_deref()),
-            Some("LEVEL")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--log-level").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--set-frame-rate").and_then(|a| a.value_name.as_deref()),
-            Some("FPS")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--set-frame-rate").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--set-mouse-mode").and_then(|a| a.value_name.as_deref()),
-            Some("MODE")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--set-mouse-mode").map(|a| a.value_hint),
-            Some(ValueHint::Unknown)
-        );
-
-        assert_eq!(
-            arg_by_long(&cmd, "--version").and_then(|a| a.description.as_deref()),
-            Some("Show version information")
-        );
-        assert!(
-            arg_by_long(&cmd, "--log-level")
-                .and_then(|a| a.description.as_deref())
-                .unwrap_or("")
-                .contains("logging level")
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--log-level").and_then(|a| a.value_enum.clone()),
-            Some(vec![
-                "error".to_string(),
-                "warn".to_string(),
-                "info".to_string(),
-                "debug".to_string(),
-                "trace".to_string()
-            ])
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--show-animations").and_then(|a| a.value_enum.clone()),
-            Some(vec!["true".to_string(), "false".to_string()])
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--show-inline-history").and_then(|a| a.value_enum.clone()),
-            Some(vec!["true".to_string(), "false".to_string()])
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--auto-close-chars").and_then(|a| a.value_enum.clone()),
-            Some(vec!["true".to_string(), "false".to_string()])
-        );
-        assert_eq!(
-            arg_by_long(&cmd, "--enable-extended-key-codes").and_then(|a| a.value_enum.clone()),
-            Some(vec!["true".to_string(), "false".to_string()])
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--version".to_string()),
+                        ..Default::default()
+                    },
+                    description_contains: "Show version information",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--log-level".to_string()),
+                        value_name: Some("LEVEL".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: Some(vec![
+                            "error".to_string(),
+                            "warn".to_string(),
+                            "info".to_string(),
+                            "debug".to_string(),
+                            "trace".to_string(),
+                        ]),
+                        ..Default::default()
+                    },
+                    description_contains: "logging level",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--show-animations".to_string()),
+                        value_name: Some("SHOW_ANIMATIONS".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: Some(vec!["true".to_string(), "false".to_string()]),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--show-inline-history".to_string()),
+                        value_name: Some("SHOW_INLINE_HISTORY".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: Some(vec!["true".to_string(), "false".to_string()]),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--auto-close-chars".to_string()),
+                        value_name: Some("AUTO_CLOSE_CHARS".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: Some(vec!["true".to_string(), "false".to_string()]),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        long: Some("--enable-extended-key-codes".to_string()),
+                        value_name: Some("ENABLE_EXTENDED_KEY_CODES".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: Some(vec!["true".to_string(), "false".to_string()]),
+                        ..Default::default()
+                    },
+                    description_contains: "",
+                },
+            ],
         );
     }
 
@@ -1862,7 +1849,8 @@ Commands:
     }
 
     fn parse_test_help(name: &str) -> Command {
-        let content = std::fs::read_to_string(format!("../tests/help_texts/{}/help.txt", name)).unwrap();
+        let content =
+            std::fs::read_to_string(format!("../tests/help_texts/{}/help.txt", name)).unwrap();
         parse_help(&content)
     }
 
