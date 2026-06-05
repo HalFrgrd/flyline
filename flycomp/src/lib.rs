@@ -750,6 +750,40 @@ where
     Ok(synthesize_completion_with(command_path, &help_runner, strategy)?.command)
 }
 
+fn merge_commands(help_cmd: Command, man_cmd: Command) -> Command {
+    let mut merged = help_cmd.clone();
+
+    if merged.description.is_none() {
+        merged.description = man_cmd.description.clone();
+    }
+
+    for arg in &mut merged.args {
+        if let Some(man_arg) = man_cmd.args.iter().find(|a| {
+            (a.long.is_some() && a.long == arg.long) || (a.short.is_some() && a.short == arg.short)
+        }) {
+            if arg.description.is_none()
+                || arg.description.as_deref().unwrap_or("").trim().is_empty()
+            {
+                arg.description = man_arg.description.clone();
+            }
+            if arg.value_enum.is_none() {
+                arg.value_enum = man_arg.value_enum.clone();
+            }
+            if arg.value_hint == ValueHint::Unknown {
+                arg.value_hint = man_arg.value_hint;
+            }
+        }
+    }
+
+    for sub in &mut merged.subcommands {
+        if let Some(man_sub) = man_cmd.subcommands.iter().find(|s| s.name == sub.name) {
+            *sub = merge_commands(sub.clone(), man_sub.clone());
+        }
+    }
+
+    merged
+}
+
 fn synthesize_completion_with<F>(
     command_path: &str,
     help_runner: &F,
@@ -768,10 +802,16 @@ where
             strategy_used: SynthesisMethod::ManPage,
         }),
         SynthesisStrategy::ManPageThenRunHelp => match load_manpage_command(command_path) {
-            Ok(command) => Ok(SynthesisOutcome {
-                command,
-                strategy_used: SynthesisMethod::ManPage,
-            }),
+            Ok(man_command) => match synthesize_from_help(command_path, help_runner) {
+                Ok(help_command) => Ok(SynthesisOutcome {
+                    command: merge_commands(help_command, man_command),
+                    strategy_used: SynthesisMethod::ManPage,
+                }),
+                Err(_) => Ok(SynthesisOutcome {
+                    command: man_command,
+                    strategy_used: SynthesisMethod::ManPage,
+                }),
+            },
             Err(error) => {
                 log::debug!(
                     "flycomp: falling back to --help for '{}': {}",
@@ -1912,20 +1952,87 @@ Options:
     fn test_extract_value_hint() {
         // Test URL
         assert_eq!(extract_value_hint(Some("url"), None), ValueHint::Url);
-        assert_eq!(extract_value_hint(None, Some("the API endpoint")), ValueHint::Url);
+        assert_eq!(
+            extract_value_hint(None, Some("the API endpoint")),
+            ValueHint::Url
+        );
 
         // Test Hostname
         assert_eq!(extract_value_hint(Some("host"), None), ValueHint::Hostname);
-        assert_eq!(extract_value_hint(None, Some("bind to the server ip address")), ValueHint::Hostname);
-        assert_eq!(extract_value_hint(None, Some("target host remote name")), ValueHint::Hostname);
+        assert_eq!(
+            extract_value_hint(None, Some("bind to the server ip address")),
+            ValueHint::Hostname
+        );
+        assert_eq!(
+            extract_value_hint(None, Some("target host remote name")),
+            ValueHint::Hostname
+        );
 
         // Test ExecutablePath
-        assert_eq!(extract_value_hint(Some("executable"), None), ValueHint::ExecutablePath);
-        assert_eq!(extract_value_hint(None, Some("path to executable command")), ValueHint::ExecutablePath);
-        assert_eq!(extract_value_hint(None, Some("path to binary")), ValueHint::ExecutablePath);
+        assert_eq!(
+            extract_value_hint(Some("executable"), None),
+            ValueHint::ExecutablePath
+        );
+        assert_eq!(
+            extract_value_hint(None, Some("path to executable command")),
+            ValueHint::ExecutablePath
+        );
+        assert_eq!(
+            extract_value_hint(None, Some("path to binary")),
+            ValueHint::ExecutablePath
+        );
 
         // Test DirPath vs FilePath in output/input specific heuristic
-        assert_eq!(extract_value_hint(Some("output"), Some("write output to directory")), ValueHint::DirPath);
-        assert_eq!(extract_value_hint(Some("output"), Some("write output to file")), ValueHint::FilePath);
+        assert_eq!(
+            extract_value_hint(Some("output"), Some("write output to directory")),
+            ValueHint::DirPath
+        );
+        assert_eq!(
+            extract_value_hint(Some("output"), Some("write output to file")),
+            ValueHint::FilePath
+        );
+    }
+
+    #[test]
+    fn test_merge_commands() {
+        let help_cmd = Command {
+            name: Some("test".to_string()),
+            description: None,
+            args: vec![Arg {
+                long: Some("--config".to_string()),
+                description: Some("Config path".to_string()),
+                value_name: Some("PATH".to_string()),
+                value_hint: ValueHint::Unknown,
+                ..Default::default()
+            }],
+            ..Command::default()
+        };
+
+        let man_cmd = Command {
+            name: Some("test".to_string()),
+            description: Some("A parsed test tool description".to_string()),
+            args: vec![Arg {
+                long: Some("--config".to_string()),
+                description: None,
+                value_name: Some("PATH".to_string()),
+                value_hint: ValueHint::FilePath,
+                value_enum: Some(vec!["config.toml".to_string()]),
+                ..Default::default()
+            }],
+            ..Command::default()
+        };
+
+        let merged = merge_commands(help_cmd, man_cmd);
+
+        assert_eq!(
+            merged.description,
+            Some("A parsed test tool description".to_string())
+        );
+        assert_eq!(merged.args[0].value_hint, ValueHint::FilePath);
+        assert_eq!(
+            merged.args[0].value_enum,
+            Some(vec!["config.toml".to_string()])
+        );
+        assert_eq!(merged.args[0].description, Some("Config path".to_string()));
     }
 }
