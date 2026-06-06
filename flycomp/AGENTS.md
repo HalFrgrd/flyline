@@ -16,8 +16,8 @@ This document provides a simplified overview of [flycomp](.), a workspace member
 # Build
 cargo build -p flycomp
 
-# Test
-cargo test -p flycomp
+# Test (release build runs much faster)
+cargo test --release -p flycomp
 
 # Run / Generate Completions
 cargo run -p flycomp -- <command> [options]
