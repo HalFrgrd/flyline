@@ -606,14 +606,10 @@ impl FuzzyHistorySearch {
         max_visible: usize,
     ) -> (&[HistoryEntryFormatted], usize, usize, usize) {
         // when the command changes, reset the cache
-        // but keep the current visual row if possible
-        let mut desired_visual_row = None;
-
         if Some(current_cmd.to_string()) != self.cache_command {
             self.cache_command = Some(current_cmd.to_string());
             self.cache = vec![];
             self.global_index = 0;
-            desired_visual_row = Some(self.window.visual_index_of_interest());
             self.cache_index = 0;
             self.window = StatefulSlidingWindow::new(0, Self::VISIBLE_CACHE_SIZE, 0, None);
         }
@@ -624,9 +620,6 @@ impl FuzzyHistorySearch {
 
         self.window.update_max_index(cache_len);
         self.window.update_window_size(max_visible);
-        if let Some(desired) = desired_visual_row {
-            self.window.set_visual_index_of_interest(desired);
-        }
         self.window.move_index_to(self.cache_index);
 
         let entries_to_show = &mut self.cache[self.window.get_window_range()];
