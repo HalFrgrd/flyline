@@ -483,17 +483,70 @@ fn top_level_sections(content: &str) -> Vec<&str> {
 
 fn parse_type1_blocks(cmd: &mut Command, section: &str) -> bool {
     let mut found = false;
-    let re = Regex::new(r"(?ms)\.PP(.*?)\.RE").unwrap();
     let cmd_name = cmd.name.clone().unwrap_or_default();
 
-    for caps in re.captures_iter(section) {
-        let mut data = caps.get(1).unwrap().as_str().to_string();
-        if let Some(idx) = data.rfind(".PP") {
-            data = data[idx + 3..].to_string();
-        }
-        let parts: Vec<&str> = data.splitn(2, ".RS 4").collect();
-        if parts.len() == 2 && looks_like_option_block(parts[0], &cmd_name) {
-            found |= add_option(cmd, parts[0], parts[1]);
+    let lines: Vec<&str> = section.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i].trim();
+        if line.starts_with(".PP")
+            || line.starts_with(".sp")
+            || line.starts_with(".SS")
+            || line.starts_with(".Ss")
+        {
+            let mut opt_lines = Vec::new();
+            i += 1;
+
+            let mut rs_found = false;
+            while i < lines.len() {
+                let next_line = lines[i].trim();
+                if next_line.starts_with(".RS") {
+                    rs_found = true;
+                    break;
+                }
+                if next_line.starts_with(".PP")
+                    || next_line.starts_with(".sp")
+                    || next_line.starts_with(".SS")
+                    || next_line.starts_with(".Ss")
+                {
+                    break;
+                }
+                opt_lines.push(lines[i]);
+                i += 1;
+            }
+
+            if rs_found {
+                i += 1; // skip .RS
+                let mut desc_lines = Vec::new();
+                let mut nesting = 1;
+
+                while i < lines.len() && nesting > 0 {
+                    let next_line = lines[i].trim();
+                    if next_line.starts_with(".RS") {
+                        nesting += 1;
+                    } else if next_line.starts_with(".RE") {
+                        nesting -= 1;
+                    }
+                    if nesting > 0 {
+                        desc_lines.push(lines[i]);
+                        i += 1;
+                    }
+                }
+
+                if nesting == 0 {
+                    let option_text = opt_lines.join("\n");
+                    let description = desc_lines.join("\n");
+
+                    if looks_like_option_block(&option_text, &cmd_name) {
+                        found |= add_option(cmd, &option_text, &description);
+                    }
+                    i += 1; // skip .RE
+                    continue;
+                }
+            }
+        } else {
+            i += 1;
         }
     }
 
@@ -3270,6 +3323,161 @@ Use asynchronous IO.
                         description: None,
                     },
                     description_contains: "leading slashes",
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn parses_real_cargo_fixture() {
+        let cmd = parse_test_manpage("cargo.1");
+        assert_expected_subcommands(&cmd, &[]);
+        assert_contains_expected_args(
+            &cmd,
+            &[
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-V".to_string()),
+                        long: Some("--version".to_string()),
+                        value_name: None,
+                        num_args: None,
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Print version info",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: None,
+                        long: Some("--explain".to_string()),
+                        value_name: Some("code".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Run rustc --explain",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-v".to_string()),
+                        long: Some("--verbose".to_string()),
+                        value_name: None,
+                        num_args: None,
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Use verbose output",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-q".to_string()),
+                        long: Some("--quiet".to_string()),
+                        value_name: None,
+                        num_args: None,
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Do not print cargo log messages",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: None,
+                        long: Some("--color".to_string()),
+                        value_name: Some("when".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Control when colored output is used",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: None,
+                        long: Some("--locked".to_string()),
+                        value_name: None,
+                        num_args: None,
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Asserts that the exact same dependencies",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: None,
+                        long: Some("--offline".to_string()),
+                        value_name: None,
+                        num_args: None,
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Prevents Cargo from accessing the network",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: None,
+                        long: Some("--frozen".to_string()),
+                        value_name: None,
+                        num_args: None,
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Equivalent to specifying both",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: None,
+                        long: Some("--config".to_string()),
+                        value_name: Some("KEY=VALUE".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: None,
+                        value_hint: crate::ValueHint::AnyPath,
+                        description: None,
+                    },
+                    description_contains: "Overrides a Cargo configuration value",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-C".to_string()),
+                        long: None,
+                        value_name: Some("PATH".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: None,
+                        value_hint: crate::ValueHint::DirPath,
+                        description: None,
+                    },
+                    description_contains: "Changes the current working directory",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-h".to_string()),
+                        long: Some("--help".to_string()),
+                        value_name: None,
+                        num_args: None,
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Prints help information",
+                },
+                ExpectedArg {
+                    arg: Arg {
+                        short: Some("-Z".to_string()),
+                        long: None,
+                        value_name: Some("flag".to_string()),
+                        num_args: Some("1".to_string()),
+                        value_enum: None,
+                        value_hint: crate::ValueHint::Unknown,
+                        description: None,
+                    },
+                    description_contains: "Unstable (nightly-only) flags",
                 },
             ],
         );

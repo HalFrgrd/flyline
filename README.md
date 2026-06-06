@@ -9,7 +9,7 @@
 **A Bash plugin for modern command line editing.**
 
 
-[![Demo](https://HalFrgrd.github.io/flyline/demo_overview.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Demo](https://HalFrgrd.github.io/flyline/demo_overview.svg?v=1)
 
 </div>
 
@@ -106,7 +106,7 @@ Flyline supports dynamic content in `PS1`, `RPS1` / `RPROMPT`, and `PS1_FILL`.
 
 ## PS1
 The `PS1` environment variable sets the left prompt just like normal. See [Bash prompt documentation](https://www.gnu.org/software/bash/manual/html_node/Controlling-the-Prompt.html), [Arch Linux wiki](https://wiki.archlinux.org/title/Bash/Prompt_customization), or [Starship](https://starship.rs/) for more information.
-[![PS1 demo](https://HalFrgrd.github.io/flyline/demo_prompts_ps1.svg?v=1)](https://github.com/HalFrgrd/evp)
+![PS1 demo](https://HalFrgrd.github.io/flyline/demo_prompts_ps1.svg?v=1)
 ```bash
 PS1='\u@\h:\w$ '
 PS1='\u@\h:\w\n$ '
@@ -118,7 +118,7 @@ PS1='\e[01;32m\u@\h\e[00m:\e[01;34m\w\e[00m\n$ '
 
 ## RPS1 / RPROMPT
 The `RPS1` / `RPROMPT` variable sets the right prompt similarly to Zsh.
-[![RPS1 demo](https://HalFrgrd.github.io/flyline/demo_prompts_rps1.svg?v=1)](https://github.com/HalFrgrd/evp)
+![RPS1 demo](https://HalFrgrd.github.io/flyline/demo_prompts_rps1.svg?v=1)
 ```bash
 RPS1='\t'
 RPS1='\t\n<'
@@ -127,7 +127,7 @@ RPS1='\e[01;33m\t\n<\e[00m'
 
 ## PS1_FILL
 `PS1_FILL` fills the gap between the `PS1` and `RPS1` lines.
-[![PS1_FILL demo](https://HalFrgrd.github.io/flyline/demo_prompts_ps1_fill.svg?v=1)](https://github.com/HalFrgrd/evp)
+![PS1_FILL demo](https://HalFrgrd.github.io/flyline/demo_prompts_ps1_fill.svg?v=1)
 ```bash
 PS1_FILL='-'
 PS1_FILL='🯁🯂🯃🮲🮳' # finger pointing to running man
@@ -181,7 +181,7 @@ The available widget types are `animation`, `mouse-mode`, `copy-buffer`, `custom
 Create your own animations with `flyline create-prompt-widget animation --name [your animation name here] [FRAMES]...`.
 Flyline will replace strings in the prompt matching the animation name with the animation:
 
-[![Custom animation demo](https://HalFrgrd.github.io/flyline/demo_custom_animation.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Custom animation demo](https://HalFrgrd.github.io/flyline/demo_custom_animation.svg?v=1)
 
 More examples can be found in [examples/animations.sh](examples/animations.sh).
 
@@ -334,7 +334,7 @@ RPS1=' FLYLINE_LAST_COMMAND_DURATION'
 Flyline can interact with your AI agent to suggest commands.
 This allows you to write a command in plain English and your agent will convert it into a Bash command:
 
-[![Agent mode demo](https://HalFrgrd.github.io/flyline/demo_agent_mode.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Agent mode demo](https://HalFrgrd.github.io/flyline/demo_agent_mode.svg?v=1)
 
 After setting up your agent with flyline, you can pass the buffer to your agent with Alt+Enter or simply Enter when your command starts with your trigger prefix (e.g. `ai: list files older than three days`).
 
@@ -363,18 +363,18 @@ Note that you will need to have [set up completions in normal Bash first](https:
 ### Intellisense style auto suggestions
 Flyline can automatically start tab completion suggestions as you type. This demo shows auto-started suggestions, confirming a suggestion, dismissing with Escape, and submitting the command.
 
-[![Auto tab completion demo](https://HalFrgrd.github.io/flyline/demo_auto_tab_completion.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Auto tab completion demo](https://HalFrgrd.github.io/flyline/demo_auto_tab_completion.svg?v=1)
 
 
 ### Fuzzy tab completion search
 When you're presented with suggestions, you can type to fuzzily search through the list:
 
-[![Fuzzy suggestions demo](https://HalFrgrd.github.io/flyline/demo_fuzzy_suggestions.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Fuzzy suggestions demo](https://HalFrgrd.github.io/flyline/demo_fuzzy_suggestions.svg?v=1)
 
 ### Fuzzy path completion
 The last path segments from the cursor to the end will be fuzzily matched on the directory contents:
 
-[![Fuzzy path suggestions demo](https://HalFrgrd.github.io/flyline/demo_fuzzy_path_suggestions.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Fuzzy path suggestions demo](https://HalFrgrd.github.io/flyline/demo_fuzzy_path_suggestions.svg?v=1)
 
 
 ### Alias expansion
@@ -388,7 +388,7 @@ For instance, `ls $(grep --<Tab>)` calls `grep`'s tab completion logic if it's s
 ### Dynamic descriptions
 If a suggestion contains a tab character, flyline displays the contents after the tab as a description. If there are multiple tab characters, flyline will animate each tab-delimited frame at 24fps. Try `flyline set-cursor --interpolate-easing <Tab>` for an example:
 
-[![Tab completion easing demo](https://HalFrgrd.github.io/flyline/demo_tab_completion_easing.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Tab completion easing demo](https://HalFrgrd.github.io/flyline/demo_tab_completion_easing.svg?v=1)
 
 
 ANSI styling is supported in descriptions: any ANSI colour/style escape codes embedded in the tab-separated description text will be rendered as ratatui styled spans.
@@ -402,7 +402,7 @@ For now, you can manually generate a Bash completion script using the standalone
 ### `LS_COLORS` styling
 Flyline styles your filename tab completion results according to `$LS_COLORS`:
 
-[![LS_COLORS demo](https://HalFrgrd.github.io/flyline/demo_ls_colors.svg?v=1)](https://github.com/HalFrgrd/evp)
+![LS_COLORS demo](https://HalFrgrd.github.io/flyline/demo_ls_colors.svg?v=1)
 
 
 # Command history
@@ -410,12 +410,12 @@ Flyline styles your filename tab completion results according to `$LS_COLORS`:
 **Fuzzy history search:**
 Flyline offers a fuzzy history search similar to fzf or skim accessed with `Ctrl+R`:
 
-[![Fuzzy history demo](https://HalFrgrd.github.io/flyline/demo_fuzzy_history.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Fuzzy history demo](https://HalFrgrd.github.io/flyline/demo_fuzzy_history.svg?v=1)
 
 **Inline suggestions:**
 Inline suggestions appear as you type based on the most recent matching history entry. Accept them by moving your cursor to the end of the line and pressing `Right`/`End`.
 
-[![Inline history demo](https://HalFrgrd.github.io/flyline/demo_inline_history.svg?v=1)](https://github.com/HalFrgrd/evp)
+![Inline history demo](https://HalFrgrd.github.io/flyline/demo_inline_history.svg?v=1)
 
 **Scroll through prefix matches:**
 Pressing `Up` will scroll through history entries that are a prefix match with the current command.

@@ -85,12 +85,13 @@ impl<'a> CompletionContext<'a> {
         }
     }
 
-    pub fn dummy(buffer: &'a str) -> Self {
+    pub fn dummy(buffer: &'a str, cursor_byte_pos: usize) -> Self {
         CompletionContext {
             buffer: Cow::Borrowed(buffer),
-            context: SubString::new(buffer, &buffer[0..0]).unwrap(),
-            cursor_byte_pos: 0,
-            word_under_cursor: SubString::new(buffer, &buffer[0..0]).unwrap(),
+            context: SubString::new(buffer, &buffer[cursor_byte_pos..cursor_byte_pos]).unwrap(),
+            cursor_byte_pos,
+            word_under_cursor: SubString::new(buffer, &buffer[cursor_byte_pos..cursor_byte_pos])
+                .unwrap(),
         }
     }
 
@@ -412,7 +413,7 @@ pub fn get_completion_context<'a>(
         }
         Some((_, cursor_node)) => cursor_node.token.byte_range(),
         None if context_tokens.is_empty() => {
-            return CompletionContext::dummy(buffer);
+            return CompletionContext::dummy(buffer, cursor_byte_pos);
         }
         None => {
             log::error!(
@@ -421,7 +422,7 @@ pub fn get_completion_context<'a>(
             for t in context_tokens.iter() {
                 log::error!("  Token: {:?} byte_range={:?}", t, t.token.byte_range());
             }
-            return CompletionContext::dummy(buffer);
+            return CompletionContext::dummy(buffer, cursor_byte_pos);
         }
     };
 

@@ -1210,13 +1210,14 @@ pub fn run_help(
 
     let timeout = std::time::Duration::from_millis(timeout_ms);
     let start = std::time::Instant::now();
+    let mut exit_status = None;
     let mut exited = false;
-
     while start.elapsed() < timeout {
-        if let Some(_status) = child
+        if let Some(status) = child
             .try_wait()
             .map_err(|e| anyhow::anyhow!("failed to wait: {}", e))?
         {
+            exit_status = Some(status);
             exited = true;
             break;
         }
@@ -1235,6 +1236,22 @@ pub fn run_help(
     let stderr = stderr_thread
         .join()
         .map_err(|_| anyhow::anyhow!("stderr thread panicked"))?;
+
+    if use_sandbox {
+        if let Some(status) = exit_status {
+            if !status.success() {
+                if stderr.contains("bwrap:") || stderr.contains("bubblewrap:") {
+                    let code = status.code().unwrap_or(-1);
+                    eprintln!("bubblewrap error (exit code {}): {}", code, stderr.trim());
+                    anyhow::bail!(
+                        "bubblewrap exited with error code {}: {}",
+                        code,
+                        stderr.trim()
+                    );
+                }
+            }
+        }
+    }
 
     // Some tools (e.g. git) write help to stdout when `--help` is passed as a
     // flag, but others write to stderr.  Prefer stdout when it has content.

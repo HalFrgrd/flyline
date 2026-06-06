@@ -671,6 +671,23 @@ impl<'a> App<'a> {
             _ => None,
         };
 
+        let scrollbar_tag = self.mouse_state.last_mouse_over_cell;
+        let is_scrollbar_hovered =
+            matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
+        let scrollbar_state = if is_scrollbar_hovered {
+            if self.mouse_state.is_left_button_down() {
+                ButtonState::Depressed
+            } else {
+                ButtonState::Hovered
+            }
+        } else {
+            ButtonState::Normal
+        };
+        let scrollbar_style = Palette::apply_button_style(
+            self.settings.colour_palette.secondary_text(),
+            scrollbar_state,
+        );
+
         match &mut self.content_mode {
             ContentMode::TabCompletion(active_suggestions) if self.mode.is_running() => {
                 if active_suggestions.auto_started {
@@ -683,6 +700,7 @@ impl<'a> App<'a> {
                         cursor_pos_maybe,
                         self.buffer.buffer(),
                         self.buffer.cursor_byte_pos(),
+                        scrollbar_style,
                     );
                 } else {
                     Self::render_user_suggestions(
@@ -1118,6 +1136,7 @@ impl<'a> App<'a> {
         cursor_pos_maybe: Option<Coord>,
         buffer: &str,
         cursor_byte_pos: usize,
+        scrollbar_style: Style,
     ) {
         content.newline();
 
@@ -1257,7 +1276,7 @@ impl<'a> App<'a> {
             active_suggestions.filtered_suggestions_len(),
             num_rows_visible,
             window_range.start,
-            settings.colour_palette.secondary_text(),
+            scrollbar_style,
         );
 
         if let Some(sel_row) = selected_grid_row {
@@ -1276,10 +1295,6 @@ fn auto_suggestions_popup_anchor_col(
     buffer: &str,
     cursor_byte_pos: usize,
 ) -> usize {
-    if word_under_cursor.as_ref().is_empty() {
-        return cursor_col.saturating_sub(1);
-    }
-
     let wuc_start = word_under_cursor.start;
     if wuc_start <= cursor_byte_pos {
         let left_part = &buffer[wuc_start..cursor_byte_pos];
@@ -1310,7 +1325,7 @@ mod tests {
     #[test]
     fn test_auto_suggestions_popup_anchor_col_uses_cursor_col_for_empty_wuc() {
         let anchor =
-            auto_suggestions_popup_anchor_col(9, &SubString::from_parts("", 4), 3, "echo test", 4);
+            auto_suggestions_popup_anchor_col(9, &SubString::from_parts("", 4), 0, "echo test", 4);
 
         assert_eq!(anchor, 8);
     }
