@@ -1913,7 +1913,7 @@ mod tests {
             };
             Ok(text)
         };
-        let top = synthesize_completion("git", help_runner, SynthesisStrategy::RunHelp).unwrap();
+        let top = synthesize_completion("git", help_runner, SynthesisStrategy::RunHelp, 5).unwrap();
 
         assert!(subcommand_names(&top).contains(&"log"));
         assert!(subcommand_names(&top).contains(&"commit"));
@@ -1947,7 +1947,7 @@ mod tests {
                 Ok("".to_string())
             }
         };
-        let top = synthesize_completion("git", help_runner, SynthesisStrategy::RunHelp).unwrap();
+        let top = synthesize_completion("git", help_runner, SynthesisStrategy::RunHelp, 5).unwrap();
 
         let remote =
             subcommand_by_name(&top, "remote").expect("remote subcommand should be present");

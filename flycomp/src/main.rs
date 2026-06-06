@@ -25,6 +25,9 @@ struct CliArgs {
     /// Show version information
     #[arg(long)]
     version: bool,
+    /// Maximum depth for recursive subcommand synthesis/exploration.
+    #[arg(long, default_value_t = 3)]
+    recurse_limit: usize,
 }
 
 struct SimpleLogger;
@@ -83,6 +86,7 @@ fn main() -> anyhow::Result<()> {
         args.strategy,
         !args.no_sandbox,
         args.timeout_ms,
+        args.recurse_limit,
     ) {
         Ok(output) => {
             print!("{}", output);

@@ -7,6 +7,34 @@ use anyhow::Context;
 use chrono::{SecondsFormat, Utc};
 use strum::IntoStaticStr;
 
+use std::cell::Cell;
+
+thread_local! {
+    static MAN_PAGES_READ: Cell<usize> = Cell::new(0);
+    static HELP_RUNS: Cell<usize> = Cell::new(0);
+}
+
+pub fn increment_man_pages_read() {
+    MAN_PAGES_READ.with(|c| c.set(c.get() + 1));
+}
+
+pub fn increment_help_runs() {
+    HELP_RUNS.with(|c| c.set(c.get() + 1));
+}
+
+pub fn get_man_pages_read() -> usize {
+    MAN_PAGES_READ.with(|c| c.get())
+}
+
+pub fn get_help_runs() -> usize {
+    HELP_RUNS.with(|c| c.get())
+}
+
+pub fn reset_stats() {
+    MAN_PAGES_READ.with(|c| c.set(0));
+    HELP_RUNS.with(|c| c.set(0));
+}
+
 mod parse_help;
 pub mod parse_man;
 
@@ -136,6 +164,8 @@ struct JsonMetadata {
     sandboxed: bool,
     timeout_ms: u64,
     command_path: String,
+    man_pages_read: usize,
+    help_runs: usize,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -838,11 +868,12 @@ pub fn synthesize_completion<F>(
     command_path: &str,
     help_runner: F,
     strategy: SynthesisStrategy,
+    recurse_limit: usize,
 ) -> anyhow::Result<Command>
 where
     F: Fn(&[&str]) -> anyhow::Result<String>,
 {
-    Ok(synthesize_completion_with(command_path, &help_runner, strategy)?.command)
+    Ok(synthesize_completion_with(command_path, &help_runner, strategy, recurse_limit)?.command)
 }
 
 fn merge_commands(help_cmd: Command, man_cmd: Command) -> Command {
@@ -883,42 +914,47 @@ fn synthesize_completion_with<F>(
     command_path: &str,
     help_runner: &F,
     strategy: SynthesisStrategy,
+    recurse_limit: usize,
 ) -> anyhow::Result<SynthesisOutcome>
 where
     F: Fn(&[&str]) -> anyhow::Result<String>,
 {
     match strategy {
         SynthesisStrategy::RunHelp => Ok(SynthesisOutcome {
-            command: synthesize_from_help(command_path, help_runner)?,
+            command: synthesize_from_help(command_path, help_runner, recurse_limit)?,
             strategy_used: SynthesisMethod::RunHelp,
         }),
         SynthesisStrategy::ManPage => Ok(SynthesisOutcome {
-            command: load_manpage_command(command_path)?,
+            command: load_manpage_command(command_path, recurse_limit)?,
             strategy_used: SynthesisMethod::ManPage,
         }),
-        SynthesisStrategy::ManPageThenRunHelp => match load_manpage_command(command_path) {
-            Ok(man_command) => match synthesize_from_help(command_path, help_runner) {
-                Ok(help_command) => Ok(SynthesisOutcome {
-                    command: merge_commands(help_command, man_command),
-                    strategy_used: SynthesisMethod::ManPage,
-                }),
-                Err(_) => Ok(SynthesisOutcome {
-                    command: man_command,
-                    strategy_used: SynthesisMethod::ManPage,
-                }),
-            },
-            Err(error) => {
-                log::debug!(
-                    "flycomp: falling back to --help for '{}': {}",
-                    command_path,
-                    error
-                );
-                Ok(SynthesisOutcome {
-                    command: synthesize_from_help(command_path, help_runner)?,
-                    strategy_used: SynthesisMethod::RunHelp,
-                })
+        SynthesisStrategy::ManPageThenRunHelp => {
+            match load_manpage_command(command_path, recurse_limit) {
+                Ok(man_command) => {
+                    match synthesize_from_help(command_path, help_runner, recurse_limit) {
+                        Ok(help_command) => Ok(SynthesisOutcome {
+                            command: merge_commands(help_command, man_command),
+                            strategy_used: SynthesisMethod::ManPage,
+                        }),
+                        Err(_) => Ok(SynthesisOutcome {
+                            command: man_command,
+                            strategy_used: SynthesisMethod::ManPage,
+                        }),
+                    }
+                }
+                Err(error) => {
+                    log::debug!(
+                        "flycomp: falling back to --help for '{}': {}",
+                        command_path,
+                        error
+                    );
+                    Ok(SynthesisOutcome {
+                        command: synthesize_from_help(command_path, help_runner, recurse_limit)?,
+                        strategy_used: SynthesisMethod::RunHelp,
+                    })
+                }
             }
-        },
+        }
     }
 }
 
@@ -942,6 +978,8 @@ fn render_json_output(
             sandboxed,
             timeout_ms,
             command_path: command_path.to_string(),
+            man_pages_read: get_man_pages_read(),
+            help_runs: get_help_runs(),
         },
         command,
     };
@@ -957,7 +995,7 @@ fn command_basename(command_path: &str) -> String {
         .to_string()
 }
 
-fn load_manpage_command(command_path: &str) -> anyhow::Result<Command> {
+fn load_manpage_command(command_path: &str, recurse_limit: usize) -> anyhow::Result<Command> {
     let cmd_name = command_basename(command_path);
     let manpage_path = locate_manpage(&cmd_name)?;
     let manpage_content = read_manpage_source(&manpage_path)?;
@@ -967,7 +1005,7 @@ fn load_manpage_command(command_path: &str) -> anyhow::Result<Command> {
         read_manpage_source(&path).ok()
     };
 
-    parse_man::parse_manpage_recursive(&cmd_name, &manpage_content, 5, &loader)
+    parse_man::parse_manpage_recursive(&cmd_name, &manpage_content, recurse_limit, &loader)
         .ok_or_else(|| anyhow::anyhow!("failed to parse man page for '{}'", cmd_name))
 }
 
@@ -992,6 +1030,7 @@ fn locate_manpage(command_name: &str) -> anyhow::Result<String> {
 }
 
 fn read_manpage_source(manpage_path: &str) -> anyhow::Result<String> {
+    increment_man_pages_read();
     let decomp_cmd = if manpage_path.ends_with(".gz") {
         Some(("gzip", vec!["-cd", manpage_path]))
     } else if manpage_path.ends_with(".zst") {
@@ -1026,7 +1065,11 @@ fn read_manpage_source(manpage_path: &str) -> anyhow::Result<String> {
     }
 }
 
-fn synthesize_from_help<F>(command_path: &str, help_runner: &F) -> anyhow::Result<Command>
+fn synthesize_from_help<F>(
+    command_path: &str,
+    help_runner: &F,
+    recurse_limit: usize,
+) -> anyhow::Result<Command>
 where
     F: Fn(&[&str]) -> anyhow::Result<String>,
 {
@@ -1039,13 +1082,6 @@ where
     root.name = Some(cmd_name);
 
     // ── iterative subcommand exploration ─────────────────────────────────────
-    // Each stack entry is a path of subcommand names from the root, e.g.
-    // `["remote", "add"]`.  We use this path both to locate the node in the
-    // `Command` tree and to build the argv for the `--help` invocation.
-    // Five levels of nesting covers the vast majority of real CLI tools while
-    // keeping synthesis time bounded.
-    const MAX_SUBCOMMAND_DEPTH: usize = 5;
-
     // Seed the stack with every top-level subcommand.
     let mut stack: Vec<Vec<String>> = root
         .subcommands
@@ -1054,7 +1090,7 @@ where
         .collect();
 
     while let Some(path) = stack.pop() {
-        if path.len() > MAX_SUBCOMMAND_DEPTH {
+        if path.len() > recurse_limit {
             continue;
         }
 
@@ -1118,6 +1154,7 @@ pub fn run_help(
     sandbox: bool,
     timeout_ms: u64,
 ) -> anyhow::Result<String> {
+    increment_help_runs();
     let mut actual_command = command_path.to_string();
 
     // If command_path is a simple name (no path separators), check CWD.
@@ -1275,11 +1312,14 @@ pub fn generate_completion_script(
     strategy: SynthesisStrategy,
     sandbox: bool,
     timeout_ms: u64,
+    recurse_limit: usize,
 ) -> anyhow::Result<String> {
+    reset_stats();
     let parsed_cmd = synthesize_completion(
         command_path,
         |args| run_help(command_path, args, sandbox, timeout_ms),
         strategy,
+        recurse_limit,
     )?;
     let cmd_name = command_basename(command_path);
 
@@ -1300,12 +1340,15 @@ pub fn generate_completion_output(
     strategy: SynthesisStrategy,
     sandbox: bool,
     timeout_ms: u64,
+    recurse_limit: usize,
 ) -> anyhow::Result<String> {
+    reset_stats();
     if matches!(output, OutputFormat::Json) {
         let outcome = synthesize_completion_with(
             command_path,
             &|extra_args| run_help(command_path, extra_args, sandbox, timeout_ms),
             strategy,
+            recurse_limit,
         )?;
         render_json_output(
             command_path,
@@ -1317,7 +1360,14 @@ pub fn generate_completion_output(
         )
     } else {
         let shell = output.shell().expect("non-JSON output has shell mapping");
-        generate_completion_script(command_path, shell, strategy, sandbox, timeout_ms)
+        generate_completion_script(
+            command_path,
+            shell,
+            strategy,
+            sandbox,
+            timeout_ms,
+            recurse_limit,
+        )
     }
 }
 
@@ -1834,6 +1884,8 @@ Options:
         assert_eq!(value["metadata"]["sandboxed"], true);
         assert_eq!(value["metadata"]["timeout_ms"], 15000);
         assert_eq!(value["metadata"]["command_path"], "cargo");
+        assert_eq!(value["metadata"]["man_pages_read"], 0);
+        assert_eq!(value["metadata"]["help_runs"], 0);
         assert_eq!(value["command"]["name"], "cargo");
         assert!(value["metadata"]["generated_at"].as_str().is_some());
     }
