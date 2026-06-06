@@ -962,7 +962,12 @@ fn load_manpage_command(command_path: &str) -> anyhow::Result<Command> {
     let manpage_path = locate_manpage(&cmd_name)?;
     let manpage_content = read_manpage_source(&manpage_path)?;
 
-    parse_man::parse_manpage(&cmd_name, &manpage_content)
+    let loader = |name: &str| -> Option<String> {
+        let path = locate_manpage(name).ok()?;
+        read_manpage_source(&path).ok()
+    };
+
+    parse_man::parse_manpage_recursive(&cmd_name, &manpage_content, 5, &loader)
         .ok_or_else(|| anyhow::anyhow!("failed to parse man page for '{}'", cmd_name))
 }
 
