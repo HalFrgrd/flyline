@@ -152,6 +152,9 @@ pub struct ProcessedSuggestion {
     pub style: Option<Style>,
     /// Description to display as a visual suffix (not inserted).
     pub description: SuggestionDescription,
+    /// Precomputed visual width including the description.
+    #[serde(default)]
+    pub display_width: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -612,18 +615,22 @@ impl ProcessedSuggestion {
         prefix: P,
         suffix: X,
     ) -> Self {
+        let s = s.into();
+        let display_width = s.width();
         ProcessedSuggestion {
-            s: s.into(),
+            s,
             prefix: prefix.into(),
             suffix: suffix.into(),
             style: None,
             description: SuggestionDescription::Static(vec![]),
+            display_width,
         }
     }
 
     /// Set the description on this suggestion.
     pub fn with_description(mut self, description: SuggestionDescription) -> Self {
         self.description = description;
+        self.update_display_width();
         self
     }
 
@@ -638,15 +645,17 @@ impl ProcessedSuggestion {
     }
 
     pub fn display_width(&self) -> usize {
+        self.display_width
+    }
+
+    fn update_display_width(&mut self) {
         let main_width = self.s.width();
         let max_description_frame_width = self.description.max_width();
-        if max_description_frame_width > 0 {
-            main_width
-                + SuggestionFormatted::DESCRIPTION_SEPARATOR.len()
-                + max_description_frame_width
+        self.display_width = if max_description_frame_width > 0 {
+            main_width + SuggestionFormatted::DESCRIPTION_SEPARATOR.len() + max_description_frame_width
         } else {
             main_width
-        }
+        };
     }
 
     pub fn from_string_vec(
@@ -848,8 +857,9 @@ impl UnprocessedSuggestion {
         };
 
         let suffix_str = suffix_char.map(|f| f.to_string()).unwrap_or_default();
-        let suggestion = ProcessedSuggestion::new(quoted_no_prefix, prefix, &suffix_str)
+        let mut suggestion = ProcessedSuggestion::new(quoted_no_prefix, prefix, &suffix_str)
             .with_description(description);
+        suggestion.update_display_width();
         match style {
             Some(s) => suggestion.with_style(s),
             None => suggestion,
@@ -1015,8 +1025,13 @@ pub struct FilteredItem {
 }
 
 pub struct ColumnInfo {
-    pub global_col_idx: usize,
     pub items: Vec<(SuggestionFormatted, bool)>,
+    pub width: usize,
+}
+
+struct ColumnInfoInternal {
+    pub global_col_idx: usize,
+    pub filtered_indices: std::ops::Range<usize>,
     pub width: usize,
     pub is_selected_col: bool,
 }
@@ -1056,6 +1071,10 @@ pub struct ActiveSuggestions {
     pub comp_type: tab_completion_context::CompType,
     /// Whether this tab completion was auto-initiated.
     pub auto_started: bool,
+    /// Cached maximum width of all processed suggestions.
+    cached_max_width: usize,
+    /// Cached maximum width of currently filtered suggestions.
+    cached_max_filtered_width: usize,
 }
 
 impl ActiveSuggestions {
@@ -1091,8 +1110,11 @@ impl ActiveSuggestions {
             load_time,
             comp_type,
             auto_started,
+            cached_max_width: 0,
+            cached_max_filtered_width: 0,
         };
 
+        active_sug.update_max_width();
         active_sug.update_fuzzy_filtered();
         active_sug
     }
@@ -1112,7 +1134,9 @@ impl ActiveSuggestions {
         let start_time = std::time::Instant::now();
         for _ in 0..max_to_process {
             if let Some(raw) = self.unprocessed_suggestions.pop_front() {
-                self.processed_suggestions.push(raw.into_processed());
+                let processed = raw.into_processed();
+                self.cached_max_width = self.cached_max_width.max(processed.display_width());
+                self.processed_suggestions.push(processed);
             }
             if start_time.elapsed() > CHUNK_PROCESSING_TIMEOUT {
                 break;
@@ -1353,7 +1377,7 @@ impl ActiveSuggestions {
             .map(|d| (d.as_millis() / (1000 / ANIMATION_FRAME_FPS as u128)) as usize)
             .unwrap_or(0);
 
-        let mut grid: Vec<ColumnInfo> = vec![];
+        let mut grid: Vec<ColumnInfoInternal> = vec![];
         let mut untruncated_total_width: usize = 0;
 
         let mut max_col_index = (n - 1) / max_rows;
@@ -1376,28 +1400,11 @@ impl ActiveSuggestions {
             let start = col_idx * max_rows;
             let end = (start + max_rows).min(n);
 
-            let col_items: Vec<(SuggestionFormatted, bool)> = (start..end)
+            let untruncated_col_width = (start..end)
                 .map(|filtered_idx| {
                     let fi = &self.filtered_suggestions[filtered_idx];
-                    let suggestion = &self.processed_suggestions[fi.suggestion_idx];
-
-                    let formatted = SuggestionFormatted::new(
-                        suggestion,
-                        fi.suggestion_idx,
-                        filtered_idx,
-                        fi.matching_indices.clone(),
-                        palette,
-                        frame_index,
-                    );
-                    let is_selected_entry = selected_1d == Some(filtered_idx);
-
-                    (formatted, is_selected_entry)
+                    self.processed_suggestions[fi.suggestion_idx].display_width()
                 })
-                .collect();
-
-            let untruncated_col_width = col_items
-                .iter()
-                .map(|(formatted, _)| formatted.display_width)
                 .max()
                 .unwrap_or(0);
 
@@ -1406,9 +1413,9 @@ impl ActiveSuggestions {
             } else {
                 COLUMN_PADDING + untruncated_col_width
             };
-            grid.push(ColumnInfo {
+            grid.push(ColumnInfoInternal {
                 global_col_idx: col_idx,
-                items: col_items,
+                filtered_indices: start..end,
                 width: untruncated_col_width,
                 is_selected_col: col_idx == selected_col,
             });
@@ -1469,6 +1476,32 @@ impl ActiveSuggestions {
             })
             .filter(|col_info| col_info.width > 0)
             .sorted_by_key(|col_info| col_info.global_col_idx)
+            .map(|col_internal| {
+                let col_items: Vec<(SuggestionFormatted, bool)> = col_internal
+                    .filtered_indices
+                    .map(|filtered_idx| {
+                        let fi = &self.filtered_suggestions[filtered_idx];
+                        let suggestion = &self.processed_suggestions[fi.suggestion_idx];
+
+                        let formatted = SuggestionFormatted::new(
+                            suggestion,
+                            fi.suggestion_idx,
+                            filtered_idx,
+                            fi.matching_indices.clone(),
+                            palette,
+                            frame_index,
+                        );
+                        let is_selected_entry = selected_1d == Some(filtered_idx);
+
+                        (formatted, is_selected_entry)
+                    })
+                    .collect();
+
+                ColumnInfo {
+                    items: col_items,
+                    width: col_internal.width,
+                }
+            })
             .collect::<Vec<_>>();
 
         self.last_num_visible_cols = final_grid.len();
@@ -1596,6 +1629,13 @@ impl ActiveSuggestions {
         self.filtered_suggestions
             .sort_by(|a, b| b.score.cmp(&a.score));
 
+        self.cached_max_filtered_width = self
+            .filtered_suggestions
+            .iter()
+            .map(|fi| self.processed_suggestions[fi.suggestion_idx].display_width())
+            .max()
+            .unwrap_or(0);
+
         // Reset selected position if needed
         if self.filtered_suggestions.is_empty() {
             self.selected_coord = None;
@@ -1623,19 +1663,20 @@ impl ActiveSuggestions {
 
     #[allow(dead_code)]
     pub fn max_filtered_width(&self) -> usize {
-        self.filtered_suggestions
-            .iter()
-            .map(|fi| self.processed_suggestions[fi.suggestion_idx].display_width())
-            .max()
-            .unwrap_or(0)
+        self.cached_max_filtered_width
     }
 
     pub fn max_width(&self) -> usize {
-        self.processed_suggestions
+        self.cached_max_width
+    }
+
+    fn update_max_width(&mut self) {
+        self.cached_max_width = self
+            .processed_suggestions
             .iter()
-            .map(|sug| sug.display_width())
+            .map(|s| s.display_width())
             .max()
-            .unwrap_or(0)
+            .unwrap_or(0);
     }
 
     pub fn accept_selected_filtered_item(&mut self, buffer: &mut TextBuffer) {
