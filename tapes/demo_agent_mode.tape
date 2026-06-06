@@ -1,5 +1,6 @@
 # Where should we write the GIF?
 Output demo_agent_mode.gif
+Output demo_agent_mode.svg
 
 Source demo_settings.tape
 Source demo_setup.tape

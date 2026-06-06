@@ -1,5 +1,6 @@
 # Where should we write the GIF?
 Output demo_custom_animation.gif
+Output demo_custom_animation.svg
 
 Source demo_settings.tape
 Set Height 400

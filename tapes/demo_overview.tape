@@ -1,5 +1,6 @@
 # Where should we write the GIF?
 Output demo_overview.gif
+Output demo_overview.svg
 
 Source demo_settings.tape
 Source demo_setup.tape

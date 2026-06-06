@@ -14,4 +14,4 @@ COPY tapes/demo_fuzzy_history.tape .
 RUN faketime @1771881894 /home/john/bin/evp demo_fuzzy_history.tape
 
 FROM scratch
-COPY --from=demo-builder /app/*.gif /
+COPY --from=demo-builder /app/*.gif /app/*.svg /

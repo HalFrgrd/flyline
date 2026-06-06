@@ -1,5 +1,6 @@
 # Where should we write the GIF?
 Output demo_ls_colors.gif
+Output demo_ls_colors.svg
 
 Source demo_settings.tape
 Set Height 400

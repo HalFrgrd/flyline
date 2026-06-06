@@ -1,4 +1,5 @@
 Output demo_auto_tab_completion.gif
+Output demo_auto_tab_completion.svg
 
 Source demo_settings.tape
 Set Height 600

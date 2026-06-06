@@ -1,5 +1,6 @@
 # Where should we write the GIF?
 Output demo_fuzzy_path_suggestions.gif
+Output demo_fuzzy_path_suggestions.svg
 
 Source demo_settings.tape
 Source demo_setup.tape
