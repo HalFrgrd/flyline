@@ -1073,6 +1073,39 @@ fn extract_subcommand_candidates(section: &str, cmd_name: &str) -> Vec<(String, 
         candidates.push((name, raw_description.to_string()));
     }
 
+    if candidates.is_empty() {
+        let lines: Vec<&str> = section.lines().collect();
+        let mut i = 0;
+        while i < lines.len() {
+            let line = lines[i].trim();
+            if let Some(name) = parse_subcommand_name(cmd_name, line) {
+                i += 1;
+                if i < lines.len() && lines[i].trim() == ".br" {
+                    i += 1;
+                }
+
+                let mut desc_parts = Vec::new();
+                while i < lines.len() {
+                    let next_line = lines[i].trim();
+                    if next_line.starts_with(".sp")
+                        || next_line.starts_with(".SS")
+                        || next_line.starts_with(".SH")
+                        || parse_subcommand_name(cmd_name, next_line).is_some()
+                    {
+                        break;
+                    }
+                    if !next_line.is_empty() {
+                        desc_parts.push(next_line);
+                    }
+                    i += 1;
+                }
+                candidates.push((name, desc_parts.join("\n")));
+            } else {
+                i += 1;
+            }
+        }
+    }
+
     candidates
 }
 
@@ -3073,16 +3106,35 @@ Use asynchronous IO.
         assert_expected_subcommands(
             &cmd,
             &[
-                ("repo", "Manage repositories"),
-                ("pr", "Manage pull requests"),
-                ("issue", "Manage issues"),
+                ("auth", "Authenticate gh and git with GitHub"),
+                ("browse", "Open the repository in the browser"),
+                ("codespace", "Connect to and manage codespaces"),
                 ("gist", "Manage gists"),
-                ("alias", "Manage command aliases"),
-                ("api", "authenticated API request"),
-                ("auth", "Authenticate with GitHub"),
-                ("completion", "Generate shell completion"),
-                ("config", "Manage configuration"),
-                ("run", "workflow runs"),
+                ("issue", "Manage issues"),
+                ("org", "Manage organizations"),
+                ("pr", "Manage pull requests"),
+                ("project", "Work with GitHub Projects"),
+                ("release", "Manage releases"),
+                ("repo", "Manage repositories"),
+                ("cache", "Manage Github Actions caches"),
+                ("run", "View details about workflow runs"),
+                ("workflow", "View details about GitHub Actions workflows"),
+                ("alias", "Create command shortcuts"),
+                ("api", "Make an authenticated GitHub API request"),
+                ("completion", "Generate shell completion scripts"),
+                ("config", "Manage configuration for gh"),
+                ("extension", "Manage gh extensions"),
+                ("gpg-key", "Manage GPG keys"),
+                ("label", "Manage labels"),
+                ("ruleset", "View info about repo rulesets"),
+                (
+                    "search",
+                    "Search for repositories, issues, and pull requests",
+                ),
+                ("secret", "Manage GitHub secrets"),
+                ("ssh-key", "Manage SSH keys"),
+                ("status", "Print information about relevant issues"),
+                ("variable", "Manage GitHub Actions variables"),
             ],
         );
         assert_contains_expected_args(
@@ -3331,7 +3383,47 @@ Use asynchronous IO.
     #[test]
     fn parses_real_cargo_fixture() {
         let cmd = parse_test_manpage("cargo.1");
-        assert_expected_subcommands(&cmd, &[]);
+        assert_expected_subcommands(
+            &cmd,
+            &[
+                ("bench", "Execute benchmarks"),
+                ("build", "Compile a package"),
+                ("check", "Check a local package"),
+                ("clean", "Remove artifacts"),
+                ("doc", "Build a package"),
+                ("fetch", "Fetch dependencies"),
+                ("fix", "Automatically fix lint"),
+                ("run", "Run a binary"),
+                ("rustc", "Compile a package"),
+                ("rustdoc", "Build a package"),
+                ("test", "Execute unit"),
+                ("add", "Add dependencies"),
+                ("generate-lockfile", "Generate Cargo"),
+                ("info", "Display information"),
+                ("locate-project", "Print a JSON"),
+                ("metadata", "Output the resolved"),
+                ("pkgid", "Print a fully qualified"),
+                ("remove", "Remove dependencies"),
+                ("tree", "Display a tree"),
+                ("update", "Update dependencies"),
+                ("vendor", "Vendor all"),
+                ("init", "Create a new Cargo"),
+                ("install", "Build and install"),
+                ("new", "Create a new Cargo"),
+                ("search", "Search packages"),
+                ("uninstall", "Remove a Rust"),
+                ("login", "Save an API"),
+                ("logout", "Remove an API"),
+                ("owner", "Manage the owners"),
+                ("package", "Assemble the local"),
+                ("publish", "Upload a package"),
+                ("yank", "Remove a pushed"),
+                ("report", "Generate and display"),
+                ("report-future-incompatibilities", "Reports any crates"),
+                ("help", "Display help"),
+                ("version", "Show version"),
+            ],
+        );
         assert_contains_expected_args(
             &cmd,
             &[
