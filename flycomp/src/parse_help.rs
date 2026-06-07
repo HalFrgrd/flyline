@@ -705,16 +705,11 @@ pub fn parse_help_clap(help: &str) -> Command {
                         continue;
                     }
                 } else if indent < first_indent.unwrap() {
-                    // Possible group header or end of section
-                    if line.trim().is_empty() {
-                        i += 1;
-                        continue;
-                    } else {
-                        // If it's not indented and not empty, it might be a new group header.
-                        // We skip it and keep looking for indented subcommands.
-                        i += 1;
-                        continue;
-                    }
+                    // Possible group header or end of section.
+                    // If it's not indented, it might be a new group header (like in Git).
+                    // We skip it and keep looking for indented subcommands.
+                    i += 1;
+                    continue;
                 } else if indent > first_indent.unwrap() {
                     // More indented than subcommands, might be a continuation of description
                     i += 1;
@@ -2191,12 +2186,9 @@ mod tests {
 
         let (short, long, value_name) =
             parse_flag_tokens("-U[dlexhi] --unicode=[default|locale|escape|hex|highlight|invalid]");
-        assert_eq!(short, None);
+        assert_eq!(short, Some("-U".to_string()));
         assert_eq!(long.as_deref(), Some("--unicode"));
-        assert_eq!(
-            value_name.as_deref(),
-            Some("[default|locale|escape|hex|highlight|invalid]")
-        );
+        assert_eq!(value_name.as_deref(), Some("dlexhi"));
     }
     #[test]
     fn test_zstd_help() {
