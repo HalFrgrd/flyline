@@ -80,7 +80,6 @@ impl StatefulSlidingWindow {
         self.start_index..((self.start_index + self.window_size).min(self.max_index))
     }
 
-
     pub fn force_window_and_index(&mut self, new_start: usize, new_index: usize) {
         self.start_index = new_start;
         self.index_of_interest = new_index;

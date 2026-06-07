@@ -601,6 +601,69 @@ mod description_tests {
     }
 
     #[test]
+    fn test_auto_suggestions_refinement_preserves_selection() {
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("commit", "", ""),
+                ProcessedSuggestion::new("checkout", "", ""),
+                ProcessedSuggestion::new("clone", "", ""),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+        };
+        let mut active = ActiveSuggestions::new(
+            builder,
+            SubString::new("c", "c").unwrap(),
+            std::time::Duration::from_millis(0),
+            true, // auto_started
+            crate::settings::SuggestionSortOrder::default(),
+        );
+
+        // Initially, in auto_started, no selection is active.
+        assert_eq!(active.selected_coord, None);
+
+        // Select the first entry manually (e.g. by pressing down arrow or mouse click)
+        active.selected_coord = Some((0, 0));
+
+        // Refine the search by updating word under cursor to "cl"
+        active.update_word_under_cursor(&SubString::new("cl", "cl").unwrap());
+
+        // Since we had a selection previously, the selection should change to the first entry (Some((0, 0))) of the refined list
+        assert_eq!(active.selected_coord, Some((0, 0)));
+        assert_eq!(active.filtered_suggestions.len(), 1);
+        assert_eq!(active.filtered_suggestions[0].suggestion_idx, 2); // "clone"
+
+        // Let's also test the case where we start with NO selection, and update
+        let mut active_no_sel = ActiveSuggestions::new(
+            ActiveSuggestionsBuilder {
+                processed: vec![
+                    ProcessedSuggestion::new("commit", "", ""),
+                    ProcessedSuggestion::new("checkout", "", ""),
+                    ProcessedSuggestion::new("clone", "", ""),
+                ],
+                unprocessed: std::collections::VecDeque::new(),
+                common_prefix: None,
+                auto_accept_if_solo: false,
+                insert_common_prefix: false,
+                comp_type: crate::tab_completion_context::CompType::FirstWord,
+                nosort: false,
+            },
+            SubString::new("c", "c").unwrap(),
+            std::time::Duration::from_millis(0),
+            true, // auto_started
+            crate::settings::SuggestionSortOrder::default(),
+        );
+        assert_eq!(active_no_sel.selected_coord, None);
+        active_no_sel.update_word_under_cursor(&SubString::new("cl", "cl").unwrap());
+        // Since there was no selection before, it should remain None
+        assert_eq!(active_no_sel.selected_coord, None);
+    }
+
+    #[test]
     fn test_sorting_mtime_alphabetical() {
         let _palette = crate::palette::Palette::default();
         let builder = ActiveSuggestionsBuilder {
@@ -1769,6 +1832,7 @@ impl ActiveSuggestions {
 
     /// Apply fuzzy search filtering to the suggestions based on the given pattern.
     fn update_fuzzy_filtered(&mut self) {
+        let had_selection = self.selected_coord.is_some();
         let raw_pattern = self.word_under_cursor.s.as_str();
         log::debug!(
             "Applying fuzzy filter with raw_pattern {:?} on {} processed suggestions ({} still unprocessed)",
@@ -1809,7 +1873,7 @@ impl ActiveSuggestions {
             self.selected_coord = None;
         } else {
             self.selected_coord = if self.auto_started {
-                None
+                if had_selection { Some((0, 0)) } else { None }
             } else {
                 Some((0, 0))
             };
