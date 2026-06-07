@@ -25,7 +25,10 @@ fn detect_format(help: &str) -> HelpFormat {
         || help_lower.contains("subcommands:")
         || help_lower.contains("commands\n")
         || help_lower.contains("commands:\n")
-        || help_lower.contains("common git commands");
+        || help_lower.contains("common commands")
+        || help_lower.contains("available commands")
+        || help_lower.contains("frequently used commands")
+        || (help_lower.contains("common") && help_lower.contains("commands"));
     let has_positional = help.lines().any(|l| {
         let t = l.trim();
         t == "positional arguments:" || t == "arguments:"
@@ -82,16 +85,29 @@ pub fn parse_help(help: &str) -> Command {
     cmd.expand_no_options();
     cmd.populate_possible_values();
 
-    // Git-specific: if we have subcommands but no name was parsed from Usage,
-    // and it looks like Git's "These are common Git commands...", set name to "git".
-    if cmd.name.is_none()
-        && !cmd.subcommands.is_empty()
-        && clean_help.to_lowercase().contains("common git commands")
-    {
-        cmd.name = Some("git".to_string());
+    // Fallback: if we have subcommands but no name was parsed from Usage,
+    // try to extract the command name from patterns like "common <name> commands"
+    if cmd.name.is_none() && !cmd.subcommands.is_empty() {
+        if let Some(name) = extract_fallback_name(&clean_help) {
+            cmd.name = Some(name);
+        }
     }
 
     cmd
+}
+
+fn extract_fallback_name(help: &str) -> Option<String> {
+    let help_lower = help.to_lowercase();
+    static RE_COMMON: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re =
+        RE_COMMON.get_or_init(|| regex::Regex::new(r"common\s+([a-z0-9_-]+)\s+commands").unwrap());
+    if let Some(caps) = re.captures(&help_lower) {
+        let name = caps.get(1).unwrap().as_str();
+        if name != "sub" && name != "main" && name != "available" && name != "frequently" {
+            return Some(name.to_string());
+        }
+    }
+    None
 }
 
 fn split_top_level(s: &str, delimiter: char) -> Vec<String> {
@@ -391,7 +407,8 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
                     if end_bracket > start_bracket {
                         let val = &piece_str[start_bracket + 2..end_bracket];
                         if value_name.is_none() {
-                            value_name = Some(val.trim_matches(|c| c == '<' || c == '>').to_string());
+                            value_name =
+                                Some(val.trim_matches(|c| c == '<' || c == '>').to_string());
                         }
                         piece_str.drain(start_bracket..=end_bracket);
                     }
@@ -416,24 +433,28 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
             // Only treat single-character forms like `-v` as clap short flags.
             // Multi-character forms such as `-wk`, `-wK`, or `-U[dlexhi]` are
             // command-specific syntax, not plain one-letter short options.
-            // But we do handle bracketed optional parts like `-u[<mode>]` for Git.
+            // But we do handle bracketed optional parts like `-u[<mode>]` or `-u[mode]`.
             // We also allow forms ending with '#' (like `-T#` or `-b#`).
-            let mut is_git_short = false;
+            let mut is_bracketed_short = false;
             if let Some(start_bracket) = short_candidate.find('[') {
                 if let Some(end_bracket) = short_candidate.rfind(']') {
                     if end_bracket > start_bracket {
                         let val = &short_candidate[start_bracket + 1..end_bracket];
                         let base = &short_candidate[..start_bracket];
                         if base.chars().count() == 1 {
-                            // Only treat it as a Git short flag if the bracketed part
+                            // Treat it as a short flag with optional value if the bracketed part
                             // looks like a value name (contains lowercase or angle brackets).
-                            if val.chars().any(|c| c.is_lowercase() || c == '<' || c == '>') {
+                            if val
+                                .chars()
+                                .any(|c| c.is_lowercase() || c == '<' || c == '>')
+                            {
                                 if value_name.is_none() {
-                                    value_name =
-                                        Some(val.trim_matches(|c| c == '<' || c == '>').to_string());
+                                    value_name = Some(
+                                        val.trim_matches(|c| c == '<' || c == '>').to_string(),
+                                    );
                                 }
                                 short_candidate = base.to_string();
-                                is_git_short = true;
+                                is_bracketed_short = true;
                             }
                         }
                     }
@@ -441,7 +462,7 @@ pub(crate) fn parse_flag_tokens(token: &str) -> (Option<String>, Option<String>,
             }
 
             let count = short_candidate.chars().count();
-            if count == 1 || (count == 2 && short_candidate.ends_with('#')) || is_git_short {
+            if count == 1 || (count == 2 && short_candidate.ends_with('#')) || is_bracketed_short {
                 short = Some(format!("-{short_candidate}"));
             }
         } else if piece.starts_with('<') || piece.starts_with('[') {
@@ -632,8 +653,8 @@ pub fn parse_help_clap(help: &str) -> Command {
         let is_commands_section = trimmed == "Commands:"
             || trimmed == "Subcommands:"
             || trimmed == "Available Commands:"
-            || lower.contains("common git commands")
-            || lower.contains("commands used in various situations")
+            || (lower.contains("common") && lower.contains("commands"))
+            || lower.contains("commands used in")
             || (lower.contains("commands")
                 && (trimmed.ends_with(':')
                     || lower.contains("commands are")
@@ -696,7 +717,7 @@ pub fn parse_help_clap(help: &str) -> Command {
 
                 let indent = indent_of(line);
                 if first_indent.is_none() {
-                    // Git-specific: the first non-empty line after "Commands:"
+                    // The first non-empty line after the commands section header
                     // might be a group header if it is not indented.
                     if indent > 0 {
                         first_indent = Some(indent);
@@ -706,7 +727,7 @@ pub fn parse_help_clap(help: &str) -> Command {
                     }
                 } else if indent < first_indent.unwrap() {
                     // Possible group header or end of section.
-                    // If it's not indented, it might be a new group header (like in Git).
+                    // If it's not indented or less indented, it might be a group header.
                     // We skip it and keep looking for indented subcommands.
                     i += 1;
                     continue;
@@ -1079,7 +1100,6 @@ mod tests {
     fn arg_by_long<'a>(cmd: &'a Command, long: &str) -> Option<&'a Arg> {
         cmd.args.iter().find(|a| a.long.as_deref() == Some(long))
     }
-
 
     fn subcommand_by_name<'a>(cmd: &'a Command, name: &str) -> Option<&'a Command> {
         cmd.subcommands
@@ -3076,6 +3096,37 @@ Commands:
                     description_contains: "show untracked files",
                 },
             ],
+        );
+
+        // Verify that the [no-] expansion worked properly on real Git flags.
+        // E.g., --[no-]quiet should expand to --quiet and --no-quiet.
+        assert!(
+            cmd.args
+                .iter()
+                .any(|a| a.long.as_deref() == Some("--quiet"))
+        );
+        assert!(
+            cmd.args
+                .iter()
+                .any(|a| a.long.as_deref() == Some("--no-quiet"))
+        );
+
+        assert!(cmd.args.iter().any(|a| a.long.as_deref() == Some("--file")));
+        assert!(
+            cmd.args
+                .iter()
+                .any(|a| a.long.as_deref() == Some("--no-file"))
+        );
+
+        assert!(
+            cmd.args
+                .iter()
+                .any(|a| a.long.as_deref() == Some("--verbose"))
+        );
+        assert!(
+            cmd.args
+                .iter()
+                .any(|a| a.long.as_deref() == Some("--no-verbose"))
         );
     }
 }
