@@ -1277,6 +1277,7 @@ impl<'a> App<'a> {
             num_rows_visible,
             window_range.start,
             scrollbar_style,
+            settings.colour_palette.secondary_text(),
         );
 
         if let Some(sel_row) = selected_grid_row {

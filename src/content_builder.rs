@@ -964,7 +964,8 @@ impl Contents {
         total: usize,
         visible: usize,
         start: usize,
-        style: ratatui::style::Style,
+        thumb_style: ratatui::style::Style,
+        gutter_style: ratatui::style::Style,
     ) {
         if length == 0 || total == 0 || visible >= total {
             return;
@@ -989,12 +990,13 @@ impl Contents {
             let row_y = y_start + i as u16;
             let is_thumb = i >= thumb_pos && i < thumb_pos + thumb_size;
             let symbol = if is_thumb { "█" } else { "░" };
+            let cell_style = if is_thumb { thumb_style } else { gutter_style };
 
             if let Some(row) = self.buf.get_mut(row_y as usize)
                 && let Some(tagged_cell) = row.get_mut(x as usize)
             {
                 tagged_cell.cell.reset();
-                tagged_cell.cell.set_symbol(symbol).set_style(style);
+                tagged_cell.cell.set_symbol(symbol).set_style(cell_style);
                 tagged_cell.tag = Tag::TabCompletionScrollBar {
                     cell_height: i,
                     max_cell_height: length.saturating_sub(1) as usize,
