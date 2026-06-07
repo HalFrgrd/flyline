@@ -19,7 +19,9 @@ pub enum ColourTheme {
 }
 
 /// How suggestions should be sorted when fuzzy scores are tied.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
+)]
 pub enum SuggestionSortOrder {
     /// Sort by last modification time (if available), then alphabetically.
     #[default]

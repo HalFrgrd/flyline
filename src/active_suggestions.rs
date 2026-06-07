@@ -605,9 +605,12 @@ mod description_tests {
         let _palette = crate::palette::Palette::default();
         let builder = ActiveSuggestionsBuilder {
             processed: vec![
-                ProcessedSuggestion::new("b", "", "").with_description(SuggestionDescription::LastMTime(100)),
-                ProcessedSuggestion::new("a", "", "").with_description(SuggestionDescription::LastMTime(100)),
-                ProcessedSuggestion::new("c", "", "").with_description(SuggestionDescription::LastMTime(200)),
+                ProcessedSuggestion::new("b", "", "")
+                    .with_description(SuggestionDescription::LastMTime(100)),
+                ProcessedSuggestion::new("a", "", "")
+                    .with_description(SuggestionDescription::LastMTime(100)),
+                ProcessedSuggestion::new("c", "", "")
+                    .with_description(SuggestionDescription::LastMTime(200)),
                 ProcessedSuggestion::new("d", "", ""),
             ],
             unprocessed: std::collections::VecDeque::new(),
@@ -630,7 +633,9 @@ mod description_tests {
             crate::settings::SuggestionSortOrder::Mtime,
         );
 
-        let filtered_names: Vec<String> = active.filtered_suggestions.iter()
+        let filtered_names: Vec<String> = active
+            .filtered_suggestions
+            .iter()
             .map(|fi| active.processed_suggestions[fi.suggestion_idx].s.clone())
             .collect();
 
@@ -639,9 +644,12 @@ mod description_tests {
         // Test Alphabetical order
         let builder = ActiveSuggestionsBuilder {
             processed: vec![
-                ProcessedSuggestion::new("b", "", "").with_description(SuggestionDescription::LastMTime(100)),
-                ProcessedSuggestion::new("a", "", "").with_description(SuggestionDescription::LastMTime(100)),
-                ProcessedSuggestion::new("c", "", "").with_description(SuggestionDescription::LastMTime(200)),
+                ProcessedSuggestion::new("b", "", "")
+                    .with_description(SuggestionDescription::LastMTime(100)),
+                ProcessedSuggestion::new("a", "", "")
+                    .with_description(SuggestionDescription::LastMTime(100)),
+                ProcessedSuggestion::new("c", "", "")
+                    .with_description(SuggestionDescription::LastMTime(200)),
                 ProcessedSuggestion::new("d", "", ""),
             ],
             unprocessed: std::collections::VecDeque::new(),
@@ -660,8 +668,14 @@ mod description_tests {
             crate::settings::SuggestionSortOrder::Alphabetical,
         );
 
-        let filtered_names_alpha: Vec<String> = active_alpha.filtered_suggestions.iter()
-            .map(|fi| active_alpha.processed_suggestions[fi.suggestion_idx].s.clone())
+        let filtered_names_alpha: Vec<String> = active_alpha
+            .filtered_suggestions
+            .iter()
+            .map(|fi| {
+                active_alpha.processed_suggestions[fi.suggestion_idx]
+                    .s
+                    .clone()
+            })
             .collect();
 
         assert_eq!(filtered_names_alpha, vec!["a", "b", "c", "d"]);
@@ -690,7 +704,9 @@ mod description_tests {
             crate::settings::SuggestionSortOrder::Alphabetical,
         );
 
-        let filtered_names: Vec<String> = active.filtered_suggestions.iter()
+        let filtered_names: Vec<String> = active
+            .filtered_suggestions
+            .iter()
             .map(|fi| active.processed_suggestions[fi.suggestion_idx].s.clone())
             .collect();
 
@@ -709,6 +725,55 @@ mod description_tests {
 
         active.on_up_arrow(); // from (0,0) wraps to (0,1)
         assert_eq!(active.selected_coord, Some((0, 1)));
+    }
+
+    #[test]
+    fn test_nosort_on_large_list() {
+        // 1. Boundary check: exactly FILENAME_INFERENCE_LIMIT suggestions -> nosort should be false
+        let mut processed_boundary = Vec::new();
+        for i in 0..crate::FILENAME_INFERENCE_LIMIT {
+            processed_boundary.push(ProcessedSuggestion::new(format!("sug_{}", i), "", ""));
+        }
+        let builder_boundary = ActiveSuggestionsBuilder {
+            processed: processed_boundary,
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+        };
+        let active_boundary = ActiveSuggestions::new(
+            builder_boundary,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+        );
+        assert!(!active_boundary.nosort);
+
+        // 2. Exceeding check: FILENAME_INFERENCE_LIMIT + 1 suggestions -> nosort should be true
+        let mut processed_large = Vec::new();
+        for i in 0..=crate::FILENAME_INFERENCE_LIMIT {
+            processed_large.push(ProcessedSuggestion::new(format!("sug_{}", i), "", ""));
+        }
+        let builder_large = ActiveSuggestionsBuilder {
+            processed: processed_large,
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+        };
+        let active_large = ActiveSuggestions::new(
+            builder_large,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+        );
+        assert!(active_large.nosort);
     }
 }
 
@@ -1217,7 +1282,7 @@ impl ActiveSuggestions {
             load_time,
             comp_type,
             auto_started,
-            nosort,
+            nosort: nosort || sug_len > crate::FILENAME_INFERENCE_LIMIT,
             sort_order,
         };
 

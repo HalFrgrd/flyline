@@ -598,11 +598,9 @@ fn analyze_candidate(s: &str) -> Option<(&str, &str, usize)> {
 }
 
 fn should_infer_filename_completion(completions: &[String], flags: &CompletionFlags) -> bool {
-    const FILENAME_INFERENCE_LIMIT: usize = 5000;
-
     if flags.filename_completion_desired
         || completions.is_empty()
-        || completions.len() >= FILENAME_INFERENCE_LIMIT
+        || completions.len() >= crate::FILENAME_INFERENCE_LIMIT
     {
         return false;
     }
