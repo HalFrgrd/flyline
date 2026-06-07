@@ -502,6 +502,9 @@ enum Commands {
         /// Enable or disable auto-suggest (auto-started tab completion suggestions).
         #[arg(long = "auto-suggest", default_missing_value = "true", num_args = 0..=1)]
         auto_suggest: Option<bool>,
+        /// How to sort suggestions when fuzzy scores are tied (mtime, alphabetical).
+        #[arg(long = "sort-order", value_name = "ORDER")]
+        sort_order: Option<settings::SuggestionSortOrder>,
         /// Maximum number of suggestion rows to render for tab-completion lists.
         #[arg(long = "num-suggestion-rows", value_name = "NUM")]
         num_suggestion_rows: Option<u16>,
@@ -1154,11 +1157,16 @@ impl Flyline {
                     }
                     Some(Commands::Suggestions {
                         auto_suggest,
+                        sort_order,
                         num_suggestion_rows,
                     }) => {
                         if let Some(enabled) = auto_suggest {
                             log::info!("Auto tab-completion suggestions set to {}", enabled);
                             self.settings.auto_suggest = enabled;
+                        }
+                        if let Some(order) = sort_order {
+                            log::info!("Suggestion sort order set to {:?}", order);
+                            self.settings.suggestion_sort_order = order;
                         }
                         if let Some(num) = num_suggestion_rows {
                             if num == 0 {

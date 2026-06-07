@@ -18,6 +18,18 @@ pub enum ColourTheme {
     Light,
 }
 
+/// How suggestions should be sorted when fuzzy scores are tied.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, serde::Serialize, serde::Deserialize,
+)]
+pub enum SuggestionSortOrder {
+    /// Sort by last modification time (if available), then alphabetically.
+    #[default]
+    Mtime,
+    /// Sort alphabetically.
+    Alphabetical,
+}
+
 /// A single custom prompt animation registered with `flyline create-prompt-widget animation`.
 #[derive(Debug, Clone)]
 pub struct PromptAnimation {
@@ -177,6 +189,8 @@ pub struct Settings {
     pub show_inline_history: bool,
     /// Whether to auto-start tab completion suggestions as you type.
     pub auto_suggest: bool,
+    /// How to sort suggestions when fuzzy scores are tied.
+    pub suggestion_sort_order: SuggestionSortOrder,
     /// Maximum number of suggestion rows to render for tab-completion lists.
     pub num_suggestion_rows: u16,
     /// Whether to automatically close opening characters (e.g., parentheses, brackets, quotes).
@@ -237,6 +251,7 @@ impl Default for Settings {
             tutorial_step: TutorialStep::default(),
             show_animations: true,
             auto_suggest: true,
+            suggestion_sort_order: SuggestionSortOrder::default(),
             num_suggestion_rows: 15,
             show_inline_history: true,
             auto_close_chars: true,

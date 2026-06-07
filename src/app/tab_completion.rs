@@ -97,17 +97,20 @@ fn run_comp_spec_completion(
                 );
                 log::debug!("Completions: {:#?}", comp_result);
                 let flags = comp_result.flags;
-                Some(ActiveSuggestionsBuilder::from_unprocessed(
-                    comp_result
-                        .completions
-                        .into_iter()
-                        .map(move |sug| UnprocessedSuggestion {
-                            raw_text: sug,
-                            full_path: None,
-                            flags,
-                            word_under_cursor: alias_expanded_word_under_cursor.to_string(),
-                        }),
-                ))
+                Some(
+                    ActiveSuggestionsBuilder::from_unprocessed(
+                        comp_result
+                            .completions
+                            .into_iter()
+                            .map(move |sug| UnprocessedSuggestion {
+                                raw_text: sug,
+                                full_path: None,
+                                flags,
+                                word_under_cursor: alias_expanded_word_under_cursor.to_string(),
+                            }),
+                    )
+                    .with_nosort(flags.nosort_desired),
+                )
             }
             _ => None,
         }
@@ -1062,8 +1065,13 @@ impl App<'_> {
                     return;
                 }
             }
-            let suggestions =
-                ActiveSuggestions::new(builder, wuc_substring, load_time, auto_started);
+            let suggestions = ActiveSuggestions::new(
+                builder,
+                wuc_substring,
+                load_time,
+                auto_started,
+                self.settings.suggestion_sort_order,
+            );
             self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
         } else {
             let outcome = apply_tab_complete_to_buffer(&mut self.buffer, &builder, &wuc_substring);
@@ -1072,8 +1080,13 @@ impl App<'_> {
                     self.content_mode = ContentMode::Normal;
                 }
                 TabCompleteBufferOutcome::Pending { final_wuc } => {
-                    let suggestions =
-                        ActiveSuggestions::new(builder, final_wuc, load_time, auto_started);
+                    let suggestions = ActiveSuggestions::new(
+                        builder,
+                        final_wuc,
+                        load_time,
+                        auto_started,
+                        self.settings.suggestion_sort_order,
+                    );
                     self.content_mode = ContentMode::TabCompletion(Box::new(suggestions));
                 }
             }
@@ -1311,7 +1324,13 @@ mod tab_completion_tests {
         } else {
             panic!("Expected pending outcome with suggestions");
         };
-        ActiveSuggestions::new(builder, final_wuc, std::time::Duration::from_secs(0), false)
+        ActiveSuggestions::new(
+            builder,
+            final_wuc,
+            std::time::Duration::from_secs(0),
+            false,
+            crate::settings::SuggestionSortOrder::default(),
+        )
     }
 
     fn assert_completions(command: &str, expected: &[ProcessedSuggestion]) {

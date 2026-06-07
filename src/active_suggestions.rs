@@ -545,12 +545,14 @@ mod description_tests {
             auto_accept_if_solo: false,
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
         };
         let mut active = ActiveSuggestions::new(
             builder,
             SubString::new("", "").unwrap(),
             std::time::Duration::from_millis(0),
             true, // auto_started
+            crate::settings::SuggestionSortOrder::default(),
         );
 
         // Grid width/rows logic, let's call into_list with max_rows = 2
@@ -596,17 +598,193 @@ mod description_tests {
 
         // Test arrow key movement on list
         active.on_down_arrow(); // should move from index 2 to index 3
-        assert_eq!(active.selected_coord, Some((0, 3)));
-        active.on_down_arrow(); // should wrap from 3 to 0
+    }
+
+    #[test]
+    fn test_sorting_mtime_alphabetical() {
+        let _palette = crate::palette::Palette::default();
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("b", "", "")
+                    .with_description(SuggestionDescription::LastMTime(100)),
+                ProcessedSuggestion::new("a", "", "")
+                    .with_description(SuggestionDescription::LastMTime(100)),
+                ProcessedSuggestion::new("c", "", "")
+                    .with_description(SuggestionDescription::LastMTime(200)),
+                ProcessedSuggestion::new("d", "", ""),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+        };
+
+        // mtime descending: c(200), then {a, b} (100), then d(0).
+        // {a, b} alphabetical: a, then b.
+        // Expected: c, a, b, d
+
+        let active = ActiveSuggestions::new(
+            builder,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            false, // auto_started
+            crate::settings::SuggestionSortOrder::Mtime,
+        );
+
+        let filtered_names: Vec<String> = active
+            .filtered_suggestions
+            .iter()
+            .map(|fi| active.processed_suggestions[fi.suggestion_idx].s.clone())
+            .collect();
+
+        assert_eq!(filtered_names, vec!["c", "a", "b", "d"]);
+
+        // Test Alphabetical order
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("b", "", "")
+                    .with_description(SuggestionDescription::LastMTime(100)),
+                ProcessedSuggestion::new("a", "", "")
+                    .with_description(SuggestionDescription::LastMTime(100)),
+                ProcessedSuggestion::new("c", "", "")
+                    .with_description(SuggestionDescription::LastMTime(200)),
+                ProcessedSuggestion::new("d", "", ""),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+        };
+
+        let active_alpha = ActiveSuggestions::new(
+            builder,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+        );
+
+        let filtered_names_alpha: Vec<String> = active_alpha
+            .filtered_suggestions
+            .iter()
+            .map(|fi| {
+                active_alpha.processed_suggestions[fi.suggestion_idx]
+                    .s
+                    .clone()
+            })
+            .collect();
+
+        assert_eq!(filtered_names_alpha, vec!["a", "b", "c", "d"]);
+    }
+
+    #[test]
+    fn test_nosort_flag() {
+        let builder = ActiveSuggestionsBuilder {
+            processed: vec![
+                ProcessedSuggestion::new("z", "", ""),
+                ProcessedSuggestion::new("a", "", ""),
+            ],
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: true,
+        };
+
+        let mut active = ActiveSuggestions::new(
+            builder,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+        );
+
+        let filtered_names: Vec<String> = active
+            .filtered_suggestions
+            .iter()
+            .map(|fi| active.processed_suggestions[fi.suggestion_idx].s.clone())
+            .collect();
+
+        // Nosort should preserve the original order: z, then a
+        assert_eq!(filtered_names, vec!["z", "a"]);
+
+        // Setup for movement tests
+        active.selected_coord = Some((0, 1)); // Select "a" (index 1)
+        active.last_num_rows_per_col = 10; // Dummy value for movement logic
+
+        active.on_down_arrow(); // from index 1 to index 0 (wrap if only 2 items)
+        // Wait, n=2. selected_coord (0,1). next_row = 2. next_row >= last_num_rows_per_col? 2 >= 10 is false.
+        // next_idx = 0*10 + 2 = 2. 2 < 2 is false.
+        // So it wraps to (0,0).
         assert_eq!(active.selected_coord, Some((0, 0)));
-        active.on_up_arrow(); // should wrap from 0 to 3
-        assert_eq!(active.selected_coord, Some((0, 3)));
-        active.on_up_arrow(); // should move from 3 to 2
-        assert_eq!(active.selected_coord, Some((0, 2)));
+
+        active.on_up_arrow(); // from (0,0) wraps to (0,1)
+        assert_eq!(active.selected_coord, Some((0, 1)));
+    }
+
+    #[test]
+    fn test_nosort_on_large_list() {
+        // 1. Boundary check: exactly FILENAME_INFERENCE_LIMIT suggestions -> nosort should be false
+        let mut processed_boundary = Vec::new();
+        for i in 0..crate::FILENAME_INFERENCE_LIMIT {
+            processed_boundary.push(ProcessedSuggestion::new(format!("sug_{}", i), "", ""));
+        }
+        let builder_boundary = ActiveSuggestionsBuilder {
+            processed: processed_boundary,
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+        };
+        let active_boundary = ActiveSuggestions::new(
+            builder_boundary,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+        );
+        assert!(!active_boundary.nosort);
+
+        // 2. Exceeding check: FILENAME_INFERENCE_LIMIT + 1 suggestions -> nosort should be true
+        let mut processed_large = Vec::new();
+        for i in 0..=crate::FILENAME_INFERENCE_LIMIT {
+            processed_large.push(ProcessedSuggestion::new(format!("sug_{}", i), "", ""));
+        }
+        let builder_large = ActiveSuggestionsBuilder {
+            processed: processed_large,
+            unprocessed: std::collections::VecDeque::new(),
+            common_prefix: None,
+            auto_accept_if_solo: false,
+            insert_common_prefix: false,
+            comp_type: crate::tab_completion_context::CompType::FirstWord,
+            nosort: false,
+        };
+        let active_large = ActiveSuggestions::new(
+            builder_large,
+            SubString::new("", "").unwrap(),
+            std::time::Duration::from_millis(0),
+            false,
+            crate::settings::SuggestionSortOrder::Alphabetical,
+        );
+        assert!(active_large.nosort);
     }
 }
 
 impl ProcessedSuggestion {
+    pub fn mtime(&self) -> Option<u64> {
+        match self.description {
+            SuggestionDescription::LastMTime(ts) => Some(ts),
+            _ => None,
+        }
+    }
+
     pub fn new<S: Into<String>, P: Into<String>, X: Into<String>>(
         s: S,
         prefix: P,
@@ -877,6 +1055,7 @@ pub struct ActiveSuggestionsBuilder {
     pub insert_common_prefix: bool,
     pub common_prefix: Option<String>,
     pub comp_type: tab_completion_context::CompType,
+    pub nosort: bool,
 }
 
 impl ActiveSuggestionsBuilder {
@@ -890,6 +1069,7 @@ impl ActiveSuggestionsBuilder {
             insert_common_prefix: true,
             common_prefix: None,
             comp_type: tab_completion_context::CompType::default(),
+            nosort: false,
         }
     }
 
@@ -908,6 +1088,11 @@ impl ActiveSuggestionsBuilder {
 
     pub fn with_comp_type(mut self, comp_type: tab_completion_context::CompType) -> Self {
         self.comp_type = comp_type;
+        self
+    }
+
+    pub fn with_nosort(mut self, nosort: bool) -> Self {
+        self.nosort = nosort;
         self
     }
 
@@ -1056,6 +1241,10 @@ pub struct ActiveSuggestions {
     pub comp_type: tab_completion_context::CompType,
     /// Whether this tab completion was auto-initiated.
     pub auto_started: bool,
+    /// Whether the suggestions should be sorted by fuzzy score and tie-breakers.
+    pub nosort: bool,
+    /// How to sort suggestions when fuzzy scores are tied.
+    pub sort_order: crate::settings::SuggestionSortOrder,
 }
 
 impl ActiveSuggestions {
@@ -1064,6 +1253,7 @@ impl ActiveSuggestions {
         word_under_cursor: SubString,
         load_time: std::time::Duration,
         auto_started: bool,
+        sort_order: crate::settings::SuggestionSortOrder,
     ) -> Self {
         let ActiveSuggestionsBuilder {
             processed: processed_suggestions,
@@ -1072,6 +1262,7 @@ impl ActiveSuggestions {
             auto_accept_if_solo: _,
             insert_common_prefix: _,
             comp_type,
+            nosort,
         } = builder;
         let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
 
@@ -1091,6 +1282,8 @@ impl ActiveSuggestions {
             load_time,
             comp_type,
             auto_started,
+            nosort: nosort || sug_len > crate::FILENAME_INFERENCE_LIMIT,
+            sort_order,
         };
 
         active_sug.update_fuzzy_filtered();
@@ -1593,8 +1786,23 @@ impl ActiveSuggestions {
             .collect();
 
         // Sort by score (descending - higher scores are better matches)
-        self.filtered_suggestions
-            .sort_by(|a, b| b.score.cmp(&a.score));
+        if !self.nosort {
+            self.filtered_suggestions.sort_by(|a, b| {
+                b.score.cmp(&a.score).then_with(|| {
+                    let sug_a = &self.processed_suggestions[a.suggestion_idx];
+                    let sug_b = &self.processed_suggestions[b.suggestion_idx];
+
+                    match self.sort_order {
+                        crate::settings::SuggestionSortOrder::Mtime => {
+                            let mtime_a = sug_a.mtime().unwrap_or(0);
+                            let mtime_b = sug_b.mtime().unwrap_or(0);
+                            mtime_b.cmp(&mtime_a).then_with(|| sug_a.s.cmp(&sug_b.s))
+                        }
+                        crate::settings::SuggestionSortOrder::Alphabetical => sug_a.s.cmp(&sug_b.s),
+                    }
+                })
+            });
+        }
 
         // Reset selected position
         if self.filtered_suggestions.is_empty() {

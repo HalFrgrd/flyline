@@ -1,6 +1,8 @@
 use libc::{c_char, c_int};
 use std::sync::Mutex;
 
+pub const FILENAME_INFERENCE_LIMIT: usize = 5000;
+
 #[cfg(feature = "pre_bash_4_4")]
 use ctor::ctor;
 
