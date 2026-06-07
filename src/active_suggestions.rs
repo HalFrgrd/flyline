@@ -1596,23 +1596,10 @@ impl ActiveSuggestions {
         self.filtered_suggestions
             .sort_by(|a, b| b.score.cmp(&a.score));
 
-        // Reset selected position if needed
+        // Reset selected position
         if self.filtered_suggestions.is_empty() {
             self.selected_coord = None;
-            return;
-        }
-
-        if self.current_1d_index().is_none() {
-            if !self.auto_started {
-                self.selected_coord = Some((0, 0));
-            }
-            return;
-        }
-
-        if self
-            .current_1d_index()
-            .is_some_and(|idx| idx >= self.filtered_suggestions.len())
-        {
+        } else {
             self.selected_coord = if self.auto_started {
                 None
             } else {
