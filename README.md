@@ -16,7 +16,7 @@
 When Bash prompts you for a command, a library called [readline](https://www.gnu.org/software/bash/manual/html_node/Command-Line-Editing.html) handles your keystrokes. Readline lacks many features users have come to expect. Flyline is a readline replacement that provides an enhanced line editing experience with:
 - Undo and redo support
 - [Agent assisted command writing](#agent-mode)
-- [Rich prompt customizations, (asynchronous widgets), and animations](#rich-prompts)
+- [Rich prompt customizations (asynchronous widgets) and animations](#rich-prompts)
 - [Fuzzy history searching](#command-history)
 - [Mouse support](#mouse-support)
 - [Improvements to Bash's tab completion](#tab-completion-improvements)
@@ -579,7 +579,7 @@ A context expression may combine multiple variables with `+`:
 ```bash
 flyline key bind Tab inlineSuggestionAvailable+cursorAtEnd=inlineSuggestionAccept
 ```
-Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses are not supported. 
+Use `!` in front of a variable to negate it (e.g. `!textSelected`). Parentheses and `||` are not supported.
 
 It is possible to remap keys entirely with:
 ```bash
