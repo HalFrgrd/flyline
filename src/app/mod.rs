@@ -1455,11 +1455,11 @@ impl<'a> App<'a> {
                         active_suggestions.original_word_under_cursor.s
                     );
                     restart_auto_completion = true;
-                } else if new_wuc.s == active_suggestions.word_under_cursor.s {
+                } else if new_wuc == active_suggestions.word_under_cursor {
                     // No change to the word under cursor; keep the same suggestions.
                     log::debug!(
-                        "Word under cursor unchanged ('{}'), keeping existing tab completion suggestions",
-                        new_wuc.s
+                        "Word under cursor unchanged ('{:?}'), keeping existing tab completion suggestions",
+                        new_wuc
                     );
                 } else if new_wuc.s.is_empty()
                     && !active_suggestions.original_word_under_cursor.s.is_empty()
