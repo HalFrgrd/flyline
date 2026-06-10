@@ -42,6 +42,7 @@ parse-style = { version = "0.4.0" }
 easing-function = "0.1.1"
 ctor = "0.10.0"
 strum = { version = "0.28.0", features = ["derive"] }
+ipc-channel = "0.22.0"
 
 [features]
 pre_bash_4_4 = []

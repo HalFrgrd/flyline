@@ -1,8 +1,8 @@
 use std::collections::HashSet;
-use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 use std::vec;
+
+use ipc_channel::ipc;
 
 use crate::active_suggestions::{
     ActiveSuggestions, ActiveSuggestionsBuilder, ProcessedSuggestion, SuggestionDescription,
@@ -1111,128 +1111,151 @@ impl App<'_> {
         );
 
         let wuc_substring = completion_context.word_under_cursor.clone();
-
         let (tx, rx) =
             std::sync::mpsc::channel::<Option<(ActiveSuggestionsBuilder, std::time::Duration)>>();
 
-        let completion_context_owned = completion_context.into_owned();
+        let shutdown_signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let shutdown_signal_clone = shutdown_signal.clone();
 
+        let completion_context_owned = completion_context.into_owned();
         let start_time = std::time::Instant::now();
 
-        let (read_fd, write_fd) = unsafe {
-            let mut fds: [libc::c_int; 2] = [0; 2];
-            if libc::pipe(fds.as_mut_ptr()) != 0 {
-                log::error!("Failed to create pipe for tab completion");
+        std::thread::spawn(move || {
+            // Warm the completion caches inside the thread
+            crate::bash_funcs::warm_completion_caches();
+
+            if shutdown_signal_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                let _ = tx.send(None);
                 return;
             }
-            (fds[0], fds[1])
-        };
 
-        // Since the fork doesnt live for long, the main process should have the caches warm
-        crate::bash_funcs::warm_completion_caches();
-
-        let pid = unsafe { libc::fork() };
-
-        if pid == 0 {
-            // Child process
-            unsafe {
-                libc::close(read_fd);
-                let dev_null =
-                    libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
-                if dev_null >= 0 {
-                    // Close these incase the tab completion generation tries to use them
-                    libc::dup2(dev_null, libc::STDIN_FILENO);
-                    libc::dup2(dev_null, libc::STDOUT_FILENO);
-                    libc::dup2(dev_null, libc::STDERR_FILENO);
-                    libc::close(dev_null);
-                }
-            }
-            let thread_start = std::time::Instant::now();
-            let result = gen_completions_internal(&completion_context_owned, auto_started);
-            let elapsed = thread_start.elapsed();
-
-            let data = result.map(|r| (r, elapsed));
-            if let Ok(serialized) = serde_json::to_vec(&data) {
-                let mut file = unsafe { std::fs::File::from_raw_fd(write_fd) };
-                use std::io::Write;
-                let len = serialized.len() as u64;
-                if file.write_all(&len.to_ne_bytes()).is_ok() {
-                    let _ = file.write_all(&serialized);
-                }
-                drop(file);
-            } else {
-                unsafe {
-                    libc::close(write_fd);
-                }
-            }
-
-            log::info!("Child process completed");
-
-            // Use _exit to avoid running atexit handlers in the child process.
-            unsafe {
-                libc::_exit(0);
-            }
-        } else if pid > 0 {
-            // Parent process
-            unsafe {
-                libc::close(write_fd);
-            }
-
-            // Using a thread here makes it easier to handle polling here and in the main app loop.
-            std::thread::spawn(move || {
-                let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
-                let mut len_buf = [0u8; 8];
-                if std::io::Read::read_exact(&mut file, &mut len_buf).is_err() {
+            // Set up the ipc-channel using Result wrapper
+            type CompletionResult =
+                Result<Option<(ActiveSuggestionsBuilder, std::time::Duration)>, String>;
+            let (ipc_tx, ipc_rx) = match ipc::channel::<CompletionResult>() {
+                Ok(res) => res,
+                Err(e) => {
+                    log::error!("Failed to create IPC channel: {:?}", e);
                     let _ = tx.send(None);
-                } else {
-                    let len = u64::from_ne_bytes(len_buf);
-                    let mut data_buf = vec![0u8; len as usize];
-                    if std::io::Read::read_exact(&mut file, &mut data_buf).is_ok() {
-                        let result: Option<(ActiveSuggestionsBuilder, std::time::Duration)> =
-                            serde_json::from_slice(&data_buf).ok().flatten();
-                        let _ = tx.send(result);
-                    } else {
-                        let _ = tx.send(None);
+                    return;
+                }
+            };
+
+            let pid = unsafe { libc::fork() };
+
+            if pid == 0 {
+                // Child process
+                unsafe {
+                    let dev_null =
+                        libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
+                    if dev_null >= 0 {
+                        libc::dup2(dev_null, libc::STDIN_FILENO);
+                        libc::dup2(dev_null, libc::STDOUT_FILENO);
+                        libc::dup2(dev_null, libc::STDERR_FILENO);
+                        libc::close(dev_null);
                     }
                 }
-            });
 
-            // Block for up to 100ms waiting for the process to finish.
-            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                Ok(Some((builder, elapsed))) => {
-                    self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
+                let thread_start = std::time::Instant::now();
+                let result = gen_completions_internal(&completion_context_owned, auto_started);
+                let elapsed = thread_start.elapsed();
+
+                let data = match result {
+                    Some(builder) => Ok(Some((builder, elapsed))),
+                    None => Ok(None),
+                };
+                let _ = ipc_tx.send(data);
+
+                log::info!("Child process completed");
+                unsafe {
+                    libc::_exit(0);
                 }
-                Ok(None) => {
-                    // No suggestions generated or process failed.
-                    self.finish_tab_complete(
-                        ActiveSuggestionsBuilder::new(),
-                        wuc_substring,
-                        start_time.elapsed(),
-                        auto_started,
-                    );
+            } else if pid > 0 {
+                // Parent thread in parent process
+                if shutdown_signal_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                        let mut status = 0;
+                        libc::waitpid(pid, &mut status, 0);
+                    }
+                    let _ = tx.send(None);
+                    return;
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Process hasn't finished yet; enter waiting mode.
-                    self.content_mode = ContentMode::TabCompletionWaiting {
-                        handle: TabCompletionHandle {
-                            receiver: rx,
-                            pid: Some(pid),
-                        },
-                        wuc_substring,
-                        start_time,
-                        auto_started,
-                    };
+
+                // Receive the data from the child process in a loop to check shutdown signal
+                let data = loop {
+                    if shutdown_signal_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                        unsafe {
+                            libc::kill(pid, libc::SIGKILL);
+                        }
+                        break None;
+                    }
+                    match ipc_rx.try_recv() {
+                        Ok(Ok(Some((builder, elapsed)))) => break Some((builder, elapsed)),
+                        Ok(Ok(None)) => break None,
+                        Ok(Err(e)) => {
+                            log::error!("Error in tab completion process: {}", e);
+                            break None;
+                        }
+                        Err(ipc_channel::TryRecvError::Empty) => {
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                        Err(ipc_channel::TryRecvError::IpcError(
+                            ipc_channel::IpcError::Disconnected,
+                        )) => {
+                            log::error!("IPC channel disconnected");
+                            break None;
+                        }
+                        Err(ipc_channel::TryRecvError::IpcError(e)) => {
+                            log::error!("IPC channel error: {:?}", e);
+                            break None;
+                        }
+                    }
+                };
+
+                // Reap the child process
+                unsafe {
+                    let mut status = 0;
+                    libc::waitpid(pid, &mut status, 0);
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    log::warn!("Tab completion process disconnected unexpectedly");
-                }
+
+                // Send the result to the main thread
+                let _ = tx.send(data);
+            } else {
+                // Fork failed
+                log::error!("Failed to fork child process for tab completion");
+                let _ = tx.send(None);
             }
-        } else {
-            // Fork failed
-            log::error!("Failed to fork for tab completion");
-            unsafe {
-                libc::close(read_fd);
-                libc::close(write_fd);
+        });
+
+        // Block for up to 100ms waiting for the completion results
+        match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(Some((builder, elapsed))) => {
+                self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
+            }
+            Ok(None) => {
+                // No suggestions generated or process failed.
+                self.finish_tab_complete(
+                    ActiveSuggestionsBuilder::new(),
+                    wuc_substring,
+                    start_time.elapsed(),
+                    auto_started,
+                );
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Process hasn't finished yet; enter waiting mode.
+                self.content_mode = ContentMode::TabCompletionWaiting {
+                    handle: TabCompletionHandle {
+                        receiver: rx,
+                        shutdown_signal,
+                    },
+                    wuc_substring,
+                    start_time,
+                    auto_started,
+                };
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                log::warn!("Tab completion thread disconnected unexpectedly");
             }
         }
     }
@@ -1864,6 +1887,75 @@ mod tab_completion_tests {
                 }
             ]);
 
+        }
+    }
+
+    #[test]
+    fn test_tab_completion_handle_drop_kills_process() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let shutdown_signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let shutdown_signal_clone = shutdown_signal.clone();
+
+        // Spawn a helper thread to simulate the background behavior
+        let handle = std::thread::spawn(move || {
+            // Fork a child process that sleeps
+            let pid = unsafe { libc::fork() };
+            if pid == 0 {
+                // Child process: sleep for a long time
+                std::thread::sleep(std::time::Duration::from_secs(60));
+                unsafe {
+                    libc::_exit(0);
+                }
+            } else if pid > 0 {
+                // Parent thread in parent process:
+                // Send the pid back to the test so it knows child is ready
+                let _ = tx.send(pid);
+
+                // Wait in a loop checking the shutdown signal (like try_recv loop)
+                loop {
+                    if shutdown_signal_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                        unsafe {
+                            libc::kill(pid, libc::SIGKILL);
+                        }
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+
+                // Reap the child process
+                let mut status = 0;
+                unsafe {
+                    libc::waitpid(pid, &mut status, 0);
+                }
+            }
+        });
+
+        // Wait for thread to fork and set up child
+        let child_pid = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+
+        // Create TabCompletionHandle
+        let (_, dummy_rx) = std::sync::mpsc::channel();
+        let tab_completion_handle = TabCompletionHandle {
+            receiver: dummy_rx,
+            shutdown_signal: shutdown_signal.clone(),
+        };
+
+        // Before drop, check that shutdown_signal is false
+        assert!(!shutdown_signal.load(std::sync::atomic::Ordering::SeqCst));
+
+        // Drop the handle - this should trigger the loop to kill the child process and set shutdown_signal to true
+        drop(tab_completion_handle);
+
+        assert!(shutdown_signal.load(std::sync::atomic::Ordering::SeqCst));
+
+        // Wait for helper thread to finish (since waitpid should return because child is killed)
+        handle.join().unwrap();
+
+        // Verify that child process is indeed dead
+        // libc::kill with signal 0 checks for existence
+        unsafe {
+            let res = libc::kill(child_pid, 0);
+            assert!(res < 0, "Child process should be terminated");
         }
     }
 }
