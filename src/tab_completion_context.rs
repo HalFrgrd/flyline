@@ -370,7 +370,9 @@ pub fn get_completion_context<'a>(
                 match context_tokens.get(i) {
                     Some(t) if t.annotations.is_env_var && !range_contains_dollar => {
                         start = t.token.byte_range().start;
-                        while buffer.get(end.saturating_sub(1)..end) == Some(" ") {
+                        while end > cursor_byte_pos
+                            && buffer.get(end.saturating_sub(1)..end) == Some(" ")
+                        {
                             end = end.saturating_sub(1);
                         }
                     }
@@ -495,6 +497,11 @@ mod tests {
             }
             _ => panic!("Expected CommandComp"),
         }
+    }
+
+    #[test]
+    fn test_panic_gcm_dollar_space() {
+        let _res = run_inline(r#"gcm "foo bar $ █"#);
     }
 
     #[test]
