@@ -748,8 +748,8 @@ mod description_tests {
     fn test_nosort_flag() {
         let builder = ActiveSuggestionsBuilder {
             processed: vec![
-                ProcessedSuggestion::new("z", "", ""),
-                ProcessedSuggestion::new("a", "", ""),
+                ProcessedSuggestion::new("xz", "", ""),
+                ProcessedSuggestion::new("xa", "", ""),
             ],
             unprocessed: std::collections::VecDeque::new(),
             common_prefix: None,
@@ -761,7 +761,7 @@ mod description_tests {
 
         let mut active = ActiveSuggestions::new(
             builder,
-            SubString::new("", "").unwrap(),
+            SubString::new("x", "x").unwrap(),
             std::time::Duration::from_millis(0),
             false,
             crate::settings::SuggestionSortOrder::Alphabetical,
@@ -773,17 +773,26 @@ mod description_tests {
             .map(|fi| active.processed_suggestions[fi.suggestion_idx].s.clone())
             .collect();
 
-        // Nosort should preserve the original order: z, then a
-        assert_eq!(filtered_names, vec!["z", "a"]);
+        // Nosort should preserve the original order: xz, then xa
+        assert_eq!(filtered_names, vec!["xz", "xa"]);
+
+        // If we change the word under cursor to "", we have modified it, so nosort is ignored
+        active.update_word_under_cursor(&SubString::new("", "").unwrap());
+
+        let filtered_names_after: Vec<String> = active
+            .filtered_suggestions
+            .iter()
+            .map(|fi| active.processed_suggestions[fi.suggestion_idx].s.clone())
+            .collect();
+
+        // Since nosort is ignored, they should be sorted alphabetically: xa, then xz
+        assert_eq!(filtered_names_after, vec!["xa", "xz"]);
 
         // Setup for movement tests
-        active.selected_coord = Some((0, 1)); // Select "a" (index 1)
+        active.selected_coord = Some((0, 1)); // Select "xz" (index 1 in sorted list)
         active.last_num_rows_per_col = 10; // Dummy value for movement logic
 
         active.on_down_arrow(); // from index 1 to index 0 (wrap if only 2 items)
-        // Wait, n=2. selected_coord (0,1). next_row = 2. next_row >= last_num_rows_per_col? 2 >= 10 is false.
-        // next_idx = 0*10 + 2 = 2. 2 < 2 is false.
-        // So it wraps to (0,0).
         assert_eq!(active.selected_coord, Some((0, 0)));
 
         active.on_up_arrow(); // from (0,0) wraps to (0,1)
@@ -1850,7 +1859,9 @@ impl ActiveSuggestions {
             .collect();
 
         // Sort by score (descending - higher scores are better matches)
-        if !self.nosort {
+        let should_nosort = self.nosort
+            && (self.word_under_cursor.s == self.original_word_under_cursor.s);
+        if !should_nosort {
             self.filtered_suggestions.sort_by(|a, b| {
                 b.score.cmp(&a.score).then_with(|| {
                     let sug_a = &self.processed_suggestions[a.suggestion_idx];
