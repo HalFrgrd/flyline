@@ -1859,8 +1859,8 @@ impl ActiveSuggestions {
             .collect();
 
         // Sort by score (descending - higher scores are better matches)
-        let should_nosort = self.nosort
-            && (self.word_under_cursor.s == self.original_word_under_cursor.s);
+        let should_nosort =
+            self.nosort && (self.word_under_cursor.s == self.original_word_under_cursor.s);
         if !should_nosort {
             self.filtered_suggestions.sort_by(|a, b| {
                 b.score.cmp(&a.score).then_with(|| {

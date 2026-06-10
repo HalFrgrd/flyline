@@ -1020,12 +1020,11 @@ impl<'a> App<'a> {
                         crossterm::event::KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
                     );
                     update_buffer = true;
-                } else if matches!(
-                    mouse.kind,
-                    MouseEventKind::Down(_) | MouseEventKind::Drag(_)
-                ) {
+                } else if matches!(mouse.kind, MouseEventKind::Down(_)) {
                     self.content_mode = ContentMode::PromptDirSelect(idx);
                     return true;
+                } else if matches!(mouse.kind, MouseEventKind::Drag(_)) {
+                    self.content_mode = ContentMode::PromptDirSelect(idx);
                 }
             }
             Some(Tag::Clipboard(clipboard_type)) => {
@@ -1054,6 +1053,13 @@ impl<'a> App<'a> {
                 }
             }
             _ => {}
+        }
+
+        if mouse.kind == MouseEventKind::Moved || matches!(mouse.kind, MouseEventKind::Drag(_)) {
+            if update_buffer {
+                self.on_possible_buffer_change();
+            }
+            return false;
         }
 
         if update_buffer {
