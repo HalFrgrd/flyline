@@ -1391,7 +1391,10 @@ impl<'a> App<'a> {
                             .modifiers
                             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
 
-                        (c == '/' || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-')))
+                        (c == '/'
+                            || c == '$'
+                            || c == '~'
+                            || (c == '-' && new_wuc.s.chars().all(|ch| ch == '-')))
                             && mods_satisfied
                     } else {
                         false

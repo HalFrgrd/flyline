@@ -6,6 +6,8 @@ use crate::content_utils::{
 use crate::tutorial;
 use ratatui::prelude::*;
 
+const LOADING_TEXT: &str = "Loading completions…";
+
 pub(crate) struct DrawnContent {
     pub(crate) contents: Contents,
     /// The terminal row (absolute) where the content starts. Used for translating mouse coordinates.
@@ -713,10 +715,29 @@ impl<'a> App<'a> {
                     );
                 }
             }
-            ContentMode::TabCompletionWaiting { start_time, .. } if self.mode.is_running() => {
-                content.newline();
-                let line = gaussian_wave_animated("Loading completions…", now, *start_time);
-                content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
+            ContentMode::TabCompletionWaiting {
+                start_time,
+                auto_started,
+                wuc_substring,
+                ..
+            } if self.mode.is_running() => {
+                if *auto_started {
+                    Self::render_auto_suggestions_loading(
+                        &self.settings,
+                        &mut content,
+                        width,
+                        cursor_pos_maybe,
+                        self.buffer.buffer(),
+                        self.buffer.cursor_byte_pos(),
+                        wuc_substring,
+                        now,
+                        *start_time,
+                    );
+                } else {
+                    content.newline();
+                    let line = gaussian_wave_animated(LOADING_TEXT, now, *start_time);
+                    content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
+                }
             }
             ContentMode::FuzzyHistorySearch(_) if self.mode.is_running() => {
                 let source = fuzzy_source_for_render.as_ref().unwrap();
@@ -1285,6 +1306,80 @@ impl<'a> App<'a> {
         }
 
         content.move_cursor_to(y + num_rows_visible as u16 + 2, 0);
+        content.newline();
+    }
+
+    fn render_auto_suggestions_loading(
+        settings: &Settings,
+        content: &mut Contents,
+        width: u16,
+        cursor_pos_maybe: Option<Coord>,
+        buffer: &str,
+        cursor_byte_pos: usize,
+        wuc_substring: &crate::text_buffer::SubString,
+        now: std::time::Instant,
+        start_time: std::time::Instant,
+    ) {
+        content.newline();
+
+        let grid_start_row = content.cursor_position().row;
+        let term_width = width as usize;
+
+        let loading_text = LOADING_TEXT;
+        let inner_width = unicode_width::UnicodeWidthStr::width(loading_text);
+
+        let box_width = (inner_width + 2).min(term_width);
+        let inner_width = box_width.saturating_sub(2).max(1);
+
+        let popup_anchor_col = cursor_pos_maybe
+            .map(|pos| {
+                auto_suggestions_popup_anchor_col(
+                    pos.col as usize,
+                    wuc_substring,
+                    0,
+                    buffer,
+                    cursor_byte_pos,
+                )
+            })
+            .unwrap_or(0);
+        let popup_anchor_col = popup_anchor_col.min(term_width.saturating_sub(1));
+        let max_x = term_width.saturating_sub(box_width);
+        let x = popup_anchor_col.min(max_x) as u16;
+        let y = grid_start_row;
+
+        let box_area = Rect {
+            x,
+            y,
+            width: box_width as u16,
+            height: 3,
+        };
+
+        let full_inner_area = Rect {
+            x: x + 1,
+            y: y + 1,
+            width: inner_width as u16,
+            height: 1,
+        };
+
+        content.fill_rect(full_inner_area, " ", Style::default(), Tag::TabSuggestion);
+
+        content.render_border(
+            box_area,
+            Tag::TabSuggestion,
+            settings.colour_palette.secondary_text(),
+            false,
+            cursor_pos_maybe,
+            None,
+        );
+
+        content.move_cursor_to(y + 1, x + 1);
+        let line = gaussian_wave_animated(loading_text, now, start_time);
+        content.write_tagged_line_area(
+            &TaggedLine::from_line(line, Tag::TabSuggestion),
+            full_inner_area,
+        );
+
+        content.move_cursor_to(y + 3, 0);
         content.newline();
     }
 }
