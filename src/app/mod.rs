@@ -718,6 +718,11 @@ impl<'a> App<'a> {
             .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
             .map(|(tag, _)| tag);
 
+        let active_drag_tag = match mouse.kind {
+            MouseEventKind::Down(event::MouseButton::Left) => clicked_tag,
+            _ => self.mouse_state.drag_start_tag,
+        };
+
         match mouse.kind {
             MouseEventKind::Down(event::MouseButton::Left) => {
                 self.mouse_state.set_left_button_down();
@@ -763,13 +768,13 @@ impl<'a> App<'a> {
             }
         }
 
-        let mut update_buffer = false;
         if let Some(Tag::TabCompletionScrollBar {
             max_cell_height,
             y_start,
             ..
-        }) = self.mouse_state.drag_start_tag
+        }) = active_drag_tag
         {
+            let mut redraw = false;
             if matches!(
                 mouse.kind,
                 MouseEventKind::Down(event::MouseButton::Left)
@@ -790,11 +795,14 @@ impl<'a> App<'a> {
                     if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                         active_suggestions
                             .set_selected_by_scrollbar_pos(cell_height, max_cell_height);
-                        update_buffer = true;
+                        redraw = true;
                     }
                 }
             }
+            return redraw;
         }
+
+        let mut update_buffer = false;
 
         let mut cursor_directly_on_cell = true;
 
@@ -946,7 +954,8 @@ impl<'a> App<'a> {
             }
             Some(Tag::Command(byte_pos))
                 if self.settings.select_with_mouse
-                    && matches!(mouse.kind, MouseEventKind::Drag(_)) =>
+                    && matches!(mouse.kind, MouseEventKind::Drag(_))
+                    && matches!(active_drag_tag, Some(Tag::Command(_))) =>
             {
                 match (
                     self.mouse_state.get_click_count(),
