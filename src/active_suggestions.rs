@@ -1317,6 +1317,7 @@ pub struct ActiveSuggestions {
     pub nosort: bool,
     /// How to sort suggestions when fuzzy scores are tied.
     pub sort_order: crate::settings::SuggestionSortOrder,
+    formatted_cache: Vec<Option<SuggestionFormatted>>,
 }
 
 impl ActiveSuggestions {
@@ -1356,6 +1357,7 @@ impl ActiveSuggestions {
             auto_started,
             nosort: nosort || sug_len > crate::FILENAME_INFERENCE_LIMIT,
             sort_order,
+            formatted_cache: vec![],
         };
 
         active_sug.update_fuzzy_filtered();
@@ -1769,20 +1771,36 @@ impl ActiveSuggestions {
 
         let window_range = self.row_window_to_show.get_window_range();
 
-        window_range
-            .map(|filtered_idx| {
-                let fi = &self.filtered_suggestions[filtered_idx];
-                let suggestion = &self.processed_suggestions[fi.suggestion_idx];
-                SuggestionFormatted::new(
+        let mut list = Vec::with_capacity(window_range.len());
+        for filtered_idx in window_range {
+            let fi = &self.filtered_suggestions[filtered_idx];
+            let suggestion = &self.processed_suggestions[fi.suggestion_idx];
+
+            let needs_format = match &self.formatted_cache[filtered_idx] {
+                None => true,
+                Some(_) => match &suggestion.description {
+                    SuggestionDescription::Animation(_) => true,
+                    _ => false,
+                },
+            };
+
+            if needs_format {
+                let formatted = SuggestionFormatted::new(
                     suggestion,
                     fi.suggestion_idx,
                     filtered_idx,
                     fi.matching_indices.clone(),
                     palette,
                     frame_index,
-                )
-            })
-            .collect()
+                );
+                self.formatted_cache[filtered_idx] = Some(formatted);
+            }
+
+            if let Some(formatted) = &self.formatted_cache[filtered_idx] {
+                list.push(formatted.clone());
+            }
+        }
+        list
     }
 
     /// Number of suggestions currently shown (after fuzzy filtering).
@@ -1889,6 +1907,7 @@ impl ActiveSuggestions {
                 Some((0, 0))
             };
         }
+        self.formatted_cache = vec![None; self.filtered_suggestions.len()];
     }
 
     #[allow(dead_code)]
