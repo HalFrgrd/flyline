@@ -1192,7 +1192,7 @@ impl<'a> App<'a> {
 
         let pos_string = active_suggestions
             .current_1d_index()
-            .map(|idx| idx.to_string())
+            .map(|idx| idx.saturating_add(1).to_string())
             .unwrap_or_else(|| "-".to_string());
 
         let status_prefix = format!(
