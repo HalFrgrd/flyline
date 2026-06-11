@@ -740,6 +740,38 @@ impl<'a> App<'a> {
             _ => {}
         }
 
+        // Handle scrolling on suggestions popup
+        let is_over_suggestions = matches!(
+            clicked_tag,
+            Some(Tag::Suggestion(_))
+                | Some(Tag::TabSuggestion)
+                | Some(Tag::TabCompletionScrollBar { .. })
+        );
+
+        if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
+            if is_over_suggestions {
+                match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        active_suggestions.on_up_arrow();
+                        return false;
+                    }
+                    MouseEventKind::ScrollDown => {
+                        active_suggestions.on_down_arrow();
+                        return false;
+                    }
+                    MouseEventKind::ScrollLeft => {
+                        active_suggestions.on_left_arrow();
+                        return false;
+                    }
+                    MouseEventKind::ScrollRight => {
+                        active_suggestions.on_right_arrow();
+                        return false;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Smart mode: check if a scroll event occurred or the mouse is above the viewport.
         if self.settings.mouse_mode == MouseMode::Smart {
             match mouse.kind {
