@@ -1,5 +1,0 @@
-usage: git remote set-url [--push] <name> <new-url>
-
-    --push             Manipulate push URLs
-    --add              Add URL to list
-    --delete           Delete URL
