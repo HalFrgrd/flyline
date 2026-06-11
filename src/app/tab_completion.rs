@@ -1049,6 +1049,7 @@ impl App<'_> {
         if auto_started {
             if builder.is_empty() {
                 self.content_mode = ContentMode::Normal;
+                self.dismissed_tab_completion_wuc = Some(wuc_substring.s.clone());
                 return;
             }
             let total_len = builder.processed.len() + builder.unprocessed.len();
@@ -1062,6 +1063,7 @@ impl App<'_> {
                 };
                 if matches_exact {
                     self.content_mode = ContentMode::Normal;
+                    self.dismissed_tab_completion_wuc = Some(wuc_substring.s.clone());
                     return;
                 }
             }
