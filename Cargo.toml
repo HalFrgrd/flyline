@@ -3,8 +3,6 @@ name = "flyline"
 version = "1.0.0"
 edition = "2024"
 
-[workspace]
-members = ["flycomp"]
 
 [lib]
 crate-type = ["cdylib"]

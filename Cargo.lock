@@ -602,22 +602,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flycomp"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "clap_complete",
- "is_executable",
- "log",
- "regex",
- "serde",
- "serde_json",
- "strum 0.28.0",
-]
-
-[[package]]
 name = "flyline"
 version = "1.0.0"
 dependencies = [
