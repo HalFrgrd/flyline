@@ -1196,8 +1196,8 @@ impl App<'_> {
                 }
             });
 
-            // Block for up to 100ms waiting for the process to finish.
-            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            // Block for some time waiting for the process to finish.
+            match rx.recv_timeout(std::time::Duration::from_millis(40)) {
                 Ok(Some((builder, elapsed))) => {
                     self.finish_tab_complete(builder, wuc_substring, elapsed, auto_started);
                 }
