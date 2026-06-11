@@ -13,45 +13,43 @@ Type `export PATH="/home/john/bin/:$PATH" && flyline editor --auto-close-chars t
 Enter
 Show
 
+Hide
+Type clear
+Enter
 Type "# flyline is a full terminal app that replaces Bash's line editing functionality."
 Enter
-Sleep 800ms
+Type "# There are many improvements like Intellisense style suggestions:"
+Enter
+Sleep 100ms
+Show
 
-Type "# flyline can draw anywhere on the terminal meaning we can do pretty much anything:"
-Enter
-Sleep 800ms
 
-Type `flyline --matrix-animation`
+Type "gre"
+Sleep 600ms
+Tab
 Enter
-Sleep 800ms
+Sleep 900ms
 
-Type `echo "`
-Delete
-Sleep 200ms
-Enter
-Sleep 200ms
-Enter
-Sleep 200ms
-Enter
-Sleep 200ms
-Type `No other process is drawing this; it is all happening inside of Bash!`
-Enter
-Sleep 200ms
-Enter
-Type `"`
-Sleep 2000ms
-Ctrl+C
-Enter
-Type `flyline --matrix-animation off`
-Enter
-Sleep 800ms
+Type "--"
+Sleep 600ms
 
+Type `matches`
+Sleep 600ms
+Tab
+Sleep 600ms
+Enter
+Sleep 900ms
+
+Hide
+Type `flyline suggestions --auto-suggest false && clear`
+Sleep 100ms
 Type `# flyline integrates deeply with Bash allowing it to extend Bash's tab completions, history searching, and more.`
 Enter
-Sleep 800ms
-
-Type `# How about tooltips as you type:`
+Sleep 100ms
+Type `# Tooltips as you type:`
 Enter
+Show
+
 Sleep 800ms
 Type `ls`
 Sleep 1500ms
@@ -62,8 +60,10 @@ Sleep 2000ms
 Ctrl+C
 Sleep 800ms
 
-Type `# Or fuzzy history search like fzf:`
+Hide
+Type `# Fuzzy history search:`
 Enter
+Show
 Sleep 800ms
 Ctrl+R
 Sleep 1500ms
@@ -82,9 +82,32 @@ Sleep 500ms
 Ctrl+C
 Sleep 800ms
 
+Hide
+Type `cd ~/foo/bar/baz`
+Enter
+Sleep 100ms
+Type "# have you ever wanted to navigate by simply selecting a folder shown in your prompt?"
+Enter
+Show
+
+Sleep 800ms
+Left
+Sleep 500ms
+Left
+Sleep 500ms
+Left
+Sleep 500ms
+Left
+Sleep 500ms
+Enter
+Sleep 800ms
+
+Hide
 Type `# flyline can interface with your AI agent to help you write commands`
 Enter
 Sleep 800ms
+Show
+
 Type "list files older than three days"
 Sleep 500ms
 Alt+Enter
@@ -99,29 +122,12 @@ Enter
 Sleep 800ms
 Enter
 
-Type `cd ~/foo/bar/baz`
-Sleep 500ms
-Enter
-Sleep 800ms
-Type "# have you ever wanted to navigate by simply selecting a folder shown in your prompt?"
-Enter
-Sleep 800ms
-Left
-Sleep 500ms
-Left
-Sleep 500ms
-Left
-Sleep 500ms
-Left
-Sleep 500ms
-Enter
-Sleep 800ms
-Type "# flyline automatically detects the current working directory in your prompt and allows you to interact with it."
-Enter
-Sleep 800ms
 
+Hide
 Type `# flyline can intelligently close opening quotes and brackets: `
 Enter
+Show
+
 Sleep 800ms
 Type `echo "`
 Sleep 1000ms
@@ -142,10 +148,12 @@ Sleep 800ms
 Ctrl+C
 Sleep 800ms
 
+Hide
 Type `# flyline also supports text selection like you would expect in a code editor`
 Enter
-Sleep 800ms
+Show
 
+Sleep 800ms
 Type `git commit -m a multi word message`
 Sleep 1000ms
 # I rigged page up to select left one word
@@ -169,4 +177,4 @@ Enter
 Type `RPS1='\t`
 Enter
 
-Sleep 5s
+Sleep 4s
