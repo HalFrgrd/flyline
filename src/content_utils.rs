@@ -740,28 +740,6 @@ fn verify_all_alphanumeric_chars_in_haystack(pattern: &str, haystack: &str) -> b
     true
 }
 
-fn verify_all_alphanumeric_chars_in_matching_indices(
-    pattern: &str,
-    haystack: &str,
-    indices: &[usize],
-) -> bool {
-    let haystack_chars: Vec<char> = haystack.chars().collect();
-    let matched_chars: Vec<char> = indices
-        .iter()
-        .filter_map(|&idx| haystack_chars.get(idx))
-        .filter(|c| c.is_alphanumeric())
-        .flat_map(|c| c.to_lowercase())
-        .collect();
-
-    for p_char in pattern.chars().filter(|c| c.is_alphanumeric()) {
-        let p_lower = p_char.to_lowercase().next().unwrap_or(p_char);
-        if !matched_chars.contains(&p_lower) {
-            return false;
-        }
-    }
-    true
-}
-
 pub fn fuzzy_match_with_threshold(
     matcher: &ArinaeMatcher,
     candidate: &str,
@@ -793,9 +771,9 @@ pub fn fuzzy_indices_with_threshold(
     matcher
         .fuzzy_indices(candidate, pattern)
         .filter(|&(score, _)| score >= score_threshold)
-        .filter(|(_, indices)| {
+        .filter(|_| {
             if matches!(threshold, FuzzyMatchThreshold::High) {
-                verify_all_alphanumeric_chars_in_matching_indices(pattern, candidate, indices)
+                verify_all_alphanumeric_chars_in_haystack(pattern, candidate)
             } else {
                 true
             }
@@ -989,47 +967,6 @@ mod fuzzy_tests {
         );
         assert!(
             fuzzy_match_with_threshold(&matcher, "commit", "cxt", FuzzyMatchThreshold::High)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn test_verify_all_alphanumeric_chars_in_matching_indices() {
-        assert!(verify_all_alphanumeric_chars_in_matching_indices(
-            "momit",
-            "ommit",
-            &[0, 1, 2, 3, 4]
-        ));
-        assert!(verify_all_alphanumeric_chars_in_matching_indices(
-            "foo",
-            "barfoobaz",
-            &[3, 4, 5]
-        ));
-
-        // If the indices do not contain all the alphanumeric characters:
-        assert!(!verify_all_alphanumeric_chars_in_matching_indices(
-            "fao",
-            "fooa",
-            &[0, 1]
-        )); // Only "f" and "o"
-        assert!(verify_all_alphanumeric_chars_in_matching_indices(
-            "fao",
-            "fooa",
-            &[0, 1, 3]
-        )); // "f", "o", "a"
-    }
-
-    #[test]
-    fn test_fuzzy_indices_with_threshold_high() {
-        let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
-
-        assert!(
-            fuzzy_indices_with_threshold(&matcher, "commit", "cmomit", FuzzyMatchThreshold::High)
-                .is_some()
-        );
-
-        assert!(
-            fuzzy_indices_with_threshold(&matcher, "commit", "commita", FuzzyMatchThreshold::High)
                 .is_none()
         );
     }
