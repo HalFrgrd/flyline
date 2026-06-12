@@ -18,7 +18,7 @@ Show
 Hide
 Type clear
 Enter
-Type@5ms `clear && echo "flyline is a full terminal app that replaces Bash's line editing functionality." && echo "There are many improvements like Intellisense style suggestions:" && echo ""`
+Type@5ms `clear && echo "flyline is a Bash plugin that enhances Bash's line editing experience." && echo "There are many improvements like Intellisense style suggestions:" && echo ""`
 Enter
 Sleep 100ms
 Show
@@ -28,7 +28,7 @@ Type "gre"
 Sleep 1000ms
 Tab
 Enter
-Sleep 900ms
+Sleep 800ms
 Type "--"
 Sleep 600ms
 Type `matches`
@@ -36,14 +36,15 @@ Sleep 600ms
 Tab
 Sleep 600ms
 Enter
-Type `foo `
+Type `something `
 Sleep 600ms
 
 Type `~/`
-Sleep 900ms
+Sleep 800ms
 Tab
-Tab
-Sleep 900ms
+Sleep 800ms
+Enter
+Sleep 800ms
 
 
 # ############################################################################################################
@@ -51,6 +52,7 @@ Sleep 900ms
 # ############################################################################################################
 
 Hide
+Sleep 100ms
 Ctrl+C
 Type@5ms `cd ~/foo/bar/baz`
 Enter
@@ -82,10 +84,12 @@ Show
 # #############################################################################################################
 
 Hide
+Sleep 100ms
 Ctrl+C
 Type@5ms `clear && echo "fuzzy history search:" && echo ""`
 Enter
 Show
+
 Sleep 800ms
 Ctrl+R
 Sleep 1500ms
@@ -108,12 +112,13 @@ Sleep 800ms
 # # AI agent integration
 # ############################################################################################################
 Hide
+Sleep 100ms
 Ctrl+C
 Type@5ms `clear && echo "flyline can interface with your AI agent to help you write commands" && echo ""`
 Enter
-Sleep 800ms
 Show
 
+Sleep 800ms
 Type "list files older than three days"
 Sleep 500ms
 Alt+Enter
@@ -133,11 +138,9 @@ Enter
 #############################################################################################################
 
 Hide
-Ctrl+C
-Type@5ms `flyline suggestions --auto-suggest false `
-Enter
 Sleep 100ms
-Type@5ms `clear && echo "flyline integrates deeply with Bash allowing tooltips as you type:" && echo ""`
+Ctrl+C
+Type@5ms `flyline suggestions --auto-suggest false && clear && echo "flyline integrates deeply with Bash allowing tooltips as you type:" && echo ""`
 Enter
 Show
 
@@ -169,19 +172,14 @@ Type `$(`
 Sleep 1000ms
 Type `foo`
 Sleep 800ms
-Backspace
-Backspace
-Backspace
+Backspace 3
 Sleep 800ms
-Backspace
-Sleep 800ms
-Backspace
-Sleep 800ms
-Backspace
+Backspace@800ms 3
 Sleep 800ms
 
 
 Hide
+Ctrl+C
 Type@5ms `flyline editor --auto-close-chars false `
 Enter
 Show
@@ -209,7 +207,8 @@ Sleep 500ms
 Ctrl+Shift+Left
 Sleep 1000ms
 Type '"'
-Sleep 1500ms
+Sleep 600ms
+Right
 Right
 Sleep 800ms
 
@@ -224,6 +223,7 @@ Type@5ms `clear && echo "Check out the rest of this README to learn about flylin
 Enter
 Show
 
+Sleep 800ms
 Type `RPS1='\t'`
 Enter
 
