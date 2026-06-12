@@ -199,6 +199,7 @@ mod tests {
             will_bash_accept_buffer("echo hello # ' this is a comment\n"),
             true
         );
+        assert_eq!(will_bash_accept_buffer("clear# test '"), false);
     }
 
     #[test]
