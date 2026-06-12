@@ -8,7 +8,7 @@ Require claude
 
 Hide
 Sleep 50ms
-Type@5ms `export PATH="/home/john/bin/:$PATH" && flyline suggestions --auto-suggest true && flyline suggestions --num-suggestion-rows 8  && clear`
+Type@5ms `export PATH="/home/john/bin/:$PATH" && flyline suggestions --auto-suggest true && flyline suggestions --num-suggestion-rows 10  && clear`
 Enter
 Show
 
@@ -18,7 +18,7 @@ Show
 Hide
 Type clear
 Enter
-Type@5ms `clear && echo "flyline is a Bash plugin that enhances Bash's line editing experience." && echo "There are many improvements like Intellisense style suggestions:" && echo ""`
+Type@5ms `clear && echo "flyline is a Bash plugin that brings many improvements. For instance, Intellisense style suggestions:" && echo ""`
 Enter
 Sleep 100ms
 Show
@@ -28,16 +28,17 @@ Type "gre"
 Sleep 1000ms
 Tab
 Enter
-Sleep 800ms
+Sleep 600ms
 Type "--"
-Sleep 600ms
+Sleep 800ms
 Type `matches`
-Sleep 600ms
+Sleep 800ms
 Tab
-Sleep 600ms
+Sleep 500ms
 Enter
+Sleep 500ms
 Type `something `
-Sleep 600ms
+Sleep 500ms
 
 Type `~/`
 Sleep 800ms
@@ -45,6 +46,12 @@ Tab
 Sleep 800ms
 Enter
 Sleep 800ms
+
+Hide
+Ctrl+C
+Type@5ms `flyline suggestions --auto-suggest false && clear`
+Enter
+Show
 
 
 # ############################################################################################################
@@ -57,21 +64,21 @@ Ctrl+C
 Type@5ms `cd ~/foo/bar/baz`
 Enter
 Sleep 100ms
-Type@5ms `clear && echo "navigation using your prompt:" && echo ""`
+Type@5ms `clear && echo "Navigate using your prompt:" && echo ""`
 Enter
 Show
 
 Sleep 800ms
 Left
-Sleep 500ms
+Sleep 600ms
 Left
-Sleep 500ms
+Sleep 600ms
 Left
-Sleep 500ms
+Sleep 600ms
 Left
-Sleep 500ms
+Sleep 600ms
 Enter
-Sleep 800ms
+Sleep 1000ms
 
 Hide
 Type@5ms `cd ~/`
@@ -86,9 +93,13 @@ Show
 Hide
 Sleep 100ms
 Ctrl+C
-Type@5ms `clear && echo "fuzzy history search:" && echo ""`
+Type@5ms `clear`
 Enter
+Type `# Fuzzy history search`
 Show
+
+Sleep 1000ms
+Ctrl+Backspace 4
 
 Sleep 800ms
 Ctrl+R
@@ -140,7 +151,7 @@ Enter
 Hide
 Sleep 100ms
 Ctrl+C
-Type@5ms `flyline suggestions --auto-suggest false && clear && echo "flyline integrates deeply with Bash allowing tooltips as you type:" && echo ""`
+Type@5ms `clear && echo "flyline unparalleled Bash integration allows tooltips as you type:" && echo ""`
 Enter
 Show
 
@@ -191,7 +202,7 @@ Show
 
 Hide
 Ctrl+C
-Type@5ms `clear && echo "flyline supports code editor-like text selection" && echo ""`
+Type@5ms `clear && echo "flyline supports code editor-like text selection" && echo "This has nothing to do with the terminal emulator, it's all inside of Bash!" && echo ""`
 Enter
 Show
 
