@@ -2,6 +2,7 @@ Output demo_overview.gif
 Output demo_overview.svg
 
 Source demo_settings.tape
+Set Width 1330
 Source demo_setup.tape
 
 Require claude
@@ -98,7 +99,7 @@ Enter
 Type `# Fuzzy history search`
 Show
 
-Sleep 1000ms
+Sleep 1500ms
 Ctrl+Backspace 4
 
 Sleep 800ms
@@ -125,7 +126,7 @@ Sleep 800ms
 Hide
 Sleep 100ms
 Ctrl+C
-Type@5ms `clear && echo "flyline can interface with your AI agent to help you write commands" && echo ""`
+Type@5ms `clear && echo "flyline can interface with your AI agent to help you write commands:" && echo ""`
 Enter
 Show
 
@@ -151,7 +152,7 @@ Enter
 Hide
 Sleep 100ms
 Ctrl+C
-Type@5ms `clear && echo "flyline unparalleled Bash integration allows tooltips as you type:" && echo ""`
+Type@5ms `clear && echo "flyline's deep Bash integration allows tooltips as you type:" && echo ""`
 Enter
 Show
 
@@ -230,7 +231,7 @@ Sleep 800ms
 
 Hide
 Ctrl+C
-Type@5ms `clear && echo "Check out the rest of this README to learn about flyline's other features! Like  dynamic prompts:" && echo ""`
+Type@5ms `clear && echo "Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:" && echo ""`
 Enter
 Show
 
