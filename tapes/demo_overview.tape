@@ -23,9 +23,9 @@ Enter
 Sleep 100ms
 Show
 
-Sleep 1000ms
+Sleep 2000ms
 Type "gre"
-Sleep 600ms
+Sleep 1000ms
 Tab
 Enter
 Sleep 900ms
@@ -45,51 +45,6 @@ Tab
 Tab
 Sleep 900ms
 
-#############################################################################################################
-# tooltips
-#############################################################################################################
-
-Hide
-Ctrl+C
-Type@5ms `flyline suggestions --auto-suggest false `
-Enter
-Sleep 100ms
-Type@5ms `clear && echo "flyline integrates deeply with Bash allowing tooltips as you type:" && echo ""`
-Enter
-Show
-
-Sleep 800ms
-Type `ls`
-Sleep 1500ms
-Type ` $HOME`
-Sleep 1500ms
-Type ` && echo $BASH_VERSINFO`
-Sleep 2000ms
-
-# #############################################################################################################
-# # fuzzy history search
-# #############################################################################################################
-
-Hide
-Ctrl+C
-Type@5ms `clear && echo "fuzzy history search:" && echo ""`
-Enter
-Show
-Sleep 800ms
-Ctrl+R
-Sleep 1500ms
-Type `crgo`
-Sleep 800ms
-Down
-Sleep 500ms
-Down
-Sleep 500ms
-Up
-Sleep 500ms
-Up
-Sleep 500ms
-Enter
-Sleep 800ms
 
 # ############################################################################################################
 # # Prompt navigation
@@ -121,6 +76,34 @@ Type@5ms `cd ~/`
 Enter
 Show
 
+
+# #############################################################################################################
+# # fuzzy history search
+# #############################################################################################################
+
+Hide
+Ctrl+C
+Type@5ms `clear && echo "fuzzy history search:" && echo ""`
+Enter
+Show
+Sleep 800ms
+Ctrl+R
+Sleep 1500ms
+Type `crgo`
+Sleep 800ms
+Down
+Sleep 500ms
+Down
+Sleep 500ms
+Up
+Sleep 500ms
+Up
+Sleep 500ms
+Enter
+Sleep 800ms
+
+
+
 # ############################################################################################################
 # # AI agent integration
 # ############################################################################################################
@@ -145,6 +128,26 @@ Enter
 Sleep 800ms
 Enter
 
+#############################################################################################################
+# tooltips
+#############################################################################################################
+
+Hide
+Ctrl+C
+Type@5ms `flyline suggestions --auto-suggest false `
+Enter
+Sleep 100ms
+Type@5ms `clear && echo "flyline integrates deeply with Bash allowing tooltips as you type:" && echo ""`
+Enter
+Show
+
+Sleep 800ms
+Type `ls`
+Sleep 1500ms
+Type ` $HOME`
+Sleep 1500ms
+Type ` && echo $BASH_VERSINFO`
+Sleep 2000ms
 
 
 # ############################################################################################################
@@ -171,35 +174,33 @@ Backspace
 Backspace
 Sleep 800ms
 Backspace
-Sleep 1000ms
-Backspace
-Sleep 1000ms
+Sleep 800ms
 Backspace
 Sleep 800ms
-Ctrl+C
+Backspace
 Sleep 800ms
+
 
 Hide
 Type@5ms `flyline editor --auto-close-chars false `
 Enter
 Show
 
-# ############################################################################################################
-# # Text selection
-# ############################################################################################################
+############################################################################################################
+# Text selection
+############################################################################################################
 
 
 Hide
 Ctrl+C
-Type@5ms `clear && echo "flyline also supports text selection like you would expect in a code editor" && echo ""`
+Type@5ms `clear && echo "flyline supports code editor-like text selection" && echo ""`
 Enter
 Show
 
 Sleep 800ms
 Type `git commit -m a multi word message`
 Sleep 1000ms
-# I rigged page up to select left one word
-Ctrl+Shift+Left
+Ctrl+Shift+Left              # making use of evp's support for all types of keybindings!
 Sleep 500ms
 Ctrl+Shift+Left
 Sleep 500ms
@@ -209,9 +210,7 @@ Ctrl+Shift+Left
 Sleep 1000ms
 Type '"'
 Sleep 1500ms
-Escape
-Sleep 500ms
-Ctrl+C
+Right
 Sleep 800ms
 
 # ############################################################################################################
@@ -221,7 +220,7 @@ Sleep 800ms
 
 Hide
 Ctrl+C
-Type@5ms `clear && echo "Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:" && echo ""`
+Type@5ms `clear && echo "Check out the rest of this README to learn about flyline's other features! Like  dynamic prompts:" && echo ""`
 Enter
 Show
 
