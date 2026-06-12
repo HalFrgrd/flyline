@@ -13,6 +13,9 @@ Type@5ms `export PATH="/home/john/bin/:$PATH" && flyline suggestions --auto-sugg
 Enter
 Show
 
+#############################################################################################################
+# intellisense
+#############################################################################################################
 Hide
 Type clear
 Enter
@@ -44,9 +47,13 @@ Sleep 900ms
 Tab
 Tab
 Sleep 900ms
-Ctrl+C
+
+#############################################################################################################
+# tooltips
+#############################################################################################################
 
 Hide
+Ctrl+C
 Type@5ms `flyline suggestions --auto-suggest false && clear `
 Enter
 Sleep 100ms
@@ -61,10 +68,15 @@ Type ` $HOME`
 Sleep 1500ms
 Type ` && echo $BASH_VERSINFO`
 Sleep 2000ms
-Ctrl+C
-Sleep 800ms
+
+
+
+#############################################################################################################
+# fuzzy history search
+#############################################################################################################
 
 Hide
+Ctrl+C
 Type `clear`
 Enter
 Type `# fuzzy history search:`
@@ -84,11 +96,16 @@ Sleep 500ms
 Up
 Sleep 500ms
 Enter
-Sleep 500ms
-Ctrl+C
 Sleep 800ms
 
+
+
+############################################################################################################
+# Prompt navigation
+############################################################################################################
+
 Hide
+Ctrl+C
 Type `cd ~/foo/bar/baz && clear`
 Enter
 Sleep 100ms
@@ -108,79 +125,103 @@ Sleep 500ms
 Enter
 Sleep 800ms
 
-# Hide
-# Type `# flyline can interface with your AI agent to help you write commands`
-# Enter
-# Sleep 800ms
-# Show
 
-# Type "list files older than three days"
-# Sleep 500ms
-# Alt+Enter
-# Sleep 4000ms
-# Down
-# Sleep 1000ms
-# Down
-# Sleep 1000ms
-# Up
-# Sleep 1000ms
-# Enter
-# Sleep 800ms
-# Enter
+############################################################################################################
+# AI agent integration
+############################################################################################################
+Hide
+Ctrl+C
+Type `cd ~/foo/bar/baz && clear`
+Enter
+Sleep 100ms
+Type `# flyline can interface with your AI agent to help you write commands`
+Enter
+Sleep 800ms
+Show
+
+Type "list files older than three days"
+Sleep 500ms
+Alt+Enter
+Sleep 4000ms
+Down
+Sleep 1000ms
+Down
+Sleep 1000ms
+Up
+Sleep 1000ms
+Enter
+Sleep 800ms
+Enter
 
 
-# Hide
-# Type `# flyline can intelligently close opening quotes and brackets: `
-# Enter
-# Show
 
-# Sleep 800ms
-# Type `echo "`
-# Sleep 1000ms
-# Type `$(`
-# Sleep 1000ms
-# Type `foo`
-# Sleep 800ms
-# Backspace
-# Backspace
-# Backspace
-# Sleep 800ms
-# Backspace
-# Sleep 1000ms
-# Backspace
-# Sleep 1000ms
-# Backspace
-# Sleep 800ms
-# Ctrl+C
-# Sleep 800ms
+############################################################################################################
+# Intelligent quote and bracket closing
+############################################################################################################
 
-# Hide
-# Type `# flyline also supports text selection like you would expect in a code editor`
-# Enter
-# Show
+Hide
+Ctrl+C
+Type `cd ~/foo/bar/baz && clear`
+Enter
+Type `# flyline can intelligently close opening quotes and brackets: `
+Enter
+Show
 
-# Sleep 800ms
-# Type `git commit -m a multi word message`
-# Sleep 1000ms
-# # I rigged page up to select left one word
-# PageUp
-# Sleep 500ms
-# PageUp
-# Sleep 500ms
-# PageUp
-# Sleep 500ms
-# PageUp
-# Sleep 1000ms
-# Type `"`
-# Sleep 1500ms
-# Escape
-# Sleep 500ms
-# Ctrl+C
-# Sleep 800ms
+Sleep 800ms
+Type 'echo "'
+Sleep 1000ms
+Type `$(`
+Sleep 1000ms
+Type `foo`
+Sleep 800ms
+Backspace
+Backspace
+Backspace
+Sleep 800ms
+Backspace
+Sleep 1000ms
+Backspace
+Sleep 1000ms
+Backspace
+Sleep 800ms
+Ctrl+C
+Sleep 800ms
 
-# Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
-# Enter
-# Type `RPS1='\t`
-# Enter
+############################################################################################################
+# Text selection
+############################################################################################################
 
-# Sleep 4s
+
+Hide
+Ctrl+C
+Type `clear`
+Enter
+Type `# flyline also supports text selection like you would expect in a code editor`
+Enter
+Show
+
+Sleep 800ms
+Type `git commit -m a multi word message`
+Sleep 1000ms
+# I rigged page up to select left one word
+PageUp
+Sleep 500ms
+PageUp
+Sleep 500ms
+PageUp
+Sleep 500ms
+PageUp
+Sleep 1000ms
+Type '"'
+Sleep 1500ms
+Escape
+Sleep 500ms
+Ctrl+C
+Sleep 800ms
+
+Type `# Check out the rest of this README to learn about flyline's other features! Like dynamic prompts:`
+Enter
+Type `RPS1='\t`
+Enter
+
+Sleep 4s
