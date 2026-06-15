@@ -1361,7 +1361,18 @@ impl<'a> App<'a> {
     }
 
     pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String) {
-        let cmd_word = command_word.clone();
+        let poss_alias = crate::bash_funcs::find_alias(&command_word);
+        let alias_def = poss_alias
+            .as_deref()
+            .filter(|alias| !alias.is_empty())
+            .unwrap_or(&command_word);
+        let alias_expanded_command_word = alias_def
+            .split_whitespace()
+            .next()
+            .unwrap_or(alias_def)
+            .to_string();
+
+        let cmd_word = alias_expanded_command_word;
         let start_time = std::time::Instant::now();
         let thread_handle = std::thread::spawn(move || {
             flycomp::generate_completion_output(
