@@ -1873,7 +1873,6 @@ impl ActiveSuggestions {
             .iter()
             .enumerate()
             .filter_map(|(idx, sug)| self.fuzzy_match_for_processed(idx, sug))
-            // .inspect(|x| log::debug!("Fuzzy match result: idx={}, score={}, matching_indices={:?}", x.suggestion_idx, x.score, x.matching_indices))
             .collect();
 
         // Sort by score (descending - higher scores are better matches)

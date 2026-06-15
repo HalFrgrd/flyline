@@ -320,9 +320,6 @@ fn gen_completions_uncomitted(
                                 pattern,
                                 content_utils::FuzzyMatchThreshold::High,
                             )
-                            .inspect(|score| {
-                                log::debug!("Fuzzy match score for '{}': {}", match_text, score)
-                            })
                             .map(|_score| sug)
                         })
                         .collect();
@@ -341,9 +338,6 @@ fn gen_completions_uncomitted(
                                 pattern,
                                 content_utils::FuzzyMatchThreshold::High,
                             )
-                            .inspect(|score| {
-                                log::debug!("Fuzzy match score for '{}': {}", match_text, score)
-                            })
                             .map(|_score| sug)
                         })
                         .collect();
