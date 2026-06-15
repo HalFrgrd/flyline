@@ -265,17 +265,77 @@ impl<'a> App<'a> {
 
         let now = std::time::Instant::now();
 
-        // When terminal log streaming is enabled, show the last 20 log lines at
-        // the top of the content before anything else.
+        // When terminal log streaming is enabled, show the logs in a fixed-height bordered box of exactly 15 lines.
         if crate::logging::is_terminal_streaming() {
-            let log_lines = crate::logging::last_n_logs(20);
+            let box_height: u16 = 15;
+            let log_lines = crate::logging::last_n_logs(50);
+
+            let inner_width = if width > 2 { width - 2 } else { width };
+            let mut wrapped_lines: Vec<String> = Vec::new();
             for line_text in log_lines {
-                let tagged_line = TaggedLine::from(vec![TaggedSpan::new(
-                    ratatui::text::Span::raw(line_text),
-                    Tag::Normal,
-                )]);
-                content.write_tagged_line(&tagged_line, true);
+                let r_span = Span::raw(line_text);
+                let r_line = Line::from(r_span);
+                let split_rows = split_line_to_terminal_rows(&r_line, inner_width);
+                for row in split_rows {
+                    let content_str: String =
+                        row.spans.iter().map(|s| s.content.as_ref()).collect();
+                    wrapped_lines.push(content_str);
+                }
             }
+
+            let inner_height = box_height.saturating_sub(2) as usize;
+            let len = wrapped_lines.len();
+            let start_idx = len.saturating_sub(inner_height);
+            let display_lines = &wrapped_lines[start_idx..];
+
+            let box_area = Rect {
+                x: 0,
+                y: 0,
+                width,
+                height: box_height,
+            };
+
+            let status_line = TaggedLine::from(vec![TaggedSpan::new(
+                Span::styled(
+                    " Streamed Logs ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Tag::Normal,
+            )]);
+
+            content.render_border(
+                box_area,
+                Tag::Normal,
+                Style::default().fg(Color::DarkGray),
+                false,
+                None,
+                Some(status_line),
+            );
+
+            let start_col = if width > 2 { 1 } else { 0 };
+            let padding_lines = inner_height.saturating_sub(display_lines.len());
+            for i in 0..inner_height {
+                let row = 1 + i as u16;
+                content.move_cursor_to(row, start_col);
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::raw(" ".repeat(inner_width as usize)),
+                    Tag::Normal,
+                ));
+
+                if i >= padding_lines {
+                    let log_idx = i - padding_lines;
+                    if log_idx < display_lines.len() {
+                        content.move_cursor_to(row, start_col);
+                        content.write_tagged_span(&TaggedSpan::new(
+                            Span::raw(&display_lines[log_idx]),
+                            Tag::Normal,
+                        ));
+                    }
+                }
+            }
+
+            content.move_to_final_line();
+            content.newline();
         }
 
         // Render tutorial text above the prompt when a tutorial step is active.
@@ -310,12 +370,13 @@ impl<'a> App<'a> {
                     Constraint::Max(10),
                 ]);
 
-                let tutorial_start_row = 1;
+                let start_y = content.cursor_position().row;
+                let tutorial_start_row = start_y + 1;
                 content.newline();
 
                 let [mut prev_block, text_block, mut next_block] = Rect {
                     x: 0,
-                    y: 0,
+                    y: start_y,
                     width,
                     height: BUTTON_HEIGHT,
                 }
@@ -392,7 +453,7 @@ impl<'a> App<'a> {
                 let drain_start = text_end_row + 2;
                 content.delete_rows(drain_start, tutorial_start_row + BUTTON_HEIGHT);
 
-                let final_height = content.height().max(7);
+                let final_height = (content.height() - start_y).max(10);
 
                 prev_block.height = final_height;
                 next_block.height = final_height;

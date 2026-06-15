@@ -408,6 +408,8 @@ pub enum Action {
     TabCompletionMovePageDown,
     #[strum(message = "Accept the currently selected suggestion")]
     TabCompletionAcceptEntry,
+    #[strum(message = "Accept all currently shown suggestions")]
+    TabCompletionAcceptAll,
     #[strum(message = "Move to the previous tab completion suggestion")]
     TabCompletionPrevSuggestion,
     #[strum(message = "Move to the next tab completion suggestion")]
@@ -630,6 +632,12 @@ impl Action {
             Action::TabCompletionAcceptEntry => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
                     active_suggestions.accept_selected_filtered_item(&mut app.buffer);
+                    app.content_mode = ContentMode::Normal;
+                }
+            }
+            Action::TabCompletionAcceptAll => {
+                if let ContentMode::TabCompletion(active_suggestions) = &mut app.content_mode {
+                    active_suggestions.accept_all_filtered_items(&mut app.buffer);
                     app.content_mode = ContentMode::Normal;
                 }
             }
@@ -1857,7 +1865,7 @@ fn capitalize_first(s: &str) -> String {
 /// useful for backward compatibility with old applications. The "Esc+" option is recommended for most users"
 /// In text_buffer.rs, I check if either of them are set for maximal compatibility.
 /// From highest priority to lowest
-static DEFAULT_BINDINGS: LazyLock<[Binding; 89]> = LazyLock::new(|| {
+static DEFAULT_BINDINGS: LazyLock<[Binding; 90]> = LazyLock::new(|| {
     use KeyCode as KC;
     use KeyModifiers as M;
     [
@@ -1953,6 +1961,11 @@ static DEFAULT_BINDINGS: LazyLock<[Binding; 89]> = LazyLock::new(|| {
             &expand_variations![KC::Enter.into()],
             ContextVar::TabCompletionEntrySelected.into(),
             Action::TabCompletionAcceptEntry,
+        ),
+        Binding::new(
+            &expand_variations![M::CONTROL + KC::Enter.into(), M::SUPER + KC::Enter.into()],
+            ContextVar::TabCompletionAvailable.into(),
+            Action::TabCompletionAcceptAll,
         ),
         Binding::new(
             &expand_variations![KC::Enter.into()],

@@ -1894,5 +1894,19 @@ mod tab_completion_tests {
             ]);
 
         }
+
+        #[test]
+        fn test_accept_all_filtered_items() {
+            cd_to_example_braces_fs();
+            let mut buffer = TextBuffer::new("mycmd f");
+            let mut active_suggestions = run_to_active_suggestions(&mut buffer);
+            active_suggestions.accept_all_filtered_items(&mut buffer);
+
+            let words: Vec<&str> = buffer.buffer().split_whitespace().collect();
+            assert_eq!(words[0], "mycmd");
+            let mut items = words[1..].to_vec();
+            items.sort();
+            assert_eq!(items, vec!["foo1/", "foo2/", "foo3/"]);
+        }
     }
 }

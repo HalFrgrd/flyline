@@ -1957,4 +1957,29 @@ impl ActiveSuggestions {
             log::error!("Failed to apply suggestion: {}", e);
         }
     }
+
+    pub fn accept_all_filtered_items(&mut self, buffer: &mut TextBuffer) {
+        if self.filtered_suggestions.is_empty() {
+            return;
+        }
+
+        let suggestion_strings: Vec<String> = self
+            .filtered_suggestions
+            .iter()
+            .filter_map(|filtered_item| {
+                self.processed_suggestions
+                    .get(filtered_item.suggestion_idx)
+                    .map(|suggestion| suggestion.formatted())
+            })
+            .collect();
+
+        if suggestion_strings.is_empty() {
+            return;
+        }
+
+        let joined = suggestion_strings.join(" ");
+        if let Err(e) = buffer.replace_word_under_cursor(&joined, &self.word_under_cursor) {
+            log::error!("Failed to apply all suggestions: {}", e);
+        }
+    }
 }
