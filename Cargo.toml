@@ -38,8 +38,8 @@ shlex = "1.3.0"
 rand = "0.10.1"
 parse-style = { version = "0.4.0" }
 easing-function = "0.1.1"
-ctor = "0.10.0"
 strum = { version = "0.28.0", features = ["derive"] }
+flycomp = { path = "../flycomp" }
 
 [features]
 pre_bash_4_4 = []

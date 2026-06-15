@@ -803,6 +803,93 @@ impl<'a> App<'a> {
                     content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
                 }
             }
+            ContentMode::TabCompletionAskForFlycomp {
+                command_word,
+                selected_yes,
+                ..
+            } if self.mode.is_running() => {
+                content.newline();
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        format!(
+                            "No completion script found for '{}'. Run flycomp to synthesize one? ",
+                            command_word
+                        ),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Tag::Normal,
+                ));
+
+                // Yes button
+                let yes_style = if *selected_yes {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Green)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Green)
+                };
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(" [Yes] ", yes_style),
+                    Tag::FlycompYes,
+                ));
+
+                content.write_tagged_span(&TaggedSpan::new(Span::raw(" "), Tag::Normal));
+
+                // No button
+                let no_style = if !*selected_yes {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Red)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Red)
+                };
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(" [No] ", no_style),
+                    Tag::FlycompNo,
+                ));
+                content.newline();
+            }
+            ContentMode::TabCompletionRunningFlycomp {
+                command_word,
+                start_time,
+                ..
+            } if self.mode.is_running() => {
+                content.newline();
+                let text = format!(
+                    "Running flycomp to synthesize completions for '{}'...",
+                    command_word
+                );
+                let line = gaussian_wave_animated(&text, now, *start_time);
+                content.write_tagged_line(&TaggedLine::from_line(line, Tag::Normal), false);
+            }
+            ContentMode::TabCompletionFlycompResult {
+                command_word,
+                error_message,
+            } if self.mode.is_running() => {
+                content.newline();
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        format!("flycomp was not successful for '{}': ", command_word),
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ),
+                    Tag::Normal,
+                ));
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(error_message.clone(), Style::default().fg(Color::LightRed)),
+                    Tag::Normal,
+                ));
+                content.newline();
+                content.write_tagged_span(&TaggedSpan::new(
+                    Span::styled(
+                        "Press any key to return to normal editing.",
+                        self.settings.colour_palette.secondary_text(),
+                    ),
+                    Tag::Normal,
+                ));
+                content.newline();
+            }
             ContentMode::FuzzyHistorySearch(_) if self.mode.is_running() => {
                 let source = fuzzy_source_for_render.as_ref().unwrap();
                 let num_rows_footer = 1;

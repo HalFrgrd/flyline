@@ -51,6 +51,7 @@ use skim::fuzzy_matcher::arinae::ArinaeMatcher;
 fn run_comp_spec_completion(
     completion_context: &tab_completion_context::CompletionContext,
     initial_command_word: &str,
+    auto_started: bool,
 ) -> Option<ActiveSuggestionsBuilder> {
     let poss_alias = bash_funcs::find_alias(initial_command_word);
     log::debug!(
@@ -93,9 +94,14 @@ fn run_comp_spec_completion(
             Ok(comp_result) => {
                 if !comp_result.compspec_was_useful {
                     log::info!(
-                        "run_comp_spec_completion: compspec for '{}' was not useful, falling back to flyline's own completion strategies.",
+                        "run_comp_spec_completion: compspec for '{}' was not useful",
                         alias_expanded_command_word
                     );
+                    if !auto_started {
+                        let mut builder = ActiveSuggestionsBuilder::new();
+                        builder.compspec_was_useful = false;
+                        return Some(builder);
+                    }
                     return None;
                 }
                 log::debug!(
@@ -281,14 +287,14 @@ fn gen_completions_uncomitted(
                 // Since aliases are the highest priority in command word resolution,
                 // If it is an alias, lets expand it here for better completion results.
                 if let Some(builder) =
-                    run_comp_spec_completion(completion_context, initial_command_word)
+                    run_comp_spec_completion(completion_context, initial_command_word, auto_started)
                 {
                     log::debug!(
                         "CompType::CommandComp found {} completions for command word: {}",
                         builder.len(),
                         initial_command_word
                     );
-                    if !builder.is_empty() {
+                    if !builder.compspec_was_useful || !builder.is_empty() {
                         return Some(builder.with_comp_type(comp_type.clone()));
                     }
                 }
@@ -310,9 +316,14 @@ fn gen_completions_uncomitted(
 
                 let fuzzy_completion_context = completion_context.with_wuc_replaced(&new_wuc);
 
-                if let Some(mut builder) =
-                    run_comp_spec_completion(&fuzzy_completion_context, initial_command_word)
-                {
+                if let Some(mut builder) = run_comp_spec_completion(
+                    &fuzzy_completion_context,
+                    initial_command_word,
+                    auto_started,
+                ) {
+                    if !builder.compspec_was_useful {
+                        return Some(builder.with_comp_type(comp_type.clone()));
+                    }
                     let matcher = ArinaeMatcher::new(skim::CaseMatching::Smart, true);
                     let pattern = original_wuc.strip_prefix(&new_wuc).unwrap_or(original_wuc);
 
@@ -1075,6 +1086,27 @@ impl App<'_> {
         load_time: std::time::Duration,
         auto_started: bool,
     ) {
+        if !builder.compspec_was_useful && !auto_started {
+            let completion_context = tab_completion_context::get_completion_context(
+                self.buffer.buffer(),
+                self.buffer.cursor_byte_pos(),
+            );
+            let command_word = completion_context
+                .context
+                .as_ref()
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+
+            self.content_mode = ContentMode::TabCompletionAskForFlycomp {
+                command_word,
+                word_under_cursor: wuc_substring.s.clone(),
+                selected_yes: true,
+            };
+            return;
+        }
+
         if auto_started {
             if builder.is_empty() {
                 self.content_mode = ContentMode::Normal;

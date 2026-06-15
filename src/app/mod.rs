@@ -68,6 +68,7 @@ fn restore_terminal(extended_key_codes: bool) {
     });
 
     // Reset mouse pointer shape back to default
+    // TODO: ghostty doesnt recognise the empty cursor
     let mut stdout = std::io::stdout();
     let _ = std::io::Write::write_all(&mut stdout, b"\x1b]22;\x1b\\");
     let _ = std::io::Write::flush(&mut stdout);
@@ -321,6 +322,21 @@ pub(crate) enum ContentMode {
     /// User is navigating the CWD path segments displayed in the prompt.
     /// The inner value is the currently highlighted segment index (0 = rightmost/current dir).
     PromptDirSelect(usize),
+    TabCompletionAskForFlycomp {
+        command_word: String,
+        word_under_cursor: String,
+        selected_yes: bool,
+    },
+    TabCompletionRunningFlycomp {
+        command_word: String,
+        _word_under_cursor: String,
+        start_time: std::time::Instant,
+        thread_handle: std::thread::JoinHandle<anyhow::Result<String>>,
+    },
+    TabCompletionFlycompResult {
+        command_word: String,
+        error_message: String,
+    },
 }
 
 pub(crate) struct App<'a> {
@@ -516,6 +532,9 @@ impl<'a> App<'a> {
                 redraw = true;
             }
             if self.poll_tab_completion() {
+                redraw = true;
+            }
+            if self.poll_flycomp() {
                 redraw = true;
             }
 
@@ -895,6 +914,38 @@ impl<'a> App<'a> {
             Some(Tag::PromptCopyBufferWidget) => {}
             Some(Tag::Ps1PromptCwdWidget(_)) => {}
             Some(Tag::TabCompletionScrollBar { .. }) => {}
+            Some(Tag::FlycompYes) => {
+                if let ContentMode::TabCompletionAskForFlycomp {
+                    ref mut selected_yes,
+                    ..
+                } = self.content_mode
+                {
+                    *selected_yes = true;
+                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                        let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
+                        if let ContentMode::TabCompletionAskForFlycomp {
+                            command_word,
+                            word_under_cursor,
+                            ..
+                        } = mode
+                        {
+                            self.run_flycomp(command_word, word_under_cursor);
+                        }
+                    }
+                }
+            }
+            Some(Tag::FlycompNo) => {
+                if let ContentMode::TabCompletionAskForFlycomp {
+                    ref mut selected_yes,
+                    ..
+                } = self.content_mode
+                {
+                    *selected_yes = false;
+                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                        self.content_mode = ContentMode::Normal;
+                    }
+                }
+            }
             _ => {
                 self.tooltip = None;
             }
@@ -1245,6 +1296,89 @@ impl<'a> App<'a> {
             }
         }
         false
+    }
+
+    fn poll_flycomp(&mut self) -> bool {
+        let finished = if let ContentMode::TabCompletionRunningFlycomp {
+            ref thread_handle, ..
+        } = self.content_mode
+        {
+            thread_handle.is_finished()
+        } else {
+            false
+        };
+
+        if finished {
+            let mode = std::mem::replace(&mut self.content_mode, ContentMode::Normal);
+            if let ContentMode::TabCompletionRunningFlycomp {
+                command_word,
+                thread_handle,
+                ..
+            } = mode
+            {
+                match thread_handle.join() {
+                    Ok(Ok(script)) => {
+                        log::info!("flycomp succeeded for command '{}'", command_word);
+                        match crate::bash_funcs::evaluate_shell_string(&script) {
+                            Ok(_) => {
+                                log::info!(
+                                    "Successfully evaluated synthesized completion script for '{}'",
+                                    command_word
+                                );
+                                self.start_tab_complete(false);
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to evaluate synthesized completion script: {:?}",
+                                    e
+                                );
+                                self.content_mode = ContentMode::TabCompletionFlycompResult {
+                                    command_word,
+                                    error_message: format!("Failed to load script: {}", e),
+                                };
+                            }
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        log::warn!("flycomp failed for command '{}': {:?}", command_word, e);
+                        self.content_mode = ContentMode::TabCompletionFlycompResult {
+                            command_word,
+                            error_message: e.to_string(),
+                        };
+                    }
+                    Err(join_err) => {
+                        log::error!("flycomp thread panicked: {:?}", join_err);
+                        self.content_mode = ContentMode::TabCompletionFlycompResult {
+                            command_word,
+                            error_message: "Thread panicked".to_string(),
+                        };
+                    }
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(crate) fn run_flycomp(&mut self, command_word: String, word_under_cursor: String) {
+        let cmd_word = command_word.clone();
+        let start_time = std::time::Instant::now();
+        let thread_handle = std::thread::spawn(move || {
+            flycomp::generate_completion_output(
+                &cmd_word,
+                flycomp::OutputFormat::Bash,
+                flycomp::SynthesisStrategy::ManPageOrRunHelp,
+                true, // sandbox
+                5000, // timeout_ms
+                2,    // recurse_limit
+            )
+        });
+        self.content_mode = ContentMode::TabCompletionRunningFlycomp {
+            command_word,
+            _word_under_cursor: word_under_cursor,
+            start_time,
+            thread_handle,
+        };
     }
 
     fn show_agent_mode_not_configured_error(&mut self) {

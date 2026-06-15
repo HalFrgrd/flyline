@@ -862,7 +862,7 @@ pub fn useful_compspec_ran(command_word: &str) -> bool {
                 command_word,
                 funcname_str
             );
-            if funcname_str == "_minimal" || funcname_str == "_completion_loader" {
+            if funcname_str == "_minimal" || funcname_str == "_completion_loader" || funcname_str == "_longopt" {
                 return false;
             }
         }
@@ -873,6 +873,25 @@ pub fn useful_compspec_ran(command_word: &str) -> bool {
 #[cfg(test)]
 pub fn useful_compspec_ran(_command_word: &str) -> bool {
     true
+}
+
+#[cfg(not(test))]
+pub fn evaluate_shell_string(script: &str) -> Result<()> {
+    unsafe {
+        let script_cstr = std::ffi::CString::new(script)?;
+        let allocated_ptr = bash_symbols::xmalloc_cstr(&script_cstr);
+        let from_file_cstr = std::ffi::CString::new("flycomp")?;
+        #[cfg(not(feature = "pre_bash_4_4"))]
+        bash_symbols::evalstring(allocated_ptr, from_file_cstr.as_ptr(), 0);
+        #[cfg(feature = "pre_bash_4_4")]
+        bash_symbols::parse_and_execute(allocated_ptr, from_file_cstr.as_ptr(), 0);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub fn evaluate_shell_string(_script: &str) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(not(test))]

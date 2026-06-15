@@ -195,6 +195,8 @@ pub enum Tag {
     Tutorial,
     Clipboard(ClipboardTypes),
     MultiWidthContinuation,
+    FlycompYes,
+    FlycompNo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

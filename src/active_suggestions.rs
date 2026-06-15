@@ -546,6 +546,7 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
+            compspec_was_useful: true,
         };
         let mut active = ActiveSuggestions::new(
             builder,
@@ -614,6 +615,7 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
+            compspec_was_useful: true,
         };
         let mut active = ActiveSuggestions::new(
             builder,
@@ -651,6 +653,7 @@ mod description_tests {
                 insert_common_prefix: false,
                 comp_type: crate::tab_completion_context::CompType::FirstWord,
                 nosort: false,
+                compspec_was_useful: true,
             },
             SubString::new("c", "c").unwrap(),
             std::time::Duration::from_millis(0),
@@ -682,6 +685,7 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
+            compspec_was_useful: true,
         };
 
         // mtime descending: c(200), then {a, b} (100), then d(0).
@@ -721,6 +725,7 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
+            compspec_was_useful: true,
         };
 
         let active_alpha = ActiveSuggestions::new(
@@ -757,6 +762,7 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: true,
+            compspec_was_useful: true,
         };
 
         let mut active = ActiveSuggestions::new(
@@ -814,6 +820,7 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
+            compspec_was_useful: true,
         };
         let active_boundary = ActiveSuggestions::new(
             builder_boundary,
@@ -837,6 +844,7 @@ mod description_tests {
             insert_common_prefix: false,
             comp_type: crate::tab_completion_context::CompType::FirstWord,
             nosort: false,
+            compspec_was_useful: true,
         };
         let active_large = ActiveSuggestions::new(
             builder_large,
@@ -1128,6 +1136,7 @@ pub struct ActiveSuggestionsBuilder {
     pub common_prefix: Option<String>,
     pub comp_type: tab_completion_context::CompType,
     pub nosort: bool,
+    pub compspec_was_useful: bool,
 }
 
 impl ActiveSuggestionsBuilder {
@@ -1142,6 +1151,7 @@ impl ActiveSuggestionsBuilder {
             common_prefix: None,
             comp_type: tab_completion_context::CompType::default(),
             nosort: false,
+            compspec_was_useful: true,
         }
     }
 
@@ -1336,6 +1346,7 @@ impl ActiveSuggestions {
             insert_common_prefix: _,
             comp_type,
             nosort,
+            ..
         } = builder;
         let sug_len = processed_suggestions.len() + unprocessed_suggestions.len();
 
