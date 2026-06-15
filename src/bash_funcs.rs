@@ -1515,7 +1515,7 @@ impl ExecutablesOnPath {
         let mut names = Vec::new();
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata()
+                if let Ok(metadata) = std::fs::metadata(entry.path())
                     && metadata.is_file()
                 {
                     let permissions = metadata.permissions();
