@@ -77,11 +77,7 @@ impl DrawnContent {
             .enumerate()
             .rev()
             .find(|(col_idx, tagged_cell)| {
-                *col_idx <= term_em_x as usize
-                    && matches!(
-                        tagged_cell.tag,
-                        Tag::Command(_)
-                    )
+                *col_idx <= term_em_x as usize && matches!(tagged_cell.tag, Tag::Command(_))
             })
             .map(|(_, cell)| cell.tag)
         {
@@ -604,6 +600,11 @@ impl<'a> App<'a> {
             let cursor_style = {
                 if self.settings.cursor_config.backend == CursorBackend::Terminal {
                     None
+                } else if self.mouse_state.is_left_button_down()
+                    && self.buffer.selection_range().is_some()
+                    && matches!(self.mouse_state.last_mouse_over_cell, Some(Tag::Command(_)))
+                {
+                    None
                 } else if self.settings.show_animations {
                     let focused = self.term_has_focus
                         && !matches!(self.content_mode, ContentMode::PromptDirSelect(_))
@@ -1044,6 +1045,9 @@ impl<'a> App<'a> {
         if let Some(term_em_cursor) = drawn_content.term_em_cursor_pos()
             && (self.settings.cursor_config.backend == CursorBackend::Terminal
                 || !self.mode.is_running())
+            && !(self.mouse_state.is_left_button_down()
+                && self.buffer.selection_range().is_some()
+                && matches!(self.mouse_state.last_mouse_over_cell, Some(Tag::Command(_))))
         {
             frame.set_cursor_position(term_em_cursor);
         }
