@@ -35,8 +35,10 @@ pub struct MouseState {
     /// True while the left mouse button is currently being held down.
     /// Set on `MouseEventKind::Down(Left)` and cleared on `MouseEventKind::Up(Left)`.
     left_button_down: bool,
-    pub last_mouse_over_cell: Option<Tag>,
-    pub last_mouse_over_direct_cell: Option<Tag>,
+    /// `DrawnContent::get_tagged_cell` sometimes returns a different tag than the actual direct cell under mouse.
+    /// This improves UX.
+    pub last_mouse_over_cell_semantic: Option<Tag>,
+    pub last_mouse_over_cell_direct: Option<Tag>,
     pub drag_start_tag: Option<Tag>,
     current_pointer_shape: PointerShape,
 }
@@ -65,8 +67,8 @@ impl MouseState {
             last_left_click_times: Vec::new(),
             last_left_click_buffer_pos: None,
             left_button_down: false,
-            last_mouse_over_cell: None,
-            last_mouse_over_direct_cell: None,
+            last_mouse_over_cell_semantic: None,
+            last_mouse_over_cell_direct: None,
             drag_start_tag: None,
             current_pointer_shape: PointerShape::Default,
         }
@@ -189,12 +191,14 @@ impl MouseState {
         let _ = std::io::Write::flush(&mut stdout);
     }
 
-    pub fn update_pointer_shape(&mut self, _is_text_selected: bool) {
+    pub fn update_pointer_shape(&mut self, _is_text_selected: bool, change_shape: bool) {
         let is_dragging = self.left_button_down;
-        let hovered_tag = self.last_mouse_over_direct_cell;
+        let hovered_tag = self.last_mouse_over_cell_direct;
         let drag_start = self.drag_start_tag;
 
-        let shape = if is_dragging {
+        let shape = if !change_shape {
+            PointerShape::Default
+        } else if is_dragging {
             if matches!(drag_start, Some(Tag::Command(_))) {
                 PointerShape::Text
             } else {

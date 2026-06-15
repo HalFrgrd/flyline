@@ -515,8 +515,12 @@ enum Commands {
         /// Show the last 10 mouse events above the prompt.
         #[arg(long = "debug", default_missing_value = "true", num_args = 0..=1)]
         debug: Option<bool>,
-        #[command(subcommand)]
-        subcommand: Option<MouseSubcommands>,
+        /// Whether to change the mouse cursor shape depending on what is hovered.
+        #[arg(long = "change-shape", default_missing_value = "true", num_args = 0..=1)]
+        change_shape: Option<bool>,
+        /// Mouse capture mode (disabled, simple, smart).
+        #[arg(long = "mode", value_name = "MODE")]
+        mode: Option<settings::MouseMode>,
     },
 }
 
@@ -581,17 +585,6 @@ enum KeySubcommands {
         from: String,
         /// The key or modifier to remap to (e.g. "z", "ctrl").
         to: String,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum MouseSubcommands {
-    /// Configure mouse capture mode (disabled, simple, smart).
-    #[command(name = "mode", verbatim_doc_comment)]
-    Mode {
-        /// Mouse capture mode to apply (disabled, simple, smart).
-        #[arg(value_name = "MODE")]
-        mode: settings::MouseMode,
     },
 }
 
@@ -1116,18 +1109,22 @@ impl Flyline {
                             None => {}
                         }
                     }
-                    Some(Commands::Mouse { debug, subcommand }) => {
+                    Some(Commands::Mouse {
+                        debug,
+                        change_shape,
+                        mode,
+                    }) => {
                         if let Some(enabled) = debug {
                             log::info!("Mouse debug mode enabled: {}", enabled);
                             self.settings.mouse_debug = enabled;
                         }
-
-                        match subcommand {
-                            Some(MouseSubcommands::Mode { mode }) => {
-                                log::info!("Mouse mode set to {:?}", mode);
-                                self.settings.mouse_mode = mode;
-                            }
-                            None => {}
+                        if let Some(enabled) = change_shape {
+                            log::info!("Mouse change shape enabled: {}", enabled);
+                            self.settings.mouse_change_shape = enabled;
+                        }
+                        if let Some(m) = mode {
+                            log::info!("Mouse mode set to {:?}", m);
+                            self.settings.mouse_mode = m;
                         }
                     }
                     None => {}

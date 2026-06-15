@@ -484,7 +484,7 @@ impl<'a> App<'a> {
         // Apply hover/depress styling to whichever CWD segment the mouse is over.
         if self.mode.is_running()
             && let Some(Tag::Ps1PromptCwdWidget(hovered_idx)) =
-                self.mouse_state.last_mouse_over_cell
+                self.mouse_state.last_mouse_over_cell_semantic
         {
             let cwd_state = self.button_state_for(Tag::Ps1PromptCwdWidget(hovered_idx));
             if !matches!(cwd_state, ButtonState::Normal) {
@@ -602,7 +602,10 @@ impl<'a> App<'a> {
                     None
                 } else if self.mouse_state.is_left_button_down()
                     && self.buffer.selection_range().is_some()
-                    && matches!(self.mouse_state.last_mouse_over_cell, Some(Tag::Command(_)))
+                    && matches!(
+                        self.mouse_state.last_mouse_over_cell_semantic,
+                        Some(Tag::Command(_))
+                    )
                 {
                     None
                 } else if self.settings.show_animations {
@@ -673,7 +676,7 @@ impl<'a> App<'a> {
             _ => None,
         };
 
-        let scrollbar_tag = self.mouse_state.last_mouse_over_cell;
+        let scrollbar_tag = self.mouse_state.last_mouse_over_cell_semantic;
         let is_scrollbar_hovered =
             matches!(scrollbar_tag, Some(Tag::TabCompletionScrollBar { .. }));
         let scrollbar_state = if is_scrollbar_hovered {
@@ -1047,7 +1050,10 @@ impl<'a> App<'a> {
                 || !self.mode.is_running())
             && !(self.mouse_state.is_left_button_down()
                 && self.buffer.selection_range().is_some()
-                && matches!(self.mouse_state.last_mouse_over_cell, Some(Tag::Command(_))))
+                && matches!(
+                    self.mouse_state.last_mouse_over_cell_semantic,
+                    Some(Tag::Command(_))
+                ))
         {
             frame.set_cursor_position(term_em_cursor);
         }

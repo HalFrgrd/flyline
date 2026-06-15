@@ -629,8 +629,10 @@ impl<'a> App<'a> {
                             true
                         }
                     };
-                    self.mouse_state
-                        .update_pointer_shape(self.buffer.selection_range().is_some());
+                    self.mouse_state.update_pointer_shape(
+                        self.buffer.selection_range().is_some(),
+                        self.settings.mouse_change_shape,
+                    );
                     r
                 }
                 Ok(None) => true,
@@ -702,8 +704,8 @@ impl<'a> App<'a> {
     fn toggle_mouse_state(&mut self) {
         self.mouse_state.toggle();
         if !self.mouse_state.is_enabled() {
-            self.mouse_state.last_mouse_over_cell = None;
-            self.mouse_state.last_mouse_over_direct_cell = None;
+            self.mouse_state.last_mouse_over_cell_semantic = None;
+            self.mouse_state.last_mouse_over_cell_direct = None;
         }
     }
 
@@ -711,7 +713,7 @@ impl<'a> App<'a> {
     /// based on whether the mouse is hovering it and whether the left mouse
     /// button is currently held down.
     fn button_state_for(&self, tag: Tag) -> ButtonState {
-        if self.mouse_state.last_mouse_over_cell != Some(tag) {
+        if self.mouse_state.last_mouse_over_cell_semantic != Some(tag) {
             ButtonState::Normal
         } else if self.mouse_state.is_left_button_down() {
             ButtonState::Depressed
@@ -794,8 +796,8 @@ impl<'a> App<'a> {
                 | MouseEventKind::ScrollRight => {
                     log::debug!("Disabling mouse capture due to scroll event in smart mode");
                     self.mouse_state.disable();
-                    self.mouse_state.last_mouse_over_cell = None;
-                    self.mouse_state.last_mouse_over_direct_cell = None;
+                    self.mouse_state.last_mouse_over_cell_semantic = None;
+                    self.mouse_state.last_mouse_over_cell_direct = None;
                     return false;
                 }
                 _ => {}
@@ -814,8 +816,8 @@ impl<'a> App<'a> {
                     );
                     self.mouse_state.disable();
                 }
-                self.mouse_state.last_mouse_over_cell = None;
-                self.mouse_state.last_mouse_over_direct_cell = None;
+                self.mouse_state.last_mouse_over_cell_semantic = None;
+                self.mouse_state.last_mouse_over_cell_direct = None;
                 return false;
             }
         }
@@ -855,8 +857,8 @@ impl<'a> App<'a> {
         }
 
         let mut update_buffer = false;
-        self.mouse_state.last_mouse_over_cell = semantic_tag;
-        self.mouse_state.last_mouse_over_direct_cell = direct_tag;
+        self.mouse_state.last_mouse_over_cell_semantic = semantic_tag;
+        self.mouse_state.last_mouse_over_cell_direct = direct_tag;
 
         let mut cursor_directly_on_cell = true;
 
@@ -899,7 +901,7 @@ impl<'a> App<'a> {
         }
 
         if matches!(self.content_mode, ContentMode::PromptDirSelect(_)) {
-            match self.mouse_state.last_mouse_over_cell {
+            match self.mouse_state.last_mouse_over_cell_semantic {
                 Some(Tag::Ps1PromptCwdWidget(_)) | Some(Tag::PromptCopyBufferWidget) => {}
                 _ => {
                     self.content_mode = ContentMode::Normal;
@@ -907,7 +909,7 @@ impl<'a> App<'a> {
             }
         }
 
-        match self.mouse_state.last_mouse_over_cell {
+        match self.mouse_state.last_mouse_over_cell_semantic {
             Some(Tag::Suggestion(idx)) => {
                 if matches!(mouse.kind, MouseEventKind::Up(_))
                     && let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode
