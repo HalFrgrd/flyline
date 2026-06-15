@@ -36,9 +36,9 @@ pub struct MouseState {
     /// Set on `MouseEventKind::Down(Left)` and cleared on `MouseEventKind::Up(Left)`.
     left_button_down: bool,
     pub last_mouse_over_cell: Option<Tag>,
+    pub last_mouse_over_direct_cell: Option<Tag>,
     pub drag_start_tag: Option<Tag>,
     current_pointer_shape: PointerShape,
-    pub selection_mouse_initiated: bool,
 }
 
 impl MouseState {
@@ -66,9 +66,9 @@ impl MouseState {
             last_left_click_buffer_pos: None,
             left_button_down: false,
             last_mouse_over_cell: None,
+            last_mouse_over_direct_cell: None,
             drag_start_tag: None,
             current_pointer_shape: PointerShape::Default,
-            selection_mouse_initiated: false,
         }
     }
 
@@ -189,25 +189,33 @@ impl MouseState {
         let _ = std::io::Write::flush(&mut stdout);
     }
 
-    pub fn update_pointer_shape(&mut self, is_text_selected: bool) {
+    pub fn update_pointer_shape(&mut self, _is_text_selected: bool) {
         let is_dragging = self.left_button_down;
-        let hovered_tag = self.last_mouse_over_cell;
+        let hovered_tag = self.last_mouse_over_direct_cell;
         let drag_start = self.drag_start_tag;
-
-        if !is_text_selected {
-            self.selection_mouse_initiated = false;
-        }
 
         let shape = if is_dragging {
             if matches!(drag_start, Some(Tag::Command(_))) {
-                self.selection_mouse_initiated = true;
                 PointerShape::Text
             } else {
                 PointerShape::Grabbing
             }
-        } else if is_text_selected && self.selection_mouse_initiated {
+        } else if matches!(hovered_tag, Some(Tag::Command(_))) {
             PointerShape::Text
-        } else if hovered_tag.is_some() && !matches!(hovered_tag, Some(Tag::Command(_))) {
+        } else if hovered_tag.is_some_and(|tag| {
+            matches!(
+                tag,
+                Tag::Suggestion(_)
+                    | Tag::HistoryResult(_)
+                    | Tag::AiResult(_)
+                    | Tag::TutorialPrev
+                    | Tag::TutorialNext
+                    | Tag::PromptCopyBufferWidget
+                    | Tag::Clipboard(_)
+                    | Tag::Ps1PromptCwdWidget(_)
+                    | Tag::TabCompletionScrollBar { .. }
+            )
+        }) {
             PointerShape::Grab
         } else {
             PointerShape::Default

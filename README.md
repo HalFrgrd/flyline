@@ -479,6 +479,7 @@ Commands:
   run-tutorial          Run the interactive tutorial for first-time users.
   editor                Configure the inline editor.
   suggestions           Configure suggestion behavior.
+  mouse                 Configure mouse options and debugging.
   help                  Print this message or the help of the given subcommand(s)
 
 Options:
@@ -498,14 +499,6 @@ Options:
 
       --set-frame-rate <FPS>
           Render frame rate in frames per second (1–120, default 24)
-
-      --set-mouse-mode <MODE>
-          Mouse capture mode (disabled, simple, smart). Default is smart
-
-          Possible values:
-          - disabled: Never capture mouse events
-          - simple:   Mouse capture is on by default; toggled when Escape is pressed
-          - smart:    Mouse capture is on by default with automatic management: disabled on scroll or when the user clicks above the viewport, re-enabled on any keypress or when focus is regained. Also can manually toggle with Escape
 
       --send-shell-integration-codes [<SEND_SHELL_INTEGRATION_CODES>]
           Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full

@@ -591,7 +591,6 @@ impl<'a> App<'a> {
                         CrosstermEvent::Key(key) => {
                             self.last_activity_time = std::time::Instant::now();
                             self.handle_key_event(key);
-                            self.mouse_state.selection_mouse_initiated = false;
                             true
                         }
                         CrosstermEvent::Mouse(mouse) => {
@@ -627,7 +626,6 @@ impl<'a> App<'a> {
                             self.buffer.delete_selection();
                             self.buffer.insert_str(&pasted);
                             self.on_possible_buffer_change();
-                            self.mouse_state.selection_mouse_initiated = false;
                             true
                         }
                     };
@@ -705,6 +703,7 @@ impl<'a> App<'a> {
         self.mouse_state.toggle();
         if !self.mouse_state.is_enabled() {
             self.mouse_state.last_mouse_over_cell = None;
+            self.mouse_state.last_mouse_over_direct_cell = None;
         }
     }
 
@@ -727,11 +726,14 @@ impl<'a> App<'a> {
         // Track whether the left mouse button is currently being held down so
         // interactive cells (clipboard cells, buttons) can render a "depressed"
         // state while the user is pressing on them.
-        let clicked_tag = self
+        let (direct_tag, semantic_tag) = self
             .last_contents
             .as_ref()
             .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
-            .map(|(tag, _)| tag);
+            .map(|(direct, semantic)| (Some(direct), Some(semantic)))
+            .unwrap_or((None, None));
+
+        let clicked_tag = semantic_tag;
 
         let active_drag_tag = match mouse.kind {
             MouseEventKind::Down(event::MouseButton::Left) => clicked_tag,
@@ -793,6 +795,7 @@ impl<'a> App<'a> {
                     log::debug!("Disabling mouse capture due to scroll event in smart mode");
                     self.mouse_state.disable();
                     self.mouse_state.last_mouse_over_cell = None;
+                    self.mouse_state.last_mouse_over_direct_cell = None;
                     return false;
                 }
                 _ => {}
@@ -812,6 +815,7 @@ impl<'a> App<'a> {
                     self.mouse_state.disable();
                 }
                 self.mouse_state.last_mouse_over_cell = None;
+                self.mouse_state.last_mouse_over_direct_cell = None;
                 return false;
             }
         }
@@ -851,64 +855,45 @@ impl<'a> App<'a> {
         }
 
         let mut update_buffer = false;
+        self.mouse_state.last_mouse_over_cell = semantic_tag;
+        self.mouse_state.last_mouse_over_direct_cell = direct_tag;
 
         let mut cursor_directly_on_cell = true;
 
-        match self
-            .last_contents
-            .as_ref()
-            .and_then(|drawn_contents| drawn_contents.get_tagged_cell(mouse.column, mouse.row))
-        {
-            Some((tag @ Tag::Suggestion(idx), true)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
+        match semantic_tag {
+            Some(Tag::Suggestion(idx)) => {
                 if let ContentMode::TabCompletion(active_suggestions) = &mut self.content_mode {
                     log::debug!("Setting selected by idx: {}", idx);
                     active_suggestions.set_selected_by_idx(idx);
                 }
             }
-            Some((tag @ Tag::HistoryResult(idx), true)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
+            Some(Tag::HistoryResult(idx)) => {
                 if let ContentMode::FuzzyHistorySearch(ref source) = self.content_mode {
                     let source = source.clone();
                     self.select_fuzzy_history_manager_mut(&source)
                         .fuzzy_search_set_idx(idx);
                 }
             }
-            Some((tag @ Tag::AiResult(idx), true)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
+            Some(Tag::AiResult(idx)) => {
                 if let ContentMode::AgentOutputSelection(selection) = &mut self.content_mode {
                     selection.set_selected_by_idx(idx);
                 }
             }
-            Some((tag @ Tag::Command(byte_pos), direct)) => {
-                cursor_directly_on_cell = direct;
-                self.mouse_state.last_mouse_over_cell = Some(tag);
+            Some(Tag::Command(byte_pos)) => {
+                cursor_directly_on_cell = matches!(direct_tag, Some(Tag::Command(_)));
                 if let Some(part) = self.formatted_buffer_cache.get_part_from_byte_pos(byte_pos)
                     && let Some(tooltip) = part.tooltip.as_ref()
                 {
                     self.tooltip = Some(tooltip.clone());
                 }
             }
-            Some((tag @ Tag::TutorialPrev, true)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
-            }
-            Some((tag @ Tag::TutorialNext, true)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
-            }
-            Some((tag @ Tag::Clipboard(_), true)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
-            }
-            Some((tag @ Tag::PromptCopyBufferWidget, true)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
-            }
-            Some((tag @ Tag::Ps1PromptCwdWidget(_), _)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
-            }
-            Some((tag @ Tag::TabCompletionScrollBar { .. }, _)) => {
-                self.mouse_state.last_mouse_over_cell = Some(tag);
-            }
+            Some(Tag::TutorialPrev) => {}
+            Some(Tag::TutorialNext) => {}
+            Some(Tag::Clipboard(_)) => {}
+            Some(Tag::PromptCopyBufferWidget) => {}
+            Some(Tag::Ps1PromptCwdWidget(_)) => {}
+            Some(Tag::TabCompletionScrollBar { .. }) => {}
             _ => {
-                self.mouse_state.last_mouse_over_cell = None;
                 self.tooltip = None;
             }
         }

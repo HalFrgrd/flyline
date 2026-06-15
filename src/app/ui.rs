@@ -45,7 +45,7 @@ impl DrawnContent {
         })
     }
 
-    pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, bool)> {
+    pub fn get_tagged_cell(&self, term_em_x: u16, term_em_y: u16) -> Option<(Tag, Tag)> {
         let content_row = self.term_em_row_to_content_row(term_em_y);
         if content_row < 0 {
             return None;
@@ -54,23 +54,22 @@ impl DrawnContent {
         let content_buf_row = self.contents.buf.get(content_row as usize)?;
 
         let direct_contact = content_buf_row.get(term_em_x as usize);
+        let direct_tag = direct_contact.map(|cell| cell.tag).unwrap_or(Tag::Blank);
 
-        if direct_contact.is_some_and(|cell| {
-            matches!(
-                cell.tag,
-                Tag::Command(_)
-                    | Tag::Suggestion(_)
-                    | Tag::HistoryResult(_)
-                    | Tag::AiResult(_)
-                    | Tag::TutorialPrev
-                    | Tag::TutorialNext
-                    | Tag::PromptCopyBufferWidget
-                    | Tag::Clipboard(_)
-                    | Tag::Ps1PromptCwdWidget(_)
-                    | Tag::TabCompletionScrollBar { .. }
-            )
-        }) {
-            return direct_contact.map(|cell| (cell.tag, true));
+        if matches!(
+            direct_tag,
+            Tag::Command(_)
+                | Tag::Suggestion(_)
+                | Tag::HistoryResult(_)
+                | Tag::AiResult(_)
+                | Tag::TutorialPrev
+                | Tag::TutorialNext
+                | Tag::PromptCopyBufferWidget
+                | Tag::Clipboard(_)
+                | Tag::Ps1PromptCwdWidget(_)
+                | Tag::TabCompletionScrollBar { .. }
+        ) {
+            return Some((direct_tag, direct_tag));
         }
 
         if let Some(hit) = content_buf_row
@@ -84,9 +83,9 @@ impl DrawnContent {
                         Tag::Command(_) | Tag::TabCompletionScrollBar { .. }
                     )
             })
-            .map(|(_, cell)| (cell.tag, false))
+            .map(|(_, cell)| cell.tag)
         {
-            return Some(hit);
+            return Some((direct_tag, hit));
         }
 
         // Mirror of the leftward search above: when the click is below the
@@ -104,7 +103,7 @@ impl DrawnContent {
                 .rev()
                 .find(|tagged_cell| matches!(tagged_cell.tag, Tag::Command(_)))
             {
-                return Some((cell.tag, false));
+                return Some((direct_tag, cell.tag));
             }
         }
 

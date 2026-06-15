@@ -86,7 +86,7 @@ struct FlylineArgs {
     #[arg(long = "set-frame-rate", value_name = "FPS", value_parser = clap::value_parser!(u8).range(1..=120))]
     frame_rate: Option<u8>,
     /// Mouse capture mode (disabled, simple, smart). Default is smart.
-    #[arg(long = "set-mouse-mode", value_name = "MODE")]
+    #[arg(long = "set-mouse-mode", value_name = "MODE", hide = true)]
     mouse_mode: Option<settings::MouseMode>,
     /// Send shell integration escape codes (OSC 133 / OSC 633): none, only-prompt-pos, or full
     #[arg(long = "send-shell-integration-codes", default_missing_value = "only-prompt-pos", num_args = 0..=1)]
