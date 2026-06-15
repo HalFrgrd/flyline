@@ -194,6 +194,10 @@ unsafe extern "C" {
         foundp: *mut c_int,
     ) -> *mut *mut c_char;
 
+    // from pcomplete.c
+    // COMPSPEC *progcomp_search (const char *)
+    pub fn progcomp_search(cmd: *const c_char) -> *mut CompSpec;
+
     // from bashline.c
     // char ** bash_default_completion (const char *text, int start, int end, int qc, int compflags)
     pub fn bash_default_completion(

@@ -91,6 +91,13 @@ fn run_comp_spec_completion(
 
         match poss_completions {
             Ok(comp_result) => {
+                if !comp_result.compspec_was_useful {
+                    log::info!(
+                        "run_comp_spec_completion: compspec for '{}' was not useful, falling back to flyline's own completion strategies.",
+                        alias_expanded_command_word
+                    );
+                    return None;
+                }
                 log::debug!(
                     "Programmable completion results for command: {}",
                     alias_expanded_full_command

@@ -634,6 +634,7 @@ impl Default for CompletionFlags {
 pub struct ProgrammableCompleteReturn {
     pub completions: Vec<String>,
     pub flags: CompletionFlags,
+    pub compspec_was_useful: bool,
 }
 
 impl std::fmt::Debug for ProgrammableCompleteReturn {
@@ -653,7 +654,9 @@ impl std::fmt::Debug for ProgrammableCompleteReturn {
                 ),
             );
         }
-        s.field("flags", &self.flags).finish()
+        s.field("flags", &self.flags)
+            .field("compspec_was_useful", &self.compspec_was_useful)
+            .finish()
     }
 }
 
@@ -757,12 +760,20 @@ fn detect_and_convert_inline_descriptions(completions: &mut Vec<String>, flags: 
 }
 
 impl ProgrammableCompleteReturn {
-    pub fn new(mut completions: Vec<String>, mut flags: CompletionFlags) -> Self {
+    pub fn new(
+        mut completions: Vec<String>,
+        mut flags: CompletionFlags,
+        compspec_was_useful: bool,
+    ) -> Self {
         if should_infer_filename_completion(&completions, &flags) {
             flags.filename_completion_desired = true;
         }
         detect_and_convert_inline_descriptions(&mut completions, &flags);
-        Self { completions, flags }
+        Self {
+            completions,
+            flags,
+            compspec_was_useful,
+        }
     }
 
     pub fn from(
@@ -770,6 +781,7 @@ impl ProgrammableCompleteReturn {
         quote_type: Option<QuoteType>,
         foundcs: c_int,
         append_char: i32,
+        compspec_was_useful: bool,
     ) -> Self {
         let some_dont_end_in_equal_sign = completions.iter().any(|s| !s.ends_with('='));
         Self::new(
@@ -780,6 +792,7 @@ impl ProgrammableCompleteReturn {
                 append_char,
                 some_dont_end_in_equal_sign,
             ),
+            compspec_was_useful,
         )
     }
 }
@@ -807,6 +820,59 @@ fn vec_of_strings_from_char_char_ptr(ptr: *mut *mut c_char) -> Vec<String> {
         }
     }
     strings
+}
+
+#[cfg(not(test))]
+pub fn useful_compspec_ran(command_word: &str) -> bool {
+    unsafe {
+        let command_word_cstr = match std::ffi::CString::new(command_word) {
+            Ok(cstr) => cstr,
+            Err(_) => return false,
+        };
+        let compspec_ptr = bash_symbols::progcomp_search(command_word_cstr.as_ptr());
+        if compspec_ptr.is_null() {
+            log::info!(
+                "useful_compspec_ran: no registered compspec found for '{}' (default/fallback)",
+                command_word
+            );
+            return false;
+        }
+        let compspec = &*compspec_ptr;
+        if compspec.funcname.is_null() {
+            if !compspec.command.is_null() {
+                if let Ok(cmd_str) = std::ffi::CStr::from_ptr(compspec.command).to_str() {
+                    log::info!(
+                        "useful_compspec_ran: registered compspec command for '{}' is: {}",
+                        command_word,
+                        cmd_str
+                    );
+                }
+            } else {
+                log::info!(
+                    "useful_compspec_ran: registered compspec for '{}' has no funcname",
+                    command_word
+                );
+            }
+            return true;
+        }
+        let funcname_cstr = std::ffi::CStr::from_ptr(compspec.funcname);
+        if let Ok(funcname_str) = funcname_cstr.to_str() {
+            log::info!(
+                "useful_compspec_ran: registered compspec function for '{}' is: {}",
+                command_word,
+                funcname_str
+            );
+            if funcname_str == "_minimal" || funcname_str == "_completion_loader" {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+pub fn useful_compspec_ran(_command_word: &str) -> bool {
+    true
 }
 
 #[cfg(not(test))]
@@ -886,33 +952,25 @@ pub fn run_programmable_completions(
             bash_symbols::pcomp_set_readline_variables(foundcs, 1);
         }
 
-        // The matches won't be escaped / quoted.
+        // Detect when there was no useful compspec and a dummy one that just returned filenames was used instead
+        let compspec_was_useful = useful_compspec_ran(command_word);
+        log::info!(
+            "run_programmable_completions: useful_compspec_ran for '{}' returned: {}",
+            command_word,
+            compspec_was_useful
+        );
+
         let completion_strings = vec_of_strings_from_char_char_ptr(list_of_strs);
-        // Readline also deduplicates the results
+
         let res = ProgrammableCompleteReturn::from(
             completion_strings,
             quote_type,
             foundcs,
             bash_symbols::rl_completion_append_character,
+            compspec_was_useful,
         );
 
-        log::debug!(
-            "Programmable completions found with foundcs={}: {:#?}",
-            foundcs,
-            res
-        );
-
-        if res.completions.is_empty() && res.flags.bash_default_fallback_desired {
-            // Flyline used to support bash default completions as a fallback, but has deprecated
-            // this in favor of flyline's own secondary completions.
-            log::warn!(
-                "Bash default completions requested by compspec, but flyline will try its own secondary completions instead."
-            );
-        } else {
-            log::debug!(
-                "Bash default fallback not desired or completions found. Returning programmable completions."
-            );
-        }
+        log::debug!("Programmable completions found: {:#?}", res);
 
         Ok(res)
     }
@@ -940,7 +998,7 @@ pub fn run_programmable_completions(
             .map(|c| c.get_value().to_string_lossy().to_string())
             .collect();
         let flags = CompletionFlags::from_alt(word_under_cursor, &completions);
-        Ok(ProgrammableCompleteReturn::new(completions, flags))
+        Ok(ProgrammableCompleteReturn::new(completions, flags, true))
     } else if command_word == "docker" {
         let completions = if word_under_cursor.starts_with('p') {
             vec![
@@ -961,7 +1019,7 @@ pub fn run_programmable_completions(
             .filter(|s| s.starts_with(word_under_cursor))
             .collect();
         let flags = CompletionFlags::from_alt(word_under_cursor, &filtered);
-        Ok(ProgrammableCompleteReturn::new(filtered, flags))
+        Ok(ProgrammableCompleteReturn::new(filtered, flags, true))
     } else if command_word == "cat" {
         // do a naive filessytem glob.
         // bash sometimes does this if nothing is returned by the prog comp spec.
@@ -1008,11 +1066,12 @@ pub fn run_programmable_completions(
         completions.dedup();
 
         let flags = CompletionFlags::from_alt(word_under_cursor, &completions);
-        Ok(ProgrammableCompleteReturn::new(completions, flags))
+        Ok(ProgrammableCompleteReturn::new(completions, flags, true))
     } else {
         Ok(ProgrammableCompleteReturn::new(
             Vec::new(),
             CompletionFlags::default(),
+            true,
         ))
     }
 }
