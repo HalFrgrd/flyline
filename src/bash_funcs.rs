@@ -1399,33 +1399,103 @@ pub fn find_quote_type(s: &str) -> Option<QuoteType> {
 // Cached environment lookups (moved from BashEnvManager)
 // ---------------------------------------------------------------------------
 
-static DEFINED_ALIASES: Mutex<Option<Vec<String>>> = Mutex::new(None);
-static DEFINED_RESERVED_WORDS: Mutex<Option<Vec<String>>> = Mutex::new(None);
-static DEFINED_SHELL_FUNCTIONS: Mutex<Option<Vec<String>>> = Mutex::new(None);
-static DEFINED_BUILTINS: Mutex<Option<Vec<String>>> = Mutex::new(None);
+static DEFINED_ALIASES: Mutex<Option<Vec<CommandWordInfo>>> = Mutex::new(None);
+static DEFINED_RESERVED_WORDS: Mutex<Option<Vec<CommandWordInfo>>> = Mutex::new(None);
+static DEFINED_SHELL_FUNCTIONS: Mutex<Option<Vec<CommandWordInfo>>> = Mutex::new(None);
+static DEFINED_BUILTINS: Mutex<Option<Vec<CommandWordInfo>>> = Mutex::new(None);
 
 #[cfg(not(test))]
-fn get_cached_aliases() -> Vec<String> {
+fn get_cached_aliases() -> Vec<CommandWordInfo> {
     let mut guard = DEFINED_ALIASES.lock().unwrap();
-    guard.get_or_insert_with(get_all_aliases).clone()
+    guard
+        .get_or_insert_with(|| {
+            get_all_aliases()
+                .into_iter()
+                .map(|name| {
+                    let expansion = find_alias(&name).unwrap_or_else(|| name.clone());
+                    CommandWordInfo::Alias {
+                        command: name,
+                        expansion,
+                    }
+                })
+                .collect()
+        })
+        .clone()
 }
 
 #[cfg(not(test))]
-fn get_cached_reserved_words() -> Vec<String> {
+fn get_cached_reserved_words() -> Vec<CommandWordInfo> {
     let mut guard = DEFINED_RESERVED_WORDS.lock().unwrap();
-    guard.get_or_insert_with(get_all_reserved_words).clone()
+    guard
+        .get_or_insert_with(|| {
+            get_all_reserved_words()
+                .into_iter()
+                .map(|name| CommandWordInfo::Keyword {
+                    command: name,
+                    usage: None,
+                })
+                .collect()
+        })
+        .clone()
 }
 
 #[cfg(not(test))]
-fn get_cached_shell_functions() -> Vec<String> {
+fn get_cached_shell_functions() -> Vec<CommandWordInfo> {
     let mut guard = DEFINED_SHELL_FUNCTIONS.lock().unwrap();
-    guard.get_or_insert_with(get_all_shell_functions).clone()
+    guard
+        .get_or_insert_with(|| {
+            get_all_shell_functions()
+                .into_iter()
+                .map(|name| unsafe {
+                    let name_c = std::ffi::CString::new(name.clone()).unwrap();
+                    let func_def_ptr = bash_symbols::find_function_def(name_c.as_ptr());
+                    if !func_def_ptr.is_null() {
+                        let func_def = &*func_def_ptr;
+                        let line = if func_def.line > 0 {
+                            Some(func_def.line)
+                        } else {
+                            None
+                        };
+                        let source_file = if func_def.source_file.is_null() {
+                            None
+                        } else {
+                            std::ffi::CStr::from_ptr(func_def.source_file)
+                                .to_str()
+                                .ok()
+                                .map(|s| s.to_string())
+                        };
+                        CommandWordInfo::Function {
+                            command: name,
+                            source_file,
+                            line,
+                        }
+                    } else {
+                        CommandWordInfo::Function {
+                            command: name,
+                            source_file: None,
+                            line: None,
+                        }
+                    }
+                })
+                .collect()
+        })
+        .clone()
 }
 
 #[cfg(not(test))]
-fn get_cached_builtins() -> Vec<String> {
+fn get_cached_builtins() -> Vec<CommandWordInfo> {
     let mut guard = DEFINED_BUILTINS.lock().unwrap();
-    guard.get_or_insert_with(get_all_shell_builtins).clone()
+    guard
+        .get_or_insert_with(|| {
+            get_all_shell_builtins()
+                .into_iter()
+                .map(|name| CommandWordInfo::Builtin {
+                    command: name,
+                    usage: None,
+                })
+                .collect()
+        })
+        .clone()
 }
 
 /// Per-directory executable cache entry: the directory's last-modified time and
@@ -1541,63 +1611,17 @@ pub(crate) static LS_COLORS: LazyLock<Option<LsColors>> =
 /// Get all potential first word completions (aliases, reserved words, functions, builtins, executables)
 #[cfg(not(test))]
 pub fn get_possible_command_words() -> impl Iterator<Item = CommandWordInfo> {
-    let aliases = get_cached_aliases().into_iter().map(|name| {
-        let expansion = find_alias(&name).unwrap_or_else(|| name.clone());
-        CommandWordInfo::Alias {
-            command: name,
-            expansion,
-        }
-    });
-    let reserved_words =
-        get_cached_reserved_words()
-            .into_iter()
-            .map(|name| CommandWordInfo::Keyword {
-                command: name,
-                usage: None,
-            });
-    let shell_functions = get_cached_shell_functions().into_iter().map(|name| unsafe {
-        let name_c = std::ffi::CString::new(name.clone()).unwrap();
-        let func_def_ptr = bash_symbols::find_function_def(name_c.as_ptr());
-        if !func_def_ptr.is_null() {
-            let func_def = &*func_def_ptr;
-            let line = if func_def.line > 0 {
-                Some(func_def.line)
-            } else {
-                None
-            };
-            let source_file = if func_def.source_file.is_null() {
-                None
-            } else {
-                std::ffi::CStr::from_ptr(func_def.source_file)
-                    .to_str()
-                    .ok()
-                    .map(|s| s.to_string())
-            };
-            CommandWordInfo::Function {
-                command: name,
-                source_file,
-                line,
-            }
-        } else {
-            CommandWordInfo::Function {
-                command: name,
-                source_file: None,
-                line: None,
-            }
-        }
-    });
-    let builtins = get_cached_builtins()
-        .into_iter()
-        .map(|name| CommandWordInfo::Builtin {
-            command: name,
-            usage: None,
-        });
+    let aliases = get_cached_aliases();
+    let reserved_words = get_cached_reserved_words();
+    let shell_functions = get_cached_shell_functions();
+    let builtins = get_cached_builtins();
     let mut exe_guard = EXECUTABLES_ON_PATH.lock().unwrap();
     exe_guard.update_cache();
     let executables: Vec<CommandWordInfo> = exe_guard.iter_info().collect();
     drop(exe_guard);
 
     aliases
+        .into_iter()
         .chain(reserved_words)
         .chain(shell_functions)
         .chain(builtins)
